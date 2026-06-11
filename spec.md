@@ -10,6 +10,8 @@
 
 NOVA Lab is a hybrid physical-digital STEM engagement game designed to motivate students through the science fair process. Students build and expand a personalized virtual research laboratory, earning upgrades through daily learning activities, demonstrated knowledge, and real science fair project progress. Physical collectible figurines, distributed at verified real-world milestones, unlock special capabilities inside the app. Students can work solo or in shared-laboratory teams. Completed projects can be published as public Showcases visible beyond the app.
 
+**The lab is the interface.** NOVA Lab presents as a single pixel-art lab scene rather than a conventional tab-based web app. Navigation is spatial: each core feature lives behind a **building** on the student's plot, and the student enters a feature by clicking its building, which opens that feature's panel over the scene. New buildings appear on the plot as the student advances through phases, so the lab visibly grows alongside real project progress and the set of reachable features expands in lockstep. There are two distinct classes of building — **gateway buildings** (the navigation spine) and **economy buildings** (the game layer) — defined in Section 9.
+
 ---
 
 ## 2. Core Goals
@@ -195,6 +197,8 @@ A visual map of how the papers in a team's Literature Library connect to one ano
 
 ## 7. Daily Engagement Pillars
 
+The three daily pillars below — Field Dispatch, Proof of Expertise, and Project Log / Failure Log — are **consolidated into a single gateway building, the Operations Hub** (see Section 9.6). Once unlocked, the Operations Hub becomes the central structure of the lab and the student's everyday home base; the individual pillars are surfaced as panels within it rather than as separate destinations.
+
 ### 7.1 Field Dispatch (~2 min)
 - Daily narrative tip/case study tailored to lab type
 - Ends with single reflection question
@@ -258,8 +262,19 @@ A specialized Project Log entry type for documenting failed experiments, dead en
 
 ## 9. Lab Building System
 
-### 9.1 Starting State
-Every new lab begins with one basic starter building. All other buildings and upgrades earned over time.
+### 9.1 Starting State & Building Classes
+
+NOVA Lab has **two distinct classes of building**, which look and behave differently and should never be conflated in design or data:
+
+| Class | Count | Purpose | Economy | PvP | Reskin |
+|---|---|---|---|---|---|
+| **Gateway buildings** | 7 (fixed) | Navigation spine — each opens one core feature panel | None (not bought, no levels) | None | Reskin to lab type on specialization |
+| **Economy buildings** | 60 (10 per lab type) | Game layer — bought, upgraded, host mini-games | KP / LC | Map 1:1 to PvP characters | Already lab-type-specific by design |
+
+- **Gateway buildings** are the doors into features (Discovery, Literature Review, etc.). They are a small fixed set, present according to phase, with no purchase cost, no upgrade levels, no mini-game, and no PvP character. They are the subject of Section 9.6. *Gateway buildings are never labelled "laboratory"* — naming is provisional (see Section 19).
+- **Economy buildings** are the 60 described in 9.2–9.5. They only become relevant after specialization, and only the chosen lab type's 10 are ever in play for a given team.
+
+A brand-new lab begins with a single gateway building (the Discovery building) on a small plot. Economy buildings and upgrades are earned over time, and only after a lab type is selected.
 
 ### 9.2 How Buildings Work
 - KP buys new buildings and minor upgrades
@@ -385,6 +400,27 @@ The same category implementation is reused across buildings with discipline-spec
 - Each mini-game category is a parameterized React component
 - Game content generated either pre-baked per discipline or dynamically via Claude API
 - Results submitted on completion; server validates and awards KP
+
+### 9.6 Gateway Buildings (Navigation Spine)
+
+The seven gateway buildings are the app's primary navigation. Each is a structure on the plot that, when clicked, opens the corresponding feature panel over the lab scene. They appear one at a time as the team advances, and every previously unlocked gateway stays present and usable. Gateways are configuration/seed data, not earned economy buildings.
+
+| # | Gateway (provisional name) | Opens | Appears at phase | Notes |
+|---|---|---|---|---|
+| 1 | **Discovery building** | Topic Discovery (Wikipedia deep dives + idea generation) | `discovery` | The starter building; the only structure on the plot during Discovery |
+| 2 | **Literature Review building** | Literature Review + Library + Citation Graph | `literature_review` | — |
+| 3 | **Research Plan building** | Research Planning (hypothesis, methodology, study design) | `research_planning` | — |
+| 4 | **Operations Hub** | Daily pillars: Field Dispatch, Proof of Expertise, Project Log / Failure Log | `literature_review` *(see §19)* | Becomes the **central** building once unlocked — the everyday home base |
+| 5 | **Science Fair Research building** | Science Fair Information Hub | `discovery` *(see §19)* | Reference center; available early |
+| 6 | **Showcase building** | Showcase Wing (public portfolio) | `showcase` | Additionally gated by the Presenter figurine |
+| 7 | **PvP building** | PvP combat arena | `working` | Battle lobby, team builder, leaderboards |
+
+**Visual behavior:**
+- All gateway buildings start in the shared **generic grey/teal sci-fi palette** (see Section 20).
+- On specialization (entering `lab_selection` and committing to a lab type), **the gateway buildings reskin** to the chosen lab type's palette. This is the visible specialization milestone, in concert with the lab growing in size. Only the gateway buildings reskin — the background/environment is unchanged for the pilot.
+- Gateways have no upgrade levels; their appearance is a function of `(lab_type)` for skin and `(phase)` for which are present.
+
+**Relationship to economy buildings:** gateways are fixed and unbuyable; the 60 economy buildings (9.2–9.5) are bought with KP/LC and populate the grown lab after specialization. A student can have all relevant gateways present while still owning zero economy buildings.
 
 ---
 
@@ -1093,3 +1129,53 @@ This flow keeps the pilot logistically simple: each classroom receives a starter
 - [ ] PvP: how are the 60 characters' identities and movesets actually designed — this is significant creative work
 - [ ] PvP: at what trophy level does each tier (Bronze/Silver/Gold/etc.) begin?
 - [ ] PvP: should opponent's full battle log be visible post-battle, or just outcome?
+- [ ] Gateway buildings: final names (must not be "laboratory") and sculpt identities for all 7
+- [ ] Operations Hub: does it unlock at `literature_review` (current assumption) — and if daily pillars are meant to be "day one," how are they reached before the Hub exists?
+- [ ] Science Fair Research building: appears at `discovery` (reference material early) or later, given buildings otherwise appear chronologically?
+- [ ] Gateway reskin: confirm background/environment stays constant per lab type for the pilot (no biome change)
+
+---
+
+## 20. Visual & Art Direction
+
+> **Status:** Direction set; concrete sprite production pending. This section is the source of truth for the pixel-art look. Technical asset specs (dimensions, file paths, manifest) live in `architecture.md` §8.4.
+
+### 20.1 Overall Aesthetic
+NOVA Lab is a **pixel-art** game. The target is a **chunkier, lower-resolution** look than the two reference images supplied during design — those references read as high-resolution/HD pixel art, and the intended style is more visibly pixelated (fewer, larger pixels; a tighter palette). Think classic 2D top-down/isometric game art rather than detailed illustration.
+
+### 20.2 Reference Decomposition (avoiding "lost in translation")
+Two reference images informed the look, and each contributes **one** thing — they are not to be blended literally:
+
+| Reference | Take **only** this | Do **not** take |
+|---|---|---|
+| `Labratory_Design.png` (cozy building w/ sign) | **Form language** — a clear, charming, approachable standalone structure that instantly reads as "a building you walk up to and enter" | Its specific colors; its exact (Stardew-like) art; the word "Laboratory" on the sign |
+| `Color_Scheme.png` (isometric forest lab) | **Palette** — lavender/grey structure, glowing cyan-teal glass, warm orange accents | Its building shape; its HD resolution |
+
+The brief in one line: **the approachable building silhouette of the first reference, rendered in the palette of the second, at a more pixelated resolution, as an original sculpt.**
+
+### 20.3 Generic (pre-specialization) Palette
+The shared base palette all gateway buildings start in:
+- **Structure:** lavender / grey-purple (cool, neutral)
+- **Glass / screens:** glowing cyan-teal
+- **Accents / lights:** warm orange
+- **Read:** clean sci-fi research facility, discipline-neutral
+
+### 20.4 Lab-Type Reskin Palettes (post-specialization)
+On specialization, gateway buildings recolor to the chosen lab type. Palettes below are **starting direction**, to be refined in the design system:
+
+| Lab Type | Palette direction |
+|---|---|
+| **BioCore** | Greens + organic teal, warm wood/amber accents |
+| **ChemWorks** | Glassware blues + reactive orange/violet accents |
+| **Volt Lab** | Industrial steel grey + electric yellow/cyan accents |
+| **TerraBase** | Earthy ochre/slate + mineral teal accents |
+| **MindFrame** | Muted indigo/violet + soft magenta accents |
+| **Axiom** | Deep space navy + starlight gold/cyan accents |
+
+### 20.5 Reskin Scope
+- **Only the gateway buildings reskin.** The background/environment stays constant for the pilot (no per-type biome).
+- The 60 economy buildings are already drawn per lab type, so they simply appear in their native look once purchased.
+
+### 20.6 UI / Panels
+- Feature panels open **over** the lab scene (modal/overlay), styled in the same pixel-art frame language (chunky borders, pixel font).
+- Pixel font for in-game UI with accessible fallbacks; locked buildings show a pixel padlock.

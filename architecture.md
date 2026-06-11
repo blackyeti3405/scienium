@@ -330,6 +330,13 @@ paper_clusters        paper_id, cluster_id, cluster_label
                       # updated on add/remove via HDBSCAN re-run
 
 # Lab
+gateway_buildings     id, key (discovery | literature_review | research_plan |
+                      operations_hub | science_fair | showcase | pvp),
+                      display_name, feature_route, unlock_phase, is_central,
+                      sort_order
+                      # Fixed config/seed (7 rows). NOT per-team and NOT purchasable.
+                      # Per-team visibility derives from teams.phase >= unlock_phase;
+                      # per-team skin derives from teams.lab_type. No per-team rows needed.
 buildings             id, lab_type, name, role (starter | standard | premium),
                       description, mini_game_category
 team_buildings        id, team_id, building_id, current_level,
@@ -596,11 +603,15 @@ Phases cannot be skipped.
 
 ### 8.4 Pixel-art visual system
 
-The lab home (`/lab`) replaces the old dashboard as the spatial navigation hub. Navigation feels like "entering rooms" rather than switching tabs.
+The lab home (`/lab`) replaces the old dashboard as the spatial navigation hub. Navigation feels like "entering buildings" rather than switching tabs: the scene is a pixel-art plot, and **each feature is reached by clicking its building**, which opens that feature's panel as an overlay. There is no persistent tab bar.
+
+**Two building classes (see spec §9.1):**
+- **Gateway buildings** — 7 fixed structures that *are* the navigation. Seeded via `gateway_buildings`; rendered by `LabCanvas`. Visibility derives from `teams.phase >= unlock_phase`; skin derives from `teams.lab_type`. The Operations Hub (`is_central = true`) renders at plot center once unlocked.
+- **Economy buildings** — the 60 purchasable/upgradeable buildings (`buildings` / `team_buildings`), rendered as additional sprites on the grown plot after specialization.
 
 **Lab visual variables:**
 - `size`: `small` (discovery + lab_selection phases) | `grown` (all later phases)
-- `skin`: `generic` (before lab type selection) | one of 6 lab types (after)
+- `skin`: `generic` grey/teal (before lab type selection) | one of 6 lab types (after). **Only gateway buildings reskin**; the background/environment is constant for the pilot.
 
 **Implementation files:**
 
@@ -608,15 +619,19 @@ The lab home (`/lab`) replaces the old dashboard as the spatial navigation hub. 
 |---|---|
 | `lib/sprites/manifest.ts` | All sprite definitions — path, dimensions, scale, placeholder color |
 | `components/lab/Sprite.tsx` | Renders PNG with `image-rendering: pixelated`; falls back to labeled colored div |
-| `components/lab/LabCanvas.tsx` | Lab hub: building sprite + wing tiles + phase progress dots |
+| `components/lab/LabCanvas.tsx` | Lab hub: renders gateway + economy building sprites by phase/lab_type, handles click-to-open-panel, phase progress dots |
+| `components/lab/FeaturePanel.tsx` | Overlay shell a building opens into; pixel-art frame |
 
 **Asset spec for artists:**
-- Lab exterior sprites: `public/sprites/lab/{lab_type}_{size}.png`
-- Source dimensions: 48×32 px, displayed at 3× scale (144×96 CSS px)
-- Format: PNG-8 or PNG-32, 16–32 color palette
-- Files: `generic_small.png`, `generic_grown.png`, `{biocore,chemworks,volt_lab,terrabase,mindframe,axiom}_grown.png`
+- **Resolution intent:** deliberately **more pixelated / lower-res than the design reference images** (those are HD pixel art). Favor fewer, larger pixels and a tight palette.
+- **Generic base palette:** lavender/grey structure, cyan-teal glass, warm orange accents. **Six reskin palettes** (one per lab type) per spec §20.4.
+- Gateway building sprites: `public/sprites/gateways/{key}_{skin}.png` where `key ∈ {discovery, literature_review, research_plan, operations_hub, science_fair, showcase, pvp}` and `skin ∈ {generic, biocore, chemworks, volt_lab, terrabase, mindframe, axiom}` → 7 × 7 = 49 sprites at full coverage (start with `generic` set + one lab type for the vertical slice).
+- Lab plot/size sprites: `public/sprites/lab/plot_{small,grown}.png`
+- Source dimensions: target **32×32 px** building tiles (down from 48×32), displayed at 3–4× scale; keep palette to **16 colors** where possible. Confirm final grid with the artist.
 - UI sprites: `public/sprites/ui/padlock_closed.png`, `padlock_open.png` — 16×16 px at 2× scale
 - Pixel font: `Press Start 2P` (Google Fonts) via `--font-pixel` CSS variable; applied with `.font-pixel` class
+
+> **Provisional:** gateway building names are placeholders (must not be "laboratory"); Operations Hub and Science Fair unlock timing are open (spec §19).
 
 ---
 
@@ -632,7 +647,7 @@ CI/CD via GitHub Actions: lint → typecheck → test → preview deploy.
 
 ---
 
-## 9. Open Technical Questions
+## 10. Open Technical Questions
 
 - [ ] Sync vs. async AI service endpoints — split decision per endpoint
 - [ ] Real-time strategy for team feeds — polling until pain, or Supabase Realtime from day one
@@ -641,3 +656,5 @@ CI/CD via GitHub Actions: lint → typecheck → test → preview deploy.
 - [ ] Video transcoding: in-house ffmpeg vs. managed service like Mux or Cloudflare Stream (Mux is expensive; in-house works for pilot)
 - [ ] Showcase moderation: auto-only vs. always human-reviewed for public publish
 - [ ] Caching strategy for Wikipedia articles
+- [ ] Lab canvas: fixed pre-placed building slots vs. data-driven layout engine for positioning gateway + economy buildings on the grown plot
+- [ ] Reskin delivery: ship all 7 gateway sprites per lab type (49 total) up front, or lazy-load the selected lab type's set
