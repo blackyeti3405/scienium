@@ -1,0 +1,297 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --ring: 212.7 26.8% 83.9%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ── Pixel font utility ────────────────────────────────────────────────────── */
+/* Apply to game-UI elements only; not body text (accessibility) */
+.font-pixel {
+  font-family: var(--font-pixel), 'Courier New', monospace;
+  font-size: 0.625rem; /* 10px — Press Start 2P reads large; use sparingly */
+  line-height: 1.6;
+  letter-spacing: 0;
+}
+
+/* ── Pixel-art image rendering ─────────────────────────────────────────────── */
+/* Applied to all sprites via inline style; this ensures browser fallback */
+.pixel-art {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ── Lab canvas ─────────────────────────────────────────────────────────────── */
+.lab-canvas {
+  background: #1a1f2e;
+  border: 3px solid #2a3048;
+  border-radius: 4px;
+  padding: 0;
+  overflow: hidden;
+  max-width: 720px;
+}
+
+.lab-canvas__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #0f1320;
+  border-bottom: 2px solid #2a3048;
+}
+
+.lab-canvas__building {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px 12px;
+  gap: 8px;
+}
+
+.lab-canvas__building-label {
+  color: #ffe566;
+  font-size: 9px;
+}
+
+.lab-canvas__small-hint {
+  color: #888;
+  font-size: 8px;
+  text-align: center;
+  max-width: 280px;
+}
+
+/* ── Lab wings grid ─────────────────────────────────────────────────────────── */
+.lab-canvas__wings {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  padding: 2px;
+  background: #0f1320;
+}
+
+@media (max-width: 600px) {
+  .lab-canvas__wings {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.lab-wing-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 6px;
+  min-height: 72px;
+  text-align: center;
+  border: 1px solid transparent;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.lab-wing-tile--open {
+  background: #1e2540;
+  border-color: #2a3048;
+  cursor: pointer;
+}
+
+.lab-wing-tile--open:hover {
+  background: #252d50;
+  border-color: #4a5580;
+}
+
+.lab-wing-tile--locked {
+  background: #131722;
+  border-color: #1e2230;
+  opacity: 0.6;
+}
+
+.lab-wing-tile__padlock {
+  margin-bottom: 2px;
+  image-rendering: pixelated;
+}
+
+.lab-wing-tile__label {
+  font-size: 7px;
+  color: #c8d0e8;
+  line-height: 1.4;
+}
+
+.lab-wing-tile--locked .lab-wing-tile__label {
+  color: #556070;
+}
+
+.lab-wing-tile__hint {
+  font-size: 9px;
+  color: #6878a0;
+  line-height: 1.3;
+  display: none;
+}
+
+.lab-wing-tile--open:hover .lab-wing-tile__hint {
+  display: block;
+}
+
+/* ── Phase progress dots ────────────────────────────────────────────────────── */
+.lab-canvas__phase-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  background: #0f1320;
+  border-top: 2px solid #2a3048;
+}
+
+.lab-canvas__phase-dot {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #2a3048;
+  image-rendering: pixelated;
+}
+
+.lab-canvas__phase-dot--done {
+  background: #4a8f5e;
+  border-color: #5aaf6e;
+}
+
+.lab-canvas__phase-dot--current {
+  background: #ffe566;
+  border-color: #ffd022;
+  box-shadow: 0 0 4px #ffe566;
+}
+
+.lab-canvas__phase-dot--future {
+  background: #1a2030;
+  border-color: #2a3048;
+}
+
+/* ── Pixel-art nav padlock icon (inline SVG fallback) ───────────────────────── */
+/* Used in DashboardNav when sprite PNG is missing */
+.nav-padlock {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  background: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Crect x='1' y='3' width='6' height='5'/%3E%3Crect x='2' y='1' width='4' height='3' fill='none' stroke='currentColor' stroke-width='1.5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Crect x='1' y='3' width='6' height='5'/%3E%3Crect x='2' y='1' width='4' height='3' fill='none' stroke='currentColor' stroke-width='1.5'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+
+/* ── Wikipedia article reader ──────────────────────────────────────────────── */
+.wiki-content {
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  color: hsl(var(--foreground));
+}
+.wiki-content p {
+  margin-bottom: 1rem;
+}
+.wiki-content h2,
+.wiki-content h3,
+.wiki-content h4 {
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 0.4rem;
+  line-height: 1.3;
+}
+.wiki-content h2 { font-size: 1.15rem; }
+.wiki-content h3 { font-size: 1rem; }
+.wiki-content ul,
+.wiki-content ol {
+  margin: 0.6rem 0 0.8rem 1.4rem;
+}
+.wiki-content li { margin-bottom: 0.25rem; }
+.wiki-content table { display: none; }        /* hide infoboxes */
+.wiki-content .mw-empty-elt { display: none; }
+
+/* Internal wiki links — clickable, intercepted */
+.wiki-content a.wiki-link {
+  color: hsl(217, 91%, 52%);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  border-radius: 2px;
+  padding: 0 1px;
+  transition: background-color 0.1s, color 0.1s;
+}
+.wiki-content a.wiki-link:hover {
+  color: hsl(217, 91%, 38%);
+  background-color: hsl(217, 91%, 52%, 0.08);
+}
+/* Selected branch links */
+.wiki-content a.wiki-link-selected {
+  background-color: hsl(var(--primary) / 0.12);
+  color: hsl(var(--primary));
+  font-weight: 600;
+  text-decoration-color: hsl(var(--primary));
+  outline: 1.5px solid hsl(var(--primary) / 0.35);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+/* Red links stripped to plain text */
+.wiki-content .wiki-redlink {
+  color: hsl(var(--foreground));
+}
+/* Section headings injected by our API route */
+.wiki-content .wiki-section-heading {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid hsl(var(--border));
+}

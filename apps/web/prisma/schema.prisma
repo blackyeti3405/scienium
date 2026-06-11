@@ -1,0 +1,820 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
+}
+
+// ─── Users & Org ─────────────────────────────────────────────────────────────
+
+model User {
+  id          String   @id @default(cuid())
+  clerkUserId String   @unique @map("clerk_user_id")
+  name        String
+  email       String   @unique
+  schoolId    String?  @map("school_id")
+  classId     String?  @map("class_id")
+  role        UserRole @default(student)
+  isMinor     Boolean  @default(true) @map("is_minor")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  school              School?              @relation(fields: [schoolId], references: [id])
+  class               Class?               @relation(fields: [classId], references: [id])
+  teamMemberships     TeamMember[]
+  figurineUnlocks     FigurineUnlock[]
+  parentalConsents    ParentalConsent[]
+  projectLogEntries   ProjectLog[]
+  discoveryNodes      DiscoveryNode[]
+  fieldDispatchResp   FieldDispatchResponse[]
+  expertiseAttempts   ExpertiseAttempt[]
+  miniGamePlays       MiniGamePlay[]
+  rubricAssessments   RubricSelfAssessment[]
+  activityFeedEntries ActivityFeed[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  student
+  teacher
+  admin
+
+  @@map("user_role")
+}
+
+model School {
+  id      String @id @default(cuid())
+  name    String
+  adminId String @map("admin_id")
+  users   User[]
+  classes Class[]
+
+  @@map("schools")
+}
+
+model Class {
+  id        String @id @default(cuid())
+  schoolId  String @map("school_id")
+  name      String
+  teacherId String @map("teacher_id")
+  school    School @relation(fields: [schoolId], references: [id])
+  users     User[]
+
+  @@map("classes")
+}
+
+model ParentalConsent {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  consentType String    @map("consent_type")
+  grantedAt   DateTime  @map("granted_at")
+  revokedAt   DateTime? @map("revoked_at")
+  evidenceUrl String?   @map("evidence_url")
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@map("parental_consents")
+}
+
+// ─── Teams ───────────────────────────────────────────────────────────────────
+
+model Team {
+  id         String   @id @default(cuid())
+  name       String
+  teamLeadId String   @map("team_lead_id")
+  labType    LabType? @map("lab_type")
+  topic      String?
+  phase      ProjectPhase @default(discovery)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  members         TeamMember[]
+  currency        TeamCurrency?
+  buildings       TeamBuilding[]
+  discoveryNodes  DiscoveryNode[]
+  topicInterests  TopicInterest[]
+  papers          Paper[]
+  projectLogs     ProjectLog[]
+  pvpTeam         PvpTeam?
+  pvpTrophies     PvpTrophies?
+  pvpBattleQuota  PvpBattleQuota[]
+  showcase        Showcase?
+  formStatuses    TeamFormStatus[]
+  activityFeed    ActivityFeed[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  userId    String     @map("user_id")
+  teamId    String     @map("team_id")
+  role      MemberRole @default(member)
+  joinedAt  DateTime   @default(now()) @map("joined_at")
+  user      User       @relation(fields: [userId], references: [id])
+  team      Team       @relation(fields: [teamId], references: [id])
+
+  @@id([userId, teamId])
+  @@map("team_members")
+}
+
+enum MemberRole {
+  lead
+  member
+
+  @@map("member_role")
+}
+
+enum LabType {
+  biocore
+  chemworks
+  volt_lab
+  terrabase
+  mindframe
+  axiom
+
+  @@map("lab_type")
+}
+
+enum ProjectPhase {
+  discovery
+  lab_selection
+  literature_review
+  research_planning
+  working
+  showcase
+
+  @@map("project_phase")
+}
+
+// ─── Currency ────────────────────────────────────────────────────────────────
+
+model TeamCurrency {
+  teamId         String @id @map("team_id")
+  kp             Int    @default(0)
+  clearanceLevel Int    @default(0) @map("clearance_level")
+  lc             Int    @default(0)
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  team           Team   @relation(fields: [teamId], references: [id])
+
+  @@map("team_currency")
+}
+
+// ─── Discovery ───────────────────────────────────────────────────────────────
+
+model DiscoveryNode {
+  id              String          @id @default(cuid())
+  teamId          String          @map("team_id")
+  parentId        String?         @map("parent_id")
+  sourceType      DiscoverySource @map("source_type")
+  wikipediaTitle  String?         @map("wikipedia_title")
+  paperId         String?         @map("paper_id")
+  starred         Boolean         @default(false)
+  visitedByUserId String          @map("visited_by_user_id")
+  visitedAt       DateTime        @default(now()) @map("visited_at")
+
+  team        Team          @relation(fields: [teamId], references: [id])
+  visitedBy   User          @relation(fields: [visitedByUserId], references: [id])
+  parent      DiscoveryNode? @relation("tree", fields: [parentId], references: [id])
+  children    DiscoveryNode[] @relation("tree")
+
+  @@map("discovery_nodes")
+}
+
+enum DiscoverySource {
+  wikipedia
+  paper
+
+  @@map("discovery_source")
+}
+
+model TopicInterest {
+  id              String   @id @default(cuid())
+  teamId          String   @map("team_id")
+  text            String
+  createdByUserId String   @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  team            Team     @relation(fields: [teamId], references: [id])
+
+  @@map("topic_interests")
+}
+
+// ─── Literature ──────────────────────────────────────────────────────────────
+
+model Paper {
+  id               String      @id @default(cuid())
+  teamId           String      @map("team_id")
+  title            String
+  authors          String[]
+  abstract         String?
+  sourceType       PaperSource @map("source_type")
+  fileUrl          String?     @map("file_url")
+  contentHash      String?     @map("content_hash")
+  /// @db.VectorType(1536)
+  embedding        Unsupported("vector(1536)")?
+  status           PaperStatus @default(pending)
+  uploadedByUserId String      @map("uploaded_by_user_id")
+  createdAt        DateTime    @default(now()) @map("created_at")
+
+  team            Team              @relation(fields: [teamId], references: [id])
+  summary         PaperSummary?
+  quizAttempts    PaperQuizAttempt[]
+  relevanceNotes  PaperRelevanceNote[]
+  cluster         PaperCluster?
+  citationsFrom   PaperCitation[]   @relation("source")
+  citationsTo     PaperCitation[]   @relation("target")
+
+  @@map("papers")
+}
+
+enum PaperSource {
+  pdf
+  text
+
+  @@map("paper_source")
+}
+
+enum PaperStatus {
+  pending
+  processing
+  ready
+  error
+
+  @@map("paper_status")
+}
+
+model PaperSummary {
+  paperId     String @id @map("paper_id")
+  summaryJson Json   @map("summary_json")
+  paper       Paper  @relation(fields: [paperId], references: [id])
+
+  @@map("paper_summaries")
+}
+
+model PaperQuizAttempt {
+  id         String   @id @default(cuid())
+  paperId    String   @map("paper_id")
+  userId     String   @map("user_id")
+  question   String
+  response   String
+  evaluation String
+  createdAt  DateTime @default(now()) @map("created_at")
+  paper      Paper    @relation(fields: [paperId], references: [id])
+
+  @@map("paper_quiz_attempts")
+}
+
+model PaperRelevanceNote {
+  paperId   String @map("paper_id")
+  userId    String @map("user_id")
+  response  String
+  createdAt DateTime @default(now()) @map("created_at")
+  paper     Paper  @relation(fields: [paperId], references: [id])
+
+  @@id([paperId, userId])
+  @@map("paper_relevance_notes")
+}
+
+model PaperCitation {
+  sourcePaperId   String     @map("source_paper_id")
+  targetPaperId   String     @map("target_paper_id")
+  edgeType        CitationEdge @map("edge_type")
+  confidenceScore Float      @map("confidence_score")
+
+  source Paper @relation("source", fields: [sourcePaperId], references: [id])
+  target Paper @relation("target", fields: [targetPaperId], references: [id])
+
+  @@id([sourcePaperId, targetPaperId, edgeType])
+  @@map("paper_citations")
+}
+
+enum CitationEdge {
+  direct
+  thematic
+
+  @@map("citation_edge")
+}
+
+model PaperCluster {
+  paperId      String @id @map("paper_id")
+  clusterId    Int    @map("cluster_id")
+  clusterLabel String @map("cluster_label")
+  paper        Paper  @relation(fields: [paperId], references: [id])
+
+  @@map("paper_clusters")
+}
+
+// ─── Lab Buildings ───────────────────────────────────────────────────────────
+
+model Building {
+  id               String           @id @default(cuid())
+  labType          LabType          @map("lab_type")
+  name             String
+  role             BuildingRole
+  description      String
+  miniGameCategory MiniGameCategory @map("mini_game_category")
+
+  teamBuildings TeamBuilding[]
+  character     Character?
+
+  @@map("buildings")
+}
+
+enum BuildingRole {
+  starter
+  standard
+  premium
+
+  @@map("building_role")
+}
+
+enum MiniGameCategory {
+  identification
+  configuration
+  prediction
+  diagnosis
+  optimization
+  decoding
+
+  @@map("mini_game_category")
+}
+
+model TeamBuilding {
+  id                  String   @id @default(cuid())
+  teamId              String   @map("team_id")
+  buildingId          String   @map("building_id")
+  currentLevel        Int      @default(1) @map("current_level")
+  lastUpgradedByUserId String? @map("last_upgraded_by_user_id")
+  lastUpgradedAt      DateTime? @map("last_upgraded_at")
+
+  team     Team     @relation(fields: [teamId], references: [id])
+  building Building @relation(fields: [buildingId], references: [id])
+
+  @@unique([teamId, buildingId])
+  @@map("team_buildings")
+}
+
+// ─── Daily Activities ─────────────────────────────────────────────────────────
+
+model FieldDispatchContent {
+  id                 String   @id @default(cuid())
+  labType            LabType  @map("lab_type")
+  body               String
+  reflectionQuestion String   @map("reflection_question")
+  publishedDate      DateTime @map("published_date")
+
+  responses FieldDispatchResponse[]
+
+  @@map("field_dispatch_content")
+}
+
+model FieldDispatchResponse {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  contentId String   @map("content_id")
+  response  String
+  kpAwarded Int      @map("kp_awarded")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User                 @relation(fields: [userId], references: [id])
+  content FieldDispatchContent @relation(fields: [contentId], references: [id])
+
+  @@map("field_dispatch_responses")
+}
+
+model ExpertiseAttempt {
+  id                   String   @id @default(cuid())
+  userId               String   @map("user_id")
+  clearanceLevelAtAttempt Int   @map("clearance_level_at_attempt")
+  question             String
+  response             String
+  passed               Boolean
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("expertise_attempts")
+}
+
+model ProjectLog {
+  id              String           @id @default(cuid())
+  teamId          String           @map("team_id")
+  entryType       ProjectLogEntry  @map("entry_type")
+  stage           String?
+  body            String
+  artifactUrl     String?          @map("artifact_url")
+  createdByUserId String           @map("created_by_user_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  team       Team               @relation(fields: [teamId], references: [id])
+  createdBy  User               @relation(fields: [createdByUserId], references: [id])
+  followups  ProjectLogFollowup[]
+  references ProjectLogReference[] @relation("from")
+  referencedBy ProjectLogReference[] @relation("to")
+
+  @@map("project_logs")
+}
+
+enum ProjectLogEntry {
+  progress
+  failure
+
+  @@map("project_log_entry")
+}
+
+model ProjectLogFollowup {
+  id           String   @id @default(cuid())
+  projectLogId String   @map("project_log_id")
+  question     String
+  response     String
+  createdAt    DateTime @default(now()) @map("created_at")
+  log          ProjectLog @relation(fields: [projectLogId], references: [id])
+
+  @@map("project_log_followups")
+}
+
+model ProjectLogReference {
+  projectLogId     String     @map("project_log_id")
+  referencesLogId  String     @map("references_log_id")
+  from             ProjectLog @relation("from", fields: [projectLogId], references: [id])
+  to               ProjectLog @relation("to", fields: [referencesLogId], references: [id])
+
+  @@id([projectLogId, referencesLogId])
+  @@map("project_log_references")
+}
+
+model MiniGamePlay {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  teamId     String   @map("team_id")
+  buildingId String   @map("building_id")
+  score      Int
+  kpAwarded  Int      @map("kp_awarded")
+  playedAt   DateTime @default(now()) @map("played_at")
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@map("mini_game_plays")
+}
+
+// ─── Figurines ───────────────────────────────────────────────────────────────
+
+model FigurineUnlock {
+  id              String       @id @default(cuid())
+  userId          String       @map("user_id")
+  figurineTier    FigurineTier @map("figurine_tier")
+  labTypeVariant  LabType?     @map("lab_type_variant")
+  qrToken         String       @unique @map("qr_token")
+  unlockedAt      DateTime     @default(now()) @map("unlocked_at")
+  user            User         @relation(fields: [userId], references: [id])
+
+  @@map("figurine_unlocks")
+}
+
+enum FigurineTier {
+  apprentice
+  analyst
+  experimenter
+  presenter
+  pioneer
+
+  @@map("figurine_tier")
+}
+
+// ─── Showcase ────────────────────────────────────────────────────────────────
+
+model Showcase {
+  id               String           @id @default(cuid())
+  teamId           String           @unique @map("team_id")
+  slug             String           @unique
+  title            String
+  abstract         String
+  privacyLevel     PrivacyLevel     @default(private) @map("privacy_level")
+  publishedAt      DateTime?        @map("published_at")
+  lastEditedAt     DateTime         @updatedAt @map("last_edited_at")
+  moderationStatus ModerationStatus @default(draft) @map("moderation_status")
+
+  team   Team            @relation(fields: [teamId], references: [id])
+  assets ShowcaseAsset[]
+  views  ShowcaseView[]
+
+  @@map("showcases")
+}
+
+enum PrivacyLevel {
+  public
+  school_only
+  link_only
+  private
+
+  @@map("privacy_level")
+}
+
+enum ModerationStatus {
+  draft
+  pending_review
+  approved
+  rejected
+
+  @@map("moderation_status")
+}
+
+model ShowcaseAsset {
+  id          String      @id @default(cuid())
+  showcaseId  String      @map("showcase_id")
+  assetType   AssetType   @map("asset_type")
+  fileUrl     String?     @map("file_url")
+  metadataJson Json?      @map("metadata_json")
+  uploadedAt  DateTime    @default(now()) @map("uploaded_at")
+  showcase    Showcase    @relation(fields: [showcaseId], references: [id])
+
+  @@map("showcase_assets")
+}
+
+enum AssetType {
+  script
+  board
+  video
+  visual
+  report
+  repo_link
+
+  @@map("asset_type")
+}
+
+model ShowcaseView {
+  id                 String   @id @default(cuid())
+  showcaseId         String   @map("showcase_id")
+  visitorFingerprint String   @map("visitor_fingerprint")
+  viewedAt           DateTime @default(now()) @map("viewed_at")
+  showcase           Showcase @relation(fields: [showcaseId], references: [id])
+
+  @@map("showcase_views")
+}
+
+// ─── Science Fair Hub ────────────────────────────────────────────────────────
+
+model Fair {
+  id          String    @id @default(cuid())
+  name        String
+  level       FairLevel
+  state       String?
+  county      String?
+  country     String    @default("US")
+  websiteUrl  String?   @map("website_url")
+  parentFairId String?  @map("parent_fair_id")
+
+  events     FairEvent[]
+  userAssocs FairUserAssociation[]
+
+  @@map("fairs")
+}
+
+enum FairLevel {
+  school
+  regional
+  state
+  international
+  affiliated
+
+  @@map("fair_level")
+}
+
+model FairEvent {
+  id                    String      @id @default(cuid())
+  fairId                String      @map("fair_id")
+  year                  Int
+  eventDate             DateTime?   @map("event_date")
+  registrationDeadline  DateTime?   @map("registration_deadline")
+  abstractDeadline      DateTime?   @map("abstract_deadline")
+  venue                 String?
+  status                EventStatus @default(estimated)
+  previousYearEventId   String?     @map("previous_year_event_id")
+
+  fair Fair @relation(fields: [fairId], references: [id])
+
+  @@map("fair_events")
+}
+
+enum EventStatus {
+  confirmed
+  estimated
+
+  @@map("event_status")
+}
+
+model FairUserAssociation {
+  userId       String   @map("user_id")
+  fairId       String   @map("fair_id")
+  isPrimary    Boolean  @default(false) @map("is_primary")
+  registeredAt DateTime @default(now()) @map("registered_at")
+
+  fair Fair @relation(fields: [fairId], references: [id])
+
+  @@id([userId, fairId])
+  @@map("fair_user_associations")
+}
+
+model RubricVersion {
+  id         String   @id @default(cuid())
+  fairId     String   @map("fair_id")
+  year       Int
+  rubricJson Json     @map("rubric_json")
+  criteria   RubricCriterion[]
+
+  @@map("rubric_versions")
+}
+
+model RubricCriterion {
+  id               String        @id @default(cuid())
+  rubricVersionId  String        @map("rubric_version_id")
+  name             String
+  description      String
+  maxScore         Int           @map("max_score")
+  checklistItemsJson Json        @map("checklist_items_json")
+  rubricVersion    RubricVersion @relation(fields: [rubricVersionId], references: [id])
+  assessments      RubricSelfAssessment[]
+
+  @@map("rubric_criteria")
+}
+
+model RubricSelfAssessment {
+  id                String          @id @default(cuid())
+  teamId            String          @map("team_id")
+  rubricCriterionId String          @map("rubric_criterion_id")
+  score             Int
+  notes             String?
+  assessedByUserId  String          @map("assessed_by_user_id")
+  assessedAt        DateTime        @default(now()) @map("assessed_at")
+  criterion         RubricCriterion @relation(fields: [rubricCriterionId], references: [id])
+  assessedBy        User            @relation(fields: [assessedByUserId], references: [id])
+
+  @@map("rubric_self_assessments")
+}
+
+model IsefCategory {
+  id                   String   @id @default(cuid())
+  name                 String
+  description          String
+  exampleSubtopicsJson Json     @map("example_subtopics_json")
+  recommendedLabType   LabType  @map("recommended_lab_type")
+
+  @@map("isef_categories")
+}
+
+model FormsCatalog {
+  id                    String @id @default(cuid())
+  name                  String
+  formCode              String @map("form_code")
+  requiredForLevelsJson Json   @map("required_for_levels_json")
+  templateUrl           String? @map("template_url")
+  description           String
+  teamStatuses          TeamFormStatus[]
+
+  @@map("forms_catalog")
+}
+
+model TeamFormStatus {
+  id          String     @id @default(cuid())
+  teamId      String     @map("team_id")
+  formId      String     @map("form_id")
+  status      FormStatus @default(not_started)
+  completedAt DateTime?  @map("completed_at")
+  team        Team       @relation(fields: [teamId], references: [id])
+  form        FormsCatalog @relation(fields: [formId], references: [id])
+
+  @@unique([teamId, formId])
+  @@map("team_form_status")
+}
+
+enum FormStatus {
+  not_started
+  in_progress
+  complete
+
+  @@map("form_status")
+}
+
+// ─── PvP Combat ──────────────────────────────────────────────────────────────
+
+model Character {
+  id          String     @id @default(cuid())
+  buildingId  String     @unique @map("building_id")
+  name        String
+  type        CombatType
+  baseHp      Int        @map("base_hp")
+  baseAtk     Int        @map("base_atk")
+  baseDef     Int        @map("base_def")
+  baseSpd     Int        @map("base_spd")
+  sprite1Url  String     @map("sprite_1_url")
+  sprite2Url  String     @map("sprite_2_url")
+  building    Building   @relation(fields: [buildingId], references: [id])
+  moves       CharacterMove[]
+
+  @@map("characters")
+}
+
+enum CombatType {
+  empirical
+  theoretical
+  applied
+
+  @@map("combat_type")
+}
+
+model Move {
+  id                  String     @id @default(cuid())
+  name                String
+  type                CombatType
+  baseDamage          Int        @map("base_damage")
+  accuracy            Int
+  pp                  Int
+  secondaryEffectJson Json?      @map("secondary_effect_json")
+  flavorText          String     @map("flavor_text")
+  characters          CharacterMove[]
+
+  @@map("moves")
+}
+
+model CharacterMove {
+  characterId  String    @map("character_id")
+  moveId       String    @map("move_id")
+  levelLearned Int       @map("level_learned")
+  character    Character @relation(fields: [characterId], references: [id])
+  move         Move      @relation(fields: [moveId], references: [id])
+
+  @@id([characterId, moveId])
+  @@map("character_moves")
+}
+
+model PvpTeam {
+  id                 String   @id @default(cuid())
+  teamId             String   @unique @map("team_id")
+  characterSlotsJson Json     @map("character_slots_json")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  team               Team     @relation(fields: [teamId], references: [id])
+
+  @@map("pvp_teams")
+}
+
+model PvpBattle {
+  id                     String    @id @default(cuid())
+  attackerTeamId         String    @map("attacker_team_id")
+  defenderTeamId         String    @map("defender_team_id")
+  phase                  ProjectPhase
+  startedAt              DateTime  @default(now()) @map("started_at")
+  endedAt                DateTime? @map("ended_at")
+  winnerTeamId           String?   @map("winner_team_id")
+  trophiesDeltaAttacker  Int?      @map("trophies_delta_attacker")
+  trophiesDeltaDefender  Int?      @map("trophies_delta_defender")
+  battleLogJson          Json?     @map("battle_log_json")
+
+  @@map("pvp_battles")
+}
+
+model PvpTrophies {
+  teamId          String   @id @map("team_id")
+  currentTrophies Int      @default(0) @map("current_trophies")
+  tier            PvpTier  @default(bronze)
+  season          Int      @default(1)
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  team            Team     @relation(fields: [teamId], references: [id])
+
+  @@map("pvp_trophies")
+}
+
+enum PvpTier {
+  bronze
+  silver
+  gold
+  platinum
+  diamond
+  master
+
+  @@map("pvp_tier")
+}
+
+model PvpBattleQuota {
+  teamId     String   @map("team_id")
+  date       DateTime @db.Date
+  battlesUsed Int     @default(0) @map("battles_used")
+  team       Team     @relation(fields: [teamId], references: [id])
+
+  @@id([teamId, date])
+  @@map("pvp_battle_quota")
+}
+
+// ─── Activity Feed ───────────────────────────────────────────────────────────
+
+model ActivityFeed {
+  id          String   @id @default(cuid())
+  teamId      String   @map("team_id")
+  userId      String   @map("user_id")
+  actionType  String   @map("action_type")
+  payloadJson Json     @map("payload_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+  team        Team     @relation(fields: [teamId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@map("activity_feed")
+}

@@ -1,0 +1,73 @@
+export const BUILDINGS = [
+  // BioCore
+  { labType: 'biocore', name: 'Greenhouse', role: 'starter', description: 'Cultivate and observe plant specimens', miniGameCategory: 'identification' },
+  { labType: 'biocore', name: 'Specimen Vault', role: 'standard', description: 'Curate and classify biological samples', miniGameCategory: 'identification' },
+  { labType: 'biocore', name: 'Microscopy Suite', role: 'standard', description: 'Visualize cells and microorganisms', miniGameCategory: 'identification' },
+  { labType: 'biocore', name: 'Incubation Chamber', role: 'standard', description: 'Grow cultures under controlled conditions', miniGameCategory: 'prediction' },
+  { labType: 'biocore', name: 'Wet Lab', role: 'standard', description: 'Conduct biological assays', miniGameCategory: 'configuration' },
+  { labType: 'biocore', name: 'Field Station', role: 'standard', description: 'Collect ecological data from the field', miniGameCategory: 'prediction' },
+  { labType: 'biocore', name: 'Aquatic Habitat', role: 'standard', description: 'Study aquatic ecosystems', miniGameCategory: 'diagnosis' },
+  { labType: 'biocore', name: 'Genetics Sequencing Lab', role: 'standard', description: 'Sequence and align DNA samples', miniGameCategory: 'decoding' },
+  { labType: 'biocore', name: 'Behavioral Observation Room', role: 'standard', description: 'Track and analyze animal behavior', miniGameCategory: 'prediction' },
+  { labType: 'biocore', name: 'Bioinformatics Suite', role: 'premium', description: 'Analyze genomic data at scale', miniGameCategory: 'optimization' },
+
+  // ChemWorks
+  { labType: 'chemworks', name: 'Fume Hood Bench', role: 'starter', description: 'Safe baseline workspace for reactions', miniGameCategory: 'configuration' },
+  { labType: 'chemworks', name: 'Reaction Synthesis Lab', role: 'standard', description: 'Run controlled chemical syntheses', miniGameCategory: 'prediction' },
+  { labType: 'chemworks', name: 'Spectroscopy Suite', role: 'standard', description: 'Identify compounds by spectral signatures', miniGameCategory: 'identification' },
+  { labType: 'chemworks', name: 'Materials Testing Bay', role: 'standard', description: 'Measure mechanical and chemical properties', miniGameCategory: 'diagnosis' },
+  { labType: 'chemworks', name: 'Crystallography Room', role: 'standard', description: 'Determine molecular structures', miniGameCategory: 'decoding' },
+  { labType: 'chemworks', name: 'Distillation Tower', role: 'standard', description: 'Separate and purify mixtures', miniGameCategory: 'optimization' },
+  { labType: 'chemworks', name: 'Catalysis Lab', role: 'standard', description: 'Study reaction acceleration', miniGameCategory: 'optimization' },
+  { labType: 'chemworks', name: 'Polymer Workshop', role: 'standard', description: 'Synthesize and test polymers', miniGameCategory: 'configuration' },
+  { labType: 'chemworks', name: 'Computational Chemistry Hub', role: 'standard', description: 'Simulate molecules in silico', miniGameCategory: 'prediction' },
+  { labType: 'chemworks', name: 'Cleanroom Synthesizer', role: 'premium', description: 'Precision synthesis under contamination control', miniGameCategory: 'optimization' },
+
+  // Volt Lab
+  { labType: 'volt_lab', name: 'Workshop', role: 'starter', description: 'Default workbench for general builds', miniGameCategory: 'configuration' },
+  { labType: 'volt_lab', name: 'CNC Mill Shop', role: 'standard', description: 'Precision subtractive fabrication', miniGameCategory: 'configuration' },
+  { labType: 'volt_lab', name: '3D Printing Shop', role: 'standard', description: 'Additive prototyping', miniGameCategory: 'optimization' },
+  { labType: 'volt_lab', name: 'PCB Fab', role: 'standard', description: 'Design and produce circuit boards', miniGameCategory: 'configuration' },
+  { labType: 'volt_lab', name: 'Robotics Bay', role: 'standard', description: 'Integrate sensors, actuators, control', miniGameCategory: 'configuration' },
+  { labType: 'volt_lab', name: 'Electronics Bench', role: 'standard', description: 'Build and debug analog/digital circuits', miniGameCategory: 'diagnosis' },
+  { labType: 'volt_lab', name: 'Mechanical Testing Rig', role: 'standard', description: 'Stress, fatigue, and load testing', miniGameCategory: 'prediction' },
+  { labType: 'volt_lab', name: 'Welding & Fabrication', role: 'standard', description: 'Metalwork and structural assembly', miniGameCategory: 'configuration' },
+  { labType: 'volt_lab', name: 'Embedded Systems Lab', role: 'standard', description: 'Microcontroller-based projects', miniGameCategory: 'configuration' },
+  { labType: 'volt_lab', name: 'AI Incubator', role: 'premium', description: 'Develop ML-driven engineering systems', miniGameCategory: 'optimization' },
+
+  // TerraBase
+  { labType: 'terrabase', name: 'Sampling Station', role: 'starter', description: 'Collect and catalog field samples', miniGameCategory: 'identification' },
+  { labType: 'terrabase', name: 'Seismograph Array', role: 'standard', description: 'Monitor seismic activity', miniGameCategory: 'prediction' },
+  { labType: 'terrabase', name: 'Weather Monitoring Post', role: 'standard', description: 'Record and analyze atmospheric data', miniGameCategory: 'prediction' },
+  { labType: 'terrabase', name: 'Geological Core Lab', role: 'standard', description: 'Analyze sediment and rock cores', miniGameCategory: 'identification' },
+  { labType: 'terrabase', name: 'Hydrology Bay', role: 'standard', description: 'Study water systems and flow', miniGameCategory: 'diagnosis' },
+  { labType: 'terrabase', name: 'Atmospheric Sensor Array', role: 'standard', description: 'Track atmospheric chemistry', miniGameCategory: 'prediction' },
+  { labType: 'terrabase', name: 'Soil Analysis Lab', role: 'standard', description: 'Characterize soil composition', miniGameCategory: 'identification' },
+  { labType: 'terrabase', name: 'Remote Sensing Hub', role: 'standard', description: 'Interpret satellite and aerial data', miniGameCategory: 'decoding' },
+  { labType: 'terrabase', name: 'Climate Modeling Station', role: 'standard', description: 'Run simulations of Earth systems', miniGameCategory: 'optimization' },
+  { labType: 'terrabase', name: 'Deep Earth Observatory', role: 'premium', description: 'Probe planetary-scale processes', miniGameCategory: 'prediction' },
+
+  // MindFrame
+  { labType: 'mindframe', name: 'Interview Room', role: 'starter', description: 'Conduct structured interviews', miniGameCategory: 'identification' },
+  { labType: 'mindframe', name: 'Survey Distribution Center', role: 'standard', description: 'Design and field surveys', miniGameCategory: 'diagnosis' },
+  { labType: 'mindframe', name: 'Behavioral Lab', role: 'standard', description: 'Run controlled behavioral experiments', miniGameCategory: 'prediction' },
+  { labType: 'mindframe', name: 'Eye Tracking Suite', role: 'standard', description: 'Measure attention and gaze', miniGameCategory: 'decoding' },
+  { labType: 'mindframe', name: 'Statistical Analysis Hub', role: 'standard', description: 'Choose and run the right test', miniGameCategory: 'diagnosis' },
+  { labType: 'mindframe', name: 'Focus Group Chamber', role: 'standard', description: 'Run group-based qualitative studies', miniGameCategory: 'identification' },
+  { labType: 'mindframe', name: 'Longitudinal Study Wing', role: 'standard', description: 'Track participants over time', miniGameCategory: 'optimization' },
+  { labType: 'mindframe', name: 'EEG/Biofeedback Room', role: 'standard', description: 'Measure physiological response', miniGameCategory: 'decoding' },
+  { labType: 'mindframe', name: 'Data Visualization Studio', role: 'standard', description: 'Communicate findings visually', miniGameCategory: 'configuration' },
+  { labType: 'mindframe', name: 'Computational Social Science Lab', role: 'premium', description: 'Model social systems at scale', miniGameCategory: 'optimization' },
+
+  // Axiom
+  { labType: 'axiom', name: 'Chalkboard Room', role: 'starter', description: 'Foundational derivations and proofs', miniGameCategory: 'decoding' },
+  { labType: 'axiom', name: 'Computation Cluster', role: 'standard', description: 'Numerical simulations', miniGameCategory: 'optimization' },
+  { labType: 'axiom', name: 'Particle Physics Bench', role: 'standard', description: 'Tabletop physics experiments', miniGameCategory: 'identification' },
+  { labType: 'axiom', name: 'Optics Laboratory', role: 'standard', description: 'Light, lenses, interference', miniGameCategory: 'configuration' },
+  { labType: 'axiom', name: 'Quantum Simulation Lab', role: 'standard', description: 'Model quantum systems', miniGameCategory: 'prediction' },
+  { labType: 'axiom', name: 'Mathematical Modeling Suite', role: 'standard', description: 'Build models of real phenomena', miniGameCategory: 'optimization' },
+  { labType: 'axiom', name: 'Observatory Dome', role: 'standard', description: 'Observe and classify celestial objects', miniGameCategory: 'identification' },
+  { labType: 'axiom', name: 'Theoretical Physics Annex', role: 'standard', description: 'Symbolic reasoning and derivations', miniGameCategory: 'decoding' },
+  { labType: 'axiom', name: 'Numerical Methods Hub', role: 'standard', description: 'Algorithms for scientific computing', miniGameCategory: 'optimization' },
+  { labType: 'axiom', name: 'Cosmology Visualization Theater', role: 'premium', description: 'Render large-scale structures of the universe', miniGameCategory: 'prediction' },
+]

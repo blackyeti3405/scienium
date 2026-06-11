@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Process -Name \"node\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force -ErrorAction SilentlyContinue)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri 'http://localhost:3000' -UseBasicParsing -TimeoutSec 30 -MaximumRedirection 0 -ErrorAction Stop; \"HTTP $\\($r.StatusCode\\) - serving\" } catch { if \\($_.Exception.Response\\) { \"HTTP $\\([int]$_.Exception.Response.StatusCode\\) - serving \\(redirect, expected for auth\\)\" } else { \"No response: $\\($_.Exception.Message\\)\" } })",
+      "PowerShell($procs = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'next' -and $_.CommandLine -match 'dev' -or \\($_.CommandLine -match 'filter web dev'\\) }; if \\($procs\\) { $procs | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop; \"Killed $\\($_.ProcessId\\)\" } catch { \"Already gone: $\\($_.ProcessId\\)\" } } } else { \"No dev server processes found\" })",
+      "Bash(Get-ChildItem -Path \"C:\\\\Code\\\\nova-lab\" -Recurse -Directory)",
+      "Bash(Select-Object -First 50)",
+      "Bash(Format-Table FullName)",
+      "Bash(Find \"C:\\\\Code\\\\nova-lab\\\\apps\\\\web\\\\lib\" -type f -name \"*.ts\" -o -name \"*.tsx\")",
+      "Bash(Sort-Object)"
+    ]
+  }
+}
