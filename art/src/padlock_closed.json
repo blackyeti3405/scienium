@@ -1,0 +1,29 @@
+{
+"width": 16,
+"height": 16,
+"palette": {
+"K": "#241f38",
+"O": "#ff9243",
+"o": "#ffc089",
+"r": "#d9641f",
+"W": "#f4f2ff"
+},
+"rows": [
+"................",
+"................",
+"......WWKK......",
+".....K....K.....",
+".....K....K.....",
+"..KKKKKKKKKKKK..",
+"..KooooooooorK..",
+"..KoOOOOOOOOrK..",
+"..KoOOOOOOOOrK..",
+"..KoOOOKKOOOrK..",
+"..KoOOOKKOOOrK..",
+"..KoOOOKKOOOrK..",
+"..KoOOOOOOOOrK..",
+"..KrrrrrrrrrrK..",
+"..KKKKKKKKKKKK..",
+"................"
+]
+}

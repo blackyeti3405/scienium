@@ -3,9 +3,9 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 
 export default async function HomePage() {
-  // Already logged in → go straight to dashboard
+  // Already logged in → go straight to the lab scene
   const { userId } = await auth()
-  if (userId) redirect('/dashboard')
+  if (userId) redirect('/lab')
 
   return (
     <div className="min-h-screen bg-background flex flex-col">

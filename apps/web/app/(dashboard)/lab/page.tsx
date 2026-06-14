@@ -1,60 +1,101 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
-import { getTeamContext, PHASE_INFO } from '@/lib/phase'
-import { LabCanvas } from '@/components/lab/LabCanvas'
+import { db } from '@/lib/db'
+import { LabScene } from '@/components/lab/LabScene'
+import { PHASE_ORDER, LAB_TYPES, type Phase, type LabType } from '@/lib/phase'
 
-export const metadata = { title: 'Lab Home' }
+export const metadata = { title: 'NOVA Lab' }
 
-export default async function LabPage() {
+/** Cheap stable numeric seed from the team id, so the tiled ground never reshuffles. */
+function seedFrom(id: string): number {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
+  return h || 1
+}
+
+export default async function LabPage({
+  searchParams,
+}: {
+  searchParams: { phase?: string; lab?: string; presenter?: string }
+}) {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
 
-  const ctx = await getTeamContext(userId).catch(() => null)
-  const phase = ctx?.phase ?? 'discovery'
-  const labType = ctx?.labType ?? null
-  const phaseInfo = PHASE_INFO[phase]
+  // Resolve the player's team + everything the scene needs in one query.
+  // Falls back to discovery defaults for brand-new users without a team yet.
+  let teamId = ''
+  let teamName = 'Your Lab'
+  let phase: Phase = 'discovery'
+  let labType: LabType | null = null
+  let currency = { kp: 0, clearanceLevel: 0, lc: 0 }
+  let hasPresenter = false
 
-  return (
-    <div className="space-y-6 max-w-3xl">
-      {/* Page header — regular (non-pixel) font for readability */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Lab Home</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {phaseInfo.description} — {phaseInfo.label} phase
-        </p>
-      </div>
+  try {
+    const user = await db.user.findUnique({
+      where: { clerkUserId: userId },
+      select: {
+        teamMemberships: {
+          orderBy: { joinedAt: 'desc' },
+          take: 1,
+          select: {
+            team: {
+              select: {
+                id: true,
+                name: true,
+                phase: true,
+                labType: true,
+                currency: { select: { kp: true, clearanceLevel: true, lc: true } },
+                members: {
+                  select: {
+                    user: {
+                      select: {
+                        figurineUnlocks: { select: { figurineTier: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    })
 
-      {/* Lab canvas — the spatial navigation hub */}
-      <LabCanvas phase={phase} labType={labType} />
-
-      {/* Contextual help based on phase */}
-      <PhaseHint phase={phase} />
-    </div>
-  )
-}
-
-function PhaseHint({ phase }: { phase: string }) {
-  const hints: Record<string, string> = {
-    discovery:
-      'Start in Discovery to explore topics. Once you commit to a research direction, you\'ll select a lab type and watch your lab grow.',
-    lab_selection:
-      'Choose a lab type that best matches your research topic. This is a one-time decision — your lab will grow and reskin when you confirm.',
-    literature_review:
-      'Review 25 research papers to unlock full lab advancement. Your Citation Graph grows with each paper you process.',
-    research_planning:
-      'Design your study — define your hypothesis, methodology, and variables. This unlocks the Working phase.',
-    working:
-      'Full lab access. Buy buildings, play mini-games, earn KP and LC, and battle other labs in PvP.',
-    showcase:
-      'Your Showcase Wing is now available. Publish your completed research for the world to see.',
+    const team = user?.teamMemberships[0]?.team
+    if (team) {
+      teamId = team.id
+      teamName = team.name
+      phase = team.phase as Phase
+      labType = (team.labType as LabType | null) ?? null
+      if (team.currency) currency = team.currency
+      hasPresenter = team.members.some((m) =>
+        m.user.figurineUnlocks.some((f) => f.figurineTier === 'presenter'),
+      )
+    }
+  } catch {
+    // DB unavailable during build/preview — render the discovery-phase defaults.
   }
 
-  const hint = hints[phase]
-  if (!hint) return null
+  // Dev-only preview override: /lab?phase=working&lab=biocore&presenter=1 lets you
+  // inspect any phase/skin without a database. Never active in production.
+  if (process.env.NODE_ENV !== 'production') {
+    if (searchParams.phase && (PHASE_ORDER as readonly string[]).includes(searchParams.phase)) {
+      phase = searchParams.phase as Phase
+    }
+    if (searchParams.lab && (LAB_TYPES as readonly string[]).includes(searchParams.lab)) {
+      labType = searchParams.lab as LabType
+    }
+    if (searchParams.presenter === '1') hasPresenter = true
+  }
 
   return (
-    <p className="text-sm text-muted-foreground border-l-2 border-muted pl-3 italic">
-      {hint}
-    </p>
+    <LabScene
+      teamName={teamName}
+      phase={phase}
+      labType={labType}
+      currency={currency}
+      hasPresenter={hasPresenter}
+      seed={teamId ? seedFrom(teamId) : 1}
+    />
   )
 }

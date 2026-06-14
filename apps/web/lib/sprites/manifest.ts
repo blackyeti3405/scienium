@@ -1,42 +1,17 @@
 /**
  * Sprite asset manifest — single source of truth for all game art.
  *
- * ASSET SPEC FOR ARTISTS (Aseprite or compatible tool)
- * ────────────────────────────────────────────────────
- * Directory:  apps/web/public/sprites/
+ * Sprites are authored with the pixel-art pipeline under `art/`:
+ *   - `art/build_sprites.py` generates the generic gateways, ground tiles, padlock
+ *   - `art/recolor.py` palette-swaps each gateway into the 6 lab-type skins
+ * Source char-grid JSON lives in `art/src/*.json`; rendered PNGs land in
+ * `apps/web/public/sprites/{gateways,tiles,ui}/`. See README "Pixel art" section.
  *
- * Lab exterior sprites (lab/ subdirectory):
- *   Dimensions:  48×32 px source → displayed at 3× scale (144×96 CSS px)
- *   Format:      PNG-8 or PNG-32, indexed palette recommended
- *   Naming:      {lab_type}_{size}.png  e.g. generic_small.png, biocore_grown.png
- *   Color depth: 16–32 colors per sprite
- *
- *   Files needed:
- *     generic_small.png    — Used during DISCOVERY & LAB_SELECTION phases
- *     generic_grown.png    — Fallback for grown lab with unknown type
- *     biocore_grown.png
- *     chemworks_grown.png
- *     volt_lab_grown.png
- *     terrabase_grown.png
- *     mindframe_grown.png
- *     axiom_grown.png
- *
- * UI sprites (ui/ subdirectory):
- *   Dimensions:  16×16 px → displayed at 2× scale (32×32 CSS px)
- *
- *   Files needed:
- *     padlock_closed.png   — Nav item locked indicator
- *     padlock_open.png     — Nav item recently unlocked
- *     phase_arrow.png      — Phase progress indicator
- *
- * All sprites rendered with:
- *   image-rendering: pixelated;
- *   image-rendering: crisp-edges;
+ * The scene reads ONLY from this manifest — never hardcode a sprite path inline.
  *
  * PLACEHOLDER BEHAVIOR
- * Until real PNG files are dropped in, the <Sprite> component renders
- * a labeled colored block using the placeholder color defined here.
- * Real art is a drop-in — no code changes needed.
+ * Until/if a PNG is missing, <Sprite> renders a labeled colored block using the
+ * placeholder color below, at the same dimensions — layout never breaks.
  */
 
 export interface SpriteEntry {
@@ -54,88 +29,108 @@ export interface SpriteEntry {
   placeholderColor: string
 }
 
-// ─── Lab exterior sprites ─────────────────────────────────────────────────────
+// ─── Gateway buildings ────────────────────────────────────────────────────────
+// 7 gateway keys × 7 skins (generic + 6 lab types) = 49 sprites.
+// All share 48×48 source @ 3× display. Path: /sprites/gateways/{key}_{skin}.png
 
-export type LabSpriteKey =
-  | 'generic_small'
-  | 'generic_grown'
-  | 'biocore_grown'
-  | 'chemworks_grown'
-  | 'volt_lab_grown'
-  | 'terrabase_grown'
-  | 'mindframe_grown'
-  | 'axiom_grown'
+export const GATEWAY_KEYS = [
+  'discovery',
+  'science_fair',
+  'literature_review',
+  'operations_hub',
+  'research_plan',
+  'pvp',
+  'showcase',
+] as const
+export type GatewayKey = (typeof GATEWAY_KEYS)[number]
 
-export const LAB_SPRITES: Record<LabSpriteKey, SpriteEntry> = {
-  generic_small: {
-    path: '/sprites/lab/generic_small.png',
-    srcWidth: 48,
-    srcHeight: 32,
-    scale: 3,
-    description: 'Small generic laboratory',
-    placeholderColor: '#7c8a9e',
-  },
-  generic_grown: {
-    path: '/sprites/lab/generic_grown.png',
-    srcWidth: 48,
-    srcHeight: 32,
-    scale: 3,
-    description: 'Grown generic laboratory',
-    placeholderColor: '#5a6a7e',
-  },
-  biocore_grown: {
-    path: '/sprites/lab/biocore_grown.png',
-    srcWidth: 48,
-    srcHeight: 32,
-    scale: 3,
-    description: 'BioCore laboratory — life sciences',
-    placeholderColor: '#2d6a4f',
-  },
-  chemworks_grown: {
-    path: '/sprites/lab/chemworks_grown.png',
-    srcWidth: 48,
-    srcHeight: 32,
-    scale: 3,
-    description: 'ChemWorks laboratory — chemistry',
-    placeholderColor: '#6a2d5a',
-  },
-  volt_lab_grown: {
-    path: '/sprites/lab/volt_lab_grown.png',
-    srcWidth: 48,
-    srcHeight: 32,
-    scale: 3,
-    description: 'Volt Lab — engineering & electronics',
-    placeholderColor: '#4a5c2d',
-  },
-  terrabase_grown: {
-    path: '/sprites/lab/terrabase_grown.png',
-    srcWidth: 48,
-    srcHeight: 32,
-    scale: 3,
-    description: 'TerraBase — earth science',
-    placeholderColor: '#8b5e2a',
-  },
-  mindframe_grown: {
-    path: '/sprites/lab/mindframe_grown.png',
-    srcWidth: 48,
-    srcHeight: 32,
-    scale: 3,
-    description: 'MindFrame — social & cognitive science',
-    placeholderColor: '#2a5a8b',
-  },
-  axiom_grown: {
-    path: '/sprites/lab/axiom_grown.png',
-    srcWidth: 48,
-    srcHeight: 32,
-    scale: 3,
-    description: 'Axiom — math, physics & astronomy',
-    placeholderColor: '#5a2a8b',
-  },
+export const GATEWAY_SKINS = [
+  'generic',
+  'biocore',
+  'chemworks',
+  'volt_lab',
+  'terrabase',
+  'mindframe',
+  'axiom',
+] as const
+export type GatewaySkin = (typeof GATEWAY_SKINS)[number]
+
+const GATEWAY_SRC = 64
+const GATEWAY_SCALE = 2
+
+const GATEWAY_LABELS: Record<GatewayKey, string> = {
+  discovery: 'Discovery building',
+  science_fair: 'Science Fair Research building',
+  literature_review: 'Literature Review building',
+  operations_hub: 'Operations Hub',
+  research_plan: 'Research Plan building',
+  pvp: 'PvP arena',
+  showcase: 'Showcase building',
 }
+
+// Placeholder structure color per skin (the wall "mid" tone) — keeps the dev
+// fallback visually on-palette before/if a PNG is unavailable.
+const SKIN_PLACEHOLDER: Record<GatewaySkin, string> = {
+  generic: '#968fbf',
+  biocore: '#7fae6e',
+  chemworks: '#8090c8',
+  volt_lab: '#9098a2',
+  terrabase: '#9a8a66',
+  mindframe: '#8c82bb',
+  axiom: '#5a6498',
+}
+
+/** Resolve the sprite for a (gateway, skin) pair. */
+export function getGatewaySprite(key: GatewayKey, skin: GatewaySkin): SpriteEntry {
+  return {
+    path: `/sprites/gateways/${key}_${skin}.png`,
+    srcWidth: GATEWAY_SRC,
+    srcHeight: GATEWAY_SRC,
+    scale: GATEWAY_SCALE,
+    description: `${GATEWAY_LABELS[key]} (${skin})`,
+    placeholderColor: SKIN_PLACEHOLDER[skin],
+  }
+}
+
+// ─── Ground tiles ─────────────────────────────────────────────────────────────
+// 6 grass tiles, 32×32 source @ 2× display (64px cells). Mostly plain grass;
+// a couple carry sparse clutter. The scene tiles these deterministically.
+
+export const GROUND_TILE_IDS = [
+  'grass_1',
+  'grass_2',
+  'grass_3',
+  'grass_flower',
+  'grass_shrub',
+  'grass_bush',
+  'grass_fern',
+  'grass_tree',
+  'grass_pebble',
+] as const
+export type GroundTileId = (typeof GROUND_TILE_IDS)[number]
+
+export const TILE_SRC = 32
+export const TILE_SCALE = 2
+/** Displayed cell size in CSS px (TILE_SRC × TILE_SCALE). */
+export const TILE_CELL = TILE_SRC * TILE_SCALE
+
+export const GROUND_TILES: Record<GroundTileId, SpriteEntry> = Object.fromEntries(
+  GROUND_TILE_IDS.map((id) => [
+    id,
+    {
+      path: `/sprites/tiles/${id}.png`,
+      srcWidth: TILE_SRC,
+      srcHeight: TILE_SRC,
+      scale: TILE_SCALE,
+      description: `Grass tile (${id})`,
+      placeholderColor: '#57a05c',
+    } satisfies SpriteEntry,
+  ])
+) as Record<GroundTileId, SpriteEntry>
 
 // ─── UI sprites ───────────────────────────────────────────────────────────────
 
-export type UiSpriteKey = 'padlock_closed' | 'padlock_open' | 'phase_arrow'
+export type UiSpriteKey = 'padlock_closed'
 
 export const UI_SPRITES: Record<UiSpriteKey, SpriteEntry> = {
   padlock_closed: {
@@ -144,33 +139,6 @@ export const UI_SPRITES: Record<UiSpriteKey, SpriteEntry> = {
     srcHeight: 16,
     scale: 2,
     description: 'Locked',
-    placeholderColor: '#888888',
+    placeholderColor: '#f0902a',
   },
-  padlock_open: {
-    path: '/sprites/ui/padlock_open.png',
-    srcWidth: 16,
-    srcHeight: 16,
-    scale: 2,
-    description: 'Unlocked',
-    placeholderColor: '#44bb88',
-  },
-  phase_arrow: {
-    path: '/sprites/ui/phase_arrow.png',
-    srcWidth: 16,
-    srcHeight: 16,
-    scale: 2,
-    description: 'Phase progress',
-    placeholderColor: '#ffcc44',
-  },
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-import type { LabType, LabSize } from '@/lib/phase'
-
-/** Returns the lab sprite key for a given (labType, size) pair. */
-export function getLabSpriteKey(labType: LabType | null, size: LabSize): LabSpriteKey {
-  if (size === 'small') return 'generic_small'
-  if (!labType) return 'generic_grown'
-  return `${labType}_grown` as LabSpriteKey
 }

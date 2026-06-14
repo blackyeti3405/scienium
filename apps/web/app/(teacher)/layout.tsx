@@ -6,7 +6,7 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   if (!userId) redirect('/sign-in')
 
   const role = (sessionClaims?.metadata as { role?: string })?.role
-  if (role !== 'teacher' && role !== 'admin') redirect('/dashboard')
+  if (role !== 'teacher' && role !== 'admin') redirect('/lab')
 
   return (
     <div className="flex min-h-screen">

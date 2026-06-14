@@ -70,165 +70,196 @@
   image-rendering: crisp-edges;
 }
 
-/* ── Lab canvas ─────────────────────────────────────────────────────────────── */
-.lab-canvas {
-  background: #1a1f2e;
-  border: 3px solid #2a3048;
-  border-radius: 4px;
-  padding: 0;
-  overflow: hidden;
-  max-width: 720px;
+/* ── Spatial lab scene ──────────────────────────────────────────────────────── */
+.lab-scene {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  background: #10131f;
 }
 
-.lab-canvas__header {
+/* The only persistent chrome: status strip (currencies + phase). */
+.status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  background: #0f1320;
+  border-bottom: 3px solid #2a3048;
+  flex-shrink: 0;
+}
+.status-strip__left,
+.status-strip__right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.status-strip__brand { color: #cfd6f0; font-size: 10px; }
+.status-strip__team { color: #aeb6d0; font-size: 13px; font-weight: 600; }
+.status-strip__labtype { color: #7ff2e3; font-size: 8px; }
+.status-strip__stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  color: #e8ecfb;
+}
+.status-strip__stat-value { color: #fff; }
+.status-strip__phase {
+  font-size: 8px;
+  color: #ffe566;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 3px 6px;
+  border: 1px solid #2a3048;
+}
+
+/* Full-bleed viewport — the grass tiles fill the entire area. */
+.lab-scene__viewport {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: #4a7c3e; /* grass-dark, shows only behind tiles during first paint */
+  /* subtle vignette for depth */
+  box-shadow: inset 0 0 160px rgba(8, 14, 10, 0.45);
+}
+
+/* Tiled ground layer — covers the whole viewport. */
+.tile-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+}
+.tile-bg__grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  image-rendering: pixelated;
+}
+
+/* Building cluster layer — centred on the viewport; buildings offset from centre. */
+.lab-scene__cluster {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+/* ── Gateway building (isometric, centre-anchored) ──────────────────────────── */
+.building-sprite {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.building-sprite--open { cursor: pointer; }
+.building-sprite--locked { cursor: not-allowed; }
+.building-sprite__art {
+  position: relative;
+  display: block;
+  filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.35));
+  transition: transform 0.12s ease;
+}
+.building-sprite--open:hover .building-sprite__art {
+  transform: translateY(-3px) scale(1.04);
+}
+.building-sprite--locked .building-sprite__art {
+  filter: grayscale(0.55) brightness(0.7) drop-shadow(0 4px 3px rgba(0, 0, 0, 0.35));
+}
+.building-sprite__padlock {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.building-sprite__label {
+  font-size: 8px;
+  color: #e8ecfb;
+  text-shadow: 0 1px 2px #000, 0 0 3px #000;
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.building-sprite--open:hover .building-sprite__label,
+.building-sprite--locked .building-sprite__label {
+  opacity: 1;
+}
+.building-sprite--locked .building-sprite__label { color: #9aa3c0; }
+
+.lab-scene__hint {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 2;
+  font-size: 8px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 6px 12px;
+  border: 1px solid #2a3048;
+  white-space: nowrap;
+}
+
+/* ── Feature overlay panel ──────────────────────────────────────────────────── */
+.feature-panel__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000; /* well above building sprites (z ~16–24) so the scene sits behind */
+  background: rgba(8, 10, 18, 0.72);
+  backdrop-filter: blur(1.5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5vh 2vw;
+}
+.feature-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(1120px, 96vw);
+  height: min(90vh, 860px);
+  background: hsl(var(--background));
+  border: 3px solid #2a3048;
+  box-shadow: 0 0 0 3px #10131f, 0 18px 60px rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.feature-panel__bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
   background: #0f1320;
-  border-bottom: 2px solid #2a3048;
+  border-bottom: 3px solid #2a3048;
+  flex-shrink: 0;
 }
-
-.lab-canvas__building {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px 16px 12px;
-  gap: 8px;
-}
-
-.lab-canvas__building-label {
-  color: #ffe566;
-  font-size: 9px;
-}
-
-.lab-canvas__small-hint {
-  color: #888;
-  font-size: 8px;
-  text-align: center;
-  max-width: 280px;
-}
-
-/* ── Lab wings grid ─────────────────────────────────────────────────────────── */
-.lab-canvas__wings {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 2px;
-  padding: 2px;
-  background: #0f1320;
-}
-
-@media (max-width: 600px) {
-  .lab-canvas__wings {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-.lab-wing-tile {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 10px 6px;
-  min-height: 72px;
-  text-align: center;
-  border: 1px solid transparent;
-  transition: background-color 0.15s, border-color 0.15s;
-}
-
-.lab-wing-tile--open {
+.feature-panel__title { color: #e8ecfb; font-size: 10px; }
+.feature-panel__close {
+  color: #cdd3ea;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
   background: #1e2540;
-  border-color: #2a3048;
+  border: 1px solid #2a3048;
   cursor: pointer;
+  transition: background 0.12s, color 0.12s;
 }
-
-.lab-wing-tile--open:hover {
-  background: #252d50;
-  border-color: #4a5580;
-}
-
-.lab-wing-tile--locked {
-  background: #131722;
-  border-color: #1e2230;
-  opacity: 0.6;
-}
-
-.lab-wing-tile__padlock {
-  margin-bottom: 2px;
-  image-rendering: pixelated;
-}
-
-.lab-wing-tile__label {
-  font-size: 7px;
-  color: #c8d0e8;
-  line-height: 1.4;
-}
-
-.lab-wing-tile--locked .lab-wing-tile__label {
-  color: #556070;
-}
-
-.lab-wing-tile__hint {
-  font-size: 9px;
-  color: #6878a0;
-  line-height: 1.3;
-  display: none;
-}
-
-.lab-wing-tile--open:hover .lab-wing-tile__hint {
-  display: block;
-}
-
-/* ── Phase progress dots ────────────────────────────────────────────────────── */
-.lab-canvas__phase-dots {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px;
-  background: #0f1320;
-  border-top: 2px solid #2a3048;
-}
-
-.lab-canvas__phase-dot {
-  width: 10px;
-  height: 10px;
-  border: 2px solid #2a3048;
-  image-rendering: pixelated;
-}
-
-.lab-canvas__phase-dot--done {
-  background: #4a8f5e;
-  border-color: #5aaf6e;
-}
-
-.lab-canvas__phase-dot--current {
-  background: #ffe566;
-  border-color: #ffd022;
-  box-shadow: 0 0 4px #ffe566;
-}
-
-.lab-canvas__phase-dot--future {
-  background: #1a2030;
-  border-color: #2a3048;
-}
-
-/* ── Pixel-art nav padlock icon (inline SVG fallback) ───────────────────────── */
-/* Used in DashboardNav when sprite PNG is missing */
-.nav-padlock {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  background: currentColor;
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Crect x='1' y='3' width='6' height='5'/%3E%3Crect x='2' y='1' width='4' height='3' fill='none' stroke='currentColor' stroke-width='1.5'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Crect x='1' y='3' width='6' height='5'/%3E%3Crect x='2' y='1' width='4' height='3' fill='none' stroke='currentColor' stroke-width='1.5'/%3E%3C/svg%3E");
-  -webkit-mask-size: contain;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  image-rendering: pixelated;
+.feature-panel__close:hover { background: #3a1e28; color: #ff8a8a; }
+.feature-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  background: hsl(var(--background));
 }
 
 /* ── Wikipedia article reader ──────────────────────────────────────────────── */
