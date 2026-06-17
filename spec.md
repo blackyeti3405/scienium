@@ -71,40 +71,47 @@ NOVA Lab uses an explicit **phase** model stored on each team. Phases are sequen
 ### 5.1 Purpose
 Mimics how real researchers stumble into ideas — exploring tangentially related material across many fields without commitment. Discovery occurs **before lab type selection**, so exploration is unconstrained by discipline.
 
+Discovery is a shared **forest** of source-tagged exploration trees (Wikipedia + YouTube), persisted per team in the database so it survives logout/login and is shared across the team.
+
 ### 5.2 Wikipedia Exploration
 - The student **chooses their own starter article** by typing a topic into a search bar (autocomplete-assisted via Wikipedia's API)
-- On each article, the student commits to exactly **2 hyperlinks** to branch into, which become children in the Discovery Tree
+- On each article, the student selects **up to 2 hyperlinks** to branch into, which become children in the Discovery Tree
 - Going several levels deep exposes the student to dozens of interconnected topics
 - Nothing is rejected for being off-topic
 - All visited articles are auto-logged and visualized as a branching tree
 
-### 5.3 Research Paper Exploration
-Students can also upload (or paste) research papers during Discovery. Papers don't follow the branching rule — they're standalone exploration nodes.
+### 5.3 YouTube Exploration (implemented)
+Students can chase YouTube rabbit holes alongside Wikipedia. A **📄 Wiki / ▶ YouTube** toggle switches the left pane to a video viewer.
+- The student watches on YouTube as normal, then **pastes a link** (or presses ⌘V/Ctrl+V — auto-captured) to add the video
+- Resolution uses YouTube's public **oEmbed** endpoint (no API key, no quota) for the title; the video plays in an embedded IFrame player
+- Each added video **branches off the current node**, building the same kind of tree; videos and articles coexist in one forest with different icons (▶ vs text)
+- **Cross-source bridging:** a video can be added as a child of a Wikipedia node (and vice-versa); unrelated dives simply stay as separate roots
+- No personalized-recommendation capture — discovery happens on real YouTube; NOVA Lab captures and structures it
 
-For each paper:
-- App generates a brief auto-summary
-- App asks open-ended reflection questions designed to force engagement
-- No comprehension quiz, no relevance gating, no rejection
+*(Uploading research papers as Discovery nodes — the original `paper` source type — is reserved but not built; papers live in the Literature Review.)*
 
 ### 5.4 Signaling Interest
-- Students **star** resources they find interesting
-- Students maintain a manually-curated **Topic Interest List**
-- The app prompts the student daily with new related material based on stars and listed topics
+- Students **star** any node they find interesting (visible in the sidebar and on the Discovery home)
+- *(Planned: a manually-curated Topic Interest List and daily related-material prompts.)*
 
-### 5.5 Exiting Discovery
-- Exit whenever ready by committing to a research topic
-- Discovery Log remains accessible afterward
-- Resources from Discovery can be promoted into the Literature Review
+### 5.5 Choosing the Final Topic & Exiting Discovery
+- The student commits to a **final research topic** at any time via the 🎯 topic bar (typed directly, or set in one click from any starred node)
+- The chosen topic is stored on `teams.topic`, shown on the Discovery home, and is read by later phases (Literature Review, Research Plan)
+- The Discovery tree remains accessible afterward
 
 ### 5.6 Technical Implementation
 **Wikipedia integration:**
 - Wikipedia REST API for article content; OpenSearch API for starter autocomplete
 - Article HTML rendered in a custom React reader; all internal links intercepted
-- Tree stored as adjacency list in PostgreSQL
 
-**Research paper processing:**
-- PDF/text → local `unpdf` text extraction + Claude metadata extraction (title, authors, abstract)
-- Same backend as Literature Review (Section 6.6)
+**YouTube integration:**
+- `POST /api/discovery/youtube/resolve` extracts the video id and fetches the title via public oEmbed (no key)
+- Official YouTube IFrame embed for playback
+
+**Persistence:**
+- Tree stored as an adjacency list in `discovery_nodes` (team-scoped), with `source_type` (wikipedia | youtube), `wikipedia_title` / `youtube_video_id` + `youtube_title`
+- CRUD via `GET/POST/DELETE /api/discovery/tree` and `PATCH/DELETE /api/discovery/tree/[id]`; the client store hydrates from the DB
+- Final topic stored on `teams.topic` via `GET/POST /api/discovery/topic`
 
 ---
 
@@ -121,16 +128,13 @@ The Literature Review gateway building opens a single unified panel — no sub-t
 
 **Filled slots** show:
 - Paper title (left-aligned) and authors
-- An orange "Proficiency not demonstrated" banner above the row (removed once proficiency is confirmed)
-- Two action buttons on the right:
-  1. **Open PDF** — opens the stored file in a new browser tab
-  2. **Review Q&A** — opens the Q&A split view
+- A proficiency banner above the row: **orange** "Proficiency not demonstrated" until the quiz is passed, then **green** "Proficiency demonstrated"
+- Action buttons on the right (for ready papers): **PDF** (opens the stored file in a new tab), **Q&A** (opens the review split view), and a **🗑 delete** button
 
 **Q&A split view** (entered by clicking "Review Q&A"):
-- Left side: PDF iframe viewer
-- Right side: conversational chat with Nova (the AI tutor)
-- Nova assesses the student's comprehension across four criteria: hypothesis, methodology, key findings, and relevance to their research topic
-- When all four are demonstrated, Nova emits a hidden `PROFICIENCY_DEMONSTRATED` signal; the orange banner is removed and the slot is updated
+- Left side: the actual PDF, rendered in an `<iframe>` streamed from the database (`/api/papers/[id]/file`)
+- Right side: a graded **comprehension quiz** first (see §6.5); once graded, header tabs switch between **Quiz results** and **Discuss with Nova** (active tab in gold)
+- **Discuss with Nova** is an open-ended chat about the paper; messages persist per user and reload on reopen. The chat no longer grants proficiency — the quiz owns it.
 
 **Header**: progress bar + `N / 25` counter tracking toward the gate.
 
@@ -147,27 +151,42 @@ Nova is NOVA Lab's built-in research tutor. In the Literature Review:
 - Ends most turns with a question to sustain dialogue
 - Tone: encouraging but rigorous, appropriate for high school
 
-### 6.5 Citation Graph *(removed)*
+### 6.5 Comprehension Quiz (implemented)
+Proficiency on each paper is earned by passing a graded, AI-generated quiz — not by the chat.
+
+- **Free-response, not multiple choice.** Claude generates a set of questions grounded in the paper's full text (forbidden from being answerable by the abstract alone), each with a server-only grading key.
+- **Coverage** is weighted toward findings, relevance, and methodology, plus broader field/topic knowledge; questions are calibrated to advanced/AP high-school level.
+- **Grading:** the student answers in natural language; Claude grades all answers in one call against the keys + rubric (technical accuracy, depth, own-words, specificity), returns a per-question score + feedback, and computes an **aggregate score** (pass ≥ 70%).
+- **Pedagogy is tunable** without code changes via `lib/literature/quiz-rubric.md`; question count and pass threshold are constants in `lib/literature/quiz.ts`.
+- On pass, `papers.proficiency_demonstrated` is set and the slot banner turns green. On fail, the student can retake with fresh questions. Past results (answers + feedback) persist and reload.
+
+### 6.6 Citation Graph *(removed)*
 The citation graph (and its supporting embeddings + HDBSCAN clustering) has been cut from scope. It is not planned. Thematic clustering of papers is no longer a product goal.
 
-### 6.6 Technical Implementation (current)
+### 6.7 Technical Implementation (current)
 
 **PDF processing pipeline (as built):**
 1. Client uploads PDF → `POST /api/papers` (Next.js, multipart/form-data)
-2. Server extracts text locally with `unpdf` (in-process, ~250ms, zero tokens)
-3. `papers` row created with `status = processing`; extracted text stored in the `full_text` column
+2. Server extracts text locally with `unpdf` (in-process, ~250ms, zero tokens); the raw PDF bytes are stored in `papers.pdf_data`
+3. `papers` row created with `status = processing`; extracted text stored in `full_text`; `file_url` set to `/api/papers/[id]/file` (authenticated route that streams the stored PDF inline to the viewer)
 4. Async Claude call (`claude-sonnet-4-6`) extracts `{ title, authors, abstract }` from the first ~24k chars
 5. Paper marked `ready`; client polls `GET /api/papers/[id]` every 3 seconds
 
-**Q&A chat:**
-- `POST /api/papers/[id]/chat` accepts `{ messages: [{role, content}] }`
-- Full paper text passed as a prompt-cached system block (first message pays full cost, follow-ups ~10%)
-- `PROFICIENCY_DEMONSTRATED` signal emitted on a new line when all four criteria are met
-- Frontend strips the signal before display; clears the orange banner
+**Quiz:**
+- `POST /api/papers/[id]/quiz` generates questions (paper prompt-cached + rubric); session + keys stored in `paper_quiz_sessions`
+- `POST /api/papers/[id]/quiz/grade` grades all answers in one call, writes `paper_quiz_attempts`, sets the aggregate score/pass and `papers.proficiency_demonstrated`
+- `GET /api/papers/[id]/quiz` returns the last graded session so results reload
 
-**Planned enhancements (Python AI service):**
-- R2 file storage for PDFs; `papers.file_url` populated
-- Quiz generation + evaluation moved into the Python worker (`/papers/process`, `/papers/quiz`)
+**Q&A chat:**
+- `GET/POST /api/papers/[id]/chat` — full paper text as a prompt-cached system block (first message full cost, follow-ups ~10%)
+- Messages persist to `paper_chat_messages` (per user); replies rendered as Markdown
+- Persistence is best-effort so a DB hiccup never drops a generated reply
+
+**Delete:** `DELETE /api/papers/[id]` removes the paper and cascades its quiz sessions/attempts, chat messages, and relevance notes.
+
+**Planned enhancements:**
+- R2 file storage for PDFs (replacing the in-DB stream); `papers.file_url` → signed R2 URLs
+- Optionally move quiz generation/grading into the Python worker (`/papers/process`, `/papers/quiz`)
 
 **Scalability:**
 - 120 students × 25 papers = 3,000 lifetime processings (not concurrent)

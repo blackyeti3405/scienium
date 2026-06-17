@@ -11,11 +11,11 @@
 NOVA Lab is a **two-service architecture** (with the AI layer currently consolidated into Next.js API routes during the build-out phase):
 
 1. **Web app (Next.js)** — UI, API routes, auth, all CRUD operations, Claude API calls for Literature Review Q&A and paper metadata extraction, and public Showcase rendering
-2. **AI microservice (Python FastAPI)** *(planned — not yet active)* — heavy PDF parsing, quiz generation, content generation, video transcoding
+2. **AI microservice (Python FastAPI)** *(planned — not yet active)* — heavy PDF parsing, content generation, video transcoding
 
-A single **PostgreSQL database** is the source of truth. **Object storage (Cloudflare R2)** will hold PDFs, images, and Showcase videos (not yet wired). **Redis** will run the background job queue (not yet wired).
+A single **PostgreSQL database** is the source of truth. **Object storage (Cloudflare R2)** will hold PDFs, images, and Showcase videos (not yet wired — PDFs are currently stored in-DB). **Redis** will run the background job queue (not yet wired).
 
-> **Current state (as of 2026-06-17):** The Python AI service is not running. PDF text extraction and Claude API calls for the Literature Review happen directly inside Next.js API routes using `unpdf` and `@anthropic-ai/sdk`. Extracted text is stored in the `papers.full_text` column; R2 file storage is not yet connected. This architecture will migrate to the full two-service design once the Python service is stood up.
+> **Current state (as of 2026-06-17):** The Python AI service is not running. The entire Literature Review (PDF text extraction via `unpdf`, metadata extraction, the graded comprehension quiz, and the Q&A chat) and Discovery (Wikipedia + YouTube exploration trees, final topic) run inside Next.js API routes with `@anthropic-ai/sdk` and persist to Postgres. Extracted text is in `papers.full_text` and the raw PDF in `papers.pdf_data` (streamed by `/api/papers/[id]/file`); R2 is the planned production upgrade. This architecture will migrate toward the two-service design once the Python service is stood up.
 
 ```
 ┌─────────────────┐              ┌─────────────────────────┐
@@ -62,10 +62,11 @@ A single **PostgreSQL database** is the source of truth. **Object storage (Cloud
 | Language | **TypeScript** | Type safety |
 | Styling | **Tailwind CSS + shadcn/ui** | Fast iteration, no runtime CSS overhead |
 | State | **Zustand** (client), **TanStack Query** (server state) | Lightweight |
-| Visualization | **Recharts** (charts), **react-flow** (Discovery Tree) | Both stable, well-documented |
+| Visualization | **Recharts** (charts); the Discovery tree is a **custom SVG** component (`DiscoveryTree.tsx`) | No react-flow dependency — the tree layout is hand-rolled |
+| Markdown | **react-markdown + remark-gfm** | Renders Nova's chat replies (styled via `.chat-md`) |
 | Forms | **react-hook-form + zod** | Validation as types |
-| Video player | **video.js** | Mature, accessible, handles HLS/MP4 |
-| PDF viewer | **react-pdf** | In-browser report viewing |
+| Video player | **video.js** (Showcase); YouTube via official **IFrame embed** | Mature; YouTube embed needs no key |
+| PDF viewer | Literature Review uses a native **`<iframe>`** streaming the stored PDF; `react-pdf` planned for report viewing | iframe needs no extra deps |
 
 ### Backend (Next.js side)
 | Layer | Choice | Rationale |
@@ -152,12 +153,12 @@ nova-lab/
 │   │   │   │   ├── settings/             # Class settings
 │   │   │   │   └── reports/              # Generated reports
 │   │   │   ├── api/                      # Next.js API routes
-│   │   │   │   ├── auth/
-│   │   │   │   ├── papers/
+│   │   │   │   ├── onboarding/           # Creates User/Team/TeamMember after sign-up
+│   │   │   │   ├── papers/               # upload/list/get/delete, + [id]/{file,chat,quiz,quiz/grade}
 │   │   │   │   ├── buildings/
 │   │   │   │   ├── teams/
 │   │   │   │   ├── pvp/                  # Battle resolution, matchmaking, trophies
-│   │   │   │   ├── discovery/
+│   │   │   │   ├── discovery/            # article, search, tree[, /[id]], topic, youtube/resolve
 │   │   │   │   ├── project-log/
 │   │   │   │   ├── failure-log/
 │   │   │   │   ├── showcase/
@@ -175,11 +176,9 @@ nova-lab/
 │   │   ├── components/
 │   │   │   ├── ui/                       # shadcn primitives
 │   │   │   ├── lab/                      # Lab canvas, building cards, upgrade modal
-│   │   │   ├── discovery/                # Wikipedia reader, tree viz
+│   │   │   ├── discovery/                # DiscoveryFeature/Home/Tree, TopicSearch, WikiReader, YouTubeViewer
 │   │   │   ├── literature/
-│   │   │   │   ├── UploadWidget.tsx
-│   │   │   │   ├── QuizDialog.tsx
-│   │   │   │   └── LibraryList.tsx
+│   │   │   │   └── LiteratureFeature.tsx # 25 slots, upload, PDF viewer, graded quiz, Q&A chat
 │   │   │   ├── daily/
 │   │   │   │   ├── ProjectLogForm.tsx
 │   │   │   │   ├── FailureLogForm.tsx
@@ -303,16 +302,21 @@ teams                 id, name, team_lead_id, lab_type, topic,
                       created_at
 team_members          user_id, team_id, role (lead | member), joined_at
 
-# Discovery
-discovery_nodes       id, team_id, parent_id, source_type (wikipedia | paper),
-                      wikipedia_title | paper_id, starred, visited_by_user_id, visited_at
+# Discovery   (the final research topic lives on teams.topic)
+discovery_nodes       id, team_id, parent_id, source_type (wikipedia | youtube | paper),
+                      wikipedia_title | youtube_video_id | youtube_title | paper_id,
+                      starred, visited_by_user_id, visited_at
 topic_interests       id, team_id, text, created_by_user_id, created_at
 
 # Literature
 papers                id, team_id, title, authors, abstract, source_type (pdf | text),
-                      file_url, content_hash, full_text, status,
-                      uploaded_by_user_id, created_at
-paper_quiz_attempts   id, paper_id, user_id, question, response, evaluation, created_at
+                      file_url, content_hash, full_text, pdf_data (bytes),
+                      proficiency_demonstrated, status, uploaded_by_user_id, created_at
+paper_chat_messages   id, paper_id, user_id, role, content, created_at
+paper_quiz_sessions   id, paper_id, user_id, questions_json, score, passed,
+                      graded_at, created_at
+paper_quiz_attempts   id, session_id, paper_id, user_id, question, response,
+                      evaluation, score, created_at
 paper_relevance_notes paper_id, user_id, response, created_at
 
 # Lab
@@ -413,18 +417,32 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 
 ## 5. Key Service Interactions
 
+### Onboarding flow
+1. After Clerk sign-up, a user with no team is redirected to `/onboarding` (enforced in the dashboard layout)
+2. The form `POST`s name + lab/team name to `/api/onboarding`, which idempotently creates the `User`, `Team` (seeded at `literature_review` phase), and `TeamMember` (lead) rows
+3. User is redirected to `/dashboard`
+
 ### Paper upload flow (Lit Review) — current implementation
 1. Client uploads PDF via `POST /api/papers` (multipart/form-data)
-2. Next.js API route extracts text locally with `unpdf` (server-side, in-process, ~250ms, no Python service)
-3. `papers` row created with `status = processing`; extracted text stored in the `full_text` column
+2. Next.js API route extracts text locally with `unpdf` (server-side, in-process, ~250ms, no Python service); the raw PDF bytes are stored in `papers.pdf_data`
+3. `papers` row created with `status = processing`; extracted text stored in `full_text`; `file_url` points at `/api/papers/[id]/file` (an authenticated streaming route that serves the stored PDF inline to the viewer)
 4. Async Claude call (`claude-sonnet-4-6`) extracts `{ title, authors, abstract }` from the first ~24k chars; paper marked `ready`
 5. Client polls `GET /api/papers/[id]` every 3 seconds until `status = ready`
-6. User clicks Q&A → `POST /api/papers/[id]/chat` runs tutoring conversation with the full paper text as a prompt-cached system block (follow-up turns reuse the cache at ~10% cost)
-7. Claude emits `PROFICIENCY_DEMONSTRATED` signal when all four comprehension criteria are met; frontend strips the signal and clears the orange banner
+
+### Quiz flow (Lit Review) — proficiency gate
+1. Opening a paper's Q&A panel calls `GET /api/papers/[id]/quiz`; if a graded session exists its results load, otherwise `POST /api/papers/[id]/quiz` generates a fresh quiz
+2. Generation: Claude reads the paper (prompt-cached) + the rubric (`lib/literature/quiz-rubric.md`) and returns N free-response questions, each with a server-only grading key, stored in `paper_quiz_sessions.questions_json`
+3. The student answers in natural language; `POST /api/papers/[id]/quiz/grade` grades all answers in one call against the keys + rubric, writes per-question rows to `paper_quiz_attempts`, sets the session score/passed, and on pass sets `papers.proficiency_demonstrated`
+4. After grading, the panel exposes a **Discuss with Nova** chat tab; messages persist to `paper_chat_messages` via `GET/POST /api/papers/[id]/chat` (paper text prompt-cached). The chat no longer grants proficiency — the quiz owns it.
+
+### YouTube deep-dive flow (Discovery)
+1. In YouTube mode, a pasted link (or ⌘V) calls `POST /api/discovery/youtube/resolve`, which extracts the video id and fetches the title via public **oEmbed** (no API key, no quota)
+2. The video is added to the team's `discovery_nodes` tree as a child of the current node (`source_type = youtube`) and persisted via `POST /api/discovery/tree`; it plays in an embedded IFrame
+3. Wikipedia and YouTube nodes share one team-scoped forest; the final research topic is saved to `teams.topic` via `POST /api/discovery/topic`
 
 **Planned migration** (once Python AI service is active):
-- R2 for file storage; `papers.file_url` populated
-- Quiz generation + evaluation moved into the Python worker (`/papers/process`, `/papers/quiz`)
+- R2 for file storage; `papers.file_url` points at signed R2 URLs instead of the in-DB stream
+- Quiz generation + evaluation optionally moved into the Python worker (`/papers/process`, `/papers/quiz`)
 
 ### Failure Log entry flow
 1. User opens Failure Log form
