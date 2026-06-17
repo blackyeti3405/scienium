@@ -1,7 +1,7 @@
 # NOVA Lab — Product Specification
 
 > **Status:** Early Design / Pre-Development
-> **Last Updated:** 2026-05-26
+> **Last Updated:** 2026-06-17
 > **Initial Scale Target:** ~120 students (single school pilot)
 
 ---
@@ -113,85 +113,69 @@ For each paper:
 ### 6.1 Overview
 After topic and lab type selection, students complete a structured Literature Review of 25 relevant resources before lab advancement unlocks.
 
-### 6.2 How It Works
-1. Upload PDF or paste text
-2. Auto-summary generated
-3. Conversational comprehension quiz
-4. Relevance probe
-5. Paper logged in Literature Library
+### 6.2 UI Design (implemented)
+
+The Literature Review gateway building opens a single unified panel — no sub-tabs. The panel shows 25 source slots stacked vertically.
+
+**Empty slots** are rendered as dashed-border rectangles. The first empty slot shows a centered "Upload source" button; remaining empty slots are inert placeholders showing the student how many remain.
+
+**Filled slots** show:
+- Paper title (left-aligned) and authors
+- An orange "Proficiency not demonstrated" banner above the row (removed once proficiency is confirmed)
+- Two action buttons on the right:
+  1. **Open PDF** — opens the stored file in a new browser tab
+  2. **Review Q&A** — opens the Q&A split view
+
+**Q&A split view** (entered by clicking "Review Q&A"):
+- Left side: PDF iframe viewer
+- Right side: conversational chat with Nova (the AI tutor)
+- Nova assesses the student's comprehension across four criteria: hypothesis, methodology, key findings, and relevance to their research topic
+- When all four are demonstrated, Nova emits a hidden `PROFICIENCY_DEMONSTRATED` signal; the orange banner is removed and the slot is updated
+
+**Header**: progress bar + `N / 25` counter tracking toward the gate.
 
 ### 6.3 The 25-Resource Gate
-- 25 completed entries unlock lab advancement
-- Off-topic uploads are flagged
-- Progress visible on dashboard
+- 25 papers with proficiency demonstrated unlock lab advancement
+- Progress visible in the panel header (progress bar + counter)
+- Off-topic detection deferred to v1.1
 
-### 6.4 Literature Library (Always Accessible)
-- Searchable archive of all papers
-- Each entry includes summary, quiz responses, relevance notes
-- Exportable as a research log
+### 6.4 Nova — AI Tutor Persona
+Nova is NOVA Lab's built-in research tutor. In the Literature Review:
+- Encourages genuine understanding, not surface recitation
+- Asks follow-up questions when answers are vague
+- Celebrates real insight; gently corrects misconceptions
+- Ends most turns with a question to sustain dialogue
+- Tone: encouraging but rigorous, appropriate for high school
 
-### 6.5 Citation Graph
+### 6.5 Citation Graph *(deferred)*
+The citation graph (visual map of paper-to-paper connections) is planned for a later milestone. The current UI does not include it. See `architecture.md §5` for the planned implementation.
 
-A visual map of how the papers in a team's Literature Library connect to one another. Each paper is a node; edges represent either:
-- **Direct citation relationships** — Paper A explicitly cites Paper B (extracted from references section)
-- **Strong thematic similarity** — embedding cosine similarity above a configurable threshold
+### 6.6 Technical Implementation (current)
 
-**Why it matters:**
-- Helps students see the structure of their field at a glance
-- Surfaces clusters and outliers — which subtopics are well-covered, which are gaps
-- Visual progress indicator — graph grows and gets denser as papers are added
-- Identifies **bridging papers** that connect otherwise separate research threads
-- Useful evidence when defending the "gap in the literature" claim during competition judging
+**PDF processing pipeline (as built):**
+1. Client uploads PDF → `POST /api/papers` (Next.js, multipart/form-data)
+2. Server parses text with `pdf-parse` (Node.js)
+3. `papers` row created with `status = processing`; extracted text stored in `content_hash` (temporary)
+4. Async Claude call (`claude-sonnet-4-6`) extracts `{ title, authors, abstract }` from text
+5. Paper marked `ready`; client polls `GET /api/papers/[id]` every 3 seconds
 
-**How it appears:**
-- Available in the Literature Library from the first paper added
-- Becomes meaningfully useful around 5–10 papers
-- Interactive: click a node to see paper details; hover to see why an edge exists
-- Filterable: direct citations only, thematic only, or both
-- Color-coded by sub-topic clusters (auto-clustered via embedding groups)
-- Exportable as an image for inclusion in project reports/showcase
+**Q&A chat:**
+- `POST /api/papers/[id]/chat` accepts `{ messages: [{role, content}] }`
+- Full paper text passed as context in Nova's system prompt (up to 35k chars)
+- `PROFICIENCY_DEMONSTRATED` signal emitted on a new line when all four criteria are met
+- Frontend strips the signal before display; clears the orange banner
 
-### 6.6 Design Notes
-- Quiz and probe are conversational, not form-based
-- Incorrect answers prompt explanation, not rejection
-- Anti-gaming: deduplication via document fingerprinting; off-topic detection via embedding similarity to declared topic
-
-### 6.7 Technical Implementation
-
-**PDF processing pipeline:**
-1. Client uploads PDF → Next.js API route → forwards to Python FastAPI microservice
-2. FastAPI: `pdfplumber` extracts text; `pypdf` extracts metadata
-3. Text chunked into ~4k-token segments
-4. Claude API generates summary, quiz, relevance probe
-5. Results stored in PostgreSQL; PDF in R2
-
-**Citation extraction:**
-- Claude API used to extract structured reference list from each paper (model is asked to return JSON: `[{title, authors, year}]`)
-- For each extracted reference, fuzzy-match against existing papers in the team's Library by normalized title + author + year
-- Matches written to `paper_citations` table as edges
-- Optional enhancement: use Semantic Scholar / OpenAlex API to resolve DOIs for higher-quality matching (deferred to v1.1)
-
-**Thematic similarity edges:**
-- Voyage `voyage-3-lite` embeddings computed per paper, stored in pgvector column
-- Cosine similarity computed pairwise; edges drawn above threshold (e.g. 0.78)
-- Clustering: HDBSCAN over embeddings to assign sub-topic clusters; updates whenever a paper is added/removed
-
-**Graph rendering:**
-- `react-flow` for interactive graph; force-directed layout via `d3-force` for initial positioning
-- Layout computed server-side and cached; clients fetch pre-layouted graph
-
-**Libraries:**
-- PDF parsing: `pdfplumber`
-- Text chunking: `langchain-text-splitters`
-- LLM: Anthropic Claude API
-- Embeddings: Voyage `voyage-3-lite`
-- Clustering: `hdbscan`
-- Vector storage: `pgvector` (Postgres extension) — keeps everything in one database
+**Planned enhancements (Python AI service):**
+- R2 file storage for PDFs; `papers.file_url` populated
+- `voyage-3-lite` embeddings in `papers.embedding` (pgvector)
+- Citation extraction → `paper_citations` edges
+- HDBSCAN clustering → `paper_clusters`
+- Citation Graph view
 
 **Scalability:**
 - 120 students × 25 papers = 3,000 lifetime processings (not concurrent)
-- Total LLM cost estimate: ~$150–200 for full pilot cohort (incl. citation extraction)
-- Background job queue (BullMQ on Redis) for async PDF processing
+- Total LLM cost estimate: ~$150–200 for full pilot cohort
+- Background job queue (BullMQ on Redis) planned for async processing
 
 ---
 

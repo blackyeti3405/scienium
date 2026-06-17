@@ -3,105 +3,49 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 
 export default async function HomePage() {
-  // Already logged in → go straight to the lab scene
   const { userId } = await auth()
   if (userId) redirect('/lab')
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Nav */}
-      <header className="border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xl font-bold tracking-tight">⚗️ NOVA Lab</span>
-        </div>
-        <div className="flex gap-3">
-          <Link
-            href="/sign-in"
-            className="rounded-md px-4 py-2 text-sm font-medium border hover:bg-accent transition-colors"
-          >
-            Sign In
-          </Link>
-          <Link
-            href="/sign-up"
-            className="rounded-md px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
-          >
-            Get Started
-          </Link>
-        </div>
-      </header>
+    <main className="min-h-screen flex flex-col items-center justify-center bg-[#0d1b2e]">
+      <div className="flex flex-col items-center gap-8">
+        {/* Logo + title */}
+        <div className="flex items-center gap-5">
+          {/* SVG recreation of the nova-lab mascot: figure hunched over a table */}
+          <svg width="72" height="72" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Head */}
+            <circle cx="68" cy="22" r="16" fill="#F5C518"/>
+            {/* Curved back/neck arc */}
+            <path d="M20 48 Q20 18 52 18" stroke="#F5C518" strokeWidth="12" strokeLinecap="round" fill="none"/>
+            {/* Table top */}
+            <rect x="14" y="52" width="72" height="10" rx="2" fill="#F5C518"/>
+            {/* Left leg */}
+            <rect x="20" y="62" width="10" height="28" rx="2" fill="#F5C518"/>
+            {/* Right leg */}
+            <rect x="70" y="62" width="10" height="28" rx="2" fill="#F5C518"/>
+          </svg>
 
-      {/* Hero */}
-      <main className="flex-1 flex flex-col items-center justify-center text-center px-6 py-24 gap-8">
-        <div className="inline-block rounded-full border px-4 py-1 text-sm text-muted-foreground mb-2">
-          Science Fair, Gamified 🏆
+          <h1 className="font-pixel text-white leading-snug text-center" style={{ fontSize: 'clamp(1.4rem, 3.5vw, 2.2rem)' }}>
+            NOVA<br />Lab
+          </h1>
         </div>
 
-        <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight max-w-3xl leading-tight">
-          Welcome to{' '}
-          <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
-            NOVA Lab
-          </span>
-        </h1>
-
-        <p className="text-lg text-muted-foreground max-w-xl">
-          Build a virtual research laboratory, earn upgrades through real science fair work,
-          and turn your project into a public showcase — from first idea to competition stage.
+        {/* Tagline */}
+        <p className="font-pixel text-[#8899aa] text-center leading-loose" style={{ fontSize: 'clamp(0.45rem, 1.2vw, 0.65rem)' }}>
+          Build a virtual research lab.<br />
+          Advance real science.
         </p>
 
-        <div className="flex flex-wrap gap-4 justify-center mt-2">
-          <Link
-            href="/sign-up"
-            className="rounded-md px-8 py-3 font-semibold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-base"
-          >
-            Start Your Lab →
-          </Link>
-          <Link
-            href="/showcase/gallery"
-            className="rounded-md px-8 py-3 font-semibold border hover:bg-accent transition-colors text-base"
-          >
-            Browse Showcases
-          </Link>
-        </div>
-      </main>
+        {/* CTA */}
+        <Link
+          href="/sign-in"
+          className="font-pixel bg-[#F5C518] text-[#0d1b2e] px-10 py-4 hover:brightness-110 active:scale-95 transition-all"
+          style={{ fontSize: 'clamp(0.55rem, 1.4vw, 0.75rem)', letterSpacing: '0.05em' }}
+        >
+          ↑ ENTER YOUR LAB
+        </Link>
 
-      {/* Feature grid */}
-      <section className="border-t px-6 py-16">
-        <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-8">
-          {FEATURES.map((f) => (
-            <div key={f.title} className="space-y-2">
-              <div className="text-2xl">{f.icon}</div>
-              <h3 className="font-semibold">{f.title}</h3>
-              <p className="text-sm text-muted-foreground">{f.description}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t px-6 py-6 text-center text-sm text-muted-foreground">
-        © {new Date().getFullYear()} NOVA Lab. Built for student scientists.
-      </footer>
-    </div>
+      </div>
+    </main>
   )
 }
-
-const FEATURES = [
-  {
-    icon: '🔬',
-    title: 'Build Your Lab',
-    description:
-      'Earn buildings and upgrades by completing daily activities, literature reviews, and project milestones.',
-  },
-  {
-    icon: '📚',
-    title: 'Guided Research',
-    description:
-      'Explore Wikipedia, process research papers, and build a citation graph of your field — all inside the app.',
-  },
-  {
-    icon: '⚔️',
-    title: 'Battle & Compete',
-    description:
-      'Challenge classmates in turn-based PvP battles where your lab buildings become combat characters.',
-  },
-]

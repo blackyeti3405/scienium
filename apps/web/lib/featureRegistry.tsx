@@ -26,6 +26,11 @@ const DiscoveryFeature = dynamic(
   { ssr: false, loading },
 )
 
+const LiteratureFeature = dynamic(
+  () => import('@/components/literature/LiteratureFeature').then((m) => m.LiteratureFeature),
+  { ssr: false, loading },
+)
+
 export const FEATURE_COMPONENTS: Record<GatewayKey, ComponentType> = {
   discovery: DiscoveryFeature,
 
@@ -36,13 +41,7 @@ export const FEATURE_COMPONENTS: Record<GatewayKey, ComponentType> = {
       route="/fair-hub/calendar"
     />
   ),
-  literature_review: () => (
-    <StubFeature
-      title="Literature Review"
-      description="Upload and review papers toward the 25-paper gate, search your Literature Library, and watch your Citation Graph grow."
-      route="/literature/library"
-    />
-  ),
+  literature_review: LiteratureFeature,
   operations_hub: () => (
     <StubFeature
       title="Operations Hub"

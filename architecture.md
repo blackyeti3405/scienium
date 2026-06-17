@@ -1,19 +1,21 @@
 # NOVA Lab — Technical Architecture
 
 > **Companion to:** `spec.md`
-> **Last Updated:** 2026-05-26
+> **Last Updated:** 2026-06-17
 > **Target initial scale:** ~120 students, single school pilot
 
 ---
 
 ## 1. Architecture Overview
 
-NOVA Lab is a **two-service architecture**:
+NOVA Lab is a **two-service architecture** (with the AI layer currently consolidated into Next.js API routes during the build-out phase):
 
-1. **Web app (Next.js)** — UI, lightweight API routes, auth, most CRUD operations, and public Showcase rendering
-2. **AI microservice (Python FastAPI)** — PDF parsing, paper analysis, citation extraction, content generation, video transcoding
+1. **Web app (Next.js)** — UI, API routes, auth, all CRUD operations, Claude API calls for Literature Review Q&A and paper metadata extraction, and public Showcase rendering
+2. **AI microservice (Python FastAPI)** *(planned — not yet active)* — heavy PDF parsing, embedding computation, citation extraction, content generation, video transcoding
 
-A single **PostgreSQL database** (with `pgvector` extension) is the source of truth. **Object storage (Cloudflare R2)** holds PDFs, images, and Showcase videos. **Redis** runs the background job queue.
+A single **PostgreSQL database** (with `pgvector` extension) is the source of truth. **Object storage (Cloudflare R2)** will hold PDFs, images, and Showcase videos (not yet wired). **Redis** will run the background job queue (not yet wired).
+
+> **Current state (as of 2026-06-17):** The Python AI service is not running. PDF text extraction and Claude API calls for the Literature Review happen directly inside Next.js API routes using `pdf-parse` and `@anthropic-ai/sdk`. R2 file storage is not yet connected — uploaded PDF text is stored temporarily in the `papers.content_hash` column. This architecture will migrate to the full two-service design once the Python service is stood up.
 
 ```
 ┌─────────────────┐              ┌─────────────────────────┐
@@ -26,29 +28,29 @@ A single **PostgreSQL database** (with `pgvector` extension) is the source of tr
 │           Next.js App (Vercel)                    │
 │   - Authenticated UI (/dashboard, /lab, etc)      │
 │   - Public Showcase routes (/showcase/[slug])     │
-│   - API routes (light CRUD)                       │
+│   - API routes (CRUD + Claude API calls)          │
 │   - Wikipedia integration                         │
-└──────┬───────────────────────────────────────────┘
-       │
-       ▼
+│   - PDF parsing (pdf-parse, server-side)          │
+│   - Claude API: paper extraction + Q&A tutor      │
+└──────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────┐    ┌──────────────────────────────┐
+│  PostgreSQL          │    │  Cloudflare R2 (planned)     │
+│  (local Docker /     │    │  PDFs, images, video         │
+│   Supabase in prod)  │    │  (not yet connected)         │
+│  + pgvector          │    └──────────────────────────────┘
+└──────────────────────┘
+
 ┌──────────────────────────┐
-│  Python AI Service       │
+│  Python AI Service       │   ← PLANNED, not yet active
 │  (FastAPI on Railway)    │
-│  - PDF parsing           │
-│  - Claude orchestration  │
-│  - Quiz generation       │
-│  - Citation extraction   │
+│  - Heavy PDF parsing     │
 │  - Embedding computation │
+│  - Citation extraction   │
+│  - Content generation    │
 │  - Video transcoding     │
-└───────┬──────────────────┘
-        │
-        ├──────────────────┬────────────────────┐
-        ▼                  ▼                    ▼
-┌────────────┐    ┌───────────────┐    ┌──────────────────┐
-│ PostgreSQL │    │ Cloudflare R2 │    │ Redis (BullMQ)   │
-│ (Supabase) │    │ (files+video) │    │ (job queue)      │
-│ + pgvector │    │ + CDN         │    │                  │
-└────────────┘    └───────────────┘    └──────────────────┘
+└──────────────────────────┘
 ```
 
 ---
@@ -74,6 +76,8 @@ A single **PostgreSQL database** (with `pgvector` extension) is the source of tr
 | Auth | **Clerk** | Email/password, OAuth, sessions, parental consent flow possible |
 | ORM | **Prisma** | Type-safe queries, migrations |
 | Database | **PostgreSQL via Supabase** + **pgvector** extension | Industry standard; pgvector keeps embeddings co-located, no separate vector DB |
+| LLM (current) | **`@anthropic-ai/sdk`** (`claude-sonnet-4-6`) | Paper metadata extraction + Literature Review Q&A tutor running directly in API routes |
+| PDF parsing (current) | **`pdf-parse`** (Node.js) | Lightweight server-side text extraction; replaces Python `pdfplumber` until AI service is active |
 | Image processing | **sharp** | Server-side image resizing/thumbnails |
 
 ### AI Microservice
@@ -427,14 +431,20 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 
 ## 5. Key Service Interactions
 
-### Paper upload flow (Lit Review)
-1. Client uploads PDF to `/api/papers` (Next.js)
-2. File uploaded to R2; row created in `papers` with `status = pending`
-3. Job enqueued in Redis targeting AI service
-4. AI service: download → parse → Claude (summary + quiz + probe) → extract citations → compute embedding → write back
-5. Citation extraction: for each reference, fuzzy-match against existing team papers; write edges to `paper_citations`
-6. Embedding written to `papers.embedding`; HDBSCAN re-clustering triggered if paper count is at a meaningful threshold
-7. `papers.status = ready`; client picks up via TanStack Query polling
+### Paper upload flow (Lit Review) — current implementation
+1. Client uploads PDF via `POST /api/papers` (multipart/form-data)
+2. Next.js API route parses PDF text with `pdf-parse` (server-side, no Python service)
+3. `papers` row created with `status = processing`; extracted text stored in `content_hash` column (temporary — R2 + dedicated column planned)
+4. Async Claude call (`claude-sonnet-4-6`) extracts `{ title, authors, abstract }` from the text; paper marked `ready`
+5. Client polls `GET /api/papers/[id]` every 3 seconds until `status = ready`
+6. User clicks Q&A → `POST /api/papers/[id]/chat` runs tutoring conversation with full paper text as context
+7. Claude emits `PROFICIENCY_DEMONSTRATED` signal when all four comprehension criteria are met; frontend strips the signal and clears the orange banner
+
+**Planned migration** (once Python AI service is active):
+- R2 for file storage; `papers.file_url` populated
+- Embeddings computed (Voyage `voyage-3-lite`) and stored in `papers.embedding`
+- Citation extraction: reference list parsed → fuzzy-matched against team's papers → edges in `paper_citations`
+- HDBSCAN clustering on add/remove
 
 ### Citation Graph render flow
 1. Client requests `/api/citation-graph?team_id=X`

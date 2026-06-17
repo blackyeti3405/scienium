@@ -11,6 +11,7 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: ['var(--font-inter)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        pixel: ['var(--font-pixel)', 'monospace'],
       },
       colors: {
         border: 'hsl(var(--border))',

@@ -46,8 +46,9 @@ export function LabScene({
 
   const skin: GatewaySkin = (labType ?? 'generic') as GatewaySkin
 
-  // Buildings present = the team's phase has reached their unlock phase.
-  const present = GATEWAYS.filter((g) => isPhaseAtLeast(phase, g.unlockPhase))
+  // TODO: restore phase gating once progression is wired up.
+  // For now show all buildings so each feature can be built and tested independently.
+  const present = GATEWAYS
 
   const openGateway = openKey ? GATEWAYS.find((g) => g.key === openKey) ?? null : null
   const FeatureComponent = openKey ? FEATURE_COMPONENTS[openKey] : null
@@ -76,7 +77,8 @@ export function LabScene({
             const dx = (g.cell.gx - g.cell.gy) * STEP_X
             const dy = (g.cell.gx + g.cell.gy) * STEP_Y + CLUSTER_Y
             const depth = g.cell.gx + g.cell.gy // higher = nearer the viewer
-            const { locked, reason } = lockInfo(g)
+            // TODO: restore lock gating once progression is wired up.
+            const { locked, reason } = { locked: false, reason: undefined }
             return (
               <BuildingSprite
                 key={g.key}
