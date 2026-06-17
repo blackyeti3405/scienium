@@ -11,11 +11,11 @@
 NOVA Lab is a **two-service architecture** (with the AI layer currently consolidated into Next.js API routes during the build-out phase):
 
 1. **Web app (Next.js)** — UI, API routes, auth, all CRUD operations, Claude API calls for Literature Review Q&A and paper metadata extraction, and public Showcase rendering
-2. **AI microservice (Python FastAPI)** *(planned — not yet active)* — heavy PDF parsing, embedding computation, citation extraction, content generation, video transcoding
+2. **AI microservice (Python FastAPI)** *(planned — not yet active)* — heavy PDF parsing, quiz generation, content generation, video transcoding
 
-A single **PostgreSQL database** (with `pgvector` extension) is the source of truth. **Object storage (Cloudflare R2)** will hold PDFs, images, and Showcase videos (not yet wired). **Redis** will run the background job queue (not yet wired).
+A single **PostgreSQL database** is the source of truth. **Object storage (Cloudflare R2)** will hold PDFs, images, and Showcase videos (not yet wired). **Redis** will run the background job queue (not yet wired).
 
-> **Current state (as of 2026-06-17):** The Python AI service is not running. PDF text extraction and Claude API calls for the Literature Review happen directly inside Next.js API routes using `pdf-parse` and `@anthropic-ai/sdk`. R2 file storage is not yet connected — uploaded PDF text is stored temporarily in the `papers.content_hash` column. This architecture will migrate to the full two-service design once the Python service is stood up.
+> **Current state (as of 2026-06-17):** The Python AI service is not running. PDF text extraction and Claude API calls for the Literature Review happen directly inside Next.js API routes using `unpdf` and `@anthropic-ai/sdk`. Extracted text is stored in the `papers.full_text` column; R2 file storage is not yet connected. This architecture will migrate to the full two-service design once the Python service is stood up.
 
 ```
 ┌─────────────────┐              ┌─────────────────────────┐
@@ -30,7 +30,7 @@ A single **PostgreSQL database** (with `pgvector` extension) is the source of tr
 │   - Public Showcase routes (/showcase/[slug])     │
 │   - API routes (CRUD + Claude API calls)          │
 │   - Wikipedia integration                         │
-│   - PDF parsing (pdf-parse, server-side)          │
+│   - PDF parsing (unpdf, server-side)              │
 │   - Claude API: paper extraction + Q&A tutor      │
 └──────────────────────────────────────────────────┘
          │
@@ -39,15 +39,13 @@ A single **PostgreSQL database** (with `pgvector` extension) is the source of tr
 │  PostgreSQL          │    │  Cloudflare R2 (planned)     │
 │  (local Docker /     │    │  PDFs, images, video         │
 │   Supabase in prod)  │    │  (not yet connected)         │
-│  + pgvector          │    └──────────────────────────────┘
-└──────────────────────┘
+└──────────────────────┘    └──────────────────────────────┘
 
 ┌──────────────────────────┐
 │  Python AI Service       │   ← PLANNED, not yet active
 │  (FastAPI on Railway)    │
 │  - Heavy PDF parsing     │
-│  - Embedding computation │
-│  - Citation extraction   │
+│  - Quiz generation       │
 │  - Content generation    │
 │  - Video transcoding     │
 └──────────────────────────┘
@@ -64,7 +62,7 @@ A single **PostgreSQL database** (with `pgvector` extension) is the source of tr
 | Language | **TypeScript** | Type safety |
 | Styling | **Tailwind CSS + shadcn/ui** | Fast iteration, no runtime CSS overhead |
 | State | **Zustand** (client), **TanStack Query** (server state) | Lightweight |
-| Visualization | **Recharts** (charts), **react-flow** (Discovery Tree + Citation Graph) | Both stable, well-documented |
+| Visualization | **Recharts** (charts), **react-flow** (Discovery Tree) | Both stable, well-documented |
 | Forms | **react-hook-form + zod** | Validation as types |
 | Video player | **video.js** | Mature, accessible, handles HLS/MP4 |
 | PDF viewer | **react-pdf** | In-browser report viewing |
@@ -75,9 +73,9 @@ A single **PostgreSQL database** (with `pgvector` extension) is the source of tr
 | API | **Next.js API Routes** | Co-located with frontend |
 | Auth | **Clerk** | Email/password, OAuth, sessions, parental consent flow possible |
 | ORM | **Prisma** | Type-safe queries, migrations |
-| Database | **PostgreSQL via Supabase** + **pgvector** extension | Industry standard; pgvector keeps embeddings co-located, no separate vector DB |
+| Database | **PostgreSQL via Supabase** | Industry standard |
 | LLM (current) | **`@anthropic-ai/sdk`** (`claude-sonnet-4-6`) | Paper metadata extraction + Literature Review Q&A tutor running directly in API routes |
-| PDF parsing (current) | **`pdf-parse`** (Node.js) | Lightweight server-side text extraction; replaces Python `pdfplumber` until AI service is active |
+| PDF parsing (current) | **`unpdf`** (Node.js) | Lightweight in-process text extraction (~250ms); replaces Python `pdfplumber` until AI service is active |
 | Image processing | **sharp** | Server-side image resizing/thumbnails |
 
 ### AI Microservice
@@ -86,9 +84,6 @@ A single **PostgreSQL database** (with `pgvector` extension) is the source of tr
 | Framework | **FastAPI** | Async, typed |
 | LLM | **Anthropic Claude API** | Strong reasoning, long context |
 | PDF parsing | **pdfplumber** (primary), **pypdf** (metadata) | Layout fidelity + cheap header extraction |
-| Text chunking | **langchain-text-splitters** | Token-aware splitting |
-| Embeddings | **Voyage `voyage-3-lite`** | Cheap, good for similarity |
-| Clustering | **hdbscan** | Citation graph sub-topic clustering |
 | Video transcoding | **ffmpeg** (via `ffmpeg-python`) | Showcase video normalization |
 
 ### Infrastructure
@@ -120,8 +115,7 @@ nova-lab/
 │   │   │   │   ├── discovery/            # Wikipedia explorer + paper explore
 │   │   │   │   ├── literature/
 │   │   │   │   │   ├── library/          # All papers
-│   │   │   │   │   ├── review/           # Active review session
-│   │   │   │   │   └── graph/            # Citation Graph view
+│   │   │   │   │   └── review/           # Active review session
 │   │   │   │   ├── daily/                # Field Dispatch, Expertise, Project Log
 │   │   │   │   │   ├── dispatch/
 │   │   │   │   │   ├── expertise/
@@ -166,7 +160,6 @@ nova-lab/
 │   │   │   │   ├── discovery/
 │   │   │   │   ├── project-log/
 │   │   │   │   ├── failure-log/
-│   │   │   │   ├── citation-graph/
 │   │   │   │   ├── showcase/
 │   │   │   │   ├── fair-hub/             # Fair calendar, rubric, categories endpoints
 │   │   │   │   ├── teacher/              # Teacher-only endpoints
@@ -186,8 +179,7 @@ nova-lab/
 │   │   │   ├── literature/
 │   │   │   │   ├── UploadWidget.tsx
 │   │   │   │   ├── QuizDialog.tsx
-│   │   │   │   ├── LibraryList.tsx
-│   │   │   │   └── CitationGraph.tsx     # react-flow based
+│   │   │   │   └── LibraryList.tsx
 │   │   │   ├── daily/
 │   │   │   │   ├── ProjectLogForm.tsx
 │   │   │   │   ├── FailureLogForm.tsx
@@ -245,7 +237,7 @@ nova-lab/
 │       ├── app/
 │       │   ├── main.py
 │       │   ├── routers/
-│       │   │   ├── papers.py             # /papers/process, /papers/quiz, /papers/extract-citations
+│       │   │   ├── papers.py             # /papers/process, /papers/quiz
 │       │   │   ├── content.py            # /content/field-dispatch, /content/expertise
 │       │   │   ├── project_log.py        # /project-log/evaluate
 │       │   │   ├── failure_log.py        # /failure-log/evaluate
@@ -254,17 +246,12 @@ nova-lab/
 │       │   ├── services/
 │       │   │   ├── pdf_parser.py
 │       │   │   ├── claude_client.py
-│       │   │   ├── chunker.py
-│       │   │   ├── embeddings.py
-│       │   │   ├── citation_extractor.py
 │       │   │   ├── video_processor.py    # ffmpeg wrapper
 │       │   │   └── prompts/              # Versioned prompt templates
-│       │   │       ├── summarize.py
 │       │   │       ├── quiz.py
 │       │   │       ├── probe.py
 │       │   │       ├── field_dispatch.py
-│       │   │       ├── failure_followup.py
-│       │   │       └── citation_extract.py
+│       │   │       └── failure_followup.py
 │       │   ├── models/                   # Pydantic models
 │       │   └── workers/                  # Background job consumers
 │       ├── tests/
@@ -323,15 +310,10 @@ topic_interests       id, team_id, text, created_by_user_id, created_at
 
 # Literature
 papers                id, team_id, title, authors, abstract, source_type (pdf | text),
-                      file_url, content_hash, embedding (vector), status,
+                      file_url, content_hash, full_text, status,
                       uploaded_by_user_id, created_at
-paper_summaries       paper_id, summary_json
 paper_quiz_attempts   id, paper_id, user_id, question, response, evaluation, created_at
 paper_relevance_notes paper_id, user_id, response, created_at
-paper_citations       source_paper_id, target_paper_id, edge_type (direct | thematic),
-                      confidence_score
-paper_clusters        paper_id, cluster_id, cluster_label
-                      # updated on add/remove via HDBSCAN re-run
 
 # Lab
 gateway_buildings     id, key (discovery | literature_review | research_plan |
@@ -433,25 +415,16 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 
 ### Paper upload flow (Lit Review) — current implementation
 1. Client uploads PDF via `POST /api/papers` (multipart/form-data)
-2. Next.js API route parses PDF text with `pdf-parse` (server-side, no Python service)
-3. `papers` row created with `status = processing`; extracted text stored in `content_hash` column (temporary — R2 + dedicated column planned)
-4. Async Claude call (`claude-sonnet-4-6`) extracts `{ title, authors, abstract }` from the text; paper marked `ready`
+2. Next.js API route extracts text locally with `unpdf` (server-side, in-process, ~250ms, no Python service)
+3. `papers` row created with `status = processing`; extracted text stored in the `full_text` column
+4. Async Claude call (`claude-sonnet-4-6`) extracts `{ title, authors, abstract }` from the first ~24k chars; paper marked `ready`
 5. Client polls `GET /api/papers/[id]` every 3 seconds until `status = ready`
-6. User clicks Q&A → `POST /api/papers/[id]/chat` runs tutoring conversation with full paper text as context
+6. User clicks Q&A → `POST /api/papers/[id]/chat` runs tutoring conversation with the full paper text as a prompt-cached system block (follow-up turns reuse the cache at ~10% cost)
 7. Claude emits `PROFICIENCY_DEMONSTRATED` signal when all four comprehension criteria are met; frontend strips the signal and clears the orange banner
 
 **Planned migration** (once Python AI service is active):
 - R2 for file storage; `papers.file_url` populated
-- Embeddings computed (Voyage `voyage-3-lite`) and stored in `papers.embedding`
-- Citation extraction: reference list parsed → fuzzy-matched against team's papers → edges in `paper_citations`
-- HDBSCAN clustering on add/remove
-
-### Citation Graph render flow
-1. Client requests `/api/citation-graph?team_id=X`
-2. Next.js queries `papers` + `paper_citations` + `paper_clusters` for the team
-3. Pre-computed layout (force-directed) cached; if stale, recomputed in a worker
-4. Returns nodes + edges + cluster colors as JSON
-5. `react-flow` renders interactively client-side
+- Quiz generation + evaluation moved into the Python worker (`/papers/process`, `/papers/quiz`)
 
 ### Failure Log entry flow
 1. User opens Failure Log form
@@ -539,10 +512,8 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 | Trigger | Action |
 |---|---|
 | >1k concurrent authenticated users | Add Redis cache for Wikipedia article fetches and read-heavy endpoints |
-| >10k papers in system | Consider dedicated vector DB (Pinecone, Weaviate) if pgvector queries slow down |
 | Showcase video transcoding queue backed up | Scale AI service horizontally; add dedicated video workers |
 | >100k showcase views/day | Tune Cloudflare cache headers; preload popular pages with ISR |
-| Citation graph layouts slow | Move layout computation off main worker into dedicated graph-layout service |
 
 ### Cost ceiling for pilot
 | Service | Estimated monthly cost |
@@ -554,7 +525,6 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 | Upstash Redis | $0 (free tier) |
 | Clerk | $0 (free up to 10k MAU) |
 | Anthropic Claude API | ~$200–400 across pilot semester |
-| Voyage embeddings | ~$5 |
 | **Total estimate** | **~$250–500 / month at pilot scale** |
 
 ---
@@ -661,8 +631,6 @@ CI/CD via GitHub Actions: lint → typecheck → test → preview deploy.
 
 - [ ] Sync vs. async AI service endpoints — split decision per endpoint
 - [ ] Real-time strategy for team feeds — polling until pain, or Supabase Realtime from day one
-- [ ] Citation extraction quality: Claude-only vs. Semantic Scholar/OpenAlex augmentation
-- [ ] Embedding storage: continue pgvector or migrate to external vector DB at scale
 - [ ] Video transcoding: in-house ffmpeg vs. managed service like Mux or Cloudflare Stream (Mux is expensive; in-house works for pilot)
 - [ ] Showcase moderation: auto-only vs. always human-reviewed for public publish
 - [ ] Caching strategy for Wikipedia articles

@@ -103,8 +103,8 @@ For each paper:
 - Tree stored as adjacency list in PostgreSQL
 
 **Research paper processing:**
-- PDF/text → Python FastAPI service for parsing and Claude summarization
-- Same backend as Literature Review (Section 6.7)
+- PDF/text → local `unpdf` text extraction + Claude metadata extraction (title, authors, abstract)
+- Same backend as Literature Review (Section 6.6)
 
 ---
 
@@ -147,30 +147,27 @@ Nova is NOVA Lab's built-in research tutor. In the Literature Review:
 - Ends most turns with a question to sustain dialogue
 - Tone: encouraging but rigorous, appropriate for high school
 
-### 6.5 Citation Graph *(deferred)*
-The citation graph (visual map of paper-to-paper connections) is planned for a later milestone. The current UI does not include it. See `architecture.md §5` for the planned implementation.
+### 6.5 Citation Graph *(removed)*
+The citation graph (and its supporting embeddings + HDBSCAN clustering) has been cut from scope. It is not planned. Thematic clustering of papers is no longer a product goal.
 
 ### 6.6 Technical Implementation (current)
 
 **PDF processing pipeline (as built):**
 1. Client uploads PDF → `POST /api/papers` (Next.js, multipart/form-data)
-2. Server parses text with `pdf-parse` (Node.js)
-3. `papers` row created with `status = processing`; extracted text stored in `content_hash` (temporary)
-4. Async Claude call (`claude-sonnet-4-6`) extracts `{ title, authors, abstract }` from text
+2. Server extracts text locally with `unpdf` (in-process, ~250ms, zero tokens)
+3. `papers` row created with `status = processing`; extracted text stored in the `full_text` column
+4. Async Claude call (`claude-sonnet-4-6`) extracts `{ title, authors, abstract }` from the first ~24k chars
 5. Paper marked `ready`; client polls `GET /api/papers/[id]` every 3 seconds
 
 **Q&A chat:**
 - `POST /api/papers/[id]/chat` accepts `{ messages: [{role, content}] }`
-- Full paper text passed as context in Nova's system prompt (up to 35k chars)
+- Full paper text passed as a prompt-cached system block (first message pays full cost, follow-ups ~10%)
 - `PROFICIENCY_DEMONSTRATED` signal emitted on a new line when all four criteria are met
 - Frontend strips the signal before display; clears the orange banner
 
 **Planned enhancements (Python AI service):**
 - R2 file storage for PDFs; `papers.file_url` populated
-- `voyage-3-lite` embeddings in `papers.embedding` (pgvector)
-- Citation extraction → `paper_citations` edges
-- HDBSCAN clustering → `paper_clusters`
-- Citation Graph view
+- Quiz generation + evaluation moved into the Python worker (`/papers/process`, `/papers/quiz`)
 
 **Scalability:**
 - 120 students × 25 papers = 3,000 lifetime processings (not concurrent)
@@ -392,7 +389,7 @@ The seven gateway buildings are the app's primary navigation. Each is a structur
 | # | Gateway (provisional name) | Opens | Appears at phase | Notes |
 |---|---|---|---|---|
 | 1 | **Discovery building** | Topic Discovery (Wikipedia deep dives + idea generation) | `discovery` | The starter building; the only structure on the plot during Discovery |
-| 2 | **Literature Review building** | Literature Review + Library + Citation Graph | `literature_review` | — |
+| 2 | **Literature Review building** | Literature Review + Library | `literature_review` | — |
 | 3 | **Research Plan building** | Research Planning (hypothesis, methodology, study design) | `research_planning` | — |
 | 4 | **Operations Hub** | Daily pillars: Field Dispatch, Proof of Expertise, Project Log / Failure Log | `literature_review` *(see §19)* | Becomes the **central** building once unlocked — the everyday home base |
 | 5 | **Science Fair Research building** | Science Fair Information Hub | `discovery` *(see §19)* | Reference center; available early |
@@ -845,7 +842,6 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 | **Lab Type Selection UI** | `lab_selection` | One-time action; triggers lab growth + reskin |
 | **Literature Review** | `literature_review` | Upload, quiz, relevance probe |
 | **Literature Library** | `literature_review` | Searchable archive of processed papers |
-| **Citation Graph** | `literature_review` | Grows as papers are added |
 | **Daily Activities** | `literature_review` | Field Dispatch, Expertise, Project Log, Failure Log |
 | **Research Planning** | `research_planning` | Hypothesis builder, methodology designer |
 | **Building Purchases** | `working` | KP-based; building catalog available |
@@ -873,7 +869,7 @@ The teacher dashboard is critical for pilot success — student-facing polish do
 ### 15.2 Design Principles
 - **Phase-aware** — clicking a student shows context relevant to their current phase, not a generic profile
 - **Attention-first** — the dashboard surfaces students who need help; teachers don't browse, they respond
-- **Reuses student visualizations** — teacher sees the same Wikipedia Tree, Citation Graph, lab view, etc. that the student sees, so there's no separate interface to learn
+- **Reuses student visualizations** — teacher sees the same Wikipedia Tree, lab view, etc. that the student sees, so there's no separate interface to learn
 - **Low cognitive load** — minimal text, clear visual cues, sortable and filterable
 
 ### 15.3 Class Roster (Home View)
@@ -923,9 +919,8 @@ When the teacher clicks a student, the view adapts to that student's current pha
 - *Teacher actions:* leave a note, suggest a research direction, flag for in-class discussion
 
 #### Literature Review Phase
-- Citation Graph of all uploaded papers (same as student view)
 - Progress toward the 25-paper gate
-- Paper list with summaries and student's relevance notes
+- Paper list with abstracts and student's relevance notes
 - Quiz performance per paper
 - *Teacher actions:* validate hypothesis/research stage (triggers The Analyst figurine), suggest additional sources, leave feedback on any paper
 
@@ -1016,7 +1011,7 @@ showcase_review_queue      id, showcase_id, status, flagged_reasons_json,
 ```
 
 **UI components:**
-- Reuses student-facing visualization components (`DiscoveryTree`, `CitationGraph`, `LabView`, `ProjectLogTimeline`) wrapped in a teacher-context provider
+- Reuses student-facing visualization components (`DiscoveryTree`, `LabView`, `ProjectLogTimeline`) wrapped in a teacher-context provider
 - New components: `ClassRoster`, `AttentionIndicator`, `StudentDetailView`, `PhaseAdapter` (switches view based on student's current phase), `ValidationQueue`, `ValidationCard`, `FeedbackEditor`, `ShowcaseReviewQueue`
 
 **Performance:**
@@ -1098,7 +1093,6 @@ This flow keeps the pilot logistically simple: each classroom receives a starter
 - [ ] Exact KP and LC costs — economy balancing
 - [ ] Accessibility (screen readers, color contrast, language support)
 - [ ] Team disbanding: fork policy for individual members?
-- [ ] Citation Graph: include OpenAlex/Semantic Scholar API for richer citation matching? (v1.1?)
 - [ ] Failure Log: should the Resilience Bonus require an explicit reference link, or detect connection automatically?
 - [ ] Showcase: editorial featuring process — community vote, staff pick, or both?
 - [ ] Showcase: archival — how long do public Showcases stay live?

@@ -5,6 +5,62 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.3.0] — 2026-06-17
+
+### Added
+
+#### Onboarding
+- Real onboarding form (`app/(onboarding)/onboarding/page.tsx`) collecting name + lab/team name
+- `POST /api/onboarding` creates the `User`, `Team`, and `TeamMember` records (idempotent); seeds the team at `literature_review` phase
+- Dashboard layout now redirects users without a team to `/onboarding`
+
+#### Literature Review — Quiz
+- Structured **graded comprehension quiz**: free-response (not MCQ), AI-generated questions grounded in the paper's full text, each with a server-only grading key
+- Pedagogy/grading rules externalized to `lib/literature/quiz-rubric.md` (tunable, loaded into both generation and grading prompts); knobs `QUIZ_QUESTION_COUNT` (5) and `QUIZ_PASS_THRESHOLD` (70) in `lib/literature/quiz.ts`
+- `POST /api/papers/[id]/quiz` generates a quiz; `POST …/quiz/grade` grades all answers in one call (aggregate score, pass/fail); `GET …/quiz` returns the last graded session
+- Persistence: `PaperQuizSession` + `PaperQuizAttempt`; proficiency persisted on `papers.proficiency_demonstrated`
+- Past results (answers + Nova's feedback) reload on reopen; header tabs switch between **Quiz results** and **Discuss with Nova** (active tab gold); pass → green "Proficiency demonstrated" banner (mirrored on the source slot)
+
+#### Literature Review — Viewer, Chat, Delete
+- **In-panel PDF viewer**: PDF bytes stored in `papers.pdf_data`, streamed inline (auth'd) via `GET /api/papers/[id]/file`
+- **Chat persistence**: `PaperChatMessage` model; `GET/POST /api/papers/[id]/chat` save and reload the per-user conversation
+- Nova replies rendered as **Markdown** (`react-markdown` + `remark-gfm`, styled via `.chat-md`)
+- **Delete source** button (`DELETE /api/papers/[id]`, cascades quiz/chat/notes)
+
+#### Discovery — Persistence, Topic, Restyle
+- Discovery tree persisted to the DB (`discovery_nodes`, team-scoped) via `GET/POST/DELETE /api/discovery/tree` and `PATCH/DELETE …/tree/[id]`; store hydrates from DB instead of `localStorage`
+- **Final research topic** stored on `Team.topic` (`GET/POST /api/discovery/topic`); shown on the Discovery home, settable from the explorer bar or any starred item
+- Full **pixel-art restyle** of Discovery (home, search, Wikipedia reader, tree, branch panel) to match the game aesthetic; smooth-animated FAQ accordion; "← Back" button
+
+#### Discovery — YouTube deep dives
+- Paste-only YouTube exploration (no API key, no quota): `POST /api/discovery/youtube/resolve` resolves a URL → `{ videoId, title }` via public oEmbed
+- Embedded IFrame player; **⌘V/Ctrl+V auto-capture**; `addYouTubeVideo` branches off the current node
+- Unified source-tagged forest tree (`DiscoverySource += youtube`, `youtubeVideoId`/`youtubeTitle` columns); ▶ markers on video nodes; cross-source bridging (a video can branch off a Wikipedia node)
+- New "What about YouTube deep dives?" FAQ on the Discovery home
+
+### Changed
+- **PDF parsing switched from `pdf-parse` to `unpdf`** — in-process, ~250 ms, serverless-ready; extracted text now stored in `papers.full_text` (was temporarily in `content_hash`)
+- Paper metadata extraction + Q&A use **prompt caching** on the paper text (follow-up turns ~10% cost)
+- Q&A chat reframed as post-quiz discussion (proficiency is now owned exclusively by the quiz, not the chat)
+- Clerk redirect env vars migrated to `NEXT_PUBLIC_CLERK_FALLBACK_REDIRECT_URL` / `SIGN_UP_FORCE_REDIRECT_URL` (deprecation)
+
+### Fixed
+- Q&A split view: the PDF pane no longer overflows and hides the quiz/chat panel (`min-w-0` flexbox fix)
+- Filled literature slots no longer collapse to a thin line (`shrink-0`)
+- Quiz/chat/onboarding/topic inputs given dark backgrounds so typed text is visible
+- Chat 500s eliminated: persistence is best-effort (reply never lost) and the conversation is sanitized to start at the first user turn
+
+### Removed
+- **Citation graph** feature: `/api/citation-graph`, the graph page, `PaperCitation`, `CitationEdge`, `PaperCluster`
+- **Embeddings + clustering**: `embedding` column, `pgvector` extension, `PaperSummary`, and the `voyageai` / `hdbscan` / `langchain-text-splitters` deps (Python service); `embeddings.py` + `citation_extractor.py` deleted
+- `pdf-parse` and `@types/pdf-parse` (replaced by `unpdf`)
+
+### Dependencies
+- Added: `unpdf`, `react-markdown`, `remark-gfm`
+- Removed: `pdf-parse`, `@types/pdf-parse` (web); `voyageai`, `hdbscan`, `langchain-text-splitters` (ai-service)
+
+---
+
 ## [0.2.0] — 2026-06-17
 
 ### Added

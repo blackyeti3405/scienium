@@ -147,3 +147,6 @@ art/preview/
 art/scene_*.png
 art/sheet_*.png
 __pycache__/
+
+# macOS
+.DS_Store

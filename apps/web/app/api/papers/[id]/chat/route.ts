@@ -11,6 +11,35 @@ interface ChatMessage {
   content: string
 }
 
+// GET: load this user's saved chat history for the paper.
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const { userId } = await auth()
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const ctx = await getTeamContext(userId)
+  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
+
+  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
+  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
+  const paper = await db.paper.findFirst({
+    where: { id: params.id, teamId: ctx.teamId },
+    select: { id: true },
+  })
+  if (!paper) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  const rows = await db.paperChatMessage.findMany({
+    where: { paperId: paper.id, userId: dbUser.id },
+    orderBy: { createdAt: 'asc' },
+    select: { role: true, content: true },
+  })
+
+  return NextResponse.json({ messages: rows })
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
@@ -21,9 +50,12 @@ export async function POST(
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
+  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
+  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
   const paper = await db.paper.findFirst({
     where: { id: params.id, teamId: ctx.teamId },
-    select: { id: true, title: true, authors: true, abstract: true, contentHash: true, status: true },
+    select: { id: true, title: true, authors: true, abstract: true, fullText: true, status: true },
   })
 
   if (!paper) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -32,76 +64,72 @@ export async function POST(
   }
 
   const body = await req.json()
-  const messages: ChatMessage[] = body.messages ?? []
+  const rawMessages: ChatMessage[] = body.messages ?? []
 
-  if (!messages.length) {
-    return NextResponse.json({ error: 'messages array required' }, { status: 400 })
+  // Anthropic requires the conversation to start with a user turn. The client's
+  // greeting (and any client-only error notices) are assistant messages, so drop
+  // everything up to the first user message.
+  const firstUser = rawMessages.findIndex((m) => m.role === 'user')
+  const convo = firstUser >= 0 ? rawMessages.slice(firstUser) : []
+  if (!convo.length) {
+    return NextResponse.json({ error: 'No user message to respond to' }, { status: 400 })
   }
 
-  // contentHash currently stores extracted markdown text
-  const paperContent = paper.contentHash ?? ''
+  const authorLine = (paper.authors as string[]).join(', ') || 'Unknown authors'
 
-  const systemPrompt = buildSystemPrompt(
-    paper.title,
-    paper.authors as string[],
-    paper.abstract ?? '',
-    paperContent,
-  )
+  try {
+    // The paper text goes in a cached system block. The first request pays full price;
+    // every follow-up question reuses the cache at ~10% the cost (5-minute TTL).
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      system: [
+        { type: 'text', text: buildInstructions(paper.title, authorLine, paper.abstract ?? '') },
+        {
+          type: 'text',
+          text: `FULL PAPER TEXT:\n---\n${(paper.fullText ?? '').slice(0, 120000)}`,
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+      messages: convo.map((m) => ({ role: m.role, content: m.content })),
+    })
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system: systemPrompt,
-    messages: messages.map((m) => ({ role: m.role, content: m.content })),
-  })
+    const reply = response.content[0].type === 'text' ? response.content[0].text : ''
 
-  const reply = response.content[0].type === 'text' ? response.content[0].text : ''
+    // Persist the latest user turn + the assistant reply so the conversation
+    // survives closing and reopening — best-effort so a DB hiccup never drops the
+    // reply the user just paid for.
+    try {
+      const lastUser = [...convo].reverse().find((m) => m.role === 'user')
+      await db.paperChatMessage.createMany({
+        data: [
+          ...(lastUser ? [{ paperId: paper.id, userId: dbUser.id, role: 'user', content: lastUser.content }] : []),
+          { paperId: paper.id, userId: dbUser.id, role: 'assistant', content: reply },
+        ],
+      })
+    } catch (persistErr) {
+      console.error('[chat] persist failed (reply still returned):', persistErr)
+    }
 
-  return NextResponse.json({ reply })
+    return NextResponse.json({ reply })
+  } catch (err) {
+    console.error('[chat] error:', err)
+    return NextResponse.json({ error: 'Chat failed', detail: String(err) }, { status: 500 })
+  }
 }
 
-function buildSystemPrompt(
-  title: string,
-  authors: string[],
-  abstract: string,
-  content: string,
-): string {
-  const authorLine = authors.length > 0 ? authors.join(', ') : 'Unknown authors'
-  const contentExcerpt = content.slice(0, 35000)
+function buildInstructions(title: string, authors: string, abstract: string): string {
+  return `You are Nova, an academic research tutor helping an advanced high-school science-fair student explore a research paper. The student has already completed a graded comprehension quiz on this paper; this is an open-ended discussion to deepen their understanding.
 
-  return `You are Nova, an academic research tutor helping a high school student deeply understand a research paper as part of their science fair literature review. Your goal is to assess their comprehension and help them connect the paper to their own research.
-
-PAPER DETAILS:
-Title: ${title}
-Authors: ${authorLine}
-Abstract: ${abstract}
-
-FULL PAPER TEXT (for reference):
----
-${contentExcerpt}
----
+PAPER: "${title}" by ${authors}
+ABSTRACT: ${abstract}
 
 YOUR ROLE:
-- Quiz the student on the paper's methodology, key findings, and limitations
-- Ask follow-up questions when answers are too surface-level or vague
-- Help them articulate how this paper is relevant (or irrelevant) to their research topic
-- Celebrate genuine insight; gently push back on misconceptions
-- Ask them to explain concepts in their own words, not just recite the paper
-- When they demonstrate solid understanding of a key concept, acknowledge it clearly
+- Answer the student's questions about the paper's methodology, findings, limitations, and significance
+- Connect the paper to the broader field and to the student's own research where relevant
+- Explain technical concepts clearly, in language an advanced high-school student can follow
+- Celebrate genuine insight; gently correct misconceptions
+- Ground every answer in the actual paper; if something isn't covered by the paper, say so
 
-TONE & STYLE:
-- Encouraging but rigorous — this is science fair, not trivia
-- Use clear, accessible language appropriate for a high school student
-- Keep responses concise (2–5 sentences usually) unless explaining a complex concept
-- Never just summarize the paper for them — make them work for the understanding
-- End most responses with a question to keep the dialogue going
-
-PROFICIENCY TRACKING:
-A student demonstrates proficiency when they can:
-1. Accurately describe the paper's main hypothesis or research question
-2. Explain the methodology in their own words
-3. Identify at least one key finding and its significance
-4. Articulate why this paper is or isn't relevant to their research
-
-When all four criteria are met in the conversation, include the exact phrase "PROFICIENCY_DEMONSTRATED" at the very end of your response (on a new line, hidden from display logic).`
+TONE: Encouraging but rigorous. Concise (2–5 sentences) unless a concept needs more. You may end with a question to keep the dialogue going, but you don't have to.`
 }

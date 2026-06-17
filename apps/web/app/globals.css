@@ -262,11 +262,57 @@
   background: hsl(var(--background));
 }
 
+/* ── Chat markdown (Nova replies) ──────────────────────────────────────────── */
+.chat-md > :first-child { margin-top: 0; }
+.chat-md > :last-child { margin-bottom: 0; }
+.chat-md p { margin: 0 0 0.6rem; }
+.chat-md strong { color: #fff; font-weight: 600; }
+.chat-md em { font-style: italic; }
+.chat-md h1, .chat-md h2, .chat-md h3, .chat-md h4 {
+  color: #fff;
+  font-weight: 700;
+  margin: 0.8rem 0 0.4rem;
+  line-height: 1.3;
+}
+.chat-md h1 { font-size: 1.05rem; }
+.chat-md h2 { font-size: 1rem; }
+.chat-md h3, .chat-md h4 { font-size: 0.9375rem; }
+.chat-md ul, .chat-md ol { margin: 0.4rem 0 0.7rem; padding-left: 1.2rem; }
+.chat-md ul { list-style: disc; }
+.chat-md ol { list-style: decimal; }
+.chat-md li { margin: 0.2rem 0; }
+.chat-md li::marker { color: rgba(245, 197, 24, 0.7); }
+.chat-md a { color: hsl(210, 90%, 72%); text-decoration: underline; }
+.chat-md code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+.chat-md pre {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0.6rem 0.75rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+.chat-md pre code { background: none; padding: 0; }
+.chat-md blockquote {
+  border-left: 2px solid rgba(245, 197, 24, 0.4);
+  padding-left: 0.75rem;
+  margin: 0.5rem 0;
+  color: rgba(255, 255, 255, 0.6);
+}
+.chat-md table { border-collapse: collapse; margin: 0.5rem 0; font-size: 0.85em; }
+.chat-md th, .chat-md td { border: 1px solid rgba(255, 255, 255, 0.15); padding: 0.3rem 0.5rem; text-align: left; }
+.chat-md th { background: rgba(255, 255, 255, 0.06); }
+
 /* ── Wikipedia article reader ──────────────────────────────────────────────── */
 .wiki-content {
   font-size: 0.9375rem;
   line-height: 1.75;
-  color: hsl(var(--foreground));
+  color: rgba(255, 255, 255, 0.82); /* Discovery renders on a dark (#0d1b2e) panel */
 }
 .wiki-content p {
   margin-bottom: 1rem;
@@ -291,7 +337,7 @@
 
 /* Internal wiki links — clickable, intercepted */
 .wiki-content a.wiki-link {
-  color: hsl(217, 91%, 52%);
+  color: hsl(210, 90%, 70%);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
@@ -300,22 +346,22 @@
   transition: background-color 0.1s, color 0.1s;
 }
 .wiki-content a.wiki-link:hover {
-  color: hsl(217, 91%, 38%);
-  background-color: hsl(217, 91%, 52%, 0.08);
+  color: hsl(210, 95%, 80%);
+  background-color: hsl(210, 90%, 70%, 0.12);
 }
-/* Selected branch links */
+/* Selected branch links — gold to match the game accent */
 .wiki-content a.wiki-link-selected {
-  background-color: hsl(var(--primary) / 0.12);
-  color: hsl(var(--primary));
+  background-color: rgba(245, 197, 24, 0.14);
+  color: #f5c518;
   font-weight: 600;
-  text-decoration-color: hsl(var(--primary));
-  outline: 1.5px solid hsl(var(--primary) / 0.35);
+  text-decoration-color: #f5c518;
+  outline: 1.5px solid rgba(245, 197, 24, 0.4);
   outline-offset: 1px;
   border-radius: 3px;
 }
 /* Red links stripped to plain text */
 .wiki-content .wiki-redlink {
-  color: hsl(var(--foreground));
+  color: rgba(255, 255, 255, 0.82);
 }
 /* Section headings injected by our API route */
 .wiki-content .wiki-section-heading {

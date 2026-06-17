@@ -5,14 +5,11 @@ logger = structlog.get_logger()
 
 async def process_paper_job(payload: dict) -> None:
     """
-    Full paper processing pipeline:
+    Paper processing pipeline:
     1. Download PDF from R2
     2. Extract text + metadata
-    3. Chunk text
-    4. Generate summary, quiz questions, relevance probe via Claude
-    5. Extract citations
-    6. Compute embedding
-    7. Write results back to DB; update paper status to 'ready'
+    3. Generate quiz questions + relevance probe via Claude
+    4. Write results back to DB; update paper status to 'ready'
     """
     paper_id = payload["paper_id"]
     log = logger.bind(paper_id=paper_id)

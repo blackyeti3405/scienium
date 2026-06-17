@@ -3,7 +3,6 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     anthropic_api_key: str
-    voyage_api_key: str
     database_url: str
     r2_account_id: str = ""
     r2_access_key_id: str = ""

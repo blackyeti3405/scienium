@@ -1,12 +1,10 @@
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["postgresqlExtensions"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider   = "postgresql"
-  url        = env("DATABASE_URL")
-  extensions = [pgvector(map: "vector")]
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ─── Users & Org ─────────────────────────────────────────────────────────────
@@ -169,6 +167,8 @@ model DiscoveryNode {
   parentId        String?         @map("parent_id")
   sourceType      DiscoverySource @map("source_type")
   wikipediaTitle  String?         @map("wikipedia_title")
+  youtubeVideoId  String?         @map("youtube_video_id")
+  youtubeTitle    String?         @map("youtube_title")
   paperId         String?         @map("paper_id")
   starred         Boolean         @default(false)
   visitedByUserId String          @map("visited_by_user_id")
@@ -184,6 +184,7 @@ model DiscoveryNode {
 
 enum DiscoverySource {
   wikipedia
+  youtube
   paper
 
   @@map("discovery_source")
@@ -211,21 +212,35 @@ model Paper {
   sourceType       PaperSource @map("source_type")
   fileUrl          String?     @map("file_url")
   contentHash      String?     @map("content_hash")
-  /// @db.VectorType(1536)
-  embedding        Unsupported("vector(1536)")?
+  fullText         String?     @map("full_text")
+  // PDF binary stored in-DB for the in-panel viewer. Pilot-scale choice;
+  // migrate to R2 object storage for production (see lib/storage.ts).
+  pdfData          Bytes?      @map("pdf_data")
   status           PaperStatus @default(pending)
+  proficiencyDemonstrated Boolean @default(false) @map("proficiency_demonstrated")
   uploadedByUserId String      @map("uploaded_by_user_id")
   createdAt        DateTime    @default(now()) @map("created_at")
 
   team            Team              @relation(fields: [teamId], references: [id])
-  summary         PaperSummary?
+  quizSessions    PaperQuizSession[]
   quizAttempts    PaperQuizAttempt[]
   relevanceNotes  PaperRelevanceNote[]
-  cluster         PaperCluster?
-  citationsFrom   PaperCitation[]   @relation("source")
-  citationsTo     PaperCitation[]   @relation("target")
+  chatMessages    PaperChatMessage[]
 
   @@map("papers")
+}
+
+model PaperChatMessage {
+  id        String   @id @default(cuid())
+  paperId   String   @map("paper_id")
+  userId    String   @map("user_id")
+  role      String   // 'user' | 'assistant'
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+  paper     Paper    @relation(fields: [paperId], references: [id])
+
+  @@index([paperId, userId])
+  @@map("paper_chat_messages")
 }
 
 enum PaperSource {
@@ -244,23 +259,37 @@ enum PaperStatus {
   @@map("paper_status")
 }
 
-model PaperSummary {
-  paperId     String @id @map("paper_id")
-  summaryJson Json   @map("summary_json")
-  paper       Paper  @relation(fields: [paperId], references: [id])
+// A single quiz attempt: a generated set of questions (with keys) and, once
+// submitted, the per-question grades and aggregate result.
+model PaperQuizSession {
+  id            String   @id @default(cuid())
+  paperId       String   @map("paper_id")
+  userId        String   @map("user_id")
+  // [{ id, prompt, focus, key }] — `key` is server-only, never sent to client
+  questionsJson Json     @map("questions_json")
+  score         Int?     // aggregate 0-100, set on grading
+  passed        Boolean  @default(false)
+  gradedAt      DateTime? @map("graded_at")
+  createdAt     DateTime @default(now()) @map("created_at")
 
-  @@map("paper_summaries")
+  paper    Paper              @relation(fields: [paperId], references: [id])
+  attempts PaperQuizAttempt[]
+
+  @@map("paper_quiz_sessions")
 }
 
 model PaperQuizAttempt {
   id         String   @id @default(cuid())
+  sessionId  String   @map("session_id")
   paperId    String   @map("paper_id")
   userId     String   @map("user_id")
   question   String
   response   String
   evaluation String
+  score      Int      @default(0)
   createdAt  DateTime @default(now()) @map("created_at")
-  paper      Paper    @relation(fields: [paperId], references: [id])
+  paper      Paper            @relation(fields: [paperId], references: [id])
+  session    PaperQuizSession @relation(fields: [sessionId], references: [id])
 
   @@map("paper_quiz_attempts")
 }
@@ -274,35 +303,6 @@ model PaperRelevanceNote {
 
   @@id([paperId, userId])
   @@map("paper_relevance_notes")
-}
-
-model PaperCitation {
-  sourcePaperId   String     @map("source_paper_id")
-  targetPaperId   String     @map("target_paper_id")
-  edgeType        CitationEdge @map("edge_type")
-  confidenceScore Float      @map("confidence_score")
-
-  source Paper @relation("source", fields: [sourcePaperId], references: [id])
-  target Paper @relation("target", fields: [targetPaperId], references: [id])
-
-  @@id([sourcePaperId, targetPaperId, edgeType])
-  @@map("paper_citations")
-}
-
-enum CitationEdge {
-  direct
-  thematic
-
-  @@map("citation_edge")
-}
-
-model PaperCluster {
-  paperId      String @id @map("paper_id")
-  clusterId    Int    @map("cluster_id")
-  clusterLabel String @map("cluster_label")
-  paper        Paper  @relation(fields: [paperId], references: [id])
-
-  @@map("paper_clusters")
 }
 
 // ─── Lab Buildings ───────────────────────────────────────────────────────────

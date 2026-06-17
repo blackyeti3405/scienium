@@ -2,9 +2,10 @@ import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { getTeamContext } from '@/lib/phase'
 import { db } from '@/lib/db'
-// pdf-parse ships as CJS; use require so TypeScript doesn't choke on the import shape
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>
+import Anthropic from '@anthropic-ai/sdk'
+import { extractText, getDocumentProxy } from 'unpdf'
+
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth()
@@ -22,24 +23,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'A PDF file is required' }, { status: 400 })
   }
 
-  // Parse PDF → plain text
+  // Keep the raw bytes for the in-panel viewer; extract text for the LLM.
   const buffer = Buffer.from(await file.arrayBuffer())
-  let markdownContent = ''
+  let fullText = ''
   let title = file.name.replace(/\.pdf$/i, '')
-
   try {
-    const parsed = await pdfParse(buffer)
-    markdownContent = parsed.text
+    const pdf = await getDocumentProxy(new Uint8Array(buffer))
+    const { text } = await extractText(pdf, { mergePages: true })
+    fullText = (text ?? '').trim()
 
-    // Attempt to extract title from first non-empty lines
-    const lines = parsed.text.split('\n').map((l: string) => l.trim()).filter(Boolean)
-    if (lines[0] && lines[0].length < 200) title = lines[0]
-  } catch {
-    return NextResponse.json({ error: 'Could not parse PDF' }, { status: 422 })
+    const firstLine = fullText.split('\n').map((l) => l.trim()).find(Boolean)
+    if (firstLine && firstLine.length < 200) title = firstLine
+  } catch (err) {
+    console.error('[unpdf] extraction error:', err)
+    return NextResponse.json({ error: 'Could not read PDF text', detail: String(err) }, { status: 422 })
   }
 
-  // Create paper row as 'processing'
-  // contentHash field used to temporarily store extracted markdown until a dedicated column exists
+  if (!fullText) {
+    return NextResponse.json(
+      { error: 'No extractable text found (the PDF may be a scanned image)' },
+      { status: 422 },
+    )
+  }
+
   const paper = await db.paper.create({
     data: {
       teamId: ctx.teamId,
@@ -49,12 +55,17 @@ export async function POST(req: NextRequest) {
       sourceType: 'pdf',
       status: 'processing',
       uploadedByUserId: dbUser.id,
-      contentHash: markdownContent.slice(0, 50000),
+      fullText,
+      pdfData: buffer,
     },
   })
 
-  // Fire-and-forget async summarization; client polls /api/papers/[id]
-  summarizeAndFinalize(paper.id, markdownContent, title).catch(console.error)
+  // fileUrl points at our authenticated streaming route (set now that we have the id)
+  const fileUrl = `/api/papers/${paper.id}/file`
+  await db.paper.update({ where: { id: paper.id }, data: { fileUrl } })
+
+  // Fire-and-forget: extract metadata from the text we already have
+  extractMetadata(paper.id, fullText, title).catch(console.error)
 
   return NextResponse.json({
     id: paper.id,
@@ -62,6 +73,7 @@ export async function POST(req: NextRequest) {
     authors: paper.authors,
     status: paper.status,
     createdAt: paper.createdAt,
+    fileUrl,
   })
 }
 
@@ -83,23 +95,22 @@ export async function GET(req: NextRequest) {
       status: true,
       createdAt: true,
       fileUrl: true,
+      proficiencyDemonstrated: true,
     },
   })
 
   return NextResponse.json({ papers })
 }
 
-// ─── Background: extract metadata via Claude, then mark ready ────────────────
+// ─── Background: extract metadata from the already-parsed text ───────────────
 
-async function summarizeAndFinalize(paperId: string, markdown: string, rawTitle: string) {
-  const Anthropic = (await import('@anthropic-ai/sdk')).default
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
-  const excerpt = markdown.slice(0, 40000)
+async function extractMetadata(paperId: string, fullText: string, rawTitle: string) {
+  // The first ~6k tokens of a paper contain title/authors/abstract — no need to send more
+  const excerpt = fullText.slice(0, 24000)
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
+    max_tokens: 512,
     system: EXTRACTION_SYSTEM_PROMPT,
     messages: [
       {
@@ -126,13 +137,10 @@ async function summarizeAndFinalize(paperId: string, markdown: string, rawTitle:
       return
     }
   } catch {
-    // Fall through to status-only update
+    // fall through to status-only update
   }
 
-  await db.paper.update({
-    where: { id: paperId },
-    data: { status: 'ready' },
-  })
+  await db.paper.update({ where: { id: paperId }, data: { status: 'ready' } })
 }
 
 const EXTRACTION_SYSTEM_PROMPT = `You are a precise academic metadata extractor. Given raw text extracted from a research paper PDF, return a JSON object with exactly these fields:

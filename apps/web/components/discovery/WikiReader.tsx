@@ -70,7 +70,7 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full gap-3 text-muted-foreground">
+      <div className="flex items-center justify-center h-full gap-3 text-white/40 font-pixel text-[8px]">
         <span className="animate-spin">⟳</span> Loading article…
       </div>
     )
@@ -78,17 +78,17 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-2 text-destructive">
+      <div className="flex flex-col items-center justify-center h-full gap-2 text-red-400">
         <span className="text-2xl">⚠️</span>
-        <p className="font-medium">Could not load article</p>
-        <p className="text-sm text-muted-foreground">{error}</p>
+        <p className="font-pixel text-[9px]">Could not load article</p>
+        <p className="text-sm text-white/40">{error}</p>
       </div>
     )
   }
 
   if (!article) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
+      <div className="flex items-center justify-center h-full text-white/40 font-pixel text-[8px]">
         Select a topic to start reading.
       </div>
     )
@@ -97,14 +97,14 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
   return (
     <div className="flex flex-col h-full">
       {/* Article header */}
-      <div className="flex items-start gap-4 px-6 py-4 border-b shrink-0">
+      <div className="flex items-start gap-4 px-6 py-4 border-b border-white/10 shrink-0">
         <div className="flex-1 min-w-0">
           <h2
-            className="text-xl font-bold leading-tight"
+            className="text-xl font-bold leading-tight text-white"
             dangerouslySetInnerHTML={{ __html: article.title }}
           />
           {article.description && (
-            <p className="text-sm text-muted-foreground mt-0.5 truncate">{article.description}</p>
+            <p className="text-sm text-white/40 mt-0.5 truncate">{article.description}</p>
           )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
@@ -112,7 +112,7 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
             onClick={onStar}
             title={starred ? 'Unstar this article' : 'Star this article'}
             className={`text-xl transition-colors ${
-              starred ? 'text-yellow-500' : 'text-muted-foreground hover:text-yellow-400'
+              starred ? 'text-[#F5C518]' : 'text-white/30 hover:text-[#F5C518]/70'
             }`}
           >
             {starred ? '★' : '☆'}
@@ -121,7 +121,7 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
             href={`https://en.wikipedia.org/wiki/${encodeURIComponent(article.normalizedTitle.replace(/ /g, '_'))}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-muted-foreground hover:text-primary transition-colors"
+            className="font-pixel text-[7px] text-white/40 hover:text-[#F5C518] transition-colors"
           >
             ↗ Wikipedia
           </a>
@@ -130,7 +130,7 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
 
       {/* Article body */}
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        <p className="text-xs text-muted-foreground mb-4 p-2.5 rounded-md bg-muted/50 border">
+        <p className="font-pixel text-[7px] text-white/50 mb-4 p-2.5 rounded-sm bg-[#F5C518]/[0.06] border border-[#F5C518]/20 leading-loose">
           💡 Click any blue link to select it as a branch (up to 2). Selected links are highlighted.
         </p>
         <div

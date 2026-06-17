@@ -24,10 +24,3 @@ async def evaluate_quiz_response(paper_id: str, question: str, response: str):
     """Evaluate a student's quiz response for a paper."""
     # TODO: call Claude to evaluate response quality
     return {"evaluation": "placeholder", "passed": True}
-
-
-@router.post("/extract-citations")
-async def extract_citations(paper_id: str, text: str):
-    """Extract structured reference list from paper text using Claude."""
-    # TODO: call citation_extractor service
-    return {"references": []}

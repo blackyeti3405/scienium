@@ -92,10 +92,10 @@ export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onTo
 
   if (nodes.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-2 text-center text-muted-foreground px-4">
+      <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
         <span className="text-3xl">🌱</span>
-        <p className="text-sm font-medium">Your discovery tree will appear here</p>
-        <p className="text-xs">Search a topic above to start exploring</p>
+        <p className="font-pixel text-[8px] text-white/50 leading-loose">Your discovery tree<br/>will appear here</p>
+        <p className="font-pixel text-[7px] text-white/30">Search a topic above to start exploring</p>
       </div>
     )
   }
@@ -123,7 +123,7 @@ export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onTo
                   key={`edge-${n.id}`}
                   d={`M ${x1} ${y1} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${y2}`}
                   fill="none"
-                  stroke="hsl(var(--border))"
+                  stroke="rgba(255,255,255,0.18)"
                   strokeWidth={1.5}
                 />
               )
@@ -134,25 +134,26 @@ export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onTo
             const isCurrent = n.id === currentNodeId
 
             // Truncate to fit the title zone (after left star, before right ✓)
-            const maxChars = 15
-            const label = n.title.length > maxChars ? n.title.slice(0, maxChars - 1) + '…' : n.title
+            const maxChars = n.source === 'youtube' ? 12 : 15
+            const truncated = n.title.length > maxChars ? n.title.slice(0, maxChars - 1) + '…' : n.title
+            const label = (n.source === 'youtube' ? '▶ ' : '') + truncated
 
-            // Colour palette
+            // Colour palette (dark game theme)
             const bodyFill = isCurrent
-              ? 'hsl(var(--primary))'
+              ? '#F5C518'
               : n.explored
-              ? 'hsl(var(--muted))'
-              : 'hsl(var(--card))'
-            const bodyStroke = isCurrent ? 'hsl(var(--primary))' : 'hsl(var(--border))'
-            const textFill = isCurrent ? 'hsl(var(--primary-foreground))' : 'hsl(var(--foreground))'
+              ? 'rgba(255,255,255,0.08)'
+              : 'rgba(255,255,255,0.03)'
+            const bodyStroke = isCurrent ? '#F5C518' : 'rgba(255,255,255,0.18)'
+            const textFill = isCurrent ? '#0d1b2e' : 'rgba(255,255,255,0.85)'
             const starFill = n.starred
-              ? 'hsl(45, 93%, 47%)'
+              ? '#F5C518'
               : isCurrent
-              ? 'rgba(255,255,255,0.35)'
-              : 'hsl(215,16%,70%)'
+              ? 'rgba(13,27,46,0.45)'
+              : 'rgba(255,255,255,0.4)'
             const checkFill = isCurrent
-              ? 'rgba(255,255,255,0.5)'
-              : 'hsl(var(--muted-foreground))'
+              ? 'rgba(13,27,46,0.55)'
+              : 'rgba(255,255,255,0.4)'
 
             return (
               <g
@@ -172,7 +173,7 @@ export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onTo
                   x={n.x - 2} y={n.y - 2}
                   width={NODE_W + 4} height={NODE_H + 4} rx={8}
                   fill="transparent"
-                  className="group-hover:fill-primary/10 transition-colors"
+                  className="group-hover:fill-white/10 transition-colors"
                 />
 
                 {/* Node body */}
@@ -237,15 +238,15 @@ export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onTo
         <div
           style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 9999 }}
           onClick={(e) => e.stopPropagation()}
-          className="bg-card border rounded-lg shadow-xl py-1 min-w-[200px]"
+          className="bg-[#0f1320] border border-white/15 rounded-sm shadow-xl py-1 min-w-[200px]"
         >
-          <div className="px-3 py-1.5 border-b">
-            <p className="text-xs font-semibold text-muted-foreground truncate max-w-[176px]">
+          <div className="px-3 py-1.5 border-b border-white/10">
+            <p className="font-pixel text-[7px] text-white/40 truncate max-w-[176px]">
               {contextMenu.nodeTitle}
             </p>
           </div>
           <button
-            className="w-full px-3 py-2 text-sm text-left flex items-center gap-2.5 hover:bg-destructive/10 text-destructive transition-colors"
+            className="w-full px-3 py-2 text-sm text-left flex items-center gap-2.5 hover:bg-red-500/15 text-red-400 transition-colors"
             onClick={() => { onDelete(contextMenu.nodeId); setContextMenu(null) }}
           >
             <span aria-hidden>🗑</span>
