@@ -30,9 +30,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ teamId: existing.teamMemberships[0].team.id })
   }
 
-  const user = existing ?? (await db.user.create({
-    data: { clerkUserId: userId, name: name.trim(), email },
-  }))
+  const user =
+    existing ??
+    (await db.user.create({
+      data: { clerkUserId: userId, name: name.trim(), email },
+    }))
 
   const team = await db.team.create({
     data: {
@@ -40,6 +42,9 @@ export async function POST(req: NextRequest) {
       teamLeadId: user.id,
       phase: 'literature_review',
       members: { create: { userId: user.id, role: 'lead' } },
+      // Every team starts with a zeroed currency ledger so KP/CLR/LC awards
+      // (e.g. literature-review quiz proficiency) always have a row to update.
+      currency: { create: {} },
     },
   })
 

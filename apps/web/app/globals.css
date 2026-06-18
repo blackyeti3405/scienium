@@ -105,8 +105,17 @@
   gap: 5px;
   font-size: 9px;
   color: #e8ecfb;
+  transform-origin: center;
+  /* Smoothly grow→shrink and tint→reset as the --bump class toggles. */
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.22s ease;
 }
 .status-strip__stat-value { color: #fff; }
+/* Currency-gain celebration: green + ballooned while counting up. */
+.status-strip__stat--bump {
+  color: #5ef08a;
+  transform: scale(1.5);
+}
+.status-strip__stat--bump .status-strip__stat-value { color: #5ef08a; }
 .status-strip__phase {
   font-size: 8px;
   color: #ffe566;
@@ -261,6 +270,180 @@
   position: relative;
   background: hsl(var(--background));
 }
+
+/* ── Buildings shop ─────────────────────────────────────────────────────────── */
+/* Bottom-right trigger button, sitting above the building cluster. */
+.shop-button {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 14px;
+  color: #2a1d05;
+  background: linear-gradient(#ffe566, #f5c518);
+  border: 3px solid #8a6d10;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px #10131f, 0 6px 14px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+.shop-button:hover { transform: translateY(-2px); filter: brightness(1.06); }
+.shop-button:active { transform: translateY(0); }
+.shop-button__icon { font-size: 18px; line-height: 1; }
+.shop-button__label { font-size: 8px; letter-spacing: 0.5px; }
+
+/* Rectangular shop overlay. */
+.shop-panel__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(8, 10, 18, 0.72);
+  backdrop-filter: blur(1.5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4vh 3vw;
+}
+.shop-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(1040px, 96vw);
+  max-height: min(78vh, 620px);
+  background: hsl(var(--background));
+  border: 3px solid #2a3048;
+  box-shadow: 0 0 0 3px #10131f, 0 18px 60px rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.shop-panel__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #0f1320;
+  border-bottom: 3px solid #2a3048;
+  flex-shrink: 0;
+}
+.shop-panel__title { color: #ffe566; font-size: 11px; }
+.shop-panel__close {
+  color: #cdd3ea;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  background: #1e2540;
+  border: 1px solid #2a3048;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.shop-panel__close:hover { background: #3a1e28; color: #ff8a8a; }
+
+/* Horizontally scrolling shelf; the grid flows into columns of two rows. */
+.shop-panel__shelf {
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 16px;
+  background: #10131f;
+}
+.shop-panel__grid {
+  display: grid;
+  grid-template-rows: repeat(2, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 168px;
+  gap: 14px;
+  height: 100%;
+}
+/* Chunky pixel-styled scrollbar. */
+.shop-panel__shelf::-webkit-scrollbar { height: 12px; }
+.shop-panel__shelf::-webkit-scrollbar-track {
+  background: #0b0e18;
+  border-top: 1px solid #2a3048;
+}
+.shop-panel__shelf::-webkit-scrollbar-thumb {
+  background: #2a3048;
+  border: 2px solid #0b0e18;
+}
+.shop-panel__shelf::-webkit-scrollbar-thumb:hover { background: #3a4060; }
+.shop-panel__shelf { scrollbar-color: #2a3048 #0b0e18; }
+
+/* Square building card: image, name, cost, description. */
+.shop-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  background: #161c2e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+.shop-card__image {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    repeating-linear-gradient(45deg, #1d2742 0 8px, #19223a 8px 16px);
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.shop-card__placeholder {
+  font-size: 7px;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+  padding: 4px;
+  line-height: 1.3;
+}
+.shop-card__name {
+  font-size: 8px;
+  color: #e8ecfb;
+}
+.shop-card__cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  color: #ffe566;
+}
+.shop-card__cost--short { color: #ff8a8a; }
+.shop-card__coin {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe566, #d8a200);
+  border: 1px solid #8a6d10;
+  flex-shrink: 0;
+}
+.shop-card__desc {
+  font-size: 10px;
+  line-height: 1.35;
+  color: #9aa3c0;
+}
+
+/* Currencies pinned along the bottom. */
+.shop-panel__currencies {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 14px;
+  background: #0f1320;
+  border-top: 3px solid #2a3048;
+  flex-shrink: 0;
+}
+.shop-panel__currency {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  color: #e8ecfb;
+}
+.shop-panel__currency-value { color: #fff; }
 
 /* ── Chat markdown (Nova replies) ──────────────────────────────────────────── */
 .chat-md > :first-child { margin-top: 0; }

@@ -4,6 +4,7 @@ import { getTeamContext } from '@/lib/phase'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { extractText, getDocumentProxy } from 'unpdf'
+import { putObject, paperPdfKey } from '@/lib/storage'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'A PDF file is required' }, { status: 400 })
   }
 
-  // Keep the raw bytes for the in-panel viewer; extract text for the LLM.
+  // Keep the raw bytes to upload to R2; extract text for the LLM.
   const buffer = Buffer.from(await file.arrayBuffer())
   let fullText = ''
   let title = file.name.replace(/\.pdf$/i, '')
@@ -56,13 +57,23 @@ export async function POST(req: NextRequest) {
       status: 'processing',
       uploadedByUserId: dbUser.id,
       fullText,
-      pdfData: buffer,
     },
   })
 
+  // Upload the PDF to R2 under a team/paper-scoped key. If this fails the row is
+  // useless (no file to view), so roll it back rather than leave an orphan.
+  const pdfKey = paperPdfKey(ctx.teamId, paper.id)
+  try {
+    await putObject(pdfKey, buffer, 'application/pdf')
+  } catch (err) {
+    console.error('[r2] PDF upload failed:', err)
+    await db.paper.delete({ where: { id: paper.id } })
+    return NextResponse.json({ error: 'Could not store the PDF' }, { status: 502 })
+  }
+
   // fileUrl points at our authenticated streaming route (set now that we have the id)
   const fileUrl = `/api/papers/${paper.id}/file`
-  await db.paper.update({ where: { id: paper.id }, data: { fileUrl } })
+  await db.paper.update({ where: { id: paper.id }, data: { pdfKey, fileUrl } })
 
   // Fire-and-forget: extract metadata from the text we already have
   extractMetadata(paper.id, fullText, title).catch(console.error)

@@ -1,9 +1,22 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Upload, FileText, MessageSquare, ExternalLink, Send, X, Loader2, CheckCircle2, RotateCcw, Award, Trash2 } from 'lucide-react'
+import {
+  Upload,
+  FileText,
+  MessageSquare,
+  ExternalLink,
+  Send,
+  X,
+  Loader2,
+  CheckCircle2,
+  RotateCcw,
+  Award,
+  Trash2,
+} from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { useLabCurrency } from '@/lib/labCurrency'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,8 +67,8 @@ function PaperSlot({
     return (
       <div className="flex flex-col shrink-0 border border-white/15 bg-white/3 rounded-sm overflow-hidden">
         {/* Proficiency banner — green once demonstrated, orange until then */}
-        {paper.status === 'ready' && (
-          paper.proficiencyDemonstrated ? (
+        {paper.status === 'ready' &&
+          (paper.proficiencyDemonstrated ? (
             <div className="bg-green-500/15 border-b border-green-500/30 px-4 py-1.5 flex items-center gap-2">
               <Award size={11} className="text-green-400 shrink-0" />
               <span className="font-pixel text-[7px] text-green-300 uppercase tracking-widest">
@@ -69,8 +82,7 @@ function PaperSlot({
                 Proficiency not demonstrated
               </span>
             </div>
-          )
-        )}
+          ))}
 
         {/* Content row */}
         <div className="flex items-center gap-3 px-4 py-3">
@@ -86,14 +98,17 @@ function PaperSlot({
               </div>
             ) : paper.status === 'error' ? (
               <div className="flex items-center gap-2">
-                <span className="font-pixel text-[8px] text-red-400">Upload failed — check console for details</span>
+                <span className="font-pixel text-[8px] text-red-400">
+                  Upload failed — check console for details
+                </span>
               </div>
             ) : (
               <p className="text-sm text-white/80 truncate">{paper.title}</p>
             )}
             {paper.authors.length > 0 && (
               <p className="font-pixel text-[7px] text-white/30 truncate mt-0.5">
-                {paper.authors.slice(0, 2).join(', ')}{paper.authors.length > 2 ? ' et al.' : ''}
+                {paper.authors.slice(0, 2).join(', ')}
+                {paper.authors.length > 2 ? ' et al.' : ''}
               </p>
             )}
           </div>
@@ -185,6 +200,8 @@ interface GradeResult {
   score: number
   passed: boolean
   threshold: number
+  /** KP granted by this grading (0 unless this attempt beat the source's prior best). */
+  kpEarned?: number
   results: { questionId: string; score: number; rationale: string }[]
 }
 
@@ -199,8 +216,11 @@ function QAPanel({
   onClose: () => void
   onProficiencyEarned?: () => void
 }) {
+  const { addCurrency } = useLabCurrency()
   const [phase, setPhase] = useState<Phase>('loading')
-  const [quiz, setQuiz] = useState<{ sessionId: string; questions: QuizQuestionView[] } | null>(null)
+  const [quiz, setQuiz] = useState<{ sessionId: string; questions: QuizQuestionView[] } | null>(
+    null,
+  )
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [results, setResults] = useState<GradeResult | null>(null)
   const [hasPastResults, setHasPastResults] = useState(false)
@@ -252,7 +272,12 @@ function QAPanel({
           const s = data.session
           setQuiz({ sessionId: s.sessionId, questions: s.questions })
           setAnswers(s.answers ?? {})
-          setResults({ score: s.score, passed: s.passed, threshold: s.threshold, results: s.results })
+          setResults({
+            score: s.score,
+            passed: s.passed,
+            threshold: s.threshold,
+            results: s.results,
+          })
           setHasPastResults(true)
           setPhase('results')
           return
@@ -303,6 +328,8 @@ function QAPanel({
       setResults(data)
       setHasPastResults(true)
       setPhase('results')
+      // Reflect freshly-earned KP in the live balance so the StatusStrip animates.
+      if (data.kpEarned > 0) addCurrency({ kp: data.kpEarned })
       if (data.passed) onProficiencyEarned?.()
     } catch (err) {
       setQuizError(err instanceof Error ? err.message : 'Grading failed')
@@ -335,8 +362,7 @@ function QAPanel({
     }
   }
 
-  const allAnswered =
-    !!quiz && quiz.questions.every((q) => (answers[q.id] ?? '').trim().length > 0)
+  const allAnswered = !!quiz && quiz.questions.every((q) => (answers[q.id] ?? '').trim().length > 0)
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -413,7 +439,10 @@ function QAPanel({
             {quizError && (
               <div className="m-3 px-3 py-2 bg-red-500/15 border border-red-500/30 rounded-sm flex items-center justify-between gap-2">
                 <span className="font-pixel text-[7px] text-red-300">{quizError}</span>
-                <button onClick={generateQuiz} className="font-pixel text-[7px] text-red-200 underline shrink-0">
+                <button
+                  onClick={generateQuiz}
+                  className="font-pixel text-[7px] text-red-200 underline shrink-0"
+                >
                   retry
                 </button>
               </div>
@@ -467,13 +496,23 @@ function QAPanel({
                 <RotateCcw size={18} className="text-orange-400 shrink-0" />
               )}
               <div className="flex flex-col">
-                <span className={`font-pixel text-[9px] ${results.passed ? 'text-green-300' : 'text-orange-300'}`}>
+                <span
+                  className={`font-pixel text-[9px] ${results.passed ? 'text-green-300' : 'text-orange-300'}`}
+                >
                   {results.passed ? 'Proficiency demonstrated!' : 'Not quite — try again'}
                 </span>
                 <span className="font-pixel text-[7px] text-white/40 mt-1">
                   Score {results.score}% · pass {results.threshold}%
                 </span>
               </div>
+              {results.passed && (results.kpEarned ?? 0) > 0 && (
+                <span
+                  className="ml-auto font-pixel text-[9px] text-[#F5C518] shrink-0 flex items-center gap-1"
+                  title="Knowledge Points earned for this source"
+                >
+                  +{results.kpEarned} KP
+                </span>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto px-4 pb-4 flex flex-col gap-4">
               {quiz?.questions.map((q, i) => {
@@ -482,12 +521,18 @@ function QAPanel({
                   <div key={q.id} className="flex flex-col gap-1.5">
                     <div className="flex items-baseline justify-between gap-2">
                       <p className="text-sm text-white/70 leading-snug flex-1">
-                        <span className="text-[#F5C518] font-pixel text-[8px] mr-1.5">{i + 1}.</span>
+                        <span className="text-[#F5C518] font-pixel text-[8px] mr-1.5">
+                          {i + 1}.
+                        </span>
                         {q.prompt}
                       </p>
                       <span
                         className={`font-pixel text-[8px] shrink-0 ${
-                          (r?.score ?? 0) >= 70 ? 'text-green-400' : (r?.score ?? 0) >= 40 ? 'text-yellow-400' : 'text-red-400'
+                          (r?.score ?? 0) >= 70
+                            ? 'text-green-400'
+                            : (r?.score ?? 0) >= 40
+                              ? 'text-yellow-400'
+                              : 'text-red-400'
                         }`}
                       >
                         {r?.score ?? 0}
@@ -495,13 +540,17 @@ function QAPanel({
                     </div>
                     {answers[q.id] && (
                       <p className="text-[13px] text-white/70 leading-relaxed pl-5 border-l border-white/10 ml-1">
-                        <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest block mb-0.5">Your answer</span>
+                        <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest block mb-0.5">
+                          Your answer
+                        </span>
                         {answers[q.id]}
                       </p>
                     )}
                     {r?.rationale && (
                       <p className="text-[13px] text-white/45 leading-relaxed pl-5 italic">
-                        <span className="font-pixel text-[6px] text-[#F5C518]/40 uppercase tracking-widest block mb-0.5 not-italic">Nova</span>
+                        <span className="font-pixel text-[6px] text-[#F5C518]/40 uppercase tracking-widest block mb-0.5 not-italic">
+                          Nova
+                        </span>
                         {r.rationale}
                       </p>
                     )}
@@ -534,18 +583,25 @@ function QAPanel({
             {paper.proficiencyDemonstrated && (
               <div className="mx-3 mt-3 px-3 py-2 bg-green-500/10 border border-green-500/25 rounded-sm flex items-center gap-2 shrink-0">
                 <CheckCircle2 size={12} className="text-green-400 shrink-0" />
-                <span className="font-pixel text-[7px] text-green-300">Proficiency demonstrated</span>
+                <span className="font-pixel text-[7px] text-green-300">
+                  Proficiency demonstrated
+                </span>
               </div>
             )}
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
               {messages.map((msg, i) => (
-                <div key={i} className={`flex flex-col gap-1 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                <div
+                  key={i}
+                  className={`flex flex-col gap-1 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                >
                   <span className="font-pixel text-[6px] text-white/25 uppercase tracking-widest px-1">
                     {msg.role === 'user' ? 'You' : 'Nova'}
                   </span>
                   <div
                     className={`text-sm leading-relaxed px-3 py-2 rounded-sm max-w-full ${
-                      msg.role === 'user' ? 'bg-[#F5C518]/15 text-white/85 text-right' : 'bg-white/6 text-white/80'
+                      msg.role === 'user'
+                        ? 'bg-[#F5C518]/15 text-white/85 text-right'
+                        : 'bg-white/6 text-white/80'
                     }`}
                   >
                     {msg.role === 'user' ? (
@@ -571,7 +627,9 @@ function QAPanel({
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
+                onKeyDown={(e) =>
+                  e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())
+                }
                 placeholder="Ask about this paper…"
                 className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm font-pixel text-[8px]"
               />
@@ -611,7 +669,7 @@ export function LiteratureFeature() {
               proficiencyDemonstrated: Boolean(p.proficiencyDemonstrated),
               fileUrl: p.fileUrl ?? undefined,
               createdAt: p.createdAt,
-            }))
+            })),
           )
         }
       })
@@ -654,8 +712,8 @@ export function LiteratureFeature() {
                 fileUrl: data.fileUrl,
                 createdAt: data.createdAt,
               }
-            : p
-        )
+            : p,
+        ),
       )
 
       pollStatus(data.id)
@@ -664,7 +722,7 @@ export function LiteratureFeature() {
       console.error('[upload] error:', msg)
       setUploadError(msg)
       setPapers((prev) =>
-        prev.map((p) => (p.id === tempId ? { ...p, status: 'error' as const } : p))
+        prev.map((p) => (p.id === tempId ? { ...p, status: 'error' as const } : p)),
       )
     }
   }
@@ -684,8 +742,8 @@ export function LiteratureFeature() {
                     title: data.title ?? p.title,
                     authors: data.authors ?? p.authors,
                   }
-                : p
-            )
+                : p,
+            ),
           )
           clearInterval(interval)
         }
@@ -724,8 +782,8 @@ export function LiteratureFeature() {
           onProficiencyEarned={() => {
             setPapers((prev) =>
               prev.map((p) =>
-                p.id === activePaper.id ? { ...p, proficiencyDemonstrated: true } : p
-              )
+                p.id === activePaper.id ? { ...p, proficiencyDemonstrated: true } : p,
+              ),
             )
           }}
         />
@@ -753,7 +811,10 @@ export function LiteratureFeature() {
       {uploadError && (
         <div className="mx-6 mt-3 px-4 py-2 bg-red-500/15 border border-red-500/30 rounded-sm flex items-center justify-between gap-3">
           <span className="font-pixel text-[8px] text-red-300">{uploadError}</span>
-          <button onClick={() => setUploadError(null)} className="text-red-400 hover:text-red-200 shrink-0">
+          <button
+            onClick={() => setUploadError(null)}
+            className="text-red-400 hover:text-red-200 shrink-0"
+          >
             <X size={12} />
           </button>
         </div>

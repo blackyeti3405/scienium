@@ -213,11 +213,17 @@ model Paper {
   fileUrl          String?     @map("file_url")
   contentHash      String?     @map("content_hash")
   fullText         String?     @map("full_text")
-  // PDF binary stored in-DB for the in-panel viewer. Pilot-scale choice;
-  // migrate to R2 object storage for production (see lib/storage.ts).
+  // PDF binary lives in Cloudflare R2; `pdfKey` is the object key (see lib/storage.ts).
+  // `pdfData` is the legacy in-DB blob, kept only as a fallback for rows uploaded
+  // before the R2 migration — new uploads leave it null and a cleanup migration
+  // can drop it once all rows are backfilled.
+  pdfKey           String?     @map("pdf_key")
   pdfData          Bytes?      @map("pdf_data")
   status           PaperStatus @default(pending)
   proficiencyDemonstrated Boolean @default(false) @map("proficiency_demonstrated")
+  // High-water mark of KP this source has already granted the team (max 100).
+  // A passing quiz tops this up to the best score; retakes never exceed 100.
+  kpAwarded        Int         @default(0) @map("kp_awarded")
   uploadedByUserId String      @map("uploaded_by_user_id")
   createdAt        DateTime    @default(now()) @map("created_at")
 

@@ -32,3 +32,40 @@ export async function getDownloadSignedUrl(key: string): Promise<string> {
 export function publicAssetUrl(key: string): string {
   return `${process.env.R2_PUBLIC_URL}/${key}`
 }
+
+// ─── Server-side object access ────────────────────────────────────────────────
+// Used for private team uploads (e.g. paper PDFs): the app reads/writes objects
+// directly and streams them through its own authenticated routes — no public or
+// signed URLs are ever handed to the browser.
+
+/** Canonical R2 key for a paper's PDF, namespaced by team for tidy listing. */
+export function paperPdfKey(teamId: string, paperId: string): string {
+  return `papers/${teamId}/${paperId}.pdf`
+}
+
+/** Upload bytes to R2 under `key`. */
+export async function putObject(key: string, body: Buffer, contentType: string): Promise<void> {
+  await r2.send(
+    new PutObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
+  )
+}
+
+/** Fetch an object from R2 as a web ReadableStream for streaming to the client. */
+export async function getObjectStream(key: string): Promise<{
+  body: ReadableStream
+  contentLength?: number
+  contentType?: string
+}> {
+  const out = await r2.send(new GetObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }))
+  if (!out.Body) throw new Error(`R2 object has no body: ${key}`)
+  return {
+    body: (out.Body as { transformToWebStream: () => ReadableStream }).transformToWebStream(),
+    contentLength: out.ContentLength,
+    contentType: out.ContentType,
+  }
+}

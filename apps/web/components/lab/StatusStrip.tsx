@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import { UserButton } from '@clerk/nextjs'
 import { PHASE_INFO, LAB_TYPE_LABELS, type Phase, type LabType } from '@/lib/phase'
 
@@ -50,6 +51,12 @@ export function StatusStrip({
   )
 }
 
+/**
+ * A single currency readout. When the value increases it celebrates the gain:
+ * the number ticks up from the old value to the new, while the whole stat turns
+ * green and balloons, then contracts back to its normal size and colour. A
+ * decrease (or the first render) just snaps to the value with no animation.
+ */
 function Stat({
   label,
   value,
@@ -61,10 +68,50 @@ function Stat({
   title: string
   color: string
 }) {
+  const [display, setDisplay] = useState(value)
+  const [bumping, setBumping] = useState(false)
+  const prevRef = useRef(value)
+
+  useEffect(() => {
+    const from = prevRef.current
+    prevRef.current = value
+    if (value <= from) {
+      setDisplay(value)
+      return
+    }
+
+    // Count up from the old balance to the new one, then hold the balloon a beat
+    // before contracting back (the CSS transition handles grow/shrink + colour).
+    setBumping(true)
+    const duration = 700
+    const start = performance.now()
+    let raf = 0
+    let holdTimer = 0
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration)
+      const eased = 1 - Math.pow(1 - t, 3) // easeOutCubic
+      setDisplay(Math.round(from + (value - from) * eased))
+      if (t < 1) {
+        raf = requestAnimationFrame(tick)
+      } else {
+        setDisplay(value)
+        holdTimer = window.setTimeout(() => setBumping(false), 200)
+      }
+    }
+    raf = requestAnimationFrame(tick)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.clearTimeout(holdTimer)
+    }
+  }, [value])
+
   return (
-    <span className="font-pixel status-strip__stat" title={title}>
-      <span style={{ color }}>{label}</span>
-      <span className="status-strip__stat-value">{value}</span>
+    <span
+      className={`font-pixel status-strip__stat${bumping ? ' status-strip__stat--bump' : ''}`}
+      title={title}
+    >
+      <span style={bumping ? undefined : { color }}>{label}</span>
+      <span className="status-strip__stat-value">{display.toLocaleString()}</span>
     </span>
   )
 }

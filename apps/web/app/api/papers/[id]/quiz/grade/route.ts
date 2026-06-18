@@ -18,10 +18,7 @@ interface SubmittedAnswer {
   response: string
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -40,7 +37,11 @@ export async function POST(
 
   const session = await db.paperQuizSession.findFirst({
     where: { id: sessionId, userId: dbUser.id, paperId: params.id },
-    include: { paper: { select: { id: true, teamId: true, title: true, fullText: true } } },
+    include: {
+      paper: {
+        select: { id: true, teamId: true, title: true, fullText: true, kpAwarded: true },
+      },
+    },
   })
   if (!session || session.paper.teamId !== ctx.teamId) {
     return NextResponse.json({ error: 'Quiz session not found' }, { status: 404 })
@@ -88,12 +89,17 @@ export async function POST(
   }
 
   const gradeMap = new Map(graded.map((g) => [g.questionId, g]))
-  const aggregate = Math.round(
-    graded.reduce((sum, g) => sum + clamp(g.score), 0) / graded.length,
-  )
+  const aggregate = Math.round(graded.reduce((sum, g) => sum + clamp(g.score), 0) / graded.length)
   const passed = aggregate >= QUIZ_PASS_THRESHOLD
 
-  // Persist: per-question attempts, session result, and (if passed) proficiency.
+  // Knowledge Points reward: a source grants at most 100 KP — your quiz score on
+  // a passing attempt. `paper.kpAwarded` is the high-water mark already granted,
+  // so we only top up by the improvement (and never below 0). A failing quiz, or
+  // a passing retake that doesn't beat the prior best, grants nothing.
+  const kpEarned = passed ? Math.max(0, aggregate - session.paper.kpAwarded) : 0
+
+  // Persist atomically: per-question attempts, session result, and — when passed —
+  // proficiency, the new KP high-water mark, and the team's KP balance bump.
   await db.$transaction([
     db.paperQuizAttempt.createMany({
       data: questions.map((q) => {
@@ -114,7 +120,26 @@ export async function POST(
       data: { score: aggregate, passed, gradedAt: new Date() },
     }),
     ...(passed
-      ? [db.paper.update({ where: { id: session.paper.id }, data: { proficiencyDemonstrated: true } })]
+      ? [
+          db.paper.update({
+            where: { id: session.paper.id },
+            data: {
+              proficiencyDemonstrated: true,
+              // Raise the high-water mark only — never lower it on a weaker retake.
+              kpAwarded: { set: Math.max(session.paper.kpAwarded, aggregate) },
+            },
+          }),
+        ]
+      : []),
+    ...(kpEarned > 0
+      ? [
+          // Upsert so teams created before the currency ledger existed still award.
+          db.teamCurrency.upsert({
+            where: { teamId: session.paper.teamId },
+            create: { teamId: session.paper.teamId, kp: kpEarned },
+            update: { kp: { increment: kpEarned } },
+          }),
+        ]
       : []),
   ])
 
@@ -122,6 +147,7 @@ export async function POST(
     score: aggregate,
     passed,
     threshold: QUIZ_PASS_THRESHOLD,
+    kpEarned,
     results: questions.map((q) => {
       const g = gradeMap.get(q.id)
       return { questionId: q.id, score: clamp(g?.score ?? 0), rationale: g?.rationale ?? '' }
