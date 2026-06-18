@@ -219,7 +219,6 @@ nova-lab/
 │   │   │   └── shared/                   # Layout, nav, modals
 │   │   ├── lib/
 │   │   │   ├── wikipedia.ts
-│   │   │   ├── ai-service.ts             # Client for Python service
 │   │   │   ├── db.ts                     # Prisma client singleton
 │   │   │   ├── auth.ts                   # Clerk helpers
 │   │   │   ├── storage.ts                # R2 client + signed URL generation
@@ -229,36 +228,11 @@ nova-lab/
 │   │   ├── hooks/
 │   │   ├── stores/                       # Zustand stores
 │   │   └── prisma/
-│   │       ├── schema.prisma
-│   │       └── migrations/
-│   │
-│   └── ai-service/                       # Python FastAPI microservice
-│       ├── app/
-│       │   ├── main.py
-│       │   ├── routers/
-│       │   │   ├── papers.py             # /papers/process, /papers/quiz
-│       │   │   ├── content.py            # /content/field-dispatch, /content/expertise
-│       │   │   ├── project_log.py        # /project-log/evaluate
-│       │   │   ├── failure_log.py        # /failure-log/evaluate
-│       │   │   ├── minigames.py          # /minigames/generate
-│       │   │   └── video.py              # /video/transcode, /video/thumbnail
-│       │   ├── services/
-│       │   │   ├── pdf_parser.py
-│       │   │   ├── claude_client.py
-│       │   │   ├── video_processor.py    # ffmpeg wrapper
-│       │   │   └── prompts/              # Versioned prompt templates
-│       │   │       ├── quiz.py
-│       │   │       ├── probe.py
-│       │   │       ├── field_dispatch.py
-│       │   │       └── failure_followup.py
-│       │   ├── models/                   # Pydantic models
-│       │   └── workers/                  # Background job consumers
-│       ├── tests/
-│       ├── pyproject.toml
-│       └── Dockerfile
+│           ├── schema.prisma
+│           └── migrations/
 │
 ├── packages/
-│   ├── shared-types/                     # Types shared web <-> AI service
+│   ├── shared-types/                     # Types shared across the workspace
 │   └── config/                           # Shared ESLint, Prettier, tsconfig bases
 │
 ├── infra/
@@ -275,7 +249,6 @@ nova-lab/
 ├── docs/
 │   ├── spec.md
 │   ├── architecture.md
-│   ├── api-contracts.md                  # Web <-> AI service contract
 │   └── decisions/                        # ADRs
 │
 ├── pnpm-workspace.yaml

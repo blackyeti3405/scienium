@@ -17,7 +17,7 @@ vendored `pixel-art-generator` skill.
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 brew install git node pnpm python@3.12       # Node 20+, pnpm 9+, Python 3.12
-brew install --cask docker                    # Docker Desktop (local Postgres + Redis)
+brew install --cask docker                    # Docker Desktop (local Postgres)
 ```
 
 Verify:
@@ -59,13 +59,12 @@ Then edit `apps/web/.env.local`:
 | `CLERK_SECRET_KEY` | Clerk dashboard → API Keys | `sk_test_…` |
 | `NEXT_PUBLIC_CLERK_*_URL` | leave as the defaults | sign-in/up + redirect routes |
 | `DATABASE_URL` | leave as default for local Docker | `postgresql://postgres:postgres@localhost:5432/nova_lab` |
-| `AI_SERVICE_URL` / `AI_SERVICE_API_KEY` | leave defaults | only used if you run the AI service |
-| `R2_*` | Cloudflare R2 (optional) | only for file/video uploads |
-| `UPSTASH_REDIS_*` | Upstash (optional) | only for the background job queue |
+| `ANTHROPIC_API_KEY` | Anthropic console | required for paper metadata, quizzes, and chat |
+| `R2_*` | Cloudflare R2 | required for PDF storage (uploads + viewer) |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | — |
 
-You only need **Clerk keys + `DATABASE_URL`** to run the lab UI. R2/Upstash/AI
-service are optional and can stay blank for now.
+You need **Clerk keys + `DATABASE_URL` + `ANTHROPIC_API_KEY`** to run the core
+app; add the `R2_*` values to enable PDF upload/viewing.
 
 ### Clerk redirect URLs
 In your Clerk dashboard, allow `http://localhost:3000` as a development origin.
@@ -80,17 +79,16 @@ spatial scene). No extra config needed.
 pnpm install
 ```
 
-(Monorepo via pnpm workspaces — installs `apps/web`, `apps/ai-service` types, and
-shared packages.)
+(Monorepo via pnpm workspaces — installs `apps/web` and shared packages.)
 
 ---
 
 ## 4. Local database (Docker)
 
-Start Postgres (with the `pgvector` extension) and Redis:
+Start Postgres:
 
 ```bash
-docker compose -f infra/docker-compose.yml up -d postgres redis
+docker compose -f infra/docker-compose.yml up -d postgres
 ```
 
 Then generate the Prisma client and apply migrations:
@@ -178,36 +176,16 @@ are in the repo; project context lives in `spec.md`, `architecture.md`, and
 
 ---
 
-## 8. (Optional) Python AI service
-
-Only needed for PDF/paper processing, quizzes, and content generation.
-
-```bash
-cd apps/ai-service
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-
-# needs ANTHROPIC_API_KEY and VOYAGE_API_KEY in the environment
-export ANTHROPIC_API_KEY=sk-ant-...
-export VOYAGE_API_KEY=...
-uvicorn app.main:app --reload --port 8000
-```
-
-`hdbscan` compiles native code; if `pip install` fails, ensure Xcode command-line
-tools are present (`xcode-select --install`).
-
----
-
-## 9. Deploy (Vercel + managed services)
+## 8. Deploy (Vercel + managed services)
 
 The web app is built for **Vercel**:
 
 1. Import the GitHub repo in Vercel. Set **Root Directory = `apps/web`**, framework
    **Next.js**, install command `pnpm install`, build `pnpm build`.
 2. Add the same env vars as `.env.local`, but pointed at managed services:
-   - `DATABASE_URL` → your Supabase/managed Postgres (with `pgvector`).
+   - `DATABASE_URL` → your Supabase/managed Postgres (pooled), plus `DIRECT_URL` (direct) for migrations.
+   - `ANTHROPIC_API_KEY` and the `R2_*` storage vars.
    - Clerk **production** keys + add your Vercel domain to Clerk's allowed origins.
-   - R2 / Upstash if you've enabled uploads / the job queue.
 3. Run `pnpm prisma migrate deploy` against the production DB (Vercel build step or
    a one-off), since migrations aren't auto-applied.
 
@@ -220,7 +198,7 @@ Architecture, hosting choices, and the schema are documented in
 
 ```bash
 # day-to-day
-docker compose -f infra/docker-compose.yml up -d postgres redis
+docker compose -f infra/docker-compose.yml up -d postgres
 pnpm dev                                   # web app at :3000
 
 # regenerate all sprites
