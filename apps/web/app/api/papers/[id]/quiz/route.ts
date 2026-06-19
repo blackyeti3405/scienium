@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { getTeamContext } from '@/lib/phase'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import {
@@ -18,11 +19,14 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 // GET: return the most recent GRADED quiz session for this paper (so past
 // answers + feedback stay accessible). Returns null if none has been graded.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } },
 ) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = enforceRateLimit(req, 'read', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
@@ -68,11 +72,15 @@ export async function GET(
 
 // Generate a fresh graded quiz for a paper.
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } },
 ) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Strict per-user + per-IP limit: quiz generation is a paid Claude call.
+  const limited = enforceRateLimit(req, 'ai', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })

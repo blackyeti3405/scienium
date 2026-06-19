@@ -1,7 +1,12 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getTeamContext } from '@/lib/phase'
+import { enforceRateLimit } from '@/lib/rate-limit'
+import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
+
+const PatchBody = z.object({ starred: z.boolean() }).strict()
 
 // ─── PATCH: update a node (currently: toggle star) ───────────────────────────
 
@@ -12,6 +17,9 @@ export async function PATCH(
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const limited = enforceRateLimit(req, 'mutate', userId)
+  if (limited) return limited
+
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
@@ -21,14 +29,12 @@ export async function PATCH(
   })
   if (!node) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const body = await req.json()
-  if (typeof body.starred !== 'boolean') {
-    return NextResponse.json({ error: 'starred (boolean) required' }, { status: 400 })
-  }
+  const { data, error } = await parseJson(req, PatchBody)
+  if (error) return error
 
   await db.discoveryNode.update({
     where: { id: params.id },
-    data: { starred: body.starred },
+    data: { starred: data.starred },
   })
 
   return NextResponse.json({ ok: true })
@@ -37,11 +43,14 @@ export async function PATCH(
 // ─── DELETE: remove a node and its entire subtree ────────────────────────────
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } },
 ) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = enforceRateLimit(req, 'mutate', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })

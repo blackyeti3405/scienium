@@ -221,6 +221,8 @@ nova-lab/
 │   │   │   ├── wikipedia.ts
 │   │   │   ├── db.ts                     # Prisma client singleton
 │   │   │   ├── auth.ts                   # Clerk helpers
+│   │   │   ├── rate-limit.ts             # Per-user + per-IP API rate limiter (tiers, 429)
+│   │   │   ├── validation.ts             # parseJson() + strict zod body validation
 │   │   │   ├── storage.ts                # R2 client + signed URL generation
 │   │   │   ├── permissions.ts            # RBAC + RLS helpers
 │   │   │   ├── consent.ts                # Parental consent checks
@@ -547,6 +549,7 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 ### When to scale up
 | Trigger | Action |
 |---|---|
+| Running >1 app instance (serverless / autoscaled) | Rate-limit counters are in-memory per instance — move them to a shared store (Upstash Redis / Cloudflare KV / Durable Objects) and/or enforce at the Cloudflare edge (Rate Limiting Rules) for an exact global limit. See §7.1. |
 | >1k concurrent authenticated users | Add Redis cache for Wikipedia article fetches and read-heavy endpoints |
 | Showcase video transcoding queue backed up | Scale AI service horizontally; add dedicated video workers |
 | >100k showcase views/day | Tune Cloudflare cache headers; preload popular pages with ISR |
@@ -567,13 +570,26 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 
 ## 7. Security & Privacy
 
+### 7.1 Application security (API hardening)
+
+Defense-in-depth on every API route, following OWASP API Top 10. The primitives live in two shared modules so the rules stay consistent:
+
+- **Rate limiting** — `apps/web/lib/rate-limit.ts`. Every route calls `enforceRateLimit(req, tier, userId)` and returns a graceful **429 with `Retry-After`** when exceeded. Tiers (per-minute): `ai` 12, `upload` 8, `mutate` 40, `read` 120, `join` 10. It checks **both a per-user and a per-IP bucket** — the per-user bucket is the precise limit; the per-IP bucket is a generous `×12` backstop so a whole classroom behind one school NAT IP isn't locked out. This protects the Claude-backed endpoints specifically (each call costs money), and `join` is kept tight to blunt invite-code brute-forcing. The domain cap of **3 idea-checks/day per team** still applies on top.
+  - **Topology caveat:** counters are **in-memory, i.e. per server instance** (Redis/queue were removed from the stack). On a single long-lived Node server this is exact. On multi-instance/serverless the effective limit becomes `limit × instances` — see §6 for the upgrade path (Cloudflare edge Rate Limiting Rules, and/or a shared store: Upstash Redis / Cloudflare KV / Durable Objects). Only the store inside `hit()` changes; call sites don't.
+- **Input validation** — `apps/web/lib/validation.ts`. Body-accepting routes parse with `parseJson(req, schema)` against **strict** zod schemas: type checks, length caps (names ≤80, chat ≤60 msgs × 8k chars, quiz answers ≤50 × 5k, etc.), and `.strict()` so unexpected fields are **rejected** (mass-assignment defense). Malformed JSON returns a clean 400 instead of an unhandled 500.
+- **Secret handling** — Anthropic and R2 keys are read **server-side only** (no `NEXT_PUBLIC_*`), so nothing secret is ever bundled to the browser. Error responses return generic messages; internal error text (`String(err)`) is logged server-side only, never sent to the client.
+- **Upload safety** — PDF uploads are capped at **20 MB** and verified by **`%PDF-` magic bytes** (the client-declared MIME type is not trusted). (Note: NOT antivirus-scanned — add ClamAV/an upstream scanner before accepting untrusted public uploads at scale.)
+- **Untrusted HTML** — Wikipedia article HTML (publicly editable) is rendered via `dangerouslySetInnerHTML` in `WikiReader`, so `app/api/discovery/article` runs it (and the page title) through **`sanitize-html`** with a strict tag/attribute allowlist before returning it — the regex passes there are cosmetic, not the security boundary.
+- **Authz** — Clerk middleware gates all non-public routes; every handler independently re-checks `auth()` and scopes each query by `teamId` (no object reads across teams). Phase-gated endpoints additionally call `assertFeatureUnlocked` (§8).
+
+### 7.2 Data & privacy
+
 - FERPA/COPPA compliance for minor students; parental consent required for public Showcase publishing
 - PII isolated in `users` table; activity feed and social view use names only with consent
-- Row-level security (RLS) policies ensure team data isolation
-- PDF uploads scanned for known malware signatures before processing
+- Team data isolation is enforced in application queries (every read/write is scoped by `teamId`); enabling Postgres/Supabase RLS as a DB-level backstop is recommended
+- Private assets (paper PDFs) live in **private R2** and are streamed through the authenticated, team-scoped `/api/papers/[id]/file` route — **never** a public or signed URL. Signed/public URLs are reserved for public Showcase assets only.
 - QR codes on figurines are signed tokens (HMAC), not raw IDs
 - Public Showcase visitor tracking is privacy-respecting (no third-party trackers, no PII)
-- All file URLs in R2 are accessed via signed time-limited URLs for private assets; only public Showcase assets get long-lived public URLs
 
 ---
 

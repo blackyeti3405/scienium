@@ -1,9 +1,11 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { getTeamContext } from '@/lib/phase'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 
+// Server-side only; the Anthropic key is never exposed to the client.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 /**
@@ -13,9 +15,14 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
  * not human-verified). Deadline pages vary wildly per fair, so this is explicitly
  * a starting point that still needs per-fair verification.
  */
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Strict per-user + per-IP limit: this fetches an external page AND makes a
+  // paid Claude call, and any fair id can be targeted — cap the burst.
+  const limited = enforceRateLimit(req, 'ai', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
@@ -43,8 +50,9 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     const html = await res.text()
     pageText = htmlToText(html).slice(0, 16000)
   } catch (err) {
+    console.error('[sync-deadlines] site fetch failed:', err)
     return NextResponse.json(
-      { error: `Could not read the fair's site — check it manually`, detail: String(err) },
+      { error: `Could not read the fair's site — check it manually` },
       { status: 502 },
     )
   }
@@ -71,7 +79,8 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     const match = raw.match(/\{[\s\S]*\}/)
     if (match) extracted = JSON.parse(match[0]) as ExtractedDates
   } catch (err) {
-    return NextResponse.json({ error: 'Could not extract dates', detail: String(err) }, { status: 502 })
+    console.error('[sync-deadlines] extraction failed:', err)
+    return NextResponse.json({ error: 'Could not extract dates' }, { status: 502 })
   }
 
   if (!extracted || !extracted.year) {

@@ -1,11 +1,13 @@
 import { auth } from '@clerk/nextjs/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { getTeamContext } from '@/lib/phase'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { IDEA_CHECK_DAILY_LIMIT, ideaChecksUsedToday } from '@/lib/research-plan/idea-check'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 
+// Server-side only; the Anthropic key is never exposed to the client.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 /**
@@ -17,9 +19,15 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
  * plan; rate-limited 3/day per team. Pre-flight checks return normal JSON errors;
  * once streaming starts, problems arrive as `{ type: 'error' }` events.
  */
-export async function POST() {
+export async function POST(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Per-minute burst cap on top of the 3/day-per-team cap below: stops a single
+  // caller from racing many concurrent web-search runs before the daily counter
+  // catches up (each run is a multi-search paid Claude call).
+  const limited = enforceRateLimit(req, 'ai', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })

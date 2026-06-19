@@ -1,8 +1,13 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getTeamContext } from '@/lib/phase'
-import { isValidZip, zipToState } from '@/lib/fairs/zip'
+import { enforceRateLimit } from '@/lib/rate-limit'
+import { parseJson, zipString } from '@/lib/validation'
+import { zipToState } from '@/lib/fairs/zip'
 import { db } from '@/lib/db'
+
+const LocationBody = z.object({ zip: zipString }).strict()
 
 /**
  * POST /api/team/location — set/update the team's US location from a ZIP code
@@ -12,15 +17,17 @@ export async function POST(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const limited = enforceRateLimit(req, 'mutate', userId)
+  if (limited) return limited
+
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
-  const { zip } = await req.json()
-  if (!zip || !isValidZip(String(zip))) {
-    return NextResponse.json({ error: 'Enter a valid US ZIP code' }, { status: 400 })
-  }
+  const { data, error } = await parseJson(req, LocationBody)
+  if (error) return error
+  const { zip } = data
 
-  const state = zipToState(String(zip))
+  const state = zipToState(zip)
   if (!state) {
     return NextResponse.json(
       { error: "That ZIP doesn't map to a US state we recognize" },
@@ -30,8 +37,8 @@ export async function POST(req: NextRequest) {
 
   await db.team.update({
     where: { id: ctx.teamId },
-    data: { locationZip: String(zip).trim(), locationState: state },
+    data: { locationZip: zip, locationState: state },
   })
 
-  return NextResponse.json({ zip: String(zip).trim(), state })
+  return NextResponse.json({ zip, state })
 }

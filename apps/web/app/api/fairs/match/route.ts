@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getTeamContext } from '@/lib/phase'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { matchFairs } from '@/lib/fairs/match'
 import { db } from '@/lib/db'
 
@@ -8,9 +9,12 @@ import { db } from '@/lib/db'
  * GET /api/fairs/match — the current team's matched fairs (regional, state, ISEF)
  * plus the saved location so the gateway can show/edit it.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = enforceRateLimit(req, 'read', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })

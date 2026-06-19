@@ -1116,6 +1116,16 @@ This flow keeps the pilot logistically simple: each classroom receives a starter
 | **Phase 1** | Web app (responsive, mobile-first design) |
 | **Phase 2** | iOS and Android native apps (React Native, shared business logic) |
 
+### 18.1 Security & Abuse Prevention
+
+NOVA Lab serves minors and calls paid AI APIs, so abuse prevention is a first-class requirement, not an afterthought. (Implementation details live in `architecture.md` §7.)
+
+- **Rate limiting on all endpoints.** Every API route is rate-limited per authenticated user (with a coarse per-IP backstop tuned so a shared school/NAT network isn't penalized). The AI-backed actions — paper chat, quiz generation/grading, research-plan review, "has this been done before?" idea-check, and fair-deadline reads — are capped tightly because each call costs money; runaway or scripted use is throttled with a friendly "slow down" response rather than a hard failure. Idea-checks keep their per-team daily cap (3/day). Invite-code redemption is throttled to make code guessing impractical.
+- **Strict input validation.** All user input is validated against a schema: correct types, sensible length limits, and rejection of unexpected fields. Oversized or malformed submissions are refused with a clear error.
+- **Safe file uploads.** Uploaded research PDFs have a size cap and are verified to actually be PDFs (not just by their claimed type). *(Open: virus scanning and video-size caps for the Showcase phase — see §19.)*
+- **No secrets in the browser.** All third-party API keys (AI, storage) are used only on the server; none are ever shipped to the client, and internal error details are never returned in API responses.
+- **Untrusted external content is sanitized.** Externally-sourced HTML (e.g. Wikipedia articles in Discovery) is run through an allowlist sanitizer before display, so it can't inject scripts.
+
 ---
 
 ## 19. Open Design Questions
@@ -1125,7 +1135,7 @@ This flow keeps the pilot logistically simple: each classroom receives a starter
 - [ ] Figurine production and distribution logistics
 - [ ] Visual/aesthetic direction of the virtual lab
 - [ ] Discovery depth soft cap to prevent infinite branching
-- [ ] File size and length caps for uploads (especially video)
+- [ ] File size and length caps for uploads (PDFs now capped at 20 MB; **video caps for Showcase still open**) + virus scanning for untrusted uploads
 - [ ] Exact KP and LC costs — economy balancing
 - [ ] Accessibility (screen readers, color contrast, language support)
 - [ ] Team disbanding: fork policy for individual members?

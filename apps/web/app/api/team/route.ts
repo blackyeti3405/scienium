@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getTeamContext } from '@/lib/phase'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { getLiteratureAdvanceProgress } from '@/lib/team/advance'
 import { db } from '@/lib/db'
 
@@ -8,9 +9,12 @@ import { db } from '@/lib/db'
  * GET /api/team — everything the Team panel needs: roster, capacity, the lead's
  * active invite code, and (for the literature phase) the advance-readiness gate.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = enforceRateLimit(req, 'read', userId)
+  if (limited) return limited
 
   const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
   if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })

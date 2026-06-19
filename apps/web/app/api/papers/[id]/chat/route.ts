@@ -1,23 +1,46 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getTeamContext } from '@/lib/phase'
+import { enforceRateLimit } from '@/lib/rate-limit'
+import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 
+// ANTHROPIC_API_KEY is read server-side only — this module never runs in the
+// browser, so the key is never shipped to the client.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
+// Bound the conversation we forward to Claude: caps both the number of turns and
+// the size of each message so a crafted request can't run up an unbounded bill.
+const MAX_MESSAGES = 60
+const MAX_MESSAGE_CHARS = 8_000
+const ChatBody = z
+  .object({
+    messages: z
+      .array(
+        z.object({
+          role: z.enum(['user', 'assistant']),
+          content: z.string().min(1).max(MAX_MESSAGE_CHARS),
+        }),
+      )
+      .min(1)
+      .max(MAX_MESSAGES),
+  })
+  .strict()
+
+type ChatMessage = z.infer<typeof ChatBody>['messages'][number]
 
 // GET: load this user's saved chat history for the paper.
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } },
 ) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = enforceRateLimit(req, 'read', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
@@ -47,6 +70,10 @@ export async function POST(
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Strict per-user + per-IP limit: this handler makes a paid Claude call.
+  const limited = enforceRateLimit(req, 'ai', userId)
+  if (limited) return limited
+
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
@@ -63,8 +90,9 @@ export async function POST(
     return NextResponse.json({ error: 'Paper is still processing' }, { status: 409 })
   }
 
-  const body = await req.json()
-  const rawMessages: ChatMessage[] = body.messages ?? []
+  const { data, error } = await parseJson(req, ChatBody)
+  if (error) return error
+  const rawMessages: ChatMessage[] = data.messages
 
   // Anthropic requires the conversation to start with a user turn. The client's
   // greeting (and any client-only error notices) are assistant messages, so drop
@@ -113,8 +141,10 @@ export async function POST(
 
     return NextResponse.json({ reply })
   } catch (err) {
+    // Log the real error server-side; return a generic message so internal
+    // details (stack/SDK internals) never reach the client (OWASP API8/A09).
     console.error('[chat] error:', err)
-    return NextResponse.json({ error: 'Chat failed', detail: String(err) }, { status: 500 })
+    return NextResponse.json({ error: 'Chat failed' }, { status: 500 })
   }
 }
 

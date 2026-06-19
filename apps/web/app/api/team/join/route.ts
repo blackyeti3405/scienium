@@ -1,7 +1,17 @@
 import { auth, currentUser } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { enforceRateLimit } from '@/lib/rate-limit'
+import { parseJson } from '@/lib/validation'
 import { normalizeInviteCode } from '@/lib/team/invite'
 import { db } from '@/lib/db'
+
+const JoinBody = z
+  .object({
+    name: z.string().trim().max(80).optional(),
+    code: z.string().trim().min(1, 'A join code is required').max(32),
+  })
+  .strict()
 
 /**
  * POST /api/team/join — a student redeems a join code to join an existing lab
@@ -13,11 +23,17 @@ export async function POST(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Tight per-user + per-IP limit: join codes are short, so cap redemption
+  // attempts to make brute-forcing an active code impractical.
+  const limited = enforceRateLimit(req, 'join', userId)
+  if (limited) return limited
+
   const clerkUser = await currentUser()
   if (!clerkUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { name, code } = await req.json()
-  if (!code?.trim()) return NextResponse.json({ error: 'A join code is required' }, { status: 400 })
+  const { data, error } = await parseJson(req, JoinBody)
+  if (error) return error
+  const { name, code } = data
 
   const normalized = normalizeInviteCode(code)
 

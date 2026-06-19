@@ -1,22 +1,37 @@
 import { auth, currentUser } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { enforceRateLimit } from '@/lib/rate-limit'
+import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { isValidZip, zipToState } from '@/lib/fairs/zip'
+
+// Names are capped so a client can't store unbounded text; `.strict()` rejects
+// any field other than these three.
+const OnboardingBody = z
+  .object({
+    name: z.string().trim().min(1, 'Name is required').max(80),
+    teamName: z.string().trim().min(1, 'Team name is required').max(80),
+    zip: z.string().trim().max(10).optional(),
+  })
+  .strict()
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const limited = enforceRateLimit(req, 'mutate', userId)
+  if (limited) return limited
+
   const clerkUser = await currentUser()
   if (!clerkUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { name, teamName, zip } = await req.json()
-  if (!name?.trim() || !teamName?.trim()) {
-    return NextResponse.json({ error: 'Name and team name are required' }, { status: 400 })
-  }
+  const { data, error } = await parseJson(req, OnboardingBody)
+  if (error) return error
+  const { name, teamName, zip } = data
 
   // Optional US location (Feature 3): derive the state if a valid ZIP is given.
-  const locationZip = zip && isValidZip(String(zip)) ? String(zip).trim() : null
+  const locationZip = zip && isValidZip(zip) ? zip : null
   const locationState = locationZip ? zipToState(locationZip) : null
 
   const email =

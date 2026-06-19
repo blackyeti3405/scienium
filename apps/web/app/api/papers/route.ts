@@ -1,16 +1,28 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { getTeamContext } from '@/lib/phase'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { extractText, getDocumentProxy } from 'unpdf'
 import { putObject, paperPdfKey } from '@/lib/storage'
 
+// Server-side only; the Anthropic key is never bundled for the browser.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+// Hard ceiling on an uploaded PDF. The bytes are buffered in memory, stored to
+// R2, and (as text) sent to Claude, so an unbounded upload is a memory + cost
+// DoS. 20 MB comfortably covers real papers.
+const MAX_PDF_BYTES = 20 * 1024 * 1024
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Strict per-user + per-IP limit: each upload triggers parsing, storage, and a
+  // paid Claude metadata call.
+  const limited = enforceRateLimit(req, 'upload', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
@@ -23,9 +35,22 @@ export async function POST(req: NextRequest) {
   if (!file || file.type !== 'application/pdf') {
     return NextResponse.json({ error: 'A PDF file is required' }, { status: 400 })
   }
+  // `file.type` is client-supplied, so enforce a real size cap up front and
+  // verify the PDF magic bytes below — don't trust the declared MIME alone.
+  if (file.size > MAX_PDF_BYTES) {
+    return NextResponse.json(
+      { error: `PDF is too large (max ${Math.round(MAX_PDF_BYTES / 1024 / 1024)} MB)` },
+      { status: 413 },
+    )
+  }
 
   // Keep the raw bytes to upload to R2; extract text for the LLM.
   const buffer = Buffer.from(await file.arrayBuffer())
+  // Defense in depth: a genuine PDF starts with "%PDF-". Rejects a non-PDF that
+  // lied about its MIME type before we hand it to the parser / store it.
+  if (buffer.length < 5 || buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+    return NextResponse.json({ error: 'That file is not a valid PDF' }, { status: 400 })
+  }
   let fullText = ''
   let title = file.name.replace(/\.pdf$/i, '')
   try {
@@ -36,8 +61,9 @@ export async function POST(req: NextRequest) {
     const firstLine = fullText.split('\n').map((l) => l.trim()).find(Boolean)
     if (firstLine && firstLine.length < 200) title = firstLine
   } catch (err) {
+    // Log internally; return a generic message (no raw parser error to client).
     console.error('[unpdf] extraction error:', err)
-    return NextResponse.json({ error: 'Could not read PDF text', detail: String(err) }, { status: 422 })
+    return NextResponse.json({ error: 'Could not read PDF text' }, { status: 422 })
   }
 
   if (!fullText) {
@@ -91,6 +117,9 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = enforceRateLimit(req, 'read', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })

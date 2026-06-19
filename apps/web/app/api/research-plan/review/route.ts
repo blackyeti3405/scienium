@@ -1,12 +1,14 @@
 import { auth } from '@clerk/nextjs/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { getTeamContext } from '@/lib/phase'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { loadResearchRubric } from '@/lib/research-plan/rubric'
 import { findProjectType, findSubtype } from '@/lib/research-plan/types'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 
+// Server-side only; the Anthropic key is never exposed to the client.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 /**
@@ -18,9 +20,13 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
  * one at a time and the three columns fill in live. The assembled structured
  * review is persisted so it reloads in the same format.
  */
-export async function POST() {
+export async function POST(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Strict per-user + per-IP limit: a full plan review is a large paid Claude call.
+  const limited = enforceRateLimit(req, 'ai', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })

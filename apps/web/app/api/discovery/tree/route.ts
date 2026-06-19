@@ -1,13 +1,39 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getTeamContext } from '@/lib/phase'
+import { enforceRateLimit } from '@/lib/rate-limit'
+import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
+
+// Bounded batch of client-generated nodes; `.strict()` rejects extra fields.
+const TreeBody = z
+  .object({
+    nodes: z
+      .array(
+        z
+          .object({
+            id: z.string().trim().min(1).max(64),
+            title: z.string().max(300),
+            parentId: z.string().trim().max(64).nullable(),
+            source: z.enum(['wikipedia', 'youtube']).optional(),
+            videoId: z.string().trim().max(32).optional(),
+          })
+          .strict(),
+      )
+      .min(1, 'nodes array required')
+      .max(200),
+  })
+  .strict()
 
 // ─── GET: load the team's discovery tree ─────────────────────────────────────
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = enforceRateLimit(req, 'read', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
@@ -63,23 +89,18 @@ export async function POST(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const limited = enforceRateLimit(req, 'mutate', userId)
+  if (limited) return limited
+
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
   const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
   if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-  const body = await req.json()
-  const incoming: Array<{
-    id: string
-    title: string
-    parentId: string | null
-    source?: 'wikipedia' | 'youtube'
-    videoId?: string
-  }> = body.nodes ?? []
-  if (!incoming.length) {
-    return NextResponse.json({ error: 'nodes array required' }, { status: 400 })
-  }
+  const { data, error } = await parseJson(req, TreeBody)
+  if (error) return error
+  const incoming = data.nodes
 
   await db.discoveryNode.createMany({
     data: incoming.map((n) => {
@@ -103,9 +124,12 @@ export async function POST(req: NextRequest) {
 
 // ─── DELETE: reset the whole tree for the team ───────────────────────────────
 
-export async function DELETE() {
+export async function DELETE(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = enforceRateLimit(req, 'mutate', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })

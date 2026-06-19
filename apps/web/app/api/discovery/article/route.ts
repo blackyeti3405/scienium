@@ -1,6 +1,47 @@
+import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import sanitizeHtml from 'sanitize-html'
+import { enforceRateLimit } from '@/lib/rate-limit'
 
 const WIKI_API = 'https://en.wikipedia.org/w/api.php'
+
+// ── HTML sanitization (XSS defense) ───────────────────────────────────────────
+// Wikipedia article HTML is PUBLICLY EDITABLE and we render it client-side via
+// dangerouslySetInnerHTML (WikiReader). The regex passes in processWikiHtml are
+// cosmetic, NOT a security boundary, so every response is run through a real
+// allowlist sanitizer: it parses the HTML and re-serializes only known-safe tags
+// /attributes, dropping <script>, inline event handlers, style/iframe/object,
+// and javascript: URLs. The allowlist keeps the tags Wikipedia articles use plus
+// our rewritten links (class="wiki-link" + data-wiki-title) so navigation works.
+const ARTICLE_SANITIZE_OPTS: sanitizeHtml.IOptions = {
+  allowedTags: [
+    'p', 'br', 'hr', 'span', 'div',
+    'b', 'strong', 'i', 'em', 'u', 's', 'small', 'sub', 'sup', 'abbr',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+    'blockquote', 'pre', 'code',
+    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
+    'a',
+  ],
+  allowedAttributes: {
+    a: ['href', 'target', 'rel', 'class', 'data-wiki-title'],
+    th: ['colspan', 'rowspan', 'scope'],
+    td: ['colspan', 'rowspan'],
+    '*': ['class'],
+  },
+  // No data: or javascript: — only real navigable schemes. Our rewritten
+  // internal links use href="#" (a fragment), which is allowed as relative.
+  allowedSchemes: ['http', 'https', 'mailto'],
+  allowProtocolRelative: false,
+  disallowedTagsMode: 'discard',
+}
+
+// The page title (displaytitle) can carry markup (e.g. italic species names) and
+// is also rendered via dangerouslySetInnerHTML — allow only inline formatting.
+const TITLE_SANITIZE_OPTS: sanitizeHtml.IOptions = {
+  allowedTags: ['i', 'b', 'em', 'strong', 'sub', 'sup', 'span'],
+  allowedAttributes: {},
+}
 const WIKI_REST = 'https://en.wikipedia.org/api/rest_v1'
 
 // Wikimedia's User-Agent policy requires a descriptive UA with contact info for
@@ -49,6 +90,12 @@ async function wikiFetch(url: string, attempt = 0): Promise<Response> {
 }
 
 export async function GET(req: NextRequest) {
+  // Auth-gated by middleware; resolve the user so this Wikipedia proxy is limited
+  // per-user (shared-NAT classrooms aren't punished) and isn't a free hop.
+  const { userId } = await auth()
+  const limited = enforceRateLimit(req, 'read', userId)
+  if (limited) return limited
+
   const title = req.nextUrl.searchParams.get('title')
   if (!title) return NextResponse.json({ error: 'title required' }, { status: 400 })
 
@@ -106,7 +153,7 @@ export async function GET(req: NextRequest) {
     }
 
     const payload: ArticlePayload = {
-      title:           parseData.parse.displaytitle ?? title,
+      title:           sanitizeHtml(parseData.parse.displaytitle ?? title, TITLE_SANITIZE_OPTS),
       normalizedTitle: parseData.parse.title ?? title,
       description,
       html:            processWikiHtml(parseData.parse.text['*']),
@@ -129,8 +176,7 @@ export async function GET(req: NextRequest) {
 // The parse API wraps everything in <div class="mw-parser-output">...</div>
 // We transform it into clean, interceptable markup.
 function processWikiHtml(raw: string): string {
-  return (
-    raw
+  const rewritten = raw
       // ── Strip scaffolding ──────────────────────────────────────────────────
       // Remove edit-section widgets
       .replace(/<span[^>]*class="[^"]*mw-editsection[^"]*"[^>]*>[\s\S]*?<\/span>/g, '')
@@ -163,5 +209,7 @@ function processWikiHtml(raw: string): string {
         /href="((?:https?:)?\/\/[^"]+)"/g,
         'href="$1" target="_blank" rel="noopener noreferrer"',
       )
-  )
+
+  // Final, authoritative safety gate (see ARTICLE_SANITIZE_OPTS above).
+  return sanitizeHtml(rewritten, ARTICLE_SANITIZE_OPTS)
 }

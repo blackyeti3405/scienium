@@ -1,5 +1,10 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { enforceRateLimit } from '@/lib/rate-limit'
+import { parseJson } from '@/lib/validation'
+
+const ResolveBody = z.object({ url: z.string().trim().min(1).max(2000) }).strict()
 
 // Extracts a YouTube video ID from any common URL shape.
 function extractVideoId(input: string): string | null {
@@ -26,10 +31,13 @@ export async function POST(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { url } = await req.json()
-  if (typeof url !== 'string' || !url.trim()) {
-    return NextResponse.json({ error: 'A YouTube URL is required' }, { status: 400 })
-  }
+  // Mutating + triggers an external oEmbed fetch — moderate per-user + per-IP limit.
+  const limited = enforceRateLimit(req, 'mutate', userId)
+  if (limited) return limited
+
+  const { data, error } = await parseJson(req, ResolveBody)
+  if (error) return error
+  const { url } = data
 
   const videoId = extractVideoId(url)
   if (!videoId) {

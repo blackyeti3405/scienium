@@ -1,6 +1,9 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getTeamContext } from '@/lib/phase'
+import { enforceRateLimit } from '@/lib/rate-limit'
+import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import {
@@ -11,16 +14,33 @@ import {
   extractJson,
 } from '@/lib/literature/quiz'
 
+// Server-side only; the Anthropic key never reaches the browser.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-interface SubmittedAnswer {
-  questionId: string
-  response: string
-}
+// Cap submission size: a quiz is a fixed handful of questions, each answered with
+// short free text — this bounds the grading prompt we forward to Claude.
+const GradeBody = z
+  .object({
+    sessionId: z.string().trim().min(1).max(64),
+    answers: z
+      .array(
+        z.object({
+          questionId: z.string().trim().min(1).max(64),
+          response: z.string().max(5_000),
+        }),
+      )
+      .min(1)
+      .max(50),
+  })
+  .strict()
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Strict per-user + per-IP limit: grading is a paid Claude call.
+  const limited = enforceRateLimit(req, 'ai', userId)
+  if (limited) return limited
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
@@ -28,12 +48,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
   if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-  const body = await req.json()
-  const sessionId: string = body.sessionId
-  const answers: SubmittedAnswer[] = body.answers ?? []
-  if (!sessionId || !answers.length) {
-    return NextResponse.json({ error: 'sessionId and answers are required' }, { status: 400 })
-  }
+  const { data, error } = await parseJson(req, GradeBody)
+  if (error) return error
+  const { sessionId, answers } = data
 
   const session = await db.paperQuizSession.findFirst({
     where: { id: sessionId, userId: dbUser.id, paperId: params.id },
