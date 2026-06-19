@@ -66,6 +66,15 @@ export function DiscoveryFeature() {
   const [editingTopic, setEditingTopic] = useState(false)
   const [topicDraft, setTopicDraft] = useState('')
   const [savingTopic, setSavingTopic] = useState(false)
+  // Confirmation modal state
+  const [topicConfirm, setTopicConfirm] = useState<{
+    newTopic: string
+    paperCount: number
+  } | null>(null)
+  const [topicWipeResult, setTopicWipeResult] = useState<{
+    removedCount: number
+    removedTitles: string[]
+  } | null>(null)
 
   useEffect(() => {
     fetch('/api/discovery/topic')
@@ -74,17 +83,26 @@ export function DiscoveryFeature() {
       .catch(() => {})
   }, [])
 
-  async function saveTopic(topic: string) {
+  async function saveTopic(topic: string, confirmWipe = false) {
     setSavingTopic(true)
     try {
       const res = await fetch('/api/discovery/topic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic }),
+        body: JSON.stringify({ topic, confirmWipe }),
       })
       const d = await res.json()
+      if (res.status === 409 && d.requiresConfirmation) {
+        // Server says papers exist — ask the user to confirm before wiping
+        setTopicConfirm({ newTopic: topic, paperCount: d.paperCount })
+        return
+      }
       setFinalTopic(d.topic ?? null)
       setEditingTopic(false)
+      setTopicConfirm(null)
+      if (d.removedCount > 0) {
+        setTopicWipeResult({ removedCount: d.removedCount, removedTitles: d.removedTitles })
+      }
     } catch (err) {
       console.error('[discovery] save topic failed:', err)
     } finally {
@@ -138,10 +156,76 @@ export function DiscoveryFeature() {
     }
   }, [])
 
+  // ── Shared modals (rendered over whichever screen is active) ────────────────
+
+  const modals = (
+    <>
+      {/* Topic-change confirmation */}
+      {topicConfirm && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-[#0d1b2e] border border-white/20 rounded-sm p-6 max-w-sm w-full mx-4 flex flex-col gap-4">
+            <h3 className="font-pixel text-[9px] text-white">Change research topic?</h3>
+            <div className="text-[13px] text-white/70 leading-relaxed flex flex-col gap-2">
+              <p>
+                You&apos;re changing your topic to{' '}
+                <span className="text-[#F5C518] font-medium">"{topicConfirm.newTopic}"</span>.
+              </p>
+              <p>
+                You have{' '}
+                <span className="text-white font-medium">{topicConfirm.paperCount} source{topicConfirm.paperCount !== 1 ? 's' : ''}</span>{' '}
+                in your literature review. Sources that aren&apos;t relevant to your new topic will be removed. Sources that apply to both topics will be kept.
+              </p>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setTopicConfirm(null)}
+                className="flex-1 font-pixel text-[8px] border border-white/20 text-white/60 py-2.5 hover:border-white/40 hover:text-white/80 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={savingTopic}
+                onClick={() => saveTopic(topicConfirm.newTopic, true)}
+                className="flex-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 hover:brightness-110 disabled:opacity-50 transition-all"
+              >
+                {savingTopic ? 'Updating…' : 'Change topic'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wipe result notification */}
+      {topicWipeResult && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 bg-[#0d1b2e] border border-orange-500/40 rounded-sm px-4 py-3 max-w-sm w-full mx-4 flex items-start gap-3">
+          <span className="text-orange-400 text-base shrink-0">⚠</span>
+          <div className="flex-1 min-w-0">
+            <p className="font-pixel text-[8px] text-orange-300">
+              {topicWipeResult.removedCount} source{topicWipeResult.removedCount !== 1 ? 's' : ''} removed
+            </p>
+            {topicWipeResult.removedTitles.length > 0 && (
+              <p className="text-[11px] text-white/50 mt-1 leading-relaxed">
+                {topicWipeResult.removedTitles.slice(0, 3).join(', ')}
+                {topicWipeResult.removedTitles.length > 3 && ` and ${topicWipeResult.removedTitles.length - 3} more`}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => setTopicWipeResult(null)}
+            className="text-white/30 hover:text-white/60 shrink-0 font-pixel text-[8px]"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+    </>
+  )
+
   // ── Home screen ─────────────────────────────────────────────────────────────
   if (showHome) {
     return (
-      <div className="flex h-full flex-col bg-[#0d1b2e] text-white">
+      <div className="relative flex h-full flex-col bg-[#0d1b2e] text-white">
+        {modals}
         {/* Minimal top bar on home */}
         <header className="flex items-center gap-3 border-b border-white/10 px-6 py-4 shrink-0">
           <span className="font-pixel text-[10px] text-white">🔭 Discovery</span>
@@ -165,7 +249,8 @@ export function DiscoveryFeature() {
   // ── Main explorer layout (handles the empty case too: search a Wikipedia
   //    topic, or toggle to YouTube and paste a link) ──────────────────────────
   return (
-    <div className="flex h-full flex-col bg-[#0d1b2e] text-white">
+    <div className="relative flex h-full flex-col bg-[#0d1b2e] text-white">
+      {modals}
 
       {/* ── Top bar ── */}
       <header className="flex items-center gap-3 border-b border-white/10 px-4 py-3 shrink-0">

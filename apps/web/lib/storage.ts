@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID!
@@ -53,6 +53,11 @@ export async function putObject(key: string, body: Buffer, contentType: string):
       ContentType: contentType,
     }),
   )
+}
+
+/** Delete an object from R2. */
+export async function deleteObject(key: string): Promise<void> {
+  await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }))
 }
 
 /** Fetch an object from R2 as a web ReadableStream for streaming to the client. */

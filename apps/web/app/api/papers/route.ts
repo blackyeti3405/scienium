@@ -1,11 +1,13 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { createHash } from 'crypto'
 import { getTeamContext } from '@/lib/phase'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { extractText, getDocumentProxy } from 'unpdf'
 import { putObject, paperPdfKey } from '@/lib/storage'
+import { checkPaperRelevance } from '@/lib/literature/relevance'
 
 // Server-side only; the Anthropic key is never bundled for the browser.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -51,6 +53,21 @@ export async function POST(req: NextRequest) {
   if (buffer.length < 5 || buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
     return NextResponse.json({ error: 'That file is not a valid PDF' }, { status: 400 })
   }
+  // Stable content fingerprint: SHA-256 of the raw PDF bytes.
+  // Used to reject duplicate uploads before any expensive processing.
+  const contentHash = createHash('sha256').update(buffer).digest('hex')
+
+  const duplicate = await db.paper.findFirst({
+    where: { teamId: ctx.teamId, contentHash },
+    select: { id: true, title: true },
+  })
+  if (duplicate) {
+    return NextResponse.json(
+      { error: `This paper is already in your literature review ("${duplicate.title ?? 'untitled'}").` },
+      { status: 409 },
+    )
+  }
+
   let fullText = ''
   let title = file.name.replace(/\.pdf$/i, '')
   try {
@@ -73,6 +90,25 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Relevance gate: if the team has committed to a final topic, the paper must
+  // be meaningfully connected. Skipped when no topic is set (still exploring).
+  const team = await db.team.findUnique({
+    where: { id: ctx.teamId },
+    select: { topic: true },
+  })
+  if (team?.topic) {
+    const { relevant, reason } = await checkPaperRelevance(team.topic, title, fullText)
+    if (!relevant) {
+      return NextResponse.json(
+        {
+          error: `This paper doesn't appear relevant to your research topic "${team.topic}". ${reason} Upload a source that connects to your research.`,
+          code: 'IRRELEVANT',
+        },
+        { status: 422 },
+      )
+    }
+  }
+
   const paper = await db.paper.create({
     data: {
       teamId: ctx.teamId,
@@ -83,6 +119,7 @@ export async function POST(req: NextRequest) {
       status: 'processing',
       uploadedByUserId: dbUser.id,
       fullText,
+      contentHash,
     },
   })
 

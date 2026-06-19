@@ -654,6 +654,14 @@ export function LiteratureFeature() {
   const [papers, setPapers] = useState<Paper[]>([])
   const [activePaper, setActivePaper] = useState<Paper | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [topic, setTopic] = useState<string | null | undefined>(undefined) // undefined = loading
+
+  useEffect(() => {
+    fetch('/api/discovery/topic')
+      .then((r) => r.json())
+      .then((d) => setTopic(d.topic ?? null))
+      .catch(() => setTopic(null))
+  }, [])
 
   useEffect(() => {
     fetch('/api/papers')
@@ -797,9 +805,15 @@ export function LiteratureFeature() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
         <div>
           <h2 className="font-pixel text-[10px] text-white">Literature Review</h2>
-          <p className="font-pixel text-[7px] text-white/35 mt-1">
-            Upload and review 25 sources to advance your lab
-          </p>
+          {topic ? (
+            <p className="font-pixel text-[7px] text-[#F5C518]/70 mt-1 max-w-[260px] truncate">
+              🎯 {topic}
+            </p>
+          ) : (
+            <p className="font-pixel text-[7px] text-white/35 mt-1">
+              Upload and review 25 sources to advance your lab
+            </p>
+          )}
         </div>
         <div className="text-right">
           <span className="font-pixel text-[18px] text-[#F5C518]">{readyCount}</span>
@@ -807,13 +821,23 @@ export function LiteratureFeature() {
         </div>
       </div>
 
+      {/* No-topic warning — uploads are allowed but not gated until a topic is set */}
+      {topic === null && (
+        <div className="mx-6 mt-3 px-4 py-2.5 bg-[#F5C518]/8 border border-[#F5C518]/25 rounded-sm flex items-start gap-2.5">
+          <span className="font-pixel text-[8px] text-[#F5C518]/60 shrink-0 mt-0.5">!</span>
+          <p className="font-pixel text-[7px] text-[#F5C518]/60 leading-relaxed">
+            Set your final research topic in Discovery first. Once set, Nova will check that each source you upload is relevant.
+          </p>
+        </div>
+      )}
+
       {/* Upload error banner */}
       {uploadError && (
-        <div className="mx-6 mt-3 px-4 py-2 bg-red-500/15 border border-red-500/30 rounded-sm flex items-center justify-between gap-3">
-          <span className="font-pixel text-[8px] text-red-300">{uploadError}</span>
+        <div className="mx-6 mt-3 px-4 py-2.5 bg-red-500/15 border border-red-500/30 rounded-sm flex items-start justify-between gap-3">
+          <span className="font-pixel text-[8px] text-red-300 leading-relaxed">{uploadError}</span>
           <button
             onClick={() => setUploadError(null)}
-            className="text-red-400 hover:text-red-200 shrink-0"
+            className="text-red-400 hover:text-red-200 shrink-0 mt-0.5"
           >
             <X size={12} />
           </button>
