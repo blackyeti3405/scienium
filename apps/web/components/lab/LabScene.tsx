@@ -5,11 +5,14 @@ import { TileBackground } from '@/components/lab/TileBackground'
 import { BuildingSprite } from '@/components/lab/BuildingSprite'
 import { FeaturePanel } from '@/components/lab/FeaturePanel'
 import { ShopPanel } from '@/components/lab/ShopPanel'
+import { TeamPanel } from '@/components/lab/TeamPanel'
+import { PhaseAdvance } from '@/components/lab/PhaseAdvance'
 import { StatusStrip, type Currency } from '@/components/lab/StatusStrip'
 import { LabCurrencyProvider } from '@/lib/labCurrency'
 import { FEATURE_COMPONENTS } from '@/lib/featureRegistry'
 import { GATEWAYS, type Gateway } from '@/lib/gateways'
 import { type GatewaySkin } from '@/lib/sprites/manifest'
+import type { AdvanceProgress } from '@/lib/team/advance'
 import {
   isPhaseAtLeast,
   isFeatureUnlocked,
@@ -32,6 +35,10 @@ export interface LabSceneProps {
   currency: Currency
   /** Whether any team member holds the Presenter figurine (gates the Showcase). */
   hasPresenter: boolean
+  /** Live team size — building costs scale by it (Feature 1c). */
+  memberCount: number
+  /** Literature-phase advance gate, or null when no gate applies (Feature 1e). */
+  advance: AdvanceProgress | null
   /** Stable per-team seed so the tiled background never reshuffles. */
   seed?: number
 }
@@ -42,10 +49,13 @@ export function LabScene({
   labType,
   currency,
   hasPresenter,
+  memberCount,
+  advance,
   seed = 1,
 }: LabSceneProps) {
   const [openKey, setOpenKey] = useState<Gateway['key'] | null>(null)
   const [shopOpen, setShopOpen] = useState(false)
+  const [teamOpen, setTeamOpen] = useState(false)
 
   const skin: GatewaySkin = (labType ?? 'generic') as GatewaySkin
 
@@ -80,7 +90,10 @@ export function LabScene({
             phase={phase}
             labType={labType}
             currency={liveCurrency}
+            onOpenTeam={() => setTeamOpen(true)}
           />
+
+          {advance && <PhaseAdvance progress={advance} />}
 
           <div className="lab-scene__viewport">
             <TileBackground seed={seed} />
@@ -136,7 +149,15 @@ export function LabScene({
             </FeaturePanel>
           )}
 
-          {shopOpen && <ShopPanel currency={liveCurrency} onClose={() => setShopOpen(false)} />}
+          {shopOpen && (
+            <ShopPanel
+              currency={liveCurrency}
+              memberCount={memberCount}
+              onClose={() => setShopOpen(false)}
+            />
+          )}
+
+          {teamOpen && <TeamPanel onClose={() => setTeamOpen(false)} />}
         </div>
       )}
     </LabCurrencyProvider>

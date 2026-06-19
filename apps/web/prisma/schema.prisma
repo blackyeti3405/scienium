@@ -32,6 +32,7 @@ model User {
   miniGamePlays       MiniGamePlay[]
   rubricAssessments   RubricSelfAssessment[]
   activityFeedEntries ActivityFeed[]
+  paperProficiencies  PaperProficiency[]
 
   @@map("users")
 }
@@ -86,6 +87,13 @@ model Team {
   labType    LabType? @map("lab_type")
   topic      String?
   phase      ProjectPhase @default(discovery)
+  // Cap on how many students may join this lab. Building costs scale with the
+  // live member count (lib/shop.ts), so a bigger team earns more KP but pays more.
+  maxMembers Int      @default(3) @map("max_members")
+  // US location (Feature 3) — drives Science Fair matching. ZIP is captured at
+  // onboarding; `locationState` is the 2-letter code derived from it (lib/fairs/zip.ts).
+  locationZip   String? @map("location_zip")
+  locationState String? @map("location_state")
   createdAt  DateTime @default(now()) @map("created_at")
 
   members         TeamMember[]
@@ -95,6 +103,9 @@ model Team {
   topicInterests  TopicInterest[]
   papers          Paper[]
   projectLogs     ProjectLog[]
+  invites         TeamInvite[]
+  researchPlan    ResearchPlan?
+  ideaChecks      IdeaCheck[]
   pvpTeam         PvpTeam?
   pvpTrophies     PvpTrophies?
   pvpBattleQuota  PvpBattleQuota[]
@@ -103,6 +114,22 @@ model Team {
   activityFeed    ActivityFeed[]
 
   @@map("teams")
+}
+
+// A single-use join code a lead generates so other students can join the lab.
+// Consumed by POST /api/team/join, which enforces Team.maxMembers.
+model TeamInvite {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  teamId          String    @map("team_id")
+  createdByUserId String    @map("created_by_user_id")
+  expiresAt       DateTime  @map("expires_at")
+  usedByUserId    String?   @map("used_by_user_id")
+  usedAt          DateTime? @map("used_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  team            Team      @relation(fields: [teamId], references: [id])
+
+  @@map("team_invites")
 }
 
 model TeamMember {
@@ -220,9 +247,12 @@ model Paper {
   pdfKey           String?     @map("pdf_key")
   pdfData          Bytes?      @map("pdf_data")
   status           PaperStatus @default(pending)
+  // ── Legacy team-global proficiency/KP (transitional fallback) ──
+  // Proficiency and the KP high-water mark are now tracked PER STUDENT in
+  // `PaperProficiency` so each member earns independently. These two columns are
+  // kept one release as a backfill source / fallback (mirrors `pdf_data`); a
+  // cleanup migration drops them once the new table is confirmed (see TODO.md).
   proficiencyDemonstrated Boolean @default(false) @map("proficiency_demonstrated")
-  // High-water mark of KP this source has already granted the team (max 100).
-  // A passing quiz tops this up to the best score; retakes never exceed 100.
   kpAwarded        Int         @default(0) @map("kp_awarded")
   uploadedByUserId String      @map("uploaded_by_user_id")
   createdAt        DateTime    @default(now()) @map("created_at")
@@ -232,8 +262,31 @@ model Paper {
   quizAttempts    PaperQuizAttempt[]
   relevanceNotes  PaperRelevanceNote[]
   chatMessages    PaperChatMessage[]
+  proficiencies   PaperProficiency[]
 
   @@map("papers")
+}
+
+// Per-student proficiency on a single source. Each member demonstrates
+// proficiency independently (by passing that source's quiz), and earns KP up to
+// 100 per source — so a 3-student lab can earn up to 3× the KP from the same 25
+// sources. The literature-review phase gate requires EVERY member to be
+// `demonstrated` on all 25 sources (lib/team/advance.ts).
+model PaperProficiency {
+  paperId      String   @map("paper_id")
+  userId       String   @map("user_id")
+  demonstrated Boolean  @default(false)
+  // Best aggregate quiz score this student has achieved on the source (0-100).
+  bestScore    Int      @default(0) @map("best_score")
+  // High-water mark of KP this student has already earned from the source (max 100).
+  kpAwarded    Int      @default(0) @map("kp_awarded")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  paper        Paper    @relation(fields: [paperId], references: [id])
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@id([paperId, userId])
+  @@map("paper_proficiency")
 }
 
 model PaperChatMessage {
@@ -309,6 +362,52 @@ model PaperRelevanceNote {
 
   @@id([paperId, userId])
   @@map("paper_relevance_notes")
+}
+
+// ─── Research Plan (Feature 2) ───────────────────────────────────────────────
+
+// One research-plan workspace per team. The plan lives in a Google Doc the team
+// connects by pasting an "anyone with the link" URL; we fetch the published text
+// on demand (lib/research-plan/google-doc.ts — OAuth deferred, see TODO.md). The
+// project type/subtype selects the rubric the AI review grades against.
+model ResearchPlan {
+  teamId         String    @id @map("team_id")
+  googleDocUrl   String?   @map("google_doc_url")
+  projectType    String?   @map("project_type")     // 'engineering' | 'science'
+  projectSubtype String?   @map("project_subtype")  // e.g. 'robotics', 'biology'
+  lastSyncedText String?   @map("last_synced_text")
+  lastSyncedAt   DateTime? @map("last_synced_at")
+  // Latest AI review of the synced plan; replaced on each re-review so it
+  // persists across reloads and never piles up.
+  lastReviewJson Json?     @map("last_review_json")
+  lastReviewedAt DateTime? @map("last_reviewed_at")
+  // Latest idea-check result ({ verdict, findings }); replaced on each re-run.
+  // (The `IdeaCheck` table is only the per-day rate-limit ledger.)
+  lastIdeaCheckJson Json?     @map("last_idea_check_json")
+  lastIdeaCheckAt   DateTime? @map("last_idea_check_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@map("research_plans")
+}
+
+// A run of the "has this idea been done before?" web-search agent. Rate-limited
+// to 3/day per team (counted from createdAt).
+model IdeaCheck {
+  id           String   @id @default(cuid())
+  teamId       String   @map("team_id")
+  userId       String   @map("user_id")
+  // 'novel' | 'refine' | 'reject' — the agent's recommendation.
+  verdict      String
+  findingsJson Json     @map("findings_json")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@index([teamId, createdAt])
+  @@map("idea_checks")
 }
 
 // ─── Lab Buildings ───────────────────────────────────────────────────────────
@@ -569,6 +668,12 @@ model Fair {
   country     String    @default("US")
   websiteUrl  String?   @map("website_url")
   parentFairId String?  @map("parent_fair_id")
+  // Representative coordinates (host city / state centre) for nearest-fair
+  // matching against a team's location (Feature 3, lib/fairs/match.ts).
+  latitude    Float?
+  longitude   Float?
+  // Stable natural key from the seed dataset, so re-seeding upserts in place.
+  seedKey     String?   @unique @map("seed_key")
 
   events     FairEvent[]
   userAssocs FairUserAssociation[]

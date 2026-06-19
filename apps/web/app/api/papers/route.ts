@@ -95,6 +95,9 @@ export async function GET(req: NextRequest) {
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
+  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
+  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
   const papers = await db.paper.findMany({
     where: { teamId: ctx.teamId },
     orderBy: { createdAt: 'asc' },
@@ -106,11 +109,17 @@ export async function GET(req: NextRequest) {
       status: true,
       createdAt: true,
       fileUrl: true,
-      proficiencyDemonstrated: true,
+      // Proficiency is per-student now: surface only THIS user's demonstration.
+      proficiencies: { where: { userId: dbUser.id }, select: { demonstrated: true } },
     },
   })
 
-  return NextResponse.json({ papers })
+  return NextResponse.json({
+    papers: papers.map(({ proficiencies, ...p }) => ({
+      ...p,
+      proficiencyDemonstrated: proficiencies[0]?.demonstrated ?? false,
+    })),
+  })
 }
 
 // ─── Background: extract metadata from the already-parsed text ───────────────

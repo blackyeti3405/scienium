@@ -139,7 +139,8 @@ The Literature Review gateway building opens a single unified panel — no sub-t
 **Header**: progress bar + `N / 25` counter tracking toward the gate.
 
 ### 6.3 The 25-Resource Gate
-- 25 papers with proficiency demonstrated unlock lab advancement
+- Proficiency is tracked **per student** (`paper_proficiency`): each member demonstrates understanding of each source independently by passing its quiz, and the literature panel shows the current member's own proficiency
+- To leave `literature_review`, the team needs **25 sources uploaded AND every member proficient on all 25** — surfaced by the lab-scene phase-advance banner ("18/25 sources · 2/3 members ready"). Bigger teams therefore do proportionally more total reading, balancing the extra KP they earn
 - Progress visible in the panel header (progress bar + counter)
 - Off-topic detection deferred to v1.1
 
@@ -158,7 +159,7 @@ Proficiency on each paper is earned by passing a graded, AI-generated quiz — n
 - **Coverage** is weighted toward findings, relevance, and methodology, plus broader field/topic knowledge; questions are calibrated to advanced/AP high-school level.
 - **Grading:** the student answers in natural language; Claude grades all answers in one call against the keys + rubric (technical accuracy, depth, own-words, specificity), returns a per-question score + feedback, and computes an **aggregate score** (pass ≥ 70%).
 - **Pedagogy is tunable** without code changes via `lib/literature/quiz-rubric.md`; question count and pass threshold are constants in `lib/literature/quiz.ts`.
-- On pass, `papers.proficiency_demonstrated` is set and the slot banner turns green. On fail, the student can retake with fresh questions. Past results (answers + feedback) persist and reload.
+- On pass, the current student's `paper_proficiency` row is upserted (demonstrated + KP high-water mark, max 100 per source **per student**) and the slot banner turns green for them. KP accrues into the shared `team_currency` total shown the same to all members. On fail, the student can retake with fresh questions. Past results (answers + feedback) persist and reload.
 
 ### 6.6 Citation Graph *(removed)*
 The citation graph (and its supporting embeddings + HDBSCAN clustering) has been cut from scope. It is not planned. Thematic clustering of papers is no longer a product goal.
@@ -174,8 +175,8 @@ The citation graph (and its supporting embeddings + HDBSCAN clustering) has been
 
 **Quiz:**
 - `POST /api/papers/[id]/quiz` generates questions (paper prompt-cached + rubric); session + keys stored in `paper_quiz_sessions`
-- `POST /api/papers/[id]/quiz/grade` grades all answers in one call, writes `paper_quiz_attempts`, sets the aggregate score/pass and `papers.proficiency_demonstrated`
-- `GET /api/papers/[id]/quiz` returns the last graded session so results reload
+- `POST /api/papers/[id]/quiz/grade` grades all answers in one call, writes `paper_quiz_attempts`, and on pass upserts the current student's `paper_proficiency` (per-student demonstrated + KP high-water mark) and increments the shared `team_currency`
+- `GET /api/papers` / `GET /api/papers/[id]` return the **current user's** proficiency; `GET /api/papers/[id]/quiz` returns the last graded session so results reload
 
 **Q&A chat:**
 - `GET/POST /api/papers/[id]/chat` — full paper text as a prompt-cached system block (first message full cost, follow-ups ~10%)
@@ -422,19 +423,33 @@ The seven gateway buildings are the app's primary navigation. Each is a structur
 
 **Relationship to economy buildings:** gateways are fixed and unbuyable; the 60 economy buildings (9.2–9.5) are bought with KP/LC and populate the grown lab after specialization. A student can have all relevant gateways present while still owning zero economy buildings.
 
+### 9.7 Research Plan Building (implemented)
+The Research Plan gateway (unlocked at `research_planning`) turns a team's plan into a coached, reviewable artifact. Three parts:
+
+**Connect a Google Doc (paste-a-link).** The team pastes an "Anyone with the link" Google Doc URL; the app fetches the published plain text on demand (no account connection — full Google OAuth is deferred, see `TODO.md`). "Refresh" re-syncs the latest text. The fetch lives behind one abstraction (`lib/research-plan/google-doc.ts`) so swapping in the Docs API later is localized.
+
+**Project-type review.** The student picks an ISEF track — **Engineering** or **Science** — and a subtype (robotics, software, electrical, mechanical, materials / biology, chemistry, physics, environmental, behavioral). Each choice selects a rubric composed from a track base (`_engineering.md` / `_science.md`, the ISEF five-section criteria) plus subtype emphasis (e.g. robotics → motor type, current draw, battery runtime, multi-trial testing). "Review my plan" streams a structured critique that **fills in live** — the five rubric rows grade in one at a time with filling bars, then Strengths / Gaps / Next-steps columns populate. The result is persisted (`research_plans.last_review_json`) and replaced on each re-review.
+
+**"Has this idea been done before?"** A web-search agent (Claude + the Anthropic native `web_search` tool) reads the synced plan, runs a handful of searches, and returns a **novel / refine / reject** verdict with prior work, how the project could still differ, a recommendation, and citations. The UI shows each **search query and the sources as they happen**. Rate-limited to **3 runs per day per team** (`idea_checks` ledger); the latest result is persisted (`research_plans.last_idea_check_json`) and replaced on each re-run.
+
+Tune review rigor by editing the markdown in `lib/research-plan/rubrics/` — no code changes.
+
 ---
 
 ## 10. Team Collaboration
 
 ### 10.1 Overview
-Students can work solo or in shared-laboratory teams of 1–4 members. For teams, everything project-related is shared and identical between members. Each member has their own login; every action is attributed to the user who performed it.
+Students can work solo or in shared-laboratory teams (up to `max_members`, default 3). Most project state is shared and identical between members; the exception is **literature proficiency, which is per student** (each member earns their own). Each member has their own login; every action is attributed to the user who performed it.
 
 ### 10.2 Team Mechanics
-- Teams formed during onboarding or invited later
+- A lead **creates** a lab at onboarding; others **join** with a single-use code
+- Invite/join: the lead mints a code in the **Team panel** (`POST /api/team/invite`); a joiner redeems it (`POST /api/team/join`), which enforces `max_members` atomically. Codes expire after 7 days and burn on use
 - One member designated **Team Lead**
-- Teams can have 1–4 members (solo = team of 1, unified data model)
-- Currencies (KP, Clearance, LC) accumulate to the team
-- Figurines remain individually owned (one member's Analyst figurine unlocks Data Terminal for the whole team)
+- Solo = team of 1 (unified data model)
+- **Independent proficiency:** each member demonstrates literature proficiency and earns KP (max 100/source) on their own, so a bigger team earns proportionally more KP from the same 25 sources
+- **Cost scaling:** building-shop prices scale with the live member count (`baseCost × members`), shown as a `×N · N-student lab` badge — offsetting the extra earning
+- Currencies (KP, Clearance, LC) accumulate into one shared team total, displayed the same for every member
+- Discovery trees stay team-shared; figurines remain individually owned
 
 ### 10.3 Attribution
 Every action records the acting user. A team activity feed shows recent actions: *"Maya uploaded *Quantum Entanglement and Bell Inequalities*"* / *"Devon upgraded the Optics Laboratory to level 4."* / *"Aisha logged a Failure Log entry."*
@@ -444,10 +459,11 @@ Every action records the acting user. A team activity feed shows recent actions:
 - Major actions (changing topic, lab type, kicking a member) require Team Lead authorization
 
 ### 10.5 Technical Implementation
-- `teams` and `team_members` tables; all shared resources carry `team_id`
+- `teams` (with `max_members`) + `team_members`; join codes in `team_invites`
+- Per-student proficiency in `paper_proficiency` (`@@id([paper_id, user_id])`); shared resources carry `team_id`
+- `GET /api/team` backs the Team panel (roster, capacity, the lead's active code, phase-advance gate); `POST /api/team/invite` + `/api/team/join` handle codes
 - All actions carry `created_by_user_id` for attribution
-- Initial sync: 15s polling on activity feed
-- At scale: Supabase Realtime or Pusher WebSocket
+- Initial sync: 15s polling on activity feed; at scale: Supabase Realtime or Pusher WebSocket
 
 ---
 
@@ -736,6 +752,8 @@ A reference center inside NOVA Lab providing everything a student needs to navig
 
 The Fair Hub is **always accessible** from day one — even before topic selection — so students understand the competitive landscape they're working toward from the start.
 
+> **Status (as built):** the gateway is live (`components/fair/ScienceFairFeature.tsx`) — US location via ZIP, matched regional/state/ISEF cards with a countdown, the full ISEF rubric, and an AI "sync from site" deadline step. The fair dataset is a **provisional starter** and deadlines are **estimated** pending per-fair verification (see §13.8 and `TODO.md`). Self-assessment, teacher review, category matcher, forms tracking, and the notification engine remain planned.
+
 ### 13.2 Personalized Fair Calendar
 Based on the student's school location (collected during onboarding), the app surfaces the fairs they're eligible for:
 
@@ -758,7 +776,7 @@ Each fair entry includes:
 When a date for the current year has not yet been officially announced, the app shows: *"Estimated: [Month] [Year] (based on [Previous Year] timing)"* until the official date is published. The estimate is computed from the same week-of-year as the prior year's event.
 
 ### 13.3 ISEF Rubric Integration
-The full official ISEF judging rubric is built into the Fair Hub. *(Final rubric content to be supplied; structure described below.)*
+The full official ISEF judging rubric is built into the Fair Hub and rendered in the ISEF card. **Content is in `docs/isef-2026.md`** and structured for display in `lib/fairs/isef-rubric.ts` — Science and Engineering tracks, each with the five sections, every section's checklist subpoints (what judges score), the Poster (10) / Interview (25) split of Section V, the judging-emphasis notes, and the project-board guidance.
 
 - Each criterion (e.g. Research Question, Design and Methodology, Execution, Creativity, Presentation) explained in plain language
 - **Self-assessment tool:** students rate themselves on each criterion against a clear checklist of what would earn a higher rating
@@ -797,16 +815,16 @@ Comprehensive checklist of required ISEF forms (1, 1A, 1B, 2, 3, 4, 5, 6, 7) and
 
 ### 13.8 Technical Implementation
 
-**Data sources:**
-- Initial fair date database manually curated from Society for Science's list of ISEF-affiliated fairs (~450 regional fairs in the US, ~50 state fairs)
-- ISEF dates pulled from Society for Science's official source
-- Annual update process via admin interface (admin tool used by NOVA Lab staff to refresh dates each season)
-- *Future:* explore web scraping or partnerships with Society for Science for an official data feed
+**Data sources (as built):**
+- A **provisional starter dataset** of affiliated fairs lives in `lib/fairs/dataset.ts` (modeled on the Society for Science affiliated-fair directory: ISEF + a spread of state fairs + example regionals, each with coordinates and a stable `seed_key`). `ensureFairsSeeded()` upserts it idempotently into `fairs`/`fair_events` on first match
+- **All dates are estimated.** `POST /api/fairs/[id]/sync-deadlines` fetches a fair's site and has Claude extract the upcoming dates into a `fair_events` row marked `estimated`; per-fair verification is still required before promoting to `confirmed`
+- *Owner follow-up (`TODO.md`):* replace/extend the dataset with the full affiliated-fair list; an annual admin refresh process and an official Society for Science feed remain future work
 
 **Schema additions:**
 ```
 fairs                 id, name, level (school|regional|state|international|affiliated),
-                      state, county, country, website_url, parent_fair_id
+                      state, county, country, website_url, parent_fair_id,
+                      latitude, longitude, seed_key (unique)  # matching + idempotent seed
 fair_events           id, fair_id, year, event_date, registration_deadline,
                       abstract_deadline, venue, status (confirmed|estimated),
                       previous_year_event_id  # for estimate fallback
@@ -824,10 +842,9 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
                       completed_at
 ```
 
-**Geographic matching:**
-- Student's school location (state + county/region from school record) determines regional fair eligibility
-- Multiple fairs may match; student selects their primary fair, can also track others
-- Manual override for unusual cases (homeschoolers, students switching schools, etc.)
+**Geographic matching (as built):**
+- The team's US **ZIP** (captured at onboarding or set inline via `POST /api/team/location`) is mapped to a state in `lib/fairs/zip.ts` (USPS prefix ranges); `GET /api/fairs/match` returns the state fair + nearest regional (ordered by state-centroid distance) + ISEF
+- *Planned:* finer ZIP-centroid distance, primary-fair selection, and manual override for edge cases (homeschoolers, school switches)
 
 **Rubric storage:**
 - ISEF rubric stored as versioned JSON in `rubric_versions` table
@@ -862,7 +879,7 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 | **Literature Review** | `literature_review` | Upload, quiz, relevance probe |
 | **Literature Library** | `literature_review` | Searchable archive of processed papers |
 | **Daily Activities** | `literature_review` | Field Dispatch, Expertise, Project Log, Failure Log |
-| **Research Planning** | `research_planning` | Hypothesis builder, methodology designer |
+| **Research Plan** | `research_planning` | Google Doc connect + type-specific AI review + web-search idea check (§9.7) |
 | **Building Purchases** | `working` | KP-based; building catalog available |
 | **Building Upgrades** | `working` | Capped by Clearance Level |
 | **Building Mini-games** | `working` | Daily cap, KP reward |

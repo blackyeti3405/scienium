@@ -39,7 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     where: { id: sessionId, userId: dbUser.id, paperId: params.id },
     include: {
       paper: {
-        select: { id: true, teamId: true, title: true, fullText: true, kpAwarded: true },
+        select: { id: true, teamId: true, title: true, fullText: true },
       },
     },
   })
@@ -92,14 +92,22 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const aggregate = Math.round(graded.reduce((sum, g) => sum + clamp(g.score), 0) / graded.length)
   const passed = aggregate >= QUIZ_PASS_THRESHOLD
 
-  // Knowledge Points reward: a source grants at most 100 KP — your quiz score on
-  // a passing attempt. `paper.kpAwarded` is the high-water mark already granted,
-  // so we only top up by the improvement (and never below 0). A failing quiz, or
-  // a passing retake that doesn't beat the prior best, grants nothing.
-  const kpEarned = passed ? Math.max(0, aggregate - session.paper.kpAwarded) : 0
+  // Proficiency + KP are tracked PER STUDENT now (paper_proficiency), so every
+  // member earns independently from the same 25 sources. A source grants at most
+  // 100 KP to each student — their quiz score on a passing attempt. The student's
+  // own `kpAwarded` is their high-water mark, so we top up only by the improvement
+  // (never below 0). A failing quiz, or a passing retake that doesn't beat this
+  // student's prior best, grants nothing.
+  const existing = await db.paperProficiency.findUnique({
+    where: { paperId_userId: { paperId: session.paper.id, userId: dbUser.id } },
+    select: { kpAwarded: true, bestScore: true },
+  })
+  const priorKp = existing?.kpAwarded ?? 0
+  const priorBest = existing?.bestScore ?? 0
+  const kpEarned = passed ? Math.max(0, aggregate - priorKp) : 0
 
   // Persist atomically: per-question attempts, session result, and — when passed —
-  // proficiency, the new KP high-water mark, and the team's KP balance bump.
+  // this student's proficiency row (new high-water mark) + the team's KP bump.
   await db.$transaction([
     db.paperQuizAttempt.createMany({
       data: questions.map((q) => {
@@ -121,12 +129,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }),
     ...(passed
       ? [
-          db.paper.update({
-            where: { id: session.paper.id },
-            data: {
-              proficiencyDemonstrated: true,
-              // Raise the high-water mark only — never lower it on a weaker retake.
-              kpAwarded: { set: Math.max(session.paper.kpAwarded, aggregate) },
+          db.paperProficiency.upsert({
+            where: { paperId_userId: { paperId: session.paper.id, userId: dbUser.id } },
+            create: {
+              paperId: session.paper.id,
+              userId: dbUser.id,
+              demonstrated: true,
+              bestScore: aggregate,
+              kpAwarded: Math.min(100, aggregate),
+            },
+            // Raise the high-water marks only — never lower them on a weaker retake.
+            update: {
+              demonstrated: true,
+              bestScore: Math.max(priorBest, aggregate),
+              kpAwarded: Math.max(priorKp, aggregate),
             },
           }),
         ]

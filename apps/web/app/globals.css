@@ -98,6 +98,16 @@
 }
 .status-strip__brand { color: #cfd6f0; font-size: 10px; }
 .status-strip__team { color: #aeb6d0; font-size: 13px; font-weight: 600; }
+/* Team name doubles as the Team-panel trigger when a roster is available. */
+.status-strip__team--button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  border-bottom: 1px dotted transparent;
+  transition: color 0.12s, border-color 0.12s;
+}
+.status-strip__team--button:hover { color: #e8ecfb; border-bottom-color: #4a5478; }
 .status-strip__labtype { color: #7ff2e3; font-size: 8px; }
 .status-strip__stat {
   display: inline-flex;
@@ -123,6 +133,47 @@
   padding: 3px 6px;
   border: 1px solid #2a3048;
 }
+
+/* ── Phase-advance affordance (literature gate) ─────────────────────────────── */
+.phase-advance {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: #0c1424;
+  border-bottom: 1px solid #2a3048;
+  flex-shrink: 0;
+}
+.phase-advance--ready {
+  background: linear-gradient(90deg, rgba(245, 197, 24, 0.12), rgba(12, 20, 36, 0));
+  border-bottom-color: rgba(245, 197, 24, 0.35);
+}
+.phase-advance__progress {
+  font-size: 8px;
+  color: #aeb6d0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.phase-advance--ready .phase-advance__progress { color: #e8ecfb; }
+.phase-advance__dot { color: #4a5478; }
+.phase-advance__btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 8px;
+  color: #2a1d05;
+  background: linear-gradient(#ffe566, #f5c518);
+  border: 1px solid #8a6d10;
+  border-radius: 3px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: filter 0.12s ease, transform 0.12s ease;
+}
+.phase-advance__btn:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.phase-advance__btn:disabled { opacity: 0.55; cursor: default; transform: none; }
+.phase-advance__error { font-size: 7px; color: #ff8a8a; }
 
 /* Full-bleed viewport — the grass tiles fill the entire area. */
 .lab-scene__viewport {
@@ -329,6 +380,17 @@
   flex-shrink: 0;
 }
 .shop-panel__title { color: #ffe566; font-size: 11px; }
+/* Cost multiplier badge — building costs scale with the live team size. */
+.shop-panel__scale {
+  margin-right: auto;
+  margin-left: 12px;
+  font-size: 7px;
+  color: #7ff2e3;
+  background: rgba(127, 242, 227, 0.08);
+  border: 1px solid rgba(127, 242, 227, 0.25);
+  padding: 2px 7px;
+  border-radius: 3px;
+}
 .shop-panel__close {
   color: #cdd3ea;
   font-size: 11px;
@@ -444,6 +506,12 @@
   color: #e8ecfb;
 }
 .shop-panel__currency-value { color: #fff; }
+
+/* Indeterminate progress bar (streamed AI review / idea check). */
+@keyframes indeterminate {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(360%); }
+}
 
 /* ── Chat markdown (Nova replies) ──────────────────────────────────────────── */
 .chat-md > :first-child { margin-top: 0; }

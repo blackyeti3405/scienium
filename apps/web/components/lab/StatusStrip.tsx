@@ -20,11 +20,14 @@ export function StatusStrip({
   phase,
   labType,
   currency,
+  onOpenTeam,
 }: {
   teamName: string
   phase: Phase
   labType: LabType | null
   currency: Currency
+  /** Opens the Team panel (roster + invite codes). */
+  onOpenTeam?: () => void
 }) {
   const phaseInfo = PHASE_INFO[phase]
 
@@ -32,7 +35,18 @@ export function StatusStrip({
     <div className="status-strip">
       <div className="status-strip__left">
         <span className="font-pixel status-strip__brand">⚗ NOVA Lab</span>
-        <span className="status-strip__team">{teamName}</span>
+        {onOpenTeam ? (
+          <button
+            type="button"
+            className="status-strip__team status-strip__team--button"
+            onClick={onOpenTeam}
+            title="View your lab roster & invite members"
+          >
+            {teamName}
+          </button>
+        ) : (
+          <span className="status-strip__team">{teamName}</span>
+        )}
         {labType && (
           <span className="font-pixel status-strip__labtype">{LAB_TYPE_LABELS[labType]}</span>
         )}

@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { LabScene } from '@/components/lab/LabScene'
+import { getLiteratureAdvanceProgress, type AdvanceProgress } from '@/lib/team/advance'
 import { PHASE_ORDER, LAB_TYPES, type Phase, type LabType } from '@/lib/phase'
 
 export const metadata = { title: 'NOVA Lab' }
@@ -29,6 +30,7 @@ export default async function LabPage({
   let labType: LabType | null = null
   let currency = { kp: 0, clearanceLevel: 0, lc: 0 }
   let hasPresenter = false
+  let memberCount = 1
 
   try {
     const user = await db.user.findUnique({
@@ -68,6 +70,7 @@ export default async function LabPage({
       phase = team.phase as Phase
       labType = (team.labType as LabType | null) ?? null
       if (team.currency) currency = team.currency
+      memberCount = team.members.length || 1
       hasPresenter = team.members.some((m) =>
         m.user.figurineUnlocks.some((f) => f.figurineTier === 'presenter'),
       )
@@ -88,6 +91,17 @@ export default async function LabPage({
     if (searchParams.presenter === '1') hasPresenter = true
   }
 
+  // Literature-phase advance gate (Feature 1e): progress toward 25 sources with
+  // every member proficient. Only meaningful during literature_review.
+  let advance: AdvanceProgress | null = null
+  if (teamId && phase === 'literature_review') {
+    try {
+      advance = await getLiteratureAdvanceProgress(teamId, phase)
+    } catch {
+      // Non-fatal: the gate affordance simply won't render.
+    }
+  }
+
   return (
     <LabScene
       teamName={teamName}
@@ -95,6 +109,8 @@ export default async function LabPage({
       labType={labType}
       currency={currency}
       hasPresenter={hasPresenter}
+      memberCount={memberCount}
+      advance={advance}
       seed={teamId ? seedFrom(teamId) : 1}
     />
   )

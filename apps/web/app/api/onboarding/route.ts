@@ -1,6 +1,7 @@
 import { auth, currentUser } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { isValidZip, zipToState } from '@/lib/fairs/zip'
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth()
@@ -9,10 +10,14 @@ export async function POST(req: NextRequest) {
   const clerkUser = await currentUser()
   if (!clerkUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { name, teamName } = await req.json()
+  const { name, teamName, zip } = await req.json()
   if (!name?.trim() || !teamName?.trim()) {
     return NextResponse.json({ error: 'Name and team name are required' }, { status: 400 })
   }
+
+  // Optional US location (Feature 3): derive the state if a valid ZIP is given.
+  const locationZip = zip && isValidZip(String(zip)) ? String(zip).trim() : null
+  const locationState = locationZip ? zipToState(locationZip) : null
 
   const email =
     clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
@@ -41,6 +46,8 @@ export async function POST(req: NextRequest) {
       name: teamName.trim(),
       teamLeadId: user.id,
       phase: 'literature_review',
+      locationZip,
+      locationState,
       members: { create: { userId: user.id, role: 'lead' } },
       // Every team starts with a zeroed currency ledger so KP/CLR/LC awards
       // (e.g. literature-review quiz proficiency) always have a row to update.

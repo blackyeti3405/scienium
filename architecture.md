@@ -272,8 +272,12 @@ parental_consents     id, user_id, consent_type, granted_at, revoked_at, evidenc
 teams                 id, name, team_lead_id, lab_type, topic,
                       phase (discovery | lab_selection | literature_review |
                              research_planning | working | showcase),
+                      max_members (default 3), location_zip, location_state,
                       created_at
 team_members          user_id, team_id, role (lead | member), joined_at
+team_invites          id, code (unique), team_id, created_by_user_id, expires_at,
+                      used_by_user_id, used_at, created_at
+                      # Single-use join codes; POST /api/team/join enforces max_members
 
 # Discovery   (the final research topic lives on teams.topic)
 discovery_nodes       id, team_id, parent_id, source_type (wikipedia | youtube | paper),
@@ -283,14 +287,30 @@ topic_interests       id, team_id, text, created_by_user_id, created_at
 
 # Literature
 papers                id, team_id, title, authors, abstract, source_type (pdf | text),
-                      file_url, content_hash, full_text, pdf_data (bytes),
-                      proficiency_demonstrated, status, uploaded_by_user_id, created_at
+                      file_url, content_hash, full_text, pdf_key (R2 object key),
+                      pdf_data (legacy bytes fallback), status,
+                      uploaded_by_user_id, created_at
+                      # proficiency_demonstrated / kp_awarded retained one release as a
+                      # backfill fallback — superseded by paper_proficiency (per-student)
+paper_proficiency     paper_id, user_id, demonstrated, best_score, kp_awarded, updated_at
+                      # @@id([paper_id, user_id]) — each member demonstrates + earns
+                      # KP (max 100/source) independently; backfilled from passing quizzes
 paper_chat_messages   id, paper_id, user_id, role, content, created_at
 paper_quiz_sessions   id, paper_id, user_id, questions_json, score, passed,
                       graded_at, created_at
 paper_quiz_attempts   id, session_id, paper_id, user_id, question, response,
                       evaluation, score, created_at
 paper_relevance_notes paper_id, user_id, response, created_at
+
+# Research Plan (Engineering/Science plan review + originality check)
+research_plans        team_id (PK), google_doc_url, project_type, project_subtype,
+                      last_synced_text, last_synced_at,
+                      last_review_json, last_reviewed_at,
+                      last_idea_check_json, last_idea_check_at
+                      # One per team; the review + idea-check results are the current
+                      # values, replaced on each re-run so they persist across reloads
+idea_checks           id, team_id, user_id, verdict, findings_json, created_at
+                      # Per-day rate-limit ledger (3/day per team)
 
 # Lab
 gateway_buildings     id, key (discovery | literature_review | research_plan |
@@ -334,7 +354,10 @@ showcase_views        id, showcase_id, visitor_fingerprint, viewed_at
 
 # Science Fair Hub
 fairs                 id, name, level (school | regional | state | international | affiliated),
-                      state, county, country, website_url, parent_fair_id
+                      state, county, country, website_url, parent_fair_id,
+                      latitude, longitude, seed_key (unique)
+                      # lat/lng + seed_key support nearest-fair matching + idempotent
+                      # upsert of the affiliated-fair dataset (lib/fairs/dataset.ts)
 fair_events           id, fair_id, year, event_date, registration_deadline,
                       abstract_deadline, venue, status (confirmed | estimated),
                       previous_year_event_id
@@ -392,8 +415,15 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 
 ### Onboarding flow
 1. After Clerk sign-up, a user with no team is redirected to `/onboarding` (enforced in the dashboard layout)
-2. The form `POST`s name + lab/team name to `/api/onboarding`, which idempotently creates the `User`, `Team` (seeded at `literature_review` phase), and `TeamMember` (lead) rows
+2. The form offers **Create a lab** or **Join a lab**:
+   - *Create* `POST`s name + lab/team name + optional US ZIP to `/api/onboarding`, which idempotently creates the `User`, `Team` (seeded at `literature_review`, `location_state` derived from ZIP), and `TeamMember` (lead) rows
+   - *Join* `POST`s name + a join code to `/api/team/join`, which creates the `User` if needed and adds a `TeamMember` to the invited team (capacity re-checked atomically)
 3. User is redirected to `/dashboard`
+
+### Team invite / join flow
+1. The lead opens the **Team panel** (status-strip team name) and `POST /api/team/invite` mints a single-use `team_invites` code (7-day expiry; refused at capacity)
+2. Another student redeems it via `/onboarding` (Join) or directly → `POST /api/team/join`, which validates the code, re-checks `max_members` in a transaction, creates the membership, and burns the code
+3. `GET /api/team` backs the panel (roster, capacity, the lead's active code, and the phase-advance gate)
 
 ### Paper upload flow (Lit Review) — current implementation
 1. Client uploads PDF via `POST /api/papers` (multipart/form-data)
@@ -405,8 +435,23 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 ### Quiz flow (Lit Review) — proficiency gate
 1. Opening a paper's Q&A panel calls `GET /api/papers/[id]/quiz`; if a graded session exists its results load, otherwise `POST /api/papers/[id]/quiz` generates a fresh quiz
 2. Generation: Claude reads the paper (prompt-cached) + the rubric (`lib/literature/quiz-rubric.md`) and returns N free-response questions, each with a server-only grading key, stored in `paper_quiz_sessions.questions_json`
-3. The student answers in natural language; `POST /api/papers/[id]/quiz/grade` grades all answers in one call against the keys + rubric, writes per-question rows to `paper_quiz_attempts`, sets the session score/passed, and on pass sets `papers.proficiency_demonstrated`
+3. The student answers in natural language; `POST /api/papers/[id]/quiz/grade` grades all answers in one call against the keys + rubric, writes per-question rows to `paper_quiz_attempts`, sets the session score/passed, and on pass **upserts the current user's `paper_proficiency` row** (demonstrated + per-student KP high-water mark, max 100/source). KP is per student but accrues into the shared `team_currency` total shown identically to all members
 4. After grading, the panel exposes a **Discuss with Nova** chat tab; messages persist to `paper_chat_messages` via `GET/POST /api/papers/[id]/chat` (paper text prompt-cached). The chat no longer grants proficiency — the quiz owns it.
+
+### Phase-advance gate flow (literature_review → research_planning)
+1. `lib/team/advance.ts#getLiteratureAdvanceProgress` computes readiness: 25 sources `ready` AND **every** member `demonstrated` on all 25 (per-student `paper_proficiency`)
+2. The lab scene renders a `PhaseAdvance` banner with live progress ("18/25 sources · 2/3 members ready"); when satisfied it offers an advance button
+3. `POST /api/team/advance-phase` re-runs the gate server-side and bumps `teams.phase`; the scene refreshes (the Research Plan gateway appears)
+
+### Research Plan flow (Engineering/Science)
+1. Student picks a project type + subtype and pastes an "anyone with the link" Google Doc URL; `POST /api/research-plan` fetches the published text (`lib/research-plan/google-doc.ts`) and stores it on `research_plans` ("Refresh" re-syncs)
+2. **Review:** `POST /api/research-plan/review` streams a structured critique (NDJSON) graded against the composed rubric (`_<type>.md` + `<subtype>.md`, prompt-cached on the doc); the assembled review is saved to `last_review_json` and replaces the prior one
+3. **Idea check:** `POST /api/research-plan/idea-check` runs Claude with the native web-search tool (`web_search_20260209`), streaming each search + sources live; verdict/findings save to `last_idea_check_json` (and an `idea_checks` ledger row for the 3/day-per-team limit), replacing the prior result
+
+### Science Fair matching flow
+1. `GET /api/fairs/match` reads the team's `location_state` (from ZIP) and calls `lib/fairs/match.ts#matchFairs`
+2. `ensureFairsSeeded` lazily upserts the affiliated-fair dataset into `fairs`/`fair_events` (idempotent by `seed_key`); matching returns the state fair + nearest regional (by state-centroid distance) + ISEF
+3. `POST /api/fairs/[id]/sync-deadlines` fetches a fair's site and has Claude extract dates into a `fair_events` row marked `estimated` (per-fair verification still required)
 
 ### YouTube deep-dive flow (Discovery)
 1. In YouTube mode, a pasted link (or ⌘V) calls `POST /api/discovery/youtube/resolve`, which extracts the video id and fetches the title via public **oEmbed** (no API key, no quota)
@@ -566,9 +611,10 @@ Gating is enforced in **two independent layers** — client-only gating is never
 
 ### 8.3 Phase transitions
 
-Phase transitions are explicit server-side actions (not automatic). A team's `phase` field is updated only by dedicated transition API endpoints (not yet built) that validate:
-- Current phase is exactly one step below the target
-- Any exit conditions are met (e.g., lab_type is set before leaving lab_selection; 25 papers before leaving literature_review)
+Phase transitions are explicit server-side actions (not automatic). A team's `phase` field is updated only by dedicated transition endpoints that re-run the gate server-side before bumping the phase.
+
+- **literature_review → research_planning** is built: `POST /api/team/advance-phase` calls `lib/team/advance.ts` and requires **25 sources uploaded AND every member proficient (per-student `paper_proficiency`) on all 25**. The lab scene's `PhaseAdvance` banner surfaces live progress and the advance affordance. Bigger teams take proportionally more total work to advance, balancing the extra KP they earn.
+- Other transitions' gates (e.g. lab_type set before leaving lab_selection) are not yet built.
 
 Phases cannot be skipped.
 

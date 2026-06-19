@@ -13,6 +13,9 @@ export async function GET(
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
+  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
+  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+
   const paper = await db.paper.findFirst({
     where: { id: params.id, teamId: ctx.teamId },
     select: {
@@ -23,13 +26,18 @@ export async function GET(
       status: true,
       fileUrl: true,
       createdAt: true,
-      proficiencyDemonstrated: true,
+      // This user's own proficiency on the source (per-student).
+      proficiencies: { where: { userId: dbUser.id }, select: { demonstrated: true } },
     },
   })
 
   if (!paper) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  return NextResponse.json(paper)
+  const { proficiencies, ...rest } = paper
+  return NextResponse.json({
+    ...rest,
+    proficiencyDemonstrated: proficiencies[0]?.demonstrated ?? false,
+  })
 }
 
 export async function DELETE(
@@ -54,6 +62,7 @@ export async function DELETE(
     db.paperQuizAttempt.deleteMany({ where: { paperId: paper.id } }),
     db.paperQuizSession.deleteMany({ where: { paperId: paper.id } }),
     db.paperRelevanceNote.deleteMany({ where: { paperId: paper.id } }),
+    db.paperProficiency.deleteMany({ where: { paperId: paper.id } }),
     db.paper.delete({ where: { id: paper.id } }),
   ])
 

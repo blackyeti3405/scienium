@@ -4,10 +4,13 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
 
+type Mode = 'create' | 'join'
+
 export default function OnboardingPage() {
   const { user } = useUser()
   const router = useRouter()
 
+  const [mode, setMode] = useState<Mode>('create')
   const [name, setName] = useState('')
 
   useEffect(() => {
@@ -15,7 +18,10 @@ export default function OnboardingPage() {
       setName(user.fullName ?? user.firstName ?? '')
     }
   }, [user])
+
   const [teamName, setTeamName] = useState('')
+  const [zip, setZip] = useState('')
+  const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -25,10 +31,13 @@ export default function OnboardingPage() {
     setLoading(true)
 
     try {
-      const res = await fetch('/api/onboarding', {
+      const endpoint = mode === 'create' ? '/api/onboarding' : '/api/team/join'
+      const payload =
+        mode === 'create' ? { name, teamName, zip: zip.trim() || undefined } : { name, code }
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, teamName }),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Setup failed')
@@ -40,16 +49,44 @@ export default function OnboardingPage() {
     }
   }
 
+  const canSubmit =
+    !!name.trim() && (mode === 'create' ? !!teamName.trim() : code.trim().length >= 4)
+
   return (
     <div className="max-w-md w-full space-y-8">
       <div>
         <h1 className="font-pixel text-white text-lg">Welcome to NOVA Lab</h1>
-        <p className="font-pixel text-white/40 text-[9px] mt-2">Set up your researcher profile to get started.</p>
+        <p className="font-pixel text-white/40 text-[9px] mt-2">
+          Set up your researcher profile to get started.
+        </p>
+      </div>
+
+      {/* Create / Join toggle */}
+      <div className="grid grid-cols-2 gap-2">
+        {(['create', 'join'] as Mode[]).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => {
+              setMode(m)
+              setError(null)
+            }}
+            className={`font-pixel text-[8px] uppercase tracking-widest py-2.5 border transition-colors ${
+              mode === m
+                ? 'border-[#F5C518] text-[#F5C518] bg-[#F5C518]/10'
+                : 'border-white/20 text-white/40 hover:border-white/40 hover:text-white/60'
+            }`}
+          >
+            {m === 'create' ? 'Create a lab' : 'Join a lab'}
+          </button>
+        ))}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-1.5">
-          <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">Your name</label>
+          <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
+            Your name
+          </label>
           <input
             type="text"
             value={name}
@@ -60,28 +97,67 @@ export default function OnboardingPage() {
           />
         </div>
 
-        <div className="space-y-1.5">
-          <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">Lab / team name</label>
-          <input
-            type="text"
-            value={teamName}
-            onChange={(e) => setTeamName(e.target.value)}
-            required
-            placeholder="Saini Research Lab"
-            className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
-          />
-        </div>
-
-        {error && (
-          <p className="font-pixel text-[8px] text-red-400">{error}</p>
+        {mode === 'create' ? (
+          <div className="space-y-1.5">
+            <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
+              Lab / team name
+            </label>
+            <input
+              type="text"
+              value={teamName}
+              onChange={(e) => setTeamName(e.target.value)}
+              required
+              placeholder="Saini Research Lab"
+              className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
+            />
+            <div className="space-y-1.5 pt-3">
+              <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
+                ZIP code <span className="text-white/25">(optional · finds your fairs)</span>
+              </label>
+              <input
+                type="text"
+                value={zip}
+                onChange={(e) => setZip(e.target.value)}
+                placeholder="90089"
+                maxLength={10}
+                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
+              Join code
+            </label>
+            <input
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              required
+              placeholder="K7M9QP"
+              maxLength={8}
+              className="w-full bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.3em] px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30 placeholder:tracking-normal"
+            />
+            <p className="font-pixel text-[7px] text-white/30 leading-loose">
+              Ask your lab lead for the code shown in their Team panel.
+            </p>
+          </div>
         )}
+
+        {error && <p className="font-pixel text-[8px] text-red-400">{error}</p>}
 
         <button
           type="submit"
-          disabled={loading || !name.trim() || !teamName.trim()}
+          disabled={loading || !canSubmit}
           className="w-full font-pixel text-[9px] bg-[#F5C518] text-[#0d1b2e] py-3 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
         >
-          {loading ? 'Setting up…' : '↑ Enter Your Lab'}
+          {loading
+            ? mode === 'create'
+              ? 'Setting up…'
+              : 'Joining…'
+            : mode === 'create'
+              ? '↑ Enter Your Lab'
+              : '↑ Join the Lab'}
         </button>
       </form>
     </div>

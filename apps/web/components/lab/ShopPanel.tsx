@@ -10,9 +10,23 @@ import type { Currency } from '@/components/lab/StatusStrip'
  * scrolling shelf laid out as two rows of square cards, with the team's three
  * currencies pinned along the bottom. Matches the lab's pixel-frame chrome
  * (chunky border, pixel-font labels, gold accents). Escape / backdrop closes.
+ *
+ * Costs scale with the live team size (Feature 1c): a building costs
+ * `baseCost × memberCount`, so a bigger lab — which earns proportionally more KP
+ * across its members — pays proportionally more to build. The multiplier is shown
+ * up front when the team has more than one member.
  */
-export function ShopPanel({ currency, onClose }: { currency: Currency; onClose: () => void }) {
+export function ShopPanel({
+  currency,
+  memberCount,
+  onClose,
+}: {
+  currency: Currency
+  memberCount: number
+  onClose: () => void
+}) {
   const closeRef = useRef<HTMLButtonElement>(null)
+  const multiplier = Math.max(1, memberCount)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -41,6 +55,11 @@ export function ShopPanel({ currency, onClose }: { currency: Currency; onClose: 
       <div className="shop-panel">
         <header className="shop-panel__bar">
           <span className="shop-panel__title font-pixel">⚒ Buildings</span>
+          {multiplier > 1 && (
+            <span className="shop-panel__scale font-pixel" title="Costs scale with your lab size">
+              ×{multiplier} · {multiplier}-student lab
+            </span>
+          )}
           <button
             ref={closeRef}
             type="button"
@@ -55,9 +74,17 @@ export function ShopPanel({ currency, onClose }: { currency: Currency; onClose: 
         {/* Two-row, horizontally scrolling shelf of building cards. */}
         <div className="shop-panel__shelf">
           <div className="shop-panel__grid">
-            {SHOP_BUILDINGS.map((b) => (
-              <ShopCard key={b.key} building={b} affordable={currency.kp >= b.cost} />
-            ))}
+            {SHOP_BUILDINGS.map((b) => {
+              const cost = b.cost * multiplier
+              return (
+                <ShopCard
+                  key={b.key}
+                  building={b}
+                  cost={cost}
+                  affordable={currency.kp >= cost}
+                />
+              )
+            })}
           </div>
         </div>
 
@@ -77,7 +104,15 @@ export function ShopPanel({ currency, onClose }: { currency: Currency; onClose: 
   )
 }
 
-function ShopCard({ building, affordable }: { building: ShopBuilding; affordable: boolean }) {
+function ShopCard({
+  building,
+  cost,
+  affordable,
+}: {
+  building: ShopBuilding
+  cost: number
+  affordable: boolean
+}) {
   return (
     <div className="shop-card">
       <div className="shop-card__image" aria-hidden="true">
@@ -89,7 +124,7 @@ function ShopCard({ building, affordable }: { building: ShopBuilding; affordable
         title="Knowledge Points"
       >
         <span className="shop-card__coin" aria-hidden="true" />
-        {building.cost.toLocaleString()}
+        {cost.toLocaleString()}
       </span>
       <span className="shop-card__desc">{building.description}</span>
     </div>

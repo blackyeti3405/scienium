@@ -31,16 +31,20 @@ const LiteratureFeature = dynamic(
   { ssr: false, loading },
 )
 
+const ScienceFairFeature = dynamic(
+  () => import('@/components/fair/ScienceFairFeature').then((m) => m.ScienceFairFeature),
+  { ssr: false, loading },
+)
+
+const ResearchPlanFeature = dynamic(
+  () => import('@/components/research-plan/ResearchPlanFeature').then((m) => m.ResearchPlanFeature),
+  { ssr: false, loading },
+)
+
 export const FEATURE_COMPONENTS: Record<GatewayKey, ComponentType> = {
   discovery: DiscoveryFeature,
 
-  science_fair: () => (
-    <StubFeature
-      title="Science Fair Hub"
-      description="Personalized fair calendar, ISEF rubric & categories, and a forms checklist — your competition reference center, available from day one."
-      route="/fair-hub/calendar"
-    />
-  ),
+  science_fair: ScienceFairFeature,
   literature_review: LiteratureFeature,
   operations_hub: () => (
     <StubFeature
@@ -49,13 +53,7 @@ export const FEATURE_COMPONENTS: Record<GatewayKey, ComponentType> = {
       route="/daily/dispatch"
     />
   ),
-  research_plan: () => (
-    <StubFeature
-      title="Research Plan"
-      description="Define your hypothesis, methodology, variables, and study design before experiments begin."
-      route="/research-plan"
-    />
-  ),
+  research_plan: ResearchPlanFeature,
   pvp: () => (
     <StubFeature
       title="Battle Arena"
