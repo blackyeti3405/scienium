@@ -6,6 +6,7 @@ import { BuildingSprite } from '@/components/lab/BuildingSprite'
 import { FeaturePanel } from '@/components/lab/FeaturePanel'
 import { ShopPanel } from '@/components/lab/ShopPanel'
 import { TeamPanel } from '@/components/lab/TeamPanel'
+import { ActivityPanel } from '@/components/lab/ActivityPanel'
 import { PhaseAdvance } from '@/components/lab/PhaseAdvance'
 import { StatusStrip, type Currency } from '@/components/lab/StatusStrip'
 import { LabCurrencyProvider } from '@/lib/labCurrency'
@@ -56,6 +57,7 @@ export function LabScene({
   const [openKey, setOpenKey] = useState<Gateway['key'] | null>(null)
   const [shopOpen, setShopOpen] = useState(false)
   const [teamOpen, setTeamOpen] = useState(false)
+  const [activityOpen, setActivityOpen] = useState(false)
 
   const skin: GatewaySkin = (labType ?? 'generic') as GatewaySkin
 
@@ -91,6 +93,7 @@ export function LabScene({
             labType={labType}
             currency={liveCurrency}
             onOpenTeam={() => setTeamOpen(true)}
+            onOpenActivity={() => setActivityOpen(true)}
           />
 
           {advance && <PhaseAdvance progress={advance} />}
@@ -158,6 +161,8 @@ export function LabScene({
           )}
 
           {teamOpen && <TeamPanel onClose={() => setTeamOpen(false)} />}
+
+          {activityOpen && <ActivityPanel onClose={() => setActivityOpen(false)} />}
         </div>
       )}
     </LabCurrencyProvider>

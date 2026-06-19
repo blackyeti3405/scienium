@@ -7,6 +7,7 @@ import { parseJson } from '@/lib/validation'
 import { isValidSelection } from '@/lib/research-plan/types'
 import { fetchGoogleDocText, GoogleDocError } from '@/lib/research-plan/google-doc'
 import { IDEA_CHECK_DAILY_LIMIT, ideaChecksUsedToday } from '@/lib/research-plan/idea-check'
+import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
 const MAX_STORED_TEXT = 100_000
@@ -75,6 +76,8 @@ export async function POST(req: NextRequest) {
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
+  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
+
   const { data: body, error } = await parseJson(req, PlanBody)
   if (error) return error
   const { googleDocUrl, projectType, projectSubtype } = body
@@ -107,6 +110,10 @@ export async function POST(req: NextRequest) {
     create: { teamId: ctx.teamId, ...data },
     update: data,
   })
+
+  if (dbUser) {
+    logActivity(ctx.teamId, dbUser.id, 'plan_synced', {}).catch(console.error)
+  }
 
   return NextResponse.json({
     plan: {

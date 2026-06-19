@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { getTeamContext } from '@/lib/phase'
 import { enforceRateLimit } from '@/lib/rate-limit'
+import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
 export async function GET(
@@ -57,9 +58,11 @@ export async function DELETE(
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
+  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
+
   const paper = await db.paper.findFirst({
     where: { id: params.id, teamId: ctx.teamId },
-    select: { id: true },
+    select: { id: true, title: true },
   })
   if (!paper) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -72,6 +75,10 @@ export async function DELETE(
     db.paperProficiency.deleteMany({ where: { paperId: paper.id } }),
     db.paper.delete({ where: { id: paper.id } }),
   ])
+
+  if (dbUser) {
+    logActivity(ctx.teamId, dbUser.id, 'paper_delete', { title: paper.title }).catch(console.error)
+  }
 
   return NextResponse.json({ ok: true })
 }

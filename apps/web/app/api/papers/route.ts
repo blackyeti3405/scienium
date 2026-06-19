@@ -8,6 +8,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { extractText, getDocumentProxy } from 'unpdf'
 import { putObject, paperPdfKey } from '@/lib/storage'
 import { checkPaperRelevance } from '@/lib/literature/relevance'
+import { logActivity } from '@/lib/activity/log'
 
 // Server-side only; the Anthropic key is never bundled for the browser.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -140,6 +141,7 @@ export async function POST(req: NextRequest) {
 
   // Fire-and-forget: extract metadata from the text we already have
   extractMetadata(paper.id, fullText, title).catch(console.error)
+  logActivity(ctx.teamId, dbUser.id, 'paper_upload', { title }).catch(console.error)
 
   return NextResponse.json({
     id: paper.id,

@@ -98,6 +98,9 @@ model Team {
   // for ordering regional fairs. Set at onboarding / location update via Nominatim.
   locationLat   Float?   @map("location_lat")
   locationLng   Float?   @map("location_lng")
+  // One-sentence research idea submitted at the end of lit review — used to
+  // auto-assign lab type via Haiku classification before entering research_planning.
+  researchIdea  String?  @map("research_idea")
   createdAt  DateTime @default(now()) @map("created_at")
 
   members         TeamMember[]

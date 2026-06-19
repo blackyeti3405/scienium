@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { UserButton } from '@clerk/nextjs'
+import { Activity } from 'lucide-react'
 import { PHASE_INFO, LAB_TYPE_LABELS, type Phase, type LabType } from '@/lib/phase'
 
 export interface Currency {
@@ -21,6 +22,7 @@ export function StatusStrip({
   labType,
   currency,
   onOpenTeam,
+  onOpenActivity,
 }: {
   teamName: string
   phase: Phase
@@ -28,6 +30,8 @@ export function StatusStrip({
   currency: Currency
   /** Opens the Team panel (roster + invite codes). */
   onOpenTeam?: () => void
+  /** Opens the Activity side panel. */
+  onOpenActivity?: () => void
 }) {
   const phaseInfo = PHASE_INFO[phase]
 
@@ -59,6 +63,17 @@ export function StatusStrip({
         <span className="font-pixel status-strip__phase" title={phaseInfo.description}>
           {phaseInfo.label.toUpperCase()}
         </span>
+        {onOpenActivity && (
+          <button
+            type="button"
+            className="status-strip__activity-btn"
+            onClick={onOpenActivity}
+            title="Team activity"
+            aria-label="View team activity"
+          >
+            <Activity size={13} />
+          </button>
+        )}
         <UserButton afterSignOutUrl="/" />
       </div>
     </div>

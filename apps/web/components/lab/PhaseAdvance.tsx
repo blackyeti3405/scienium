@@ -2,33 +2,44 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Lock, ArrowRight, Loader2 } from 'lucide-react'
-import { PHASE_INFO } from '@/lib/phase'
+import { Lock, Loader2, FlaskConical } from 'lucide-react'
+import { LAB_TYPE_LABELS } from '@/lib/phase'
 import type { AdvanceProgress } from '@/lib/team/advance'
 
 /**
- * Lab-scene affordance for the phase gate (Feature 1e). Sits just under the
- * status strip during literature_review and shows live progress toward leaving
- * it — sources uploaded and how many members are proficient on all of them.
- * Once the gate is satisfied it becomes a gold "advance" button; the server
- * re-checks the gate before bumping the phase.
+ * Phase-gate affordance shown below the status strip during literature_review.
+ * Shows live progress toward leaving the phase.
+ *
+ * When the gate is satisfied:
+ *   - Prompts the student for a one-sentence research idea
+ *   - Submits to advance-phase which classifies the lab type via Haiku
+ *   - Briefly shows the assigned lab type, then refreshes
  */
 export function PhaseAdvance({ progress }: { progress: AdvanceProgress }) {
   const router = useRouter()
+  const [idea, setIdea] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const toLabel = progress.toPhase ? PHASE_INFO[progress.toPhase].label : 'next phase'
+  const [result, setResult] = useState<{ labTypeLabel: string; rationale: string } | null>(null)
 
   async function advance() {
+    if (!idea.trim()) {
+      setError('Please describe your research idea first.')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch('/api/team/advance-phase', { method: 'POST' })
+      const res = await fetch('/api/team/advance-phase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ researchIdea: idea.trim() }),
+      })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Could not advance')
-      // The scene (buildings, gating) is server-rendered from the phase, so refresh.
-      router.refresh()
+      setResult({ labTypeLabel: data.labTypeLabel, rationale: data.rationale })
+      // Short pause so the student can see their assigned lab type before refresh.
+      setTimeout(() => router.refresh(), 2200)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not advance')
       setBusy(false)
@@ -44,16 +55,43 @@ export function PhaseAdvance({ progress }: { progress: AdvanceProgress }) {
         {progress.membersReady}/{progress.memberCount} members ready
       </span>
 
-      {progress.canAdvance && (
-        <button
-          type="button"
-          className="phase-advance__btn font-pixel"
-          onClick={advance}
-          disabled={busy}
-        >
-          {busy ? <Loader2 size={11} className="animate-spin" /> : <ArrowRight size={11} />}
-          Advance to {toLabel}
-        </button>
+      {progress.canAdvance && !result && (
+        <div className="phase-advance__idea-form">
+          <label className="phase-advance__idea-label font-pixel" htmlFor="research-idea">
+            Lit review complete — describe your project in one sentence:
+          </label>
+          <div className="phase-advance__idea-row">
+            <input
+              id="research-idea"
+              type="text"
+              className="phase-advance__idea-input font-pixel"
+              placeholder="e.g. I'm investigating how soil pH affects plant growth rate…"
+              value={idea}
+              onChange={(e) => setIdea(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !busy && advance()}
+              maxLength={500}
+              disabled={busy}
+            />
+            <button
+              type="button"
+              className="phase-advance__btn font-pixel"
+              onClick={advance}
+              disabled={busy || !idea.trim()}
+            >
+              {busy ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
+              {busy ? 'Classifying…' : 'Submit'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {result && (
+        <div className="phase-advance__result font-pixel">
+          <FlaskConical size={11} className="shrink-0" />
+          <span>
+            Lab assigned: <strong>{result.labTypeLabel}</strong> — {result.rationale}
+          </span>
+        </div>
       )}
 
       {error && <span className="phase-advance__error font-pixel">{error}</span>}

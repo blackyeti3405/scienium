@@ -7,6 +7,7 @@ import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { batchCheckRelevance } from '@/lib/literature/relevance'
 import { deleteObject } from '@/lib/storage'
+import { logActivity } from '@/lib/activity/log'
 
 // An empty/absent topic clears it; cap the length otherwise.
 // `confirmWipe: true` signals the client has seen the confirmation and
@@ -53,6 +54,8 @@ export async function POST(req: NextRequest) {
 
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
+
+  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
 
   const { data, error } = await parseJson(req, TopicBody)
   if (error) return error
@@ -113,6 +116,13 @@ export async function POST(req: NextRequest) {
     where: { id: ctx.teamId },
     data: { topic: newTopic || null },
   })
+
+  if (dbUser) {
+    logActivity(ctx.teamId, dbUser.id, 'topic_changed', {
+      oldTopic,
+      newTopic: newTopic || null,
+    }).catch(console.error)
+  }
 
   return NextResponse.json({
     topic: newTopic || null,

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
 import { normalizeInviteCode } from '@/lib/team/invite'
+import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
 const JoinBody = z
@@ -81,6 +82,7 @@ export async function POST(req: NextRequest) {
       return team.id
     })
 
+    logActivity(teamId, user.id, 'member_joined', { name: user.name }).catch(console.error)
     return NextResponse.json({ teamId })
   } catch (err) {
     if (err instanceof JoinError) {

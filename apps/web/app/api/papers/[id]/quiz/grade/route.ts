@@ -13,6 +13,7 @@ import {
   loadRubric,
   extractJson,
 } from '@/lib/literature/quiz'
+import { logActivity } from '@/lib/activity/log'
 
 // Server-side only; the Anthropic key never reaches the browser.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -175,6 +176,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         ]
       : []),
   ])
+
+  if (passed) {
+    logActivity(ctx.teamId, dbUser.id, 'quiz_passed', {
+      paperTitle: session.paper.title,
+      score: aggregate,
+    }).catch(console.error)
+  }
 
   return NextResponse.json({
     score: aggregate,
