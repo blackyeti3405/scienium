@@ -9,7 +9,9 @@ const nextConfig = {
     ],
   },
   experimental: {
-    serverComponentsExternalPackages: ['sharp'],
+    // firecrawl uses undici (Node built-in HTTP) which webpack can't bundle.
+    // sharp likewise needs native bindings. Mark both as server-side externals.
+    serverComponentsExternalPackages: ['sharp', 'firecrawl'],
   },
 }
 

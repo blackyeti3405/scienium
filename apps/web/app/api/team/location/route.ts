@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { getTeamContext } from '@/lib/phase'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson, zipString } from '@/lib/validation'
-import { zipToState } from '@/lib/fairs/zip'
+import { zipToState, geocodeZip } from '@/lib/fairs/zip'
 import { db } from '@/lib/db'
 
 const LocationBody = z.object({ zip: zipString }).strict()
@@ -35,9 +35,16 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  const coords = await geocodeZip(zip)
+
   await db.team.update({
     where: { id: ctx.teamId },
-    data: { locationZip: zip, locationState: state },
+    data: {
+      locationZip: zip,
+      locationState: state,
+      locationLat: coords?.[0] ?? null,
+      locationLng: coords?.[1] ?? null,
+    },
   })
 
   return NextResponse.json({ zip, state })

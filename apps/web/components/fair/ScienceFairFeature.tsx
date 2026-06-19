@@ -11,10 +11,17 @@ import {
   Award,
   AlertTriangle,
   Pencil,
+  ClipboardList,
+  LayoutGrid,
+  Bell,
 } from 'lucide-react'
 import { format, differenceInCalendarDays } from 'date-fns'
 import { ISEF_RUBRIC, ISEF_BOARD_GUIDANCE, ISEF_EMPHASIS } from '@/lib/fairs/isef-rubric'
 import type { FairMatch, FairView } from '@/lib/fairs/match'
+import { FormsChecklist } from './FormsChecklist'
+import { CategoryBrowser } from './CategoryBrowser'
+
+type Tab = 'overview' | 'forms' | 'categories'
 
 interface MatchResponse {
   location: { zip: string | null; state: string | null }
@@ -25,6 +32,7 @@ export function ScienceFairFeature() {
   const [data, setData] = useState<MatchResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState<Tab>('overview')
 
   async function load() {
     setLoading(true)
@@ -44,7 +52,6 @@ export function ScienceFairFeature() {
     load()
   }, [])
 
-  // Update one fair's event in place after an AI deadline sync.
   function patchEvent(fairId: string, event: FairView['event']) {
     setData((prev) => {
       if (!prev) return prev
@@ -57,7 +64,7 @@ export function ScienceFairFeature() {
           regional: patch(m.regional),
           stateFair: patch(m.stateFair),
           isef: patch(m.isef),
-          otherRegionals: m.otherRegionals.map((f) => patch(f)!) ,
+          otherRegionals: m.otherRegionals.map((f) => patch(f)!),
         },
       }
     })
@@ -65,10 +72,11 @@ export function ScienceFairFeature() {
 
   const fairs = data?.match
   const countdown = useMemo(() => nextFairCountdown(fairs), [fairs])
+  const urgentDeadlines = useMemo(() => upcomingDeadlines(fairs), [fairs])
 
   return (
     <div className="flex flex-col h-full bg-[#0d1b2e] text-white">
-      {/* Header + countdown */}
+      {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
         <div>
           <h2 className="font-pixel text-[10px] text-white">Science Fair Hub</h2>
@@ -78,7 +86,15 @@ export function ScienceFairFeature() {
         </div>
         {countdown && (
           <div className="text-right">
-            <div className="font-pixel text-[18px] text-[#F5C518] flex items-center gap-1.5 justify-end">
+            <div
+              className={`font-pixel text-[18px] flex items-center gap-1.5 justify-end ${
+                countdown.days <= 7
+                  ? 'text-red-400'
+                  : countdown.days <= 14
+                    ? 'text-amber-400'
+                    : 'text-[#F5C518]'
+              }`}
+            >
               <CalendarClock size={14} />
               {countdown.days <= 0 ? 'Today!' : `${countdown.days}d`}
             </div>
@@ -89,6 +105,68 @@ export function ScienceFairFeature() {
         )}
       </div>
 
+      {/* Tab bar */}
+      <div className="flex border-b border-white/10 shrink-0">
+        {(
+          [
+            { key: 'overview', label: 'Overview', icon: <CalendarClock size={10} /> },
+            { key: 'forms', label: 'Forms', icon: <ClipboardList size={10} /> },
+            { key: 'categories', label: 'Categories', icon: <LayoutGrid size={10} /> },
+          ] as const
+        ).map(({ key, label, icon }) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`flex items-center gap-1.5 font-pixel text-[7px] uppercase tracking-widest px-4 py-2.5 border-b-2 transition-colors ${
+              tab === key
+                ? 'border-[#F5C518] text-[#F5C518]'
+                : 'border-transparent text-white/35 hover:text-white/60'
+            }`}
+          >
+            {icon}
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Deadline alerts — shown on any tab when deadlines are within 30 days */}
+      {urgentDeadlines.length > 0 && (
+        <div className="shrink-0 flex flex-col gap-1 px-6 pt-3">
+          {urgentDeadlines.map((d, i) => (
+            <div
+              key={i}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-sm border ${
+                d.days <= 7
+                  ? 'bg-red-500/10 border-red-500/30'
+                  : d.days <= 14
+                    ? 'bg-amber-500/10 border-amber-500/25'
+                    : 'bg-blue-500/8 border-blue-500/20'
+              }`}
+            >
+              <Bell
+                size={10}
+                className={
+                  d.days <= 7 ? 'text-red-400' : d.days <= 14 ? 'text-amber-400' : 'text-blue-400'
+                }
+              />
+              <p
+                className={`font-pixel text-[7px] leading-loose ${
+                  d.days <= 7
+                    ? 'text-red-300'
+                    : d.days <= 14
+                      ? 'text-amber-200'
+                      : 'text-blue-200/80'
+                }`}
+              >
+                {d.days <= 0 ? 'Today:' : `${d.days}d:`}{' '}
+                <strong>{d.label}</strong> — {d.fairName}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tab content */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center text-white/40">
           <Loader2 size={20} className="animate-spin" />
@@ -96,6 +174,14 @@ export function ScienceFairFeature() {
       ) : error && !data ? (
         <div className="flex-1 flex items-center justify-center">
           <p className="font-pixel text-[8px] text-red-400">{error}</p>
+        </div>
+      ) : tab === 'forms' ? (
+        <div className="flex-1 overflow-y-auto">
+          <FormsChecklist />
+        </div>
+      ) : tab === 'categories' ? (
+        <div className="flex-1 overflow-y-auto">
+          <CategoryBrowser />
         </div>
       ) : data ? (
         <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
@@ -464,7 +550,7 @@ function CriterionItems({ items }: { items: string[] }) {
   )
 }
 
-// ─── Countdown ────────────────────────────────────────────────────────────────
+// ─── Countdown + deadline alerts ──────────────────────────────────────────────
 
 function nextFairCountdown(
   match: FairMatch | undefined,
@@ -480,4 +566,35 @@ function nextFairCountdown(
     .sort((a, b) => a.date.getTime() - b.date.getTime())
   if (!upcoming.length) return null
   return { name: upcoming[0].name, days: differenceInCalendarDays(upcoming[0].date, today) }
+}
+
+interface DeadlineAlert {
+  fairName: string
+  label: string
+  days: number
+}
+
+function upcomingDeadlines(match: FairMatch | undefined): DeadlineAlert[] {
+  if (!match) return []
+  const today = new Date()
+  const alerts: DeadlineAlert[] = []
+
+  for (const fair of [match.regional, match.stateFair, match.isef]) {
+    if (!fair?.event) continue
+    const e = fair.event
+    const checks: Array<{ label: string; date: string | null }> = [
+      { label: 'Registration deadline', date: e.registrationDeadline },
+      { label: 'Abstract due', date: e.abstractDeadline },
+      { label: 'Fair day', date: e.eventDate },
+    ]
+    for (const { label, date } of checks) {
+      if (!date) continue
+      const days = differenceInCalendarDays(new Date(date), today)
+      if (days >= 0 && days <= 30) {
+        alerts.push({ fairName: fair.name, label, days })
+      }
+    }
+  }
+
+  return alerts.sort((a, b) => a.days - b.days)
 }

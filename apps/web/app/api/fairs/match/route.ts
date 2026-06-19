@@ -21,10 +21,15 @@ export async function GET(req: NextRequest) {
 
   const team = await db.team.findUnique({
     where: { id: ctx.teamId },
-    select: { locationZip: true, locationState: true },
+    select: { locationZip: true, locationState: true, locationLat: true, locationLng: true },
   })
 
-  const match = await matchFairs(team?.locationState ?? null)
+  const coords: readonly [number, number] | null =
+    team?.locationLat != null && team?.locationLng != null
+      ? [team.locationLat, team.locationLng]
+      : null
+
+  const match = await matchFairs(team?.locationState ?? null, coords)
 
   return NextResponse.json({
     location: { zip: team?.locationZip ?? null, state: team?.locationState ?? null },

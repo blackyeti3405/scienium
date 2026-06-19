@@ -1,26 +1,50 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getTeamContext } from '@/lib/phase'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { db } from '@/lib/db'
-import Anthropic from '@anthropic-ai/sdk'
+import { Firecrawl } from 'firecrawl'
 
-// Server-side only; the Anthropic key is never exposed to the client.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const firecrawl = new Firecrawl({ apiKey: process.env.FIRECRAWL_API_KEY! })
 
 /**
- * POST /api/fairs/[id]/sync-deadlines — best-effort AI deadline extraction
- * (Feature 3c). Fetches the fair's public website, has Claude pull the upcoming
- * event date + deadlines, and upserts a FairEvent marked `estimated` (AI-read,
- * not human-verified). Deadline pages vary wildly per fair, so this is explicitly
- * a starting point that still needs per-fair verification.
+ * Schema passed to Firecrawl extract. Firecrawl uses it to steer its LLM and
+ * type-check the response — we get validated structured data back, no Claude
+ * post-processing step needed.
+ */
+const DatesSchema = z.object({
+  year: z.number().nullable().describe('Calendar year of the upcoming fair event'),
+  eventDate: z
+    .string()
+    .nullable()
+    .describe('Main competition/fair day in YYYY-MM-DD format'),
+  registrationDeadline: z
+    .string()
+    .nullable()
+    .describe('Student registration deadline in YYYY-MM-DD format'),
+  abstractDeadline: z
+    .string()
+    .nullable()
+    .describe('Abstract or project-summary submission deadline in YYYY-MM-DD format'),
+  venue: z.string().nullable().describe('Short venue name or city/location string'),
+})
+
+type ExtractedDates = z.infer<typeof DatesSchema>
+
+/**
+ * POST /api/fairs/[id]/sync-deadlines
+ *
+ * Replaces the old `fetch + htmlToText + Claude` pipeline with a single
+ * Firecrawl extract call. Firecrawl handles JS-rendered pages, follows links
+ * to /dates, /schedule, /registration sub-pages, and returns structured JSON
+ * that matches DatesSchema — no extra LLM step required.
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Strict per-user + per-IP limit: this fetches an external page AND makes a
-  // paid Claude call, and any fair id can be targeted — cap the burst.
+  // Strict rate limit: each call triggers a paid Firecrawl job.
   const limited = enforceRateLimit(req, 'ai', userId)
   if (limited) return limited
 
@@ -36,54 +60,40 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'This fair has no website to read' }, { status: 400 })
   }
 
-  // Fetch the page (bounded — fair sites occasionally hang or 403 a bot).
-  let pageText = ''
+  const today = new Date().toISOString().slice(0, 10)
+
+  // Pass both the homepage and a wildcard so Firecrawl can follow links to
+  // /schedule, /dates, /registration pages where deadlines usually live.
+  const base = fair.websiteUrl.replace(/\/$/, '')
+  let extracted: ExtractedDates | null = null
+
   try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 12000)
-    const res = await fetch(fair.websiteUrl, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (NOVA Lab fair-deadline reader)' },
+    const res = await firecrawl.extract({
+      urls: [fair.websiteUrl, `${base}/*`],
+      prompt: `Extract the next upcoming event dates for the ${fair.name} science fair.
+Today is ${today}. Find:
+- The main competition / fair day
+- The student registration deadline
+- The abstract or project-summary submission deadline
+- The venue or city
+
+Use YYYY-MM-DD date format. If only a month is given, use the 1st of that month.
+Return null for any date not found on the site — do not guess.`,
+      schema: DatesSchema,
     })
-    clearTimeout(timeout)
-    if (!res.ok) throw new Error(`site returned ${res.status}`)
-    const html = await res.text()
-    pageText = htmlToText(html).slice(0, 16000)
+
+    if (res.success && res.data) {
+      extracted = res.data as ExtractedDates
+    }
   } catch (err) {
-    console.error('[sync-deadlines] site fetch failed:', err)
+    console.error('[sync-deadlines] Firecrawl extract failed:', err)
     return NextResponse.json(
-      { error: `Could not read the fair's site — check it manually` },
+      { error: "Could not read the fair's site — check it manually" },
       { status: 502 },
     )
   }
 
-  if (!pageText.trim()) {
-    return NextResponse.json({ error: 'The fair site had no readable text' }, { status: 422 })
-  }
-
-  const today = new Date().toISOString().slice(0, 10)
-  let extracted: ExtractedDates | null = null
-  try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 400,
-      system: EXTRACTION_PROMPT(today),
-      messages: [
-        {
-          role: 'user',
-          content: `Fair: ${fair.name}\nToday: ${today}\n\nPAGE TEXT:\n---\n${pageText}`,
-        },
-      ],
-    })
-    const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-    const match = raw.match(/\{[\s\S]*\}/)
-    if (match) extracted = JSON.parse(match[0]) as ExtractedDates
-  } catch (err) {
-    console.error('[sync-deadlines] extraction failed:', err)
-    return NextResponse.json({ error: 'Could not extract dates' }, { status: 502 })
-  }
-
-  if (!extracted || !extracted.year) {
+  if (!extracted?.year) {
     return NextResponse.json(
       { error: "Couldn't find clear dates on that page — please verify manually" },
       { status: 422 },
@@ -99,7 +109,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     status: 'estimated' as const,
   }
 
-  const existing = await db.fairEvent.findFirst({ where: { fairId: fair.id, year }, select: { id: true } })
+  const existing = await db.fairEvent.findFirst({
+    where: { fairId: fair.id, year },
+    select: { id: true },
+  })
   const event = existing
     ? await db.fairEvent.update({ where: { id: existing.id }, data })
     : await db.fairEvent.create({ data: { fairId: fair.id, year, ...data } })
@@ -116,46 +129,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   })
 }
 
-interface ExtractedDates {
-  year?: number | string
-  eventDate?: string | null
-  registrationDeadline?: string | null
-  abstractDeadline?: string | null
-  venue?: string | null
-}
-
 function parseDate(value?: string | null): Date | null {
-  if (!value) return null
+  if (!value || value.trim() === '') return null
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? null : d
-}
-
-/** Crude HTML → text: drop scripts/styles/tags, collapse whitespace. */
-function htmlToText(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function EXTRACTION_PROMPT(today: string): string {
-  return `You extract science-fair dates from a fair's webpage text. Today is ${today}.
-
-Find the NEXT upcoming fair event (prefer the soonest date on/after today). Return ONLY a JSON object:
-{
-  "year": 2026,
-  "eventDate": "YYYY-MM-DD or null",
-  "registrationDeadline": "YYYY-MM-DD or null",
-  "abstractDeadline": "YYYY-MM-DD or null",
-  "venue": "short location string or null"
-}
-
-Rules:
-- Use ISO YYYY-MM-DD. If only a month is given, use the first of that month.
-- If a date is genuinely not present, use null — never guess.
-- "year" is the calendar year of the event (required if any date is found).
-- No prose outside the JSON object.`
 }

@@ -92,8 +92,12 @@ model Team {
   maxMembers Int      @default(3) @map("max_members")
   // US location (Feature 3) — drives Science Fair matching. ZIP is captured at
   // onboarding; `locationState` is the 2-letter code derived from it (lib/fairs/zip.ts).
-  locationZip   String? @map("location_zip")
-  locationState String? @map("location_state")
+  locationZip   String?  @map("location_zip")
+  locationState String?  @map("location_state")
+  // Geocoded coordinates for the team's ZIP — more accurate than state centroid
+  // for ordering regional fairs. Set at onboarding / location update via Nominatim.
+  locationLat   Float?   @map("location_lat")
+  locationLng   Float?   @map("location_lng")
   createdAt  DateTime @default(now()) @map("created_at")
 
   members         TeamMember[]

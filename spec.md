@@ -752,7 +752,7 @@ A reference center inside NOVA Lab providing everything a student needs to navig
 
 The Fair Hub is **always accessible** from day one — even before topic selection — so students understand the competitive landscape they're working toward from the start.
 
-> **Status (as built):** the gateway is live (`components/fair/ScienceFairFeature.tsx`) — US location via ZIP, matched regional/state/ISEF cards with a countdown, the full ISEF rubric, and an AI "sync from site" deadline step. The fair dataset is a **provisional starter** and deadlines are **estimated** pending per-fair verification (see §13.8 and `TODO.md`). Self-assessment, teacher review, category matcher, forms tracking, and the notification engine remain planned.
+> **Status (as built):** the gateway is live (`components/fair/ScienceFairFeature.tsx`) — US location via ZIP (geocoded to lat/lng at onboarding), matched regional/state/ISEF cards with a countdown, the ISEF category browser, the ISEF forms checklist (with per-form status tracking), the full ISEF rubric, and an AI "sync from site" deadline step. The fair dataset is **268 entries** (all geocoded to city level). Deadlines are **estimated** pending per-fair verification. Self-assessment, teacher review, and the notification engine remain planned.
 
 ### 13.2 Personalized Fair Calendar
 Based on the student's school location (collected during onboarding), the app surfaces the fairs they're eligible for:
@@ -816,9 +816,9 @@ Comprehensive checklist of required ISEF forms (1, 1A, 1B, 2, 3, 4, 5, 6, 7) and
 ### 13.8 Technical Implementation
 
 **Data sources (as built):**
-- A **provisional starter dataset** of affiliated fairs lives in `lib/fairs/dataset.ts` (modeled on the Society for Science affiliated-fair directory: ISEF + a spread of state fairs + example regionals, each with coordinates and a stable `seed_key`). `ensureFairsSeeded()` upserts it idempotently into `fairs`/`fair_events` on first match
-- **All dates are estimated.** `POST /api/fairs/[id]/sync-deadlines` fetches a fair's site and has Claude extract the upcoming dates into a `fair_events` row marked `estimated`; per-fair verification is still required before promoting to `confirmed`
-- *Owner follow-up (`TODO.md`):* replace/extend the dataset with the full affiliated-fair list; an annual admin refresh process and an official Society for Science feed remain future work
+- **268-entry fair dataset** in `lib/fairs/dataset.ts` scraped from the Society for Science affiliated-fair directory: 1 ISEF + 40 state + 227 regional fairs. Every entry has `websiteUrl` (linked directly from the directory), city-level `latitude`/`longitude` (184 Nominatim-geocoded, 60 manually fixed), a stable `seed_key`, and the year's event/deadline dates where available. `ensureFairsSeeded()` in `lib/fairs/match.ts` upserts idempotently on first `GET /api/fairs/match` call
+- **All dates are estimated.** `POST /api/fairs/[id]/sync-deadlines` fetches the fair's `websiteUrl` via Firecrawl and has Claude extract dates into a `fair_events` row marked `estimated`; per-fair verification required before promoting to `confirmed`
+- *Future:* annual admin refresh; official Society for Science data feed
 
 **Schema additions:**
 ```
@@ -843,8 +843,9 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 ```
 
 **Geographic matching (as built):**
-- The team's US **ZIP** (captured at onboarding or set inline via `POST /api/team/location`) is mapped to a state in `lib/fairs/zip.ts` (USPS prefix ranges); `GET /api/fairs/match` returns the state fair + nearest regional (ordered by state-centroid distance) + ISEF
-- *Planned:* finer ZIP-centroid distance, primary-fair selection, and manual override for edge cases (homeschoolers, school switches)
+- At onboarding or `POST /api/team/location`, the team's ZIP is (a) mapped to a 2-letter state via `zipToState()` in `lib/fairs/zip.ts` and (b) forward-geocoded to lat/lng via `geocodeZip()` (Nominatim) and stored as `teams.location_lat` / `teams.location_lng`
+- `GET /api/fairs/match` calls `matchFairs(state, coords)` in `lib/fairs/match.ts`, which sorts all regional fairs in the state by Haversine distance from the stored team coordinates (falling back to the state centroid if no coordinates are stored). Returns nearest regional + state fair + ISEF
+- *Future:* primary-fair manual override for edge cases (homeschoolers, school switches); official data feed for confirmed deadlines
 
 **Rubric storage:**
 - ISEF rubric stored as versioned JSON in `rubric_versions` table

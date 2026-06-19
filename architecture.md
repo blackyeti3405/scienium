@@ -1,21 +1,20 @@
 # NOVA Lab — Technical Architecture
 
 > **Companion to:** `spec.md`
-> **Last Updated:** 2026-06-17
+> **Last Updated:** 2026-06-19
 > **Target initial scale:** ~120 students, single school pilot
 
 ---
 
 ## 1. Architecture Overview
 
-NOVA Lab is a **two-service architecture** (with the AI layer currently consolidated into Next.js API routes during the build-out phase):
+NOVA Lab is a **single-service architecture**: all UI, API routes, AI calls, and CRUD live in the Next.js app. The Python AI microservice originally planned has been removed.
 
-1. **Web app (Next.js)** — UI, API routes, auth, all CRUD operations, Claude API calls for Literature Review Q&A and paper metadata extraction, and public Showcase rendering
-2. **AI microservice (Python FastAPI)** *(planned — not yet active)* — heavy PDF parsing, content generation, video transcoding
+1. **Web app (Next.js on Vercel)** — UI, API routes, auth (Clerk), all CRUD operations, Claude API calls (paper processing, quizzes, chat, research plan review, idea-check, fair deadline sync), and public Showcase rendering
+2. **PostgreSQL (Supabase)** — single source of truth for all application state
+3. **Cloudflare R2** — PDF storage (`lib/storage.ts`); all PDFs served through the authenticated `/api/papers/[id]/file` route, never via public URL
 
-A single **PostgreSQL database** is the source of truth. **Object storage (Cloudflare R2)** will hold PDFs, images, and Showcase videos (not yet wired — PDFs are currently stored in-DB). **Redis** will run the background job queue (not yet wired).
-
-> **Current state (as of 2026-06-17):** The Python AI service is not running. The entire Literature Review (PDF text extraction via `unpdf`, metadata extraction, the graded comprehension quiz, and the Q&A chat) and Discovery (Wikipedia + YouTube exploration trees, final topic) run inside Next.js API routes with `@anthropic-ai/sdk` and persist to Postgres. Extracted text is in `papers.full_text` and the raw PDF in `papers.pdf_data` (streamed by `/api/papers/[id]/file`); R2 is the planned production upgrade. This architecture will migrate toward the two-service design once the Python service is stood up.
+> **Current state (as of 2026-06-19):** The Python AI service has been removed. All AI work runs in Next.js API routes via `@anthropic-ai/sdk`. PDFs are stored in R2. Rate limiting (`lib/rate-limit.ts`) and input validation (`lib/validation.ts`) are applied on every route. Firecrawl is used for AI-powered deadline extraction from fair websites and is configured as a server-side external package to avoid webpack bundling `undici`.
 
 ```
 ┌─────────────────┐              ┌─────────────────────────┐
@@ -26,29 +25,22 @@ A single **PostgreSQL database** is the source of truth. **Object storage (Cloud
          ▼                                ▼
 ┌──────────────────────────────────────────────────┐
 │           Next.js App (Vercel)                    │
-│   - Authenticated UI (/dashboard, /lab, etc)      │
+│   - Authenticated UI (/lab, onboarding, etc.)     │
 │   - Public Showcase routes (/showcase/[slug])     │
-│   - API routes (CRUD + Claude API calls)          │
-│   - Wikipedia integration                         │
-│   - PDF parsing (unpdf, server-side)              │
-│   - Claude API: paper extraction + Q&A tutor      │
+│   - API routes (CRUD + all AI calls)              │
+│   - Wikipedia / YouTube integration               │
+│   - PDF parsing (unpdf, in-process)               │
+│   - Claude API: all AI features                   │
+│   - Firecrawl: fair deadline extraction           │
+│   - Nominatim: ZIP geocoding                      │
 └──────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────────┐    ┌──────────────────────────────┐
-│  PostgreSQL          │    │  Cloudflare R2 (planned)     │
-│  (local Docker /     │    │  PDFs, images, video         │
-│   Supabase in prod)  │    │  (not yet connected)         │
-└──────────────────────┘    └──────────────────────────────┘
-
-┌──────────────────────────┐
-│  Python AI Service       │   ← PLANNED, not yet active
-│  (FastAPI on Railway)    │
-│  - Heavy PDF parsing     │
-│  - Quiz generation       │
-│  - Content generation    │
-│  - Video transcoding     │
-└──────────────────────────┘
+         │                    │
+         ▼                    ▼
+┌──────────────────┐  ┌──────────────────────────┐
+│  PostgreSQL      │  │  Cloudflare R2            │
+│  (Supabase prod  │  │  PDFs (private bucket;    │
+│   Docker local)  │  │  served via /api route)   │
+└──────────────────┘  └──────────────────────────┘
 ```
 
 ---
@@ -79,23 +71,22 @@ A single **PostgreSQL database** is the source of truth. **Object storage (Cloud
 | PDF parsing (current) | **`unpdf`** (Node.js) | Lightweight in-process text extraction (~250ms); replaces Python `pdfplumber` until AI service is active |
 | Image processing | **sharp** | Server-side image resizing/thumbnails |
 
-### AI Microservice
-| Layer | Choice | Rationale |
-|---|---|---|
-| Framework | **FastAPI** | Async, typed |
-| LLM | **Anthropic Claude API** | Strong reasoning, long context |
-| PDF parsing | **pdfplumber** (primary), **pypdf** (metadata) | Layout fidelity + cheap header extraction |
-| Video transcoding | **ffmpeg** (via `ffmpeg-python`) | Showcase video normalization |
+### External services (used by Next.js API routes)
+| Service | Purpose |
+|---|---|
+| **Anthropic Claude API** (`claude-sonnet-4-6`) | Paper metadata extraction, quiz gen/grade, Q&A chat, research plan review, idea-check (w/ native web-search), fair deadline extraction |
+| **Firecrawl** (`firecrawl@4.x`) | Structured data extraction from fair websites for deadline sync. Marked `serverComponentsExternalPackages` to avoid bundling `undici` |
+| **Nominatim (OpenStreetMap)** | ZIP-to-lat/lng geocoding at onboarding and location update (1 req/s, User-Agent required per ToS) |
+| **Wikipedia REST API** | Article fetch + OpenSearch autocomplete for Discovery |
+| **YouTube oEmbed** | Title resolution for pasted YouTube links (no API key) |
 
 ### Infrastructure
 | Layer | Choice | Rationale |
 |---|---|---|
-| Frontend hosting | **Vercel** | Best DX for Next.js |
-| Backend hosting | **Railway** | Simple Python deploys |
+| App hosting | **Vercel** | Best DX for Next.js |
 | Database | **Supabase** | Managed Postgres + RLS + auth helpers |
-| Object storage | **Cloudflare R2** | S3-compatible, no egress fees — critical for video |
-| CDN | **Cloudflare** (in front of R2) | Fast global video/image delivery |
-| Queue | **Upstash Redis** | Serverless, free tier |
+| Object storage | **Cloudflare R2** | S3-compatible, no egress fees |
+| CDN | **Cloudflare** (in front of R2) | Fast global delivery |
 | Monitoring | **Sentry** (errors), **PostHog** (analytics) | Free tiers |
 
 ---
@@ -221,12 +212,35 @@ nova-lab/
 │   │   │   ├── wikipedia.ts
 │   │   │   ├── db.ts                     # Prisma client singleton
 │   │   │   ├── auth.ts                   # Clerk helpers
-│   │   │   ├── rate-limit.ts             # Per-user + per-IP API rate limiter (tiers, 429)
-│   │   │   ├── validation.ts             # parseJson() + strict zod body validation
-│   │   │   ├── storage.ts                # R2 client + signed URL generation
-│   │   │   ├── permissions.ts            # RBAC + RLS helpers
-│   │   │   ├── consent.ts                # Parental consent checks
-│   │   │   └── fair-matching.ts          # Match user location to eligible fairs
+│   │   │   ├── db.ts                     # Prisma client singleton
+│   │   │   ├── phase.ts                  # Phase order, feature gates, getTeamContext()
+│   │   │   ├── rate-limit.ts             # Per-user + per-IP rate limiter (tiers, 429)
+│   │   │   ├── validation.ts             # parseJson() + strict zod schemas
+│   │   │   ├── storage.ts                # R2: putObject, getObjectStream, paperPdfKey
+│   │   │   ├── gateways.ts               # 7 gateway building configs + unlock phases
+│   │   │   ├── featureRegistry.tsx        # Maps gateway key → feature component
+│   │   │   ├── shop.ts                   # Economy building catalog (60 buildings)
+│   │   │   ├── labCurrency.tsx            # Client context for live KP/CLR/LC display
+│   │   │   ├── wikipedia.ts              # Wikipedia REST + OpenSearch helpers
+│   │   │   ├── literature/
+│   │   │   │   ├── quiz.ts               # QUIZ_QUESTION_COUNT, QUIZ_PASS_THRESHOLD
+│   │   │   │   └── quiz-rubric.md        # Grading rubric (tunable without code changes)
+│   │   │   ├── research-plan/
+│   │   │   │   ├── google-doc.ts         # Fetch published Google Doc text
+│   │   │   │   ├── rubric.ts             # Compose track + subtype rubric from .md files
+│   │   │   │   ├── idea-check.ts         # Web-search idea-check streaming logic
+│   │   │   │   ├── types.ts              # ResearchPlan shared types
+│   │   │   │   └── rubrics/              # _science.md, _engineering.md, biology.md, ...
+│   │   │   ├── fairs/
+│   │   │   │   ├── dataset.ts            # 268-entry seed (ISEF + 40 state + 227 regional)
+│   │   │   │   ├── match.ts              # ensureFairsSeeded(), matchFairs()
+│   │   │   │   ├── zip.ts                # zipToState(), geocodeZip(), haversineMiles()
+│   │   │   │   ├── forms.ts              # 12 ISEF forms catalog + requiredFor
+│   │   │   │   ├── categories.ts         # 22 ISEF categories
+│   │   │   │   └── isef-rubric.ts        # ISEF rubric structured for display
+│   │   │   └── team/
+│   │   │       ├── advance.ts            # getLiteratureAdvanceProgress() phase gate
+│   │   │       └── invite.ts             # generateInviteCode() helpers
 │   │   ├── hooks/
 │   │   ├── stores/                       # Zustand stores
 │   │   └── prisma/
@@ -451,9 +465,11 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 3. **Idea check:** `POST /api/research-plan/idea-check` runs Claude with the native web-search tool (`web_search_20260209`), streaming each search + sources live; verdict/findings save to `last_idea_check_json` (and an `idea_checks` ledger row for the 3/day-per-team limit), replacing the prior result
 
 ### Science Fair matching flow
-1. `GET /api/fairs/match` reads the team's `location_state` (from ZIP) and calls `lib/fairs/match.ts#matchFairs`
-2. `ensureFairsSeeded` lazily upserts the affiliated-fair dataset into `fairs`/`fair_events` (idempotent by `seed_key`); matching returns the state fair + nearest regional (by state-centroid distance) + ISEF
-3. `POST /api/fairs/[id]/sync-deadlines` fetches a fair's site and has Claude extract dates into a `fair_events` row marked `estimated` (per-fair verification still required)
+1. At onboarding or `POST /api/team/location`, `geocodeZip()` (`lib/fairs/zip.ts`) calls Nominatim for the ZIP → stores `teams.location_lat` / `teams.location_lng`
+2. `GET /api/fairs/match` reads the team's stored coords + state and calls `matchFairs(state, coords)` in `lib/fairs/match.ts`
+3. `ensureFairsSeeded()` lazily upserts the 268-entry dataset (`lib/fairs/dataset.ts`) into `fairs`/`fair_events` (idempotent by `seed_key`); ordering is ISEF → state → regional so parent FK always exists before child
+4. `matchFairs` sorts all regional fairs in the state by Haversine distance from the stored team coordinates (falls back to state centroid if no coords stored); returns nearest regional + state fair + ISEF
+5. `POST /api/fairs/[id]/sync-deadlines` calls Firecrawl with the fair's `website_url` to extract dates into a `fair_events` row marked `estimated`
 
 ### YouTube deep-dive flow (Discovery)
 1. In YouTube mode, a pasted link (or ⌘V) calls `POST /api/discovery/youtube/resolve`, which extracts the video id and fetches the title via public **oEmbed** (no API key, no quota)
@@ -538,39 +554,146 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 
 ---
 
-## 6. Scalability Considerations
+## 6. Feature File Map
+
+Quick reference for debugging each feature without scanning the whole repo. For each feature: UI component → API routes → lib modules → DB tables touched.
+
+### Onboarding / Team setup
+| Layer | File |
+|---|---|
+| UI | `app/(onboarding)/onboarding/page.tsx` |
+| API (create) | `app/api/onboarding/route.ts` |
+| API (join) | `app/api/team/join/route.ts` |
+| API (invite code) | `app/api/team/invite/route.ts` |
+| API (roster/panel) | `app/api/team/route.ts` |
+| API (location) | `app/api/team/location/route.ts` |
+| Lib | `lib/fairs/zip.ts` — `geocodeZip()`, `zipToState()` |
+| DB | `users`, `teams`, `team_members`, `team_invites` |
+
+### Lab scene & navigation
+| Layer | File |
+|---|---|
+| UI (scene) | `components/lab/LabScene.tsx` |
+| UI (sprites) | `components/lab/BuildingSprite.tsx`, `Sprite.tsx`, `TileBackground.tsx` |
+| UI (overlay shell) | `components/lab/FeaturePanel.tsx` |
+| UI (status bar) | `components/lab/StatusStrip.tsx` |
+| UI (team panel) | `components/lab/TeamPanel.tsx` |
+| UI (shop) | `components/lab/ShopPanel.tsx` |
+| UI (phase gate) | `components/lab/PhaseAdvance.tsx` |
+| Lib | `lib/gateways.ts`, `lib/shop.ts`, `lib/featureRegistry.tsx`, `lib/phase.ts` |
+| API (buildings) | `app/api/buildings/route.ts` |
+| DB | `gateway_buildings`, `team_buildings`, `team_currency` |
+
+### Currency (KP / CLR / LC)
+| Layer | File |
+|---|---|
+| UI context | `lib/labCurrency.tsx` (React context, live ticker in StatusStrip) |
+| KP awarded | `app/api/papers/[id]/quiz/grade/route.ts` (upserts `team_currency.kp`) |
+| DB | `team_currency` |
+
+### Discovery
+| Layer | File |
+|---|---|
+| UI | `components/discovery/DiscoveryFeature.tsx`, `DiscoveryHome.tsx`, `DiscoveryTree.tsx` |
+| UI (Wikipedia) | `components/discovery/WikiReader.tsx`, `TopicSearch.tsx` |
+| UI (YouTube) | `components/discovery/YouTubeViewer.tsx` |
+| API (article) | `app/api/discovery/article/route.ts` — fetches + sanitizes Wikipedia HTML |
+| API (search) | `app/api/discovery/search/route.ts` |
+| API (tree) | `app/api/discovery/tree/route.ts`, `app/api/discovery/tree/[id]/route.ts` |
+| API (topic) | `app/api/discovery/topic/route.ts` |
+| API (YouTube) | `app/api/discovery/youtube/resolve/route.ts` |
+| Lib | `lib/wikipedia.ts` |
+| DB | `discovery_nodes`, `teams.topic` |
+
+### Literature Review
+| Layer | File |
+|---|---|
+| UI | `components/literature/LiteratureFeature.tsx` (25 slots, upload, PDF viewer, quiz, chat) |
+| API (list/upload) | `app/api/papers/route.ts` |
+| API (get/delete) | `app/api/papers/[id]/route.ts` |
+| API (PDF stream) | `app/api/papers/[id]/file/route.ts` — streams from R2 |
+| API (quiz gen) | `app/api/papers/[id]/quiz/route.ts` |
+| API (quiz grade) | `app/api/papers/[id]/quiz/grade/route.ts` — awards KP per student |
+| API (chat) | `app/api/papers/[id]/chat/route.ts` |
+| Lib | `lib/literature/quiz.ts`, `lib/literature/quiz-rubric.md`, `lib/storage.ts` |
+| DB | `papers`, `paper_proficiency`, `paper_quiz_sessions`, `paper_quiz_attempts`, `paper_chat_messages` |
+
+### Phase advance gate (lit → research planning)
+| Layer | File |
+|---|---|
+| UI | `components/lab/PhaseAdvance.tsx` |
+| API | `app/api/team/advance-phase/route.ts` |
+| Lib | `lib/team/advance.ts` — `getLiteratureAdvanceProgress()` |
+| DB | `teams.phase`, `paper_proficiency`, `papers` |
+
+### Research Plan
+| Layer | File |
+|---|---|
+| UI | `components/research-plan/ResearchPlanFeature.tsx` |
+| API (sync/save) | `app/api/research-plan/route.ts` |
+| API (review) | `app/api/research-plan/review/route.ts` — streams NDJSON critique |
+| API (idea-check) | `app/api/research-plan/idea-check/route.ts` — streams web-search results |
+| Lib | `lib/research-plan/google-doc.ts`, `lib/research-plan/rubric.ts`, `lib/research-plan/idea-check.ts`, `lib/research-plan/rubrics/` |
+| DB | `research_plans`, `idea_checks` |
+
+### Science Fair Hub
+| Layer | File |
+|---|---|
+| UI (main) | `components/fair/ScienceFairFeature.tsx` |
+| UI (categories) | `components/fair/CategoryBrowser.tsx` |
+| UI (forms) | `components/fair/FormsChecklist.tsx` |
+| API (match) | `app/api/fairs/match/route.ts` — returns regional + state + ISEF |
+| API (deadline sync) | `app/api/fairs/[id]/sync-deadlines/route.ts` — Firecrawl extraction |
+| API (forms list) | `app/api/fairs/forms/route.ts` |
+| API (form update) | `app/api/fairs/forms/[formId]/route.ts` |
+| Lib (dataset) | `lib/fairs/dataset.ts` — 268-entry seed array |
+| Lib (matching) | `lib/fairs/match.ts` — `ensureFairsSeeded()`, `matchFairs()` |
+| Lib (geo) | `lib/fairs/zip.ts` — `geocodeZip()`, `zipToState()`, `haversineMiles()` |
+| Lib (forms) | `lib/fairs/forms.ts` — 12-form catalog |
+| Lib (categories) | `lib/fairs/categories.ts` — 22 ISEF categories |
+| Lib (rubric) | `lib/fairs/isef-rubric.ts` |
+| DB | `fairs`, `fair_events`, `team_form_status`, `isef_categories` |
+| DB (team coords) | `teams.location_lat`, `teams.location_lng`, `teams.location_zip`, `teams.location_state` |
+
+### Security middleware (applied to all routes)
+| Layer | File |
+|---|---|
+| Auth gate | `middleware.ts` — Clerk session check on all non-public routes |
+| Rate limiting | `lib/rate-limit.ts` — `enforceRateLimit(req, tier, userId)` |
+| Input validation | `lib/validation.ts` — `parseJson(req, schema)` with strict zod |
+
+---
+
+## 7. Scalability Considerations
 
 ### Current scale (120 students)
 - Single Postgres instance, no replicas
-- Single AI service instance, 2–4 worker processes
 - No caching layer beyond Vercel's defaults
 - Public Showcase traffic likely the largest unknown — Cloudflare CDN handles it transparently
 
 ### When to scale up
 | Trigger | Action |
 |---|---|
-| Running >1 app instance (serverless / autoscaled) | Rate-limit counters are in-memory per instance — move them to a shared store (Upstash Redis / Cloudflare KV / Durable Objects) and/or enforce at the Cloudflare edge (Rate Limiting Rules) for an exact global limit. See §7.1. |
+| Running >1 app instance (serverless / autoscaled) | Rate-limit counters are in-memory per instance — move them to a shared store (Upstash Redis / Cloudflare KV / Durable Objects) and/or enforce at the Cloudflare edge (Rate Limiting Rules) for an exact global limit. See §8.1. |
 | >1k concurrent authenticated users | Add Redis cache for Wikipedia article fetches and read-heavy endpoints |
-| Showcase video transcoding queue backed up | Scale AI service horizontally; add dedicated video workers |
 | >100k showcase views/day | Tune Cloudflare cache headers; preload popular pages with ISR |
 
 ### Cost ceiling for pilot
 | Service | Estimated monthly cost |
 |---|---|
 | Vercel (Hobby/Pro) | $0–20 |
-| Railway (AI service) | ~$10 |
 | Supabase (Pro) | $25 |
 | Cloudflare R2 + CDN | ~$5–15 (depends on Showcase video traffic) |
-| Upstash Redis | $0 (free tier) |
 | Clerk | $0 (free up to 10k MAU) |
 | Anthropic Claude API | ~$200–400 across pilot semester |
-| **Total estimate** | **~$250–500 / month at pilot scale** |
+| Firecrawl | $0–20 (depends on deadline sync usage) |
+| **Total estimate** | **~$230–480 / month at pilot scale** |
 
 ---
 
-## 7. Security & Privacy
+## 8. Security & Privacy
 
-### 7.1 Application security (API hardening)
+### 8.1 Application security (API hardening)
 
 Defense-in-depth on every API route, following OWASP API Top 10. The primitives live in two shared modules so the rules stay consistent:
 
@@ -582,7 +705,7 @@ Defense-in-depth on every API route, following OWASP API Top 10. The primitives 
 - **Untrusted HTML** — Wikipedia article HTML (publicly editable) is rendered via `dangerouslySetInnerHTML` in `WikiReader`, so `app/api/discovery/article` runs it (and the page title) through **`sanitize-html`** with a strict tag/attribute allowlist before returning it — the regex passes there are cosmetic, not the security boundary.
 - **Authz** — Clerk middleware gates all non-public routes; every handler independently re-checks `auth()` and scopes each query by `teamId` (no object reads across teams). Phase-gated endpoints additionally call `assertFeatureUnlocked` (§8).
 
-### 7.2 Data & privacy
+### 8.2 Data & privacy
 
 - FERPA/COPPA compliance for minor students; parental consent required for public Showcase publishing
 - PII isolated in `users` table; activity feed and social view use names only with consent
@@ -593,9 +716,9 @@ Defense-in-depth on every API route, following OWASP API Top 10. The primitives 
 
 ---
 
-## 8. Phase Gating System
+## 9. Phase Gating System
 
-### 8.1 Single source of truth
+### 9.1 Single source of truth
 
 `apps/web/lib/phase.ts` exports all phase-gating logic. Both UI components and API route handlers import from this file — never define feature availability in two places.
 
@@ -611,7 +734,7 @@ Key exports:
 | `getLabSize(phase)` | Returns `'small'` or `'grown'` for lab visual |
 | `getTeamContext(clerkUserId)` | DB lookup: returns `{ teamId, phase, labType }` |
 
-### 8.2 Enforcement layers
+### 9.2 Enforcement layers
 
 Gating is enforced in **two independent layers** — client-only gating is never sufficient:
 
@@ -625,7 +748,7 @@ Gating is enforced in **two independent layers** — client-only gating is never
 - Returns HTTP 403 with a descriptive error message if the team's phase is insufficient
 - `getTeamContext()` is called once per handler to resolve phase from DB
 
-### 8.3 Phase transitions
+### 9.3 Phase transitions
 
 Phase transitions are explicit server-side actions (not automatic). A team's `phase` field is updated only by dedicated transition endpoints that re-run the gate server-side before bumping the phase.
 
@@ -634,7 +757,7 @@ Phase transitions are explicit server-side actions (not automatic). A team's `ph
 
 Phases cannot be skipped.
 
-### 8.4 Pixel-art visual system
+### 9.4 Pixel-art visual system
 
 The lab home (`/lab`) replaces the old dashboard as the spatial navigation hub. Navigation feels like "entering buildings" rather than switching tabs: the scene is a pixel-art plot, and **each feature is reached by clicking its building**, which opens that feature's panel as an overlay. There is no persistent tab bar.
 
@@ -668,24 +791,26 @@ The lab home (`/lab`) replaces the old dashboard as the spatial navigation hub. 
 
 ---
 
-## 9. Deployment & Environments
+## 10. Deployment & Environments
 
 | Environment | Purpose | Hosting |
 |---|---|---|
-| Local | Developer machines | Docker Compose |
-| Staging | Internal testing | Vercel Preview + Railway Staging |
-| Production | Pilot | Vercel + Railway + Supabase + R2 |
+| Local | Developer machines | Docker Compose (Postgres only) |
+| Staging | Internal testing | Vercel Preview + Supabase |
+| Production | Pilot | Vercel + Supabase + R2 |
 
 CI/CD via GitHub Actions: lint → typecheck → test → preview deploy.
 
 ---
 
-## 10. Open Technical Questions
+## 11. Open Technical Questions
 
-- [ ] Sync vs. async AI service endpoints — split decision per endpoint
 - [ ] Real-time strategy for team feeds — polling until pain, or Supabase Realtime from day one
-- [ ] Video transcoding: in-house ffmpeg vs. managed service like Mux or Cloudflare Stream (Mux is expensive; in-house works for pilot)
+- [ ] Showcase: video transcoding — in-house ffmpeg vs. Mux / Cloudflare Stream
 - [ ] Showcase moderation: auto-only vs. always human-reviewed for public publish
 - [ ] Caching strategy for Wikipedia articles
 - [ ] Lab canvas: fixed pre-placed building slots vs. data-driven layout engine for positioning gateway + economy buildings on the grown plot
 - [ ] Reskin delivery: ship all 7 gateway sprites per lab type (49 total) up front, or lazy-load the selected lab type's set
+- [ ] Existing teams need lat/lng backfill — teams onboarded before 0.5.2 don't have `location_lat`/`location_lng`; fair matching falls back to state centroid until they re-submit their ZIP via the location field
+- [ ] Fair Hub: annual refresh process for the fair dataset; official Society for Science data feed
+- [ ] Rate limiting: move in-memory counters to a shared store (Upstash Redis / Cloudflare KV) before multi-instance deploy

@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { FAIRS, type SeedFairLevel } from '@/lib/fairs/dataset'
-import { STATE_CENTROIDS, haversineMiles } from '@/lib/fairs/zip'
+import { STATE_CENTROIDS, zipToApproxCoords, haversineMiles } from '@/lib/fairs/zip'
 import type { FairLevel, Prisma } from '@prisma/client'
 
 /**
@@ -17,8 +17,11 @@ const LEVEL_MAP: Record<SeedFairLevel, FairLevel> = {
 
 /**
  * Idempotently upsert the seed dataset. Upserts each Fair by its stable
- * `seedKey` and seeds one estimated FairEvent per fair if none exists yet
- * (so AI-synced / manually-corrected events are never clobbered).
+ * `seedKey` and seeds one confirmed FairEvent per fair if none exists yet.
+ *
+ * When the dataset grows (FAIRS.length > seeded count), new fairs are inserted.
+ * The migration 20260619010000_reseed_isef_fairs clears the old 56-entry dataset
+ * before this runs, so there are no duplicate state fairs from the old keys.
  */
 export async function ensureFairsSeeded(): Promise<void> {
   const seeded = await db.fair.count({ where: { seedKey: { not: null } } })
@@ -134,7 +137,10 @@ function toView(fair: FairWithEvents, teamPoint: readonly [number, number] | nul
 }
 
 /** Match a team's location to its regional fair, state fair, and ISEF. */
-export async function matchFairs(state: string | null): Promise<FairMatch> {
+export async function matchFairs(
+  state: string | null,
+  coords?: readonly [number, number] | null,
+): Promise<FairMatch> {
   await ensureFairsSeeded()
 
   const isefRow = await db.fair.findFirst({ where: { level: 'international' }, include: fairInclude })
@@ -144,7 +150,8 @@ export async function matchFairs(state: string | null): Promise<FairMatch> {
     return { hasLocation: false, state: null, regional: null, stateFair: null, isef, otherRegionals: [] }
   }
 
-  const teamPoint = STATE_CENTROIDS[state] ?? null
+  // Prefer geocoded coords (stored on team at onboarding) > state centroid fallback.
+  const teamPoint = coords ?? STATE_CENTROIDS[state] ?? null
 
   const [stateRow, regionalRows] = await Promise.all([
     db.fair.findFirst({ where: { level: 'state', state }, include: fairInclude }),

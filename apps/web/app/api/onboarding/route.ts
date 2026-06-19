@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { isValidZip, zipToState } from '@/lib/fairs/zip'
+import { isValidZip, zipToState, geocodeZip } from '@/lib/fairs/zip'
 
 // Names are capped so a client can't store unbounded text; `.strict()` rejects
 // any field other than these three.
@@ -30,9 +30,10 @@ export async function POST(req: NextRequest) {
   if (error) return error
   const { name, teamName, zip } = data
 
-  // Optional US location (Feature 3): derive the state if a valid ZIP is given.
+  // Optional US location (Feature 3): derive state + geocode to lat/lng.
   const locationZip = zip && isValidZip(zip) ? zip : null
   const locationState = locationZip ? zipToState(locationZip) : null
+  const locationCoords = locationZip ? await geocodeZip(locationZip) : null
 
   const email =
     clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
@@ -63,6 +64,8 @@ export async function POST(req: NextRequest) {
       phase: 'literature_review',
       locationZip,
       locationState,
+      locationLat: locationCoords?.[0] ?? null,
+      locationLng: locationCoords?.[1] ?? null,
       members: { create: { userId: user.id, role: 'lead' } },
       // Every team starts with a zeroed currency ledger so KP/CLR/LC awards
       // (e.g. literature-review quiz proficiency) always have a row to update.
