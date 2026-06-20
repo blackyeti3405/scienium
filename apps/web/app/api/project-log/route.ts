@@ -10,9 +10,10 @@ import { db } from '@/lib/db'
 const Body = z.object({
   body: z.string().min(1).max(5000),
   nextSteps: z.string().min(1).max(2000),
-  stage: z.string().max(100).optional(),
+  stage: z.string().min(1, 'Select a project stage').max(100),
   // Bounded to avoid storage-bloat; ids are further intersected with the
-  // team's actual roster before persisting (see POST).
+  // team's actual roster before persisting (see POST). Attendance is required
+  // for multi-member teams (enforced in the handler, which knows the roster).
   attendeeIds: z.array(z.string().max(64)).max(50).default([]),
   // Relative streaming paths into our own attachment view route. Bounded in
   // both count and length so a single entry can't store an unbounded blob.
@@ -82,16 +83,16 @@ export async function POST(req: NextRequest) {
   const { data, error } = await parseJson(req, Body)
   if (error) return error
 
-  // Keep only attendee ids that are genuinely on this team — a client can't
-  // record arbitrary or other-team user ids as present.
-  const requestedAttendees = data.attendeeIds ?? []
-  let attendeeIds: string[] = []
-  if (requestedAttendees.length > 0) {
-    const members = await db.teamMember.findMany({
-      where: { teamId: ctx.teamId, userId: { in: requestedAttendees } },
-      select: { userId: true },
-    })
-    attendeeIds = members.map((m) => m.userId)
+  // Keep only attendee ids that are genuinely on this team, and require
+  // attendance for multi-member teams (solo labs have an implicit attendee).
+  const roster = await db.teamMember.findMany({
+    where: { teamId: ctx.teamId },
+    select: { userId: true },
+  })
+  const rosterIds = new Set(roster.map((m) => m.userId))
+  const attendeeIds = (data.attendeeIds ?? []).filter((id) => rosterIds.has(id))
+  if (roster.length > 1 && attendeeIds.length === 0) {
+    return NextResponse.json({ error: 'Select who was present' }, { status: 400 })
   }
 
   // Count existing entries to compute the entry number for this new one
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
       entryType: 'progress',
       body: data.body.trim(),
       nextSteps: data.nextSteps.trim(),
-      stage: data.stage?.trim() || null,
+      stage: data.stage.trim(),
       attendeeIds,
       attachmentUrls: data.attachmentUrls,
     },

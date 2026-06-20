@@ -11,7 +11,7 @@ import { db } from '@/lib/db'
 const Body = z.object({
   body: z.string().min(1).max(5000),
   nextSteps: z.string().min(1).max(2000),
-  stage: z.string().max(100).optional(),
+  stage: z.string().min(1, 'Select a project stage').max(100),
   attendeeIds: z.array(z.string().max(64)).max(50).default([]),
   attachmentUrls: z
     .array(z.string().max(400).startsWith('/api/project-log/attachment/view'))
@@ -50,14 +50,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (error) return error
 
   // Keep only attendee ids that are genuinely on this team.
-  const requested = data.attendeeIds ?? []
-  let attendeeIds: string[] = []
-  if (requested.length > 0) {
-    const members = await db.teamMember.findMany({
-      where: { teamId: ctx.teamId, userId: { in: requested } },
-      select: { userId: true },
-    })
-    attendeeIds = members.map((m) => m.userId)
+  // Keep only real team members, and require attendance for multi-member teams.
+  const roster = await db.teamMember.findMany({
+    where: { teamId: ctx.teamId },
+    select: { userId: true },
+  })
+  const rosterIds = new Set(roster.map((m) => m.userId))
+  const attendeeIds = (data.attendeeIds ?? []).filter((id) => rosterIds.has(id))
+  if (roster.length > 1 && attendeeIds.length === 0) {
+    return NextResponse.json({ error: 'Select who was present' }, { status: 400 })
   }
 
   const entry = await db.projectLog.update({
@@ -65,7 +66,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     data: {
       body: data.body.trim(),
       nextSteps: data.nextSteps.trim(),
-      stage: data.stage?.trim() || null,
+      stage: data.stage.trim(),
       attendeeIds,
       attachmentUrls: data.attachmentUrls,
       lastEditedByUserId: dbUser.id,

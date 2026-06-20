@@ -219,6 +219,8 @@ function ProjectLogForm({
 
   async function submit() {
     setError(null)
+    if (members.length > 1 && attendeeIds.length === 0) { setError('Select who was present.'); return }
+    if (!stage) { setError('Select a project stage.'); return }
     const plainBody = body.replace(/[*_#>\-\s]/g, '')
     if (!plainBody) { setError('Session notes are required.'); return }
     if (!nextSteps.trim()) { setError('Next steps are required.'); return }
@@ -270,7 +272,7 @@ function ProjectLogForm({
       <div className="ops-entry-card__body">
         {members.length > 1 && (
           <div className="ops-field">
-            <SectionLabel><Users size={9} className="inline mr-1 -mt-0.5" />Who was present?</SectionLabel>
+            <SectionLabel required><Users size={9} className="inline mr-1 -mt-0.5" />Who was present?</SectionLabel>
             <div className="flex flex-wrap gap-2">
               {members.map((m) => {
                 const checked = attendeeIds.includes(m.userId)
@@ -291,7 +293,7 @@ function ProjectLogForm({
         )}
 
         <div className="ops-field">
-          <SectionLabel>Project stage</SectionLabel>
+          <SectionLabel required>Project stage</SectionLabel>
           <div className="ops-select-wrap">
             <select value={stage} onChange={(e) => setStage(e.target.value)} className="ops-select">
               <option value="">— Select stage —</option>
