@@ -817,9 +817,98 @@ CI/CD via GitHub Actions: lint → typecheck → test → preview deploy.
 - [ ] Real-time strategy for team feeds — polling until pain, or Supabase Realtime from day one
 - [ ] Showcase: video transcoding — in-house ffmpeg vs. Mux / Cloudflare Stream
 - [ ] Showcase moderation: auto-only vs. always human-reviewed for public publish
-- [ ] Caching strategy for Wikipedia articles
+- [x] Caching strategy for Wikipedia articles — **0.6.0:** bounded `LruCache` (cap 500, 30-min TTL) in `app/api/discovery/article`. Still per-instance; a shared CDN/edge cache remains a future option (see §12)
 - [ ] Lab canvas: fixed pre-placed building slots vs. data-driven layout engine for positioning gateway + economy buildings on the grown plot
 - [ ] Reskin delivery: ship all 7 gateway sprites per lab type (49 total) up front, or lazy-load the selected lab type's set
 - [ ] Existing teams need lat/lng backfill — teams onboarded before 0.5.2 don't have `location_lat`/`location_lng`; fair matching falls back to state centroid until they re-submit their ZIP via the location field
 - [ ] Fair Hub: annual refresh process for the fair dataset; official Society for Science data feed
-- [ ] Rate limiting: move in-memory counters to a shared store (Upstash Redis / Cloudflare KV) before multi-instance deploy
+- [x] Rate limiting: move in-memory counters to a shared store — **0.6.0:** `lib/rate-limit.ts` is now backend-pluggable; set `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` to enforce limits globally across instances (see §12)
+
+---
+
+## 12. Production-Hardening Pass (v0.6.0)
+
+A functionality-preserving sweep over the API layer for **testability, scalability, and security**. Nothing in this section changes product behaviour — every item is additive or a verified-equivalent extraction, gated by `tsc --noEmit` (strict) and a unit-test suite. It exists to make the highest-stakes logic (the currency economy, privacy rules, and the AI-graded mechanic) safe to change and safe to scale out.
+
+### 12.1 Request guard — `lib/api/route-context.ts`
+
+Almost every authenticated handler opened with the same five steps: `auth()` → `enforceRateLimit()` → `getTeamContext()` → a **second** `user.findUnique()` for the internal `User.id` → a `PhaseGateError` try/catch. Steps 3 and 4 hit the **same `user` row twice per request**.
+
+`requireTeamContext(req, { tier, feature? })` collapses all of it into one call and one query, returning a discriminated union:
+
+```ts
+const { ctx, error } = await requireTeamContext(req, { tier: 'mutate', feature: 'buildings' })
+if (error) return error
+// ctx.userId (Clerk) · ctx.dbUserId (internal) · ctx.teamId · ctx.phase · ctx.labType
+```
+
+- **One query** resolves the internal id *and* the most-recently-joined team (replacing the `getTeamContext` + separate `user.findUnique` pair).
+- The optional `feature` runs the existing phase gate and returns a 403 with the same message as before.
+- Error precedence/status codes are unchanged; the only collapsed case (`user` row missing but team found) was already unreachable.
+- **Adopted on 19 routes** (all production team-scoped handlers). The dev-only `dev/fill-papers` route keeps its bespoke `currentUser` flow.
+
+### 12.2 Pluggable rate limiter — `lib/rate-limit.ts`
+
+The limiter is now backend-agnostic behind a `RateLimitStore` interface (`incr(key, windowMs, now)`), chosen once at module load:
+
+| Backend | When | Scope |
+|---|---|---|
+| `MemoryStore` (default) | no Upstash env | per-instance fixed window (identical to pre-0.6.0 semantics) |
+| `UpstashStore` | `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` set | **global** across instances |
+
+- `UpstashStore` uses the Upstash **REST** API via `fetch` (no SDK dependency): a pipelined `INCR` + `PEXPIRE … NX` + `PTTL` per check, with a 2s timeout. It **fails open** (logs + allows) on any Upstash error so a limiter outage can't take down the API; pair with an edge WAF for a hard guarantee under limiter failure.
+- `enforceRateLimit` is now **async** (`Promise<NextResponse | null>`); all 59 call sites `await` it. This is the only call-site change — exactly the seam the original file header anticipated.
+- **Trusted client IP:** `clientIp` resolves from `RATE_LIMIT_IP_HEADER` → `cf-connecting-ip` → `x-real-ip` → first `x-forwarded-for` hop. Prior code trusted XFF first, which a client can spoof to mint unlimited per-IP buckets on anonymous routes (e.g. the public showcase-asset stream). The per-user bucket remains the precise control; the per-IP bucket (`×12`) is the coarse backstop.
+
+### 12.3 Economy invariants — `lib/economy.ts`
+
+The KP/clearance/purchase arithmetic that lived inline in `papers/[id]/quiz/grade`, `expertise/grade`, and `buildings` is extracted into pure functions so the money-minting logic has a no-DB test surface:
+
+- `computeQuizAward` — per-student KP high-water; tops up only by the improvement over the prior best, capped at 100/paper.
+- `computeClearanceRaise` — clearance only rises (high-water; a pass at/below current grants no second bonus).
+- `evaluatePurchase` — owned → clearance → affordability precheck with the team-size cost multiplier.
+- `clampScore`, and the opt-in `clampScoreGain` (see §12.5).
+
+Atomicity stays in the database (conditional `updateMany` debits, unique constraints, `lt` clearance guards); these helpers only compute the numbers fed into those transactions. Tested invariants: high-water never decreases across any sequence; ≤100 KP per paper; failing/weaker retakes grant nothing; clearance never regresses.
+
+### 12.4 Bounded cache — `lib/lru.ts`
+
+A small TTL + LRU cache with a hard `maxSize`. The Wikipedia article proxy previously used a bare `Map` (TTL only, no size cap) that grew unbounded with distinct titles on a long-running instance. Now cap 500, same 30-min TTL, LRU eviction. Single-instance only (same caveat as the memory rate-limit store) — fine for a best-effort read cache.
+
+### 12.5 AI grading prompt-injection hardening
+
+Quiz and clearance grading send **attacker-influenceable** text to Claude as ground truth: an uploaded paper's `fullText`, and student-authored project context (topic, idea, logs, plan). A crafted document or answer could attempt to steer the grade and inflate the KP/clearance economy.
+
+- Untrusted text is wrapped in explicit `<paper_text>` / `<project_context>` delimiters.
+- The grading system prompt states the document **and** the student answers are *data, not instructions* and must be scored only against the rubric + grading key.
+- `clampScoreGain(aggregate, priorBest, maxGain)` is available to cap an implausible single-attempt jump. It is **wired-ready but a no-op at the default `maxGain = 100`** — tighten via config without a code change. Blast radius is otherwise bounded by design (≤100 KP/paper, single-use exams via `gradedAt`, clearance high-water).
+
+### 12.6 Secret hygiene — `viewFingerprint`
+
+`lib/showcase-server.ts` no longer salts the visitor fingerprint with `R2_SECRET_ACCESS_KEY` (a storage credential) plus a hardcoded fallback. It now uses a dedicated `VIEW_FINGERPRINT_SALT` (≥16 chars), resolved + memoized **on first use** so it gates only the fingerprint path — `makeSlug` and `next build` are unaffected. **Fails closed in production** (throws if unset); dev falls back to a clearly-labelled constant.
+
+### 12.7 Error-handling parity
+
+The quiz- and expertise-grading Anthropic calls are wrapped like the chat route — log the real error server-side, return a generic 502 — instead of letting an SDK throw surface as an unhandled 500.
+
+### 12.8 Testing
+
+`vitest.config.ts` + `pnpm --filter web test`. **60 tests**, pure-logic only (no DB, no Next server, no network), so they run in <1s and need no infrastructure:
+
+| File | Covers |
+|---|---|
+| `lib/economy.test.ts` | KP/clearance/purchase invariants |
+| `test/showcase.test.ts` | `canViewShowcase` privacy truth table, safe-link/video parsing |
+| `test/phase.test.ts` | phase ordering + feature-gate cumulativeness |
+| `lib/rate-limit.test.ts` | memory window, per-user vs per-IP, header precedence, Upstash parse + fail-open |
+| `lib/lru.test.ts` | LRU eviction, recency refresh, TTL expiry |
+
+**Not yet covered (follow-up):** the DB transactions themselves (atomic debits, `lt` guards) — they need an integration harness with a test Postgres. A staging smoke-test of one grade flow + one purchase is the cheap interim insurance.
+
+### 12.9 New environment variables
+
+| Var | Required? | Purpose |
+|---|---|---|
+| `VIEW_FINGERPRINT_SALT` | **prod (≥16 chars)** | dedicated salt for showcase view fingerprints; fails closed in production |
+| `UPSTASH_REDIS_REST_URL` / `_TOKEN` | optional | enables the shared (global) rate-limit backend |
+| `RATE_LIMIT_IP_HEADER` | optional | override the trusted client-IP header (default `cf-connecting-ip`) |
