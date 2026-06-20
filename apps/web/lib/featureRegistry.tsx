@@ -41,18 +41,17 @@ const ResearchPlanFeature = dynamic(
   { ssr: false, loading },
 )
 
+const OperationsHubFeature = dynamic(
+  () => import('@/components/ops/OperationsHubFeature').then((m) => m.OperationsHubFeature),
+  { ssr: false, loading },
+)
+
 export const FEATURE_COMPONENTS: Record<GatewayKey, ComponentType> = {
   discovery: DiscoveryFeature,
 
   science_fair: ScienceFairFeature,
   literature_review: LiteratureFeature,
-  operations_hub: () => (
-    <StubFeature
-      title="Operations Hub"
-      description="Your everyday home base: Field Dispatch, Proof of Expertise, and the Project Log / Failure Log daily pillars."
-      route="/daily/dispatch"
-    />
-  ),
+  operations_hub: OperationsHubFeature,
   research_plan: ResearchPlanFeature,
   pvp: () => (
     <StubFeature

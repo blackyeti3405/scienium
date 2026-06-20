@@ -49,11 +49,6 @@ export function PhaseAdvance({ progress }: { progress: AdvanceProgress }) {
   return (
     <div className={`phase-advance${progress.canAdvance ? ' phase-advance--ready' : ''}`}>
       {!progress.canAdvance && <Lock size={11} className="text-white/40 shrink-0" />}
-      <span className="phase-advance__progress font-pixel">
-        {progress.sourceCount}/{progress.sourceTarget} sources
-        <span className="phase-advance__dot">·</span>
-        {progress.membersReady}/{progress.memberCount} members ready
-      </span>
 
       {progress.canAdvance && !result && (
         <div className="phase-advance__idea-form">

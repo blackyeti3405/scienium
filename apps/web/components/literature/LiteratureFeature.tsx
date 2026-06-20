@@ -13,7 +13,10 @@ import {
   RotateCcw,
   Award,
   Trash2,
+  FlaskConical,
+  Lock,
 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useLabCurrency } from '@/lib/labCurrency'
@@ -651,10 +654,15 @@ function QAPanel({
 // ─── Main Feature ─────────────────────────────────────────────────────────────
 
 export function LiteratureFeature() {
+  const router = useRouter()
   const [papers, setPapers] = useState<Paper[]>([])
   const [activePaper, setActivePaper] = useState<Paper | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [topic, setTopic] = useState<string | null | undefined>(undefined) // undefined = loading
+  const [idea, setIdea] = useState('')
+  const [ideaBusy, setIdeaBusy] = useState(false)
+  const [ideaError, setIdeaError] = useState<string | null>(null)
+  const [ideaResult, setIdeaResult] = useState<{ labTypeLabel: string; rationale: string } | null>(null)
 
   useEffect(() => {
     fetch('/api/discovery/topic')
@@ -683,6 +691,26 @@ export function LiteratureFeature() {
       })
       .catch((err) => console.error('[papers] failed to load:', err))
   }, [])
+
+  async function advancePhase() {
+    if (!idea.trim()) { setIdeaError('Describe your research idea first.'); return }
+    setIdeaBusy(true)
+    setIdeaError(null)
+    try {
+      const res = await fetch('/api/team/advance-phase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ researchIdea: idea.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Could not advance')
+      setIdeaResult({ labTypeLabel: data.labTypeLabel, rationale: data.rationale })
+      setTimeout(() => router.refresh(), 2200)
+    } catch (err) {
+      setIdeaError(err instanceof Error ? err.message : 'Could not advance')
+      setIdeaBusy(false)
+    }
+  }
 
   async function handleUpload(file: File) {
     setUploadError(null)
@@ -778,7 +806,7 @@ export function LiteratureFeature() {
   }
 
   const readyCount = papers.filter((p) => p.status === 'ready').length
-  const firstEmptyIndex = papers.length // index of the first slot with no paper
+  const locked = readyCount >= TOTAL_SLOTS
 
   // If a paper is open in Q&A mode, show the split view
   if (activePaper) {
@@ -821,8 +849,54 @@ export function LiteratureFeature() {
         </div>
       </div>
 
-      {/* No-topic warning — uploads are allowed but not gated until a topic is set */}
-      {topic === null && (
+      {/* Idea submission box — shown once all 25 sources are in */}
+      {locked && (
+        <div className="mx-6 mt-4 rounded-sm border border-[#F5C518]/35 bg-[#F5C518]/[0.06] px-5 py-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <FlaskConical size={13} className="text-[#F5C518] shrink-0" />
+            <span className="font-pixel text-[8px] text-[#F5C518]">
+              Literature review complete — describe your project in one sentence
+            </span>
+          </div>
+
+          {ideaResult ? (
+            <div className="flex items-start gap-2 text-green-300">
+              <FlaskConical size={11} className="shrink-0 mt-0.5" />
+              <span className="font-pixel text-[8px]">
+                Lab assigned: <strong>{ideaResult.labTypeLabel}</strong> — {ideaResult.rationale}
+              </span>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={idea}
+                onChange={(e) => setIdea(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !ideaBusy && advancePhase()}
+                maxLength={500}
+                disabled={ideaBusy}
+                placeholder="e.g. I'm investigating how soil pH affects plant growth rate…"
+                className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm font-pixel text-[8px]"
+              />
+              <button
+                onClick={advancePhase}
+                disabled={ideaBusy || !idea.trim()}
+                className="shrink-0 flex items-center gap-1.5 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                {ideaBusy ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
+                {ideaBusy ? 'Classifying…' : 'Submit'}
+              </button>
+            </div>
+          )}
+
+          {ideaError && (
+            <span className="font-pixel text-[7px] text-red-400">{ideaError}</span>
+          )}
+        </div>
+      )}
+
+      {/* No-topic warning — only shown when not yet locked */}
+      {!locked && topic === null && (
         <div className="mx-6 mt-3 px-4 py-2.5 bg-[#F5C518]/8 border border-[#F5C518]/25 rounded-sm flex items-start gap-2.5">
           <span className="font-pixel text-[8px] text-[#F5C518]/60 shrink-0 mt-0.5">!</span>
           <p className="font-pixel text-[7px] text-[#F5C518]/60 leading-relaxed">
@@ -844,29 +918,36 @@ export function LiteratureFeature() {
         </div>
       )}
 
-      {/* Progress bar */}
-      <div className="h-1 bg-white/8 shrink-0">
-        <div
-          className="h-full bg-[#F5C518] transition-all duration-500"
-          style={{ width: `${(readyCount / TOTAL_SLOTS) * 100}%` }}
-        />
-      </div>
+      {/* Lock notice + progress bar */}
+      {locked ? (
+        <div className="flex items-center gap-2 px-6 py-2 bg-white/[0.02] border-t border-white/8 shrink-0">
+          <Lock size={10} className="text-white/25 shrink-0" />
+          <span className="font-pixel text-[7px] text-white/30">Sources locked — 25/25</span>
+          <div className="flex-1 h-px bg-[#F5C518]/40 ml-2" />
+        </div>
+      ) : (
+        <div className="h-1 bg-white/8 shrink-0">
+          <div
+            className="h-full bg-[#F5C518] transition-all duration-500"
+            style={{ width: `${(readyCount / TOTAL_SLOTS) * 100}%` }}
+          />
+        </div>
+      )}
 
       {/* Slots list */}
       <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-2">
-        {/* Render filled slots */}
         {papers.map((paper) => (
           <PaperSlot
             key={paper.id}
             paper={paper}
             isFirst={false}
             onOpenQA={setActivePaper}
-            onDelete={handleDelete}
+            onDelete={locked ? undefined : handleDelete}
           />
         ))}
 
-        {/* Render remaining empty slots */}
-        {Array.from({ length: TOTAL_SLOTS - papers.length }).map((_, i) => (
+        {/* Empty upload slots only shown while not yet locked */}
+        {!locked && Array.from({ length: TOTAL_SLOTS - papers.length }).map((_, i) => (
           <PaperSlot
             key={`empty-${i}`}
             isFirst={i === 0}
