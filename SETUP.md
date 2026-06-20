@@ -245,6 +245,81 @@ in [`architecture.md`](architecture.md) (see §12).
 
 ---
 
+## 9. Team workflow & CI
+
+How we work as a team and what the automated check on each change is.
+
+### 9.1 The day-to-day flow
+
+We use a **pull-request workflow** — `main` always stays releasable.
+
+```bash
+git checkout main && git pull            # start from latest main
+git checkout -b your-feature             # branch for your change
+# ...make changes, commit...
+git push -u origin your-feature          # push the branch
+gh pr create                             # open a PR (or use the GitHub UI)
+```
+
+On the PR: **CI runs automatically**, a teammate reviews, and once it's green +
+approved you **Squash and merge**. Delete the branch after merge.
+
+Before pushing, run the same checks CI will run, so you don't wait on a red PR:
+
+```bash
+cd apps/web
+pnpm typecheck && pnpm lint && pnpm test && pnpm build
+```
+
+### 9.2 What the `verify` check is
+
+`verify` is the single job in our CI workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+It runs on **every pull request and every push to `main`**, and it is the green ✓
+(or red ✗) you see on a PR. In order, it:
+
+1. **Installs** dependencies (`pnpm install --frozen-lockfile`)
+2. **Builds `@nova-lab/shared-types`** — that package compiles to a git-ignored
+   `dist/`, and the web app imports its types (a `prepare` script also builds it
+   on `pnpm install`, so fresh clones work too)
+3. **Generates the Prisma client** (needed for type-checking)
+4. **`typecheck`** — `tsc --noEmit` (strict)
+5. **`lint`** — ESLint (`next/core-web-vitals`)
+6. **`test`** — the Vitest unit suite
+7. **`build`** — a full `next build` with placeholder env (routes are dynamic, so
+   the values only need to be *present*; swap in repo Actions secrets for a
+   faithful build)
+
+If any step fails, `verify` goes red — that's the signal **not** to merge until
+it's fixed. A green `verify` means types, lint, tests, and the production build
+all pass.
+
+### 9.3 Branch protection (the gate)
+
+A **ruleset** on `main` is configured to require a PR, **1 approval**, and a
+passing `verify` check before merge. Repository **admins** are on the bypass list
+(mode **Always**) so the owner can still push directly when working solo; everyone
+else goes through the gate.
+
+> ⚠️ **Plan limitation:** rulesets / branch protection are **not enforced on a
+> private repo under a free personal account.** Right now the ruleset exists but
+> isn't enforced, so the gate is **convention, not hard-enforced**: CI still runs
+> on every PR, but GitHub won't *block* a merge.
+>
+> To make it a real gate, either:
+> - move this repo into a **GitHub Organization on the Team plan** (recommended for
+>   a team — also gives team permissions, org rulesets, and shared secrets), or
+> - make the repo **public** (free enforcement — but not advisable here, since the
+>   app handles student data).
+>
+> The ruleset config is saved and activates automatically once the repo is on a
+> qualifying plan — no rework needed. See [`SECURITY.md`](SECURITY.md) §4.
+
+**Until enforcement is on, the team agreement is:** always open a PR, wait for a
+**green `verify`**, and get **one review** before merging. Don't push straight to
+`main` unless you're the owner doing intentional solo work.
+
+---
+
 ## Quick reference
 
 ```bash
