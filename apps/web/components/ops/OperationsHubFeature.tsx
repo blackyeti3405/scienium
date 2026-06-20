@@ -1,21 +1,21 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Loader2,
   Send,
   AlertTriangle,
   BookOpen,
-  Bold,
-  Italic,
-  List,
-  ListOrdered,
   ImagePlus,
   X,
   ChevronDown,
+  Users,
+  ArrowRight,
+  Calendar,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { RichEditor } from './RichEditor'
 
 // ─── Stage options ─────────────────────────────────────────────────────────────
 
@@ -87,106 +87,29 @@ function timeAgo(iso: string): string {
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  })
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function Avatar({ name, size = 28 }: { name: string; size?: number }) {
+function Avatar({ name, size = 26 }: { name: string; size?: number }) {
   return (
-    <span
-      className="ops-avatar font-pixel"
-      style={{ width: size, height: size, fontSize: size * 0.36 }}
-    >
+    <span className="ops-avatar font-pixel" style={{ width: size, height: size, fontSize: size * 0.36 }}>
       {name[0]?.toUpperCase() ?? '?'}
     </span>
   )
 }
 
-// ─── Markdown toolbar ──────────────────────────────────────────────────────────
-
-type FormatType = 'bold' | 'italic' | 'bullet' | 'numbered'
-
-function applyFormat(
-  el: HTMLTextAreaElement,
-  type: FormatType,
-  setValue: (v: string) => void,
-) {
-  const start = el.selectionStart
-  const end = el.selectionEnd
-  const selected = el.value.slice(start, end)
-  const before = el.value.slice(0, start)
-  const after = el.value.slice(end)
-
-  let replacement: string
-  let cursorOffset: number
-
-  if (type === 'bold') {
-    replacement = `**${selected || 'bold text'}**`
-    cursorOffset = selected ? replacement.length : 2
-  } else if (type === 'italic') {
-    replacement = `*${selected || 'italic text'}*`
-    cursorOffset = selected ? replacement.length : 1
-  } else if (type === 'bullet') {
-    const lines = (selected || 'Item').split('\n')
-    replacement = lines.map((l) => `- ${l}`).join('\n')
-    cursorOffset = replacement.length
-  } else {
-    const lines = (selected || 'Item').split('\n')
-    replacement = lines.map((l, i) => `${i + 1}. ${l}`).join('\n')
-    cursorOffset = replacement.length
-  }
-
-  const newValue = before + replacement + after
-  setValue(newValue)
-  setTimeout(() => {
-    el.focus()
-    const pos = start + cursorOffset
-    el.setSelectionRange(pos, pos)
-  }, 0)
-}
-
-function Toolbar({
-  textareaRef,
-  setValue,
-}: {
-  textareaRef: React.RefObject<HTMLTextAreaElement>
-  setValue: (v: string) => void
-}) {
-  const fmt = (type: FormatType) => {
-    if (textareaRef.current) applyFormat(textareaRef.current, type, setValue)
-  }
+function SectionLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <div className="ops-toolbar">
-      {([
-        ['bold', <Bold size={11} />, 'Bold'],
-        ['italic', <Italic size={11} />, 'Italic'],
-        ['bullet', <List size={11} />, 'Bullet list'],
-        ['numbered', <ListOrdered size={11} />, 'Numbered list'],
-      ] as [FormatType, React.ReactNode, string][]).map(([type, icon, label]) => (
-        <button
-          key={type}
-          type="button"
-          onMouseDown={(e) => { e.preventDefault(); fmt(type) }}
-          className="ops-toolbar__btn"
-          title={label}
-        >
-          {icon}
-        </button>
-      ))}
-    </div>
+    <p className="ops-label font-pixel">
+      {children}
+      {required && <span className="ops-label__req">*</span>}
+    </p>
   )
 }
 
 // ─── Attachment uploader ───────────────────────────────────────────────────────
 
-function AttachmentUploader({
-  urls,
-  onChange,
-}: {
-  urls: string[]
-  onChange: (urls: string[]) => void
-}) {
+function AttachmentUploader({ urls, onChange }: { urls: string[]; onChange: (urls: string[]) => void }) {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -210,7 +133,7 @@ function AttachmentUploader({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2.5 flex-wrap">
         {urls.map((url, i) => (
           <div key={i} className="ops-thumb-wrap">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -232,7 +155,7 @@ function AttachmentUploader({
           className="ops-upload-btn"
           title="Add photo"
         >
-          {uploading ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />}
+          {uploading ? <Loader2 size={15} className="animate-spin" /> : <ImagePlus size={15} />}
           <span className="font-pixel text-[7px]">{uploading ? 'Uploading…' : 'Add photo'}</span>
         </button>
         <input
@@ -260,7 +183,6 @@ function ProjectLogTab() {
   const [labType, setLabType] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Form state
   const [body, setBody] = useState('')
   const [nextSteps, setNextSteps] = useState('')
   const [stage, setStage] = useState('')
@@ -268,8 +190,6 @@ function ProjectLogTab() {
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const bodyRef = useRef<HTMLTextAreaElement>(null)
-  const nextStepsRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     fetch('/api/project-log')
@@ -291,11 +211,10 @@ function ProjectLogTab() {
     )
   }
 
-  const setBodyCb = useCallback((v: string) => setBody(v), [])
-
   async function submit() {
     setError(null)
-    if (!body.trim()) { setError('Notes are required.'); return }
+    const plainBody = body.replace(/[*_#>\-\s]/g, '')
+    if (!plainBody) { setError('Session notes are required.'); return }
     if (!nextSteps.trim()) { setError('Next steps are required.'); return }
     if (attachmentUrls.length === 0) { setError('At least one photo is required.'); return }
     setBusy(true)
@@ -328,7 +247,7 @@ function ProjectLogTab() {
 
   if (loading) {
     return (
-      <div className="ops-tab-body" style={{ alignItems: 'center', justifyContent: 'center' }}>
+      <div className="ops-tab-body items-center justify-center">
         <Loader2 size={18} className="animate-spin text-white/25" />
       </div>
     )
@@ -336,101 +255,97 @@ function ProjectLogTab() {
 
   return (
     <div className="ops-tab-body">
-      {/* ── Entry form ── */}
-      <div className="ops-card flex flex-col gap-4">
-        <p className="font-pixel text-[7px] text-white/40 uppercase tracking-widest">
-          Session Entry #{entries.length + 1} · {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-        </p>
+      {/* ── New entry card ── */}
+      <div className="ops-entry-card">
+        {/* Card header */}
+        <div className="ops-entry-card__head">
+          <span className="ops-entry-card__badge font-pixel">#{entries.length + 1}</span>
+          <div className="flex flex-col">
+            <span className="font-pixel text-[9px] text-white">New session entry</span>
+            <span className="font-pixel text-[6px] text-white/35 mt-0.5 flex items-center gap-1">
+              <Calendar size={8} />
+              {formatDate(new Date().toISOString())}
+            </span>
+          </div>
+        </div>
 
-        {/* Attendance — only shown for multi-member teams */}
-        {members.length > 1 && (
-          <div>
-            <p className="font-pixel text-[7px] text-white/35 mb-2">Who was present?</p>
-            <div className="flex flex-wrap gap-2">
-              {members.map((m) => {
-                const checked = attendeeIds.includes(m.userId)
-                return (
-                  <button
-                    key={m.userId}
-                    type="button"
-                    onClick={() => toggleAttendee(m.userId)}
-                    className={`ops-attendee-chip ${checked ? 'ops-attendee-chip--on' : ''}`}
-                  >
-                    <span className="ops-attendee-chip__dot" />
-                    <span className="font-pixel text-[7px]">{m.name}</span>
-                  </button>
-                )
-              })}
+        <div className="ops-entry-card__body">
+          {/* Attendance */}
+          {members.length > 1 && (
+            <div className="ops-field">
+              <SectionLabel><Users size={9} className="inline mr-1 -mt-0.5" />Who was present?</SectionLabel>
+              <div className="flex flex-wrap gap-2">
+                {members.map((m) => {
+                  const checked = attendeeIds.includes(m.userId)
+                  return (
+                    <button
+                      key={m.userId}
+                      type="button"
+                      onClick={() => toggleAttendee(m.userId)}
+                      className={`ops-attendee-chip ${checked ? 'ops-attendee-chip--on' : ''}`}
+                    >
+                      <span className="ops-attendee-chip__check">{checked ? '✓' : ''}</span>
+                      <span className="font-pixel text-[7px]">{m.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Stage */}
+          <div className="ops-field">
+            <SectionLabel>Project stage</SectionLabel>
+            <div className="ops-select-wrap">
+              <select value={stage} onChange={(e) => setStage(e.target.value)} className="ops-select">
+                <option value="">— Select stage —</option>
+                {stages.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <ChevronDown size={13} className="ops-select-icon" />
             </div>
           </div>
-        )}
 
-        {/* Stage dropdown */}
-        <div>
-          <p className="font-pixel text-[7px] text-white/35 mb-2">Stage</p>
-          <div className="ops-select-wrap">
-            <select
-              value={stage}
-              onChange={(e) => setStage(e.target.value)}
-              className="ops-select"
-            >
-              <option value="">— Select stage —</option>
-              {stages.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-            <ChevronDown size={12} className="ops-select-icon" />
+          {/* Notes */}
+          <div className="ops-field">
+            <SectionLabel required>Session notes</SectionLabel>
+            <RichEditor
+              value={body}
+              onChange={setBody}
+              placeholder="What did you do? What did you observe? What worked, what didn't?"
+            />
           </div>
+
+          {/* Next steps */}
+          <div className="ops-field">
+            <SectionLabel required>Next steps</SectionLabel>
+            <textarea
+              value={nextSteps}
+              onChange={(e) => setNextSteps(e.target.value)}
+              rows={2}
+              placeholder="What will you tackle in the next session?"
+              className="ops-textarea"
+            />
+          </div>
+
+          {/* Photos */}
+          <div className="ops-field">
+            <SectionLabel required>
+              Photos <span className="ops-label__hint">— at least one</span>
+            </SectionLabel>
+            <AttachmentUploader urls={attachmentUrls} onChange={setAttachmentUrls} />
+          </div>
+
+          {error && (
+            <div className="ops-error">
+              <AlertTriangle size={11} className="shrink-0" />
+              <span className="font-pixel text-[7px]">{error}</span>
+            </div>
+          )}
         </div>
 
-        {/* Notes with markdown toolbar */}
-        <div>
-          <p className="font-pixel text-[7px] text-white/35 mb-2">
-            Session notes <span className="text-red-400">*</span>
-          </p>
-          <Toolbar textareaRef={bodyRef} setValue={setBodyCb} />
-          <textarea
-            ref={bodyRef}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={5}
-            placeholder="What did you do? What observations did you make? What worked?"
-            className="ops-textarea"
-          />
-        </div>
-
-        {/* Next steps — required */}
-        <div>
-          <p className="font-pixel text-[7px] text-white/35 mb-2">
-            Next steps <span className="text-red-400">*</span>
-          </p>
-          <textarea
-            ref={nextStepsRef}
-            value={nextSteps}
-            onChange={(e) => setNextSteps(e.target.value)}
-            rows={2}
-            placeholder="What will you do in the next session?"
-            className="ops-textarea"
-          />
-        </div>
-
-        {/* Attachments — required */}
-        <div>
-          <p className="font-pixel text-[7px] text-white/35 mb-2">
-            Photos <span className="text-red-400">*</span>{' '}
-            <span className="text-white/25">(at least 1 required)</span>
-          </p>
-          <AttachmentUploader urls={attachmentUrls} onChange={setAttachmentUrls} />
-        </div>
-
-        {error && <p className="font-pixel text-[7px] text-red-400">{error}</p>}
-
-        <div className="flex justify-end">
-          <button
-            onClick={submit}
-            disabled={busy}
-            className="ops-submit-btn"
-          >
+        {/* Card footer */}
+        <div className="ops-entry-card__foot">
+          <button onClick={submit} disabled={busy} className="ops-submit-btn">
             {busy ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />}
             {busy ? 'Saving…' : 'Save entry'}
           </button>
@@ -440,70 +355,71 @@ function ProjectLogTab() {
       {/* ── Timeline ── */}
       {entries.length === 0 ? (
         <div className="ops-empty">
-          <BookOpen size={20} className="text-white/15 mb-2" />
+          <BookOpen size={22} className="text-white/15 mb-2" />
           <span className="font-pixel text-[8px] text-white/30">No entries yet — log your first session above.</span>
         </div>
       ) : (
-        <div className="ops-timeline">
-          {entries.map((e) => {
-            const attendeeNames = members
-              .filter((m) => e.attendeeIds.includes(m.userId))
-              .map((m) => m.name)
-            return (
-              <div key={e.id} className="ops-entry">
-                {/* Entry number badge */}
-                <div className="ops-entry__num font-pixel">#{e.entryNumber}</div>
-                <div className="ops-entry__body">
-                  {/* Header row */}
-                  <div className="flex items-center gap-2 flex-wrap mb-2">
-                    <Avatar name={e.createdBy.name} size={22} />
-                    <span className="font-pixel text-[7px] text-white/55">{e.createdBy.name}</span>
-                    {attendeeNames.length > 0 && (
-                      <span className="font-pixel text-[6px] text-white/30">
-                        + {attendeeNames.filter((n) => n !== e.createdBy.name).join(', ')}
-                      </span>
-                    )}
-                    {e.stage && (
-                      <span className="ops-stage-badge font-pixel">{e.stage}</span>
-                    )}
-                    <span className="font-pixel text-[6px] text-white/25 ml-auto">
-                      {formatDate(e.createdAt)} · {timeAgo(e.createdAt)}
-                    </span>
+        <>
+          <div className="ops-timeline-header">
+            <span className="font-pixel text-[7px] text-white/30 uppercase tracking-widest">
+              {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+            </span>
+            <div className="ops-timeline-header__line" />
+          </div>
+          <div className="ops-timeline">
+            {entries.map((e) => {
+              const attendeeNames = members
+                .filter((m) => e.attendeeIds.includes(m.userId) && m.userId !== e.createdBy.id)
+                .map((m) => m.name)
+              return (
+                <div key={e.id} className="ops-log-entry">
+                  <div className="ops-log-entry__rail">
+                    <span className="ops-log-entry__num font-pixel">{e.entryNumber}</span>
                   </div>
-
-                  {/* Notes */}
-                  <div className="ops-md text-sm text-white/75 leading-relaxed mb-3">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{e.body}</ReactMarkdown>
-                  </div>
-
-                  {/* Next steps */}
-                  <div className="ops-nextsteps">
-                    <p className="font-pixel text-[6px] text-[#F5C518]/50 uppercase tracking-widest mb-1">
-                      Next steps
-                    </p>
-                    <p className="text-sm text-[#F5C518]/70 leading-relaxed">{e.nextSteps}</p>
-                  </div>
-
-                  {/* Photos */}
-                  {e.attachmentUrls.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-3">
-                      {e.attachmentUrls.map((url, i) => (
-                        <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={url}
-                            alt={`entry ${e.entryNumber} photo ${i + 1}`}
-                            className="ops-thumb ops-thumb--timeline"
-                          />
-                        </a>
-                      ))}
+                  <div className="ops-log-entry__card">
+                    <div className="ops-log-entry__head">
+                      <Avatar name={e.createdBy.name} size={24} />
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-pixel text-[7px] text-white/70">
+                          {e.createdBy.name}
+                          {attendeeNames.length > 0 && (
+                            <span className="text-white/30"> + {attendeeNames.join(', ')}</span>
+                          )}
+                        </span>
+                        <span className="font-pixel text-[6px] text-white/30 mt-0.5">
+                          {formatDate(e.createdAt)} · {timeAgo(e.createdAt)}
+                        </span>
+                      </div>
+                      {e.stage && <span className="ops-stage-badge font-pixel">{e.stage}</span>}
                     </div>
-                  )}
+
+                    <div className="ops-md text-sm text-white/80 leading-relaxed">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{e.body}</ReactMarkdown>
+                    </div>
+
+                    {e.attachmentUrls.length > 0 && (
+                      <div className="ops-photo-row">
+                        {e.attachmentUrls.map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="ops-photo-link">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={url} alt={`entry ${e.entryNumber} photo ${i + 1}`} className="ops-photo" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="ops-nextsteps">
+                      <span className="ops-nextsteps__label font-pixel">
+                        <ArrowRight size={9} /> Next steps
+                      </span>
+                      <p className="text-sm text-[#F5C518]/80 leading-relaxed mt-1">{e.nextSteps}</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        </>
       )}
     </div>
   )
@@ -550,27 +466,30 @@ function FailureLogTab() {
 
   return (
     <div className="ops-tab-body">
-      <div className="ops-card">
-        <p className="font-pixel text-[7px] text-white/40 uppercase tracking-widest mb-4">
-          Log a failure — every setback is data
-        </p>
-        <div className="flex flex-col gap-3">
-          <div>
-            <label className="font-pixel text-[7px] text-white/35 block mb-2">
-              What failed or didn&apos;t go as expected? <span className="text-red-400">*</span>
-            </label>
+      <div className="ops-entry-card">
+        <div className="ops-entry-card__head">
+          <span className="ops-entry-card__badge ops-entry-card__badge--failure font-pixel">
+            <AlertTriangle size={12} />
+          </span>
+          <div className="flex flex-col">
+            <span className="font-pixel text-[9px] text-white">Log a failure</span>
+            <span className="font-pixel text-[6px] text-white/35 mt-0.5">Every setback is data — document it</span>
+          </div>
+        </div>
+
+        <div className="ops-entry-card__body">
+          <div className="ops-field">
+            <SectionLabel required>What failed or didn&apos;t go as expected?</SectionLabel>
             <textarea
               value={happened}
               onChange={(e) => setHappened(e.target.value)}
               rows={3}
-              placeholder="Describe what went wrong — be specific about conditions and what you expected vs. what happened."
+              placeholder="Be specific about conditions and what you expected vs. what happened."
               className="ops-textarea"
             />
           </div>
-          <div>
-            <label className="font-pixel text-[7px] text-white/35 block mb-2">
-              What did you learn from it? <span className="text-red-400">*</span>
-            </label>
+          <div className="ops-field">
+            <SectionLabel required>What did you learn from it?</SectionLabel>
             <textarea
               value={learned}
               onChange={(e) => setLearned(e.target.value)}
@@ -579,14 +498,16 @@ function FailureLogTab() {
               className="ops-textarea"
             />
           </div>
+          {error && (
+            <div className="ops-error">
+              <AlertTriangle size={11} className="shrink-0" />
+              <span className="font-pixel text-[7px]">{error}</span>
+            </div>
+          )}
         </div>
-        {error && <p className="font-pixel text-[7px] text-red-400 mt-2">{error}</p>}
-        <div className="flex justify-end mt-3">
-          <button
-            onClick={submit}
-            disabled={busy || !happened.trim() || !learned.trim()}
-            className="ops-submit-btn"
-          >
+
+        <div className="ops-entry-card__foot">
+          <button onClick={submit} disabled={busy || !happened.trim() || !learned.trim()} className="ops-submit-btn">
             {busy ? <Loader2 size={11} className="animate-spin" /> : <AlertTriangle size={11} />}
             {busy ? 'Saving…' : 'Log failure'}
           </button>
@@ -595,24 +516,30 @@ function FailureLogTab() {
 
       {entries.length === 0 ? (
         <div className="ops-empty">
-          <AlertTriangle size={20} className="text-white/15 mb-2" />
+          <AlertTriangle size={22} className="text-white/15 mb-2" />
           <span className="font-pixel text-[8px] text-white/30">No failures logged yet — every setback is data.</span>
         </div>
       ) : (
         <div className="ops-timeline">
           {entries.map((e, i) => (
-            <div key={e.id} className="ops-entry">
-              <div className="ops-entry__num ops-entry__num--failure font-pixel">#{entries.length - i}</div>
-              <div className="ops-entry__body">
-                <div className="flex items-center gap-2 mb-2">
-                  <Avatar name={e.author} size={22} />
-                  <span className="font-pixel text-[7px] text-white/55">{e.author}</span>
-                  <span className="font-pixel text-[6px] text-white/25 ml-auto">{timeAgo(e.createdAt)}</span>
+            <div key={e.id} className="ops-log-entry">
+              <div className="ops-log-entry__rail">
+                <span className="ops-log-entry__num ops-log-entry__num--failure font-pixel">
+                  {entries.length - i}
+                </span>
+              </div>
+              <div className="ops-log-entry__card">
+                <div className="ops-log-entry__head">
+                  <Avatar name={e.author} size={24} />
+                  <span className="font-pixel text-[7px] text-white/70">{e.author}</span>
+                  <span className="font-pixel text-[6px] text-white/30 ml-auto">{timeAgo(e.createdAt)}</span>
                 </div>
                 <p className="font-pixel text-[6px] text-white/30 uppercase tracking-widest mb-1">What failed</p>
-                <p className="text-sm text-white/75 leading-relaxed mb-3">{e.happened}</p>
-                <p className="font-pixel text-[6px] text-[#F5C518]/50 uppercase tracking-widest mb-1">What I learned</p>
-                <p className="text-sm text-[#F5C518]/70 leading-relaxed">{e.learned}</p>
+                <p className="text-sm text-white/80 leading-relaxed mb-3">{e.happened}</p>
+                <div className="ops-nextsteps">
+                  <span className="ops-nextsteps__label font-pixel">What I learned</span>
+                  <p className="text-sm text-[#F5C518]/80 leading-relaxed mt-1">{e.learned}</p>
+                </div>
               </div>
             </div>
           ))}
@@ -631,7 +558,7 @@ export function OperationsHubFeature() {
 
   return (
     <div className="flex flex-col h-full bg-[#0d1b2e] text-white">
-      <div className="flex border-b border-white/10 shrink-0">
+      <div className="flex border-b border-white/10 shrink-0 px-2">
         {([
           ['log', '📋', 'Project Log'],
           ['failure', '⚡', 'Failure Log'],
@@ -641,7 +568,7 @@ export function OperationsHubFeature() {
             onClick={() => setTab(key)}
             className={`ops-tab-btn font-pixel ${tab === key ? 'ops-tab-btn--active' : ''}`}
           >
-            {icon} {label}
+            <span className="mr-1.5">{icon}</span>{label}
           </button>
         ))}
       </div>

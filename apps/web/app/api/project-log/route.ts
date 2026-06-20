@@ -11,7 +11,10 @@ const Body = z.object({
   nextSteps: z.string().min(1).max(2000),
   stage: z.string().max(100).optional(),
   attendeeIds: z.array(z.string()).default([]),
-  attachmentUrls: z.array(z.string().url()).min(1, 'At least one photo is required'),
+  // Relative streaming paths into our own attachment view route.
+  attachmentUrls: z
+    .array(z.string().startsWith('/api/project-log/attachment/view'))
+    .min(1, 'At least one photo is required'),
 }).strict()
 
 export async function GET(req: NextRequest) {

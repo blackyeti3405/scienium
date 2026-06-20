@@ -2,7 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { getTeamContext } from '@/lib/phase'
 import { enforceRateLimit } from '@/lib/rate-limit'
-import { putObject, publicAssetUrl } from '@/lib/storage'
+import { putObject } from '@/lib/storage'
 import { randomUUID } from 'crypto'
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic']
@@ -40,5 +40,7 @@ export async function POST(req: NextRequest) {
 
   await putObject(key, buffer, file.type)
 
-  return NextResponse.json({ url: publicAssetUrl(key), key }, { status: 201 })
+  // Served through the authenticated streaming route (R2 bucket is private).
+  const url = `/api/project-log/attachment/view?key=${encodeURIComponent(key)}`
+  return NextResponse.json({ url, key }, { status: 201 })
 }
