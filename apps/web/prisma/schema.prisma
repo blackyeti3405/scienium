@@ -515,7 +515,10 @@ model ProjectLog {
   entryType       ProjectLogEntry  @map("entry_type")
   stage           String?
   body            String
+  nextSteps       String           @default("") @map("next_steps")
+  attendeeIds     String[]         @default([]) @map("attendee_ids")
   artifactUrl     String?          @map("artifact_url")
+  attachmentUrls  String[]         @default([]) @map("attachment_urls")
   createdByUserId String           @map("created_by_user_id")
   createdAt       DateTime         @default(now()) @map("created_at")
 

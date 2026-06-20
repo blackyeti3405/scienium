@@ -7,8 +7,11 @@ import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 
 const Body = z.object({
-  body: z.string().min(1).max(2000),
+  body: z.string().min(1).max(5000),
+  nextSteps: z.string().min(1).max(2000),
   stage: z.string().max(100).optional(),
+  attendeeIds: z.array(z.string()).default([]),
+  attachmentUrls: z.array(z.string().url()).min(1, 'At least one photo is required'),
 }).strict()
 
 export async function GET(req: NextRequest) {
@@ -21,20 +24,34 @@ export async function GET(req: NextRequest) {
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
-  const entries = await db.projectLog.findMany({
-    where: { teamId: ctx.teamId, entryType: 'progress' },
-    orderBy: { createdAt: 'desc' },
-    take: 100,
-    select: {
-      id: true,
-      body: true,
-      stage: true,
-      createdAt: true,
-      createdBy: { select: { name: true } },
-    },
-  })
+  const [rows, members] = await Promise.all([
+    db.projectLog.findMany({
+      where: { teamId: ctx.teamId, entryType: 'progress' },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        body: true,
+        nextSteps: true,
+        stage: true,
+        attendeeIds: true,
+        attachmentUrls: true,
+        createdAt: true,
+        createdBy: { select: { id: true, name: true } },
+      },
+    }),
+    db.teamMember.findMany({
+      where: { teamId: ctx.teamId },
+      orderBy: { joinedAt: 'asc' },
+      select: { userId: true, user: { select: { name: true } } },
+    }),
+  ])
 
-  return NextResponse.json({ entries })
+  // Number entries 1-based (oldest first, which is the query order)
+  const entries = rows.map((r, i) => ({ ...r, entryNumber: i + 1 })).reverse()
+
+  const memberList = members.map((m) => ({ userId: m.userId, name: m.user.name }))
+
+  return NextResponse.json({ entries, members: memberList, labType: ctx.labType })
 }
 
 export async function POST(req: NextRequest) {
@@ -53,22 +70,33 @@ export async function POST(req: NextRequest) {
   const { data, error } = await parseJson(req, Body)
   if (error) return error
 
+  // Count existing entries to compute the entry number for this new one
+  const existingCount = await db.projectLog.count({
+    where: { teamId: ctx.teamId, entryType: 'progress' },
+  })
+
   const entry = await db.projectLog.create({
     data: {
       teamId: ctx.teamId,
       createdByUserId: dbUser.id,
       entryType: 'progress',
       body: data.body.trim(),
+      nextSteps: data.nextSteps.trim(),
       stage: data.stage?.trim() || null,
+      attendeeIds: data.attendeeIds,
+      attachmentUrls: data.attachmentUrls,
     },
     select: {
       id: true,
       body: true,
+      nextSteps: true,
       stage: true,
+      attendeeIds: true,
+      attachmentUrls: true,
       createdAt: true,
-      createdBy: { select: { name: true } },
+      createdBy: { select: { id: true, name: true } },
     },
   })
 
-  return NextResponse.json({ entry }, { status: 201 })
+  return NextResponse.json({ entry: { ...entry, entryNumber: existingCount + 1 } }, { status: 201 })
 }

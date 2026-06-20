@@ -926,3 +926,164 @@
   border-radius: 4px;
   padding: 10px 14px;
 }
+
+/* ── Markdown toolbar ─────────────────────────────────────────────────────── */
+.ops-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 6px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+}
+.ops-toolbar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  color: rgba(255,255,255,0.4);
+  border-radius: 2px;
+  transition: color 0.1s, background 0.1s;
+}
+.ops-toolbar__btn:hover { color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.08); }
+/* Attach to textarea below */
+.ops-toolbar + .ops-textarea { border-top: none; border-radius: 0 0 3px 3px; }
+
+/* ── Select / dropdown ────────────────────────────────────────────────────── */
+.ops-select-wrap { position: relative; display: inline-flex; width: 100%; }
+.ops-select {
+  width: 100%;
+  appearance: none;
+  background: #0a1628;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 3px;
+  color: rgba(255,255,255,0.7);
+  font-size: 8px;
+  font-family: inherit;
+  padding: 9px 32px 9px 12px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.12s;
+  letter-spacing: 0.3px;
+}
+.ops-select:focus { border-color: rgba(245,197,24,0.4); }
+.ops-select option { background: #0d1b2e; }
+.ops-select-icon {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255,255,255,0.3);
+  pointer-events: none;
+}
+
+/* ── Attendance chips ─────────────────────────────────────────────────────── */
+.ops-attendee-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.03);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+  cursor: pointer;
+}
+.ops-attendee-chip:hover { border-color: rgba(255,255,255,0.25); color: rgba(255,255,255,0.7); }
+.ops-attendee-chip--on {
+  border-color: rgba(245,197,24,0.5);
+  color: #F5C518;
+  background: rgba(245,197,24,0.08);
+}
+.ops-attendee-chip__dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; flex-shrink: 0;
+}
+
+/* ── Attachment upload ────────────────────────────────────────────────────── */
+.ops-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1.5px dashed rgba(255,255,255,0.2);
+  border-radius: 4px;
+  color: rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.02);
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.ops-upload-btn:hover { border-color: rgba(245,197,24,0.4); color: #F5C518; }
+.ops-upload-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.ops-thumb-wrap { position: relative; }
+.ops-thumb {
+  width: 64px; height: 64px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.12);
+  display: block;
+}
+.ops-thumb--timeline {
+  width: 80px; height: 80px;
+  transition: opacity 0.12s;
+}
+.ops-thumb--timeline:hover { opacity: 0.85; }
+.ops-thumb__remove {
+  position: absolute;
+  top: -5px; right: -5px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: #dc2626;
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+/* ── Entry number badge ──────────────────────────────────────────────────── */
+.ops-entry__num {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: rgba(245,197,24,0.12);
+  color: rgba(245,197,24,0.7);
+  font-size: 8px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(245,197,24,0.2);
+}
+.ops-entry__num--failure {
+  background: rgba(239,68,68,0.1);
+  color: rgba(239,68,68,0.7);
+  border-color: rgba(239,68,68,0.2);
+}
+
+/* ── Stage badge ─────────────────────────────────────────────────────────── */
+.ops-stage-badge {
+  font-size: 6px;
+  padding: 2px 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 20px;
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 0.3px;
+}
+
+/* ── Next steps block ────────────────────────────────────────────────────── */
+.ops-nextsteps {
+  border-left: 2px solid rgba(245,197,24,0.3);
+  padding-left: 10px;
+  margin-top: 2px;
+}
+
+/* ── Markdown prose in entries ───────────────────────────────────────────── */
+.ops-md ul { list-style: disc; padding-left: 1.25rem; margin: 4px 0; }
+.ops-md ol { list-style: decimal; padding-left: 1.25rem; margin: 4px 0; }
+.ops-md li { margin: 2px 0; }
+.ops-md strong { color: rgba(255,255,255,0.9); }
+.ops-md em { color: rgba(255,255,255,0.65); font-style: italic; }
+.ops-md p { margin: 4px 0; }
