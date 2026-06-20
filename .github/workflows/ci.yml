@@ -1,0 +1,65 @@
+name: CI
+
+# Pre-merge gate: typecheck -> lint -> test -> build on every PR and on pushes to main.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9 # matches lockfileVersion 9.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        # Required: tsc + next build import @prisma/client types.
+        run: pnpm --filter web exec prisma generate
+
+      - name: Typecheck
+        run: pnpm --filter web typecheck
+
+      - name: Lint
+        run: pnpm --filter web lint
+
+      - name: Test
+        run: pnpm --filter web test
+
+      - name: Build
+        run: pnpm --filter web build
+        # Build-time placeholders so `next build` can assemble without real
+        # secrets. Routes are dynamic (server-rendered on demand), so these are
+        # never used to reach a real service — they only need to be PRESENT.
+        # For a faithful build (e.g. to catch a Clerk/runtime issue), add the
+        # real values as repository Actions secrets and reference them here, e.g.
+        #   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+        env:
+          # pk_test_ + base64("clerk.example.com$") — format-valid dummy
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
+          CLERK_SECRET_KEY: sk_test_ci_build_placeholder_00000000000000
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nova_lab
+          ANTHROPIC_API_KEY: sk-ant-ci-build-placeholder
+          R2_ACCOUNT_ID: ci
+          R2_ACCESS_KEY_ID: ci
+          R2_SECRET_ACCESS_KEY: ci
+          R2_BUCKET_NAME: ci-bucket
+          R2_PUBLIC_URL: https://example.com
+          VIEW_FINGERPRINT_SALT: ci-build-only-fingerprint-salt-0000000000
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
