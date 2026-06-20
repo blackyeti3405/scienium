@@ -19,7 +19,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ fo
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const limited = enforceRateLimit(req, 'mutate', userId)
+  const limited = await enforceRateLimit(req, 'mutate', userId)
   if (limited) return limited
 
   const ctx = await getTeamContext(userId)

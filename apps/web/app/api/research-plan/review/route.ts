@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // Strict per-user + per-IP limit: a full plan review is a large paid Claude call.
-  const limited = enforceRateLimit(req, 'ai', userId)
+  const limited = await enforceRateLimit(req, 'ai', userId)
   if (limited) return limited
 
   const ctx = await getTeamContext(userId)

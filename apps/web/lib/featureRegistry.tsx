@@ -46,6 +46,11 @@ const OperationsHubFeature = dynamic(
   { ssr: false, loading },
 )
 
+const ShowcaseEditor = dynamic(
+  () => import('@/components/showcase/ShowcaseEditor').then((m) => m.ShowcaseEditor),
+  { ssr: false, loading },
+)
+
 export const FEATURE_COMPONENTS: Record<GatewayKey, ComponentType> = {
   discovery: DiscoveryFeature,
 
@@ -60,11 +65,5 @@ export const FEATURE_COMPONENTS: Record<GatewayKey, ComponentType> = {
       route="/pvp/lobby"
     />
   ),
-  showcase: () => (
-    <StubFeature
-      title="Showcase Wing"
-      description="Publish your completed project as a public portfolio — title, abstract, board, video, and report."
-      route="/showcase/edit"
-    />
-  ),
+  showcase: ShowcaseEditor,
 }

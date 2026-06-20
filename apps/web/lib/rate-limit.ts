@@ -1,22 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 /**
- * In-process rate limiter — OWASP API4:2023 (Unrestricted Resource Consumption).
+ * Rate limiter — OWASP API4:2023 (Unrestricted Resource Consumption).
  *
  * Every authenticated API route runs a check through here so a single account (or
  * IP) can't hammer an endpoint — most importantly the Claude-backed ones, where
- * each call costs real money. Counters live in module memory, so a stolen/forged
- * request still can't get past the *application* layer for free.
+ * each call costs real money.
  *
- * DEPLOYMENT NOTE — read before scaling out:
- * Because the window state is in-memory, limits are enforced **per server
- * instance**. On a single long-lived Node server (the current deploy) that's
- * exactly the intended behavior. On multi-instance or serverless hosting each
- * instance keeps its own window, so the effective ceiling becomes
- * `limit × instances` and cold starts reset it — still a real brake on abuse,
- * but for a hard global guarantee put a shared store (Upstash/Redis) or an edge
- * WAF (Cloudflare) in front. Only the body of `hit()` changes when you do; every
- * call site below stays the same.
+ * BACKENDS (chosen once at module load):
+ *   - **MemoryStore** (default): fixed-window counters in module memory. On a
+ *     single long-lived Node server this is exactly right and needs no infra. On
+ *     multi-instance / serverless hosting each instance keeps its own window, so
+ *     the effective ceiling is `limit × instances` and cold starts reset it.
+ *   - **UpstashStore**: a shared fixed-window counter in Upstash Redis (REST), so
+ *     the limit is enforced **globally** across instances. Activated automatically
+ *     when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set — no code
+ *     change at any call site.
+ *
+ * The store interface is the only thing that varies; `enforceRateLimit` and every
+ * caller are backend-agnostic. `enforceRateLimit` is async (a network store needs
+ * it); the memory path resolves synchronously in practice.
  */
 
 export interface RateLimitTier {
@@ -45,17 +48,105 @@ export const RATE_LIMITS = {
 
 export type TierName = keyof typeof RATE_LIMITS
 
-// key → fixed window. Pruned lazily (see `sweep`) so the map can't grow forever.
-const buckets = new Map<string, { count: number; resetAt: number }>()
-let lastSweep = Date.now()
+// ─── Window record + pluggable store ──────────────────────────────────────────
 
-function sweep(now: number): void {
-  if (now - lastSweep < 60_000) return
-  lastSweep = now
-  for (const [key, b] of buckets) {
-    if (b.resetAt <= now) buckets.delete(key)
+/** The state of one fixed window after an increment. */
+export interface WindowState {
+  count: number
+  /** Epoch ms when this window resets. */
+  resetAt: number
+}
+
+/**
+ * A counter store. `incr` registers one hit against `key` within a `windowMs`
+ * fixed window and returns the resulting count + reset time. Implementations must
+ * preserve fixed-window semantics: the first hit opens a window of `windowMs`;
+ * subsequent hits in that window increment; once `resetAt` passes, the next hit
+ * opens a fresh window.
+ */
+export interface RateLimitStore {
+  incr(key: string, windowMs: number, now: number): Promise<WindowState>
+}
+
+/** In-memory fixed-window store. Counters live in module memory, pruned lazily. */
+export class MemoryStore implements RateLimitStore {
+  private buckets = new Map<string, WindowState>()
+  private lastSweep = Date.now()
+
+  private sweep(now: number): void {
+    if (now - this.lastSweep < 60_000) return
+    this.lastSweep = now
+    for (const [key, b] of this.buckets) {
+      if (b.resetAt <= now) this.buckets.delete(key)
+    }
+  }
+
+  async incr(key: string, windowMs: number, now: number): Promise<WindowState> {
+    this.sweep(now)
+    const b = this.buckets.get(key)
+    if (!b || b.resetAt <= now) {
+      const fresh = { count: 1, resetAt: now + windowMs }
+      this.buckets.set(key, fresh)
+      return fresh
+    }
+    b.count += 1
+    return b
   }
 }
+
+/**
+ * Shared fixed-window store backed by Upstash Redis over its REST API (no SDK
+ * dependency — just `fetch`). One pipelined round trip per check:
+ *   INCR key                  → the running count for this window
+ *   PEXPIRE key windowMs NX    → set the window TTL only on the first hit
+ *   PTTL key                   → remaining ms, to compute `resetAt`
+ *
+ * Fails OPEN: if Upstash is unreachable we allow the request (a limiter outage
+ * shouldn't take the whole API down) but log it. For a hard guarantee under
+ * limiter failure, pair with an edge WAF.
+ */
+export class UpstashStore implements RateLimitStore {
+  constructor(
+    private url: string,
+    private token: string,
+  ) {}
+
+  async incr(key: string, windowMs: number, now: number): Promise<WindowState> {
+    try {
+      const res = await fetch(`${this.url}/pipeline`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify([
+          ['INCR', key],
+          ['PEXPIRE', key, String(windowMs), 'NX'],
+          ['PTTL', key],
+        ]),
+        // Never let the limiter add latency unboundedly.
+        signal: AbortSignal.timeout(2_000),
+      })
+      if (!res.ok) throw new Error(`Upstash HTTP ${res.status}`)
+      const out = (await res.json()) as Array<{ result?: number; error?: string }>
+      const count = Number(out[0]?.result ?? 1)
+      const ttl = Number(out[2]?.result ?? windowMs)
+      const resetAt = now + (Number.isFinite(ttl) && ttl > 0 ? ttl : windowMs)
+      return { count, resetAt }
+    } catch (err) {
+      console.error('[rate-limit] Upstash unreachable — failing open:', err)
+      // Fail open: treat as the first hit of a fresh window (always allowed).
+      return { count: 1, resetAt: now + windowMs }
+    }
+  }
+}
+
+function createStore(): RateLimitStore {
+  const url = process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+  if (url && token) return new UpstashStore(url, token)
+  return new MemoryStore()
+}
+
+// Single store instance for the process lifetime.
+const store: RateLimitStore = createStore()
 
 /**
  * The per-IP ceiling is this multiple of the per-user limit. NOVA Lab teams are
@@ -63,7 +154,7 @@ function sweep(now: number): void {
  * cap at the per-user limit would lock out legitimate shared-network users. The
  * **per-user** bucket is the precise control; the per-IP bucket is only a coarse
  * backstop against one host hammering the API, generous enough to fit a room of
- * students. (For a hard per-IP control, do it at the edge — see the file header.)
+ * students.
  */
 const IP_LIMIT_MULTIPLIER = 12
 
@@ -73,28 +164,40 @@ interface HitResult {
   retryAfter: number
 }
 
-function hit(key: string, tier: RateLimitTier, now: number): HitResult {
-  const b = buckets.get(key)
-  if (!b || b.resetAt <= now) {
-    buckets.set(key, { count: 1, resetAt: now + tier.windowMs })
-    return { ok: true, retryAfter: 0 }
-  }
-  b.count += 1
-  if (b.count > tier.limit) {
-    return { ok: false, retryAfter: Math.ceil((b.resetAt - now) / 1000) }
+async function hit(key: string, tier: RateLimitTier, now: number): Promise<HitResult> {
+  const { count, resetAt } = await store.incr(key, tier.windowMs, now)
+  if (count > tier.limit) {
+    return { ok: false, retryAfter: Math.ceil((resetAt - now) / 1000) }
   }
   return { ok: true, retryAfter: 0 }
 }
 
 /**
- * Best-effort client IP. Trusts the standard proxy headers our host sets; falls
- * back to a constant so a missing header degrades to a shared (still-limited)
- * bucket rather than throwing.
+ * Best-effort client IP, resolved from the most trustworthy header first.
+ *
+ * `x-forwarded-for` is client-settable and therefore spoofable end-to-end, which
+ * lets a single host mint unlimited per-IP buckets on anonymous routes. We prefer
+ * headers the *edge* sets and a client cannot override:
+ *   1. a configured trusted header (`RATE_LIMIT_IP_HEADER`), if set;
+ *   2. Cloudflare's `cf-connecting-ip` (overwritten by CF on every request);
+ *   3. `x-real-ip` (set by most reverse proxies);
+ *   4. the first `x-forwarded-for` hop (least trusted — used only as a fallback).
+ * Falls back to a constant so a missing header degrades to a shared (still
+ * limited) bucket rather than throwing.
  */
 export function clientIp(req: NextRequest): string {
+  const configured = process.env.RATE_LIMIT_IP_HEADER
+  if (configured) {
+    const v = req.headers.get(configured)
+    if (v) return v.split(',')[0]!.trim()
+  }
+  const cf = req.headers.get('cf-connecting-ip')
+  if (cf) return cf.trim()
+  const real = req.headers.get('x-real-ip')
+  if (real) return real.trim()
   const xff = req.headers.get('x-forwarded-for')
   if (xff) return xff.split(',')[0]!.trim()
-  return req.headers.get('x-real-ip') ?? 'unknown'
+  return 'unknown'
 }
 
 /**
@@ -105,23 +208,24 @@ export function clientIp(req: NextRequest): string {
  * of the two wins.
  *
  * @example
- *   const limited = enforceRateLimit(req, 'ai', userId)
+ *   const limited = await enforceRateLimit(req, 'ai', userId)
  *   if (limited) return limited
  */
-export function enforceRateLimit(
+export async function enforceRateLimit(
   req: NextRequest,
   tierName: TierName,
   userId?: string | null,
-): NextResponse | null {
+): Promise<NextResponse | null> {
   const tier = RATE_LIMITS[tierName]
   const now = Date.now()
-  sweep(now)
 
   // Per-IP backstop is intentionally generous (see IP_LIMIT_MULTIPLIER); the
   // per-user bucket carries the real limit when the caller is authenticated.
   const ipTier: RateLimitTier = { limit: tier.limit * IP_LIMIT_MULTIPLIER, windowMs: tier.windowMs }
-  const checks: HitResult[] = [hit(`${tierName}:ip:${clientIp(req)}`, ipTier, now)]
-  if (userId) checks.push(hit(`${tierName}:user:${userId}`, tier, now))
+  const checks = await Promise.all([
+    hit(`${tierName}:ip:${clientIp(req)}`, ipTier, now),
+    ...(userId ? [hit(`${tierName}:user:${userId}`, tier, now)] : []),
+  ])
 
   const blocked = checks.find((c) => !c.ok)
   if (!blocked) return null

@@ -17,7 +17,9 @@ export default function OnboardingPage() {
     if (user && !name) {
       setName(user.fullName ?? user.firstName ?? '')
     }
-  }, [user])
+    // `name` is intentionally included; the `!name` guard keeps it idempotent
+    // (it only ever prefills once, never overwrites what the user typed).
+  }, [user, name])
 
   const [teamName, setTeamName] = useState('')
   const [zip, setZip] = useState('')

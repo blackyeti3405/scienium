@@ -1,7 +1,5 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { getTeamContext } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
@@ -9,17 +7,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'read', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
+  if (error) return error
 
   const paper = await db.paper.findFirst({
     where: { id: params.id, teamId: ctx.teamId },
@@ -32,7 +21,7 @@ export async function GET(
       fileUrl: true,
       createdAt: true,
       // This user's own proficiency on the source (per-student).
-      proficiencies: { where: { userId: dbUser.id }, select: { demonstrated: true } },
+      proficiencies: { where: { userId: ctx.dbUserId }, select: { demonstrated: true } },
     },
   })
 
@@ -49,16 +38,8 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
+  if (error) return error
 
   const paper = await db.paper.findFirst({
     where: { id: params.id, teamId: ctx.teamId },
@@ -76,9 +57,7 @@ export async function DELETE(
     db.paper.delete({ where: { id: paper.id } }),
   ])
 
-  if (dbUser) {
-    logActivity(ctx.teamId, dbUser.id, 'paper_delete', { title: paper.title }).catch(console.error)
-  }
+  logActivity(ctx.teamId, ctx.dbUserId, 'paper_delete', { title: paper.title }).catch(console.error)
 
   return NextResponse.json({ ok: true })
 }

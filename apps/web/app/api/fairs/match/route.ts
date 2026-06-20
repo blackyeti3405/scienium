@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const limited = enforceRateLimit(req, 'read', userId)
+  const limited = await enforceRateLimit(req, 'read', userId)
   if (limited) return limited
 
   const ctx = await getTeamContext(userId)

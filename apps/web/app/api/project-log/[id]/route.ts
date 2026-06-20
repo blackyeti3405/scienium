@@ -1,8 +1,6 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getTeamContext } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { deleteObject } from '@/lib/storage'
 import { logActivity } from '@/lib/activity/log'
@@ -27,17 +25,8 @@ function keyFromUrl(url: string): string | null {
 
 // PATCH — edit an existing progress entry. Author-only.
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
+  if (guardError) return guardError
 
   // Logs are shared across the team — any member may edit any entry.
   const existing = await db.projectLog.findFirst({
@@ -69,7 +58,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       stage: data.stage.trim(),
       attendeeIds,
       attachmentUrls: data.attachmentUrls,
-      lastEditedByUserId: dbUser.id,
+      lastEditedByUserId: ctx.dbUserId,
       lastEditedAt: new Date(),
     },
     select: {
@@ -95,24 +84,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }),
   )
 
-  logActivity(ctx.teamId, dbUser.id, 'log_edited', { kind: 'progress' }).catch(console.error)
+  logActivity(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'progress' }).catch(console.error)
 
   return NextResponse.json({ entry })
 }
 
 // DELETE — remove a progress entry and its attachments. Author-only.
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
+  if (error) return error
 
   // Shared log — any team member may delete; the act is recorded in the feed.
   const existing = await db.projectLog.findFirst({
@@ -130,7 +110,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     }),
   )
 
-  logActivity(ctx.teamId, dbUser.id, 'log_deleted', { kind: 'progress' }).catch(console.error)
+  logActivity(ctx.teamId, ctx.dbUserId, 'log_deleted', { kind: 'progress' }).catch(console.error)
 
   return NextResponse.json({ ok: true })
 }

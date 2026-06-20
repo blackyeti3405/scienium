@@ -1,0 +1,152 @@
+/**
+ * Pure economy arithmetic — the KP / Clearance / purchase decisions that used to
+ * live inline in the grade and buildings routes.
+ *
+ * Pulling these out gives the highest-stakes rules (the ones that mint currency)
+ * a unit-test surface with **no DB**, and keeps the route handlers thin. Each
+ * function is a faithful extraction: it returns exactly the values the routes
+ * previously computed inline, so behaviour is unchanged — the tests pin that.
+ *
+ * The *atomicity* of applying these decisions still belongs to the database
+ * (conditional `updateMany` debits, unique constraints, `lt` guards); these
+ * helpers only compute the numbers that go into those transactions.
+ */
+
+/** Clamp any model-returned score into a 0–100 integer (NaN → 0). */
+export function clampScore(n: number): number {
+  if (Number.isNaN(n)) return 0
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
+// ─── Quiz proficiency (per-student KP high-water) ─────────────────────────────
+
+export interface QuizAwardInput {
+  passed: boolean
+  /** Aggregate quiz score, already a 0–100 integer. */
+  aggregate: number
+  /** This student's prior `kpAwarded` high-water for the paper (0 if none). */
+  priorKp: number
+  /** This student's prior `bestScore` for the paper (0 if none). */
+  priorBest: number
+}
+
+export interface QuizAward {
+  /** KP to credit the team now — only the improvement over the prior high-water. */
+  kpEarned: number
+  /** New `bestScore` high-water to persist (never below prior). */
+  newBestScore: number
+  /** New `kpAwarded` high-water to persist (never below prior, capped at 100). */
+  newKpAwarded: number
+}
+
+/**
+ * A source grants each student at most 100 KP — their best passing quiz score —
+ * and only ever tops up by the improvement over their own prior best. A failing
+ * quiz, or a passing retake that doesn't beat the prior best, grants nothing.
+ *
+ * Mirrors the prior inline logic in papers/[id]/quiz/grade exactly:
+ *   kpEarned     = passed ? max(0, aggregate - priorKp) : 0
+ *   newKpAwarded = max(priorKp,  min(100, aggregate))     // create used min(100,agg); update used max(priorKp,agg)
+ *   newBestScore = max(priorBest, aggregate)
+ * (aggregate is an average of clamped 0–100 scores, so it is already ≤ 100 and
+ * the min(100, …) is a no-op kept for defensiveness.)
+ */
+export function computeQuizAward({ passed, aggregate, priorKp, priorBest }: QuizAwardInput): QuizAward {
+  if (!passed) {
+    return { kpEarned: 0, newBestScore: priorBest, newKpAwarded: priorKp }
+  }
+  return {
+    kpEarned: Math.max(0, aggregate - priorKp),
+    newBestScore: Math.max(priorBest, aggregate),
+    newKpAwarded: Math.max(priorKp, Math.min(100, aggregate)),
+  }
+}
+
+// ─── Clearance (team mastery high-water) ──────────────────────────────────────
+
+export interface ClearanceRaiseInput {
+  passed: boolean
+  /** The level this exam grants on a pass. */
+  targetLevel: number
+  /** The team's current clearance level. */
+  currentLevel: number
+  /** Bonus KP for first reaching `targetLevel`. */
+  levelKpBonus: number
+}
+
+export interface ClearanceRaise {
+  /** Whether this pass actually lifts the team's clearance (high-water). */
+  raised: boolean
+  /** KP bonus to grant (0 unless this pass raises clearance). */
+  kpBonus: number
+}
+
+/**
+ * A clearance raise is a high-water mark: a pass only advances clearance when its
+ * target exceeds the team's current level (so a teammate who already lifted it
+ * past this exam's target since it began yields no further bonus). Mirrors the
+ * prior inline logic in expertise/grade exactly.
+ */
+export function computeClearanceRaise({ passed, targetLevel, currentLevel, levelKpBonus }: ClearanceRaiseInput): ClearanceRaise {
+  const raised = passed && targetLevel > currentLevel
+  return { raised, kpBonus: raised ? levelKpBonus : 0 }
+}
+
+// ─── Anti-inflation guard for AI-graded gains ─────────────────────────────────
+
+/**
+ * Defence-in-depth against prompt-injection of the grader (V1): cap how much a
+ * single AI-graded attempt may *raise* a student's high-water in one shot. The
+ * grading model is fed attacker-controllable text (uploaded paper / project
+ * notes) as ground truth, so an injected "award full marks" could spike a score.
+ * Legitimate gains are gradual; this clamps an implausible jump without affecting
+ * normal play.
+ *
+ * Returns the aggregate unchanged when the jump is within `maxGain`, otherwise
+ * `priorBest + maxGain`. With `maxGain = 100` (the default) it is a no-op, so it
+ * can be wired in inert and tightened via config without code changes.
+ */
+export function clampScoreGain(aggregate: number, priorBest: number, maxGain = 100): number {
+  const ceiling = Math.min(100, priorBest + Math.max(0, maxGain))
+  return Math.min(aggregate, ceiling)
+}
+
+// ─── Building purchase pre-check ──────────────────────────────────────────────
+
+export interface ShopStateLike {
+  owned: string[]
+  kp: number
+  clearanceLevel: number
+  /** team-size cost multiplier (>= 1). */
+  multiplier: number
+}
+
+export interface ShopBuildingLike {
+  key: string
+  cost: number
+  minClearance: number
+}
+
+export type PurchaseCheck =
+  | { ok: true; cost: number }
+  | { ok: false; cost: number; status: number; error: string }
+
+/**
+ * The purchase pre-check — owned/clearance/affordability — exactly as it ran
+ * inline in buildings POST, returned as data so the route stays declarative.
+ * The actual debit remains an atomic conditional `updateMany` in the DB; this is
+ * the fast rejection path that also computes the team-size-adjusted cost.
+ */
+export function evaluatePurchase(state: ShopStateLike, building: ShopBuildingLike): PurchaseCheck {
+  const cost = building.cost * state.multiplier
+  if (state.owned.includes(building.key)) {
+    return { ok: false, cost, status: 409, error: 'Your lab already owns this building.' }
+  }
+  if (state.clearanceLevel < building.minClearance) {
+    return { ok: false, cost, status: 403, error: `Requires Clearance Level ${building.minClearance}.` }
+  }
+  if (state.kp < cost) {
+    return { ok: false, cost, status: 402, error: 'Not enough Knowledge Points.' }
+  }
+  return { ok: true, cost }
+}

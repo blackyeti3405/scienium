@@ -1,8 +1,6 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getTeamContext } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { batchCheckRelevance } from '@/lib/literature/relevance'
@@ -21,14 +19,8 @@ const TopicBody = z
 
 // GET: the team's chosen final research topic + how many papers they have.
 export async function GET(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'read', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
+  if (error) return error
 
   const [team, paperCount] = await Promise.all([
     db.team.findUnique({ where: { id: ctx.teamId }, select: { topic: true } }),
@@ -46,16 +38,8 @@ export async function GET(req: NextRequest) {
 //   - With `confirmWipe: true`: runs a batch relevance check, deletes papers that
 //     are no longer relevant to the new topic, then sets the topic.
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
+  const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
+  if (guardError) return guardError
 
   const { data, error } = await parseJson(req, TopicBody)
   if (error) return error
@@ -117,12 +101,10 @@ export async function POST(req: NextRequest) {
     data: { topic: newTopic || null },
   })
 
-  if (dbUser) {
-    logActivity(ctx.teamId, dbUser.id, 'topic_changed', {
-      oldTopic,
-      newTopic: newTopic || null,
-    }).catch(console.error)
-  }
+  logActivity(ctx.teamId, ctx.dbUserId, 'topic_changed', {
+    oldTopic,
+    newTopic: newTopic || null,
+  }).catch(console.error)
 
   return NextResponse.json({
     topic: newTopic || null,

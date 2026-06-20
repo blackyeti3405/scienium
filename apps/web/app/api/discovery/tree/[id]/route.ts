@@ -17,7 +17,7 @@ export async function PATCH(
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const limited = enforceRateLimit(req, 'mutate', userId)
+  const limited = await enforceRateLimit(req, 'mutate', userId)
   if (limited) return limited
 
   const ctx = await getTeamContext(userId)
@@ -49,7 +49,7 @@ export async function DELETE(
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const limited = enforceRateLimit(req, 'mutate', userId)
+  const limited = await enforceRateLimit(req, 'mutate', userId)
   if (limited) return limited
 
   const ctx = await getTeamContext(userId)

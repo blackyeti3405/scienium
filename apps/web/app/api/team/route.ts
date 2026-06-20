@@ -1,7 +1,5 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { getTeamContext } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { getLiteratureAdvanceProgress } from '@/lib/team/advance'
 import { db } from '@/lib/db'
 
@@ -10,17 +8,8 @@ import { db } from '@/lib/db'
  * active invite code, and (for the literature phase) the advance-readiness gate.
  */
 export async function GET(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'read', userId)
-  if (limited) return limited
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
+  if (error) return error
 
   const team = await db.team.findUnique({
     where: { id: ctx.teamId },
@@ -43,7 +32,7 @@ export async function GET(req: NextRequest) {
   })
   if (!team) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
-  const isLead = team.teamLeadId === dbUser.id
+  const isLead = team.teamLeadId === ctx.dbUserId
 
   // Only the literature_review gate is implemented; other phases report no gate.
   const advance =
@@ -61,7 +50,7 @@ export async function GET(req: NextRequest) {
     members: team.members.map((m) => ({
       name: m.user.name,
       role: m.role,
-      isYou: m.userId === dbUser.id,
+      isYou: m.userId === ctx.dbUserId,
     })),
     // The join code is sensitive to the team — only expose it to the lead.
     invite: isLead ? team.invites[0] ?? null : null,

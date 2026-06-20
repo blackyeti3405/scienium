@@ -1,8 +1,6 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getTeamContext } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
@@ -14,17 +12,8 @@ const Body = z.object({
 
 // PATCH — edit a failure entry. Author-only.
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
+  if (guardError) return guardError
 
   // Shared log — any team member may edit any entry.
   const existing = await db.projectLog.findFirst({
@@ -40,7 +29,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     where: { id: existing.id },
     data: {
       body: JSON.stringify({ happened: data.happened.trim(), learned: data.learned.trim() }),
-      lastEditedByUserId: dbUser.id,
+      lastEditedByUserId: ctx.dbUserId,
       lastEditedAt: new Date(),
     },
     select: {
@@ -56,7 +45,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   let parsed = { happened: entry.body, learned: '' }
   try { parsed = JSON.parse(entry.body) } catch {}
 
-  logActivity(ctx.teamId, dbUser.id, 'log_edited', { kind: 'failure' }).catch(console.error)
+  logActivity(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'failure' }).catch(console.error)
 
   return NextResponse.json({
     entry: {
@@ -73,17 +62,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
 // DELETE — remove a failure entry. Author-only.
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
+  if (error) return error
 
   // Shared log — any team member may delete; the act is recorded in the feed.
   const existing = await db.projectLog.findFirst({
@@ -94,7 +74,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
   await db.projectLog.delete({ where: { id: existing.id } })
 
-  logActivity(ctx.teamId, dbUser.id, 'log_deleted', { kind: 'failure' }).catch(console.error)
+  logActivity(ctx.teamId, ctx.dbUserId, 'log_deleted', { kind: 'failure' }).catch(console.error)
 
   return NextResponse.json({ ok: true })
 }

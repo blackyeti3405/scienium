@@ -168,7 +168,7 @@ export function DiscoveryFeature() {
             <div className="text-[13px] text-white/70 leading-relaxed flex flex-col gap-2">
               <p>
                 You&apos;re changing your topic to{' '}
-                <span className="text-[#F5C518] font-medium">"{topicConfirm.newTopic}"</span>.
+                <span className="text-[#F5C518] font-medium">&ldquo;{topicConfirm.newTopic}&rdquo;</span>.
               </p>
               <p>
                 You have{' '}

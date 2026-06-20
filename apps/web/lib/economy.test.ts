@@ -1,0 +1,148 @@
+import { describe, it, expect } from 'vitest'
+import {
+  clampScore,
+  clampScoreGain,
+  computeQuizAward,
+  computeClearanceRaise,
+  evaluatePurchase,
+} from '@/lib/economy'
+
+describe('clampScore', () => {
+  it('rounds and bounds to 0–100, NaN → 0', () => {
+    expect(clampScore(NaN)).toBe(0)
+    expect(clampScore(-5)).toBe(0)
+    expect(clampScore(150)).toBe(100)
+    expect(clampScore(84.6)).toBe(85)
+  })
+})
+
+describe('computeQuizAward — KP high-water invariants', () => {
+  it('a fresh pass awards the full aggregate', () => {
+    expect(computeQuizAward({ passed: true, aggregate: 80, priorKp: 0, priorBest: 0 })).toEqual({
+      kpEarned: 80,
+      newBestScore: 80,
+      newKpAwarded: 80,
+    })
+  })
+
+  it('a failing quiz awards nothing and lowers no high-water', () => {
+    expect(computeQuizAward({ passed: false, aggregate: 95, priorKp: 60, priorBest: 70 })).toEqual({
+      kpEarned: 0,
+      newBestScore: 70,
+      newKpAwarded: 60,
+    })
+  })
+
+  it('a passing retake tops up only by the improvement', () => {
+    expect(computeQuizAward({ passed: true, aggregate: 90, priorKp: 70, priorBest: 70 })).toEqual({
+      kpEarned: 20,
+      newBestScore: 90,
+      newKpAwarded: 90,
+    })
+  })
+
+  it('a weaker passing retake grants nothing and never lowers the high-water', () => {
+    const r = computeQuizAward({ passed: true, aggregate: 75, priorKp: 90, priorBest: 90 })
+    expect(r.kpEarned).toBe(0)
+    expect(r.newBestScore).toBe(90)
+    expect(r.newKpAwarded).toBe(90)
+  })
+
+  it('INVARIANT: high-water never decreases across any sequence', () => {
+    let kp = 0
+    let best = 0
+    const scores: Array<[boolean, number]> = [
+      [true, 50], [false, 99], [true, 40], [true, 80], [true, 65], [true, 100], [true, 10],
+    ]
+    for (const [passed, aggregate] of scores) {
+      const r = computeQuizAward({ passed, aggregate, priorKp: kp, priorBest: best })
+      expect(r.newKpAwarded).toBeGreaterThanOrEqual(kp)
+      expect(r.newBestScore).toBeGreaterThanOrEqual(best)
+      expect(r.kpEarned).toBeGreaterThanOrEqual(0)
+      kp = r.newKpAwarded
+      best = r.newBestScore
+    }
+    expect(kp).toBe(100)
+    expect(best).toBe(100)
+  })
+
+  it('total KP credited over retakes never exceeds 100 for one paper', () => {
+    let kp = 0
+    let totalCredited = 0
+    for (const aggregate of [40, 75, 60, 100, 100]) {
+      const r = computeQuizAward({ passed: true, aggregate, priorKp: kp, priorBest: kp })
+      totalCredited += r.kpEarned
+      kp = r.newKpAwarded
+    }
+    expect(totalCredited).toBeLessThanOrEqual(100)
+  })
+})
+
+describe('computeClearanceRaise — clearance only rises', () => {
+  it('a pass above current level raises and grants the bonus', () => {
+    expect(computeClearanceRaise({ passed: true, targetLevel: 3, currentLevel: 2, levelKpBonus: 500 })).toEqual({
+      raised: true,
+      kpBonus: 500,
+    })
+  })
+
+  it('a pass at or below current level does not raise (no double bonus)', () => {
+    expect(computeClearanceRaise({ passed: true, targetLevel: 2, currentLevel: 2, levelKpBonus: 300 })).toEqual({
+      raised: false,
+      kpBonus: 0,
+    })
+    expect(computeClearanceRaise({ passed: true, targetLevel: 1, currentLevel: 4, levelKpBonus: 150 })).toEqual({
+      raised: false,
+      kpBonus: 0,
+    })
+  })
+
+  it('a failing exam never raises', () => {
+    expect(computeClearanceRaise({ passed: false, targetLevel: 5, currentLevel: 0, levelKpBonus: 1200 })).toEqual({
+      raised: false,
+      kpBonus: 0,
+    })
+  })
+})
+
+describe('clampScoreGain — anti-injection guard', () => {
+  it('is a no-op at the default maxGain (100)', () => {
+    expect(clampScoreGain(100, 0)).toBe(100)
+    expect(clampScoreGain(72, 30)).toBe(72)
+  })
+  it('caps an implausible single-attempt jump when tightened', () => {
+    expect(clampScoreGain(100, 20, 25)).toBe(45)
+    expect(clampScoreGain(40, 20, 25)).toBe(40) // within the band, unchanged
+  })
+  it('never exceeds 100', () => {
+    expect(clampScoreGain(100, 95, 50)).toBe(100)
+  })
+})
+
+describe('evaluatePurchase', () => {
+  const building = { key: 'reagent_store', cost: 800, minClearance: 1 }
+  const base = { owned: [] as string[], kp: 5000, clearanceLevel: 2, multiplier: 1 }
+
+  it('applies the team-size multiplier to cost', () => {
+    const r = evaluatePurchase({ ...base, multiplier: 3 }, building)
+    expect(r.cost).toBe(2400)
+    expect(r.ok).toBe(true)
+  })
+  it('rejects an already-owned building (409)', () => {
+    const r = evaluatePurchase({ ...base, owned: ['reagent_store'] }, building)
+    expect(r).toMatchObject({ ok: false, status: 409 })
+  })
+  it('rejects below the clearance ceiling (403)', () => {
+    const r = evaluatePurchase({ ...base, clearanceLevel: 0 }, building)
+    expect(r).toMatchObject({ ok: false, status: 403 })
+  })
+  it('rejects when KP is short, after the multiplier (402)', () => {
+    const r = evaluatePurchase({ ...base, kp: 1000, multiplier: 2 }, building)
+    expect(r).toMatchObject({ ok: false, status: 402, cost: 1600 })
+  })
+  it('checks owned before clearance before affordability', () => {
+    // owned wins even when also under-clearance and broke
+    const r = evaluatePurchase({ owned: ['reagent_store'], kp: 0, clearanceLevel: 0, multiplier: 1 }, building)
+    expect(r).toMatchObject({ ok: false, status: 409 })
+  })
+})

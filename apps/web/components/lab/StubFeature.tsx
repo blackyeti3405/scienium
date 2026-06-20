@@ -25,7 +25,7 @@ export function StubFeature({
       <div className="mt-2 rounded-lg border border-dashed px-6 py-5 text-sm text-muted-foreground">
         <p className="font-semibold text-foreground">Coming soon</p>
         <p className="mt-1 text-xs">
-          This feature's interface is in development. It will open right here, inside the lab.
+          This feature&apos;s interface is in development. It will open right here, inside the lab.
         </p>
       </div>
       <p className="text-[11px] text-muted-foreground/60">
