@@ -12,6 +12,9 @@ import {
   Users,
   ArrowRight,
   Calendar,
+  Pencil,
+  Trash2,
+  Check,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -71,6 +74,7 @@ interface FailureEntry {
   happened: string
   learned: string
   author: string
+  authorId: string
   createdAt: string
 }
 
@@ -175,33 +179,31 @@ function AttachmentUploader({ urls, onChange }: { urls: string[]; onChange: (url
   )
 }
 
-// ─── Project Log Tab ───────────────────────────────────────────────────────────
+// ─── Project log entry form (create + edit) ─────────────────────────────────────
 
-function ProjectLogTab() {
-  const [entries, setEntries] = useState<LogEntry[]>([])
-  const [members, setMembers] = useState<Member[]>([])
-  const [labType, setLabType] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  const [body, setBody] = useState('')
-  const [nextSteps, setNextSteps] = useState('')
-  const [stage, setStage] = useState('')
-  const [attendeeIds, setAttendeeIds] = useState<string[]>([])
-  const [attachmentUrls, setAttachmentUrls] = useState<string[]>([])
+function ProjectLogForm({
+  members,
+  labType,
+  headerNumber,
+  entry,
+  onSaved,
+  onCancel,
+}: {
+  members: Member[]
+  labType: string | null
+  headerNumber: number
+  entry?: LogEntry
+  onSaved: (entry: LogEntry, mode: 'create' | 'edit') => void
+  onCancel?: () => void
+}) {
+  const isEdit = !!entry
+  const [body, setBody] = useState(entry?.body ?? '')
+  const [nextSteps, setNextSteps] = useState(entry?.nextSteps ?? '')
+  const [stage, setStage] = useState(entry?.stage ?? '')
+  const [attendeeIds, setAttendeeIds] = useState<string[]>(entry?.attendeeIds ?? [])
+  const [attachmentUrls, setAttachmentUrls] = useState<string[]>(entry?.attachmentUrls ?? [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetch('/api/project-log')
-      .then((r) => r.json())
-      .then((d) => {
-        if (Array.isArray(d.entries)) setEntries(d.entries)
-        if (Array.isArray(d.members)) setMembers(d.members)
-        if (d.labType !== undefined) setLabType(d.labType)
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
 
   const stages = getStages(labType)
 
@@ -219,8 +221,8 @@ function ProjectLogTab() {
     if (attachmentUrls.length === 0) { setError('At least one photo is required.'); return }
     setBusy(true)
     try {
-      const res = await fetch('/api/project-log', {
-        method: 'POST',
+      const res = await fetch(isEdit ? `/api/project-log/${entry!.id}` : '/api/project-log', {
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           body: body.trim(),
@@ -232,16 +234,165 @@ function ProjectLogTab() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to save')
-      setEntries((prev) => [data.entry, ...prev])
-      setBody('')
-      setNextSteps('')
-      setStage('')
-      setAttendeeIds([])
-      setAttachmentUrls([])
+      onSaved(data.entry, isEdit ? 'edit' : 'create')
+      if (!isEdit) {
+        setBody(''); setNextSteps(''); setStage(''); setAttendeeIds([]); setAttachmentUrls([])
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setBusy(false)
+    }
+  }
+
+  return (
+    <div className="ops-entry-card">
+      <div className="ops-entry-card__head">
+        <span className="ops-entry-card__badge font-pixel">#{isEdit ? entry!.entryNumber : headerNumber}</span>
+        <div className="flex flex-col">
+          <span className="font-pixel text-[9px] text-white">{isEdit ? 'Editing entry' : 'New session entry'}</span>
+          <span className="font-pixel text-[6px] text-white/35 mt-0.5 flex items-center gap-1">
+            <Calendar size={8} />
+            {formatDate(entry?.createdAt ?? new Date().toISOString())}
+          </span>
+        </div>
+        {isEdit && onCancel && (
+          <button onClick={onCancel} className="ops-entry-card__cancel font-pixel" title="Cancel edit">
+            <X size={12} />
+          </button>
+        )}
+      </div>
+
+      <div className="ops-entry-card__body">
+        {members.length > 1 && (
+          <div className="ops-field">
+            <SectionLabel><Users size={9} className="inline mr-1 -mt-0.5" />Who was present?</SectionLabel>
+            <div className="flex flex-wrap gap-2">
+              {members.map((m) => {
+                const checked = attendeeIds.includes(m.userId)
+                return (
+                  <button
+                    key={m.userId}
+                    type="button"
+                    onClick={() => toggleAttendee(m.userId)}
+                    className={`ops-attendee-chip ${checked ? 'ops-attendee-chip--on' : ''}`}
+                  >
+                    <span className="ops-attendee-chip__check">{checked ? '✓' : ''}</span>
+                    <span className="font-pixel text-[7px]">{m.name}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="ops-field">
+          <SectionLabel>Project stage</SectionLabel>
+          <div className="ops-select-wrap">
+            <select value={stage} onChange={(e) => setStage(e.target.value)} className="ops-select">
+              <option value="">— Select stage —</option>
+              {stages.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <ChevronDown size={13} className="ops-select-icon" />
+          </div>
+        </div>
+
+        <div className="ops-field">
+          <SectionLabel required>Session notes</SectionLabel>
+          <RichEditor
+            value={body}
+            onChange={setBody}
+            placeholder="What did you do? What did you observe? What worked, what didn't?"
+          />
+        </div>
+
+        <div className="ops-field">
+          <SectionLabel required>Next steps</SectionLabel>
+          <textarea
+            value={nextSteps}
+            onChange={(e) => setNextSteps(e.target.value)}
+            rows={2}
+            placeholder="What will you tackle in the next session?"
+            className="ops-textarea"
+          />
+        </div>
+
+        <div className="ops-field">
+          <SectionLabel required>
+            Photos <span className="ops-label__hint">— at least one</span>
+          </SectionLabel>
+          <AttachmentUploader urls={attachmentUrls} onChange={setAttachmentUrls} />
+        </div>
+
+        {error && (
+          <div className="ops-error">
+            <AlertTriangle size={11} className="shrink-0" />
+            <span className="font-pixel text-[7px]">{error}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="ops-entry-card__foot">
+        {isEdit && onCancel && (
+          <button onClick={onCancel} className="ops-ghost-btn font-pixel">Cancel</button>
+        )}
+        <button onClick={submit} disabled={busy} className="ops-submit-btn">
+          {busy ? <Loader2 size={11} className="animate-spin" /> : isEdit ? <Check size={11} /> : <Send size={11} />}
+          {busy ? 'Saving…' : isEdit ? 'Save changes' : 'Save entry'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Project Log Tab ───────────────────────────────────────────────────────────
+
+function ProjectLogTab() {
+  const [entries, setEntries] = useState<LogEntry[]>([])
+  const [members, setMembers] = useState<Member[]>([])
+  const [labType, setLabType] = useState<string | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/project-log')
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d.entries)) setEntries(d.entries)
+        if (Array.isArray(d.members)) setMembers(d.members)
+        if (d.labType !== undefined) setLabType(d.labType)
+        if (d.currentUserId !== undefined) setCurrentUserId(d.currentUserId)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  function handleSaved(entry: LogEntry, mode: 'create' | 'edit') {
+    if (mode === 'create') {
+      setEntries((prev) => [entry, ...prev])
+    } else {
+      setEntries((prev) => prev.map((e) => (e.id === entry.id ? { ...entry, entryNumber: e.entryNumber } : e)))
+      setEditingId(null)
+    }
+  }
+
+  async function handleDelete(target: LogEntry) {
+    if (!confirm(`Delete entry #${target.entryNumber}? This can't be undone.`)) return
+    setDeletingId(target.id)
+    try {
+      const res = await fetch(`/api/project-log/${target.id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      setEntries((prev) =>
+        prev
+          .filter((e) => e.id !== target.id)
+          .map((e) => (e.entryNumber > target.entryNumber ? { ...e, entryNumber: e.entryNumber - 1 } : e)),
+      )
+    } catch {
+      alert('Could not delete the entry. Please try again.')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -255,104 +406,13 @@ function ProjectLogTab() {
 
   return (
     <div className="ops-tab-body">
-      {/* ── New entry card ── */}
-      <div className="ops-entry-card">
-        {/* Card header */}
-        <div className="ops-entry-card__head">
-          <span className="ops-entry-card__badge font-pixel">#{entries.length + 1}</span>
-          <div className="flex flex-col">
-            <span className="font-pixel text-[9px] text-white">New session entry</span>
-            <span className="font-pixel text-[6px] text-white/35 mt-0.5 flex items-center gap-1">
-              <Calendar size={8} />
-              {formatDate(new Date().toISOString())}
-            </span>
-          </div>
-        </div>
+      <ProjectLogForm
+        members={members}
+        labType={labType}
+        headerNumber={entries.length + 1}
+        onSaved={handleSaved}
+      />
 
-        <div className="ops-entry-card__body">
-          {/* Attendance */}
-          {members.length > 1 && (
-            <div className="ops-field">
-              <SectionLabel><Users size={9} className="inline mr-1 -mt-0.5" />Who was present?</SectionLabel>
-              <div className="flex flex-wrap gap-2">
-                {members.map((m) => {
-                  const checked = attendeeIds.includes(m.userId)
-                  return (
-                    <button
-                      key={m.userId}
-                      type="button"
-                      onClick={() => toggleAttendee(m.userId)}
-                      className={`ops-attendee-chip ${checked ? 'ops-attendee-chip--on' : ''}`}
-                    >
-                      <span className="ops-attendee-chip__check">{checked ? '✓' : ''}</span>
-                      <span className="font-pixel text-[7px]">{m.name}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Stage */}
-          <div className="ops-field">
-            <SectionLabel>Project stage</SectionLabel>
-            <div className="ops-select-wrap">
-              <select value={stage} onChange={(e) => setStage(e.target.value)} className="ops-select">
-                <option value="">— Select stage —</option>
-                {stages.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <ChevronDown size={13} className="ops-select-icon" />
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div className="ops-field">
-            <SectionLabel required>Session notes</SectionLabel>
-            <RichEditor
-              value={body}
-              onChange={setBody}
-              placeholder="What did you do? What did you observe? What worked, what didn't?"
-            />
-          </div>
-
-          {/* Next steps */}
-          <div className="ops-field">
-            <SectionLabel required>Next steps</SectionLabel>
-            <textarea
-              value={nextSteps}
-              onChange={(e) => setNextSteps(e.target.value)}
-              rows={2}
-              placeholder="What will you tackle in the next session?"
-              className="ops-textarea"
-            />
-          </div>
-
-          {/* Photos */}
-          <div className="ops-field">
-            <SectionLabel required>
-              Photos <span className="ops-label__hint">— at least one</span>
-            </SectionLabel>
-            <AttachmentUploader urls={attachmentUrls} onChange={setAttachmentUrls} />
-          </div>
-
-          {error && (
-            <div className="ops-error">
-              <AlertTriangle size={11} className="shrink-0" />
-              <span className="font-pixel text-[7px]">{error}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Card footer */}
-        <div className="ops-entry-card__foot">
-          <button onClick={submit} disabled={busy} className="ops-submit-btn">
-            {busy ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />}
-            {busy ? 'Saving…' : 'Save entry'}
-          </button>
-        </div>
-      </div>
-
-      {/* ── Timeline ── */}
       {entries.length === 0 ? (
         <div className="ops-empty">
           <BookOpen size={22} className="text-white/15 mb-2" />
@@ -368,9 +428,29 @@ function ProjectLogTab() {
           </div>
           <div className="ops-timeline">
             {entries.map((e) => {
+              if (editingId === e.id) {
+                return (
+                  <div key={e.id} className="ops-log-entry">
+                    <div className="ops-log-entry__rail">
+                      <span className="ops-log-entry__num font-pixel">{e.entryNumber}</span>
+                    </div>
+                    <div className="flex-1 min-w-0 mb-4">
+                      <ProjectLogForm
+                        members={members}
+                        labType={labType}
+                        headerNumber={e.entryNumber}
+                        entry={e}
+                        onSaved={handleSaved}
+                        onCancel={() => setEditingId(null)}
+                      />
+                    </div>
+                  </div>
+                )
+              }
               const attendeeNames = members
                 .filter((m) => e.attendeeIds.includes(m.userId) && m.userId !== e.createdBy.id)
                 .map((m) => m.name)
+              const mine = e.createdBy.id === currentUserId
               return (
                 <div key={e.id} className="ops-log-entry">
                   <div className="ops-log-entry__rail">
@@ -391,6 +471,21 @@ function ProjectLogTab() {
                         </span>
                       </div>
                       {e.stage && <span className="ops-stage-badge font-pixel">{e.stage}</span>}
+                      {mine && (
+                        <div className="ops-entry-actions">
+                          <button onClick={() => setEditingId(e.id)} className="ops-icon-btn" title="Edit entry">
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(e)}
+                            disabled={deletingId === e.id}
+                            className="ops-icon-btn ops-icon-btn--danger"
+                            title="Delete entry"
+                          >
+                            {deletingId === e.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="ops-md text-sm text-white/80 leading-relaxed">
@@ -427,36 +522,36 @@ function ProjectLogTab() {
 
 // ─── Failure Log Tab ───────────────────────────────────────────────────────────
 
-function FailureLogTab() {
-  const [entries, setEntries] = useState<FailureEntry[]>([])
-  const [happened, setHappened] = useState('')
-  const [learned, setLearned] = useState('')
+function FailureForm({
+  entry,
+  onSaved,
+  onCancel,
+}: {
+  entry?: FailureEntry
+  onSaved: (entry: FailureEntry, mode: 'create' | 'edit') => void
+  onCancel?: () => void
+}) {
+  const isEdit = !!entry
+  const [happened, setHappened] = useState(entry?.happened ?? '')
+  const [learned, setLearned] = useState(entry?.learned ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetch('/api/failure-log')
-      .then((r) => r.json())
-      .then((d) => { if (Array.isArray(d.entries)) setEntries(d.entries) })
-      .catch(() => {})
-  }, [])
-
   async function submit() {
     const h = happened.trim(), l = learned.trim()
-    if (!h || !l) return
+    if (!h || !l) { setError('Both fields are required.'); return }
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch('/api/failure-log', {
-        method: 'POST',
+      const res = await fetch(isEdit ? `/api/failure-log/${entry!.id}` : '/api/failure-log', {
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ happened: h, learned: l }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to save')
-      setEntries((prev) => [data.entry, ...prev])
-      setHappened('')
-      setLearned('')
+      onSaved(data.entry, isEdit ? 'edit' : 'create')
+      if (!isEdit) { setHappened(''); setLearned('') }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')
     } finally {
@@ -465,54 +560,106 @@ function FailureLogTab() {
   }
 
   return (
-    <div className="ops-tab-body">
-      <div className="ops-entry-card">
-        <div className="ops-entry-card__head">
-          <span className="ops-entry-card__badge ops-entry-card__badge--failure font-pixel">
-            <AlertTriangle size={12} />
-          </span>
-          <div className="flex flex-col">
-            <span className="font-pixel text-[9px] text-white">Log a failure</span>
-            <span className="font-pixel text-[6px] text-white/35 mt-0.5">Every setback is data — document it</span>
-          </div>
+    <div className="ops-entry-card">
+      <div className="ops-entry-card__head">
+        <span className="ops-entry-card__badge ops-entry-card__badge--failure font-pixel">
+          <AlertTriangle size={12} />
+        </span>
+        <div className="flex flex-col">
+          <span className="font-pixel text-[9px] text-white">{isEdit ? 'Editing failure' : 'Log a failure'}</span>
+          <span className="font-pixel text-[6px] text-white/35 mt-0.5">Every setback is data — document it</span>
         </div>
-
-        <div className="ops-entry-card__body">
-          <div className="ops-field">
-            <SectionLabel required>What failed or didn&apos;t go as expected?</SectionLabel>
-            <textarea
-              value={happened}
-              onChange={(e) => setHappened(e.target.value)}
-              rows={3}
-              placeholder="Be specific about conditions and what you expected vs. what happened."
-              className="ops-textarea"
-            />
-          </div>
-          <div className="ops-field">
-            <SectionLabel required>What did you learn from it?</SectionLabel>
-            <textarea
-              value={learned}
-              onChange={(e) => setLearned(e.target.value)}
-              rows={3}
-              placeholder="What will you try differently? What does this tell you about your hypothesis or design?"
-              className="ops-textarea"
-            />
-          </div>
-          {error && (
-            <div className="ops-error">
-              <AlertTriangle size={11} className="shrink-0" />
-              <span className="font-pixel text-[7px]">{error}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="ops-entry-card__foot">
-          <button onClick={submit} disabled={busy || !happened.trim() || !learned.trim()} className="ops-submit-btn">
-            {busy ? <Loader2 size={11} className="animate-spin" /> : <AlertTriangle size={11} />}
-            {busy ? 'Saving…' : 'Log failure'}
+        {isEdit && onCancel && (
+          <button onClick={onCancel} className="ops-entry-card__cancel font-pixel" title="Cancel edit">
+            <X size={12} />
           </button>
-        </div>
+        )}
       </div>
+
+      <div className="ops-entry-card__body">
+        <div className="ops-field">
+          <SectionLabel required>What failed or didn&apos;t go as expected?</SectionLabel>
+          <textarea
+            value={happened}
+            onChange={(e) => setHappened(e.target.value)}
+            rows={3}
+            placeholder="Be specific about conditions and what you expected vs. what happened."
+            className="ops-textarea"
+          />
+        </div>
+        <div className="ops-field">
+          <SectionLabel required>What did you learn from it?</SectionLabel>
+          <textarea
+            value={learned}
+            onChange={(e) => setLearned(e.target.value)}
+            rows={3}
+            placeholder="What will you try differently? What does this tell you about your hypothesis or design?"
+            className="ops-textarea"
+          />
+        </div>
+        {error && (
+          <div className="ops-error">
+            <AlertTriangle size={11} className="shrink-0" />
+            <span className="font-pixel text-[7px]">{error}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="ops-entry-card__foot">
+        {isEdit && onCancel && (
+          <button onClick={onCancel} className="ops-ghost-btn font-pixel">Cancel</button>
+        )}
+        <button onClick={submit} disabled={busy} className="ops-submit-btn">
+          {busy ? <Loader2 size={11} className="animate-spin" /> : isEdit ? <Check size={11} /> : <AlertTriangle size={11} />}
+          {busy ? 'Saving…' : isEdit ? 'Save changes' : 'Log failure'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function FailureLogTab() {
+  const [entries, setEntries] = useState<FailureEntry[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/failure-log')
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d.entries)) setEntries(d.entries)
+        if (d.currentUserId !== undefined) setCurrentUserId(d.currentUserId)
+      })
+      .catch(() => {})
+  }, [])
+
+  function handleSaved(entry: FailureEntry, mode: 'create' | 'edit') {
+    if (mode === 'create') {
+      setEntries((prev) => [entry, ...prev])
+    } else {
+      setEntries((prev) => prev.map((e) => (e.id === entry.id ? entry : e)))
+      setEditingId(null)
+    }
+  }
+
+  async function handleDelete(target: FailureEntry) {
+    if (!confirm("Delete this failure entry? This can't be undone.")) return
+    setDeletingId(target.id)
+    try {
+      const res = await fetch(`/api/failure-log/${target.id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      setEntries((prev) => prev.filter((e) => e.id !== target.id))
+    } catch {
+      alert('Could not delete the entry. Please try again.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  return (
+    <div className="ops-tab-body">
+      <FailureForm onSaved={handleSaved} />
 
       {entries.length === 0 ? (
         <div className="ops-empty">
@@ -521,28 +668,57 @@ function FailureLogTab() {
         </div>
       ) : (
         <div className="ops-timeline">
-          {entries.map((e, i) => (
-            <div key={e.id} className="ops-log-entry">
-              <div className="ops-log-entry__rail">
-                <span className="ops-log-entry__num ops-log-entry__num--failure font-pixel">
-                  {entries.length - i}
-                </span>
-              </div>
-              <div className="ops-log-entry__card">
-                <div className="ops-log-entry__head">
-                  <Avatar name={e.author} size={24} />
-                  <span className="font-pixel text-[7px] text-white/70">{e.author}</span>
-                  <span className="font-pixel text-[6px] text-white/30 ml-auto">{timeAgo(e.createdAt)}</span>
+          {entries.map((e, i) => {
+            const num = entries.length - i
+            if (editingId === e.id) {
+              return (
+                <div key={e.id} className="ops-log-entry">
+                  <div className="ops-log-entry__rail">
+                    <span className="ops-log-entry__num ops-log-entry__num--failure font-pixel">{num}</span>
+                  </div>
+                  <div className="flex-1 min-w-0 mb-4">
+                    <FailureForm entry={e} onSaved={handleSaved} onCancel={() => setEditingId(null)} />
+                  </div>
                 </div>
-                <p className="font-pixel text-[6px] text-white/30 uppercase tracking-widest mb-1">What failed</p>
-                <p className="text-sm text-white/80 leading-relaxed mb-3">{e.happened}</p>
-                <div className="ops-nextsteps">
-                  <span className="ops-nextsteps__label font-pixel">What I learned</span>
-                  <p className="text-sm text-[#F5C518]/80 leading-relaxed mt-1">{e.learned}</p>
+              )
+            }
+            const mine = e.authorId === currentUserId
+            return (
+              <div key={e.id} className="ops-log-entry">
+                <div className="ops-log-entry__rail">
+                  <span className="ops-log-entry__num ops-log-entry__num--failure font-pixel">{num}</span>
+                </div>
+                <div className="ops-log-entry__card">
+                  <div className="ops-log-entry__head">
+                    <Avatar name={e.author} size={24} />
+                    <span className="font-pixel text-[7px] text-white/70">{e.author}</span>
+                    <span className="font-pixel text-[6px] text-white/30">{timeAgo(e.createdAt)}</span>
+                    {mine && (
+                      <div className="ops-entry-actions">
+                        <button onClick={() => setEditingId(e.id)} className="ops-icon-btn" title="Edit entry">
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(e)}
+                          disabled={deletingId === e.id}
+                          className="ops-icon-btn ops-icon-btn--danger"
+                          title="Delete entry"
+                        >
+                          {deletingId === e.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <p className="font-pixel text-[6px] text-white/30 uppercase tracking-widest mb-1">What failed</p>
+                  <p className="text-sm text-white/80 leading-relaxed mb-3">{e.happened}</p>
+                  <div className="ops-nextsteps">
+                    <span className="ops-nextsteps__label font-pixel">What I learned</span>
+                    <p className="text-sm text-[#F5C518]/80 leading-relaxed mt-1">{e.learned}</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

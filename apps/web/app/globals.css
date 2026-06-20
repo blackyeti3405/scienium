@@ -821,6 +821,7 @@
 /* ── Scrollable body ──────────────────────────────────────────────────────── */
 .ops-tab-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -830,6 +831,9 @@
   width: 100%;
   margin: 0 auto;
 }
+/* Children must keep their natural height and let the body scroll — otherwise a
+   tall composer card gets flex-shrunk and its footer (submit) is clipped. */
+.ops-tab-body > * { flex-shrink: 0; }
 
 /* ── Entry composer card ──────────────────────────────────────────────────── */
 .ops-entry-card {
@@ -878,10 +882,67 @@
 .ops-entry-card__foot {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
   padding: 14px 18px;
   background: rgba(0, 0, 0, 0.15);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
+.ops-entry-card__cancel {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: rgba(255, 255, 255, 0.4);
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: color 0.12s, background 0.12s;
+}
+.ops-entry-card__cancel:hover { color: #ff8a8a; background: rgba(255, 138, 138, 0.1); }
+
+/* Ghost (secondary) button used for Cancel in edit footers */
+.ops-ghost-btn {
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  letter-spacing: 0.4px;
+  transition: color 0.12s, border-color 0.12s;
+}
+.ops-ghost-btn:hover { color: rgba(255, 255, 255, 0.85); border-color: rgba(255, 255, 255, 0.3); }
+
+/* ── Entry edit/delete actions ────────────────────────────────────────────── */
+.ops-entry-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  align-items: center;
+}
+.ops-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: rgba(255, 255, 255, 0.38);
+  border-radius: 5px;
+  border: 1px solid transparent;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.ops-icon-btn:hover {
+  color: #f5c518;
+  background: rgba(245, 197, 24, 0.1);
+  border-color: rgba(245, 197, 24, 0.25);
+}
+.ops-icon-btn--danger:hover {
+  color: #ff8a8a;
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+.ops-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Field + label ────────────────────────────────────────────────────────── */
 .ops-field { display: flex; flex-direction: column; }
@@ -1005,20 +1066,24 @@
   background: #0a1628;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 8px;
-  font-family: inherit;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
   padding: 11px 34px 11px 13px;
   outline: none;
   cursor: pointer;
   transition: border-color 0.14s, box-shadow 0.14s;
-  letter-spacing: 0.3px;
 }
 .ops-select:focus {
   border-color: rgba(245, 197, 24, 0.5);
   box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.08);
 }
-.ops-select option { background: #0d1b2e; color: #fff; }
+.ops-select option {
+  background: #0d1b2e;
+  color: #fff;
+  font-size: 14px;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
 .ops-select-icon {
   position: absolute;
   right: 11px;

@@ -31,6 +31,8 @@ export async function GET(req: NextRequest) {
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
+  const me = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
+
   const [rows, members] = await Promise.all([
     db.projectLog.findMany({
       where: { teamId: ctx.teamId, entryType: 'progress' },
@@ -58,7 +60,7 @@ export async function GET(req: NextRequest) {
 
   const memberList = members.map((m) => ({ userId: m.userId, name: m.user.name }))
 
-  return NextResponse.json({ entries, members: memberList, labType: ctx.labType })
+  return NextResponse.json({ entries, members: memberList, labType: ctx.labType, currentUserId: me?.id ?? null })
 }
 
 export async function POST(req: NextRequest) {

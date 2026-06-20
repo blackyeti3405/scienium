@@ -22,6 +22,8 @@ export async function GET(req: NextRequest) {
   const ctx = await getTeamContext(userId)
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
+  const me = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
+
   const rows = await db.projectLog.findMany({
     where: { teamId: ctx.teamId, entryType: 'failure' },
     orderBy: { createdAt: 'desc' },
@@ -30,7 +32,7 @@ export async function GET(req: NextRequest) {
       id: true,
       body: true,
       createdAt: true,
-      createdBy: { select: { name: true } },
+      createdBy: { select: { id: true, name: true } },
     },
   })
 
@@ -38,10 +40,10 @@ export async function GET(req: NextRequest) {
   const entries = rows.map((r) => {
     let parsed = { happened: r.body, learned: '' }
     try { parsed = JSON.parse(r.body) } catch {}
-    return { id: r.id, ...parsed, createdAt: r.createdAt, author: r.createdBy.name }
+    return { id: r.id, ...parsed, createdAt: r.createdAt, author: r.createdBy.name, authorId: r.createdBy.id }
   })
 
-  return NextResponse.json({ entries })
+  return NextResponse.json({ entries, currentUserId: me?.id ?? null })
 }
 
 export async function POST(req: NextRequest) {
@@ -71,7 +73,7 @@ export async function POST(req: NextRequest) {
       id: true,
       body: true,
       createdAt: true,
-      createdBy: { select: { name: true } },
+      createdBy: { select: { id: true, name: true } },
     },
   })
 
@@ -79,6 +81,12 @@ export async function POST(req: NextRequest) {
   try { parsed = JSON.parse(entry.body) } catch {}
 
   return NextResponse.json({
-    entry: { id: entry.id, ...parsed, createdAt: entry.createdAt, author: entry.createdBy.name },
+    entry: {
+      id: entry.id,
+      ...parsed,
+      createdAt: entry.createdAt,
+      author: entry.createdBy.name,
+      authorId: entry.createdBy.id,
+    },
   }, { status: 201 })
 }
