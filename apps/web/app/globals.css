@@ -658,20 +658,54 @@
   border-bottom: 1px solid hsl(var(--border));
 }
 
-/* ── Status-strip activity button ───────────────────────────────────────────── */
-.status-strip__activity-btn {
-  display: inline-flex;
+/* ── Activity FAB — bottom-left of viewport, mirrors shop button ─────────────── */
+.activity-fab {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 4px 6px;
-  color: #aeb6d0;
-  background: #1e2540;
-  border: 1px solid #2a3048;
-  border-radius: 3px;
+  gap: 3px;
+  padding: 10px 14px;
+  color: #c8d2f0;
+  background: linear-gradient(#2a3560, #1e2540);
+  border: 3px solid #3a4880;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px #10131f, 0 6px 14px rgba(0, 0, 0, 0.5);
   cursor: pointer;
-  transition: color 0.12s, background 0.12s;
+  transition: transform 0.12s ease, filter 0.12s ease;
 }
-.status-strip__activity-btn:hover { color: #e8ecfb; background: #2a3250; }
+.activity-fab:hover { transform: translateY(-2px); filter: brightness(1.1); }
+.activity-fab:active { transform: translateY(0); }
+.activity-fab__label { font-size: 8px; letter-spacing: 0.5px; }
+
+/* ── Dev FAB — bottom-left, stacked above activity button ───────────────────── */
+.dev-fab {
+  position: absolute;
+  left: 18px;
+  bottom: 88px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 12px;
+  color: #7fffb8;
+  background: linear-gradient(#1a3028, #102018);
+  border: 2px dashed #3a6040;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px #10131f, 0 4px 10px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+  opacity: 0.8;
+}
+.dev-fab:hover { transform: translateY(-2px); filter: brightness(1.15); opacity: 1; }
+.dev-fab:active { transform: translateY(0); }
+.dev-fab:disabled { opacity: 0.4; cursor: not-allowed; }
+.dev-fab__icon { font-size: 16px; line-height: 1; }
+.dev-fab__label { font-size: 7px; letter-spacing: 0.5px; max-width: 80px; text-align: center; }
 
 /* ── Activity feed side panel ───────────────────────────────────────────────── */
 .activity-panel {

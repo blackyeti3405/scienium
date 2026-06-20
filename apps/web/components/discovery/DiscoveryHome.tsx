@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { Pencil, Check, X } from 'lucide-react'
 import type { DiscoveryNode } from '@/stores/discoveryStore'
 
 // ── Accordion content ───────────────────────────────────────────────────────
@@ -123,6 +124,9 @@ export function DiscoveryHome({
   onOpenStarred,
 }: Props) {
   const [open, setOpen] = useState<Set<number>>(new Set())
+  const [editingTopic, setEditingTopic] = useState(false)
+  const [topicDraft, setTopicDraft] = useState('')
+  const topicInputRef = useRef<HTMLInputElement>(null)
 
   const toggle = (i: number) =>
     setOpen((prev) => {
@@ -130,6 +134,18 @@ export function DiscoveryHome({
       next.has(i) ? next.delete(i) : next.add(i)
       return next
     })
+
+  function startEditTopic() {
+    setTopicDraft(finalTopic ?? '')
+    setEditingTopic(true)
+    setTimeout(() => topicInputRef.current?.focus(), 0)
+  }
+
+  function commitTopicEdit() {
+    const trimmed = topicDraft.trim()
+    if (trimmed) onSetFinalTopic(trimmed)
+    setEditingTopic(false)
+  }
 
   return (
     <div className="h-full overflow-y-auto">
@@ -145,13 +161,53 @@ export function DiscoveryHome({
         </div>
 
         {/* ── Final topic ── */}
-        {finalTopic && (
+        {(finalTopic || editingTopic) && (
           <div className="rounded-sm border border-[#F5C518]/30 bg-[#F5C518]/[0.06] px-4 py-3 flex items-center gap-3">
             <span className="text-base shrink-0">🎯</span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="font-pixel text-[7px] text-[#F5C518]/70 uppercase tracking-widest mb-1">Final research topic</p>
-              <p className="text-sm text-white/90">{finalTopic}</p>
+              {editingTopic ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={topicInputRef}
+                    value={topicDraft}
+                    onChange={(e) => setTopicDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitTopicEdit()
+                      if (e.key === 'Escape') setEditingTopic(false)
+                    }}
+                    className="flex-1 bg-transparent border-b border-[#F5C518]/50 text-sm text-white/90 outline-none focus:border-[#F5C518] pb-0.5 min-w-0"
+                    placeholder="Type your research topic…"
+                  />
+                  <button
+                    onClick={commitTopicEdit}
+                    disabled={!topicDraft.trim()}
+                    className="text-[#F5C518] hover:text-[#F5C518]/80 disabled:opacity-30 shrink-0"
+                    title="Save"
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button
+                    onClick={() => setEditingTopic(false)}
+                    className="text-white/30 hover:text-white/60 shrink-0"
+                    title="Cancel"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : (
+                <p className="text-sm text-white/90">{finalTopic}</p>
+              )}
             </div>
+            {!editingTopic && (
+              <button
+                onClick={startEditTopic}
+                className="text-white/25 hover:text-[#F5C518]/70 shrink-0 transition-colors"
+                title="Edit research topic"
+              >
+                <Pencil size={13} />
+              </button>
+            )}
           </div>
         )}
 

@@ -9,6 +9,7 @@ import { TeamPanel } from '@/components/lab/TeamPanel'
 import { ActivityPanel } from '@/components/lab/ActivityPanel'
 import { PhaseAdvance } from '@/components/lab/PhaseAdvance'
 import { StatusStrip, type Currency } from '@/components/lab/StatusStrip'
+import { Activity } from 'lucide-react'
 import { LabCurrencyProvider } from '@/lib/labCurrency'
 import { FEATURE_COMPONENTS } from '@/lib/featureRegistry'
 import { GATEWAYS, type Gateway } from '@/lib/gateways'
@@ -93,7 +94,6 @@ export function LabScene({
             labType={labType}
             currency={liveCurrency}
             onOpenTeam={() => setTeamOpen(true)}
-            onOpenActivity={() => setActivityOpen(true)}
           />
 
           {advance && <PhaseAdvance progress={advance} />}
@@ -144,6 +144,23 @@ export function LabScene({
               </span>
               <span className="shop-button__label">SHOP</span>
             </button>
+
+            {/* Activity feed — anchored bottom-left of the lab viewport. */}
+            <button
+              type="button"
+              className="activity-fab font-pixel"
+              onClick={() => setActivityOpen(true)}
+              title="Team activity"
+              aria-label="Open team activity"
+            >
+              <Activity size={16} />
+              <span className="activity-fab__label">LOG</span>
+            </button>
+
+            {/* Dev fill — only rendered in development, bottom-left above activity. */}
+            {process.env.NODE_ENV === 'development' && (
+              <DevFillButton />
+            )}
           </div>
 
           {openGateway && FeatureComponent && (
@@ -166,5 +183,40 @@ export function LabScene({
         </div>
       )}
     </LabCurrencyProvider>
+  )
+}
+
+// ─── Dev utility: one-click fill of 25 ready papers ──────────────────────────
+
+function DevFillButton() {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+
+  async function fill() {
+    setBusy(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/dev/fill-papers', { method: 'POST' })
+      const data = await res.json()
+      setMsg(res.ok ? `✓ ${data.created} papers added` : data.error ?? 'Error')
+    } catch {
+      setMsg('Request failed')
+    } finally {
+      setBusy(false)
+      setTimeout(() => setMsg(null), 3000)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="dev-fab font-pixel"
+      onClick={fill}
+      disabled={busy}
+      title="[DEV] Fill 25 papers"
+    >
+      <span className="dev-fab__icon">⚗</span>
+      <span className="dev-fab__label">{msg ?? 'DEV'}</span>
+    </button>
   )
 }

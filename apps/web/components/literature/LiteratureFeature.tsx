@@ -99,7 +99,7 @@ function PaperSlot({
             ) : paper.status === 'error' ? (
               <div className="flex items-center gap-2">
                 <span className="font-pixel text-[8px] text-red-400">
-                  Upload failed — check console for details
+                  Upload failed — see above for details
                 </span>
               </div>
             ) : (
