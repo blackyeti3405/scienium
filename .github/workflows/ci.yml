@@ -29,6 +29,12 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Build workspace packages
+        # @nova-lab/shared-types emits to dist/ (gitignored); the web app's
+        # typecheck/build import its declarations. `prepare` builds it on install
+        # too — this is explicit insurance so CI never depends on lifecycle order.
+        run: pnpm --filter @nova-lab/shared-types build
+
       - name: Generate Prisma client
         # Required: tsc + next build import @prisma/client types.
         run: pnpm --filter web exec prisma generate
