@@ -19,14 +19,18 @@ export async function GET(req: NextRequest) {
   if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
 
   const key = req.nextUrl.searchParams.get('key')
-  if (!key || !key.startsWith(`log-attachments/${ctx.teamId}/`)) {
+  if (!key || key.includes('..') || !key.startsWith(`log-attachments/${ctx.teamId}/`)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
   try {
     const { body, contentLength, contentType } = await getObjectStream(key)
     const headers: Record<string, string> = {
+      // Only ever serve image bytes; nosniff stops the browser from
+      // MIME-sniffing the response into anything executable.
       'Content-Type': contentType ?? 'image/jpeg',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
       'Cache-Control': 'private, max-age=86400',
     }
     if (contentLength != null) headers['Content-Length'] = String(contentLength)

@@ -10,11 +10,15 @@ const Body = z.object({
   body: z.string().min(1).max(5000),
   nextSteps: z.string().min(1).max(2000),
   stage: z.string().max(100).optional(),
-  attendeeIds: z.array(z.string()).default([]),
-  // Relative streaming paths into our own attachment view route.
+  // Bounded to avoid storage-bloat; ids are further intersected with the
+  // team's actual roster before persisting (see POST).
+  attendeeIds: z.array(z.string().max(64)).max(50).default([]),
+  // Relative streaming paths into our own attachment view route. Bounded in
+  // both count and length so a single entry can't store an unbounded blob.
   attachmentUrls: z
-    .array(z.string().startsWith('/api/project-log/attachment/view'))
-    .min(1, 'At least one photo is required'),
+    .array(z.string().max(400).startsWith('/api/project-log/attachment/view'))
+    .min(1, 'At least one photo is required')
+    .max(20),
 }).strict()
 
 export async function GET(req: NextRequest) {
@@ -73,6 +77,18 @@ export async function POST(req: NextRequest) {
   const { data, error } = await parseJson(req, Body)
   if (error) return error
 
+  // Keep only attendee ids that are genuinely on this team — a client can't
+  // record arbitrary or other-team user ids as present.
+  const requestedAttendees = data.attendeeIds ?? []
+  let attendeeIds: string[] = []
+  if (requestedAttendees.length > 0) {
+    const members = await db.teamMember.findMany({
+      where: { teamId: ctx.teamId, userId: { in: requestedAttendees } },
+      select: { userId: true },
+    })
+    attendeeIds = members.map((m) => m.userId)
+  }
+
   // Count existing entries to compute the entry number for this new one
   const existingCount = await db.projectLog.count({
     where: { teamId: ctx.teamId, entryType: 'progress' },
@@ -86,7 +102,7 @@ export async function POST(req: NextRequest) {
       body: data.body.trim(),
       nextSteps: data.nextSteps.trim(),
       stage: data.stage?.trim() || null,
-      attendeeIds: data.attendeeIds,
+      attendeeIds,
       attachmentUrls: data.attachmentUrls,
     },
     select: {

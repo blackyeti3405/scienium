@@ -1,12 +1,24 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import sharp from 'sharp'
 import { getTeamContext } from '@/lib/phase'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { putObject } from '@/lib/storage'
 import { randomUUID } from 'crypto'
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic']
 const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
+
+// Map the *actual* decoded image format (from sharp, not the client-declared
+// MIME) to a canonical extension + content-type. SVG is deliberately excluded —
+// it can carry script and is the one image format that's an XSS vector.
+const FORMAT_MAP: Record<string, { ext: string; contentType: string }> = {
+  jpeg: { ext: 'jpg', contentType: 'image/jpeg' },
+  png: { ext: 'png', contentType: 'image/png' },
+  gif: { ext: 'gif', contentType: 'image/gif' },
+  webp: { ext: 'webp', contentType: 'image/webp' },
+  heif: { ext: 'heic', contentType: 'image/heic' },
+  avif: { ext: 'avif', contentType: 'image/avif' },
+}
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth()
@@ -27,18 +39,31 @@ export async function POST(req: NextRequest) {
 
   const file = form.get('file') as File | null
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
-  if (!ALLOWED_TYPES.includes(file.type)) {
-    return NextResponse.json({ error: 'Only image files are accepted (JPEG, PNG, GIF, WebP)' }, { status: 415 })
-  }
   if (file.size > MAX_BYTES) {
     return NextResponse.json({ error: 'File too large (max 10 MB)' }, { status: 413 })
   }
 
-  const ext = file.type.split('/')[1]?.replace('jpeg', 'jpg') ?? 'jpg'
-  const key = `log-attachments/${ctx.teamId}/${randomUUID()}.${ext}`
   const buffer = Buffer.from(await file.arrayBuffer())
 
-  await putObject(key, buffer, file.type)
+  // Validate by *decoding* the bytes — never trust the client-declared MIME type.
+  // This rejects mislabeled files, polyglots, and SVG, and gives us the true
+  // format to store (so the view route serves an accurate content-type).
+  let format: string | undefined
+  try {
+    format = (await sharp(buffer).metadata()).format
+  } catch {
+    return NextResponse.json({ error: 'File is not a readable image' }, { status: 415 })
+  }
+  const mapped = format ? FORMAT_MAP[format] : undefined
+  if (!mapped) {
+    return NextResponse.json(
+      { error: 'Only JPEG, PNG, GIF, WebP, or HEIC images are accepted' },
+      { status: 415 },
+    )
+  }
+
+  const key = `log-attachments/${ctx.teamId}/${randomUUID()}.${mapped.ext}`
+  await putObject(key, buffer, mapped.contentType)
 
   // Served through the authenticated streaming route (R2 bucket is private).
   const url = `/api/project-log/attachment/view?key=${encodeURIComponent(key)}`
