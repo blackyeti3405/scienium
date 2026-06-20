@@ -178,21 +178,70 @@ are in the repo; project context lives in `spec.md`, `architecture.md`, and
 
 ---
 
-## 8. Deploy (Vercel + managed services)
+## 8. Production deployment (Vercel + managed services)
 
-The web app is built for **Vercel**:
+The web app is built for **Vercel**. This section is the complete checklist for a
+production deploy — do it whenever you're ready; nothing here is needed for local
+development.
+
+### 8.1 Production environment variables
+
+Set these in **Vercel → Project → Settings → Environment Variables**, scoped to
+**Production** (and **Preview** if you use preview deploys). They mirror
+`apps/web/.env.example`.
+
+**Required**
+
+| Variable | Production value / source | Notes |
+|---|---|---|
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk **production** instance | `pk_live_…` |
+| `CLERK_SECRET_KEY` | Clerk **production** instance | `sk_live_…` |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` / `…SIGN_UP_URL` / `…AFTER_SIGN_IN_URL` / `…AFTER_SIGN_UP_URL` | keep the defaults from `.env.example` | sign-in/up + redirect routes |
+| `DATABASE_URL` | Supabase/managed Postgres — **pooled** connection string | runtime queries |
+| `DIRECT_URL` | same DB — **direct** (non-pooled) connection | used only for `prisma migrate deploy` |
+| `ANTHROPIC_API_KEY` | Anthropic console | paper metadata, quizzes, chat, grading, classification |
+| `R2_ACCOUNT_ID` · `R2_ACCESS_KEY_ID` · `R2_SECRET_ACCESS_KEY` · `R2_BUCKET_NAME` · `R2_PUBLIC_URL` | Cloudflare R2 | PDF storage, project-log photos, showcase assets |
+| `VIEW_FINGERPRINT_SALT` | generate: `openssl rand -hex 32` (≥16 chars) | **Required in production.** Dedicated salt for showcase per-visitor view fingerprints. The view-tracking path **fails closed** without it (the rest of the app is unaffected). Use a value distinct from any dev salt. |
+| `NEXT_PUBLIC_APP_URL` | your production URL, e.g. `https://nova-lab.app` | — |
+
+**Optional**
+
+| Variable | When to set | Effect |
+|---|---|---|
+| `FIRECRAWL_API_KEY` | only if using Science-Fair "sync deadlines" | scrapes fair sites (`fc-…`) |
+| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | multi-instance / serverless scale-out | switches rate limiting to a **shared** store so limits hold globally across instances (default is per-instance in-memory) |
+| `RATE_LIMIT_IP_HEADER` | only if your edge sets a non-standard client-IP header | overrides the trusted-IP source (default order: `cf-connecting-ip` → `x-real-ip` → `x-forwarded-for`) |
+
+> **One-liner to set the salt** (with the Vercel CLI):
+> ```bash
+> openssl rand -hex 32 | vercel env add VIEW_FINGERPRINT_SALT production
+> ```
+
+### 8.2 Deploy steps
 
 1. Import the GitHub repo in Vercel. Set **Root Directory = `apps/web`**, framework
    **Next.js**, install command `pnpm install`, build `pnpm build`.
-2. Add the same env vars as `.env.local`, but pointed at managed services:
-   - `DATABASE_URL` → your Supabase/managed Postgres (pooled), plus `DIRECT_URL` (direct) for migrations.
-   - `ANTHROPIC_API_KEY` and the `R2_*` storage vars.
-   - Clerk **production** keys + add your Vercel domain to Clerk's allowed origins.
-3. Run `pnpm prisma migrate deploy` against the production DB (Vercel build step or
-   a one-off), since migrations aren't auto-applied.
+2. Add the env vars from §8.1 (pointed at managed services).
+3. Add your Vercel domain to **Clerk's allowed origins** (production instance).
+4. Run `pnpm prisma migrate deploy` against the production DB (Vercel build step or
+   a one-off using `DIRECT_URL`) — migrations are **not** auto-applied.
 
-Architecture, hosting choices, and the schema are documented in
-[`architecture.md`](architecture.md).
+### 8.3 Pre-launch verification
+
+```bash
+pnpm --filter web typecheck     # types (strict)
+pnpm --filter web test          # unit suite
+pnpm --filter web lint          # ESLint (next/core-web-vitals)
+pnpm --filter web build         # production build — must succeed before deploy
+```
+
+If you deploy and forget `VIEW_FINGERPRINT_SALT`, the app still boots and
+everything works **except** showcase view-counting, which errors until you add
+the var and redeploy (config-only fix, no code change).
+
+Architecture, hosting choices, the schema, and the 0.6.0 hardening details
+(rate-limit backends, `requireTeamContext`, view-fingerprint salt) are documented
+in [`architecture.md`](architecture.md) (see §12).
 
 ---
 
