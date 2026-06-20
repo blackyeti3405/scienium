@@ -38,6 +38,17 @@ Tracked items intentionally deferred during development. Remove an entry once do
 - Optional precision upgrade: ZIP→state matching uses a state centroid for distance.
   Layer in true ZIP-centroid coordinates for finer "nearest regional fair" ordering.
 
+## Showcase teacher moderation (Showcase Wing follow-up)
+- Showcases currently **auto-approve on publish** (`moderationStatus = 'approved'`),
+  with `link_only` the default privacy so sharing is safe out of the box. The
+  `ModerationStatus` enum (`draft|pending_review|approved|rejected`) and the
+  `showcases.moderation_status` column are retained for a future teacher gate.
+- **Needed for a stricter rollout:** when privacy is `public`/`school_only`, publish
+  should set `pending_review` and a teacher approves in the teacher area
+  (`app/(teacher)/validations`) before the showcase appears in the gallery / is
+  publicly viewable. `canViewShowcase` already requires `approved`, and the gallery
+  query already filters on it — only the publish transition + a teacher UI are missing.
+
 ## Dependency hygiene
 - `recharts`, `video.js`, `react-hook-form`, `@tanstack/react-query` are currently
   unused but earmarked for planned stub features (charts, showcase video, forms,

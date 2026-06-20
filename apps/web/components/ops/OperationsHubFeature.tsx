@@ -19,6 +19,7 @@ import {
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { RichEditor } from './RichEditor'
+import { ExpertisePanel } from './ExpertisePanel'
 
 // ─── Stage options ─────────────────────────────────────────────────────────────
 
@@ -731,7 +732,7 @@ function FailureLogTab() {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'log' | 'failure'
+type Tab = 'log' | 'failure' | 'expertise'
 
 export function OperationsHubFeature() {
   const [tab, setTab] = useState<Tab>('log')
@@ -742,6 +743,7 @@ export function OperationsHubFeature() {
         {([
           ['log', '📋', 'Project Log'],
           ['failure', '⚡', 'Failure Log'],
+          ['expertise', '🎖', 'Proof of Expertise'],
         ] as [Tab, string, string][]).map(([key, icon, label]) => (
           <button
             key={key}
@@ -752,7 +754,7 @@ export function OperationsHubFeature() {
           </button>
         ))}
       </div>
-      {tab === 'log' ? <ProjectLogTab /> : <FailureLogTab />}
+      {tab === 'log' ? <ProjectLogTab /> : tab === 'failure' ? <FailureLogTab /> : <ExpertisePanel />}
     </div>
   )
 }

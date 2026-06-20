@@ -14,6 +14,8 @@ export type ActivityAction =
   | 'idea_checked'
   | 'building_purchased'
   | 'building_upgraded'
+  | 'clearance_raised'
+  | 'showcase_published'
   | 'log_created'
   | 'log_edited'
   | 'log_deleted'
@@ -67,6 +69,10 @@ export function describeActivity(action: string, payload: Record<string, unknown
       return `ran AI review of the research plan`
     case 'idea_checked':
       return `ran originality check (${payload.verdict ?? '?'})`
+    case 'clearance_raised':
+      return `reached Clearance Level ${payload.level ?? '?'}${payload.title ? ` — ${payload.title}` : ''}`
+    case 'showcase_published':
+      return `published the project showcase${payload.title ? ` "${payload.title}"` : ''}`
     case 'building_purchased':
       return `purchased ${payload.buildingName ?? 'a building'}`
     case 'building_upgraded':

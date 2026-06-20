@@ -30,6 +30,8 @@ model User {
   discoveryNodes      DiscoveryNode[]
   fieldDispatchResp   FieldDispatchResponse[]
   expertiseAttempts   ExpertiseAttempt[]
+  expertiseExams      ExpertiseExam[]
+  shopPurchases       TeamShopBuilding[]
   miniGamePlays       MiniGamePlay[]
   rubricAssessments   RubricSelfAssessment[]
   activityFeedEntries ActivityFeed[]
@@ -107,6 +109,8 @@ model Team {
   members         TeamMember[]
   currency        TeamCurrency?
   buildings       TeamBuilding[]
+  shopBuildings   TeamShopBuilding[]
+  expertiseExams  ExpertiseExam[]
   discoveryNodes  DiscoveryNode[]
   topicInterests  TopicInterest[]
   papers          Paper[]
@@ -468,6 +472,25 @@ model TeamBuilding {
   @@map("team_buildings")
 }
 
+// A purchasable shop structure a team owns (lib/shop.ts catalog). Unlike
+// `TeamBuilding` (which links the seeded PvP `Building` rows), shop buildings are
+// config-keyed, so ownership is tracked by the catalog `buildingKey`. Purchases
+// deduct KP and require the team's `clearanceLevel` to meet the building's tier —
+// this is the "ceiling" Proof of Expertise pushes against (lib/clearance).
+model TeamShopBuilding {
+  id                String   @id @default(cuid())
+  teamId            String   @map("team_id")
+  buildingKey       String   @map("building_key")
+  purchasedByUserId String   @map("purchased_by_user_id")
+  purchasedAt       DateTime @default(now()) @map("purchased_at")
+
+  team       Team @relation(fields: [teamId], references: [id])
+  purchasedBy User @relation(fields: [purchasedByUserId], references: [id])
+
+  @@unique([teamId, buildingKey])
+  @@map("team_shop_buildings")
+}
+
 // ─── Daily Activities ─────────────────────────────────────────────────────────
 
 model FieldDispatchContent {
@@ -496,16 +519,49 @@ model FieldDispatchResponse {
   @@map("field_dispatch_responses")
 }
 
-model ExpertiseAttempt {
-  id                   String   @id @default(cuid())
-  userId               String   @map("user_id")
-  clearanceLevelAtAttempt Int   @map("clearance_level_at_attempt")
-  question             String
-  response             String
-  passed               Boolean
-  createdAt            DateTime @default(now()) @map("created_at")
+// Proof of Expertise — a conversational clearance exam (Feature: Clearance Level).
+// One exam attempts to raise the team from its current clearance to `targetLevel`.
+// Questions are generated from the team's OWN project context at escalating depth;
+// passing (>= threshold) raises `TeamCurrency.clearanceLevel`. Mirrors the paper
+// quiz's session/attempt split (PaperQuizSession / PaperQuizAttempt).
+model ExpertiseExam {
+  id            String    @id @default(cuid())
+  teamId        String    @map("team_id")
+  userId        String    @map("user_id")
+  // Clearance level this exam attempts to reach (current + 1).
+  targetLevel   Int       @map("target_level")
+  // [{ id, prompt, focus, key }] — `key` is the server-only grading guidance.
+  questionsJson Json      @map("questions_json")
+  // In-progress answers ({ [questionId]: response }) + how far the student has
+  // got, persisted as they go so an ungraded exam can be RESUMED after closing
+  // the panel (rather than regenerating a fresh one). Null until the first answer.
+  answersJson   Json?     @map("answers_json")
+  progressIndex Int       @default(0) @map("progress_index")
+  score         Int?      // aggregate 0-100, set on grading
+  passed        Boolean   @default(false)
+  gradedAt      DateTime? @map("graded_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id])
+  team     Team               @relation(fields: [teamId], references: [id])
+  user     User               @relation(fields: [userId], references: [id])
+  attempts ExpertiseAttempt[]
+
+  @@index([teamId, gradedAt])
+  @@map("expertise_exams")
+}
+
+model ExpertiseAttempt {
+  id         String   @id @default(cuid())
+  examId     String   @map("exam_id")
+  userId     String   @map("user_id")
+  question   String
+  response   String
+  evaluation String   @default("")
+  score      Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  exam ExpertiseExam @relation(fields: [examId], references: [id])
+  user User          @relation(fields: [userId], references: [id])
 
   @@map("expertise_attempts")
 }
@@ -608,6 +664,9 @@ model Showcase {
   id               String           @id @default(cuid())
   teamId           String           @unique @map("team_id")
   slug             String           @unique
+  // Short title (≤50 chars) shown as the headline; `title` is the full project
+  // title (≤300 chars). Abstract is capped at 250 words (enforced in-route).
+  shortTitle       String           @default("") @map("short_title")
   title            String
   abstract         String
   privacyLevel     PrivacyLevel     @default(private) @map("privacy_level")
@@ -654,11 +713,14 @@ model ShowcaseAsset {
 
 enum AssetType {
   script
-  board
-  video
-  visual
-  report
-  repo_link
+  board        // PDF of the project board (required)
+  quad_chart   // PDF or image quad chart (required)
+  video        // the required ~2-minute project video (link)
+  demo_video   // optional additional demo videos (links)
+  supplement   // optional supplemental-information links
+  visual       // (legacy, unused)
+  report       // (legacy, unused)
+  repo_link    // optional GitHub / code link
 
   @@map("asset_type")
 }
