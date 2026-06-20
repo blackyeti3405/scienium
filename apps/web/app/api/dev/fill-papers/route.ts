@@ -58,21 +58,19 @@ export async function POST(req: NextRequest) {
   const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
   if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-  const existing = await db.paper.count({ where: { teamId: ctx.teamId, status: 'ready' } })
-  const needed = Math.max(0, 25 - existing)
+  const [existingPapers, members] = await Promise.all([
+    db.paper.findMany({ where: { teamId: ctx.teamId, status: 'ready' }, select: { id: true } }),
+    db.teamMember.findMany({ where: { teamId: ctx.teamId }, select: { userId: true } }),
+  ])
 
-  if (needed === 0) {
-    return NextResponse.json({ created: 0, message: 'Already at 25 papers' })
-  }
-
-  const members = await db.teamMember.findMany({
-    where: { teamId: ctx.teamId },
-    select: { userId: true },
-  })
-
-  const titlesToCreate = FAKE_TITLES.slice(existing, existing + needed)
+  const existingCount = existingPapers.length
+  const needed = Math.max(0, 25 - existingCount)
 
   let created = 0
+  const allPaperIds: string[] = existingPapers.map((p) => p.id)
+
+  // Create however many new papers are needed to reach 25
+  const titlesToCreate = FAKE_TITLES.slice(existingCount, existingCount + needed)
   for (const title of titlesToCreate) {
     const hash = createHash('sha256').update(`dev-${ctx.teamId}-${title}`).digest('hex')
     const paper = await db.paper.create({
@@ -88,10 +86,15 @@ export async function POST(req: NextRequest) {
         uploadedByUserId: dbUser.id,
       },
     })
-    // Mark every team member proficient on this paper
+    allPaperIds.push(paper.id)
+    created++
+  }
+
+  // Ensure every team member has proficiency on ALL 25 papers (including pre-existing ones)
+  for (const paperId of allPaperIds) {
     await db.paperProficiency.createMany({
       data: members.map((m) => ({
-        paperId: paper.id,
+        paperId,
         userId: m.userId,
         demonstrated: true,
         bestScore: 85,
@@ -99,8 +102,7 @@ export async function POST(req: NextRequest) {
       })),
       skipDuplicates: true,
     })
-    created++
   }
 
-  return NextResponse.json({ created, total: existing + created })
+  return NextResponse.json({ created, total: allPaperIds.length })
 }
