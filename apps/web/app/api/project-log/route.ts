@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { getTeamContext } from '@/lib/phase'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
+import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
 const Body = z.object({
@@ -45,7 +46,9 @@ export async function GET(req: NextRequest) {
         attendeeIds: true,
         attachmentUrls: true,
         createdAt: true,
+        lastEditedAt: true,
         createdBy: { select: { id: true, name: true } },
+        lastEditedBy: { select: { id: true, name: true } },
       },
     }),
     db.teamMember.findMany({
@@ -115,9 +118,13 @@ export async function POST(req: NextRequest) {
       attendeeIds: true,
       attachmentUrls: true,
       createdAt: true,
+      lastEditedAt: true,
       createdBy: { select: { id: true, name: true } },
+      lastEditedBy: { select: { id: true, name: true } },
     },
   })
+
+  logActivity(ctx.teamId, dbUser.id, 'log_created', { kind: 'progress' }).catch(console.error)
 
   return NextResponse.json({ entry: { ...entry, entryNumber: existingCount + 1 } }, { status: 201 })
 }

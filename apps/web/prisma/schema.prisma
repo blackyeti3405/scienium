@@ -26,6 +26,7 @@ model User {
   figurineUnlocks     FigurineUnlock[]
   parentalConsents    ParentalConsent[]
   projectLogEntries   ProjectLog[]
+  projectLogEdits     ProjectLog[]         @relation("projectLogEditor")
   discoveryNodes      DiscoveryNode[]
   fieldDispatchResp   FieldDispatchResponse[]
   expertiseAttempts   ExpertiseAttempt[]
@@ -521,11 +522,16 @@ model ProjectLog {
   attachmentUrls  String[]         @default([]) @map("attachment_urls")
   createdByUserId String           @map("created_by_user_id")
   createdAt       DateTime         @default(now()) @map("created_at")
+  // Logs are shared across the team — anyone may edit. Track the last editor so
+  // the entry can show "edited by …" (null until first edited by someone).
+  lastEditedByUserId String?       @map("last_edited_by_user_id")
+  lastEditedAt       DateTime?     @map("last_edited_at")
 
-  team       Team               @relation(fields: [teamId], references: [id])
-  createdBy  User               @relation(fields: [createdByUserId], references: [id])
-  followups  ProjectLogFollowup[]
-  references ProjectLogReference[] @relation("from")
+  team         Team               @relation(fields: [teamId], references: [id])
+  createdBy    User               @relation(fields: [createdByUserId], references: [id])
+  lastEditedBy User?              @relation("projectLogEditor", fields: [lastEditedByUserId], references: [id])
+  followups    ProjectLogFollowup[]
+  references   ProjectLogReference[] @relation("from")
   referencedBy ProjectLogReference[] @relation("to")
 
   @@map("project_logs")

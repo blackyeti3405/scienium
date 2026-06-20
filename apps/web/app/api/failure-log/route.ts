@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { getTeamContext } from '@/lib/phase'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
+import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
 // Body is stored as JSON string: { happened, learned }
@@ -32,7 +33,9 @@ export async function GET(req: NextRequest) {
       id: true,
       body: true,
       createdAt: true,
+      lastEditedAt: true,
       createdBy: { select: { id: true, name: true } },
+      lastEditedBy: { select: { id: true, name: true } },
     },
   })
 
@@ -40,7 +43,15 @@ export async function GET(req: NextRequest) {
   const entries = rows.map((r) => {
     let parsed = { happened: r.body, learned: '' }
     try { parsed = JSON.parse(r.body) } catch {}
-    return { id: r.id, ...parsed, createdAt: r.createdAt, author: r.createdBy.name, authorId: r.createdBy.id }
+    return {
+      id: r.id,
+      ...parsed,
+      createdAt: r.createdAt,
+      author: r.createdBy.name,
+      authorId: r.createdBy.id,
+      editedBy: r.lastEditedBy?.name ?? null,
+      editedAt: r.lastEditedAt ?? null,
+    }
   })
 
   return NextResponse.json({ entries, currentUserId: me?.id ?? null })
@@ -80,6 +91,8 @@ export async function POST(req: NextRequest) {
   let parsed = { happened: entry.body, learned: '' }
   try { parsed = JSON.parse(entry.body) } catch {}
 
+  logActivity(ctx.teamId, dbUser.id, 'log_created', { kind: 'failure' }).catch(console.error)
+
   return NextResponse.json({
     entry: {
       id: entry.id,
@@ -87,6 +100,8 @@ export async function POST(req: NextRequest) {
       createdAt: entry.createdAt,
       author: entry.createdBy.name,
       authorId: entry.createdBy.id,
+      editedBy: null,
+      editedAt: null,
     },
   }, { status: 201 })
 }

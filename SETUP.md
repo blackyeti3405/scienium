@@ -59,12 +59,14 @@ Then edit `apps/web/.env.local`:
 | `CLERK_SECRET_KEY` | Clerk dashboard → API Keys | `sk_test_…` |
 | `NEXT_PUBLIC_CLERK_*_URL` | leave as the defaults | sign-in/up + redirect routes |
 | `DATABASE_URL` | leave as default for local Docker | `postgresql://postgres:postgres@localhost:5432/nova_lab` |
-| `ANTHROPIC_API_KEY` | Anthropic console | required for paper metadata, quizzes, and chat |
-| `R2_*` | Cloudflare R2 | required for PDF storage (uploads + viewer) |
+| `ANTHROPIC_API_KEY` | Anthropic console | required for paper metadata, quizzes, chat, lab-type classification, and relevance checks |
+| `R2_*` | Cloudflare R2 | required for PDF storage **and project-log photo attachments** (uploads + viewer) |
+| `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | optional — only the Science Fair "sync deadlines" feature scrapes fair sites with it (`fc-…`) |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | — |
 
 You need **Clerk keys + `DATABASE_URL` + `ANTHROPIC_API_KEY`** to run the core
-app; add the `R2_*` values to enable PDF upload/viewing.
+app; add the `R2_*` values to enable PDF upload/viewing and Operations-Hub photo
+attachments. `FIRECRAWL_API_KEY` is only needed if you use the fair deadline sync.
 
 ### Clerk redirect URLs
 In your Clerk dashboard, allow `http://localhost:3000` as a development origin.

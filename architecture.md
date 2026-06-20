@@ -67,9 +67,10 @@ NOVA Lab is a **single-service architecture**: all UI, API routes, AI calls, and
 | Auth | **Clerk** | Email/password, OAuth, sessions, parental consent flow possible |
 | ORM | **Prisma** | Type-safe queries, migrations |
 | Database | **PostgreSQL via Supabase** | Industry standard |
-| LLM (current) | **`@anthropic-ai/sdk`** (`claude-sonnet-4-6`) | Paper metadata extraction + Literature Review Q&A tutor running directly in API routes |
+| LLM (current) | **`@anthropic-ai/sdk`** (`claude-sonnet-4-6` for most tasks; `claude-haiku-4-5` for lab-type classification + relevance checks) | Paper metadata extraction, Literature Review Q&A tutor, and lab-type auto-assignment running directly in API routes |
+| Rich text editor | **TipTap** (`@tiptap/*`) + `tiptap-markdown` | Project-log session notes (bold/italic/lists, Markdown round-trip), code-split into the lab bundle |
 | PDF parsing (current) | **`unpdf`** (Node.js) | Lightweight in-process text extraction (~250ms); replaces Python `pdfplumber` until AI service is active |
-| Image processing | **sharp** | Server-side image resizing/thumbnails |
+| Image processing | **sharp** | Server-side image resizing/thumbnails **and project-log upload validation** (decode-to-verify, reject non-images/SVG) |
 
 ### External services (used by Next.js API routes)
 | Service | Purpose |
@@ -150,8 +151,8 @@ nova-lab/
 │   │   │   │   ├── teams/
 │   │   │   │   ├── pvp/                  # Battle resolution, matchmaking, trophies
 │   │   │   │   ├── discovery/            # article, search, tree[, /[id]], topic, youtube/resolve
-│   │   │   │   ├── project-log/
-│   │   │   │   ├── failure-log/
+│   │   │   │   ├── project-log/          # GET/POST + [id] (PATCH/DELETE) + attachment{,/view}
+│   │   │   │   ├── failure-log/           # GET/POST + [id] (PATCH/DELETE)
 │   │   │   │   ├── showcase/
 │   │   │   │   ├── fair-hub/             # Fair calendar, rubric, categories endpoints
 │   │   │   │   ├── teacher/              # Teacher-only endpoints
@@ -170,10 +171,9 @@ nova-lab/
 │   │   │   ├── discovery/                # DiscoveryFeature/Home/Tree, TopicSearch, WikiReader, YouTubeViewer
 │   │   │   ├── literature/
 │   │   │   │   └── LiteratureFeature.tsx # 25 slots, upload, PDF viewer, graded quiz, Q&A chat
-│   │   │   ├── daily/
-│   │   │   │   ├── ProjectLogForm.tsx
-│   │   │   │   ├── FailureLogForm.tsx
-│   │   │   │   └── FailureWall.tsx       # Display documented failures
+│   │   │   ├── ops/                       # Operations Hub (daily pillars)
+│   │   │   │   ├── OperationsHubFeature.tsx # Project Log + Failure Log tabs, shared edit/delete
+│   │   │   │   └── RichEditor.tsx         # TipTap notes editor (Markdown round-trip)
 │   │   │   ├── minigames/                # 6 mini-game category components
 │   │   │   ├── pvp/
 │   │   │   │   ├── BattleScreen.tsx      # Main battle UI
@@ -350,9 +350,12 @@ field_dispatch_responses  id, user_id, content_id, response, kp_awarded, created
 expertise_attempts        id, user_id, clearance_level_at_attempt, question,
                           response, passed, created_at
 project_logs              id, team_id, entry_type (progress | failure), stage, body,
-                          artifact_url, created_by_user_id, created_at
+                          next_steps, attendee_ids[], attachment_urls[], artifact_url,
+                          created_by_user_id, last_edited_by_user_id, last_edited_at, created_at
+                          # progress: structured cols; failure: {happened,learned} JSON in body.
+                          # Shared across team — any member may edit/delete; last-editor tracked.
 project_log_followups     id, project_log_id, question, response, created_at
-project_log_references    id, project_log_id, references_log_id  # Resilience Bonus link
+project_log_references    id, project_log_id, references_log_id  # Resilience Bonus link (planned)
 
 # Mini-games
 mini_game_plays       id, user_id, team_id, building_id, score, kp_awarded, played_at
@@ -454,10 +457,16 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 3. The student answers in natural language; `POST /api/papers/[id]/quiz/grade` grades all answers in one call against the keys + rubric, writes per-question rows to `paper_quiz_attempts`, sets the session score/passed, and on pass **upserts the current user's `paper_proficiency` row** (demonstrated + per-student KP high-water mark, max 100/source). KP is per student but accrues into the shared `team_currency` total shown identically to all members
 4. After grading, the panel exposes a **Discuss with Nova** chat tab; messages persist to `paper_chat_messages` via `GET/POST /api/papers/[id]/chat` (paper text prompt-cached). The chat no longer grants proficiency — the quiz owns it.
 
-### Phase-advance gate flow (literature_review → research_planning)
+### Phase-advance gate flow (literature_review → research_planning, with lab-type auto-assign)
 1. `lib/team/advance.ts#getLiteratureAdvanceProgress` computes readiness: 25 sources `ready` AND **every** member `demonstrated` on all 25 (per-student `paper_proficiency`)
-2. The lab scene renders a `PhaseAdvance` banner with live progress ("18/25 sources · 2/3 members ready"); when satisfied it offers an advance button
-3. `POST /api/team/advance-phase` re-runs the gate server-side and bumps `teams.phase`; the scene refreshes (the Research Plan gateway appears)
+2. When satisfied, the Literature Review panel (and the lab-scene `PhaseAdvance` banner) prompt for a **one-sentence research idea** instead of a bare advance button
+3. `POST /api/team/advance-phase` re-runs the gate server-side, calls `lib/lab-type/classify.ts` (Claude **Haiku**) to map the idea → one of 6 lab types, then sets `teams.lab_type` + `teams.research_idea` and bumps `teams.phase` **straight to `research_planning`** (the `lab_selection` phase is skipped). The assigned type + rationale are returned and shown before the scene refreshes (Research Plan gateway appears, lab reskins)
+
+### Operations Hub flow (Project Log / Failure Log) — shared, attributed
+1. The Operations Hub gateway opens `components/ops/OperationsHubFeature.tsx` with two tabs backed by `project_logs`
+2. **Project Log:** `GET/POST /api/project-log` lists/creates numbered entries (attendance validated against the roster, discipline-aware stage dropdown, TipTap rich-text notes stored as Markdown, required next-steps, ≥1 photo). Photos upload via `POST /api/project-log/attachment` (bytes validated by **sharp**, stored privately in R2) and stream back through the authenticated `GET /api/project-log/attachment/view?key=…`
+3. **Failure Log:** `GET/POST /api/failure-log` stores `{happened, learned}` JSON with `entry_type = failure`
+4. **Shared editing:** `PATCH/DELETE /api/project-log/[id]` and `/api/failure-log/[id]` let **any team member** edit or delete **any** entry. Edits stamp `last_edited_by_user_id`/`last_edited_at` (shown inline); create/edit/delete all write to `activity_feed` (`log_created | log_edited | log_deleted`) so deletions stay auditable
 
 ### Research Plan flow (Engineering/Science)
 1. Student picks a project type + subtype and pastes an "anyone with the link" Google Doc URL; `POST /api/research-plan` fetches the published text (`lib/research-plan/google-doc.ts`) and stores it on `research_plans` ("Refresh" re-syncs)

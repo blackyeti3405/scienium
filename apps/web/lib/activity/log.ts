@@ -14,6 +14,9 @@ export type ActivityAction =
   | 'idea_checked'
   | 'building_purchased'
   | 'building_upgraded'
+  | 'log_created'
+  | 'log_edited'
+  | 'log_deleted'
 
 /**
  * Appends a team activity entry. Fire-and-forget safe: awaiting is optional;
@@ -68,6 +71,12 @@ export function describeActivity(action: string, payload: Record<string, unknown
       return `purchased ${payload.buildingName ?? 'a building'}`
     case 'building_upgraded':
       return `upgraded ${payload.buildingName ?? 'a building'} to level ${payload.level ?? '?'}`
+    case 'log_created':
+      return `added a ${payload.kind === 'failure' ? 'failure' : 'project'} log entry`
+    case 'log_edited':
+      return `edited a ${payload.kind === 'failure' ? 'failure' : 'project'} log entry`
+    case 'log_deleted':
+      return `deleted a ${payload.kind === 'failure' ? 'failure' : 'project'} log entry`
     default:
       return action.replace(/_/g, ' ')
   }

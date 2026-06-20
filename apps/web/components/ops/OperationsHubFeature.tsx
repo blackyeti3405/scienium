@@ -67,6 +67,8 @@ interface LogEntry {
   attachmentUrls: string[]
   createdAt: string
   createdBy: { id: string; name: string }
+  lastEditedBy: { id: string; name: string } | null
+  lastEditedAt: string | null
 }
 
 interface FailureEntry {
@@ -76,6 +78,8 @@ interface FailureEntry {
   author: string
   authorId: string
   createdAt: string
+  editedBy: string | null
+  editedAt: string | null
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -351,7 +355,6 @@ function ProjectLogTab() {
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [members, setMembers] = useState<Member[]>([])
   const [labType, setLabType] = useState<string | null>(null)
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -363,7 +366,6 @@ function ProjectLogTab() {
         if (Array.isArray(d.entries)) setEntries(d.entries)
         if (Array.isArray(d.members)) setMembers(d.members)
         if (d.labType !== undefined) setLabType(d.labType)
-        if (d.currentUserId !== undefined) setCurrentUserId(d.currentUserId)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -450,7 +452,6 @@ function ProjectLogTab() {
               const attendeeNames = members
                 .filter((m) => e.attendeeIds.includes(m.userId) && m.userId !== e.createdBy.id)
                 .map((m) => m.name)
-              const mine = e.createdBy.id === currentUserId
               return (
                 <div key={e.id} className="ops-log-entry">
                   <div className="ops-log-entry__rail">
@@ -468,24 +469,25 @@ function ProjectLogTab() {
                         </span>
                         <span className="font-pixel text-[6px] text-white/30 mt-0.5">
                           {formatDate(e.createdAt)} · {timeAgo(e.createdAt)}
+                          {e.lastEditedBy && (
+                            <span className="text-white/25"> · edited by {e.lastEditedBy.name}</span>
+                          )}
                         </span>
                       </div>
                       {e.stage && <span className="ops-stage-badge font-pixel">{e.stage}</span>}
-                      {mine && (
-                        <div className="ops-entry-actions">
-                          <button onClick={() => setEditingId(e.id)} className="ops-icon-btn" title="Edit entry">
-                            <Pencil size={12} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(e)}
-                            disabled={deletingId === e.id}
-                            className="ops-icon-btn ops-icon-btn--danger"
-                            title="Delete entry"
-                          >
-                            {deletingId === e.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                          </button>
-                        </div>
-                      )}
+                      <div className="ops-entry-actions">
+                        <button onClick={() => setEditingId(e.id)} className="ops-icon-btn" title="Edit entry">
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(e)}
+                          disabled={deletingId === e.id}
+                          className="ops-icon-btn ops-icon-btn--danger"
+                          title="Delete entry"
+                        >
+                          {deletingId === e.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="ops-md text-sm text-white/80 leading-relaxed">
@@ -620,7 +622,6 @@ function FailureForm({
 
 function FailureLogTab() {
   const [entries, setEntries] = useState<FailureEntry[]>([])
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -629,7 +630,6 @@ function FailureLogTab() {
       .then((r) => r.json())
       .then((d) => {
         if (Array.isArray(d.entries)) setEntries(d.entries)
-        if (d.currentUserId !== undefined) setCurrentUserId(d.currentUserId)
       })
       .catch(() => {})
   }, [])
@@ -682,7 +682,6 @@ function FailureLogTab() {
                 </div>
               )
             }
-            const mine = e.authorId === currentUserId
             return (
               <div key={e.id} className="ops-log-entry">
                 <div className="ops-log-entry__rail">
@@ -691,23 +690,26 @@ function FailureLogTab() {
                 <div className="ops-log-entry__card">
                   <div className="ops-log-entry__head">
                     <Avatar name={e.author} size={24} />
-                    <span className="font-pixel text-[7px] text-white/70">{e.author}</span>
-                    <span className="font-pixel text-[6px] text-white/30">{timeAgo(e.createdAt)}</span>
-                    {mine && (
-                      <div className="ops-entry-actions">
-                        <button onClick={() => setEditingId(e.id)} className="ops-icon-btn" title="Edit entry">
-                          <Pencil size={12} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(e)}
-                          disabled={deletingId === e.id}
-                          className="ops-icon-btn ops-icon-btn--danger"
-                          title="Delete entry"
-                        >
-                          {deletingId === e.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-pixel text-[7px] text-white/70">{e.author}</span>
+                      <span className="font-pixel text-[6px] text-white/30 mt-0.5">
+                        {timeAgo(e.createdAt)}
+                        {e.editedBy && <span className="text-white/25"> · edited by {e.editedBy}</span>}
+                      </span>
+                    </div>
+                    <div className="ops-entry-actions">
+                      <button onClick={() => setEditingId(e.id)} className="ops-icon-btn" title="Edit entry">
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(e)}
+                        disabled={deletingId === e.id}
+                        className="ops-icon-btn ops-icon-btn--danger"
+                        title="Delete entry"
+                      >
+                        {deletingId === e.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                      </button>
+                    </div>
                   </div>
                   <p className="font-pixel text-[6px] text-white/30 uppercase tracking-widest mb-1">What failed</p>
                   <p className="text-sm text-white/80 leading-relaxed mb-3">{e.happened}</p>

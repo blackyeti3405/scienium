@@ -35,13 +35,15 @@ NOVA Lab uses an explicit **phase** model stored on each team. Phases are sequen
 |---|---|---|---|
 | 0 | **Onboarding** | *(pre-phase)* | Account creation, scan Apprentice figurine, choose solo or team |
 | 1 | **Discovery** | `discovery` | Commit to a research topic |
-| 2 | **Lab Selection** | `lab_selection` | Pick one of 6 lab types (one-time, permanent) |
-| 3 | **Literature Review** | `literature_review` | Complete 25-paper review gate |
+| 2 | **Lab Selection** | `lab_selection` | *(Auto-assigned — see below; no manual step.)* |
+| 3 | **Literature Review** | `literature_review` | Complete 25-paper review gate, then submit a one-sentence research idea |
 | 4 | **Research Planning** | `research_planning` | Finalize hypothesis, methodology, and study design |
 | 5 | **Working** | `working` | Teacher validates data collection start (Experimenter figurine) |
 | 6 | **Showcase** | `showcase` | Teacher validates competition advancement (Presenter figurine) |
 
-**Visual milestone:** When the team advances from Discovery → Lab Selection and commits to a lab type, the virtual lab **grows in size** and **reskins** to that lab type. This is a one-time, visible moment — the lab goes from small + generic to grown + type-specific.
+**Lab type is auto-assigned (implemented).** Rather than a manual selection screen, the lab type is derived from the student's project itself. At the end of Literature Review — once the 25-source gate is met — the team submits a **one-sentence research idea**, which Claude Haiku classifies into one of the 6 lab types. The team then advances **directly from `literature_review` → `research_planning`**, skipping the standalone `lab_selection` phase (the phase key is retained in the lifecycle for ordering/back-compat but is no longer a stop). The assigned type and Haiku's rationale are shown immediately, and the idea is stored on `teams.research_idea`.
+
+**Visual milestone:** When the lab type is assigned, the virtual lab **grows in size** and **reskins** to that lab type (palette switching is planned). This is a one-time, visible moment — the lab goes from small + generic to grown + type-specific.
 
 **Phase-locked features:** PvP combat, building purchases/upgrades, and mini-games are inaccessible during `discovery`, `literature_review`, and `research_planning`. The Showcase Wing additionally requires the Presenter figurine. See Section 14 for the complete feature-unlock matrix.
 
@@ -62,7 +64,7 @@ NOVA Lab uses an explicit **phase** model stored on each team. Phases are sequen
 | **MindFrame** | Social / Cognitive Science | Behavior, psychology, data |
 | **Axiom** | Math / Physics / Astronomy | Pure & applied math, pure & applied physics, astronomy |
 
-> **Suggestion engine:** Based on Discovery activity, the app may recommend a lab type. The student still chooses freely.
+> **Assignment (implemented):** The lab type is not chosen from a menu — it is inferred from the one-sentence research idea the team submits at the end of Literature Review, classified by Claude Haiku (`lib/lab-type/classify.ts`). This keeps the type honest to the actual project and removes a friction-filled decision screen. The classifier defaults to Volt Lab if it can't parse a confident answer.
 
 ---
 
@@ -210,12 +212,19 @@ The three daily pillars below — Field Dispatch, Proof of Expertise, and Projec
 - Difficulty escalates with progression
 - **Reward:** Clearance Level
 
-### 7.3 Project Log (~2–5 min)
-- Self-reported progress + required artifact upload
-- App scans artifact, asks targeted follow-ups if too generic
-- **Reward:** Lab Credits (LC)
+### 7.3 Project Log (~2–5 min) — *implemented*
+A structured lab-notebook entry, surfaced as the **Project Log** tab inside the Operations Hub. Each entry captures:
+- **Numbered sequence** — entries are auto-numbered (#1, #2, …) in creation order so the notebook reads as a chronology.
+- **Attendance** — for multi-member teams, a check-pill for each member records who was present that session (hidden for solo labs). Attendees are validated against the real team roster server-side.
+- **Project stage** — a dropdown whose options adapt to the lab's discipline: the **engineering design process** for engineering-type labs (Volt Lab, plus future Aero/Mech/Comp) vs. the **scientific inquiry** stages for science labs (BioCore, ChemWorks, etc.).
+- **Rich-text session notes** (required) — a TipTap editor with bold, italic, strikethrough, and bullet/numbered lists (Enter continues a list, Tab/Shift-Tab nest). Stored as Markdown, rendered safely (no raw HTML).
+- **Next steps** (required) — an explicit "what we'll do next session" field, highlighted in the timeline so momentum carries between sessions.
+- **Photos** (≥ 1 required) — image attachments validated by decoding the bytes (sharp), stored privately in R2, and streamed back through an authenticated route.
+- **Reward:** Lab Credits (LC). *(Artifact follow-up scanning is planned; see 7.5.)*
 
-### 7.4 Failure Logs
+**Shared & attributed.** Logs belong to the **whole team**: any member may add, **edit, or delete** any entry. Every entry records its original author ("logged by"), and edits stamp a **"last edited by"** attribution shown inline. Create / edit / delete are additionally written to the **team activity feed** (Section 10), so deletions — which leave no row behind — remain auditable ("Devon deleted a project log entry").
+
+### 7.4 Failure Logs — *implemented*
 
 A specialized Project Log entry type for documenting failed experiments, dead ends, and unexpected results. Failure is explicitly **celebrated** rather than hidden, because:
 - Real science includes failure as a core mechanism — students need to internalize this early
@@ -224,30 +233,26 @@ A specialized Project Log entry type for documenting failed experiments, dead en
 - The Failure Log normalizes failure as part of the process, not a setback to hide from teachers/parents
 
 **How it works:**
-- Submitted via the same Project Log interface but flagged as "Failure" via a clear UI toggle
-- Structured prompts adapted for failure analysis:
-  - "What did you predict would happen?"
-  - "What actually happened?"
-  - "What's your best hypothesis for why the result diverged?"
-  - "What will you try differently next?"
-- Artifact required (photo of failed data, broken setup, unexpected output, etc.)
-- Same LC reward as standard Project Log entries
-- **Resilience Bonus:** small additional LC awarded when a subsequent log entry references back to a documented failure and applies what was learned
+- Surfaced as the **Failure Log** tab in the Operations Hub, writing to the same `project_logs` table with `entry_type = failure`.
+- Two structured prompts: **"What failed or didn't go as expected?"** and **"What did you learn from it?"**
+- Shares the same team-wide editing model and attribution as the Project Log (any member may add/edit/delete; author + last-editor tracked; all three actions recorded in the activity feed).
+- Same LC reward as standard Project Log entries.
+- *(Planned: a **Resilience Bonus** — small additional LC when a later entry references a documented failure and applies what was learned — using the `project_log_references` table.)*
 
 **Display:**
-- Lab profile shows a **Failure Wall** section displaying documented failures as badges of honor
-- Counted toward the Project Log activity streak — failure entries are full participation, not "skipped" days
-- Surfaced in the Showcase as part of the project's methodology if the student chooses
+- *(Planned)* Lab profile **Failure Wall** displaying documented failures as badges of honor.
+- *(Planned)* Counted toward the Project Log activity streak — failure entries are full participation, not "skipped" days.
+- *(Planned)* Surfaced in the Showcase as part of the project's methodology if the student chooses.
 
 ### 7.5 Technical Implementation
 
 **Content generation:**
-- Field Dispatch content pre-generated weekly via cron (Claude API), stored per lab type
-- Proof of Expertise questions generated dynamically based on student's Clearance Level and prior question history
-- Project Log + Failure Log artifact analysis: server-side OCR (`pytesseract`) + Claude API for content evaluation
+- Field Dispatch content pre-generated weekly via cron (Claude API), stored per lab type *(planned)*
+- Proof of Expertise questions generated dynamically based on student's Clearance Level and prior question history *(planned)*
+- *(Planned)* Project Log + Failure Log artifact analysis: server-side OCR + Claude API for content evaluation and targeted follow-up prompts. Today, photo uploads are **validated** (real-image decode via sharp, image types only — SVG rejected) but not yet content-analyzed.
 
 **Data model note:**
-- Failure Logs are stored in the same `project_logs` table with an `entry_type` enum field (`progress | failure`) rather than as a separate table — keeps queries simple and the Failure Wall is just a filtered view
+- Both Project and Failure entries live in the same `project_logs` table, distinguished by the `entry_type` enum (`progress | failure`) — keeps queries simple and the Failure Wall is just a filtered view. Progress entries use the structured columns (`next_steps`, `attendee_ids`, `attachment_urls`); failure entries store their two prompts as JSON in `body`. Shared editing is supported by `last_edited_by_user_id` + `last_edited_at`; image attachments are private R2 objects served via an authenticated streaming route (`/api/project-log/attachment/view`).
 
 ---
 
@@ -452,7 +457,7 @@ Students can work solo or in shared-laboratory teams (up to `max_members`, defau
 - Discovery trees stay team-shared; figurines remain individually owned
 
 ### 10.3 Attribution
-Every action records the acting user. A team activity feed shows recent actions: *"Maya uploaded *Quantum Entanglement and Bell Inequalities*"* / *"Devon upgraded the Optics Laboratory to level 4."* / *"Aisha logged a Failure Log entry."*
+Every action records the acting user. A team activity feed (`activity_feed`, surfaced in the Activity panel) shows recent actions: *"Maya uploaded *Quantum Entanglement and Bell Inequalities*"* / *"Devon upgraded the Optics Laboratory to level 4."* / *"Aisha added a failure log entry."* / *"Devon deleted a project log entry."* Logged action types include paper upload/delete, quiz pass, topic change, phase advance, plan sync, member join, building purchase/upgrade, and project/failure log create/edit/delete (`log_created | log_edited | log_deleted`). Because deletes remove the underlying row, the feed is the durable audit trail for who removed an entry; in-place entries additionally show a **"last edited by"** attribution.
 
 ### 10.4 Conflict Handling
 - Last-write-wins on shared text fields
