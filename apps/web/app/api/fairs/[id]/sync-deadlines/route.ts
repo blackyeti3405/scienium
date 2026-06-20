@@ -45,7 +45,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // Strict rate limit: each call triggers a paid Firecrawl job.
-  const limited = enforceRateLimit(req, 'ai', userId)
+  const limited = await enforceRateLimit(req, 'ai', userId)
   if (limited) return limited
 
   const ctx = await getTeamContext(userId)

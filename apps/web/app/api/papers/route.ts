@@ -1,8 +1,6 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
-import { getTeamContext } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import { extractText, getDocumentProxy } from 'unpdf'
@@ -19,19 +17,10 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const MAX_PDF_BYTES = 20 * 1024 * 1024
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   // Strict per-user + per-IP limit: each upload triggers parsing, storage, and a
   // paid Claude metadata call.
-  const limited = enforceRateLimit(req, 'upload', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'upload' })
+  if (error) return error
 
   const form = await req.formData()
   const file = form.get('file') as File | null
@@ -118,7 +107,7 @@ export async function POST(req: NextRequest) {
       abstract: null,
       sourceType: 'pdf',
       status: 'processing',
-      uploadedByUserId: dbUser.id,
+      uploadedByUserId: ctx.dbUserId,
       fullText,
       contentHash,
     },
@@ -141,7 +130,7 @@ export async function POST(req: NextRequest) {
 
   // Fire-and-forget: extract metadata from the text we already have
   extractMetadata(paper.id, fullText, title).catch(console.error)
-  logActivity(ctx.teamId, dbUser.id, 'paper_upload', { title }).catch(console.error)
+  logActivity(ctx.teamId, ctx.dbUserId, 'paper_upload', { title }).catch(console.error)
 
   return NextResponse.json({
     id: paper.id,
@@ -154,17 +143,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'read', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
+  if (error) return error
 
   const papers = await db.paper.findMany({
     where: { teamId: ctx.teamId },
@@ -178,7 +158,7 @@ export async function GET(req: NextRequest) {
       createdAt: true,
       fileUrl: true,
       // Proficiency is per-student now: surface only THIS user's demonstration.
-      proficiencies: { where: { userId: dbUser.id }, select: { demonstrated: true } },
+      proficiencies: { where: { userId: ctx.dbUserId }, select: { demonstrated: true } },
     },
   })
 

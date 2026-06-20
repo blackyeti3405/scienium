@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
   // Tight per-user + per-IP limit: join codes are short, so cap redemption
   // attempts to make brute-forcing an active code impractical.
-  const limited = enforceRateLimit(req, 'join', userId)
+  const limited = await enforceRateLimit(req, 'join', userId)
   if (limited) return limited
 
   const clerkUser = await currentUser()

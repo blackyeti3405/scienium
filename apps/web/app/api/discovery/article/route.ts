@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import sanitizeHtml from 'sanitize-html'
 import { enforceRateLimit } from '@/lib/rate-limit'
+import { LruCache } from '@/lib/lru'
 
 const WIKI_API = 'https://en.wikipedia.org/w/api.php'
 
@@ -63,7 +64,10 @@ interface ArticlePayload {
 // hot-reload re-runs them, and navigating back/forth re-requests the same article.
 // Without caching this floods the Wikipedia API and trips its rate limiter.
 const CACHE_TTL_MS = 1000 * 60 * 30 // 30 minutes
-const cache = new Map<string, { payload: ArticlePayload; expires: number }>()
+// Bounded so a long-running instance fielding many distinct titles can't grow
+// memory without limit; LRU eviction keeps the hottest articles resident.
+const CACHE_MAX_ENTRIES = 500
+const cache = new LruCache<ArticlePayload>(CACHE_MAX_ENTRIES, CACHE_TTL_MS)
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -93,7 +97,7 @@ export async function GET(req: NextRequest) {
   // Auth-gated by middleware; resolve the user so this Wikipedia proxy is limited
   // per-user (shared-NAT classrooms aren't punished) and isn't a free hop.
   const { userId } = await auth()
-  const limited = enforceRateLimit(req, 'read', userId)
+  const limited = await enforceRateLimit(req, 'read', userId)
   if (limited) return limited
 
   const title = req.nextUrl.searchParams.get('title')
@@ -101,8 +105,8 @@ export async function GET(req: NextRequest) {
 
   // ── Serve from cache when fresh ──────────────────────────────────────────────
   const cached = cache.get(title)
-  if (cached && cached.expires > Date.now()) {
-    return NextResponse.json(cached.payload)
+  if (cached) {
+    return NextResponse.json(cached)
   }
 
   try {
@@ -160,9 +164,9 @@ export async function GET(req: NextRequest) {
     }
 
     // Cache under both the requested title and the canonical title
-    cache.set(title, { payload, expires: Date.now() + CACHE_TTL_MS })
+    cache.set(title, payload)
     if (payload.normalizedTitle !== title) {
-      cache.set(payload.normalizedTitle, { payload, expires: Date.now() + CACHE_TTL_MS })
+      cache.set(payload.normalizedTitle, payload)
     }
 
     return NextResponse.json(payload)

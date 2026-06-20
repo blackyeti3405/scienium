@@ -1,8 +1,7 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getTeamContext, LAB_TYPE_LABELS } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { LAB_TYPE_LABELS } from '@/lib/phase'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { getLiteratureAdvanceProgress } from '@/lib/team/advance'
 import { classifyLabType } from '@/lib/lab-type/classify'
@@ -28,17 +27,8 @@ const AdvanceBody = z
  *   - Skips `lab_selection`; jumps directly to `research_planning`
  */
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
+  if (guardError) return guardError
 
   if (ctx.phase !== 'literature_review') {
     return NextResponse.json(
@@ -76,7 +66,7 @@ export async function POST(req: NextRequest) {
     data: { phase: 'research_planning', labType, researchIdea },
   })
 
-  logActivity(ctx.teamId, dbUser.id, 'phase_advanced', {
+  logActivity(ctx.teamId, ctx.dbUserId, 'phase_advanced', {
     fromPhase: 'literature_review',
     toPhase: 'research_planning',
     labType: LAB_TYPE_LABELS[labType],

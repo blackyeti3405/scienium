@@ -1,8 +1,6 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { getTeamContext } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
 import {
@@ -22,20 +20,11 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'read', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
+  if (error) return error
 
   const session = await db.paperQuizSession.findFirst({
-    where: { paperId: params.id, userId: dbUser.id, gradedAt: { not: null } },
+    where: { paperId: params.id, userId: ctx.dbUserId, gradedAt: { not: null } },
     orderBy: { gradedAt: 'desc' },
     include: { attempts: true },
   })
@@ -75,18 +64,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   // Strict per-user + per-IP limit: quiz generation is a paid Claude call.
-  const limited = enforceRateLimit(req, 'ai', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'ai' })
+  if (error) return error
 
   const paper = await db.paper.findFirst({
     where: { id: params.id, teamId: ctx.teamId },
@@ -136,7 +116,7 @@ export async function POST(
   const session = await db.paperQuizSession.create({
     data: {
       paperId: paper.id,
-      userId: dbUser.id,
+      userId: ctx.dbUserId,
       questionsJson: questions as unknown as Prisma.InputJsonValue,
     },
     select: { id: true },

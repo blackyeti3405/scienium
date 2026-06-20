@@ -1,8 +1,6 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getTeamContext } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 
@@ -29,14 +27,8 @@ const TreeBody = z
 // ─── GET: load the team's discovery tree ─────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'read', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
+  if (error) return error
 
   const rows = await db.discoveryNode.findMany({
     where: { teamId: ctx.teamId },
@@ -86,17 +78,8 @@ export async function GET(req: NextRequest) {
 // ─── POST: create one or more nodes (root or branch children) ────────────────
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
+  if (guardError) return guardError
 
   const { data, error } = await parseJson(req, TreeBody)
   if (error) return error
@@ -113,7 +96,7 @@ export async function POST(req: NextRequest) {
         wikipediaTitle: source === 'wikipedia' ? n.title : null,
         youtubeTitle: source === 'youtube' ? n.title : null,
         youtubeVideoId: source === 'youtube' ? n.videoId ?? null : null,
-        visitedByUserId: dbUser.id,
+        visitedByUserId: ctx.dbUserId,
       }
     }),
     skipDuplicates: true,
@@ -125,14 +108,8 @@ export async function POST(req: NextRequest) {
 // ─── DELETE: reset the whole tree for the team ───────────────────────────────
 
 export async function DELETE(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
+  if (error) return error
 
   await db.discoveryNode.deleteMany({ where: { teamId: ctx.teamId } })
   return NextResponse.json({ ok: true })

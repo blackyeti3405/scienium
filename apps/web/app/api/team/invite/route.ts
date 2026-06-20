@@ -1,8 +1,6 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { getTeamContext } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { generateInviteCode, INVITE_TTL_DAYS } from '@/lib/team/invite'
 import { db } from '@/lib/db'
 
@@ -11,24 +9,15 @@ import { db } from '@/lib/db'
  * Refuses when the lab is already at capacity, since there'd be no seat to fill.
  */
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
+  if (error) return error
 
   const team = await db.team.findUnique({
     where: { id: ctx.teamId },
     select: { teamLeadId: true, maxMembers: true, _count: { select: { members: true } } },
   })
   if (!team) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-  if (team.teamLeadId !== dbUser.id) {
+  if (team.teamLeadId !== ctx.dbUserId) {
     return NextResponse.json({ error: 'Only the lab lead can invite members' }, { status: 403 })
   }
   if (team._count.members >= team.maxMembers) {
@@ -42,7 +31,7 @@ export async function POST(req: NextRequest) {
     const code = generateInviteCode()
     try {
       const invite = await db.teamInvite.create({
-        data: { code, teamId: ctx.teamId, createdByUserId: dbUser.id, expiresAt },
+        data: { code, teamId: ctx.teamId, createdByUserId: ctx.dbUserId, expiresAt },
         select: { code: true, expiresAt: true },
       })
       return NextResponse.json({ invite })

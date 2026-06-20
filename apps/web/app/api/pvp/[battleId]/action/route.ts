@@ -9,7 +9,7 @@ export async function POST(
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const limited = enforceRateLimit(req, 'mutate', userId)
+  const limited = await enforceRateLimit(req, 'mutate', userId)
   if (limited) return limited
 
   // TODO: resolve one turn — validate action, run combat math, return BattleTurnResult

@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // Mutating + triggers an external oEmbed fetch — moderate per-user + per-IP limit.
-  const limited = enforceRateLimit(req, 'mutate', userId)
+  const limited = await enforceRateLimit(req, 'mutate', userId)
   if (limited) return limited
 
   const { data, error } = await parseJson(req, ResolveBody)

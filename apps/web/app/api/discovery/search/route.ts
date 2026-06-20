@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   // Auth-gated by middleware; resolve the user so this Wikipedia proxy is limited
   // per-user (not just per shared-NAT IP) and can't be a free amplification hop.
   const { userId } = await auth()
-  const limited = enforceRateLimit(req, 'read', userId)
+  const limited = await enforceRateLimit(req, 'read', userId)
   if (limited) return limited
 
   const q = req.nextUrl.searchParams.get('q') ?? ''

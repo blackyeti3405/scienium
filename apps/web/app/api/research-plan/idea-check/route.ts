@@ -1,8 +1,6 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { getTeamContext } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { IDEA_CHECK_DAILY_LIMIT, ideaChecksUsedToday } from '@/lib/research-plan/idea-check'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
@@ -20,20 +18,11 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
  * once streaming starts, problems arrive as `{ type: 'error' }` events.
  */
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   // Per-minute burst cap on top of the 3/day-per-team cap below: stops a single
   // caller from racing many concurrent web-search runs before the daily counter
   // catches up (each run is a multi-search paid Claude call).
-  const limited = enforceRateLimit(req, 'ai', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  const dbUser = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
-  if (!dbUser) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'ai' })
+  if (error) return error
 
   const usedToday = await ideaChecksUsedToday(ctx.teamId)
   if (usedToday >= IDEA_CHECK_DAILY_LIMIT) {
@@ -178,7 +167,7 @@ export async function POST(req: NextRequest) {
         await db.ideaCheck.create({
           data: {
             teamId: ctx.teamId,
-            userId: dbUser.id,
+            userId: ctx.dbUserId,
             verdict,
             findingsJson: findings as unknown as Prisma.InputJsonValue,
           },
