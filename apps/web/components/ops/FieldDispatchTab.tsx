@@ -4,12 +4,22 @@ import { useState, useEffect } from 'react'
 import { Loader2, Radio, Send, Check } from 'lucide-react'
 import { useLabCurrency } from '@/lib/labCurrency'
 
+interface HistoryItem {
+  id: string
+  body: string
+  reflectionQuestion: string
+  response: string
+  publishedDate: string
+}
+
 interface DispatchData {
   available: boolean
   content?: { id: string; body: string; reflectionQuestion: string }
   responded?: boolean
   response?: string | null
   kpReward?: number
+  streak?: number
+  history?: HistoryItem[]
 }
 
 /**
@@ -25,6 +35,7 @@ export function FieldDispatchTab() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [justEarned, setJustEarned] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   useEffect(() => {
     fetch('/api/field-dispatch')
@@ -84,6 +95,8 @@ export function FieldDispatchTab() {
   }
 
   const responded = !!data.responded
+  const streak = data.streak ?? 0
+  const history = data.history ?? []
 
   return (
     <div className="ops-tab-body">
@@ -93,6 +106,11 @@ export function FieldDispatchTab() {
           <span className="font-pixel text-[9px] text-[#F5C518] uppercase tracking-widest">
             Today’s Field Dispatch
           </span>
+          {streak > 0 && (
+            <span className="font-pixel text-[8px] bg-[#F5C518]/15 text-[#F5C518] border border-[#F5C518]/40 px-2 py-0.5 leading-none">
+              {streak}-DAY STREAK
+            </span>
+          )}
         </div>
 
         <p className="text-sm leading-relaxed text-white/85">{data.content?.body}</p>
@@ -133,6 +151,52 @@ export function FieldDispatchTab() {
             {busy ? <Loader2 className="animate-spin" size={12} /> : <Send size={12} />}
             {busy ? 'Submitting…' : `Submit · +${data.kpReward} KP`}
           </button>
+        )}
+
+        {history.length > 0 && (
+          <div className="border-t border-white/10 pt-4 space-y-3">
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((o) => !o)}
+              className="flex items-center gap-2 font-pixel text-[8px] text-white/45 uppercase tracking-widest hover:text-white/70 transition-colors"
+            >
+              <span>{historyOpen ? '▼' : '▶'}</span>
+              <span>Past Dispatches ({history.length})</span>
+            </button>
+
+            {historyOpen && (
+              <div className="space-y-6 pt-1">
+                {history.map((item) => {
+                  const dateLabel = new Date(item.publishedDate).toLocaleDateString(undefined, {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    timeZone: 'UTC',
+                  })
+                  return (
+                    <div key={item.id} className="border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                      <span className="font-pixel text-[8px] text-[#F5C518]/70 uppercase tracking-widest">
+                        {dateLabel}
+                      </span>
+                      <p className="text-sm leading-relaxed text-white/75">{item.body}</p>
+                      <div className="space-y-1">
+                        <span className="font-pixel text-[8px] text-white/35 uppercase tracking-widest">
+                          Reflect
+                        </span>
+                        <p className="text-sm text-white/80 font-medium">{item.reflectionQuestion}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="font-pixel text-[8px] text-white/35 uppercase tracking-widest">
+                          Your Answer
+                        </span>
+                        <p className="text-sm text-white/65 leading-relaxed">{item.response}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

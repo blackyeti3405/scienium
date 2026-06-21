@@ -2,16 +2,24 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { ensureTodayDispatch, FIELD_DISPATCH_KP } from '@/lib/field-dispatch/dispatch'
+import { ensureTodayDispatch, computeStreak, FIELD_DISPATCH_KP } from '@/lib/field-dispatch/dispatch'
 import { db } from '@/lib/db'
+
+/** Maximum number of past dispatches returned in the history payload. */
+const HISTORY_LIMIT = 30
 
 /**
  * GET /api/field-dispatch — today's discipline dispatch for the team's lab type,
- * plus whether THIS student has already answered it.
+ * plus whether THIS student has already answered it, plus a scrollable history
+ * of past answered dispatches and a calendar-consecutive answer streak.
  *
  * Field Dispatch is discipline-specific, so it only becomes meaningful once the
  * lab type is assigned (end of literature_review). Before that we report
  * `available: false` and the tab shows a friendly locked state.
+ *
+ * Security: history is scoped to `userId: ctx.dbUserId` AND
+ * `content.labType: ctx.labType` — no other student's or other lab type's
+ * responses can appear in the payload.
  */
 export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'read', feature: 'daily' })
@@ -27,6 +35,43 @@ export async function GET(req: NextRequest) {
     select: { response: true, kpAwarded: true },
   })
 
+  // Fetch the student's full answer history for this lab type (scoped to this
+  // user AND this lab type — the two keys that prevent cross-team/IDOR leakage).
+  const allResponses = await db.fieldDispatchResponse.findMany({
+    where: {
+      userId: ctx.dbUserId,
+      content: { labType: ctx.labType },
+    },
+    select: {
+      response: true,
+      createdAt: true,
+      content: {
+        select: {
+          id: true,
+          body: true,
+          reflectionQuestion: true,
+          publishedDate: true,
+        },
+      },
+    },
+    orderBy: { content: { publishedDate: 'desc' } },
+    take: HISTORY_LIMIT,
+  })
+
+  // Streak uses every answered publishedDate (including today's if present).
+  const streak = computeStreak(allResponses.map((r) => r.content.publishedDate))
+
+  // History excludes today's dispatch (already shown as the primary card).
+  const history = allResponses
+    .filter((r) => r.content.id !== content.id)
+    .map((r) => ({
+      id: r.content.id,
+      body: r.content.body,
+      reflectionQuestion: r.content.reflectionQuestion,
+      response: r.response,
+      publishedDate: r.content.publishedDate.toISOString(),
+    }))
+
   return NextResponse.json({
     available: true,
     content: {
@@ -37,6 +82,8 @@ export async function GET(req: NextRequest) {
     responded: !!existing,
     response: existing?.response ?? null,
     kpReward: FIELD_DISPATCH_KP,
+    streak,
+    history,
   })
 }
 

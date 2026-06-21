@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   LineChart,
   Line,
@@ -11,7 +11,8 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts'
-import { Loader2, Plus, Trash2, BarChart3, ChevronLeft } from 'lucide-react'
+import { Loader2, Plus, Trash2, BarChart3, ChevronLeft, Download, FileImage } from 'lucide-react'
+import { parsePastedPoints, toCsv } from '@/lib/data-terminal/csv'
 
 interface Measurement {
   id: string
@@ -30,6 +31,29 @@ interface Experiment {
 }
 
 const SERIES_COLORS = ['#F5C518', '#4FD1C5', '#F687B3', '#90CDF4', '#A0AEC0', '#9AE6B4']
+
+/** Slugify a title to use as a download filename (no extension). */
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'experiment'
+}
+
+/** Trigger a file download from a Blob. */
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  // Safari requires the anchor to be in the DOM before click().
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
 
 /**
  * Data Terminal (spec §14.1) — experiment tracking + graphing for the `working`
@@ -272,8 +296,16 @@ function ExperimentDetail({
   const [x, setX] = useState('')
   const [y, setY] = useState('')
   const [series, setSeries] = useState('')
+  const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Bulk paste state
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const [pasteSkipped, setPasteSkipped] = useState<number | null>(null)
+
+  const chartRef = useRef<HTMLDivElement>(null)
 
   const { chartData, seriesNames } = useMemo(() => {
     const names = Array.from(
@@ -305,7 +337,14 @@ function ExperimentDetail({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          points: [{ x: xn, y: yn, series: series.trim() || undefined }],
+          points: [
+            {
+              x: xn,
+              y: yn,
+              series: series.trim() || undefined,
+              note: note.trim() || undefined,
+            },
+          ],
         }),
       })
       const out = await res.json()
@@ -313,10 +352,102 @@ function ExperimentDetail({
       onChange({ ...experiment, measurements: out.measurements })
       setX('')
       setY('')
+      setSeries('')
+      setNote('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function submitPaste() {
+    if (busy) return
+    const { points, skipped } = parsePastedPoints(pasteText)
+    if (points.length === 0) {
+      setError('No valid data rows found. Check that x and y are numeric.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    setPasteSkipped(null)
+    try {
+      const res = await fetch(`/api/data-terminal/${experiment.id}/measurements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ points }),
+      })
+      const out = await res.json()
+      if (!res.ok) throw new Error(out.error ?? 'Could not add points')
+      onChange({ ...experiment, measurements: out.measurements })
+      setPasteText('')
+      setPasteOpen(false)
+      if (skipped > 0) setPasteSkipped(skipped)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function exportCsv() {
+    const csv = toCsv(experiment)
+    const blob = new Blob([csv], { type: 'text/csv' })
+    downloadBlob(blob, `${slugify(experiment.title)}.csv`)
+  }
+
+  async function exportPng() {
+    const container = chartRef.current
+    const svg = container?.querySelector('svg')
+    if (!svg) {
+      setError('Chart not rendered — add points first.')
+      return
+    }
+    try {
+      const svgEl = svg.cloneNode(true) as SVGElement
+      const width = svg.clientWidth || 600
+      const height = svg.clientHeight || 240
+
+      svgEl.setAttribute('width', String(width))
+      svgEl.setAttribute('height', String(height))
+      svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+
+      // Prepend a dark background rect so transparency renders correctly
+      const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+      bg.setAttribute('width', String(width))
+      bg.setAttribute('height', String(height))
+      bg.setAttribute('fill', '#0a1628')
+      svgEl.insertBefore(bg, svgEl.firstChild)
+
+      const serialized = new XMLSerializer().serializeToString(svgEl)
+      const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(serialized)
+
+      await new Promise<void>((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            reject(new Error('Could not get canvas context'))
+            return
+          }
+          ctx.drawImage(img, 0, 0)
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              reject(new Error('Canvas toBlob failed'))
+              return
+            }
+            downloadBlob(blob, `${slugify(experiment.title)}.png`)
+            resolve()
+          }, 'image/png')
+        }
+        img.onerror = () => reject(new Error('SVG image load failed'))
+        img.src = dataUrl
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'PNG export failed')
     }
   }
 
@@ -346,7 +477,8 @@ function ExperimentDetail({
 
         <h3 className="text-base text-white font-medium">{experiment.title}</h3>
 
-        <div className="bg-[#0a1628] border border-white/10 p-2" style={{ height: 240 }}>
+        {/* Chart */}
+        <div ref={chartRef} className="bg-[#0a1628] border border-white/10 p-2" style={{ height: 240 }}>
           {chartData.length === 0 ? (
             <div className="h-full flex items-center justify-center">
               <span className="font-pixel text-[8px] text-white/25">
@@ -388,39 +520,113 @@ function ExperimentDetail({
           )}
         </div>
 
-        {/* Add-point row */}
-        <div className="flex flex-wrap gap-2 items-end">
-          <input
-            value={x}
-            onChange={(e) => setX(e.target.value)}
-            placeholder={experiment.xLabel}
-            inputMode="decimal"
-            className="w-20 bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
-          />
-          <input
-            value={y}
-            onChange={(e) => setY(e.target.value)}
-            placeholder={experiment.yLabel}
-            inputMode="decimal"
-            className="w-20 bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
-          />
-          <input
-            value={series}
-            onChange={(e) => setSeries(e.target.value)}
-            placeholder="series (optional)"
-            maxLength={40}
-            className="flex-1 min-w-[120px] bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
-          />
+        {/* Export buttons */}
+        <div className="flex gap-2">
           <button
             type="button"
-            onClick={addPoint}
-            disabled={busy}
-            className="inline-flex items-center gap-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
+            onClick={exportCsv}
+            disabled={experiment.measurements.length === 0}
+            className="inline-flex items-center gap-1.5 font-pixel text-[8px] border border-white/20 text-white/60 px-3 py-2 hover:border-[#F5C518]/60 hover:text-[#F5C518] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
-            <Plus size={11} /> Add
+            <Download size={11} /> Export CSV
+          </button>
+          <button
+            type="button"
+            onClick={exportPng}
+            disabled={chartData.length === 0}
+            className="inline-flex items-center gap-1.5 font-pixel text-[8px] border border-white/20 text-white/60 px-3 py-2 hover:border-[#F5C518]/60 hover:text-[#F5C518] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          >
+            <FileImage size={11} /> Export PNG
           </button>
         </div>
+
+        {/* Add-point row */}
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2 items-end">
+            <input
+              value={x}
+              onChange={(e) => setX(e.target.value)}
+              placeholder={experiment.xLabel}
+              inputMode="decimal"
+              className="w-20 bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+            />
+            <input
+              value={y}
+              onChange={(e) => setY(e.target.value)}
+              placeholder={experiment.yLabel}
+              inputMode="decimal"
+              className="w-20 bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+            />
+            <input
+              value={series}
+              onChange={(e) => setSeries(e.target.value)}
+              placeholder="series (optional)"
+              maxLength={40}
+              className="flex-1 min-w-[120px] bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+            />
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="note (optional)"
+              maxLength={200}
+              className="flex-1 min-w-[140px] bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+            />
+            <button
+              type="button"
+              onClick={addPoint}
+              disabled={busy}
+              className="inline-flex items-center gap-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
+            >
+              <Plus size={11} /> Add
+            </button>
+          </div>
+        </div>
+
         {error && <p className="font-pixel text-[8px] text-red-400">{error}</p>}
+        {pasteSkipped !== null && pasteSkipped > 0 && (
+          <p className="font-pixel text-[8px] text-white/40">
+            {pasteSkipped} row{pasteSkipped !== 1 ? 's' : ''} skipped (non-numeric or over limit).
+          </p>
+        )}
+
+        {/* Bulk paste */}
+        <div className="border border-white/10 bg-[#0a1628]">
+          <button
+            type="button"
+            onClick={() => {
+              setPasteOpen((o) => !o)
+              setError(null)
+              setPasteSkipped(null)
+            }}
+            className="w-full flex items-center justify-between px-3 py-2 font-pixel text-[8px] text-white/50 hover:text-white/80 transition-colors"
+          >
+            <span>Paste from spreadsheet</span>
+            <span className="text-white/30">{pasteOpen ? '▲' : '▼'}</span>
+          </button>
+
+          {pasteOpen && (
+            <div className="px-3 pb-3 space-y-2">
+              <p className="font-pixel text-[7px] text-white/30">
+                x, y, series, note — one row per line (tab or comma separated)
+              </p>
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                rows={6}
+                placeholder="Paste spreadsheet data here…"
+                className="w-full bg-[#0d1b2e] border border-white/15 text-white text-xs px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/20 resize-y"
+              />
+              <button
+                type="button"
+                onClick={submitPaste}
+                disabled={busy || !pasteText.trim()}
+                className="font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
+              >
+                {busy ? 'Importing…' : 'Import'}
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Points table */}
         {experiment.measurements.length > 0 && (
@@ -430,6 +636,7 @@ function ExperimentDetail({
                 <th className="text-left py-1">{experiment.xLabel}</th>
                 <th className="text-left py-1">{experiment.yLabel}</th>
                 <th className="text-left py-1">series</th>
+                <th className="text-left py-1">note</th>
                 <th className="py-1" />
               </tr>
             </thead>
@@ -439,6 +646,7 @@ function ExperimentDetail({
                   <td className="py-1">{m.x}</td>
                   <td className="py-1">{m.y}</td>
                   <td className="py-1 text-white/45">{m.series || '—'}</td>
+                  <td className="py-1 text-white/45">{m.note || '—'}</td>
                   <td className="py-1 text-right">
                     <button
                       type="button"

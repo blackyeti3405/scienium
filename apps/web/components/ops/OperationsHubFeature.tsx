@@ -698,7 +698,7 @@ function FailureLogTab() {
                     <div className="flex flex-col min-w-0">
                       <span className="font-pixel text-[7px] text-white/70">{e.author}</span>
                       <span className="font-pixel text-[6px] text-white/30 mt-0.5">
-                        {timeAgo(e.createdAt)}
+                        {formatDate(e.createdAt)} · {timeAgo(e.createdAt)}
                         {e.editedBy && <span className="text-white/25"> · edited by {e.editedBy}</span>}
                       </span>
                     </div>

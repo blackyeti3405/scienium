@@ -78,6 +78,41 @@ Return ONLY valid JSON: {"body": string, "reflectionQuestion": string}. No markd
 }
 
 /**
+ * Compute the calendar-consecutive answer streak from an array of UTC-midnight
+ * `publishedDate` values the student has already answered.
+ *
+ * Rules:
+ * - Count back from the most recent answered day, stepping one calendar day at
+ *   a time; the first missing day breaks the streak.
+ * - Anchor the walk at today's UTC day if today is in the set, otherwise at
+ *   yesterday's day — so an unanswered "today" does NOT zero a streak the
+ *   student can still extend.
+ * - The `today` parameter defaults to `new Date()` and exists solely for
+ *   deterministic unit testing.
+ */
+export function computeStreak(publishedDates: Date[], today: Date = new Date()): number {
+  if (publishedDates.length === 0) return 0
+
+  // Normalise every date to a UTC-midnight timestamp (number) for fast set lookup.
+  const todayKey = dispatchDate(today).getTime()
+  const answeredKeys = new Set(publishedDates.map((d) => dispatchDate(d).getTime()))
+
+  // Determine starting point: today (if answered) or yesterday.
+  const startKey = answeredKeys.has(todayKey) ? todayKey : todayKey - 86_400_000
+
+  // If the start day itself was not answered, streak is 0.
+  if (!answeredKeys.has(startKey)) return 0
+
+  let streak = 0
+  let cursor = startKey
+  while (answeredKeys.has(cursor)) {
+    streak++
+    cursor -= 86_400_000
+  }
+  return streak
+}
+
+/**
  * Return today's dispatch for a lab type, generating and persisting it if it
  * doesn't exist yet. Idempotent under the `(labType, publishedDate)` unique
  * constraint — a lost race re-reads the winner's row rather than duplicating.
