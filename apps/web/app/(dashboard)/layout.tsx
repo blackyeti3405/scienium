@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { getTeamContext } from '@/lib/phase'
+import { resolveTeacherRole } from '@/lib/teacher/auth'
 
 /**
  * Authenticated shell. There is intentionally NO navigation chrome here — the
@@ -9,11 +10,16 @@ import { getTeamContext } from '@/lib/phase'
  * deep-linking and back-compat.
  */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { userId } = await auth()
+  const { userId, sessionClaims } = await auth()
   if (!userId) redirect('/sign-in')
 
   const ctx = await getTeamContext(userId)
-  if (!ctx) redirect('/onboarding')
+  if (!ctx) {
+    // A team-less account is either a teacher (send to their dashboard) or a new
+    // user who still needs onboarding.
+    if (await resolveTeacherRole(userId, sessionClaims)) redirect('/teacher')
+    redirect('/onboarding')
+  }
 
   return <main className="min-h-screen">{children}</main>
 }

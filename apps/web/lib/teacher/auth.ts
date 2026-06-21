@@ -8,8 +8,9 @@ import { enforceRateLimit, type TierName } from '@/lib/rate-limit'
  * checks live in one guard rather than being re-derived per route.
  *
  * Two layers of defense:
- *   1. ROLE — the Clerk session must carry `metadata.role` of teacher|admin
- *      (mirrors `(teacher)/layout.tsx`). Client gating is never the sole gate.
+ *   1. ROLE — the caller must be teacher|admin, via the Clerk session
+ *      `metadata.role` (fast path) OR the DB `User.role` fallback for a just-
+ *      promoted teacher whose token hasn't re-minted yet. Never client-gated alone.
  *   2. SCOPE — every data query is constrained to the classes this teacher owns
  *      (`Class.teacherId`). A teacher must never read another class's students,
  *      so callers filter by `ctx.classIds` and verify ownership before returning
@@ -46,16 +47,28 @@ export async function requireTeacher(
     return { ctx: null, error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   }
 
-  const role = roleFromClaims(sessionClaims)
-  if (role !== 'teacher' && role !== 'admin') {
-    return { ctx: null, error: NextResponse.json({ error: 'Teacher access required' }, { status: 403 }) }
-  }
-
   const limited = await enforceRateLimit(req, opts.tier, userId)
   if (limited) return { ctx: null, error: limited }
 
-  // Ensure a User row backs this teacher (they may never have onboarded).
-  let user = await db.user.findUnique({ where: { clerkUserId: userId }, select: { id: true } })
+  // Role: the session claim is the fast path, but a just-promoted teacher's token
+  // hasn't re-minted the claim yet, so fall back to the DB role (set synchronously
+  // at teacher onboarding). The DB is the source of truth; the claim is a shortcut.
+  const claimRole = roleFromClaims(sessionClaims)
+  let user = await db.user.findUnique({
+    where: { clerkUserId: userId },
+    select: { id: true, role: true },
+  })
+  const role: 'teacher' | 'admin' | null =
+    claimRole === 'teacher' || claimRole === 'admin'
+      ? claimRole
+      : user?.role === 'teacher' || user?.role === 'admin'
+        ? user.role
+        : null
+  if (!role) {
+    return { ctx: null, error: NextResponse.json({ error: 'Teacher access required' }, { status: 403 }) }
+  }
+
+  // Ensure a User row backs this teacher (a claim-only teacher may have no row yet).
   if (!user) {
     const clerkUser = await currentUser()
     const email =
@@ -69,16 +82,16 @@ export async function requireTeacher(
         clerkUserId: userId,
         name: clerkUser?.firstName ?? 'Teacher',
         email,
-        role: role as 'teacher' | 'admin',
+        role,
       },
-      select: { id: true },
+      select: { id: true, role: true },
     })
   }
 
   const classes = await db.class.findMany({ where: { teacherId: user.id }, select: { id: true } })
 
   return {
-    ctx: { userId, dbUserId: user.id, classIds: classes.map((c) => c.id), role: role as 'teacher' | 'admin' },
+    ctx: { userId, dbUserId: user.id, classIds: classes.map((c) => c.id), role },
     error: null,
   }
 }
@@ -101,4 +114,19 @@ export async function teacherOwnsTeam(classIds: string[], teamId: string): Promi
 export function teacherRole(sessionClaims: unknown): 'teacher' | 'admin' | null {
   const role = roleFromClaims(sessionClaims)
   return role === 'teacher' || role === 'admin' ? role : null
+}
+
+/**
+ * Server-component teacher check with the same DB fallback as requireTeacher: the
+ * session claim is the fast path; a freshly-promoted teacher whose token hasn't
+ * re-minted yet falls back to the DB role (the source of truth).
+ */
+export async function resolveTeacherRole(
+  userId: string,
+  sessionClaims: unknown,
+): Promise<'teacher' | 'admin' | null> {
+  const claim = teacherRole(sessionClaims)
+  if (claim) return claim
+  const u = await db.user.findUnique({ where: { clerkUserId: userId }, select: { role: true } })
+  return u?.role === 'teacher' || u?.role === 'admin' ? u.role : null
 }

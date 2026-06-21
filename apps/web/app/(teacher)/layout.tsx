@@ -2,14 +2,14 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { UserButton } from '@clerk/nextjs'
-import { teacherRole } from '@/lib/teacher/auth'
+import { resolveTeacherRole } from '@/lib/teacher/auth'
 
 export const metadata = { title: 'Teacher · NOVA Lab' }
 
 export default async function TeacherLayout({ children }: { children: React.ReactNode }) {
   const { userId, sessionClaims } = await auth()
   if (!userId) redirect('/sign-in')
-  if (!teacherRole(sessionClaims)) redirect('/lab')
+  if (!(await resolveTeacherRole(userId, sessionClaims))) redirect('/lab')
 
   return (
     <div className="min-h-screen bg-[#0d1b2e] text-white">

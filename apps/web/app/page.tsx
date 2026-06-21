@@ -1,10 +1,16 @@
 import Link from 'next/link'
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
+import { resolveTeacherRole } from '@/lib/teacher/auth'
 
 export default async function HomePage() {
-  const { userId } = await auth()
-  if (userId) redirect('/lab')
+  const { userId, sessionClaims } = await auth()
+  if (userId) {
+    // Teachers have no team — send them to their dashboard, not /lab (which would
+    // bounce a team-less account on to onboarding).
+    if (await resolveTeacherRole(userId, sessionClaims)) redirect('/teacher')
+    redirect('/lab')
+  }
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center bg-[#0d1b2e]">
