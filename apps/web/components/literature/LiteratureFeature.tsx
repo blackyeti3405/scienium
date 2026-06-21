@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useLabCurrency } from '@/lib/labCurrency'
+import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -663,12 +664,26 @@ export function LiteratureFeature() {
   const [ideaBusy, setIdeaBusy] = useState(false)
   const [ideaError, setIdeaError] = useState<string | null>(null)
   const [ideaResult, setIdeaResult] = useState<{ labTypeLabel: string; rationale: string } | null>(null)
+  const [researchIdea, setResearchIdea] = useState<string | null>(null)
+  const [labType, setLabType] = useState<LabType | null>(null)
 
   useEffect(() => {
     fetch('/api/discovery/topic')
       .then((r) => r.json())
       .then((d) => setTopic(d.topic ?? null))
       .catch(() => setTopic(null))
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/team')
+      .then((r) => r.json())
+      .then((d: { researchIdea?: string | null; labType?: string | null }) => {
+        setResearchIdea(d.researchIdea ?? null)
+        setLabType((d.labType as LabType | null) ?? null)
+      })
+      .catch(() => {
+        // degrade gracefully — leave both null and fall through to first-time path
+      })
   }, [])
 
   useEffect(() => {
@@ -850,50 +865,65 @@ export function LiteratureFeature() {
       </div>
 
       {/* Idea submission box — shown once all 25 sources are in */}
-      {locked && (
-        <div className="mx-6 mt-4 rounded-sm border border-[#F5C518]/35 bg-[#F5C518]/[0.06] px-5 py-4 flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <FlaskConical size={13} className="text-[#F5C518] shrink-0" />
-            <span className="font-pixel text-[8px] text-[#F5C518]">
-              Literature review complete — describe your project in one sentence
-            </span>
-          </div>
+      {locked && (() => {
+        const ideaSubmitted = !!researchIdea || !!ideaResult
+        // Display text: prefer the persisted value; for just-submitted-this-session fallback to `idea`
+        const ideaText = researchIdea ?? idea
+        // Lab type label: prefer fresh submit result, otherwise map the persisted enum
+        const labTypeLabel = ideaResult?.labTypeLabel ?? (labType ? LAB_TYPE_LABELS[labType] : null)
 
-          {ideaResult ? (
-            <div className="flex items-start gap-2 text-green-300">
-              <FlaskConical size={11} className="shrink-0 mt-0.5" />
-              <span className="font-pixel text-[8px]">
-                Lab assigned: <strong>{ideaResult.labTypeLabel}</strong> — {ideaResult.rationale}
+        return (
+          <div className="mx-6 mt-4 mb-4 rounded-sm border border-[#F5C518]/35 bg-[#F5C518]/[0.06] px-5 py-4 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <FlaskConical size={13} className="text-[#F5C518] shrink-0" />
+              <span className="font-pixel text-[8px] text-[#F5C518]">
+                {ideaSubmitted
+                  ? 'Literature review complete — lab assigned'
+                  : 'Literature review complete — describe your project in one sentence'}
               </span>
             </div>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={idea}
-                onChange={(e) => setIdea(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !ideaBusy && advancePhase()}
-                maxLength={500}
-                disabled={ideaBusy}
-                placeholder="e.g. I'm investigating how soil pH affects plant growth rate…"
-                className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm font-pixel text-[8px]"
-              />
-              <button
-                onClick={advancePhase}
-                disabled={ideaBusy || !idea.trim()}
-                className="shrink-0 flex items-center gap-1.5 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              >
-                {ideaBusy ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
-                {ideaBusy ? 'Classifying…' : 'Submit'}
-              </button>
-            </div>
-          )}
 
-          {ideaError && (
-            <span className="font-pixel text-[7px] text-red-400">{ideaError}</span>
-          )}
-        </div>
-      )}
+            {ideaSubmitted ? (
+              <div className="flex flex-col gap-2">
+                {ideaText && (
+                  <span className="font-pixel text-[8px] text-white/80 leading-relaxed">
+                    {ideaText}
+                  </span>
+                )}
+                <span className="font-pixel text-[8px] text-green-300">
+                  Lab assigned: <strong>{labTypeLabel}</strong>
+                  {ideaResult?.rationale ? ` — ${ideaResult.rationale}` : ''}
+                </span>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={idea}
+                  onChange={(e) => setIdea(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !ideaBusy && advancePhase()}
+                  maxLength={500}
+                  disabled={ideaBusy}
+                  placeholder="e.g. I'm investigating how soil pH affects plant growth rate…"
+                  className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm font-pixel text-[8px]"
+                />
+                <button
+                  onClick={advancePhase}
+                  disabled={ideaBusy || !idea.trim()}
+                  className="shrink-0 flex items-center gap-1.5 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  {ideaBusy ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
+                  {ideaBusy ? 'Classifying…' : 'Submit'}
+                </button>
+              </div>
+            )}
+
+            {ideaError && (
+              <span className="font-pixel text-[7px] text-red-400">{ideaError}</span>
+            )}
+          </div>
+        )
+      })()}
 
       {/* No-topic warning — only shown when not yet locked */}
       {!locked && topic === null && (
@@ -920,10 +950,10 @@ export function LiteratureFeature() {
 
       {/* Lock notice + progress bar */}
       {locked ? (
-        <div className="flex items-center gap-2 px-6 py-2 bg-white/[0.02] border-t border-white/8 shrink-0">
+        <div className="flex items-center gap-2 px-6 py-3 bg-white/[0.02] border-t border-white/8 shrink-0">
           <Lock size={10} className="text-white/25 shrink-0" />
-          <span className="font-pixel text-[7px] text-white/30">Sources locked — 25/25</span>
-          <div className="flex-1 h-px bg-[#F5C518]/40 ml-2" />
+          <span className="font-pixel text-[7px] text-green-300/70">Sources locked — 25/25</span>
+          <div className="flex-1 h-1.5 rounded-full bg-green-400 ml-2" />
         </div>
       ) : (
         <div className="h-1 bg-white/8 shrink-0">

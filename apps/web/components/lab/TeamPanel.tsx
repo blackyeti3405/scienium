@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { Users, Crown, Copy, Check, Loader2, X, UserPlus } from 'lucide-react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Users, Crown, Copy, Check, Loader2, X, UserPlus, GraduationCap } from 'lucide-react'
 
 /**
  * Team panel (Feature 1b) — opened from the team name in the status strip. Shows
@@ -22,6 +22,7 @@ interface TeamData {
   isLead: boolean
   members: Member[]
   invite: { code: string; expiresAt: string } | null
+  myClass: { id: string; name: string } | null
 }
 
 export function TeamPanel({ onClose }: { onClose: () => void }) {
@@ -31,6 +32,9 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
   const [minting, setMinting] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [classCode, setClassCode] = useState('')
+  const [joining, setJoining] = useState(false)
+  const [classError, setClassError] = useState<string | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -78,6 +82,29 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     })
+  }
+
+  async function joinClass(e: FormEvent) {
+    e.preventDefault()
+    const code = classCode.trim()
+    if (!code) return
+    setJoining(true)
+    setClassError(null)
+    try {
+      const res = await fetch('/api/class/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error ?? 'Could not join that class')
+      setData((prev) => (prev ? { ...prev, myClass: { id: d.classId, name: d.className } } : prev))
+      setClassCode('')
+    } catch (err) {
+      setClassError(err instanceof Error ? err.message : 'Could not join that class')
+    } finally {
+      setJoining(false)
+    }
   }
 
   const full = data ? data.memberCount >= data.maxMembers : false
@@ -151,6 +178,44 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                     </li>
                   ))}
                 </ul>
+              </div>
+
+              {/* Your teacher's class — every member links individually */}
+              <div className="border-t border-white/10 pt-4">
+                <h3 className="font-pixel text-[8px] text-white/50 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                  <GraduationCap size={11} className="text-[#F5C518]" /> Your teacher&apos;s class
+                </h3>
+                {data.myClass ? (
+                  <p className="font-pixel text-[7px] text-white/35 leading-loose">
+                    Connected to <span className="text-[#F5C518]">{data.myClass.name}</span> — your
+                    teacher can see this lab&apos;s progress.
+                  </p>
+                ) : (
+                  <p className="font-pixel text-[7px] text-white/35 leading-loose">
+                    Not linked to a teacher yet. Enter the class code from your teacher so they can
+                    follow your lab.
+                  </p>
+                )}
+                <form onSubmit={joinClass} className="flex items-center gap-2 mt-3">
+                  <input
+                    value={classCode}
+                    onChange={(e) => setClassCode(e.target.value.toUpperCase())}
+                    placeholder={data.myClass ? 'Switch class code' : 'Class code'}
+                    maxLength={32}
+                    className="flex-1 min-w-0 bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.2em] px-3 py-2.5 rounded-sm outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30 placeholder:tracking-normal"
+                  />
+                  <button
+                    type="submit"
+                    disabled={joining || !classCode.trim()}
+                    className="shrink-0 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2.5 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center justify-center gap-1.5"
+                  >
+                    {joining ? <Loader2 size={11} className="animate-spin" /> : null}
+                    {data.myClass ? 'Switch' : 'Join'}
+                  </button>
+                </form>
+                {classError && (
+                  <p className="font-pixel text-[7px] text-red-400 mt-2">{classError}</p>
+                )}
               </div>
 
               {/* Invite (lead only) */}

@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
       name: true,
       teamLeadId: true,
       maxMembers: true,
+      researchIdea: true,
+      labType: true,
       members: {
         orderBy: { joinedAt: 'asc' },
         select: { userId: true, role: true, user: { select: { name: true } } },
@@ -34,6 +36,13 @@ export async function GET(req: NextRequest) {
 
   const isLead = team.teamLeadId === ctx.dbUserId
 
+  // The caller's own classroom (if they've joined a teacher's class), so the lab
+  // panel can show whether this lab is linked to a teacher. Scoped to self.
+  const me = await db.user.findUnique({
+    where: { id: ctx.dbUserId },
+    select: { class: { select: { id: true, name: true } } },
+  })
+
   // Only the literature_review gate is implemented; other phases report no gate.
   const advance =
     ctx.phase === 'literature_review'
@@ -47,6 +56,8 @@ export async function GET(req: NextRequest) {
     maxMembers: team.maxMembers,
     memberCount: team.members.length,
     isLead,
+    researchIdea: team.researchIdea ?? null,
+    labType: team.labType ?? null,
     members: team.members.map((m) => ({
       name: m.user.name,
       role: m.role,
@@ -54,6 +65,7 @@ export async function GET(req: NextRequest) {
     })),
     // The join code is sensitive to the team — only expose it to the lead.
     invite: isLead ? team.invites[0] ?? null : null,
+    myClass: me?.class ?? null,
     advance,
   })
 }

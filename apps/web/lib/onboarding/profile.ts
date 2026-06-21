@@ -1,3 +1,4 @@
+import { clerkClient } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
 import { normalizeInviteCode } from '@/lib/team/invite'
 
@@ -72,3 +73,24 @@ export async function applySchoolAndClass(
  */
 export const DEV_DEFAULT_HIGH_SCHOOL =
   process.env.NODE_ENV !== 'production' ? 'Santa Clara High School' : ''
+
+/**
+ * Mirror a user's display name into their Clerk profile (first/last name) so the
+ * Clerk-managed avatar/account stay consistent with our DB `User.name`. Splits on
+ * the first space. Best-effort: a Clerk hiccup must never fail the caller's primary
+ * write, so failures are logged, not thrown. Shared by settings + every onboarding
+ * path so the names never drift.
+ */
+export async function syncClerkDisplayName(clerkUserId: string, name: string): Promise<void> {
+  const trimmed = name.trim()
+  if (!trimmed) return
+  const sp = trimmed.indexOf(' ')
+  const firstName = sp === -1 ? trimmed : trimmed.slice(0, sp)
+  const lastName = sp === -1 ? '' : trimmed.slice(sp + 1)
+  try {
+    const cc = await clerkClient()
+    await cc.users.updateUser(clerkUserId, { firstName, lastName })
+  } catch (err) {
+    console.error('[profile] failed to sync display name to Clerk:', err)
+  }
+}

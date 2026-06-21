@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { UserButton } from '@clerk/nextjs'
+import { FlaskConical, Settings } from 'lucide-react'
 import { PHASE_INFO, LAB_TYPE_LABELS, type Phase, type LabType } from '@/lib/phase'
 import { NotificationBell } from './NotificationBell'
+import { LabProfileSettings } from '@/components/settings/LabProfileSettings'
 
 export interface Currency {
   kp: number
@@ -22,6 +24,7 @@ export function StatusStrip({
   labType,
   currency,
   onOpenTeam,
+  onOpenSettings,
 }: {
   teamName: string
   phase: Phase
@@ -29,6 +32,8 @@ export function StatusStrip({
   currency: Currency
   /** Opens the Team panel (roster + invite codes). */
   onOpenTeam?: () => void
+  /** Opens the Settings popup (profile, lab, topic, research plan). */
+  onOpenSettings?: () => void
 }) {
   const phaseInfo = PHASE_INFO[phase]
 
@@ -61,7 +66,28 @@ export function StatusStrip({
           {phaseInfo.label.toUpperCase()}
         </span>
         <NotificationBell />
-        <UserButton afterSignOutUrl="/" />
+        {onOpenSettings && (
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            title="Settings — edit your profile, lab, topic & research plan"
+            aria-label="Settings"
+            className="text-white/50 hover:text-[#F5C518] transition-colors flex items-center"
+          >
+            <Settings size={16} />
+          </button>
+        )}
+        <UserButton afterSignOutUrl="/">
+          {/* A custom page must be a DIRECT child of <UserButton> — Clerk ignores
+              wrapper components, so the page slot is inlined here, not abstracted. */}
+          <UserButton.UserProfilePage
+            label="Lab & Profile"
+            labelIcon={<FlaskConical size={14} />}
+            url="lab-profile"
+          >
+            <LabProfileSettings />
+          </UserButton.UserProfilePage>
+        </UserButton>
       </div>
     </div>
   )

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
 import { normalizeInviteCode } from '@/lib/team/invite'
-import { applySchoolAndClass } from '@/lib/onboarding/profile'
+import { applySchoolAndClass, syncClerkDisplayName } from '@/lib/onboarding/profile'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
@@ -59,6 +59,9 @@ export async function POST(req: NextRequest) {
 
   // Ingest the joiner's high school + optional classroom (same rules as create).
   await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => {})
+
+  // Mirror the display name into Clerk so the avatar/account match from day one.
+  await syncClerkDisplayName(userId, user.name)
 
   try {
     const teamId = await db.$transaction(async (tx) => {

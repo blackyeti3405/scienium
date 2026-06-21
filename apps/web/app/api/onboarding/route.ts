@@ -5,7 +5,7 @@ import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { isValidZip, zipToState, geocodeZip } from '@/lib/fairs/zip'
-import { applySchoolAndClass } from '@/lib/onboarding/profile'
+import { applySchoolAndClass, syncClerkDisplayName } from '@/lib/onboarding/profile'
 
 // Names are capped so a client can't store unbounded text; `.strict()` rejects
 // any field other than these.
@@ -63,6 +63,9 @@ export async function POST(req: NextRequest) {
   // Ingest the student's high school (find-or-create) and optional classroom.
   // Non-fatal — a school lookup hiccup must not block lab creation.
   await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => {})
+
+  // Mirror the display name into Clerk so the avatar/account match from day one.
+  await syncClerkDisplayName(userId, user.name)
 
   const team = await db.team.create({
     data: {

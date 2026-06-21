@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  MapPin,
   CalendarClock,
   ExternalLink,
   Loader2,
@@ -10,7 +9,6 @@ import {
   Trophy,
   Award,
   AlertTriangle,
-  Pencil,
   ClipboardList,
   LayoutGrid,
   Bell,
@@ -185,8 +183,6 @@ export function ScienceFairFeature() {
         </div>
       ) : data ? (
         <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-          <LocationBar location={data.location} onSaved={load} />
-
           {data.location.state ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <FairCard
@@ -206,7 +202,8 @@ export function ScienceFairFeature() {
           ) : (
             <div className="border border-dashed border-white/15 rounded-sm p-6 text-center">
               <p className="font-pixel text-[8px] text-white/45 leading-loose">
-                Set your ZIP code above to find your regional and state fairs.
+                Add your ZIP in your account settings (top-right avatar → Lab &amp; Profile) to find
+                your regional and state fairs.
               </p>
               <div className="mt-4">
                 <FairCard fair={fairs?.isef ?? null} kind="ISEF" onSynced={patchEvent} />
@@ -227,84 +224,6 @@ export function ScienceFairFeature() {
           <IsefRubric />
         </div>
       ) : null}
-    </div>
-  )
-}
-
-// ─── Location bar ─────────────────────────────────────────────────────────────
-
-function LocationBar({
-  location,
-  onSaved,
-}: {
-  location: { zip: string | null; state: string | null }
-  onSaved: () => void
-}) {
-  const [editing, setEditing] = useState(!location.zip)
-  const [zip, setZip] = useState(location.zip ?? '')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function save() {
-    setSaving(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/team/location', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ zip }),
-      })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error ?? 'Could not save location')
-      setEditing(false)
-      onSaved()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save location')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (!editing && location.zip) {
-    return (
-      <div className="flex items-center gap-2">
-        <MapPin size={13} className="text-[#F5C518]" />
-        <span className="font-pixel text-[8px] text-white/60">
-          {location.zip} · {location.state}
-        </span>
-        <button
-          onClick={() => setEditing(true)}
-          className="font-pixel text-[7px] text-white/35 hover:text-white/60 flex items-center gap-1"
-        >
-          <Pencil size={9} /> change
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest flex items-center gap-1.5">
-        <MapPin size={11} className="text-[#F5C518]" /> Your ZIP code (US)
-      </label>
-      <div className="flex items-center gap-2">
-        <input
-          value={zip}
-          onChange={(e) => setZip(e.target.value)}
-          placeholder="90089"
-          maxLength={10}
-          className="w-40 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30"
-          onKeyDown={(e) => e.key === 'Enter' && save()}
-        />
-        <button
-          onClick={save}
-          disabled={saving || zip.trim().length < 5}
-          className="font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all"
-        >
-          {saving ? <Loader2 size={11} className="animate-spin" /> : 'Find my fairs'}
-        </button>
-      </div>
-      {error && <p className="font-pixel text-[7px] text-red-400">{error}</p>}
     </div>
   )
 }
