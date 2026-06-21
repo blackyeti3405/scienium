@@ -20,22 +20,27 @@ model User {
   isMinor     Boolean  @default(true) @map("is_minor")
   createdAt   DateTime @default(now()) @map("created_at")
 
-  school              School?              @relation(fields: [schoolId], references: [id])
-  class               Class?               @relation(fields: [classId], references: [id])
-  teamMemberships     TeamMember[]
-  figurineUnlocks     FigurineUnlock[]
-  parentalConsents    ParentalConsent[]
-  projectLogEntries   ProjectLog[]
-  projectLogEdits     ProjectLog[]         @relation("projectLogEditor")
-  discoveryNodes      DiscoveryNode[]
-  fieldDispatchResp   FieldDispatchResponse[]
-  expertiseAttempts   ExpertiseAttempt[]
-  expertiseExams      ExpertiseExam[]
-  shopPurchases       TeamShopBuilding[]
-  miniGamePlays       MiniGamePlay[]
-  rubricAssessments   RubricSelfAssessment[]
-  activityFeedEntries ActivityFeed[]
-  paperProficiencies  PaperProficiency[]
+  school               School?                 @relation(fields: [schoolId], references: [id])
+  class                Class?                  @relation(fields: [classId], references: [id])
+  classesTeaching      Class[]                 @relation("classTeacher")
+  teamMemberships      TeamMember[]
+  projectLogEntries    ProjectLog[]
+  projectLogEdits      ProjectLog[]            @relation("projectLogEditor")
+  discoveryNodes       DiscoveryNode[]
+  fieldDispatchResp    FieldDispatchResponse[]
+  expertiseAttempts    ExpertiseAttempt[]
+  expertiseExams       ExpertiseExam[]
+  shopPurchases        TeamShopBuilding[]
+  miniGamePlays        MiniGamePlay[]
+  rubricAssessments    RubricSelfAssessment[]
+  activityFeedEntries  ActivityFeed[]
+  paperProficiencies   PaperProficiency[]
+  advanceRequestsMade  PhaseAdvanceRequest[]   @relation("advanceRequester")
+  advanceReviews       PhaseAdvanceRequest[]   @relation("advanceReviewer")
+  teacherFeedbackGiven TeacherFeedback[]       @relation("teacherFeedbackAuthor")
+  notifications        Notification[]
+  notificationPref     NotificationPref?
+  experiments          Experiment[]            @relation("experimentAuthor")
 
   @@map("users")
 }
@@ -48,63 +53,60 @@ enum UserRole {
   @@map("user_role")
 }
 
+// A school is created on demand by name during onboarding (find-or-create), so
+// `adminId` is optional — a pilot student can register their high school without
+// a pre-provisioned admin account.
 model School {
-  id      String @id @default(cuid())
-  name    String
-  adminId String @map("admin_id")
+  id      String  @id @default(cuid())
+  name    String  @unique
+  adminId String? @map("admin_id")
   users   User[]
   classes Class[]
 
   @@map("schools")
 }
 
+// A teacher's classroom. Students join with the reusable `joinCode` (unlike the
+// single-use team invite, a classroom code is long-lived so a whole class can
+// redeem it). The teacher owns it via `teacherId`.
 model Class {
-  id        String @id @default(cuid())
-  schoolId  String @map("school_id")
+  id        String   @id @default(cuid())
+  schoolId  String   @map("school_id")
   name      String
-  teacherId String @map("teacher_id")
-  school    School @relation(fields: [schoolId], references: [id])
+  teacherId String   @map("teacher_id")
+  joinCode  String?  @unique @map("join_code")
+  createdAt DateTime @default(now()) @map("created_at")
+  school    School   @relation(fields: [schoolId], references: [id])
+  teacher   User     @relation("classTeacher", fields: [teacherId], references: [id])
   users     User[]
 
   @@map("classes")
 }
 
-model ParentalConsent {
-  id          String    @id @default(cuid())
-  userId      String    @map("user_id")
-  consentType String    @map("consent_type")
-  grantedAt   DateTime  @map("granted_at")
-  revokedAt   DateTime? @map("revoked_at")
-  evidenceUrl String?   @map("evidence_url")
-  user        User      @relation(fields: [userId], references: [id])
-
-  @@map("parental_consents")
-}
-
 // ─── Teams ───────────────────────────────────────────────────────────────────
 
 model Team {
-  id         String   @id @default(cuid())
-  name       String
-  teamLeadId String   @map("team_lead_id")
-  labType    LabType? @map("lab_type")
-  topic      String?
-  phase      ProjectPhase @default(discovery)
+  id            String       @id @default(cuid())
+  name          String
+  teamLeadId    String       @map("team_lead_id")
+  labType       LabType?     @map("lab_type")
+  topic         String?
+  phase         ProjectPhase @default(discovery)
   // Cap on how many students may join this lab. Building costs scale with the
   // live member count (lib/shop.ts), so a bigger team earns more KP but pays more.
-  maxMembers Int      @default(3) @map("max_members")
+  maxMembers    Int          @default(3) @map("max_members")
   // US location (Feature 3) — drives Science Fair matching. ZIP is captured at
   // onboarding; `locationState` is the 2-letter code derived from it (lib/fairs/zip.ts).
-  locationZip   String?  @map("location_zip")
-  locationState String?  @map("location_state")
+  locationZip   String?      @map("location_zip")
+  locationState String?      @map("location_state")
   // Geocoded coordinates for the team's ZIP — more accurate than state centroid
   // for ordering regional fairs. Set at onboarding / location update via Nominatim.
-  locationLat   Float?   @map("location_lat")
-  locationLng   Float?   @map("location_lng")
+  locationLat   Float?       @map("location_lat")
+  locationLng   Float?       @map("location_lng")
   // One-sentence research idea submitted at the end of lit review — used to
   // auto-assign lab type via Haiku classification before entering research_planning.
-  researchIdea  String?  @map("research_idea")
-  createdAt  DateTime @default(now()) @map("created_at")
+  researchIdea  String?      @map("research_idea")
+  createdAt     DateTime     @default(now()) @map("created_at")
 
   members         TeamMember[]
   currency        TeamCurrency?
@@ -124,6 +126,10 @@ model Team {
   showcase        Showcase?
   formStatuses    TeamFormStatus[]
   activityFeed    ActivityFeed[]
+  advanceRequests PhaseAdvanceRequest[]
+  teacherFeedback TeacherFeedback[]
+  notifications   Notification[]
+  experiments     Experiment[]
 
   @@map("teams")
 }
@@ -145,12 +151,12 @@ model TeamInvite {
 }
 
 model TeamMember {
-  userId    String     @map("user_id")
-  teamId    String     @map("team_id")
-  role      MemberRole @default(member)
-  joinedAt  DateTime   @default(now()) @map("joined_at")
-  user      User       @relation(fields: [userId], references: [id])
-  team      Team       @relation(fields: [teamId], references: [id])
+  userId   String     @map("user_id")
+  teamId   String     @map("team_id")
+  role     MemberRole @default(member)
+  joinedAt DateTime   @default(now()) @map("joined_at")
+  user     User       @relation(fields: [userId], references: [id])
+  team     Team       @relation(fields: [teamId], references: [id])
 
   @@id([userId, teamId])
   @@map("team_members")
@@ -188,12 +194,12 @@ enum ProjectPhase {
 // ─── Currency ────────────────────────────────────────────────────────────────
 
 model TeamCurrency {
-  teamId         String @id @map("team_id")
-  kp             Int    @default(0)
-  clearanceLevel Int    @default(0) @map("clearance_level")
-  lc             Int    @default(0)
+  teamId         String   @id @map("team_id")
+  kp             Int      @default(0)
+  clearanceLevel Int      @default(0) @map("clearance_level")
+  lc             Int      @default(0)
   updatedAt      DateTime @updatedAt @map("updated_at")
-  team           Team   @relation(fields: [teamId], references: [id])
+  team           Team     @relation(fields: [teamId], references: [id])
 
   @@map("team_currency")
 }
@@ -213,10 +219,10 @@ model DiscoveryNode {
   visitedByUserId String          @map("visited_by_user_id")
   visitedAt       DateTime        @default(now()) @map("visited_at")
 
-  team        Team          @relation(fields: [teamId], references: [id])
-  visitedBy   User          @relation(fields: [visitedByUserId], references: [id])
-  parent      DiscoveryNode? @relation("tree", fields: [parentId], references: [id])
-  children    DiscoveryNode[] @relation("tree")
+  team      Team            @relation(fields: [teamId], references: [id])
+  visitedBy User            @relation(fields: [visitedByUserId], references: [id])
+  parent    DiscoveryNode?  @relation("tree", fields: [parentId], references: [id])
+  children  DiscoveryNode[] @relation("tree")
 
   @@map("discovery_nodes")
 }
@@ -259,22 +265,15 @@ model Paper {
   pdfKey           String?     @map("pdf_key")
   pdfData          Bytes?      @map("pdf_data")
   status           PaperStatus @default(pending)
-  // ── Legacy team-global proficiency/KP (transitional fallback) ──
-  // Proficiency and the KP high-water mark are now tracked PER STUDENT in
-  // `PaperProficiency` so each member earns independently. These two columns are
-  // kept one release as a backfill source / fallback (mirrors `pdf_data`); a
-  // cleanup migration drops them once the new table is confirmed (see TODO.md).
-  proficiencyDemonstrated Boolean @default(false) @map("proficiency_demonstrated")
-  kpAwarded        Int         @default(0) @map("kp_awarded")
   uploadedByUserId String      @map("uploaded_by_user_id")
   createdAt        DateTime    @default(now()) @map("created_at")
 
-  team            Team              @relation(fields: [teamId], references: [id])
-  quizSessions    PaperQuizSession[]
-  quizAttempts    PaperQuizAttempt[]
-  relevanceNotes  PaperRelevanceNote[]
-  chatMessages    PaperChatMessage[]
-  proficiencies   PaperProficiency[]
+  team           Team                 @relation(fields: [teamId], references: [id])
+  quizSessions   PaperQuizSession[]
+  quizAttempts   PaperQuizAttempt[]
+  relevanceNotes PaperRelevanceNote[]
+  chatMessages   PaperChatMessage[]
+  proficiencies  PaperProficiency[]
 
   @@map("papers")
 }
@@ -294,8 +293,8 @@ model PaperProficiency {
   kpAwarded    Int      @default(0) @map("kp_awarded")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  paper        Paper    @relation(fields: [paperId], references: [id])
-  user         User     @relation(fields: [userId], references: [id])
+  paper Paper @relation(fields: [paperId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
 
   @@id([paperId, userId])
   @@map("paper_proficiency")
@@ -305,7 +304,7 @@ model PaperChatMessage {
   id        String   @id @default(cuid())
   paperId   String   @map("paper_id")
   userId    String   @map("user_id")
-  role      String   // 'user' | 'assistant'
+  role      String // 'user' | 'assistant'
   content   String
   createdAt DateTime @default(now()) @map("created_at")
   paper     Paper    @relation(fields: [paperId], references: [id])
@@ -333,15 +332,15 @@ enum PaperStatus {
 // A single quiz attempt: a generated set of questions (with keys) and, once
 // submitted, the per-question grades and aggregate result.
 model PaperQuizSession {
-  id            String   @id @default(cuid())
-  paperId       String   @map("paper_id")
-  userId        String   @map("user_id")
+  id            String    @id @default(cuid())
+  paperId       String    @map("paper_id")
+  userId        String    @map("user_id")
   // [{ id, prompt, focus, key }] — `key` is server-only, never sent to client
-  questionsJson Json     @map("questions_json")
-  score         Int?     // aggregate 0-100, set on grading
-  passed        Boolean  @default(false)
+  questionsJson Json      @map("questions_json")
+  score         Int? // aggregate 0-100, set on grading
+  passed        Boolean   @default(false)
   gradedAt      DateTime? @map("graded_at")
-  createdAt     DateTime @default(now()) @map("created_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
 
   paper    Paper              @relation(fields: [paperId], references: [id])
   attempts PaperQuizAttempt[]
@@ -350,15 +349,15 @@ model PaperQuizSession {
 }
 
 model PaperQuizAttempt {
-  id         String   @id @default(cuid())
-  sessionId  String   @map("session_id")
-  paperId    String   @map("paper_id")
-  userId     String   @map("user_id")
+  id         String           @id @default(cuid())
+  sessionId  String           @map("session_id")
+  paperId    String           @map("paper_id")
+  userId     String           @map("user_id")
   question   String
   response   String
   evaluation String
-  score      Int      @default(0)
-  createdAt  DateTime @default(now()) @map("created_at")
+  score      Int              @default(0)
+  createdAt  DateTime         @default(now()) @map("created_at")
   paper      Paper            @relation(fields: [paperId], references: [id])
   session    PaperQuizSession @relation(fields: [sessionId], references: [id])
 
@@ -366,11 +365,11 @@ model PaperQuizAttempt {
 }
 
 model PaperRelevanceNote {
-  paperId   String @map("paper_id")
-  userId    String @map("user_id")
+  paperId   String   @map("paper_id")
+  userId    String   @map("user_id")
   response  String
   createdAt DateTime @default(now()) @map("created_at")
-  paper     Paper  @relation(fields: [paperId], references: [id])
+  paper     Paper    @relation(fields: [paperId], references: [id])
 
   @@id([paperId, userId])
   @@map("paper_relevance_notes")
@@ -383,22 +382,22 @@ model PaperRelevanceNote {
 // on demand (lib/research-plan/google-doc.ts — OAuth deferred, see TODO.md). The
 // project type/subtype selects the rubric the AI review grades against.
 model ResearchPlan {
-  teamId         String    @id @map("team_id")
-  googleDocUrl   String?   @map("google_doc_url")
-  projectType    String?   @map("project_type")     // 'engineering' | 'science'
-  projectSubtype String?   @map("project_subtype")  // e.g. 'robotics', 'biology'
-  lastSyncedText String?   @map("last_synced_text")
-  lastSyncedAt   DateTime? @map("last_synced_at")
+  teamId            String    @id @map("team_id")
+  googleDocUrl      String?   @map("google_doc_url")
+  projectType       String?   @map("project_type") // 'engineering' | 'science'
+  projectSubtype    String?   @map("project_subtype") // e.g. 'robotics', 'biology'
+  lastSyncedText    String?   @map("last_synced_text")
+  lastSyncedAt      DateTime? @map("last_synced_at")
   // Latest AI review of the synced plan; replaced on each re-review so it
   // persists across reloads and never piles up.
-  lastReviewJson Json?     @map("last_review_json")
-  lastReviewedAt DateTime? @map("last_reviewed_at")
+  lastReviewJson    Json?     @map("last_review_json")
+  lastReviewedAt    DateTime? @map("last_reviewed_at")
   // Latest idea-check result ({ verdict, findings }); replaced on each re-run.
   // (The `IdeaCheck` table is only the per-day rate-limit ledger.)
   lastIdeaCheckJson Json?     @map("last_idea_check_json")
   lastIdeaCheckAt   DateTime? @map("last_idea_check_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   team Team @relation(fields: [teamId], references: [id])
 
@@ -458,12 +457,12 @@ enum MiniGameCategory {
 }
 
 model TeamBuilding {
-  id                  String   @id @default(cuid())
-  teamId              String   @map("team_id")
-  buildingId          String   @map("building_id")
-  currentLevel        Int      @default(1) @map("current_level")
-  lastUpgradedByUserId String? @map("last_upgraded_by_user_id")
-  lastUpgradedAt      DateTime? @map("last_upgraded_at")
+  id                   String    @id @default(cuid())
+  teamId               String    @map("team_id")
+  buildingId           String    @map("building_id")
+  currentLevel         Int       @default(1) @map("current_level")
+  lastUpgradedByUserId String?   @map("last_upgraded_by_user_id")
+  lastUpgradedAt       DateTime? @map("last_upgraded_at")
 
   team     Team     @relation(fields: [teamId], references: [id])
   building Building @relation(fields: [buildingId], references: [id])
@@ -484,7 +483,7 @@ model TeamShopBuilding {
   purchasedByUserId String   @map("purchased_by_user_id")
   purchasedAt       DateTime @default(now()) @map("purchased_at")
 
-  team       Team @relation(fields: [teamId], references: [id])
+  team        Team @relation(fields: [teamId], references: [id])
   purchasedBy User @relation(fields: [purchasedByUserId], references: [id])
 
   @@unique([teamId, buildingKey])
@@ -502,6 +501,10 @@ model FieldDispatchContent {
 
   responses FieldDispatchResponse[]
 
+  // One dispatch per lab type per day; the "today" lookup hits this index and
+  // the unique pair keeps the weekly cron idempotent (re-run upserts in place).
+  @@unique([labType, publishedDate])
+  @@index([labType, publishedDate])
   @@map("field_dispatch_content")
 }
 
@@ -516,6 +519,9 @@ model FieldDispatchResponse {
   user    User                 @relation(fields: [userId], references: [id])
   content FieldDispatchContent @relation(fields: [contentId], references: [id])
 
+  // A student answers each day's dispatch at most once — the KP award reads this
+  // unique pair so a double-submit can't double-pay.
+  @@unique([userId, contentId])
   @@map("field_dispatch_responses")
 }
 
@@ -537,7 +543,7 @@ model ExpertiseExam {
   // the panel (rather than regenerating a fresh one). Null until the first answer.
   answersJson   Json?     @map("answers_json")
   progressIndex Int       @default(0) @map("progress_index")
-  score         Int?      // aggregate 0-100, set on grading
+  score         Int? // aggregate 0-100, set on grading
   passed        Boolean   @default(false)
   gradedAt      DateTime? @map("graded_at")
   createdAt     DateTime  @default(now()) @map("created_at")
@@ -567,25 +573,25 @@ model ExpertiseAttempt {
 }
 
 model ProjectLog {
-  id              String           @id @default(cuid())
-  teamId          String           @map("team_id")
-  entryType       ProjectLogEntry  @map("entry_type")
-  stage           String?
-  body            String
-  nextSteps       String           @default("") @map("next_steps")
-  attendeeIds     String[]         @default([]) @map("attendee_ids")
-  artifactUrl     String?          @map("artifact_url")
-  attachmentUrls  String[]         @default([]) @map("attachment_urls")
-  createdByUserId String           @map("created_by_user_id")
-  createdAt       DateTime         @default(now()) @map("created_at")
+  id                 String          @id @default(cuid())
+  teamId             String          @map("team_id")
+  entryType          ProjectLogEntry @map("entry_type")
+  stage              String?
+  body               String
+  nextSteps          String          @default("") @map("next_steps")
+  attendeeIds        String[]        @default([]) @map("attendee_ids")
+  artifactUrl        String?         @map("artifact_url")
+  attachmentUrls     String[]        @default([]) @map("attachment_urls")
+  createdByUserId    String          @map("created_by_user_id")
+  createdAt          DateTime        @default(now()) @map("created_at")
   // Logs are shared across the team — anyone may edit. Track the last editor so
   // the entry can show "edited by …" (null until first edited by someone).
-  lastEditedByUserId String?       @map("last_edited_by_user_id")
-  lastEditedAt       DateTime?     @map("last_edited_at")
+  lastEditedByUserId String?         @map("last_edited_by_user_id")
+  lastEditedAt       DateTime?       @map("last_edited_at")
 
-  team         Team               @relation(fields: [teamId], references: [id])
-  createdBy    User               @relation(fields: [createdByUserId], references: [id])
-  lastEditedBy User?              @relation("projectLogEditor", fields: [lastEditedByUserId], references: [id])
+  team         Team                  @relation(fields: [teamId], references: [id])
+  createdBy    User                  @relation(fields: [createdByUserId], references: [id])
+  lastEditedBy User?                 @relation("projectLogEditor", fields: [lastEditedByUserId], references: [id])
   followups    ProjectLogFollowup[]
   references   ProjectLogReference[] @relation("from")
   referencedBy ProjectLogReference[] @relation("to")
@@ -601,21 +607,21 @@ enum ProjectLogEntry {
 }
 
 model ProjectLogFollowup {
-  id           String   @id @default(cuid())
-  projectLogId String   @map("project_log_id")
+  id           String     @id @default(cuid())
+  projectLogId String     @map("project_log_id")
   question     String
   response     String
-  createdAt    DateTime @default(now()) @map("created_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
   log          ProjectLog @relation(fields: [projectLogId], references: [id])
 
   @@map("project_log_followups")
 }
 
 model ProjectLogReference {
-  projectLogId     String     @map("project_log_id")
-  referencesLogId  String     @map("references_log_id")
-  from             ProjectLog @relation("from", fields: [projectLogId], references: [id])
-  to               ProjectLog @relation("to", fields: [referencesLogId], references: [id])
+  projectLogId    String     @map("project_log_id")
+  referencesLogId String     @map("references_log_id")
+  from            ProjectLog @relation("from", fields: [projectLogId], references: [id])
+  to              ProjectLog @relation("to", fields: [referencesLogId], references: [id])
 
   @@id([projectLogId, referencesLogId])
   @@map("project_log_references")
@@ -634,28 +640,135 @@ model MiniGamePlay {
   @@map("mini_game_plays")
 }
 
-// ─── Figurines ───────────────────────────────────────────────────────────────
+// ─── Teacher Dashboard ───────────────────────────────────────────────────────
 
-model FigurineUnlock {
-  id              String       @id @default(cuid())
-  userId          String       @map("user_id")
-  figurineTier    FigurineTier @map("figurine_tier")
-  labTypeVariant  LabType?     @map("lab_type_variant")
-  qrToken         String       @unique @map("qr_token")
-  unlockedAt      DateTime     @default(now()) @map("unlocked_at")
-  user            User         @relation(fields: [userId], references: [id])
+// A team's request to cross a teacher-gated phase boundary. The figurine system
+// was removed; instead the two real-world milestones (starting data collection →
+// `working`, advancing to competition → `showcase`) require a teacher to approve
+// a request in the teacher dashboard. The earlier literature_review →
+// research_planning gate stays auto/self-serve (it's mechanically checkable).
+model PhaseAdvanceRequest {
+  id                String           @id @default(cuid())
+  teamId            String           @map("team_id")
+  fromPhase         ProjectPhase     @map("from_phase")
+  toPhase           ProjectPhase     @map("to_phase")
+  status            ValidationStatus @default(pending)
+  note              String?
+  requestedByUserId String           @map("requested_by_user_id")
+  reviewedByUserId  String?          @map("reviewed_by_user_id")
+  reviewedAt        DateTime?        @map("reviewed_at")
+  reviewNote        String?          @map("review_note")
+  createdAt         DateTime         @default(now()) @map("created_at")
 
-  @@map("figurine_unlocks")
+  team        Team  @relation(fields: [teamId], references: [id])
+  requestedBy User  @relation("advanceRequester", fields: [requestedByUserId], references: [id])
+  reviewedBy  User? @relation("advanceReviewer", fields: [reviewedByUserId], references: [id])
+
+  @@index([teamId, status])
+  @@index([status])
+  @@map("phase_advance_requests")
 }
 
-enum FigurineTier {
-  apprentice
-  analyst
-  experimenter
-  presenter
-  pioneer
+enum ValidationStatus {
+  pending
+  approved
+  rejected
 
-  @@map("figurine_tier")
+  @@map("validation_status")
+}
+
+// Free-text feedback a teacher attaches to a team (optionally to a specific
+// target like a project log or paper). Visible to the team in their own view.
+model TeacherFeedback {
+  id            String   @id @default(cuid())
+  teamId        String   @map("team_id")
+  teacherUserId String   @map("teacher_user_id")
+  targetType    String   @map("target_type") // 'team' | 'project_log' | 'paper' | 'showcase'
+  targetId      String?  @map("target_id")
+  body          String
+  resolved      Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  team    Team @relation(fields: [teamId], references: [id])
+  teacher User @relation("teacherFeedbackAuthor", fields: [teacherUserId], references: [id])
+
+  @@index([teamId])
+  @@map("teacher_feedback")
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+// An in-app notification. `userId` null means the whole team. `dedupeKey` is
+// UNIQUE so the daily cron is idempotent — re-running never double-inserts the
+// same "regional fair in 7 days" reminder.
+model Notification {
+  id        String    @id @default(cuid())
+  teamId    String    @map("team_id")
+  userId    String?   @map("user_id")
+  kind      String // 'fair_deadline' | 'urgency' | 'teacher_feedback' | 'phase_reviewed'
+  title     String
+  body      String
+  linkUrl   String?   @map("link_url")
+  dedupeKey String    @unique @map("dedupe_key")
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  team Team  @relation(fields: [teamId], references: [id])
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([teamId, createdAt])
+  @@map("notifications")
+}
+
+model NotificationPref {
+  userId       String   @id @map("user_id")
+  emailEnabled Boolean  @default(false) @map("email_enabled")
+  email        String?
+  // Days-before-deadline to fire reminders at (default 30/14/7/1).
+  deadlineDays Int[]    @default([30, 14, 7, 1]) @map("deadline_days")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notification_prefs")
+}
+
+// ─── Data Terminal ───────────────────────────────────────────────────────────
+
+// Experiment tracking + graphing (unlocked at `working`). An experiment is a
+// titled x/y dataset; measurements are its points, optionally grouped by series.
+model Experiment {
+  id              String   @id @default(cuid())
+  teamId          String   @map("team_id")
+  title           String
+  description     String   @default("")
+  xLabel          String   @default("x") @map("x_label")
+  yLabel          String   @default("y") @map("y_label")
+  createdByUserId String   @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  team         Team          @relation(fields: [teamId], references: [id])
+  createdBy    User          @relation("experimentAuthor", fields: [createdByUserId], references: [id])
+  measurements Measurement[]
+
+  @@index([teamId])
+  @@map("experiments")
+}
+
+model Measurement {
+  id           String   @id @default(cuid())
+  experimentId String   @map("experiment_id")
+  series       String   @default("")
+  x            Float
+  y            Float
+  note         String?
+  recordedAt   DateTime @default(now()) @map("recorded_at")
+
+  experiment Experiment @relation(fields: [experimentId], references: [id])
+
+  @@index([experimentId])
+  @@map("measurements")
 }
 
 // ─── Showcase ────────────────────────────────────────────────────────────────
@@ -700,27 +813,27 @@ enum ModerationStatus {
 }
 
 model ShowcaseAsset {
-  id          String      @id @default(cuid())
-  showcaseId  String      @map("showcase_id")
-  assetType   AssetType   @map("asset_type")
-  fileUrl     String?     @map("file_url")
-  metadataJson Json?      @map("metadata_json")
-  uploadedAt  DateTime    @default(now()) @map("uploaded_at")
-  showcase    Showcase    @relation(fields: [showcaseId], references: [id])
+  id           String    @id @default(cuid())
+  showcaseId   String    @map("showcase_id")
+  assetType    AssetType @map("asset_type")
+  fileUrl      String?   @map("file_url")
+  metadataJson Json?     @map("metadata_json")
+  uploadedAt   DateTime  @default(now()) @map("uploaded_at")
+  showcase     Showcase  @relation(fields: [showcaseId], references: [id])
 
   @@map("showcase_assets")
 }
 
 enum AssetType {
   script
-  board        // PDF of the project board (required)
-  quad_chart   // PDF or image quad chart (required)
-  video        // the required ~2-minute project video (link)
-  demo_video   // optional additional demo videos (links)
-  supplement   // optional supplemental-information links
-  visual       // (legacy, unused)
-  report       // (legacy, unused)
-  repo_link    // optional GitHub / code link
+  board // PDF of the project board (required)
+  quad_chart // PDF or image quad chart (required)
+  video // the required ~2-minute project video (link)
+  demo_video // optional additional demo videos (links)
+  supplement // optional supplemental-information links
+  visual // (legacy, unused)
+  report // (legacy, unused)
+  repo_link // optional GitHub / code link
 
   @@map("asset_type")
 }
@@ -738,20 +851,20 @@ model ShowcaseView {
 // ─── Science Fair Hub ────────────────────────────────────────────────────────
 
 model Fair {
-  id          String    @id @default(cuid())
-  name        String
-  level       FairLevel
-  state       String?
-  county      String?
-  country     String    @default("US")
-  websiteUrl  String?   @map("website_url")
-  parentFairId String?  @map("parent_fair_id")
+  id           String    @id @default(cuid())
+  name         String
+  level        FairLevel
+  state        String?
+  county       String?
+  country      String    @default("US")
+  websiteUrl   String?   @map("website_url")
+  parentFairId String?   @map("parent_fair_id")
   // Representative coordinates (host city / state centre) for nearest-fair
   // matching against a team's location (Feature 3, lib/fairs/match.ts).
-  latitude    Float?
-  longitude   Float?
+  latitude     Float?
+  longitude    Float?
   // Stable natural key from the seed dataset, so re-seeding upserts in place.
-  seedKey     String?   @unique @map("seed_key")
+  seedKey      String?   @unique @map("seed_key")
 
   events     FairEvent[]
   userAssocs FairUserAssociation[]
@@ -770,15 +883,15 @@ enum FairLevel {
 }
 
 model FairEvent {
-  id                    String      @id @default(cuid())
-  fairId                String      @map("fair_id")
-  year                  Int
-  eventDate             DateTime?   @map("event_date")
-  registrationDeadline  DateTime?   @map("registration_deadline")
-  abstractDeadline      DateTime?   @map("abstract_deadline")
-  venue                 String?
-  status                EventStatus @default(estimated)
-  previousYearEventId   String?     @map("previous_year_event_id")
+  id                   String      @id @default(cuid())
+  fairId               String      @map("fair_id")
+  year                 Int
+  eventDate            DateTime?   @map("event_date")
+  registrationDeadline DateTime?   @map("registration_deadline")
+  abstractDeadline     DateTime?   @map("abstract_deadline")
+  venue                String?
+  status               EventStatus @default(estimated)
+  previousYearEventId  String?     @map("previous_year_event_id")
 
   fair Fair @relation(fields: [fairId], references: [id])
 
@@ -805,24 +918,24 @@ model FairUserAssociation {
 }
 
 model RubricVersion {
-  id         String   @id @default(cuid())
-  fairId     String   @map("fair_id")
+  id         String            @id @default(cuid())
+  fairId     String            @map("fair_id")
   year       Int
-  rubricJson Json     @map("rubric_json")
+  rubricJson Json              @map("rubric_json")
   criteria   RubricCriterion[]
 
   @@map("rubric_versions")
 }
 
 model RubricCriterion {
-  id               String        @id @default(cuid())
-  rubricVersionId  String        @map("rubric_version_id")
-  name             String
-  description      String
-  maxScore         Int           @map("max_score")
-  checklistItemsJson Json        @map("checklist_items_json")
-  rubricVersion    RubricVersion @relation(fields: [rubricVersionId], references: [id])
-  assessments      RubricSelfAssessment[]
+  id                 String                 @id @default(cuid())
+  rubricVersionId    String                 @map("rubric_version_id")
+  name               String
+  description        String
+  maxScore           Int                    @map("max_score")
+  checklistItemsJson Json                   @map("checklist_items_json")
+  rubricVersion      RubricVersion          @relation(fields: [rubricVersionId], references: [id])
+  assessments        RubricSelfAssessment[]
 
   @@map("rubric_criteria")
 }
@@ -842,21 +955,21 @@ model RubricSelfAssessment {
 }
 
 model IsefCategory {
-  id                   String   @id @default(cuid())
+  id                   String  @id @default(cuid())
   name                 String
   description          String
-  exampleSubtopicsJson Json     @map("example_subtopics_json")
-  recommendedLabType   LabType  @map("recommended_lab_type")
+  exampleSubtopicsJson Json    @map("example_subtopics_json")
+  recommendedLabType   LabType @map("recommended_lab_type")
 
   @@map("isef_categories")
 }
 
 model FormsCatalog {
-  id                    String @id @default(cuid())
+  id                    String           @id @default(cuid())
   name                  String
-  formCode              String @map("form_code")
-  requiredForLevelsJson Json   @map("required_for_levels_json")
-  templateUrl           String? @map("template_url")
+  formCode              String           @map("form_code")
+  requiredForLevelsJson Json             @map("required_for_levels_json")
+  templateUrl           String?          @map("template_url")
   description           String
   teamStatuses          TeamFormStatus[]
 
@@ -864,12 +977,12 @@ model FormsCatalog {
 }
 
 model TeamFormStatus {
-  id          String     @id @default(cuid())
-  teamId      String     @map("team_id")
-  formId      String     @map("form_id")
-  status      FormStatus @default(not_started)
-  completedAt DateTime?  @map("completed_at")
-  team        Team       @relation(fields: [teamId], references: [id])
+  id          String       @id @default(cuid())
+  teamId      String       @map("team_id")
+  formId      String       @map("form_id")
+  status      FormStatus   @default(not_started)
+  completedAt DateTime?    @map("completed_at")
+  team        Team         @relation(fields: [teamId], references: [id])
   form        FormsCatalog @relation(fields: [formId], references: [id])
 
   @@unique([teamId, formId])
@@ -887,18 +1000,18 @@ enum FormStatus {
 // ─── PvP Combat ──────────────────────────────────────────────────────────────
 
 model Character {
-  id          String     @id @default(cuid())
-  buildingId  String     @unique @map("building_id")
-  name        String
-  type        CombatType
-  baseHp      Int        @map("base_hp")
-  baseAtk     Int        @map("base_atk")
-  baseDef     Int        @map("base_def")
-  baseSpd     Int        @map("base_spd")
-  sprite1Url  String     @map("sprite_1_url")
-  sprite2Url  String     @map("sprite_2_url")
-  building    Building   @relation(fields: [buildingId], references: [id])
-  moves       CharacterMove[]
+  id         String          @id @default(cuid())
+  buildingId String          @unique @map("building_id")
+  name       String
+  type       CombatType
+  baseHp     Int             @map("base_hp")
+  baseAtk    Int             @map("base_atk")
+  baseDef    Int             @map("base_def")
+  baseSpd    Int             @map("base_spd")
+  sprite1Url String          @map("sprite_1_url")
+  sprite2Url String          @map("sprite_2_url")
+  building   Building        @relation(fields: [buildingId], references: [id])
+  moves      CharacterMove[]
 
   @@map("characters")
 }
@@ -912,14 +1025,14 @@ enum CombatType {
 }
 
 model Move {
-  id                  String     @id @default(cuid())
+  id                  String          @id @default(cuid())
   name                String
   type                CombatType
-  baseDamage          Int        @map("base_damage")
+  baseDamage          Int             @map("base_damage")
   accuracy            Int
   pp                  Int
-  secondaryEffectJson Json?      @map("secondary_effect_json")
-  flavorText          String     @map("flavor_text")
+  secondaryEffectJson Json?           @map("secondary_effect_json")
+  flavorText          String          @map("flavor_text")
   characters          CharacterMove[]
 
   @@map("moves")
@@ -947,16 +1060,16 @@ model PvpTeam {
 }
 
 model PvpBattle {
-  id                     String    @id @default(cuid())
-  attackerTeamId         String    @map("attacker_team_id")
-  defenderTeamId         String    @map("defender_team_id")
-  phase                  ProjectPhase
-  startedAt              DateTime  @default(now()) @map("started_at")
-  endedAt                DateTime? @map("ended_at")
-  winnerTeamId           String?   @map("winner_team_id")
-  trophiesDeltaAttacker  Int?      @map("trophies_delta_attacker")
-  trophiesDeltaDefender  Int?      @map("trophies_delta_defender")
-  battleLogJson          Json?     @map("battle_log_json")
+  id                    String       @id @default(cuid())
+  attackerTeamId        String       @map("attacker_team_id")
+  defenderTeamId        String       @map("defender_team_id")
+  phase                 ProjectPhase
+  startedAt             DateTime     @default(now()) @map("started_at")
+  endedAt               DateTime?    @map("ended_at")
+  winnerTeamId          String?      @map("winner_team_id")
+  trophiesDeltaAttacker Int?         @map("trophies_delta_attacker")
+  trophiesDeltaDefender Int?         @map("trophies_delta_defender")
+  battleLogJson         Json?        @map("battle_log_json")
 
   @@map("pvp_battles")
 }
@@ -984,10 +1097,10 @@ enum PvpTier {
 }
 
 model PvpBattleQuota {
-  teamId     String   @map("team_id")
-  date       DateTime @db.Date
-  battlesUsed Int     @default(0) @map("battles_used")
-  team       Team     @relation(fields: [teamId], references: [id])
+  teamId      String   @map("team_id")
+  date        DateTime @db.Date
+  battlesUsed Int      @default(0) @map("battles_used")
+  team        Team     @relation(fields: [teamId], references: [id])
 
   @@id([teamId, date])
   @@map("pvp_battle_quota")
@@ -1005,5 +1118,6 @@ model ActivityFeed {
   team        Team     @relation(fields: [teamId], references: [id])
   user        User     @relation(fields: [userId], references: [id])
 
+  @@index([teamId, createdAt])
   @@map("activity_feed")
 }

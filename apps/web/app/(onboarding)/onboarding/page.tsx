@@ -24,6 +24,11 @@ export default function OnboardingPage() {
   const [teamName, setTeamName] = useState('')
   const [zip, setZip] = useState('')
   const [code, setCode] = useState('')
+  // Dev convenience: pre-fill the pilot's high school locally (inert in prod).
+  const [highSchool, setHighSchool] = useState(
+    process.env.NODE_ENV !== 'production' ? 'Santa Clara High School' : '',
+  )
+  const [classCode, setClassCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -34,8 +39,14 @@ export default function OnboardingPage() {
 
     try {
       const endpoint = mode === 'create' ? '/api/onboarding' : '/api/team/join'
+      const profile = {
+        highSchool: highSchool.trim() || undefined,
+        classCode: classCode.trim() || undefined,
+      }
       const payload =
-        mode === 'create' ? { name, teamName, zip: zip.trim() || undefined } : { name, code }
+        mode === 'create'
+          ? { name, teamName, zip: zip.trim() || undefined, ...profile }
+          : { name, code, ...profile }
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -96,6 +107,34 @@ export default function OnboardingPage() {
             required
             placeholder="Rig Saini"
             className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
+            High school
+          </label>
+          <input
+            type="text"
+            value={highSchool}
+            onChange={(e) => setHighSchool(e.target.value)}
+            placeholder="Santa Clara High School"
+            maxLength={120}
+            className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
+            Class code <span className="text-white/25">(optional · from your teacher)</span>
+          </label>
+          <input
+            type="text"
+            value={classCode}
+            onChange={(e) => setClassCode(e.target.value.toUpperCase())}
+            placeholder="MRB-2026"
+            maxLength={32}
+            className="w-full bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.2em] px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30 placeholder:tracking-normal"
           />
         </div>
 

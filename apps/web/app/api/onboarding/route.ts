@@ -5,14 +5,17 @@ import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { isValidZip, zipToState, geocodeZip } from '@/lib/fairs/zip'
+import { applySchoolAndClass } from '@/lib/onboarding/profile'
 
 // Names are capped so a client can't store unbounded text; `.strict()` rejects
-// any field other than these three.
+// any field other than these.
 const OnboardingBody = z
   .object({
     name: z.string().trim().min(1, 'Name is required').max(80),
     teamName: z.string().trim().min(1, 'Team name is required').max(80),
     zip: z.string().trim().max(10).optional(),
+    highSchool: z.string().trim().max(120).optional(),
+    classCode: z.string().trim().max(32).optional(),
   })
   .strict()
 
@@ -28,7 +31,7 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await parseJson(req, OnboardingBody)
   if (error) return error
-  const { name, teamName, zip } = data
+  const { name, teamName, zip, highSchool, classCode } = data
 
   // Optional US location (Feature 3): derive state + geocode to lat/lng.
   const locationZip = zip && isValidZip(zip) ? zip : null
@@ -56,6 +59,10 @@ export async function POST(req: NextRequest) {
     (await db.user.create({
       data: { clerkUserId: userId, name: name.trim(), email },
     }))
+
+  // Ingest the student's high school (find-or-create) and optional classroom.
+  // Non-fatal — a school lookup hiccup must not block lab creation.
+  await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => {})
 
   const team = await db.team.create({
     data: {

@@ -3,7 +3,11 @@ import { z } from 'zod'
 import { LAB_TYPE_LABELS } from '@/lib/phase'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { getLiteratureAdvanceProgress } from '@/lib/team/advance'
+import {
+  getLiteratureAdvanceProgress,
+  isTeacherGated,
+  TEACHER_GATED_TRANSITIONS,
+} from '@/lib/team/advance'
 import { classifyLabType } from '@/lib/lab-type/classify'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
@@ -29,6 +33,27 @@ const AdvanceBody = z
 export async function POST(req: NextRequest) {
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
+
+  // Teacher-gated transitions (research_planning → working, working → showcase):
+  // the student requests advancement and a teacher approves it in the dashboard.
+  if (isTeacherGated(ctx.phase)) {
+    const toPhase = TEACHER_GATED_TRANSITIONS[ctx.phase]!
+    const existing = await db.phaseAdvanceRequest.findFirst({
+      where: { teamId: ctx.teamId, status: 'pending' },
+    })
+    if (existing) {
+      return NextResponse.json({ requested: true, status: 'pending', request: existing })
+    }
+    const request = await db.phaseAdvanceRequest.create({
+      data: {
+        teamId: ctx.teamId,
+        fromPhase: ctx.phase,
+        toPhase,
+        requestedByUserId: ctx.dbUserId,
+      },
+    })
+    return NextResponse.json({ requested: true, status: 'pending', request })
+  }
 
   if (ctx.phase !== 'literature_review') {
     return NextResponse.json(

@@ -7,6 +7,7 @@ const isPublicRoute = createRouteMatcher([
   '/sign-up(.*)',
   '/showcase/(.*)', // Public showcase pages
   '/api/showcase/public/(.*)', // Privacy-checked public asset streaming
+  '/api/cron/(.*)', // Scheduled jobs — authenticated by CRON_SECRET, not a session
 ])
 
 export default clerkMiddleware(async (auth, req) => {

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { UserButton } from '@clerk/nextjs'
 import { PHASE_INFO, LAB_TYPE_LABELS, type Phase, type LabType } from '@/lib/phase'
+import { NotificationBell } from './NotificationBell'
 
 export interface Currency {
   kp: number
@@ -59,6 +60,7 @@ export function StatusStrip({
         <span className="font-pixel status-strip__phase" title={phaseInfo.description}>
           {phaseInfo.label.toUpperCase()}
         </span>
+        <NotificationBell />
         <UserButton afterSignOutUrl="/" />
       </div>
     </div>

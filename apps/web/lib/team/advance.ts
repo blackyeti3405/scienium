@@ -45,6 +45,22 @@ export function nextPhase(phase: Phase): Phase | null {
 }
 
 /**
+ * Transitions that require a teacher's sign-off rather than an automatic,
+ * mechanically-checkable gate. These map to the real-world milestones that used
+ * to hand out figurines (now removed): starting data collection (→ `working`)
+ * and advancing to competition (→ `showcase`). A student *requests* the
+ * advancement; a teacher approves it in the dashboard, which performs the bump.
+ */
+export const TEACHER_GATED_TRANSITIONS: Partial<Record<Phase, Phase>> = {
+  research_planning: 'working',
+  working: 'showcase',
+}
+
+export function isTeacherGated(from: Phase): boolean {
+  return from in TEACHER_GATED_TRANSITIONS
+}
+
+/**
  * Computes literature_review → research_planning readiness for a team:
  * how many sources are ready, and for each member how many of those they've
  * demonstrated proficiency on. `canAdvance` is true only at/after the target

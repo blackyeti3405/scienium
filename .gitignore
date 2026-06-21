@@ -150,3 +150,6 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# Local Claude Code tooling (machine-specific)
+.claude/launch.json

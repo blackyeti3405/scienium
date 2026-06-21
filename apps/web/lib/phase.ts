@@ -55,7 +55,8 @@ export type Feature =
   | 'buildings'      // Lab building purchases and upgrades
   | 'minigames'      // Building mini-games
   | 'pvp'            // PvP combat system
-  | 'showcase'       // Showcase Wing (also requires Presenter figurine)
+  | 'data_terminal'  // Experiment tracking + graphing (Operations Hub tab)
+  | 'showcase'       // Showcase Wing (public portfolio)
 
 // Which new features each phase unlocks (additive — cumulative after ordering)
 const PHASE_UNLOCKS: Record<Phase, Feature[]> = {
@@ -63,7 +64,7 @@ const PHASE_UNLOCKS: Record<Phase, Feature[]> = {
   lab_selection:      ['lab_selection'],
   literature_review:  ['literature', 'daily'],
   research_planning:  ['research_plan'],
-  working:            ['buildings', 'minigames', 'pvp'],
+  working:            ['buildings', 'minigames', 'pvp', 'data_terminal'],
   showcase:           ['showcase'],
 }
 
@@ -108,6 +109,7 @@ export const FEATURE_MIN_PHASE: Record<Feature, Phase> = {
   buildings:      'working',
   minigames:      'working',
   pvp:            'working',
+  data_terminal:  'working',
   showcase:       'showcase',
 }
 

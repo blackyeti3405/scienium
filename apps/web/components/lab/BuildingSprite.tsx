@@ -8,8 +8,8 @@ import type { Gateway } from '@/lib/gateways'
  * A single isometric gateway building in the lab cluster. Positioned by a pixel
  * offset (`dx`,`dy`) from the cluster centre and stacked by `zIndex` (iso depth).
  * Clicking an unlocked building opens its feature overlay; a locked building
- * shows a pixel padlock and is non-interactive (mirrors the server phase/figurine
- * gate — never the sole gate). zIndex stays well below the overlay panel.
+ * shows a pixel padlock and is non-interactive (mirrors the server phase gate —
+ * never the sole gate). zIndex stays well below the overlay panel.
  */
 export function BuildingSprite({
   gateway,

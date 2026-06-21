@@ -20,6 +20,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { RichEditor } from './RichEditor'
 import { ExpertisePanel } from './ExpertisePanel'
+import { FieldDispatchTab } from './FieldDispatchTab'
+import { DataTerminalTab } from './DataTerminalTab'
 
 // ─── Stage options ─────────────────────────────────────────────────────────────
 
@@ -732,29 +734,38 @@ function FailureLogTab() {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'log' | 'failure' | 'expertise'
+type Tab = 'dispatch' | 'log' | 'failure' | 'expertise' | 'data'
+
+const TAB_DEFS: [Tab, string, string][] = [
+  ['dispatch', '📡', 'Field Dispatch'],
+  ['log', '📋', 'Project Log'],
+  ['failure', '⚡', 'Failure Log'],
+  ['expertise', '🎖', 'Proof of Expertise'],
+  ['data', '📊', 'Data Terminal'],
+]
 
 export function OperationsHubFeature() {
-  const [tab, setTab] = useState<Tab>('log')
+  const [tab, setTab] = useState<Tab>('dispatch')
 
   return (
     <div className="flex flex-col h-full bg-[#0d1b2e] text-white">
-      <div className="flex border-b border-white/10 shrink-0 px-2">
-        {([
-          ['log', '📋', 'Project Log'],
-          ['failure', '⚡', 'Failure Log'],
-          ['expertise', '🎖', 'Proof of Expertise'],
-        ] as [Tab, string, string][]).map(([key, icon, label]) => (
+      <div className="flex border-b border-white/10 shrink-0 px-2 overflow-x-auto">
+        {TAB_DEFS.map(([key, icon, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
             className={`ops-tab-btn font-pixel ${tab === key ? 'ops-tab-btn--active' : ''}`}
           >
-            <span className="mr-1.5">{icon}</span>{label}
+            <span className="mr-1.5">{icon}</span>
+            {label}
           </button>
         ))}
       </div>
-      {tab === 'log' ? <ProjectLogTab /> : tab === 'failure' ? <FailureLogTab /> : <ExpertisePanel />}
+      {tab === 'dispatch' && <FieldDispatchTab />}
+      {tab === 'log' && <ProjectLogTab />}
+      {tab === 'failure' && <FailureLogTab />}
+      {tab === 'expertise' && <ExpertisePanel />}
+      {tab === 'data' && <DataTerminalTab />}
     </div>
   )
 }

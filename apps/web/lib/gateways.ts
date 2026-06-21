@@ -41,8 +41,6 @@ export interface Gateway {
   hint: string
   /** Becomes the central structure once present (Operations Hub). */
   isCentral?: boolean
-  /** Additionally gated by a physical figurine beyond phase (Showcase → Presenter). */
-  requiresFigurine?: 'presenter'
   /** Position on the isometric plot, around the central Discovery building. */
   cell: IsoCell
 }
@@ -58,7 +56,6 @@ export const GATEWAYS: Gateway[] = [
     unlockPhase: 'showcase',
     route: '/showcase/edit',
     hint: 'Publish your research to the world',
-    requiresFigurine: 'presenter',
     cell: { gx: -1, gy: -1 }, // back-centre
   },
   {

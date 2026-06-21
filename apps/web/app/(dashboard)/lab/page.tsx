@@ -2,7 +2,11 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { LabScene } from '@/components/lab/LabScene'
-import { getLiteratureAdvanceProgress, type AdvanceProgress } from '@/lib/team/advance'
+import {
+  getLiteratureAdvanceProgress,
+  TEACHER_GATED_TRANSITIONS,
+  type AdvanceProgress,
+} from '@/lib/team/advance'
 import { PHASE_ORDER, LAB_TYPES, type Phase, type LabType } from '@/lib/phase'
 
 export const metadata = { title: 'NOVA Lab' }
@@ -17,7 +21,7 @@ function seedFrom(id: string): number {
 export default async function LabPage({
   searchParams,
 }: {
-  searchParams: { phase?: string; lab?: string; presenter?: string }
+  searchParams: { phase?: string; lab?: string }
 }) {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
@@ -29,7 +33,6 @@ export default async function LabPage({
   let phase: Phase = 'discovery'
   let labType: LabType | null = null
   let currency = { kp: 0, clearanceLevel: 0, lc: 0 }
-  let hasPresenter = false
   let memberCount = 1
 
   try {
@@ -47,15 +50,7 @@ export default async function LabPage({
                 phase: true,
                 labType: true,
                 currency: { select: { kp: true, clearanceLevel: true, lc: true } },
-                members: {
-                  select: {
-                    user: {
-                      select: {
-                        figurineUnlocks: { select: { figurineTier: true } },
-                      },
-                    },
-                  },
-                },
+                members: { select: { userId: true } },
               },
             },
           },
@@ -71,15 +66,12 @@ export default async function LabPage({
       labType = (team.labType as LabType | null) ?? null
       if (team.currency) currency = team.currency
       memberCount = team.members.length || 1
-      hasPresenter = team.members.some((m) =>
-        m.user.figurineUnlocks.some((f) => f.figurineTier === 'presenter'),
-      )
     }
   } catch {
     // DB unavailable during build/preview — render the discovery-phase defaults.
   }
 
-  // Dev-only preview override: /lab?phase=working&lab=biocore&presenter=1 lets you
+  // Dev-only preview override: /lab?phase=working&lab=biocore lets you
   // inspect any phase/skin without a database. Never active in production.
   if (process.env.NODE_ENV !== 'production') {
     if (searchParams.phase && (PHASE_ORDER as readonly string[]).includes(searchParams.phase)) {
@@ -88,7 +80,6 @@ export default async function LabPage({
     if (searchParams.lab && (LAB_TYPES as readonly string[]).includes(searchParams.lab)) {
       labType = searchParams.lab as LabType
     }
-    if (searchParams.presenter === '1') hasPresenter = true
   }
 
   // Literature-phase advance gate (Feature 1e): progress toward 25 sources with
@@ -102,15 +93,31 @@ export default async function LabPage({
     }
   }
 
+  // Teacher-gated transitions (→ working, → showcase): surface a request/awaiting
+  // affordance and reflect any pending request.
+  let advanceRequest: { toPhase: Phase; pending: boolean } | null = null
+  const gatedTo = TEACHER_GATED_TRANSITIONS[phase]
+  if (teamId && gatedTo) {
+    try {
+      const pending = await db.phaseAdvanceRequest.findFirst({
+        where: { teamId, status: 'pending' },
+        select: { id: true },
+      })
+      advanceRequest = { toPhase: gatedTo, pending: !!pending }
+    } catch {
+      // Non-fatal.
+    }
+  }
+
   return (
     <LabScene
       teamName={teamName}
       phase={phase}
       labType={labType}
       currency={currency}
-      hasPresenter={hasPresenter}
       memberCount={memberCount}
       advance={advance}
+      advanceRequest={advanceRequest}
       seed={teamId ? seedFrom(teamId) : 1}
     />
   )

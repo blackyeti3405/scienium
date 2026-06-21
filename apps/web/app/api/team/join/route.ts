@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
 import { normalizeInviteCode } from '@/lib/team/invite'
+import { applySchoolAndClass } from '@/lib/onboarding/profile'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
@@ -11,6 +12,8 @@ const JoinBody = z
   .object({
     name: z.string().trim().max(80).optional(),
     code: z.string().trim().min(1, 'A join code is required').max(32),
+    highSchool: z.string().trim().max(120).optional(),
+    classCode: z.string().trim().max(32).optional(),
   })
   .strict()
 
@@ -34,7 +37,7 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await parseJson(req, JoinBody)
   if (error) return error
-  const { name, code } = data
+  const { name, code, highSchool, classCode } = data
 
   const normalized = normalizeInviteCode(code)
 
@@ -53,6 +56,9 @@ export async function POST(req: NextRequest) {
         email,
       },
     }))
+
+  // Ingest the joiner's high school + optional classroom (same rules as create).
+  await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => {})
 
   try {
     const teamId = await db.$transaction(async (tx) => {

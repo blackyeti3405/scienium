@@ -8,6 +8,7 @@ import { ShopPanel } from '@/components/lab/ShopPanel'
 import { TeamPanel } from '@/components/lab/TeamPanel'
 import { ActivityPanel } from '@/components/lab/ActivityPanel'
 import { PhaseAdvance } from '@/components/lab/PhaseAdvance'
+import { RequestAdvance } from '@/components/lab/RequestAdvance'
 import { StatusStrip, type Currency } from '@/components/lab/StatusStrip'
 import { Activity } from 'lucide-react'
 import { LabCurrencyProvider } from '@/lib/labCurrency'
@@ -35,12 +36,12 @@ export interface LabSceneProps {
   phase: Phase
   labType: LabType | null
   currency: Currency
-  /** Whether any team member holds the Presenter figurine (gates the Showcase). */
-  hasPresenter: boolean
   /** Live team size — building costs scale by it (Feature 1c). */
   memberCount: number
   /** Literature-phase advance gate, or null when no gate applies (Feature 1e). */
   advance: AdvanceProgress | null
+  /** Teacher-gated advance affordance (research_planning/working), or null. */
+  advanceRequest: { toPhase: Phase; pending: boolean } | null
   /** Stable per-team seed so the tiled background never reshuffles. */
   seed?: number
 }
@@ -50,9 +51,9 @@ export function LabScene({
   phase,
   labType,
   currency,
-  hasPresenter,
   memberCount,
   advance,
+  advanceRequest,
   seed = 1,
 }: LabSceneProps) {
   const [openKey, setOpenKey] = useState<Gateway['key'] | null>(null)
@@ -71,15 +72,12 @@ export function LabScene({
 
   function lockInfo(g: Gateway): { locked: boolean; reason?: string } {
     // Presence already implies the feature's phase is met; mirror the same gate
-    // the server enforces, plus the Presenter-figurine requirement for Showcase.
+    // the server enforces.
     if (!isFeatureUnlocked(phase, g.feature)) {
       return {
         locked: true,
         reason: `Unlocks at ${PHASE_INFO[FEATURE_MIN_PHASE[g.feature]].label}`,
       }
-    }
-    if (g.requiresFigurine === 'presenter' && !hasPresenter) {
-      return { locked: true, reason: 'Requires the Presenter figurine' }
     }
     return { locked: false }
   }
@@ -97,6 +95,9 @@ export function LabScene({
           />
 
           {advance && <PhaseAdvance progress={advance} />}
+          {advanceRequest && (
+            <RequestAdvance toPhase={advanceRequest.toPhase} pending={advanceRequest.pending} />
+          )}
 
           <div className="lab-scene__viewport">
             <TileBackground seed={seed} />
