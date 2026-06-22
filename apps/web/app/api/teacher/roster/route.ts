@@ -94,5 +94,17 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  return NextResponse.json({ students: roster, hasClasses: true })
+  // Summary fields for the roster header — derived from the already-fetched data.
+  const phaseCounts: Record<string, number> = {}
+  let attentionCount = 0
+  for (const s of roster) {
+    if (s.phase) {
+      phaseCounts[s.phase] = (phaseCounts[s.phase] ?? 0) + 1
+    }
+    if (s.flags.pendingValidation || s.flags.staleLog) {
+      attentionCount++
+    }
+  }
+
+  return NextResponse.json({ students: roster, hasClasses: true, phaseCounts, attentionCount })
 }
