@@ -187,7 +187,7 @@ OUTPUT FORMAT — JSON Lines: emit exactly ONE compact JSON object PER LINE, in 
 1. First line — overall:
 {"kind":"overall","readiness":"early"|"promising"|"strong","score":<integer 0-100 holistic estimate>,"summary":"2-3 sentence overall assessment addressed to the student"}
 
-2. Then ONE line per rubric section (the FIVE sections, in order I–V):
+2. Then ONE line per rubric section defined above, in order — emit exactly the sections the rubric lists and no others (do not invent or skip any; engineering plans list four sections, science plans list five):
 {"kind":"section","title":"<section name, e.g. I. Research Question>","score":<integer>,"max":<the section's point value from the rubric>,"assessment":"1-2 sentences: what's there, what's missing vs this section's checklist items"}
 
 3. Then strengths (each its own line):

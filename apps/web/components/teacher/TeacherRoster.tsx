@@ -2,7 +2,19 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Loader2, Plus, Copy, Check, AlertCircle, Clock } from 'lucide-react'
+import {
+  Loader2,
+  Plus,
+  Copy,
+  Check,
+  AlertCircle,
+  Clock,
+  Activity,
+  Users,
+  AlertTriangle,
+  BookOpen,
+  GraduationCap,
+} from 'lucide-react'
 import { PHASE_INFO, PHASE_ORDER, type Phase } from '@/lib/phase'
 import { StatTile } from '@/components/ui/Card'
 
@@ -15,7 +27,7 @@ interface RosterStudent {
   labType: string | null
   readyPapers: number
   lastActivityAt: string | null
-  flags: { pendingValidation: string | null; staleLog: boolean }
+  flags: { pendingValidation: string | null; status: 'on_track' | 'unlogged' | 'stale' | null }
 }
 
 interface ClassRow {
@@ -56,7 +68,8 @@ export function TeacherRoster() {
       .finally(() => setLoading(false))
   }, [])
 
-  const hasAttention = (s: RosterStudent) => !!s.flags.pendingValidation || s.flags.staleLog
+  const hasAttention = (s: RosterStudent) =>
+    !!s.flags.pendingValidation || s.flags.status === 'unlogged' || s.flags.status === 'stale'
   const visible = attentionOnly ? students.filter(hasAttention) : students
 
   if (loading) {
@@ -68,27 +81,34 @@ export function TeacherRoster() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="max-w-6xl mx-auto space-y-8">
+      {/* Classes manager */}
       <ClassManager classes={classes} onCreated={(c) => setClasses((list) => [c, ...list])} />
 
-      {/* Summary header */}
+      {/* Overview stat tiles */}
       {students.length > 0 && (
         <section className="space-y-3">
-          <h2 className="font-pixel text-[9px] text-[#F5C518] uppercase tracking-widest">
+          <h2 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
             Overview
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <StatTile label="Total students" value={students.length} />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            <StatTile
+              label="Total students"
+              value={students.length}
+              icon={<Users size={16} />}
+            />
             <StatTile
               label="Need attention"
               value={attentionCount}
               accent={attentionCount > 0}
+              icon={<AlertTriangle size={16} />}
             />
             {PHASE_ORDER.filter((p) => (phaseCounts[p] ?? 0) > 0).map((p) => (
               <StatTile
                 key={p}
                 label={PHASE_INFO[p].label}
                 value={phaseCounts[p] ?? 0}
+                icon={<GraduationCap size={16} />}
               />
             ))}
           </div>
@@ -97,8 +117,9 @@ export function TeacherRoster() {
 
       {/* Roster table */}
       <section className="space-y-3">
+        {/* Section header */}
         <div className="flex items-center justify-between">
-          <h2 className="font-pixel text-[9px] text-[#F5C518] uppercase tracking-widest">
+          <h2 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
             Roster · {students.length}
           </h2>
           <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -108,82 +129,104 @@ export function TeacherRoster() {
               onChange={(e) => setAttentionOnly(e.target.checked)}
               className="accent-[#F5C518]"
             />
-            <span className="font-pixel text-[8px] text-white/50">Needs my attention</span>
+            <span className="text-xs text-white/50">Needs my attention</span>
           </label>
         </div>
 
         {visible.length === 0 ? (
-          <p className="font-pixel text-[9px] text-white/30 py-8 text-center border border-dashed border-white/10">
-            {students.length === 0
-              ? 'No students yet — share a class code so students can join.'
-              : 'No students need attention right now.'}
-          </p>
+          <div className="border border-dashed border-white/10 rounded-lg py-12 text-center">
+            <p className="text-sm text-white/30">
+              {students.length === 0
+                ? 'No students yet — share a class code so students can join.'
+                : 'No students need attention right now.'}
+            </p>
+          </div>
         ) : (
-          <div className="border border-white/10 divide-y divide-white/5">
-            {/* Header row */}
-            <div className="hidden sm:flex items-center gap-3 px-4 py-2 bg-white/[0.02]">
-              <span className="flex-1 font-pixel text-[7px] text-white/30 uppercase tracking-wider">
+          <div className="border border-white/10 bg-[#0a1628] rounded-lg overflow-hidden">
+            {/* Table header */}
+            <div className="hidden sm:grid grid-cols-[1fr_8rem_9rem_5rem_9rem] gap-3 px-4 py-2.5 bg-white/[0.02] border-b border-white/10">
+              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider">
                 Student
               </span>
-              <span className="w-32 font-pixel text-[7px] text-white/30 uppercase tracking-wider">
+              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider">
                 Team
               </span>
-              <span className="w-28 font-pixel text-[7px] text-white/30 uppercase tracking-wider">
+              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider">
                 Phase
               </span>
-              <span className="w-20 font-pixel text-[7px] text-white/30 uppercase tracking-wider text-right">
+              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider text-right">
                 Papers
               </span>
-              <span className="w-28 font-pixel text-[7px] text-white/30 uppercase tracking-wider text-right">
+              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider text-right">
                 Flags
               </span>
             </div>
 
-            {visible.map((s) => {
-              const phaseInfo = s.phase ? PHASE_INFO[s.phase as Phase] : null
-              return (
-                <Link
-                  key={s.studentId}
-                  href={`/teacher/student/${s.studentId}`}
-                  className="flex flex-wrap sm:flex-nowrap items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors"
-                >
-                  <span className="flex-1 text-sm text-white font-medium min-w-[120px]">
-                    {s.name}
-                  </span>
-                  <span className="w-32 text-sm text-white/55 truncate">
-                    {s.teamName ?? <span className="text-white/25 italic">No team</span>}
-                  </span>
-                  <span className="w-28">
-                    {phaseInfo ? (
-                      <span className="text-sm text-white/70">{phaseInfo.label}</span>
-                    ) : (
-                      <span className="text-sm text-white/25 italic">—</span>
-                    )}
-                  </span>
-                  <span className="w-20 text-sm text-white/40 text-right">
-                    {s.readyPapers > 0 ? s.readyPapers : '—'}
-                  </span>
-                  <span className="flex items-center gap-1.5 w-28 justify-end">
-                    {s.flags.pendingValidation && (
-                      <span
-                        title="Awaiting validation"
-                        className="inline-flex items-center gap-1 font-pixel text-[7px] text-amber-400"
-                      >
-                        <AlertCircle size={11} /> validate
-                      </span>
-                    )}
-                    {s.flags.staleLog && (
-                      <span
-                        title="No recent project log"
-                        className="inline-flex items-center gap-1 font-pixel text-[7px] text-orange-400"
-                      >
-                        <Clock size={11} /> stale
-                      </span>
-                    )}
-                  </span>
-                </Link>
-              )
-            })}
+            {/* Rows */}
+            <div className="divide-y divide-white/[0.05]">
+              {visible.map((s) => {
+                const phaseInfo = s.phase ? PHASE_INFO[s.phase as Phase] : null
+                return (
+                  <Link
+                    key={s.studentId}
+                    href={`/teacher/student/${s.studentId}`}
+                    className="flex flex-wrap sm:grid sm:grid-cols-[1fr_8rem_9rem_5rem_9rem] sm:items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors duration-150 cursor-pointer"
+                  >
+                    <span className="flex-1 sm:flex-none text-sm text-white font-medium min-w-[120px]">
+                      {s.name}
+                    </span>
+                    <span className="w-32 sm:w-auto text-sm text-white/50 truncate">
+                      {s.teamName ?? (
+                        <span className="text-white/25 italic text-xs">No team</span>
+                      )}
+                    </span>
+                    <span className="w-28 sm:w-auto">
+                      {phaseInfo ? (
+                        <span className="text-sm text-white/70">{phaseInfo.label}</span>
+                      ) : (
+                        <span className="text-sm text-white/25 italic">—</span>
+                      )}
+                    </span>
+                    <span className="text-sm tabular-nums text-white/40 sm:text-right">
+                      {s.readyPapers > 0 ? (
+                        <span className="inline-flex items-center gap-1">
+                          <BookOpen size={12} className="text-white/25" />
+                          {s.readyPapers}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </span>
+                    <span className="flex items-center gap-1.5 sm:justify-end flex-wrap">
+                      {s.flags.pendingValidation && (
+                        <span
+                          title="This team has a pending phase-advance request awaiting your approval."
+                          className="inline-flex items-center gap-1 text-xs text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-2 py-0.5 whitespace-nowrap"
+                        >
+                          <AlertCircle size={11} /> validate
+                        </span>
+                      )}
+                      {s.flags.status === 'unlogged' && (
+                        <span
+                          title="Team is actively earning KP or completing tasks but hasn't written a progress log in the last 5 days."
+                          className="inline-flex items-center gap-1 text-xs text-sky-400 bg-sky-400/10 border border-sky-400/20 rounded-full px-2 py-0.5 whitespace-nowrap"
+                        >
+                          <Activity size={11} /> not logged
+                        </span>
+                      )}
+                      {s.flags.status === 'stale' && (
+                        <span
+                          title="No progress log and no activity in the last 5 days — team may be stuck."
+                          className="inline-flex items-center gap-1 text-xs text-orange-400 bg-orange-400/10 border border-orange-400/20 rounded-full px-2 py-0.5 whitespace-nowrap"
+                        >
+                          <Clock size={11} /> stale
+                        </span>
+                      )}
+                    </span>
+                  </Link>
+                )
+              })}
+            </div>
           </div>
         )}
       </section>
@@ -234,30 +277,37 @@ function ClassManager({
 
   return (
     <section className="space-y-3">
-      <h2 className="font-pixel text-[9px] text-[#F5C518] uppercase tracking-widest">Classes</h2>
+      <h2 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
+        Classes
+      </h2>
 
       {classes.length > 0 && (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {classes.map((c) => (
             <div
               key={c.id}
-              className="flex items-center justify-between border border-white/10 bg-[#0a1628] px-3 py-2.5"
+              className="flex items-center justify-between border border-white/10 bg-[#0a1628] rounded-lg px-4 py-3"
             >
               <div>
-                <span className="text-sm text-white block">{c.name}</span>
-                <span className="font-pixel text-[7px] text-white/35">
+                <span className="text-sm font-medium text-white block">{c.name}</span>
+                <span className="text-xs text-white/35">
                   {c._count?.users ?? 0} students
+                  {c.school?.name ? ` · ${c.school.name}` : ''}
                 </span>
               </div>
               {c.joinCode && (
                 <button
                   type="button"
                   onClick={() => copy(c.joinCode!)}
-                  className="inline-flex items-center gap-1.5 font-pixel text-[9px] text-[#F5C518] tracking-widest hover:brightness-110"
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-[#F5C518] tracking-widest hover:brightness-110 transition-all cursor-pointer"
                   title="Copy class code"
                 >
                   {c.joinCode}
-                  {copied === c.joinCode ? <Check size={12} /> : <Copy size={12} />}
+                  {copied === c.joinCode ? (
+                    <Check size={13} className="text-emerald-400" />
+                  ) : (
+                    <Copy size={13} />
+                  )}
                 </button>
               )}
             </div>
@@ -265,31 +315,34 @@ function ClassManager({
         </div>
       )}
 
-      <div className="flex flex-wrap items-end gap-2 border border-white/10 bg-[#0a1628] p-3">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="New class name (e.g. Period 3 Biology)"
-          maxLength={80}
-          className="flex-1 min-w-[180px] bg-[#0d1b2e] border border-white/15 text-white text-sm px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
-        />
-        <input
-          value={schoolName}
-          onChange={(e) => setSchoolName(e.target.value)}
-          placeholder="School (optional)"
-          maxLength={120}
-          className="min-w-[140px] bg-[#0d1b2e] border border-white/15 text-white text-sm px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
-        />
-        <button
-          type="button"
-          onClick={create}
-          disabled={busy || !name.trim()}
-          className="inline-flex items-center gap-1.5 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2.5 hover:brightness-110 disabled:opacity-40 transition-all"
-        >
-          <Plus size={11} /> Create class
-        </button>
+      {/* Create class form */}
+      <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4">
+        <div className="flex flex-wrap items-end gap-2">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="New class name (e.g. Period 3 Biology)"
+            maxLength={80}
+            className="flex-1 min-w-[180px] bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25 transition-colors"
+          />
+          <input
+            value={schoolName}
+            onChange={(e) => setSchoolName(e.target.value)}
+            placeholder="School (optional)"
+            maxLength={120}
+            className="min-w-[140px] bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25 transition-colors"
+          />
+          <button
+            type="button"
+            onClick={create}
+            disabled={busy || !name.trim()}
+            className="inline-flex items-center gap-1.5 bg-[#F5C518] text-[#0d1b2e] text-sm font-medium px-4 py-2 rounded-md hover:brightness-110 disabled:opacity-40 transition-all cursor-pointer"
+          >
+            <Plus size={14} /> Create class
+          </button>
+        </div>
+        {error && <p className="text-sm text-red-400 mt-2">{error}</p>}
       </div>
-      {error && <p className="font-pixel text-[8px] text-red-400">{error}</p>}
     </section>
   )
 }

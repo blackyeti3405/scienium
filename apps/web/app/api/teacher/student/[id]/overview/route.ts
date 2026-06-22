@@ -190,6 +190,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     db.researchPlan.findUnique({
       where: { teamId },
       select: {
+        googleDocUrl: true,
         projectType: true,
         projectSubtype: true,
         lastReviewJson: true,

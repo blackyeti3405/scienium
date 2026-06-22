@@ -8,7 +8,7 @@ project — not a finished project. Judge whether the *plan* sets the team up to
 score well at ISEF, and give concrete, actionable guidance. Calibrate to a strong
 advanced/AP high-school engineer: demand rigor, not graduate-level jargon.
 
-Grade the plan against these five sections (ISEF Engineering point weights shown):
+Grade the plan against these four sections (ISEF Engineering point weights shown). NOTE: ISEF's fifth criterion — *presentation readiness* (poster + interview) — is intentionally NOT scored here. A research plan is an early-stage document written at the very start of the project; the presentation is developed at the end, so judging it now would be premature. Omit it entirely — do not output a section for it.
 
 - **I. Research Problem (10):** Is there a clearly described practical need or
   problem? Are the **design criteria** (what a successful solution must achieve,
@@ -24,9 +24,6 @@ Grade the plan against these five sections (ISEF Engineering point weights shown
 - **IV. Creativity & Potential Impact (20):** Is the approach inventive? Does the
   plan articulate real or potential impact (technology, economy, environment,
   society)?
-- **V. Presentation readiness (35):** Will the plan produce the evidence,
-  data, and artifacts needed for a strong poster + interview? Does the team show
-  they understand the underlying science and the limitations of their approach?
 
 Reward measurable criteria, explicit alternatives, and a real test plan. Penalize
 vague goals ("make it better"), a single un-justified design, and testing that

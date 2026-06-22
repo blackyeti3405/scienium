@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
 import { normalizeInviteCode } from '@/lib/team/invite'
-import { applySchoolAndClass, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { applySchoolAndClass, syncClerkDisplayName, teamLeadClass } from '@/lib/onboarding/profile'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
@@ -90,6 +90,19 @@ export async function POST(req: NextRequest) {
       })
       return team.id
     })
+
+    // If the joiner isn't in a class, adopt the lab's class (its lead's) so they
+    // show up on the teacher's roster alongside the rest of the lab.
+    const fresh = await db.user.findUnique({ where: { id: user.id }, select: { classId: true } })
+    if (!fresh?.classId) {
+      const labClass = await teamLeadClass(teamId)
+      if (labClass) {
+        await db.user.update({
+          where: { id: user.id },
+          data: { classId: labClass.classId, schoolId: labClass.schoolId },
+        })
+      }
+    }
 
     logActivity(teamId, user.id, 'member_joined', { name: user.name }).catch(console.error)
     return NextResponse.json({ teamId })

@@ -67,6 +67,42 @@ export async function applySchoolAndClass(
 }
 
 /**
+ * The classroom a lab belongs to — its lead's class. A lab is "in" a teacher's
+ * class through its lead, so the lead's class (and school) defines the whole
+ * lab's class. Returns null when the lead hasn't joined a class.
+ */
+export async function teamLeadClass(
+  teamId: string,
+): Promise<{ classId: string; schoolId: string } | null> {
+  const lead = await db.teamMember.findFirst({
+    where: { teamId, role: 'lead' },
+    select: { user: { select: { classId: true, schoolId: true } } },
+  })
+  const classId = lead?.user.classId
+  const schoolId = lead?.user.schoolId
+  return classId && schoolId ? { classId, schoolId } : null
+}
+
+/**
+ * Enroll a whole lab into a classroom: copy the class + school onto every team
+ * member who isn't already in a class, so all lab members appear on the teacher's
+ * roster — even those who joined by team code without ever entering a class code.
+ * Never overrides a member who deliberately joined a different class. Returns the
+ * number of members enrolled.
+ */
+export async function enrollTeamInClass(
+  teamId: string,
+  classId: string,
+  schoolId: string,
+): Promise<number> {
+  const { count } = await db.user.updateMany({
+    where: { classId: null, teamMemberships: { some: { teamId } } },
+    data: { classId, schoolId },
+  })
+  return count
+}
+
+/**
  * Dev-only default high school. The pilot's dev account (Santa Clara High School)
  * is pre-filled so local onboarding/teacher flows have a real school without
  * manual entry. Inert in production.

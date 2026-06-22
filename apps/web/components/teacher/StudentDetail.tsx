@@ -2,7 +2,30 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Loader2, ChevronLeft, Send, ExternalLink } from 'lucide-react'
+import {
+  Loader2,
+  ChevronLeft,
+  Send,
+  ExternalLink,
+  MessageSquare,
+  X,
+  FileText,
+  User,
+  TrendingUp,
+  BookOpen,
+  FlaskConical,
+  ClipboardList,
+  Zap,
+  Building2,
+  Trophy,
+  Flag,
+  Activity,
+  Radio,
+  MessageCircle,
+  Coins,
+} from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Card } from '@/components/ui/Card'
 import { SectionTabs } from '@/components/ui/SectionTabs'
 import {
@@ -81,12 +104,44 @@ interface PaperRow {
 }
 
 interface ResearchPlan {
+  googleDocUrl: string | null
   projectType: string | null
   projectSubtype: string | null
   lastReviewJson: unknown
   lastReviewedAt: string | null
   lastIdeaCheckJson: unknown
   lastIdeaCheckAt: string | null
+}
+
+// Typed shapes for researchPlan JSON fields
+interface IdeaPriorWork {
+  title?: string
+  url?: string
+  note?: string
+}
+interface IdeaFindings {
+  summary: string
+  priorWork: IdeaPriorWork[]
+  differentiation: string
+  recommendation: string
+  citations: { title: string; url: string }[]
+}
+interface IdeaCheckResult {
+  verdict: 'novel' | 'refine' | 'reject'
+  findings: IdeaFindings
+}
+interface PlanReviewSectionRow {
+  title: string
+  score: number
+  max: number
+  assessment: string
+}
+interface PlanReviewResult {
+  overall: { readiness: 'early' | 'promising' | 'strong'; score: number; summary: string } | null
+  sections: PlanReviewSectionRow[]
+  strengths: string[]
+  gaps: string[]
+  recommendations: string[]
 }
 
 interface LogRow {
@@ -177,25 +232,157 @@ function fmtDate(iso: string | null | undefined) {
 function Field({ label, value }: { label: string; value: string | React.ReactNode }) {
   return (
     <div className="flex gap-3 text-sm">
-      <span className="font-pixel text-[7px] text-white/35 uppercase w-28 shrink-0 pt-0.5 tracking-wider">
-        {label}
-      </span>
+      <span className="text-white/40 w-28 shrink-0 text-xs">{label}</span>
       <span className="text-white/80">{value}</span>
     </div>
   )
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="font-pixel text-[8px] text-white/30 py-2">{children}</p>
+  return <p className="text-sm text-white/30 py-2">{children}</p>
 }
 
-function PhaseBadge({ phase }: { phase: string }) {
-  const info = PHASE_INFO[phase as Phase]
-  if (!info) return <span className="text-white/50 text-sm">{phase}</span>
+// ─── Student Identity Header ───────────────────────────────────────────────────
+
+function StudentHeader({ overview }: { overview: Overview }) {
+  const { student, team, studentKp } = overview
+  const phase = team?.phase as Phase | undefined
+  const labTypeLabel = team?.labType
+    ? (LAB_TYPE_LABELS[team.labType as LabType] ?? team.labType)
+    : null
+  const currentIdx = phase ? PHASE_ORDER.indexOf(phase) : -1
+
+  // Initials avatar
+  const initials = student.name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('')
+
   return (
-    <span className="inline-block text-xs px-1.5 py-0.5 rounded bg-white/10 text-white/70">
-      {info.label}
-    </span>
+    <div className="border border-white/10 bg-[#0a1628] rounded-lg p-5 space-y-5">
+      {/* Top row: avatar + name + meta */}
+      <div className="flex items-start gap-4">
+        {/* Circular initials avatar */}
+        <div className="shrink-0 w-12 h-12 rounded-full bg-[#F5C518]/15 border border-[#F5C518]/30 flex items-center justify-center">
+          <span className="text-[#F5C518] text-sm font-semibold tabular-nums select-none">
+            {initials || '?'}
+          </span>
+        </div>
+
+        {/* Name + role + meta */}
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-2xl font-semibold text-white leading-none">{student.name}</h1>
+            {student.memberRole && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-medium border ${
+                  student.memberRole === 'lead'
+                    ? 'bg-[#F5C518]/10 border-[#F5C518]/30 text-[#F5C518]'
+                    : 'bg-white/5 border-white/15 text-white/60'
+                }`}
+              >
+                {student.memberRole}
+              </span>
+            )}
+          </div>
+          {/* Meta row */}
+          <p className="text-sm text-white/45 flex flex-wrap gap-x-2 gap-y-0.5">
+            {team && <span>{team.name}</span>}
+            {labTypeLabel && (
+              <>
+                <span className="text-white/20">·</span>
+                <span>{labTypeLabel}</span>
+              </>
+            )}
+            {student.class && (
+              <>
+                <span className="text-white/20">·</span>
+                <span>{student.class.name}</span>
+              </>
+            )}
+            <span className="text-white/20">·</span>
+            <span>Joined {fmtDate(student.joinedAt ?? student.createdAt)}</span>
+          </p>
+          {/* Stat chips */}
+          <div className="flex flex-wrap gap-2 pt-0.5">
+            <span className="inline-flex items-center gap-1.5 text-xs bg-white/5 border border-white/10 rounded-full px-2.5 py-1">
+              <Coins size={12} className="text-[#F5C518]" />
+              <span className="tabular-nums text-white/80">
+                {studentKp.toLocaleString()} KP
+              </span>
+            </span>
+            {team?.currency && (
+              <span className="inline-flex items-center gap-1.5 text-xs bg-white/5 border border-white/10 rounded-full px-2.5 py-1">
+                <Zap size={12} className="text-white/50" />
+                <span className="tabular-nums text-white/80">
+                  Clearance {team.currency.clearanceLevel}
+                </span>
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Phase stepper */}
+      {team && (
+        <div className="space-y-2">
+          <p className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
+            Phase
+          </p>
+          <div className="flex items-center gap-0">
+            {PHASE_ORDER.map((p, idx) => {
+              const info = PHASE_INFO[p]
+              const isCurrent = p === phase
+              const isPast = idx < currentIdx
+              const isGated = p in TEACHER_GATED_TRANSITIONS
+              const isLast = idx === PHASE_ORDER.length - 1
+              return (
+                <div key={p} className="flex items-center flex-1 min-w-0">
+                  {/* Step node */}
+                  <div className="flex flex-col items-center gap-1 min-w-0 flex-1">
+                    <div
+                      className={`w-2 h-2 rounded-full shrink-0 ${
+                        isCurrent
+                          ? 'bg-[#F5C518] ring-2 ring-[#F5C518]/30'
+                          : isPast
+                          ? 'bg-[#F5C518]/50'
+                          : 'bg-white/15'
+                      }`}
+                    />
+                    <span
+                      className={`text-[10px] text-center leading-tight hidden sm:block truncate px-0.5 w-full ${
+                        isCurrent
+                          ? 'text-[#F5C518] font-medium'
+                          : isPast
+                          ? 'text-white/40'
+                          : 'text-white/20'
+                      }`}
+                    >
+                      {info.label}
+                      {isGated && (
+                        <span className="block font-pixel text-[8px] text-amber-400/60 uppercase">
+                          gated
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {/* Connector line */}
+                  {!isLast && (
+                    <div
+                      className={`h-px flex-1 shrink-0 mx-1 ${
+                        idx < currentIdx ? 'bg-[#F5C518]/40' : 'bg-white/10'
+                      }`}
+                    />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -203,12 +390,13 @@ function PhaseBadge({ phase }: { phase: string }) {
 
 function IdentitySection({ overview }: { overview: Overview }) {
   const { student, team } = overview
-  const phase = team?.phase as Phase | undefined
-  const labTypeLabel = team?.labType ? (LAB_TYPE_LABELS[team.labType as LabType] ?? team.labType) : null
+  const labTypeLabel = team?.labType
+    ? (LAB_TYPE_LABELS[team.labType as LabType] ?? team.labType)
+    : null
 
   return (
     <Card>
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         <Field label="Name" value={student.name} />
         <Field label="Email" value={student.email} />
         {student.class && <Field label="Class" value={student.class.name} />}
@@ -216,8 +404,26 @@ function IdentitySection({ overview }: { overview: Overview }) {
         <Field label="Joined" value={fmtDate(student.joinedAt ?? student.createdAt)} />
         {team && <Field label="Team" value={team.name} />}
         {labTypeLabel && <Field label="Lab type" value={labTypeLabel} />}
-        {phase && (
-          <Field label="Phase" value={<PhaseBadge phase={phase} />} />
+        {team?.topic && <Field label="Topic" value={team.topic} />}
+        {team?.members && (
+          <Field
+            label="Team members"
+            value={
+              <span className="flex flex-wrap gap-1.5">
+                {team.members.map((m) => (
+                  <span
+                    key={m.user.id}
+                    className="text-xs bg-white/5 border border-white/10 rounded-full px-2 py-0.5 text-white/70"
+                  >
+                    {m.user.name}
+                    {m.role === 'lead' && (
+                      <span className="ml-1 text-[#F5C518]/70">★</span>
+                    )}
+                  </span>
+                ))}
+              </span>
+            }
+          />
         )}
       </div>
     </Card>
@@ -232,62 +438,74 @@ function PhaseSection({ overview }: { overview: Overview }) {
   const currentIdx = PHASE_ORDER.indexOf(currentPhase)
 
   return (
-    <Card>
-      <div className="space-y-3">
-        {/* Phase ladder */}
-        <div className="flex flex-wrap gap-2">
-          {PHASE_ORDER.map((p, idx) => {
-            const info = PHASE_INFO[p]
-            const isCurrent = p === currentPhase
-            const isPast = idx < currentIdx
-            const isGated = p in TEACHER_GATED_TRANSITIONS
-            return (
-              <div
-                key={p}
-                className={`flex flex-col items-center gap-1 px-2.5 py-1.5 border text-xs ${
-                  isCurrent
-                    ? 'border-[#F5C518]/60 bg-[#F5C518]/5 text-white'
-                    : isPast
-                    ? 'border-white/10 bg-white/[0.02] text-white/40'
-                    : 'border-white/5 text-white/25'
-                }`}
-              >
-                <span>{info.label}</span>
-                {isGated && (
-                  <span className="font-pixel text-[6px] text-amber-400/70 uppercase">teacher</span>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Pending advance */}
-        {pendingAdvance && (
-          <div className="border border-amber-400/30 bg-amber-400/5 px-3 py-2 space-y-1">
-            <p className="font-pixel text-[8px] text-amber-300 uppercase tracking-widest">
-              Pending advance request
-            </p>
-            <p className="text-sm text-white/80">
-              {PHASE_INFO[pendingAdvance.fromPhase as Phase]?.label ?? pendingAdvance.fromPhase}
-              {' → '}
-              {PHASE_INFO[pendingAdvance.toPhase as Phase]?.label ?? pendingAdvance.toPhase}
-            </p>
-            <p className="text-xs text-white/50">
-              Requested by {pendingAdvance.requestedBy.name} on {fmtDate(pendingAdvance.createdAt)}
-            </p>
-            {pendingAdvance.note && (
-              <p className="text-sm text-white/70 italic">&ldquo;{pendingAdvance.note}&rdquo;</p>
-            )}
-            <Link
-              href="/teacher/validations"
-              className="inline-block font-pixel text-[8px] text-amber-300 underline mt-1"
-            >
-              Review in Validations →
-            </Link>
+    <div className="space-y-4">
+      <Card>
+        <div className="space-y-4">
+          {/* Phase cards grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {PHASE_ORDER.map((p, idx) => {
+              const info = PHASE_INFO[p]
+              const isCurrent = p === currentPhase
+              const isPast = idx < currentIdx
+              const isGated = p in TEACHER_GATED_TRANSITIONS
+              return (
+                <div
+                  key={p}
+                  className={`rounded-md px-3 py-2.5 border text-sm ${
+                    isCurrent
+                      ? 'border-[#F5C518]/50 bg-[#F5C518]/[0.06] text-white'
+                      : isPast
+                      ? 'border-white/10 bg-white/[0.02] text-white/40'
+                      : 'border-white/5 text-white/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-medium">{info.label}</span>
+                    {isCurrent && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#F5C518] shrink-0" />
+                    )}
+                    {isPast && (
+                      <span className="text-[#F5C518]/50 text-xs">✓</span>
+                    )}
+                  </div>
+                  {isGated && (
+                    <span className="font-pixel text-[8px] text-amber-400/70 uppercase block mt-0.5">
+                      teacher-gated
+                    </span>
+                  )}
+                </div>
+              )
+            })}
           </div>
-        )}
-      </div>
-    </Card>
+        </div>
+      </Card>
+
+      {/* Pending advance */}
+      {pendingAdvance && (
+        <div className="border border-amber-400/30 bg-amber-400/5 rounded-lg px-4 py-3 space-y-1.5">
+          <p className="font-pixel text-[10px] text-amber-300 uppercase tracking-widest">
+            Pending advance request
+          </p>
+          <p className="text-sm text-white/80">
+            {PHASE_INFO[pendingAdvance.fromPhase as Phase]?.label ?? pendingAdvance.fromPhase}
+            {' → '}
+            {PHASE_INFO[pendingAdvance.toPhase as Phase]?.label ?? pendingAdvance.toPhase}
+          </p>
+          <p className="text-xs text-white/50">
+            Requested by {pendingAdvance.requestedBy.name} on {fmtDate(pendingAdvance.createdAt)}
+          </p>
+          {pendingAdvance.note && (
+            <p className="text-sm text-white/70 italic">&ldquo;{pendingAdvance.note}&rdquo;</p>
+          )}
+          <Link
+            href="/teacher/validations"
+            className="inline-block text-xs text-amber-300 underline hover:text-amber-200 transition-colors mt-1"
+          >
+            Review in Validations →
+          </Link>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -295,28 +513,47 @@ function EconomySection({ overview }: { overview: Overview }) {
   const { team, studentKp } = overview
   const currency = team?.currency
 
-  return (
-    <Card>
-      {currency ? (
-        <div className="space-y-2">
-          <Field label="Team KP" value={currency.kp.toLocaleString()} />
-          <Field label="Clearance" value={`Level ${currency.clearanceLevel}`} />
-          <Field label="Lab Credits" value={currency.lc.toLocaleString()} />
-          <div className="border-t border-white/10 pt-2 mt-2">
-            <Field
-              label="Student KP"
-              value={
-                <span data-testid="student-kp" className="text-[#F5C518]">
-                  {studentKp.toLocaleString()}
-                </span>
-              }
-            />
-          </div>
-        </div>
-      ) : (
+  if (!currency) {
+    return (
+      <Card>
         <Empty>No economy data yet.</Empty>
-      )}
-    </Card>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
+          <span className="text-white/40"><Coins size={16} /></span>
+          <span className="text-2xl font-semibold tabular-nums text-[#F5C518]" data-testid="student-kp">
+            {studentKp.toLocaleString()}
+          </span>
+          <span className="text-xs text-white/50">Student KP</span>
+        </div>
+        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
+          <span className="text-white/40"><Coins size={16} /></span>
+          <span className="text-2xl font-semibold tabular-nums text-white">
+            {currency.kp.toLocaleString()}
+          </span>
+          <span className="text-xs text-white/50">Team KP</span>
+        </div>
+        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
+          <span className="text-white/40"><Zap size={16} /></span>
+          <span className="text-2xl font-semibold tabular-nums text-white">
+            {currency.clearanceLevel}
+          </span>
+          <span className="text-xs text-white/50">Clearance Level</span>
+        </div>
+        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
+          <span className="text-white/40"><Activity size={16} /></span>
+          <span className="text-2xl font-semibold tabular-nums text-white">
+            {currency.lc.toLocaleString()}
+          </span>
+          <span className="text-xs text-white/50">Lab Credits</span>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -336,13 +573,15 @@ function BuildingsSection({ overview }: { overview: Overview }) {
     <div className="space-y-4">
       {teamBuildings.length > 0 && (
         <Card label="Gateway buildings">
-          <ul className="space-y-2">
+          <ul className="space-y-2.5">
             {teamBuildings.map((b, i) => (
-              <li key={i} className="text-sm text-white/75 flex flex-wrap gap-x-3 gap-y-0.5">
-                <span className="font-medium text-white">{b.name}</span>
-                <span className="text-white/50">Lv {b.currentLevel}</span>
+              <li key={i} className="flex items-center justify-between text-sm">
+                <div>
+                  <span className="font-medium text-white">{b.name}</span>
+                  <span className="ml-2 text-white/50 text-xs">Lv {b.currentLevel}</span>
+                </div>
                 {b.lastUpgradedByName && (
-                  <span className="text-white/40 text-xs">
+                  <span className="text-white/35 text-xs">
                     upgraded by {b.lastUpgradedByName}
                     {b.lastUpgradedAt ? ` · ${fmtDate(b.lastUpgradedAt)}` : ''}
                   </span>
@@ -355,14 +594,14 @@ function BuildingsSection({ overview }: { overview: Overview }) {
 
       {shopBuildings.length > 0 && (
         <Card label="Shop buildings">
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {shopBuildings.map((b, i) => (
-              <li key={i} className="text-sm space-y-0.5">
-                <div className="flex flex-wrap gap-x-3 items-baseline">
-                  <span className="font-medium text-white">{b.name}</span>
+              <li key={i} className="space-y-0.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-white text-sm">{b.name}</span>
                   {b.purchasedByName && (
-                    <span className="text-white/40 text-xs">
-                      by {b.purchasedByName} · {fmtDate(b.purchasedAt)}
+                    <span className="text-white/35 text-xs">
+                      {b.purchasedByName} · {fmtDate(b.purchasedAt)}
                     </span>
                   )}
                 </div>
@@ -376,83 +615,587 @@ function BuildingsSection({ overview }: { overview: Overview }) {
   )
 }
 
+// ─── Literature Q&A types ──────────────────────────────────────────────────────
+
+interface PaperQA {
+  paper: { id: string; title: string; authors: string[]; status: string }
+  proficiency: { demonstrated: boolean; bestScore: number } | null
+  quiz: {
+    score: number
+    passed: boolean
+    threshold: number
+    gradedAt: string
+    questions: { id: string; prompt: string; focus: string }[]
+    answers: Record<string, string>
+    results: { questionId: string; score: number; rationale: string }[]
+  } | null
+  chat: { role: string; content: string }[]
+}
+
+// ─── Q&A Panel ─────────────────────────────────────────────────────────────────
+
+function QAPanel({
+  studentId,
+  paperId,
+  onClose,
+}: {
+  studentId: string
+  paperId: string
+  onClose: () => void
+}) {
+  const [data, setData] = useState<PaperQA | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch(`/api/teacher/student/${studentId}/literature/${paperId}`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error('Failed to load')
+        return r.json() as Promise<PaperQA>
+      })
+      .then(setData)
+      .catch(() => setErr('Could not load Q&A data.'))
+      .finally(() => setLoading(false))
+  }, [studentId, paperId])
+
+  return (
+    /* Backdrop */
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#0a1628] border border-white/15 rounded-lg shadow-2xl">
+        {/* Modal header */}
+        <div className="sticky top-0 z-10 flex items-center justify-between bg-[#0a1628] border-b border-white/10 px-4 py-3">
+          {data ? (
+            <div className="min-w-0 pr-4">
+              <p className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
+                Q&amp;A — read only
+              </p>
+              <p className="text-sm text-white truncate mt-0.5">{data.paper.title}</p>
+            </div>
+          ) : (
+            <p className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
+              Q&amp;A — read only
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 text-white/40 hover:text-white/80 transition-colors cursor-pointer"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-6">
+          {loading && (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="animate-spin text-white/30" size={20} />
+            </div>
+          )}
+
+          {err && (
+            <p className="text-sm text-red-400 text-center py-8">{err}</p>
+          )}
+
+          {data && !loading && (
+            <>
+              {/* View PDF link */}
+              {data.paper.status === 'ready' && (
+                <div>
+                  <a
+                    href={`/api/teacher/student/${studentId}/literature/${paperId}/file`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm text-[#F5C518] hover:brightness-110 transition-all"
+                  >
+                    <FileText size={14} /> View PDF
+                  </a>
+                </div>
+              )}
+
+              {/* Quiz section */}
+              <section className="space-y-3">
+                <h3 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
+                  Quiz
+                </h3>
+
+                {data.quiz ? (
+                  <div className="space-y-3">
+                    {/* Score + pass/fail */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl font-semibold tabular-nums text-white">
+                        {data.quiz.score}
+                        <span className="text-base text-white/40">%</span>
+                      </span>
+                      <span
+                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                          data.quiz.passed
+                            ? 'bg-emerald-400/15 text-emerald-400'
+                            : 'bg-red-400/15 text-red-400'
+                        }`}
+                      >
+                        {data.quiz.passed ? 'Passed' : 'Not passed'}
+                      </span>
+                      <span className="text-xs text-white/30">
+                        threshold {data.quiz.threshold}%
+                      </span>
+                    </div>
+
+                    {/* Per-question breakdown */}
+                    <ul className="space-y-3">
+                      {data.quiz.questions.map((q) => {
+                        const answer = data.quiz!.answers[q.id] ?? ''
+                        const result = data.quiz!.results.find((r) => r.questionId === q.id)
+                        const qScore = result?.score ?? 0
+                        const scoreColor =
+                          qScore >= 70
+                            ? 'text-emerald-400'
+                            : qScore >= 40
+                            ? 'text-amber-400'
+                            : 'text-red-400'
+                        return (
+                          <li
+                            key={q.id}
+                            className="border border-white/10 bg-[#0d1b2e] rounded-md p-3 space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="text-sm text-white/85 flex-1">{q.prompt}</p>
+                              <span className={`shrink-0 text-sm font-semibold tabular-nums ${scoreColor}`}>
+                                {qScore}%
+                              </span>
+                            </div>
+                            {answer && (
+                              <p className="text-sm text-white/60 bg-white/5 px-2.5 py-1.5 border-l-2 border-white/20 italic rounded-sm">
+                                {answer}
+                              </p>
+                            )}
+                            {result?.rationale && (
+                              <p className="text-xs text-white/40">{result.rationale}</p>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-sm text-white/30 py-2">No quiz taken yet.</p>
+                )}
+              </section>
+
+              {/* Chat transcript */}
+              <section className="space-y-3">
+                <h3 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
+                  Discussion transcript
+                </h3>
+
+                {data.chat.length > 0 ? (
+                  <ul className="space-y-3">
+                    {data.chat.map((msg, i) => (
+                      <li
+                        key={i}
+                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[85%] px-3 py-2 text-sm rounded-md ${
+                            msg.role === 'user'
+                              ? 'bg-[#F5C518]/10 border border-[#F5C518]/20 text-white/85'
+                              : 'bg-white/5 border border-white/10 text-white/75'
+                          }`}
+                        >
+                          <span className="text-[10px] uppercase text-white/30 block mb-1 font-medium tracking-wide">
+                            {msg.role === 'user' ? 'student' : 'nova'}
+                          </span>
+                          <div className="prose prose-sm prose-invert max-w-none text-inherit">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {msg.content}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-white/30 py-2">No discussion yet.</p>
+                )}
+              </section>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Literature section ─────────────────────────────────────────────────────────
+
 function LiteratureSection({ overview }: { overview: Overview }) {
   const { papers, litProgress, studentProficiencies } = overview
+  const studentId = overview.student.id
   const demonstratedCount = studentProficiencies.filter((p) => p.demonstrated).length
+
+  const [openPaperId, setOpenPaperId] = useState<string | null>(null)
+  const profMap = new Map(studentProficiencies.map((sp) => [sp.paper.id, sp]))
+
+  const pct = Math.min(100, (litProgress.sourceCount / litProgress.sourceTarget) * 100)
 
   return (
     <div className="space-y-4">
       {/* Source gate progress */}
       <Card label="Source gate">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl font-medium text-white" data-testid="source-count">
+        <div className="space-y-3">
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-semibold tabular-nums text-white" data-testid="source-count">
               {litProgress.sourceCount}
-              <span className="text-white/40 text-base"> / {litProgress.sourceTarget}</span>
             </span>
-            <span className="text-sm text-white/50">sources ready</span>
+            <span className="text-white/40 text-sm">/ {litProgress.sourceTarget} sources ready</span>
           </div>
           <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
             <div
-              className="h-full bg-[#F5C518] rounded-full transition-all"
-              style={{ width: `${Math.min(100, (litProgress.sourceCount / litProgress.sourceTarget) * 100)}%` }}
+              className="h-full bg-[#F5C518] rounded-full transition-all duration-300"
+              style={{ width: `${pct}%` }}
             />
           </div>
+          <p className="text-sm text-white/50">
+            <span className="text-white font-medium" data-testid="proficiency-count">
+              {demonstratedCount}
+            </span>{' '}
+            of {litProgress.sourceTarget} demonstrated by this student
+          </p>
         </div>
       </Card>
 
-      {/* This student's proficiency */}
-      <Card label="Student proficiency">
-        <p className="text-sm text-white/70">
-          <span className="text-white font-medium" data-testid="proficiency-count">
-            {demonstratedCount}
-          </span>{' '}
-          of {litProgress.sourceTarget} sources demonstrated
-        </p>
-        {studentProficiencies.length > 0 && (
-          <ul className="mt-2 space-y-1 max-h-48 overflow-y-auto">
-            {studentProficiencies.map((prof, i) => (
-              <li key={i} className="flex items-center gap-2 text-xs text-white/65">
-                <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${prof.demonstrated ? 'bg-emerald-400' : 'bg-white/20'}`}
-                />
-                <span className="truncate flex-1">{prof.paper.title}</span>
-                <span className="shrink-0 text-white/40">{prof.bestScore}%</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      {/* Paper list */}
+      {/* Per-source list */}
       {papers.length > 0 && (
-        <Card label={`All papers · ${papers.length}`}>
-          <ul className="space-y-1.5 max-h-64 overflow-y-auto">
-            {papers.map((p) => (
-              <li key={p.id} className="flex items-start gap-2 text-sm">
-                <span
-                  className={`mt-1 w-2 h-2 shrink-0 rounded-full ${
-                    p.status === 'ready'
-                      ? 'bg-emerald-400'
-                      : p.status === 'error'
-                      ? 'bg-red-400'
-                      : 'bg-white/30'
-                  }`}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-white/80 truncate">{p.title}</p>
-                  <p className="text-white/40 text-xs">
-                    {p.authors.length > 0 ? p.authors.slice(0, 2).join(', ') : 'No authors'} · {p.status}
-                  </p>
-                </div>
-              </li>
-            ))}
+        <Card label={`Sources · ${papers.length}`}>
+          <ul className="space-y-2">
+            {papers.map((p) => {
+              const prof = profMap.get(p.id) ?? null
+              const authorStr =
+                p.authors.length === 0
+                  ? 'No authors'
+                  : p.authors.length <= 2
+                  ? p.authors.join(', ')
+                  : `${p.authors.slice(0, 2).join(', ')} et al.`
+
+              return (
+                <li
+                  key={p.id}
+                  className="flex items-start gap-3 border border-white/10 bg-[#0d1b2e] rounded-md px-3 py-2.5"
+                >
+                  {/* Status dot */}
+                  <span
+                    className={`mt-1.5 w-2 h-2 shrink-0 rounded-full ${
+                      p.status === 'ready'
+                        ? 'bg-emerald-400'
+                        : p.status === 'error'
+                        ? 'bg-red-400'
+                        : 'bg-white/30'
+                    }`}
+                  />
+
+                  <div className="flex-1 min-w-0 space-y-0.5">
+                    <p className="text-sm text-white/85 leading-snug">{p.title}</p>
+                    <p className="text-xs text-white/40">{authorStr}</p>
+                  </div>
+
+                  <div className="shrink-0 flex flex-col items-end gap-1.5">
+                    {/* Proficiency badge */}
+                    {prof ? (
+                      prof.demonstrated ? (
+                        <span className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-full px-2 py-0.5 whitespace-nowrap">
+                          Proficient · {prof.bestScore}%
+                        </span>
+                      ) : (
+                        <span className="text-xs text-white/35 bg-white/5 border border-white/10 rounded-full px-2 py-0.5 whitespace-nowrap">
+                          Not demonstrated
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-xs text-white/25 whitespace-nowrap">
+                        No attempt
+                      </span>
+                    )}
+
+                    {/* Q&A button */}
+                    <button
+                      type="button"
+                      onClick={() => setOpenPaperId(p.id)}
+                      className="inline-flex items-center gap-1 text-xs text-[#F5C518] hover:brightness-110 transition-all cursor-pointer"
+                      title="View quiz results and chat transcript"
+                    >
+                      <MessageSquare size={12} /> Q&amp;A
+                    </button>
+                  </div>
+                </li>
+              )
+            })}
           </ul>
         </Card>
+      )}
+
+      {papers.length === 0 && (
+        <Card>
+          <Empty>No sources added yet.</Empty>
+        </Card>
+      )}
+
+      {/* Q&A modal */}
+      {openPaperId && (
+        <QAPanel
+          studentId={studentId}
+          paperId={openPaperId}
+          onClose={() => setOpenPaperId(null)}
+        />
       )}
     </div>
   )
 }
+
+// ─── Research plan helpers ─────────────────────────────────────────────────────
+
+function OriginalityCheckDisplay({
+  check,
+  checkedAt,
+}: {
+  check: IdeaCheckResult
+  checkedAt: string | null
+}) {
+  const v = check.verdict
+  const verdictStyle =
+    v === 'novel'
+      ? 'bg-emerald-400/10 text-emerald-400 border-emerald-400/20'
+      : v === 'reject'
+      ? 'bg-red-400/10 text-red-400 border-red-400/20'
+      : 'bg-amber-400/10 text-amber-400 border-amber-400/20'
+  const verdictLabel = v === 'novel' ? 'Novel' : v === 'reject' ? 'Reject' : 'Refine'
+  const priorWork = check.findings?.priorWork ?? []
+  const citations = check.findings?.citations ?? []
+
+  return (
+    <div className="space-y-4">
+      {/* Verdict pill + summary */}
+      <div className="flex items-start gap-3 flex-wrap">
+        <span
+          className={`shrink-0 text-xs font-medium px-2.5 py-0.5 rounded-full border ${verdictStyle}`}
+        >
+          {verdictLabel}
+        </span>
+        {check.findings?.summary && (
+          <p className="text-sm text-white/75 leading-relaxed flex-1 min-w-0">
+            {check.findings.summary}
+          </p>
+        )}
+      </div>
+
+      {/* Prior work */}
+      {priorWork.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="font-pixel text-[9px] text-white/40 uppercase tracking-widest">
+            Prior work
+          </p>
+          <ul className="space-y-2">
+            {priorWork.map((pw, i) => (
+              <li
+                key={i}
+                className="border border-white/10 bg-[#0d1b2e] rounded-md px-3 py-2 space-y-0.5"
+              >
+                {pw.url ? (
+                  <a
+                    href={pw.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-300 hover:text-blue-200 transition-colors inline-flex items-center gap-1"
+                  >
+                    {pw.title ?? pw.url}
+                    <ExternalLink size={10} className="shrink-0" />
+                  </a>
+                ) : (
+                  <span className="text-sm text-white/80">{pw.title}</span>
+                )}
+                {pw.note && (
+                  <p className="text-xs text-white/45 leading-relaxed">{pw.note}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* How it could differ */}
+      {check.findings?.differentiation && (
+        <div className="space-y-1">
+          <p className="font-pixel text-[9px] text-white/40 uppercase tracking-widest">
+            How it could differ
+          </p>
+          <p className="text-sm text-white/65 leading-relaxed">
+            {check.findings.differentiation}
+          </p>
+        </div>
+      )}
+
+      {/* Recommendation */}
+      {check.findings?.recommendation && (
+        <div className="border border-[#F5C518]/25 bg-[#F5C518]/5 rounded-md px-3 py-2.5 space-y-1">
+          <p className="font-pixel text-[9px] text-[#F5C518]/70 uppercase tracking-widest">
+            Recommendation
+          </p>
+          <p className="text-sm text-white/75 leading-relaxed">
+            {check.findings.recommendation}
+          </p>
+        </div>
+      )}
+
+      {/* Citations */}
+      {citations.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="font-pixel text-[9px] text-white/40 uppercase tracking-widest">
+            Sources
+          </p>
+          <ul className="space-y-1">
+            {citations.map((c, i) => (
+              <li key={i}>
+                <a
+                  href={c.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-white/40 hover:text-white/70 transition-colors"
+                >
+                  <ExternalLink size={9} className="shrink-0" />
+                  {c.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {checkedAt && (
+        <p className="text-xs text-white/30">Checked {fmtDate(checkedAt)}</p>
+      )}
+    </div>
+  )
+}
+
+function ReviewBulletColumn({
+  title,
+  items,
+  color,
+}: {
+  title: string
+  items: string[]
+  color: string
+}) {
+  if (items.length === 0) return null
+  return (
+    <div>
+      <p className="font-pixel text-[9px] text-white/40 uppercase tracking-widest mb-1.5">
+        {title}
+      </p>
+      <ul className="space-y-1.5">
+        {items.map((it, i) => (
+          <li key={i} className="flex gap-1.5 text-sm text-white/65 leading-relaxed">
+            <span className={`shrink-0 ${color}`}>▪</span>
+            {it}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function PlanReviewDisplay({
+  review,
+  reviewedAt,
+}: {
+  review: PlanReviewResult
+  reviewedAt: string | null
+}) {
+  const readiness = review.overall?.readiness ?? 'early'
+  const overallStyle =
+    readiness === 'strong'
+      ? 'border-emerald-500/30 bg-emerald-500/10'
+      : readiness === 'promising'
+      ? 'border-[#F5C518]/30 bg-[#F5C518]/10'
+      : 'border-orange-500/30 bg-orange-500/10'
+  const badgeStyle =
+    readiness === 'strong'
+      ? 'bg-emerald-400/10 text-emerald-400 border-emerald-400/20'
+      : readiness === 'promising'
+      ? 'bg-[#F5C518]/10 text-[#F5C518] border-[#F5C518]/20'
+      : 'bg-orange-400/10 text-orange-400 border-orange-400/20'
+  const sections = review.sections ?? []
+  const strengths = review.strengths ?? []
+  const gaps = review.gaps ?? []
+  const recommendations = review.recommendations ?? []
+
+  return (
+    <div className="space-y-4">
+      {/* Overall */}
+      {review.overall && (
+        <div className={`border rounded-md px-4 py-3 space-y-1.5 ${overallStyle}`}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className={`text-xs font-medium px-2 py-0.5 rounded-full border capitalize ${badgeStyle}`}
+            >
+              {readiness}
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-white">
+              {review.overall.score}
+            </span>
+          </div>
+          <p className="text-sm text-white/75 leading-relaxed">{review.overall.summary}</p>
+        </div>
+      )}
+
+      {/* Section-by-section rows */}
+      {sections.length > 0 && (
+        <div className="space-y-2">
+          {sections.map((s, i) => {
+            const pct = s.max ? Math.min(100, (s.score / s.max) * 100) : 0
+            return (
+              <div
+                key={i}
+                className="border border-white/10 bg-[#0d1b2e] rounded-md px-3 py-2.5"
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm text-white/85">{s.title}</span>
+                  <span className="text-xs text-white/40 shrink-0 tabular-nums">
+                    {s.score}/{s.max}
+                  </span>
+                </div>
+                <div className="h-1 bg-white/10 rounded-full my-1.5 overflow-hidden">
+                  <div
+                    className="h-full bg-[#F5C518] rounded-full"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="text-xs text-white/50 leading-relaxed">{s.assessment}</p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Three-column bullet lists */}
+      {(strengths.length > 0 || gaps.length > 0 || recommendations.length > 0) && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <ReviewBulletColumn title="Strengths" items={strengths} color="text-emerald-400" />
+          <ReviewBulletColumn title="Gaps" items={gaps} color="text-orange-400" />
+          <ReviewBulletColumn title="Next steps" items={recommendations} color="text-[#F5C518]" />
+        </div>
+      )}
+
+      {reviewedAt && (
+        <p className="text-xs text-white/30">Reviewed {fmtDate(reviewedAt)}</p>
+      )}
+    </div>
+  )
+}
+
+// ─── Research plan section ─────────────────────────────────────────────────────
 
 function ResearchPlanSection({ overview }: { overview: Overview }) {
   const { researchPlan } = overview
@@ -465,55 +1208,57 @@ function ResearchPlanSection({ overview }: { overview: Overview }) {
     )
   }
 
-  const review = researchPlan.lastReviewJson as Record<string, unknown> | null
-  const ideaCheck = researchPlan.lastIdeaCheckJson as Record<string, unknown> | null
+  const ideaCheck = researchPlan.lastIdeaCheckJson as IdeaCheckResult | null
+  const review = researchPlan.lastReviewJson as PlanReviewResult | null
 
   return (
     <div className="space-y-4">
+      {/* ── Header: type/subtype + doc link ── */}
       <Card>
-        <div className="space-y-2">
-          {researchPlan.projectType && (
-            <Field label="Type" value={researchPlan.projectType} />
-          )}
-          {researchPlan.projectSubtype && (
-            <Field label="Subtype" value={researchPlan.projectSubtype} />
-          )}
-          {!researchPlan.projectType && !researchPlan.projectSubtype && (
-            <Empty>Project type not set yet.</Empty>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="space-y-2">
+            {researchPlan.projectType && (
+              <Field label="Type" value={researchPlan.projectType} />
+            )}
+            {researchPlan.projectSubtype && (
+              <Field label="Subtype" value={researchPlan.projectSubtype} />
+            )}
+            {!researchPlan.projectType && !researchPlan.projectSubtype && (
+              <Empty>Project type not set yet.</Empty>
+            )}
+          </div>
+          {researchPlan.googleDocUrl ? (
+            <a
+              href={researchPlan.googleDocUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-[#F5C518] hover:brightness-110 transition-all shrink-0"
+            >
+              <ExternalLink size={13} /> Open research plan
+            </a>
+          ) : (
+            <span className="text-xs text-white/30 shrink-0">No plan linked yet</span>
           )}
         </div>
       </Card>
 
-      {review && (
-        <Card label="Last AI review">
-          <p className="text-xs text-white/40">{fmtDate(researchPlan.lastReviewedAt)}</p>
-          {typeof review.summary === 'string' && (
-            <p className="text-sm text-white/75 mt-1">{review.summary}</p>
-          )}
-          {typeof review.verdict === 'string' && (
-            <p className="text-sm text-white/75 mt-1">Verdict: {review.verdict}</p>
-          )}
-        </Card>
-      )}
+      {/* ── Originality check ── */}
+      <Card label="Originality check">
+        {ideaCheck ? (
+          <OriginalityCheckDisplay check={ideaCheck} checkedAt={researchPlan.lastIdeaCheckAt} />
+        ) : (
+          <Empty>No originality check has been run yet.</Empty>
+        )}
+      </Card>
 
-      {ideaCheck && (
-        <Card label="Idea originality check">
-          <p className="text-xs text-white/40">{fmtDate(researchPlan.lastIdeaCheckAt)}</p>
-          {typeof ideaCheck.verdict === 'string' && (
-            <p
-              className={`text-sm font-medium mt-1 ${
-                ideaCheck.verdict === 'novel'
-                  ? 'text-emerald-400'
-                  : ideaCheck.verdict === 'reject'
-                  ? 'text-red-400'
-                  : 'text-amber-400'
-              }`}
-            >
-              {ideaCheck.verdict}
-            </p>
-          )}
-        </Card>
-      )}
+      {/* ── Plan review ── */}
+      <Card label="Plan review">
+        {review ? (
+          <PlanReviewDisplay review={review} reviewedAt={researchPlan.lastReviewedAt} />
+        ) : (
+          <Empty>No AI review yet.</Empty>
+        )}
+      </Card>
     </div>
   )
 }
@@ -531,13 +1276,15 @@ function LogsSection({ overview }: { overview: Overview }) {
 
   return (
     <Card>
-      <ul className="space-y-4">
+      <ul className="space-y-5">
         {logs.map((log) => (
           <li key={log.id} className="space-y-1.5 border-l-2 border-white/10 pl-3">
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`font-pixel text-[7px] uppercase tracking-widest ${
-                  log.entryType === 'failure' ? 'text-orange-400' : 'text-emerald-400'
+                className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  log.entryType === 'failure'
+                    ? 'bg-orange-400/10 text-orange-400'
+                    : 'bg-emerald-400/10 text-emerald-400'
                 }`}
               >
                 {log.entryType}
@@ -558,7 +1305,7 @@ function LogsSection({ overview }: { overview: Overview }) {
                     {fu.response ? (
                       <p className="text-sm text-white/70">{fu.response}</p>
                     ) : (
-                      <p className="font-pixel text-[7px] text-white/25">Awaiting response…</p>
+                      <p className="text-xs text-white/25">Awaiting response…</p>
                     )}
                   </li>
                 ))}
@@ -588,7 +1335,7 @@ function ExperimentsSection({ overview }: { overview: Overview }) {
         {experiments.map((exp) => (
           <li key={exp.id} className="flex items-center justify-between text-sm">
             <span className="text-white/80">{exp.title}</span>
-            <span className="text-white/40 text-xs">
+            <span className="text-white/40 tabular-nums text-xs">
               {exp._count.measurements} measurement{exp._count.measurements !== 1 ? 's' : ''}
             </span>
           </li>
@@ -610,39 +1357,56 @@ function ShowcaseSection({ overview }: { overview: Overview }) {
   }
 
   return (
-    <Card>
-      <div className="space-y-2">
-        <Field label="Privacy" value={showcase.privacyLevel.replace(/_/g, ' ')} />
-        <Field
-          label="Status"
-          value={
-            <span
-              className={
-                showcase.moderationStatus === 'approved'
-                  ? 'text-emerald-400'
-                  : showcase.moderationStatus === 'rejected'
-                  ? 'text-red-400'
-                  : 'text-white/70'
-              }
-            >
-              {showcase.moderationStatus.replace(/_/g, ' ')}
-            </span>
-          }
-        />
-        <Field label="Assets" value={String(showcase._count.assets)} />
-        <Field label="Views" value={String(showcase._count.views)} />
-        <div className="pt-2">
-          <Link
-            href={`/showcase/${showcase.slug}`}
-            className="inline-flex items-center gap-1 font-pixel text-[8px] text-[#F5C518] hover:brightness-110"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            View showcase <ExternalLink size={10} />
-          </Link>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
+          <span className="text-white/40"><Trophy size={16} /></span>
+          <span className="text-2xl font-semibold tabular-nums text-white">
+            {showcase._count.views.toLocaleString()}
+          </span>
+          <span className="text-xs text-white/50">Views</span>
+        </div>
+        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
+          <span className="text-white/40"><FileText size={16} /></span>
+          <span className="text-2xl font-semibold tabular-nums text-white">
+            {showcase._count.assets}
+          </span>
+          <span className="text-xs text-white/50">Assets</span>
         </div>
       </div>
-    </Card>
+
+      <Card>
+        <div className="space-y-2.5">
+          <Field label="Privacy" value={showcase.privacyLevel.replace(/_/g, ' ')} />
+          <Field
+            label="Status"
+            value={
+              <span
+                className={
+                  showcase.moderationStatus === 'approved'
+                    ? 'text-emerald-400'
+                    : showcase.moderationStatus === 'rejected'
+                    ? 'text-red-400'
+                    : 'text-white/70'
+                }
+              >
+                {showcase.moderationStatus.replace(/_/g, ' ')}
+              </span>
+            }
+          />
+          <div className="pt-1">
+            <Link
+              href={`/showcase/${showcase.slug}`}
+              className="inline-flex items-center gap-1.5 text-sm text-[#F5C518] hover:brightness-110 transition-all"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              View showcase <ExternalLink size={12} />
+            </Link>
+          </div>
+        </div>
+      </Card>
+    </div>
   )
 }
 
@@ -650,15 +1414,18 @@ function FieldDispatchSection({ overview }: { overview: Overview }) {
   const { fieldDispatch } = overview
 
   return (
-    <Card>
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl font-medium text-[#F5C518]">{fieldDispatch.streak}</span>
-          <span className="text-sm text-white/50">day streak</span>
-        </div>
+    <div className="space-y-4">
+      <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
+        <span className="text-white/40"><Radio size={16} /></span>
+        <span className="text-2xl font-semibold tabular-nums text-[#F5C518]">
+          {fieldDispatch.streak}
+        </span>
+        <span className="text-xs text-white/50">Day streak</span>
+      </div>
 
-        {fieldDispatch.responses.length > 0 ? (
-          <ul className="space-y-3 mt-2">
+      {fieldDispatch.responses.length > 0 ? (
+        <Card label="Recent responses">
+          <ul className="space-y-4">
             {fieldDispatch.responses.map((r, i) => (
               <li key={i} className="space-y-1 border-l-2 border-white/10 pl-3">
                 <p className="text-xs text-white/40">{fmtDate(r.createdAt)}</p>
@@ -667,11 +1434,13 @@ function FieldDispatchSection({ overview }: { overview: Overview }) {
               </li>
             ))}
           </ul>
-        ) : (
+        </Card>
+      ) : (
+        <Card>
           <Empty>No field dispatch responses yet.</Empty>
-        )}
-      </div>
-    </Card>
+        </Card>
+      )}
+    </div>
   )
 }
 
@@ -680,39 +1449,39 @@ function ScienceFairSection({ overview }: { overview: Overview }) {
 
   return (
     <div className="space-y-4">
-      {fairAssociations.length > 0 ? (
-        <Card label="Registered fairs">
-          <ul className="space-y-1.5">
+      <Card label="Registered fairs">
+        {fairAssociations.length > 0 ? (
+          <ul className="space-y-2">
             {fairAssociations.map((fa, i) => (
               <li key={i} className="flex items-center gap-2 text-sm">
                 <span className="text-white/80">{fa.fair.name}</span>
                 <span className="text-white/40 text-xs">{fa.fair.level}</span>
                 {fa.isPrimary && (
-                  <span className="font-pixel text-[7px] text-[#F5C518] uppercase">primary</span>
+                  <span className="text-xs text-[#F5C518] bg-[#F5C518]/10 border border-[#F5C518]/20 rounded-full px-1.5 py-0.5">
+                    primary
+                  </span>
                 )}
               </li>
             ))}
           </ul>
-        </Card>
-      ) : (
-        <Card label="Registered fairs">
+        ) : (
           <Empty>No fairs registered.</Empty>
-        </Card>
-      )}
+        )}
+      </Card>
 
       {formStatuses.length > 0 && (
         <Card label="Form statuses">
-          <ul className="space-y-1.5">
+          <ul className="space-y-2">
             {formStatuses.map((fs, i) => (
               <li key={i} className="flex items-center justify-between text-sm">
                 <span className="text-white/75">{fs.form.name}</span>
                 <span
-                  className={`font-pixel text-[7px] uppercase ${
+                  className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                     fs.status === 'complete'
-                      ? 'text-emerald-400'
+                      ? 'bg-emerald-400/10 text-emerald-400'
                       : fs.status === 'in_progress'
-                      ? 'text-amber-400'
-                      : 'text-white/30'
+                      ? 'bg-amber-400/10 text-amber-400'
+                      : 'bg-white/5 text-white/30'
                   }`}
                 >
                   {fs.status.replace(/_/g, ' ')}
@@ -739,9 +1508,9 @@ function ActivitySection({ overview }: { overview: Overview }) {
 
   return (
     <Card>
-      <ul className="space-y-2">
+      <ul className="space-y-2.5">
         {activity.map((a, i) => (
-          <li key={i} className="flex flex-wrap gap-x-2 gap-y-0.5 text-sm">
+          <li key={i} className="flex flex-wrap gap-x-2 gap-y-0.5 text-sm border-l-2 border-white/10 pl-3">
             <span className="text-white/70">{a.description}</span>
             <span className="text-white/40 text-xs">— {a.userName}</span>
             <span className="text-white/30 text-xs">{fmtDate(a.createdAt)}</span>
@@ -790,15 +1559,15 @@ function FeedbackSection({
           onChange={(e) => setBody(e.target.value)}
           placeholder="Leave feedback the team will see…"
           maxLength={2000}
-          className="flex-1 bg-[#0d1b2e] border border-white/15 text-white text-sm px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+          className="flex-1 bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25 transition-colors"
         />
         <button
           type="button"
           onClick={send}
           disabled={busy || !body.trim()}
-          className="inline-flex items-center gap-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
+          className="inline-flex items-center gap-1.5 bg-[#F5C518] text-[#0d1b2e] text-sm font-medium px-3 py-2 rounded-md hover:brightness-110 disabled:opacity-40 transition-all cursor-pointer"
         >
-          <Send size={11} /> Send
+          <Send size={14} /> Send
         </button>
       </div>
       {items.length > 0 && (
@@ -853,7 +1622,7 @@ export function StudentDetail({ studentId }: { studentId: string }) {
     return (
       <div className="space-y-4">
         <BackLink />
-        <p className="font-pixel text-[9px] text-white/40">
+        <p className="text-sm text-white/40">
           This student isn&apos;t in your classes.
         </p>
       </div>
@@ -866,28 +1635,16 @@ export function StudentDetail({ studentId }: { studentId: string }) {
     <div className="space-y-6">
       <BackLink />
 
-      {/* Page header */}
-      <div>
-        <h1 className="text-xl font-semibold text-white">{student.name}</h1>
-        {team && (
-          <p className="text-sm text-white/50 mt-0.5">
-            {team.name}
-            {team.labType ? ` · ${LAB_TYPE_LABELS[team.labType as LabType] ?? team.labType}` : ''}
-            {team.phase ? ` · ${PHASE_INFO[team.phase as Phase]?.label ?? team.phase}` : ''}
-          </p>
-        )}
-      </div>
-
       {/* Pending advance banner */}
       {pendingAdvance && (
-        <div className="border border-amber-400/40 bg-amber-400/5 px-4 py-2.5">
-          <span className="font-pixel text-[8px] text-amber-300">
+        <div className="border border-amber-400/40 bg-amber-400/5 rounded-lg px-4 py-2.5">
+          <span className="text-sm text-amber-300">
             Awaiting validation:{' '}
             {PHASE_INFO[pendingAdvance.fromPhase as Phase]?.label ?? pendingAdvance.fromPhase}
             {' → '}
             {PHASE_INFO[pendingAdvance.toPhase as Phase]?.label ?? pendingAdvance.toPhase}
             {' · '}
-            <Link href="/teacher/validations" className="underline">
+            <Link href="/teacher/validations" className="underline hover:text-amber-200 transition-colors">
               review
             </Link>
           </span>
@@ -895,85 +1652,123 @@ export function StudentDetail({ studentId }: { studentId: string }) {
       )}
 
       {!team ? (
-        <div className="border border-white/10 bg-[#0a1628] px-4 py-8 text-center">
-          <p className="font-pixel text-[9px] text-white/40">
+        <div className="border border-white/10 bg-[#0a1628] rounded-lg px-4 py-8 text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mx-auto">
+            <User size={20} className="text-white/30" />
+          </div>
+          <p className="text-sm text-white/40">
             This student hasn&apos;t joined a lab yet.
           </p>
-          <div className="mt-4 space-y-2">
+          <div className="text-left max-w-xs mx-auto space-y-2">
+            <Field label="Name" value={student.name} />
             <Field label="Email" value={student.email} />
             {student.class && <Field label="Class" value={student.class.name} />}
           </div>
         </div>
       ) : (
-        <SectionTabs
-          tabs={[
-            {
-              key: 'identity',
-              label: 'Identity',
-              content: <IdentitySection overview={overview} />,
-            },
-            {
-              key: 'phase',
-              label: 'Phase',
-              content: <PhaseSection overview={overview} />,
-            },
-            {
-              key: 'economy',
-              label: 'Economy',
-              content: <EconomySection overview={overview} />,
-            },
-            {
-              key: 'buildings',
-              label: 'Buildings',
-              content: <BuildingsSection overview={overview} />,
-            },
-            {
-              key: 'literature',
-              label: 'Literature',
-              content: <LiteratureSection overview={overview} />,
-            },
-            {
-              key: 'research',
-              label: 'Research',
-              content: <ResearchPlanSection overview={overview} />,
-            },
-            {
-              key: 'logs',
-              label: 'Logs',
-              content: <LogsSection overview={overview} />,
-            },
-            {
-              key: 'experiments',
-              label: 'Experiments',
-              content: <ExperimentsSection overview={overview} />,
-            },
-            {
-              key: 'showcase',
-              label: 'Showcase',
-              content: <ShowcaseSection overview={overview} />,
-            },
-            {
-              key: 'dispatch',
-              label: 'Dispatch',
-              content: <FieldDispatchSection overview={overview} />,
-            },
-            {
-              key: 'fairs',
-              label: 'Fairs',
-              content: <ScienceFairSection overview={overview} />,
-            },
-            {
-              key: 'activity',
-              label: 'Activity',
-              content: <ActivitySection overview={overview} />,
-            },
-            {
-              key: 'feedback',
-              label: 'Feedback',
-              content: <FeedbackSection teamId={team.id} initial={overview.feedback} />,
-            },
-          ]}
-        />
+        <div className="space-y-6">
+          {/* Identity header block */}
+          <StudentHeader overview={overview} />
+
+          {/* Section tabs with sidebar nav */}
+          <SectionTabs
+            tabs={[
+              {
+                key: 'identity',
+                label: 'Identity',
+                group: 'Profile',
+                icon: <User size={14} />,
+                content: <IdentitySection overview={overview} />,
+              },
+              {
+                key: 'phase',
+                label: 'Progress',
+                group: 'Profile',
+                icon: <TrendingUp size={14} />,
+                content: <PhaseSection overview={overview} />,
+              },
+              {
+                key: 'literature',
+                label: 'Literature',
+                group: 'Work',
+                icon: <BookOpen size={14} />,
+                content: <LiteratureSection overview={overview} />,
+              },
+              {
+                key: 'research',
+                label: 'Research Plan',
+                group: 'Work',
+                icon: <ClipboardList size={14} />,
+                content: <ResearchPlanSection overview={overview} />,
+              },
+              {
+                key: 'experiments',
+                label: 'Experiments',
+                group: 'Work',
+                icon: <FlaskConical size={14} />,
+                content: <ExperimentsSection overview={overview} />,
+              },
+              {
+                key: 'logs',
+                label: 'Logs',
+                group: 'Work',
+                icon: <FileText size={14} />,
+                content: <LogsSection overview={overview} />,
+              },
+              {
+                key: 'economy',
+                label: 'Economy',
+                group: 'Lab',
+                icon: <Coins size={14} />,
+                content: <EconomySection overview={overview} />,
+              },
+              {
+                key: 'buildings',
+                label: 'Buildings',
+                group: 'Lab',
+                icon: <Building2 size={14} />,
+                content: <BuildingsSection overview={overview} />,
+              },
+              {
+                key: 'showcase',
+                label: 'Showcase',
+                group: 'Showcase',
+                icon: <Trophy size={14} />,
+                content: <ShowcaseSection overview={overview} />,
+              },
+              {
+                key: 'fairs',
+                label: 'Fairs',
+                group: 'Showcase',
+                icon: <Flag size={14} />,
+                content: <ScienceFairSection overview={overview} />,
+              },
+              {
+                key: 'activity',
+                label: 'Activity',
+                group: 'Activity',
+                icon: <Activity size={14} />,
+                content: <ActivitySection overview={overview} />,
+              },
+              {
+                key: 'dispatch',
+                label: 'Field Dispatch',
+                group: 'Activity',
+                icon: <Radio size={14} />,
+                content: <FieldDispatchSection overview={overview} />,
+              },
+              {
+                key: 'feedback',
+                label: 'Feedback',
+                group: 'Activity',
+                icon: <MessageCircle size={14} />,
+                content: (
+                  <FeedbackSection teamId={team.id} initial={overview.feedback} />
+                ),
+              },
+            ]}
+          />
+        </div>
       )}
     </div>
   )
@@ -983,9 +1778,9 @@ function BackLink() {
   return (
     <Link
       href="/teacher"
-      className="inline-flex items-center gap-1 font-pixel text-[8px] text-white/40 hover:text-white/70"
+      className="inline-flex items-center gap-1.5 text-sm text-white/40 hover:text-white/70 transition-colors"
     >
-      <ChevronLeft size={12} /> Roster
+      <ChevronLeft size={14} /> Roster
     </Link>
   )
 }

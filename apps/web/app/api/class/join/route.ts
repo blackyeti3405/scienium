@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
-import { resolveClass } from '@/lib/onboarding/profile'
+import { resolveClass, enrollTeamInClass } from '@/lib/onboarding/profile'
 import { db } from '@/lib/db'
 
 const JoinClassBody = z
@@ -39,6 +39,16 @@ export async function POST(req: NextRequest) {
   })
   // Adopt the class's school (find-or-create already done by the teacher).
   await db.user.update({ where: { id: user.id }, data: { schoolId: klass.schoolId } })
+
+  // A lab joining a class brings its whole roster: if this student leads any
+  // labs, enroll their labmates (who aren't already in a class) into it too.
+  const ledTeams = await db.teamMember.findMany({
+    where: { userId: user.id, role: 'lead' },
+    select: { teamId: true },
+  })
+  for (const { teamId } of ledTeams) {
+    await enrollTeamInClass(teamId, klass.id, klass.schoolId)
+  }
 
   return NextResponse.json({ classId: klass.id, className: klass.name })
 }

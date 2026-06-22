@@ -72,11 +72,25 @@ export async function GET(req: NextRequest) {
     const team = s.teamMemberships[0]?.team ?? null
     const teamId = team?.id ?? null
     const lastLog = teamId ? (lastLogMap.get(teamId) ?? null) : null
+    const lastActivity = teamId ? (lastActivityMap.get(teamId) ?? null) : null
     const pendingTo = teamId ? (pendingMap.get(teamId) ?? null) : null
-    const staleLog =
-      !!team &&
-      (team.phase === 'working' || team.phase === 'showcase') &&
-      (!lastLog || differenceInCalendarDays(now, lastLog) > STALE_LOG_DAYS)
+
+    // Status is only meaningful for working/showcase-phase teams.
+    let status: 'on_track' | 'unlogged' | 'stale' | null = null
+    if (team && (team.phase === 'working' || team.phase === 'showcase')) {
+      const logAge = lastLog ? differenceInCalendarDays(now, lastLog) : Infinity
+      const activityAge = lastActivity ? differenceInCalendarDays(now, lastActivity) : Infinity
+      const recentLog = logAge <= STALE_LOG_DAYS
+      const recentActivity = activityAge <= STALE_LOG_DAYS
+      if (recentLog) {
+        status = 'on_track'
+      } else if (recentActivity) {
+        // Active (earning KP/tasks) but no recent progress log.
+        status = 'unlogged'
+      } else {
+        status = 'stale'
+      }
+    }
 
     return {
       studentId: s.id,
@@ -86,10 +100,10 @@ export async function GET(req: NextRequest) {
       phase: team?.phase ?? null,
       labType: team?.labType ?? null,
       readyPapers: teamId ? (paperMap.get(teamId) ?? 0) : 0,
-      lastActivityAt: teamId ? (lastActivityMap.get(teamId) ?? null) : null,
+      lastActivityAt: lastActivity,
       flags: {
-        pendingValidation: pendingTo, // null | target phase
-        staleLog,
+        pendingValidation: pendingTo, // null | target phase string
+        status,
       },
     }
   })
@@ -101,7 +115,7 @@ export async function GET(req: NextRequest) {
     if (s.phase) {
       phaseCounts[s.phase] = (phaseCounts[s.phase] ?? 0) + 1
     }
-    if (s.flags.pendingValidation || s.flags.staleLog) {
+    if (s.flags.pendingValidation || s.flags.status === 'unlogged' || s.flags.status === 'stale') {
       attentionCount++
     }
   }
