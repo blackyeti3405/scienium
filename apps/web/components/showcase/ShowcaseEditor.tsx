@@ -53,6 +53,8 @@ interface Showcase {
   privacyLevel: PrivacyLevel
   published: boolean
   publishedAt: string | null
+  moderationStatus: string
+  moderationNote: string | null
   views: number
   assets: Asset[]
 }
@@ -100,6 +102,7 @@ export function ShowcaseEditor() {
   }, [])
 
   function applyShowcase(next: Showcase) {
+    // Preserve moderationStatus/moderationNote from server response.
     setSc(next)
     setShortTitle(next.shortTitle ?? '')
     setTitle(next.title)
@@ -221,6 +224,33 @@ export function ShowcaseEditor() {
             {sc?.published ? <Globe size={10} /> : <PenLine size={10} />}
             {sc?.published ? 'Published' : 'Draft'}
           </span>
+          {sc?.published && sc.privacyLevel === 'public' && (
+            <span
+              className={`sc-pill font-pixel ${
+                sc.moderationStatus === 'approved'
+                  ? 'sc-pill--live'
+                  : sc.moderationStatus === 'rejected'
+                  ? 'sc-pill--draft'
+                  : 'sc-pill--draft'
+              }`}
+              style={
+                sc.moderationStatus === 'pending_review'
+                  ? { color: '#F5C518', borderColor: '#F5C518' }
+                  : sc.moderationStatus === 'rejected'
+                  ? { color: '#f87171', borderColor: '#f87171' }
+                  : undefined
+              }
+            >
+              {sc.moderationStatus === 'approved' && <Check size={10} />}
+              {sc.moderationStatus === 'pending_review' && <Globe size={10} />}
+              {sc.moderationStatus === 'rejected' && <AlertTriangle size={10} />}
+              {sc.moderationStatus === 'approved'
+                ? 'Approved · live in gallery'
+                : sc.moderationStatus === 'pending_review'
+                ? 'Pending teacher review'
+                : 'Changes requested'}
+            </span>
+          )}
           {sc && (
             <span className="sc-views" title="Total views">
               <Eye size={12} /> {sc.views.toLocaleString()}
@@ -229,7 +259,7 @@ export function ShowcaseEditor() {
         </div>
         <div className="sc-topbar__right">
           {notice && <span className="sc-notice font-pixel">✓ {notice}</span>}
-          {sc?.published && publicUrl && (
+          {sc?.published && publicUrl && sc.moderationStatus === 'approved' && (
             <>
               <button
                 className="sc-ghost font-pixel"
@@ -245,8 +275,29 @@ export function ShowcaseEditor() {
               </a>
             </>
           )}
+          {sc?.published && publicUrl && sc.moderationStatus !== 'approved' && (
+            <a className="sc-ghost font-pixel" href={publicUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink size={11} /> Preview
+            </a>
+          )}
         </div>
       </div>
+
+      {/* ── Rejection notice ─────────────────────────────────────────── */}
+      {sc?.moderationStatus === 'rejected' && (
+        <div className="sc-error" style={{ borderColor: '#f87171', background: 'rgba(248,113,113,0.08)' }}>
+          <AlertTriangle size={13} className="shrink-0" style={{ color: '#f87171' }} />
+          <span>
+            <span className="font-pixel" style={{ color: '#f87171' }}>Changes requested by your teacher.</span>
+            {sc.moderationNote && (
+              <span className="block mt-1 text-white/70">{sc.moderationNote}</span>
+            )}
+            <span className="block mt-1 font-pixel text-[7px] text-white/40">
+              Edit your showcase and re-publish to resubmit for review.
+            </span>
+          </span>
+        </div>
+      )}
 
       <div className="sc-scroll">
         {/* ── Completeness strip ───────────────────────────────────────── */}
@@ -436,12 +487,18 @@ export function ShowcaseEditor() {
       <div className="sc-publish">
         <div className="sc-publish__meta">
           <span className="font-pixel text-[9px] text-white">
-            {sc?.published ? 'Your showcase is live' : `${doneCount}/${checklist.length} required complete`}
+            {sc?.published && sc.privacyLevel === 'public' && sc.moderationStatus === 'pending_review'
+              ? 'Submitted for teacher review'
+              : sc?.published && sc.privacyLevel === 'public' && sc.moderationStatus === 'rejected'
+              ? 'Showcase needs changes — resubmit when ready'
+              : sc?.published
+              ? 'Your showcase is live'
+              : `${doneCount}/${checklist.length} required complete`}
           </span>
           <span className="font-pixel text-[6px] text-white/40 mt-1.5 flex items-center gap-1.5">
             {PRIVACY_ICON[privacy]}
             {privacy === 'public'
-              ? 'Listed in the public gallery'
+              ? 'Requires teacher approval before appearing in the gallery'
               : privacy === 'private'
               ? 'Only your team can see it'
               : privacy === 'school_only'
@@ -458,6 +515,10 @@ export function ShowcaseEditor() {
             <Loader2 size={13} className="animate-spin" />
           ) : sc?.published ? (
             'Unpublish'
+          ) : privacy === 'public' ? (
+            <>
+              <Rocket size={13} /> Submit for review
+            </>
           ) : (
             <>
               <Rocket size={13} /> Publish showcase

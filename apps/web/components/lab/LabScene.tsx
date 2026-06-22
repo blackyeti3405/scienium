@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { TileBackground } from '@/components/lab/TileBackground'
 import { BuildingSprite } from '@/components/lab/BuildingSprite'
 import { FeaturePanel } from '@/components/lab/FeaturePanel'
@@ -8,10 +8,11 @@ import { ShopPanel } from '@/components/lab/ShopPanel'
 import { TeamPanel } from '@/components/lab/TeamPanel'
 import { SettingsPanel } from '@/components/settings/SettingsPanel'
 import { ActivityPanel } from '@/components/lab/ActivityPanel'
+import { FeedbackPanel } from '@/components/lab/FeedbackPanel'
 import { PhaseAdvance } from '@/components/lab/PhaseAdvance'
 import { RequestAdvance } from '@/components/lab/RequestAdvance'
 import { StatusStrip, type Currency } from '@/components/lab/StatusStrip'
-import { Activity } from 'lucide-react'
+import { Activity, MessageSquare } from 'lucide-react'
 import { LabCurrencyProvider } from '@/lib/labCurrency'
 import { FEATURE_COMPONENTS } from '@/lib/featureRegistry'
 import { GATEWAYS, type Gateway } from '@/lib/gateways'
@@ -45,6 +46,8 @@ export interface LabSceneProps {
   advanceRequest: { toPhase: Phase; pending: boolean } | null
   /** Stable per-team seed so the tiled background never reshuffles. */
   seed?: number
+  /** When 'feedback', auto-opens the Feedback panel on mount (deep-link). */
+  initialPanel?: 'feedback'
 }
 
 export function LabScene({
@@ -56,12 +59,28 @@ export function LabScene({
   advance,
   advanceRequest,
   seed = 1,
+  initialPanel,
 }: LabSceneProps) {
   const [openKey, setOpenKey] = useState<Gateway['key'] | null>(null)
   const [shopOpen, setShopOpen] = useState(false)
   const [teamOpen, setTeamOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [activityOpen, setActivityOpen] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [unresolvedCount, setUnresolvedCount] = useState(0)
+
+  // Auto-open the Feedback panel on mount when the deep-link requests it.
+  useEffect(() => {
+    if (initialPanel === 'feedback') setFeedbackOpen(true)
+  }, [initialPanel])
+
+  // Seed the badge count once on mount by fetching the unresolved count.
+  useEffect(() => {
+    fetch('/api/team/feedback')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d) setUnresolvedCount(d.unresolvedCount) })
+      .catch(() => {})
+  }, [])
 
   const skin: GatewaySkin = (labType ?? 'generic') as GatewaySkin
 
@@ -161,6 +180,23 @@ export function LabScene({
               <span className="activity-fab__label">LOG</span>
             </button>
 
+            {/* Teacher feedback — anchored bottom-left, above activity. */}
+            <button
+              type="button"
+              className="feedback-fab font-pixel"
+              onClick={() => setFeedbackOpen(true)}
+              title="Teacher feedback"
+              aria-label="Open teacher feedback"
+            >
+              <MessageSquare size={16} />
+              <span className="feedback-fab__label">FEEDBACK</span>
+              {unresolvedCount > 0 && (
+                <span className="feedback-fab__badge" aria-label={`${unresolvedCount} unread`}>
+                  {unresolvedCount > 9 ? '9+' : unresolvedCount}
+                </span>
+              )}
+            </button>
+
             {/* Dev fill — only rendered in development, bottom-left above activity. */}
             {process.env.NODE_ENV === 'development' && (
               <DevFillButton />
@@ -186,6 +222,13 @@ export function LabScene({
           {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
 
           {activityOpen && <ActivityPanel onClose={() => setActivityOpen(false)} />}
+
+          {feedbackOpen && (
+            <FeedbackPanel
+              onClose={() => setFeedbackOpen(false)}
+              onUnresolvedCount={setUnresolvedCount}
+            />
+          )}
         </div>
       )}
     </LabCurrencyProvider>

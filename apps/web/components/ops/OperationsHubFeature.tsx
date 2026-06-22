@@ -15,6 +15,7 @@ import {
   Pencil,
   Trash2,
   Check,
+  Sparkles,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -22,6 +23,7 @@ import { RichEditor } from './RichEditor'
 import { ExpertisePanel } from './ExpertisePanel'
 import { FieldDispatchTab } from './FieldDispatchTab'
 import { DataTerminalTab } from './DataTerminalTab'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 // ─── Stage options ─────────────────────────────────────────────────────────────
 
@@ -74,6 +76,13 @@ interface LogEntry {
   lastEditedAt: string | null
 }
 
+interface FailureFollowupData {
+  id: string
+  question: string
+  response: string | null
+  answeredAt: string | null
+}
+
 interface FailureEntry {
   id: string
   happened: string
@@ -83,6 +92,7 @@ interface FailureEntry {
   createdAt: string
   editedBy: string | null
   editedAt: string | null
+  followup: FailureFollowupData | null
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -357,6 +367,7 @@ function ProjectLogForm({
 // ─── Project Log Tab ───────────────────────────────────────────────────────────
 
 function ProjectLogTab() {
+  const { confirm, alert, dialog } = useConfirm()
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [members, setMembers] = useState<Member[]>([])
   const [labType, setLabType] = useState<string | null>(null)
@@ -386,7 +397,7 @@ function ProjectLogTab() {
   }
 
   async function handleDelete(target: LogEntry) {
-    if (!confirm(`Delete entry #${target.entryNumber}? This can't be undone.`)) return
+    if (!(await confirm({ title: 'Delete entry', message: `Delete entry #${target.entryNumber}? This can't be undone.`, confirmLabel: 'Delete', tone: 'danger' }))) return
     setDeletingId(target.id)
     try {
       const res = await fetch(`/api/project-log/${target.id}`, { method: 'DELETE' })
@@ -397,7 +408,7 @@ function ProjectLogTab() {
           .map((e) => (e.entryNumber > target.entryNumber ? { ...e, entryNumber: e.entryNumber - 1 } : e)),
       )
     } catch {
-      alert('Could not delete the entry. Please try again.')
+      await alert({ title: 'Delete failed', message: 'Could not delete the entry. Please try again.' })
     } finally {
       setDeletingId(null)
     }
@@ -406,6 +417,7 @@ function ProjectLogTab() {
   if (loading) {
     return (
       <div className="ops-tab-body items-center justify-center">
+        {dialog}
         <Loader2 size={18} className="animate-spin text-white/25" />
       </div>
     )
@@ -413,6 +425,7 @@ function ProjectLogTab() {
 
   return (
     <div className="ops-tab-body">
+      {dialog}
       <ProjectLogForm
         members={members}
         labType={labType}
@@ -625,7 +638,137 @@ function FailureForm({
   )
 }
 
+// ─── Failure Followup (Dig Deeper) sub-component ──────────────────────────────
+
+function FailureFollowup({
+  entry,
+  onUpdated,
+}: {
+  entry: FailureEntry
+  onUpdated: (updated: FailureEntry) => void
+}) {
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
+  const [answerText, setAnswerText] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  async function handleDigDeeper() {
+    setGenerating(true)
+    setGenError(null)
+    try {
+      const res = await fetch(`/api/failure-log/${entry.id}/followup`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        setGenError(data.error ?? 'Could not generate follow-up. Please try again.')
+        return
+      }
+      onUpdated({ ...entry, followup: data.followup })
+    } catch {
+      setGenError('Network error — please try again.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  async function handleSaveAnswer() {
+    if (!answerText.trim()) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const res = await fetch(`/api/failure-log/${entry.id}/followup`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response: answerText.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setSaveError(data.error ?? 'Could not save your answer. Please try again.')
+        return
+      }
+      onUpdated({ ...entry, followup: data.followup })
+      setAnswerText('')
+    } catch {
+      setSaveError('Network error — please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const { followup } = entry
+
+  // State A: no follow-up yet — show "Dig deeper" button.
+  if (!followup) {
+    return (
+      <div className="mt-3 pt-3 border-t border-white/10">
+        {genError && (
+          <div className="ops-error mb-2">
+            <AlertTriangle size={11} className="shrink-0" />
+            <span className="font-pixel text-[7px]">{genError}</span>
+          </div>
+        )}
+        <button
+          onClick={handleDigDeeper}
+          disabled={generating}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#F5C518]/40 bg-[#F5C518]/5 text-[#F5C518] font-pixel text-[7px] hover:bg-[#F5C518]/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {generating ? (
+            <Loader2 size={11} className="animate-spin shrink-0" />
+          ) : (
+            <Sparkles size={11} className="shrink-0" />
+          )}
+          {generating ? 'Generating…' : 'Dig deeper'}
+        </button>
+      </div>
+    )
+  }
+
+  // State B: question generated but not yet answered — show question + answer textarea.
+  if (followup.response === null) {
+    return (
+      <div className="mt-3 pt-3 border-t border-white/10">
+        <p className="font-pixel text-[6px] text-[#F5C518]/60 uppercase tracking-widest mb-1">Mentor asks</p>
+        <p className="text-sm text-white/80 leading-relaxed mb-3 italic">{followup.question}</p>
+        <textarea
+          value={answerText}
+          onChange={(e) => setAnswerText(e.target.value)}
+          rows={3}
+          placeholder="Your reflection…"
+          className="ops-textarea mb-2"
+        />
+        {saveError && (
+          <div className="ops-error mb-2">
+            <AlertTriangle size={11} className="shrink-0" />
+            <span className="font-pixel text-[7px]">{saveError}</span>
+          </div>
+        )}
+        <button
+          onClick={handleSaveAnswer}
+          disabled={saving || !answerText.trim()}
+          className="ops-submit-btn"
+        >
+          {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    )
+  }
+
+  // State C: answered — render question + answer read-only.
+  return (
+    <div className="mt-3 pt-3 border-t border-white/10">
+      <p className="font-pixel text-[6px] text-[#F5C518]/60 uppercase tracking-widest mb-1">Mentor asks</p>
+      <p className="text-sm text-white/80 leading-relaxed mb-3 italic">{followup.question}</p>
+      <div className="ops-nextsteps">
+        <span className="ops-nextsteps__label font-pixel">My reflection</span>
+        <p className="text-sm text-[#F5C518]/80 leading-relaxed mt-1">{followup.response}</p>
+      </div>
+    </div>
+  )
+}
+
 function FailureLogTab() {
+  const { confirm, alert, dialog } = useConfirm()
   const [entries, setEntries] = useState<FailureEntry[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -643,20 +786,27 @@ function FailureLogTab() {
     if (mode === 'create') {
       setEntries((prev) => [entry, ...prev])
     } else {
-      setEntries((prev) => prev.map((e) => (e.id === entry.id ? entry : e)))
+      // Preserve the existing followup — the edit PATCH route doesn't return it.
+      setEntries((prev) =>
+        prev.map((e) => (e.id === entry.id ? { ...entry, followup: e.followup } : e)),
+      )
       setEditingId(null)
     }
   }
 
+  function handleFollowupUpdated(updated: FailureEntry) {
+    setEntries((prev) => prev.map((e) => (e.id === updated.id ? updated : e)))
+  }
+
   async function handleDelete(target: FailureEntry) {
-    if (!confirm("Delete this failure entry? This can't be undone.")) return
+    if (!(await confirm({ title: 'Delete entry', message: "Delete this failure entry? This can't be undone.", confirmLabel: 'Delete', tone: 'danger' }))) return
     setDeletingId(target.id)
     try {
       const res = await fetch(`/api/failure-log/${target.id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error()
       setEntries((prev) => prev.filter((e) => e.id !== target.id))
     } catch {
-      alert('Could not delete the entry. Please try again.')
+      await alert({ title: 'Delete failed', message: 'Could not delete the entry. Please try again.' })
     } finally {
       setDeletingId(null)
     }
@@ -664,6 +814,7 @@ function FailureLogTab() {
 
   return (
     <div className="ops-tab-body">
+      {dialog}
       <FailureForm onSaved={handleSaved} />
 
       {entries.length === 0 ? (
@@ -722,6 +873,7 @@ function FailureLogTab() {
                     <span className="ops-nextsteps__label font-pixel">What I learned</span>
                     <p className="text-sm text-[#F5C518]/80 leading-relaxed mt-1">{e.learned}</p>
                   </div>
+                  <FailureFollowup entry={e} onUpdated={handleFollowupUpdated} />
                 </div>
               </div>
             )

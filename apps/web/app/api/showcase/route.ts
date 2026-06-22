@@ -29,6 +29,7 @@ function serialize(sc: {
   privacyLevel: string
   publishedAt: Date | null
   moderationStatus: string
+  moderationNote: string | null
   assets: { id: string; assetType: string; fileUrl: string | null; metadataJson: unknown }[]
   views?: number
   team?: { name: string; labType: string | null }
@@ -43,6 +44,7 @@ function serialize(sc: {
     published: sc.publishedAt != null,
     publishedAt: sc.publishedAt,
     moderationStatus: sc.moderationStatus,
+    moderationNote: sc.moderationNote,
     views: sc.views ?? 0,
     team: sc.team,
     assets: sc.assets.map((a) => ({
@@ -125,7 +127,11 @@ export async function PUT(req: NextRequest) {
 
   // Publish requires the full required set: short + long title, an abstract, and
   // the board PDF, the video link, and the quad chart.
-  let publishFields: { publishedAt: Date | null; moderationStatus: 'approved' | 'draft' } | null = null
+  let publishFields: {
+    publishedAt: Date | null
+    moderationStatus: 'approved' | 'draft' | 'pending_review'
+    moderationNote?: string | null
+  } | null = null
   if (data.published === true) {
     const have = new Set((existing?.assets ?? []).map((a) => a.assetType))
     const missing: string[] = []
@@ -141,10 +147,33 @@ export async function PUT(req: NextRequest) {
         { status: 400 },
       )
     }
-    // Auto-approve on publish (teacher moderation is a future gate; see TODO.md).
-    publishFields = { publishedAt: existing?.publishedAt ?? new Date(), moderationStatus: 'approved' }
+    // Public showcases require teacher approval before appearing in the gallery.
+    // link_only / school_only / private are self-serve (auto-approved).
+    if (nextPrivacy === 'public') {
+      publishFields = {
+        publishedAt: existing?.publishedAt ?? new Date(),
+        moderationStatus: 'pending_review',
+        moderationNote: null,
+      }
+    } else {
+      publishFields = { publishedAt: existing?.publishedAt ?? new Date(), moderationStatus: 'approved' }
+    }
   } else if (data.published === false) {
     publishFields = { publishedAt: null, moderationStatus: 'draft' }
+  } else if (
+    data.published === undefined &&
+    data.privacyLevel !== undefined &&
+    existing?.publishedAt != null
+  ) {
+    // Privacy-only change on an already-published showcase: re-gate public
+    // unconditionally (ANY transition to public must go through moderation,
+    // closing the link_only→public bypass), or immediately approve when moving
+    // away from public.
+    if (nextPrivacy === 'public') {
+      publishFields = { publishedAt: existing.publishedAt, moderationStatus: 'pending_review', moderationNote: null }
+    } else {
+      publishFields = { publishedAt: existing.publishedAt, moderationStatus: 'approved' }
+    }
   }
 
   const sc = existing

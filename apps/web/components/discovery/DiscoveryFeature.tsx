@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useDiscoveryStore } from '@/stores/discoveryStore'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { TopicSearch } from '@/components/discovery/TopicSearch'
 import { WikiReader } from '@/components/discovery/WikiReader'
 import { YouTubeViewer } from '@/components/discovery/YouTubeViewer'
@@ -36,6 +37,8 @@ export function DiscoveryFeature() {
     deleteSubtree,
     reset,
   } = useDiscoveryStore()
+
+  const { confirm, dialog } = useConfirm()
 
   // Which source the left pane shows: the Wikipedia reader or the YouTube viewer.
   const [discoverySource, setDiscoverySource] = useState<DiscoverySource>('wikipedia')
@@ -160,6 +163,7 @@ export function DiscoveryFeature() {
 
   const modals = (
     <>
+      {dialog}
       {/* Topic-change confirmation */}
       {topicConfirm && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60">
@@ -295,8 +299,8 @@ export function DiscoveryFeature() {
         )}
 
         <button
-          onClick={() => {
-            if (confirm('Start over? This will clear your discovery tree.')) reset()
+          onClick={async () => {
+            if (await confirm({ title: 'Start over', message: 'Start over? This will clear your discovery tree.', confirmLabel: 'Start over', tone: 'danger' })) reset()
           }}
           className="ml-auto font-pixel text-[7px] text-white/35 hover:text-red-400 transition-colors"
         >

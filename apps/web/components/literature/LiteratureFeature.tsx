@@ -21,6 +21,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useLabCurrency } from '@/lib/labCurrency'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -656,6 +657,7 @@ function QAPanel({
 
 export function LiteratureFeature() {
   const router = useRouter()
+  const { confirm, dialog } = useConfirm()
   const [papers, setPapers] = useState<Paper[]>([])
   const [activePaper, setActivePaper] = useState<Paper | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -805,7 +807,7 @@ export function LiteratureFeature() {
   }, [])
 
   async function handleDelete(paper: Paper) {
-    if (!confirm(`Delete "${paper.title}"? This removes the source and any quiz progress.`)) return
+    if (!(await confirm({ title: 'Delete source', message: `Delete "${paper.title}"? This removes the source and any quiz progress.`, confirmLabel: 'Delete', tone: 'danger' }))) return
     const prev = papers
     // Optimistic removal; close the Q&A view if it was open on this paper
     setPapers((cur) => cur.filter((p) => p.id !== paper.id))
@@ -827,6 +829,7 @@ export function LiteratureFeature() {
   if (activePaper) {
     return (
       <div className="h-full bg-[#0d1b2e] text-white">
+        {dialog}
         <QAPanel
           paper={activePaper}
           onClose={() => setActivePaper(null)}
@@ -844,6 +847,7 @@ export function LiteratureFeature() {
 
   return (
     <div className="flex flex-col h-full bg-[#0d1b2e] text-white">
+      {dialog}
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
         <div>

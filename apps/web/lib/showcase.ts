@@ -67,7 +67,7 @@ export const PRIVACY_OPTIONS: { value: PrivacyLevel; label: string; blurb: strin
   { value: 'private', label: 'Private', blurb: 'Only your team can see it. A working draft.' },
   { value: 'link_only', label: 'Anyone with the link', blurb: 'Unlisted — viewable by link, not in the gallery.' },
   { value: 'school_only', label: 'Your school', blurb: 'Signed-in students at your school can view it.' },
-  { value: 'public', label: 'Public', blurb: 'Anyone can find it in the public project gallery.' },
+  { value: 'public', label: 'Public', blurb: 'Submitted for teacher review — appears in the public gallery once approved.' },
 ]
 
 export interface ShowcaseViewer {

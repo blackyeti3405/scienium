@@ -21,7 +21,7 @@ function seedFrom(id: string): number {
 export default async function LabPage({
   searchParams,
 }: {
-  searchParams: { phase?: string; lab?: string }
+  searchParams: { phase?: string; lab?: string; panel?: string }
 }) {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
@@ -119,6 +119,7 @@ export default async function LabPage({
       advance={advance}
       advanceRequest={advanceRequest}
       seed={teamId ? seedFrom(teamId) : 1}
+      initialPanel={searchParams.panel === 'feedback' ? 'feedback' : undefined}
     />
   )
 }

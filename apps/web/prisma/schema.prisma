@@ -610,9 +610,10 @@ model ProjectLogFollowup {
   id           String     @id @default(cuid())
   projectLogId String     @map("project_log_id")
   question     String
-  response     String
+  response     String?
+  answeredAt   DateTime?  @map("answered_at")
   createdAt    DateTime   @default(now()) @map("created_at")
-  log          ProjectLog @relation(fields: [projectLogId], references: [id])
+  log          ProjectLog @relation(fields: [projectLogId], references: [id], onDelete: Cascade)
 
   @@map("project_log_followups")
 }
@@ -705,7 +706,7 @@ model Notification {
   id        String    @id @default(cuid())
   teamId    String    @map("team_id")
   userId    String?   @map("user_id")
-  kind      String // 'fair_deadline' | 'urgency' | 'teacher_feedback' | 'phase_reviewed'
+  kind      String // 'fair_deadline' | 'urgency' | 'teacher_feedback' | 'phase_reviewed' | 'showcase_reviewed'
   title     String
   body      String
   linkUrl   String?   @map("link_url")
@@ -786,6 +787,8 @@ model Showcase {
   publishedAt      DateTime?        @map("published_at")
   lastEditedAt     DateTime         @updatedAt @map("last_edited_at")
   moderationStatus ModerationStatus @default(draft) @map("moderation_status")
+  moderationNote   String?          @map("moderation_note")
+  moderatedAt      DateTime?        @map("moderated_at")
 
   team   Team            @relation(fields: [teamId], references: [id])
   assets ShowcaseAsset[]

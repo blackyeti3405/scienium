@@ -26,6 +26,11 @@ export async function GET(req: NextRequest) {
       lastEditedAt: true,
       createdBy: { select: { id: true, name: true } },
       lastEditedBy: { select: { id: true, name: true } },
+      followups: {
+        select: { id: true, question: true, response: true, answeredAt: true },
+        take: 1,
+        orderBy: { createdAt: 'asc' },
+      },
     },
   })
 
@@ -33,6 +38,7 @@ export async function GET(req: NextRequest) {
   const entries = rows.map((r) => {
     let parsed = { happened: r.body, learned: '' }
     try { parsed = JSON.parse(r.body) } catch {}
+    const fu = r.followups[0]
     return {
       id: r.id,
       ...parsed,
@@ -41,6 +47,14 @@ export async function GET(req: NextRequest) {
       authorId: r.createdBy.id,
       editedBy: r.lastEditedBy?.name ?? null,
       editedAt: r.lastEditedAt ?? null,
+      followup: fu
+        ? {
+            id: fu.id,
+            question: fu.question,
+            response: fu.response,
+            answeredAt: fu.answeredAt ? fu.answeredAt.toISOString() : null,
+          }
+        : null,
     }
   })
 
@@ -83,6 +97,7 @@ export async function POST(req: NextRequest) {
       authorId: entry.createdBy.id,
       editedBy: null,
       editedAt: null,
+      followup: null,
     },
   }, { status: 201 })
 }

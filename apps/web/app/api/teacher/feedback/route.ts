@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
         kind: 'teacher_feedback',
         title: 'New feedback from your teacher',
         body: data.body.length > 140 ? `${data.body.slice(0, 137)}…` : data.body,
-        linkUrl: '/lab',
+        linkUrl: '/lab?panel=feedback',
         dedupeKey: `teacher_feedback:${feedback.id}`,
       },
     })

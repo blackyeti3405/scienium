@@ -424,6 +424,82 @@
   background: hsl(var(--background));
 }
 
+/* ── Confirm / Alert dialog ─────────────────────────────────────────────────── */
+/* Pixel-native in-app dialog replacing native confirm()/alert(). */
+/* Uses the same visual language as .feature-panel* (dark bg, chunky border,    */
+/* font-pixel title bar, gold accent) but at compact dialog size.                */
+.confirm-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100; /* above feature-panel (1000) so it can appear inside a panel */
+  background: rgba(8, 10, 18, 0.80);
+  backdrop-filter: blur(1px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5vh 2vw;
+}
+.confirm-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 92vw);
+  background: hsl(var(--background));
+  border: 3px solid #2a3048;
+  box-shadow: 0 0 0 3px #10131f, 0 18px 60px rgba(0, 0, 0, 0.7);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.confirm-dialog__bar {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: #0f1320;
+  border-bottom: 3px solid #2a3048;
+  flex-shrink: 0;
+}
+.confirm-dialog__title { color: #e8ecfb; font-size: 10px; }
+.confirm-dialog__body {
+  padding: 16px 16px 12px;
+}
+.confirm-dialog__message {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.5;
+  margin: 0;
+}
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px 14px;
+}
+.confirm-dialog__btn {
+  font-size: 9px;
+  padding: 7px 16px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, filter 0.12s;
+  border: 1px solid transparent;
+}
+.confirm-dialog__btn--cancel {
+  background: #1e2540;
+  color: #cdd3ea;
+  border-color: #2a3048;
+}
+.confirm-dialog__btn--cancel:hover { background: #252d4a; }
+.confirm-dialog__btn--primary {
+  background: linear-gradient(#ffe566, #f5c518);
+  color: #2a1d05;
+  border-color: #8a6d10;
+}
+.confirm-dialog__btn--primary:hover { filter: brightness(1.07); }
+.confirm-dialog__btn--danger {
+  background: #5c1a22;
+  color: #ff9a9a;
+  border-color: #8a2030;
+}
+.confirm-dialog__btn--danger:hover { background: #6e2030; }
+
 /* ── Buildings shop ─────────────────────────────────────────────────────────── */
 /* Bottom-right trigger button, sitting above the building cluster. */
 .shop-button {
@@ -749,11 +825,49 @@
 .activity-fab:active { transform: translateY(0); }
 .activity-fab__label { font-size: 8px; letter-spacing: 0.5px; }
 
-/* ── Dev FAB — bottom-left, stacked above activity button ───────────────────── */
-.dev-fab {
+/* ── Feedback FAB — bottom-left, stacked above activity button ──────────────── */
+.feedback-fab {
   position: absolute;
   left: 18px;
   bottom: 88px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 14px;
+  color: #F5C518;
+  background: linear-gradient(#2a3048, #1a2036);
+  border: 3px solid #F5C518;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px #10131f, 0 6px 14px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+.feedback-fab:hover { transform: translateY(-2px); filter: brightness(1.1); }
+.feedback-fab:active { transform: translateY(0); }
+.feedback-fab__label { font-size: 8px; letter-spacing: 0.5px; }
+.feedback-fab__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-family: var(--font-pixel, monospace);
+  font-size: 7px;
+  line-height: 14px;
+  text-align: center;
+  color: #0d1b2e;
+  background: #f5c518;
+  border-radius: 7px;
+}
+
+/* ── Dev FAB — bottom-left, stacked above feedback button ───────────────────── */
+.dev-fab {
+  position: absolute;
+  left: 18px;
+  bottom: 158px;
   z-index: 3;
   display: flex;
   flex-direction: column;
