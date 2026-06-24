@@ -145,4 +145,32 @@ describe('evaluatePurchase', () => {
     const r = evaluatePurchase({ owned: ['reagent_store'], kp: 0, clearanceLevel: 0, multiplier: 1 }, building)
     expect(r).toMatchObject({ ok: false, status: 409 })
   })
+
+  // Lab-type gate: a building restricted to a lab type is only buyable by a
+  // matching team (defence-in-depth — the UI also hides it).
+  const voltBuilding = { key: 'workshop', cost: 1000, minClearance: 0, labType: 'volt_lab' }
+
+  it('rejects a lab-type-restricted building for a different lab (403)', () => {
+    const r = evaluatePurchase({ ...base, labType: 'biocore' }, voltBuilding)
+    expect(r).toMatchObject({ ok: false, status: 403 })
+  })
+  it('rejects a lab-type-restricted building when the team has no lab type yet (403)', () => {
+    const r = evaluatePurchase({ ...base, labType: null }, voltBuilding)
+    expect(r).toMatchObject({ ok: false, status: 403 })
+  })
+  it('allows a lab-type-restricted building for a matching lab', () => {
+    expect(evaluatePurchase({ ...base, labType: 'volt_lab' }, voltBuilding).ok).toBe(true)
+  })
+  it('ignores the lab-type gate for unrestricted buildings', () => {
+    // the universal `building` has no labType, so any team can buy it
+    expect(evaluatePurchase({ ...base, labType: 'biocore' }, building).ok).toBe(true)
+  })
+  it('applies the lab-type gate before owned/clearance/affordability', () => {
+    // wrong lab type wins even when also owned, under-clearance and broke
+    const r = evaluatePurchase(
+      { owned: ['workshop'], kp: 0, clearanceLevel: 0, multiplier: 1, labType: 'biocore' },
+      voltBuilding,
+    )
+    expect(r).toMatchObject({ ok: false, status: 403 })
+  })
 })

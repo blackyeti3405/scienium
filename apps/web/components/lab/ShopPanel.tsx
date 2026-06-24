@@ -2,9 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Lock, Check, Loader2 } from 'lucide-react'
-import { SHOP_BUILDINGS, type ShopBuilding } from '@/lib/shop'
+import { shopBuildingsForLabType, SHOP_SLOTS, type ShopBuilding } from '@/lib/shop'
 import { clearanceTitle } from '@/lib/clearance/expertise'
 import { useLabCurrency } from '@/lib/labCurrency'
+import { Sprite } from '@/components/lab/Sprite'
+import { getBuildingSprite } from '@/lib/sprites/manifest'
+import type { LabType } from '@/lib/phase'
 import type { Currency } from '@/components/lab/StatusStrip'
 
 /**
@@ -22,15 +25,22 @@ import type { Currency } from '@/components/lab/StatusStrip'
 export function ShopPanel({
   currency,
   memberCount,
+  labType,
   onClose,
 }: {
   currency: Currency
   memberCount: number
+  /** The team's lab type — gates lab-type-specific buildings (e.g. Volt Lab). */
+  labType: LabType | null
   onClose: () => void
 }) {
   const closeRef = useRef<HTMLButtonElement>(null)
   const { addCurrency } = useLabCurrency()
   const multiplier = Math.max(1, memberCount)
+  // Real, purchasable buildings for this lab first; the grid is always SHOP_SLOTS
+  // wide, with the remaining positions filled by non-purchasable placeholders.
+  const buildings = shopBuildingsForLabType(labType)
+  const placeholderCount = Math.max(0, SHOP_SLOTS - buildings.length)
 
   const [owned, setOwned] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -121,12 +131,13 @@ export function ShopPanel({
 
         <div className="shop-panel__shelf">
           <div className="shop-panel__grid">
-            {SHOP_BUILDINGS.map((b) => {
+            {buildings.map((b) => {
               const cost = b.cost * multiplier
               return (
                 <ShopCard
                   key={b.key}
                   building={b}
+                  labType={labType}
                   cost={cost}
                   owned={owned.has(b.key)}
                   clearance={currency.clearanceLevel}
@@ -137,6 +148,9 @@ export function ShopPanel({
                 />
               )
             })}
+            {Array.from({ length: placeholderCount }, (_, i) => (
+              <PlaceholderCard key={`placeholder-${i}`} />
+            ))}
           </div>
         </div>
 
@@ -157,6 +171,7 @@ export function ShopPanel({
 
 function ShopCard({
   building,
+  labType,
   cost,
   owned,
   clearance,
@@ -166,6 +181,7 @@ function ShopCard({
   onBuy,
 }: {
   building: ShopBuilding
+  labType: LabType | null
   cost: number
   owned: boolean
   clearance: number
@@ -176,11 +192,16 @@ function ShopCard({
 }) {
   const locked = clearance < building.minClearance
   const buyable = !owned && !locked && affordable && !disabled
+  const sprite = labType && building.sprite ? getBuildingSprite(labType, building.sprite) : null
 
   return (
     <div className={`shop-card${owned ? ' shop-card--owned' : ''}${locked ? ' shop-card--locked' : ''}`}>
       <div className="shop-card__image" aria-hidden="true">
-        <span className="font-pixel shop-card__placeholder">{building.name}</span>
+        {sprite ? (
+          <Sprite entry={sprite} scale={2} />
+        ) : (
+          <span className="font-pixel shop-card__placeholder">{building.name}</span>
+        )}
         {owned && (
           <span className="shop-card__owned-badge font-pixel">
             <Check size={9} /> OWNED
@@ -221,6 +242,25 @@ function ShopCard({
       )}
 
       <span className="shop-card__desc">{building.description}</span>
+    </div>
+  )
+}
+
+/**
+ * An empty shop slot — a non-purchasable placeholder shown after the real
+ * buildings so the grid is always a full SHOP_SLOTS wide. Deliberately generic
+ * ("building name" / "description", 0 KP) so it reads as a reserved "coming soon"
+ * slot rather than a real, buyable structure.
+ */
+function PlaceholderCard() {
+  return (
+    <div className="shop-card shop-card--empty" aria-hidden="true">
+      <div className="shop-card__image">
+        <span className="font-pixel shop-card__placeholder">building name</span>
+      </div>
+      <span className="shop-card__name font-pixel">building name</span>
+      <span className="shop-card__status font-pixel shop-card__status--empty">0 KP</span>
+      <span className="shop-card__desc">description</span>
     </div>
   )
 }

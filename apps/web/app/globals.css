@@ -1587,6 +1587,9 @@
 }
 .shop-card__status--owned { color: #5ef08a; }
 .shop-card__status--locked { color: #7ff2e3; }
+/* Empty "coming soon" slot — dimmed, non-interactive placeholder. */
+.shop-card--empty { opacity: 0.5; }
+.shop-card__status--empty { color: #6b7396; }
 .shop-card__buy {
   display: inline-flex;
   align-items: center;

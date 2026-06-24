@@ -14,6 +14,8 @@
  * placeholder color below, at the same dimensions — layout never breaks.
  */
 
+import type { LabType } from '@/lib/phase'
+
 export interface SpriteEntry {
   /** Path relative to /public (leading slash). */
   path: string
@@ -89,6 +91,56 @@ export function getGatewaySprite(key: GatewayKey, skin: GatewaySkin): SpriteEntr
     scale: GATEWAY_SCALE,
     description: `${GATEWAY_LABELS[key]} (${skin})`,
     placeholderColor: SKIN_PLACEHOLDER[skin],
+  }
+}
+
+// ─── Economy buildings ────────────────────────────────────────────────────────
+// Per-lab-type economy buildings authored by the /pixel-art-pipeline (catalog of
+// record: art/building.md). 64×64 source @ 2× display, matching the gateways.
+// Path: /sprites/buildings/{labType}/{slug}.png. Only buildings whose sprite has
+// actually been rendered are listed here; the rest fall back to the placeholder.
+
+const BUILDING_SRC = 64
+const BUILDING_SCALE = 2
+
+/** Slugs of economy buildings that have a rendered sprite, keyed by lab type. */
+export const BUILDING_SPRITES: Partial<Record<LabType, readonly string[]>> = {
+  volt_lab: [
+    'workshop',
+    'cnc-mill-shop',
+    '3d-printing-shop',
+    'pcb-fab',
+    'robotics-bay',
+    'electronics-bench',
+    'mechanical-testing-rig',
+    'welding-fabrication',
+    'embedded-systems-lab',
+    'ai-incubator',
+  ],
+  biocore: [
+    'greenhouse',
+    'specimen-vault',
+    'microscopy-suite',
+    'incubation-chamber',
+    'wet-lab',
+    'field-station',
+    'aquatic-habitat',
+    'genetics-sequencing-lab',
+    'behavioral-observation-room',
+    'bioinformatics-suite',
+  ],
+}
+
+/** Resolve the sprite for an economy building, or null if none has been generated. */
+export function getBuildingSprite(labType: LabType, slug: string): SpriteEntry | null {
+  if (!BUILDING_SPRITES[labType]?.includes(slug)) return null
+  return {
+    path: `/sprites/buildings/${labType}/${slug}.png`,
+    srcWidth: BUILDING_SRC,
+    srcHeight: BUILDING_SRC,
+    scale: BUILDING_SCALE,
+    description: `${slug.replace(/-/g, ' ')} building (${labType})`,
+    placeholderColor: SKIN_PLACEHOLDER[labType],
   }
 }
 

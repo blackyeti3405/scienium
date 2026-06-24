@@ -119,12 +119,16 @@ export interface ShopStateLike {
   clearanceLevel: number
   /** team-size cost multiplier (>= 1). */
   multiplier: number
+  /** The team's assigned lab type (null until classified). */
+  labType?: string | null
 }
 
 export interface ShopBuildingLike {
   key: string
   cost: number
   minClearance: number
+  /** If set, only teams of this lab type may buy this building. */
+  labType?: string | null
 }
 
 export type PurchaseCheck =
@@ -139,6 +143,9 @@ export type PurchaseCheck =
  */
 export function evaluatePurchase(state: ShopStateLike, building: ShopBuildingLike): PurchaseCheck {
   const cost = building.cost * state.multiplier
+  if (building.labType && building.labType !== state.labType) {
+    return { ok: false, cost, status: 403, error: "This building isn't available to your lab type." }
+  }
   if (state.owned.includes(building.key)) {
     return { ok: false, cost, status: 409, error: 'Your lab already owns this building.' }
   }

@@ -9,19 +9,21 @@ import { logActivity } from '@/lib/activity/log'
 
 /** Shared shop state: owned keys, clearance, and the team-size cost multiplier. */
 async function loadShopState(teamId: string) {
-  const [owned, currency, memberCount] = await Promise.all([
+  const [owned, currency, memberCount, team] = await Promise.all([
     db.teamShopBuilding.findMany({ where: { teamId }, select: { buildingKey: true } }),
     db.teamCurrency.findUnique({
       where: { teamId },
       select: { kp: true, clearanceLevel: true },
     }),
     db.teamMember.count({ where: { teamId } }),
+    db.team.findUnique({ where: { id: teamId }, select: { labType: true } }),
   ])
   return {
     owned: owned.map((o) => o.buildingKey),
     kp: currency?.kp ?? 0,
     clearanceLevel: currency?.clearanceLevel ?? 0,
     multiplier: Math.max(1, memberCount),
+    labType: team?.labType ?? null,
   }
 }
 

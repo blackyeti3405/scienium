@@ -213,6 +213,7 @@ export function LabScene({
             <ShopPanel
               currency={liveCurrency}
               memberCount={memberCount}
+              labType={labType}
               onClose={() => setShopOpen(false)}
             />
           )}
