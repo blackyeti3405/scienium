@@ -48,6 +48,18 @@ then add the key to `manifest.ts` (`GATEWAY_KEYS`), a config entry to
 `apps/web/lib/gateways.ts`, and a component mapping in
 `apps/web/lib/featureRegistry.tsx`.
 
+**Author an economy building (per-lab catalog buildings):** these must each be a
+**bespoke iso form**, NOT the gateway cube re-skinned. Use the building toolkit
+`art/isobuild.py` — `Box(top, wx, wy, h)` prisms of varied footprint/height,
+stacked/abutted for annexes·towers·hangars·L-shapes, plus `cylinder(...)` for
+silos/tanks — and author bespoke per-face glazing with `Box.window` (renders real glass — a
+sky-reflection gradient + diagonal shine + clean frame + soft mullions; never a
+black-barred blue grid) and `Box.louver` for opaque vents/grilles. Do **not** call
+`iso.py`'s `draw_cube`/`base_windows` as the body (that is the gateway cube and
+strips the building's identity). Emit the char-grid JSON with the set's palette and
+render via `render_pixel_art.py`. The `/pixel-art-pipeline` command drives this end
+to end (brainstorm → paint → review loop).
+
 **Re-skin / tune a lab-type palette:** edit that lab's entry in `LAB_PALETTES` in
 `art/recolor.py` and rerun `python3 art/recolor.py`. Only gateways reskin; tiles
 stay constant (spec §20.5).

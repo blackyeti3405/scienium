@@ -1,0 +1,3 @@
+# Review — Numerical Methods Hub (rev 2) — FINAL
+
+**Verdict: SHIP.** Rev-2 polish landed (finest quadtree cells at the solution front now visibly smaller than the coarse cells — the coarse→fine refinement reads; residual gauge unambiguously converged). All criteria pass: iso 2:1, flat-parapet roof visible, front corner to viewer, crisp + on-palette, left-face glass reads as glass and the vent wing reads as opaque louvers (distinct), cohesive Axiom, one-of-one (adaptive convergence mesh — an algorithm motif distinct from the Computation Cluster's hardware), attractive, unique built form (square two-block compute hall + louver wing). Delivered at revision ≥ 2.

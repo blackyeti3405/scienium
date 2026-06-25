@@ -11,6 +11,12 @@ There are **67 buildings in 7 sets**:
   the set for its assigned lab type, so each set must feel like one family.
 - **1 gateway set** — the 7 fixed navigation buildings every team sees.
 
+**Status — fully realized (2026-06-24):** all **67/67** buildings are made (`[x]`).
+Every lab-type set — Volt Lab, BioCore, ChemWorks, TerraBase, MindFrame, Axiom — is
+complete, each building a one-of-one signature feature on its own bespoke iso form, and
+the 7 gateways have shipped sprites. There is nothing left for the generation pipeline
+to pick up; this catalog is now the historical registry of every signature feature.
+
 ---
 
 ## The two rules every building must satisfy
@@ -128,18 +134,18 @@ water troughs, wood framing, soft amber grow-lights.
 **Shared motifs:** condenser coils & pipes, bubbling flasks/tanks, drifting vapor,
 violet reaction glow, polished lab glass.
 
-| Status | Building | Role | Mini-game | Base description | Signature feature |
-|---|---|---|---|---|---|
-| [ ] | Fume Hood Bench | starter | configuration | Safe baseline workspace for reactions | — |
-| [ ] | Reaction Synthesis Lab | standard | prediction | Run controlled chemical syntheses | — |
-| [ ] | Spectroscopy Suite | standard | identification | Identify compounds by spectral signatures | — |
-| [ ] | Materials Testing Bay | standard | diagnosis | Measure mechanical and chemical properties | — |
-| [ ] | Crystallography Room | standard | decoding | Determine molecular structures | — |
-| [ ] | Distillation Tower | standard | optimization | Separate and purify mixtures | — |
-| [ ] | Catalysis Lab | standard | optimization | Study reaction acceleration | — |
-| [ ] | Polymer Workshop | standard | configuration | Synthesize and test polymers | — |
-| [ ] | Computational Chemistry Hub | standard | prediction | Simulate molecules in silico | — |
-| [ ] | Cleanroom Synthesizer | premium | optimization | Precision synthesis under contamination control | — |
+| Status | Building | Role | Mini-game | Base description | Form | Opens | Signature feature |
+|---|---|---|---|---|---|---|---|
+| [x] | Fume Hood Bench | starter | configuration | Safe baseline workspace for reactions | Lean-to bench shed (mono-pitch) | left | Bubbling reaction flask on a ring-stand over a violet burner flame (open bench) |
+| [x] | Reaction Synthesis Lab | standard | prediction | Run controlled chemical syntheses | Pipework reactor hall + reactor drum | right | Coiled glass Liebig condenser dripping distilled product into a receiving flask |
+| [x] | Spectroscopy Suite | standard | identification | Identify compounds by spectral signatures | Low wide optics hall + clerestory monitor | left | Glass prism splitting a white beam into a banded spectral rainbow |
+| [x] | Materials Testing Bay | standard | diagnosis | Measure mechanical and chemical properties | Open portal testing bay + instrument annex | right | Clamped coupon corroding/dissolving in a glass corrosion tank, gauge dropping to red |
+| [x] | Crystallography Room | standard | decoding | Determine molecular structures | Faceted gem-cut prism pavilion | left | Floating faceted crystal with a symmetric X-ray diffraction-spot pattern around it |
+| [x] | Distillation Tower | standard | optimization | Separate and purify mixtures | Tall slender fractionating column | right | Column sight-glass separating into stacked colored fractions + a rising vapor plume |
+| [x] | Catalysis Lab | standard | optimization | Study reaction acceleration | Glass-domed round reactor pavilion | left | Glowing catalyst pellet bed turning two slow streams into one fast bright product stream |
+| [x] | Polymer Workshop | standard | configuration | Synthesize and test polymers | Sawtooth extrusion shed + spool annex | right | Screw extruder drawing a molten polymer strand onto a slowly-winding take-up reel |
+| [x] | Computational Chemistry Hub | standard | prediction | Simulate molecules in silico | Stepped two-block data-center + vent wing | left | Hovering ball-and-stick molecule with a predicted-pose ghost conformation |
+| [x] | Cleanroom Synthesizer | premium | optimization | Precision synthesis under contamination control | Sealed cleanroom + curved curtain wall + airlock | right | Glovebox robotic arm placing a single glowing atom under a laminar clean-air shimmer |
 
 ## 🌍 TerraBase — Earth & Planetary Sciences
 **Identity:** a rugged field-research outpost. **Earthy ochre/slate + mineral teal.**
@@ -150,16 +156,16 @@ rigs, sample crates, mineral-teal sensor glow, canvas/tarp roofs.
 
 | Status | Building | Role | Mini-game | Base description | Signature feature |
 |---|---|---|---|---|---|
-| [ ] | Sampling Station | starter | identification | Collect and catalog field samples | — |
-| [ ] | Seismograph Array | standard | prediction | Monitor seismic activity | — |
-| [ ] | Weather Monitoring Post | standard | prediction | Record and analyze atmospheric data | — |
-| [ ] | Geological Core Lab | standard | identification | Analyze sediment and rock cores | — |
-| [ ] | Hydrology Bay | standard | diagnosis | Study water systems and flow | — |
-| [ ] | Atmospheric Sensor Array | standard | prediction | Track atmospheric chemistry | — |
-| [ ] | Soil Analysis Lab | standard | identification | Characterize soil composition | — |
-| [ ] | Remote Sensing Hub | standard | decoding | Interpret satellite and aerial data | — |
-| [ ] | Climate Modeling Station | standard | optimization | Run simulations of Earth systems | — |
-| [ ] | Deep Earth Observatory | premium | prediction | Probe planetary-scale processes | — |
+| [x] | Sampling Station | starter | identification | Collect and catalog field samples | Open tarp-depot work-yard with a field sample rotating in a mineral-teal scanner ring, fanning out holographic mineral-name + grid-coordinate ID tags |
+| [x] | Seismograph Array | standard | prediction | Monitor seismic activity | Rooftop rotating ink-drum seismograph scrawling a jagged teal trace beside a glowing concentric shock-ripple with the predicted next jolt lit brighter |
+| [x] | Weather Monitoring Post | standard | prediction | Record and analyze atmospheric data | Tethered weather-balloon with a dangling radiosonde projecting a holographic sun→cloud→storm forecast ribbon and a predicted weather-front arrow (no anemometer) |
+| [x] | Geological Core Lab | standard | identification | Analyze sediment and rock cores | Inclined glass-cased drill-core on a rack, lit band-by-band by a sliding teal scanner that pops a mineral label for each rock layer |
+| [x] | Hydrology Bay | standard | diagnosis | Study water systems and flow | Open-yard terraced watershed flume with a teal dye-trace plume stalling at a leak/blockage fault, flow gauges reading the diagnosis |
+| [x] | Atmospheric Sensor Array | standard | prediction | Track atmospheric chemistry | Crown of upward intake horns inhaling drifting amber & teal gas wisps into a glowing bell-jar analyzer with a predicted-concentration needle climbing |
+| [x] | Soil Analysis Lab | standard | identification | Characterize soil composition | Rooftop vibrating sieve-shaker cascading soil through graded screens into glowing sand→silt→clay→organic composition bins, a teal pie-dial reading the mix |
+| [x] | Remote Sensing Hub | standard | decoding | Interpret satellite and aerial data | Orbital ground-track ring with a circling satellite beaming false-color raster tiles onto a tilted roof screen where they resolve into a terrain map (no dish) |
+| [x] | Climate Modeling Station | standard | optimization | Run simulations of Earth systems | Hovering exploded stack of Earth-system layers (ocean/land/atmosphere/ice) over a roof oculus, an optimization fork lighting the best-outcome future-Earth scenario green |
+| [x] | Deep Earth Observatory | premium | prediction | Probe planetary-scale processes | Lattice drill-rig derrick over a cutaway glowing shaft through the planet's concentric crust/mantle/core layers, a probe descending and a predicted reading rising |
 
 ## 🧠 MindFrame — Behavioral & Social Sciences
 **Identity:** a calm human-studies institute. **Muted indigo/violet + soft magenta.**
@@ -170,16 +176,16 @@ seating/booths, one-way mirrors, gentle magenta accent light.
 
 | Status | Building | Role | Mini-game | Base description | Signature feature |
 |---|---|---|---|---|---|
-| [ ] | Interview Room | starter | identification | Conduct structured interviews | — |
-| [ ] | Survey Distribution Center | standard | diagnosis | Design and field surveys | — |
-| [ ] | Behavioral Lab | standard | prediction | Run controlled behavioral experiments | — |
-| [ ] | Eye Tracking Suite | standard | decoding | Measure attention and gaze | — |
-| [ ] | Statistical Analysis Hub | standard | diagnosis | Choose and run the right test | — |
-| [ ] | Focus Group Chamber | standard | identification | Run group-based qualitative studies | — |
-| [ ] | Longitudinal Study Wing | standard | optimization | Track participants over time | — |
-| [ ] | EEG/Biofeedback Room | standard | decoding | Measure physiological response | — |
-| [ ] | Data Visualization Studio | standard | configuration | Communicate findings visually | — |
-| [ ] | Computational Social Science Lab | premium | optimization | Model social systems at scale | — |
+| [x] | Interview Room | starter | identification | Conduct structured interviews | Open one-way-mirror booth where two seated silhouettes face across a table with a hovering magenta voiceprint speech-bubble and a popped subject ID tag |
+| [x] | Survey Distribution Center | standard | diagnosis | Design and field surveys | Rooftop rotary dispatch hopper flinging out a fan of questionnaire darts while response cards stream back into a bin, a climbing magenta response-rate tally board |
+| [x] | Behavioral Lab | standard | prediction | Run controlled behavioral experiments | Seated subject at a glowing A/B two-button choice panel with a magenta predicted-choice needle leaning pre-press + reaction-time readout, watched through a one-way mirror |
+| [x] | Eye Tracking Suite | standard | decoding | Measure attention and gaze | Angled stimulus display showing a glowing gaze heatmap + connected numbered scan-path over an image, two IR cameras glinting magenta at the viewer headrest |
+| [x] | Statistical Analysis Hub | standard | diagnosis | Choose and run the right test | Rooftop holographic bell-curve with magenta-shaded tails, a significance-threshold line, and a p-value needle dropping past it to light a SIGNIFICANT stamp |
+| [x] | Focus Group Chamber | standard | identification | Run group-based qualitative studies | Open-oculus round amphitheater pit where speech-bubbles rise from each ringed seat and merge into a hovering magenta theme/word-cloud being tagged |
+| [x] | Longitudinal Study Wing | standard | optimization | Track participants over time | Rooftop Year 1→5 timeline ridge with cohort portrait-medallions at each waypoint, a climbing magenta retention trend-line and a participant token advancing along the track |
+| [x] | EEG/Biofeedback Room | standard | decoding | Measure physiological response | Capped subject's head streaming multiple stacked multicolored brainwave ribbons (alpha/beta/theta) into a decoder strip, a magenta biofeedback ring pulsing the calm/stress level |
+| [x] | Data Visualization Studio | standard | configuration | Communicate findings visually | Rooftop hovering 3D bar-chart skyline + sweeping line-graph ribbon composed onto a dashboard, magenta scatter-dots streaming in with a color legend |
+| [x] | Computational Social Science Lab | premium | optimization | Model social systems at scale | Hovering flat horizontal society-simulation plane swarming with citizen-dots flocking into clusters on a faint city-grid, social-tie threads rippling, an optimization dial steering to the best outcome |
 
 ## 🔭 Axiom — Physics, Math & Astronomy
 **Identity:** an observatory-and-theory campus. **Deep space navy + starlight
@@ -191,16 +197,16 @@ gold starlight glints, navy night-sky glass.
 
 | Status | Building | Role | Mini-game | Base description | Signature feature |
 |---|---|---|---|---|---|
-| [ ] | Chalkboard Room | starter | decoding | Foundational derivations and proofs | — |
-| [ ] | Computation Cluster | standard | optimization | Numerical simulations | — |
-| [ ] | Particle Physics Bench | standard | identification | Tabletop physics experiments | — |
-| [ ] | Optics Laboratory | standard | configuration | Light, lenses, interference | — |
-| [ ] | Quantum Simulation Lab | standard | prediction | Model quantum systems | — |
-| [ ] | Mathematical Modeling Suite | standard | optimization | Build models of real phenomena | — |
-| [ ] | Observatory Dome | standard | identification | Observe and classify celestial objects | — |
-| [ ] | Theoretical Physics Annex | standard | decoding | Symbolic reasoning and derivations | — |
-| [ ] | Numerical Methods Hub | standard | optimization | Algorithms for scientific computing | — |
-| [ ] | Cosmology Visualization Theater | premium | prediction | Render large-scale structures of the universe | — |
+| [x] | Chalkboard Room | starter | decoding | Foundational derivations and proofs | Tilted slate easel where a glowing gold chalk derivation writes itself line-by-line and boxes a final QED |
+| [x] | Computation Cluster | standard | optimization | Numerical simulations | Transparent immersion-cooled GPU blade rack glowing cyan with a bright optimization heat-sweep band as it balances load |
+| [x] | Particle Physics Bench | standard | identification | Tabletop physics experiments | Open benchtop cloud chamber where curling cosmic-ray particle tracks spiral and a detected particle lights up its ID tag |
+| [x] | Optics Laboratory | standard | configuration | Light, lenses, interference | Rooftop laser interferometer — a gold beam zig-zags through lenses & mirrors and recombines into a ring of glowing interference fringes |
+| [x] | Quantum Simulation Lab | standard | prediction | Model quantum systems | Suspended golden quantum-processor chandelier (tiered dilution-fridge coils) with a glowing qubit core and flickering superposition ghost-states |
+| [x] | Mathematical Modeling Suite | standard | optimization | Build models of real phenomena | Hovering 3D function-surface bowl where a glowing marble rolls down the gradient and comes to rest in the lit minimum basin |
+| [x] | Observatory Dome | standard | identification | Observe and classify celestial objects | Silver dome cracked open along its slit with a telescope barrel aimed at a catalogued star that pops a spectral-class ID tag |
+| [x] | Theoretical Physics Annex | standard | decoding | Symbolic reasoning and derivations | Hovering holographic curved-spacetime grid dimpled by a glowing mass, field-equation symbols orbiting with one term decoding |
+| [x] | Numerical Methods Hub | standard | optimization | Algorithms for scientific computing | Hovering adaptive convergence mesh that recursively subdivides into finer cells around a glowing solution front, residual gauge dropping to zero |
+| [x] | Cosmology Visualization Theater | premium | prediction | Render large-scale structures of the universe | Open-oculus planetarium dome projecting a rotating holographic cosmic-web of galaxy filaments & voids with a predicted-expansion arrow |
 
 ---
 

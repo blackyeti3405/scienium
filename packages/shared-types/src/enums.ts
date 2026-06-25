@@ -24,8 +24,6 @@ export type CombatType = 'empirical' | 'theoretical' | 'applied'
 
 export type BuildingRole = 'starter' | 'standard' | 'premium'
 
-export type FigurineType = 'apprentice' | 'analyst' | 'experimenter' | 'presenter' | 'pioneer'
-
 export type UserRole = 'student' | 'teacher' | 'admin'
 
 export type ProjectLogEntryType = 'progress' | 'failure'

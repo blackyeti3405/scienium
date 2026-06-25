@@ -140,7 +140,7 @@ nova-lab/
 │   │   │   │   ├── layout.tsx            # Enforces teacher role
 │   │   │   │   ├── page.tsx              # Roster (home)
 │   │   │   │   ├── student/[id]/         # Student detail view (phase-adaptive)
-│   │   │   │   ├── validations/          # Figurine validation queue
+│   │   │   │   ├── validations/          # Phase-advance request queue
 │   │   │   │   ├── showcase-review/      # Showcase moderation queue
 │   │   │   │   ├── settings/             # Class settings
 │   │   │   │   └── reports/              # Generated reports
@@ -360,8 +360,12 @@ project_log_references    id, project_log_id, references_log_id  # Resilience Bo
 # Mini-games
 mini_game_plays       id, user_id, team_id, building_id, score, kp_awarded, played_at
 
-# Figurines
-figurine_unlocks      id, user_id, figurine_tier, lab_type_variant, qr_token, unlocked_at
+# Phase advancement (teacher-gated)
+phase_advance_requests  id, team_id, from_phase, to_phase, status (pending|approved|
+                        rejected), note, requested_by_user_id, reviewed_by_user_id,
+                        reviewed_at, review_note, created_at
+                        # A team's request to cross a teacher-gated phase boundary
+                        # (→ working, → showcase). Replaced the removed figurine system.
 
 # Showcase
 showcases             id, team_id, slug (unique), title, abstract, privacy_level,
@@ -498,7 +502,7 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 6. If user explicitly references a prior log, write to `project_log_references` and award Resilience Bonus
 
 ### Showcase publish flow
-1. Team navigates to `/showcase/edit` (requires Presenter figurine unlocked)
+1. Team navigates to `/showcase/edit` (gated by reaching the `showcase` phase)
 2. Editor surfaces all uploaded assets; team fills in title/abstract/tags
 3. Asset uploads use signed R2 URLs — client uploads directly to R2, not through Next.js (critical for video)
 4. Video uploads trigger transcoding job in AI service → produces normalized MP4 + thumbnail
@@ -535,15 +539,15 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 4. Result returned as one denormalized list — no per-student requests
 5. Detail views fetched lazily when teacher clicks a row
 
-### Teacher validation flow
-1. Student progresses to a figurine-qualifying state (e.g., completes hypothesis + research stage for Analyst)
-2. Trigger writes to `teacher_validations` with `status = pending` and snapshot of evidence
-3. Teacher's roster shows attention indicator; Validations tab badge increments
-4. Teacher opens validation, reviews evidence, decides
-5. On approval: `figurine_unlocks` row created; in-app notification to student; figurine fulfillment (physical or digital) triggered
-6. On rejection or changes_requested: student receives in-app notification with teacher's notes
+### Teacher-gated phase-advance flow
+The two real-world milestones — starting data collection (`research_planning → working`) and advancing to competition (`working → showcase`) — require a teacher's sign-off rather than an automatic gate (`TEACHER_GATED_TRANSITIONS` in `lib/team/advance.ts`).
+1. A student requests advancement at a gated boundary via `POST /api/team/advance-phase`. The route detects the transition is teacher-gated and writes a `phase_advance_requests` row with `status = pending` (deduped to one pending request per team)
+2. Teacher's roster shows an attention indicator; `GET /api/teacher/validations` lists the pending requests scoped to the teacher's classes, each with lightweight evidence (requester, research idea, ready-paper/log counts)
+3. Teacher reviews and decides via `POST /api/teacher/validations` (`approve` | `reject`)
+4. On approval: one transaction marks the request `approved`, conditionally bumps `teams.phase` to `to_phase` (only if the team is still on `from_phase`, so a double-approval can't skip ahead), and writes a `phase_reviewed` notification to the team
+5. On rejection: the request is marked `rejected` and the team receives an in-app notification with the teacher's notes; the phase is unchanged
 
-> **Note:** During the pilot, the above flow is bypassed. Teachers physically validate progress and hand over figurines directly; students scan the QR code to unlock features.
+> The earlier `literature_review → research_planning` gate is **not** part of this flow — it's mechanically checkable (25 sources + every member proficient), so it stays auto/self-serve.
 
 ### PvP battle flow (async, pilot)
 1. Player initiates battle from `/pvp/lobby`
@@ -720,7 +724,6 @@ Defense-in-depth on every API route, following OWASP API Top 10. The primitives 
 - PII isolated in `users` table; activity feed and social view use names only with consent
 - Team data isolation is enforced in application queries (every read/write is scoped by `teamId`); enabling Postgres/Supabase RLS as a DB-level backstop is recommended
 - Private assets (paper PDFs) live in **private R2** and are streamed through the authenticated, team-scoped `/api/papers/[id]/file` route — **never** a public or signed URL. Signed/public URLs are reserved for public Showcase assets only.
-- QR codes on figurines are signed tokens (HMAC), not raw IDs
 - Public Showcase visitor tracking is privacy-respecting (no third-party trackers, no PII)
 
 ---
@@ -772,7 +775,7 @@ The lab home (`/lab`) replaces the old dashboard as the spatial navigation hub. 
 
 **Two building classes (see spec §9.1):**
 - **Gateway buildings** — 7 fixed structures that *are* the navigation. Seeded via `gateway_buildings`; rendered by `LabCanvas`. Visibility derives from `teams.phase >= unlock_phase`; skin derives from `teams.lab_type`. The Operations Hub (`is_central = true`) renders at plot center once unlocked.
-- **Economy buildings** — the 60 purchasable/upgradeable buildings (`buildings` / `team_buildings`), rendered as additional sprites on the grown plot after specialization.
+- **Economy buildings** — the 60 purchasable/upgradeable buildings (`buildings` / `team_buildings`), rendered as additional sprites on the grown plot after specialization. **All 60 are drawn** (10 per lab type × 6 lab types), each a bespoke iso form with a one-of-one signature feature; resolved via `getBuildingSprite(lab_type, slug)`. Catalog of record: `art/building.md` (67/67 made).
 
 **Lab visual variables:**
 - `size`: `small` (discovery + lab_selection phases) | `grown` (all later phases)
@@ -792,7 +795,7 @@ The lab home (`/lab`) replaces the old dashboard as the spatial navigation hub. 
 - **Generic base palette:** lavender/grey structure, cyan-teal glass, warm orange accents. **Six reskin palettes** (one per lab type) per spec §20.4.
 - Gateway building sprites: `public/sprites/gateways/{key}_{skin}.png` where `key ∈ {discovery, literature_review, research_plan, operations_hub, science_fair, showcase, pvp}` and `skin ∈ {generic, biocore, chemworks, volt_lab, terrabase, mindframe, axiom}` → 7 × 7 = 49 sprites at full coverage (start with `generic` set + one lab type for the vertical slice).
 - Lab plot/size sprites: `public/sprites/lab/plot_{small,grown}.png`
-- Source dimensions: target **32×32 px** building tiles (down from 48×32), displayed at 3–4× scale; keep palette to **16 colors** where possible. Confirm final grid with the artist.
+- Source dimensions (as built): **64×64 px** for every building — gateways and economy alike — displayed at 2× scale, ≤**16 colours** per set (ground tiles 32×32 @ 2×, UI sprites 16×16 @ 2×).
 - UI sprites: `public/sprites/ui/padlock_closed.png`, `padlock_open.png` — 16×16 px at 2× scale
 - Pixel font: `Press Start 2P` (Google Fonts) via `--font-pixel` CSS variable; applied with `.font-pixel` class
 
