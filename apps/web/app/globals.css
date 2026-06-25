@@ -96,7 +96,7 @@
   align-items: center;
   gap: 14px;
 }
-.status-strip__brand { color: #cfd6f0; font-size: 10px; }
+.status-strip__brand { color: #cfd6f0; font-size: 10px; display: inline-flex; align-items: center; gap: 7px; }
 .status-strip__team { color: #aeb6d0; font-size: 13px; font-weight: 600; }
 /* Team name doubles as the Team-panel trigger when a roster is available. */
 .status-strip__team--button {
@@ -886,7 +886,7 @@
 .dev-fab:hover { transform: translateY(-2px); filter: brightness(1.15); opacity: 1; }
 .dev-fab:active { transform: translateY(0); }
 .dev-fab:disabled { opacity: 0.4; cursor: not-allowed; }
-.dev-fab__icon { font-size: 16px; line-height: 1; }
+.dev-fab__icon { width: 24px; height: 24px; line-height: 1; }
 .dev-fab__label { font-size: 7px; letter-spacing: 0.5px; max-width: 80px; text-align: center; }
 
 /* ── Activity feed side panel ───────────────────────────────────────────────── */

@@ -1,0 +1,3 @@
+# Review — Cosmology Visualization Theater (rev 2) — FINAL
+
+**Verdict: SHIP.** Rev-2 polish landed (predicted-expansion arrow is now a bold gold shaft with a solid filled arrowhead breaking out of the lattice into clear sky — unmistakable). All criteria pass: iso 2:1, dome/oculus visible, front to viewer, crisp + on-palette, curtain-glass ribbon reads as glass, projected cosmic web reads as nodes-on-filaments around two dark voids, cohesive Axiom, one-of-one (whole large-scale structure, distinct from the Observatory's single star), attractive premium showpiece, unique built form (broad low domed theater — clearly different from the taller/narrower Observatory Dome). Delivered at revision ≥ 2.

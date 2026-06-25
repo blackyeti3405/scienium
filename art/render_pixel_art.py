@@ -115,7 +115,7 @@ def main() -> int:
     ap.add_argument("--preview", help="preview PNG (single mode)")
     ap.add_argument("--preview-scale", type=int, default=10)
     ap.add_argument("--dir", help="batch: source dir of *.json")
-    ap.add_argument("--out", dest="out_dir2", help=argparse.SUPPRESS)
+    ap.add_argument("--out-dir", dest="out_dir2", help=argparse.SUPPRESS)
     args, _ = ap.parse_known_args()
 
     if args.src and args.out:

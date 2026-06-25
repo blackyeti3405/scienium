@@ -142,6 +142,14 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
+# Playwright E2E — saved Clerk sessions (secrets) + generated reports.
+# Patterns are anchored to apps/web because a mid-pattern slash anchors to this
+# file's dir (repo root), so a bare `e2e/.auth/` would NOT match the nested path.
+apps/web/e2e/.auth/
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/playwright/.cache/
+
 # NOVA Lab — derived pixel-art artifacts (sources + scripts are tracked)
 art/preview/
 art/scene_*.png
@@ -153,3 +161,11 @@ __pycache__/
 
 # Local Claude Code tooling (machine-specific)
 .claude/launch.json
+.mcp.json
+
+# Feature-pipeline run output (transient; tooling in .claude/agents + .claude/commands is tracked)
+.claude/pipeline/
+
+# Python virtualenvs
+.venv/
+art/.venv/

@@ -265,7 +265,8 @@ function DevFillButton() {
       disabled={busy}
       title="[DEV] Fill 25 papers"
     >
-      <span className="dev-fab__icon">⚗</span>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/nova-lab-logo.png" alt="" width={24} height={24} className="pixel-art dev-fab__icon" />
       <span className="dev-fab__label">{msg ?? 'DEV'}</span>
     </button>
   )

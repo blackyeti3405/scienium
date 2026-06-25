@@ -14,6 +14,9 @@ art/
   canon.py              # the canonical NOVA palette (extracted from the Discovery ref)
   render_pixel_art.py   # canonical char-grid JSON  -> PNG renderer
   iso.py                # isometric gateway buildings (imports Discovery + builds 6)
+  isobuild.py           # iso BUILDING TOOLKIT — parametric Box/cylinder primitives
+                        #   for bespoke per-lab economy buildings (unique massing,
+                        #   not a re-skinned gateway cube). Driven by /pixel-art-pipeline.
   build_sprites.py      # ground tiles + padlock
   recolor.py            # palette-swaps each gateway into the 6 lab-type skins
   compose_scene.py      # composites preview screenshots of the whole scene

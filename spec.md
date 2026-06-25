@@ -8,7 +8,7 @@
 
 ## 1. Concept Overview
 
-NOVA Lab is a hybrid physical-digital STEM engagement game designed to motivate students through the science fair process. Students build and expand a personalized virtual research laboratory, earning upgrades through daily learning activities, demonstrated knowledge, and real science fair project progress. Physical collectible figurines, distributed at verified real-world milestones, unlock special capabilities inside the app. Students can work solo or in shared-laboratory teams. Completed projects can be published as public Showcases visible beyond the app.
+NOVA Lab is a hybrid physical-digital STEM engagement game designed to motivate students through the science fair process. Students build and expand a personalized virtual research laboratory, earning upgrades through daily learning activities, demonstrated knowledge, and real science fair project progress. Teacher-validated real-world milestones unlock new phases and capabilities inside the app. Students can work solo or in shared-laboratory teams. Completed projects can be published as public Showcases visible beyond the app.
 
 **The lab is the interface.** NOVA Lab presents as a single pixel-art lab scene rather than a conventional tab-based web app. Navigation is spatial: each core feature lives behind a **building** on the student's plot, and the student enters a feature by clicking its building, which opens that feature's panel over the scene. New buildings appear on the plot as the student advances through phases, so the lab visibly grows alongside real project progress and the set of reachable features expands in lockstep. There are two distinct classes of building — **gateway buildings** (the navigation spine) and **economy buildings** (the game layer) — defined in Section 9.
 
@@ -19,7 +19,6 @@ NOVA Lab is a hybrid physical-digital STEM engagement game designed to motivate 
 - Teach STEM concepts relevant to each student's chosen discipline
 - Incentivize consistent commitment to science fair projects from start to finish
 - Reward rigor and quality of work, not just participation
-- Create a tangible, collectible physical artifact tied to real academic achievement
 - Help students discover topics of genuine interest and identify real gaps in the literature
 - Make scientific work feel like a progression system, not a checklist
 - Support both individual and collaborative team projects
@@ -33,19 +32,19 @@ NOVA Lab uses an explicit **phase** model stored on each team. Phases are sequen
 
 | # | Phase | App Phase Key | Trigger to advance |
 |---|---|---|---|
-| 0 | **Onboarding** | *(pre-phase)* | Account creation, scan Apprentice figurine, choose solo or team |
+| 0 | **Onboarding** | *(pre-phase)* | Account creation, choose solo or team |
 | 1 | **Discovery** | `discovery` | Commit to a research topic |
 | 2 | **Lab Selection** | `lab_selection` | *(Auto-assigned — see below; no manual step.)* |
 | 3 | **Literature Review** | `literature_review` | Complete 25-paper review gate, then submit a one-sentence research idea |
 | 4 | **Research Planning** | `research_planning` | Finalize hypothesis, methodology, and study design |
-| 5 | **Working** | `working` | Teacher validates data collection start (Experimenter figurine) |
-| 6 | **Showcase** | `showcase` | Teacher validates competition advancement (Presenter figurine) |
+| 5 | **Working** | `working` | Teacher validates data collection start |
+| 6 | **Showcase** | `showcase` | Teacher validates competition advancement |
 
 **Lab type is auto-assigned (implemented).** Rather than a manual selection screen, the lab type is derived from the student's project itself. At the end of Literature Review — once the 25-source gate is met — the team submits a **one-sentence research idea**, which Claude Haiku classifies into one of the 6 lab types. The team then advances **directly from `literature_review` → `research_planning`**, skipping the standalone `lab_selection` phase (the phase key is retained in the lifecycle for ordering/back-compat but is no longer a stop). The assigned type and Haiku's rationale are shown immediately, and the idea is stored on `teams.research_idea`.
 
 **Visual milestone:** When the lab type is assigned, the virtual lab **grows in size** and **reskins** to that lab type (palette switching is planned). This is a one-time, visible moment — the lab goes from small + generic to grown + type-specific.
 
-**Phase-locked features:** PvP combat, building purchases/upgrades, and mini-games are inaccessible during `discovery`, `literature_review`, and `research_planning`. The Showcase Wing additionally requires the Presenter figurine. See Section 14 for the complete feature-unlock matrix.
+**Phase-locked features:** PvP combat, building purchases/upgrades, and mini-games are inaccessible during `discovery`, `literature_review`, and `research_planning`. The Showcase Wing additionally requires reaching the `showcase` phase. See Section 14 for the complete feature-unlock matrix.
 
 **Daily activities** (Field Dispatch, Proof of Expertise, Project Log, Failure Log) become available from `literature_review` onward, when a lab type — and therefore discipline-specific content — has been established. The Fair Hub is always accessible from day one.
 
@@ -277,7 +276,7 @@ NOVA Lab has **two distinct classes of building**, which look and behave differe
 | **Gateway buildings** | 7 (fixed) | Navigation spine — each opens one core feature panel | None (not bought, no levels) | None | Reskin to lab type on specialization |
 | **Economy buildings** | 60 (10 per lab type) | Game layer — bought, upgraded, host mini-games | KP / LC | Map 1:1 to PvP characters | Already lab-type-specific by design |
 
-- **Gateway buildings** are the doors into features (Discovery, Literature Review, etc.). They are a small fixed set, present according to phase, with no purchase cost, no upgrade levels, no mini-game, and no PvP character. They are the subject of Section 9.6. *Gateway buildings are never labelled "laboratory"* — naming is provisional (see Section 19).
+- **Gateway buildings** are the doors into features (Discovery, Literature Review, etc.). They are a small fixed set, present according to phase, with no purchase cost, no upgrade levels, no mini-game, and no PvP character. They are the subject of Section 9.6. *Gateway buildings are never labelled "laboratory"* — naming is provisional (see Section 18).
 - **Economy buildings** are the 60 described in 9.2–9.5. They only become relevant after specialization, and only the chosen lab type's 10 are ever in play for a given team.
 
 A brand-new lab begins with a single gateway building (the Discovery building) on a small plot. Economy buildings and upgrades are earned over time, and only after a lab type is selected.
@@ -416,13 +415,13 @@ The seven gateway buildings are the app's primary navigation. Each is a structur
 | 1 | **Discovery building** | Topic Discovery (Wikipedia deep dives + idea generation) | `discovery` | The starter building; the only structure on the plot during Discovery |
 | 2 | **Literature Review building** | Literature Review + Library | `literature_review` | — |
 | 3 | **Research Plan building** | Research Planning (hypothesis, methodology, study design) | `research_planning` | — |
-| 4 | **Operations Hub** | Daily pillars: Field Dispatch, Proof of Expertise, Project Log / Failure Log | `literature_review` *(see §19)* | Becomes the **central** building once unlocked — the everyday home base |
-| 5 | **Science Fair Research building** | Science Fair Information Hub | `discovery` *(see §19)* | Reference center; available early |
-| 6 | **Showcase building** | Showcase Wing (public portfolio) | `showcase` | Additionally gated by the Presenter figurine |
+| 4 | **Operations Hub** | Daily pillars: Field Dispatch, Proof of Expertise, Project Log / Failure Log | `literature_review` *(see §18)* | Becomes the **central** building once unlocked — the everyday home base |
+| 5 | **Science Fair Research building** | Science Fair Information Hub | `discovery` *(see §18)* | Reference center; available early |
+| 6 | **Showcase building** | Showcase Wing (public portfolio) | `showcase` | Appears once the team is teacher-advanced to `showcase` |
 | 7 | **PvP building** | PvP combat arena | `working` | Battle lobby, team builder, leaderboards |
 
 **Visual behavior:**
-- All gateway buildings start in the shared **generic grey/teal sci-fi palette** (see Section 20).
+- All gateway buildings start in the shared **generic grey/teal sci-fi palette** (see Section 19).
 - On specialization (entering `lab_selection` and committing to a lab type), **the gateway buildings reskin** to the chosen lab type's palette. This is the visible specialization milestone, in concert with the lab growing in size. Only the gateway buildings reskin — the background/environment is unchanged for the pilot.
 - Gateways have no upgrade levels; their appearance is a function of `(lab_type)` for skin and `(phase)` for which are present.
 
@@ -454,7 +453,7 @@ Students can work solo or in shared-laboratory teams (up to `max_members`, defau
 - **Independent proficiency:** each member demonstrates literature proficiency and earns KP (max 100/source) on their own, so a bigger team earns proportionally more KP from the same 25 sources
 - **Cost scaling:** building-shop prices scale with the live member count (`baseCost × members`), shown as a `×N · N-student lab` badge — offsetting the extra earning
 - Currencies (KP, Clearance, LC) accumulate into one shared team total, displayed the same for every member
-- Discovery trees stay team-shared; figurines remain individually owned
+- Discovery trees stay team-shared; literature proficiency stays individually earned
 
 ### 10.3 Attribution
 Every action records the acting user. A team activity feed (`activity_feed`, surfaced in the Activity panel) shows recent actions: *"Maya uploaded *Quantum Entanglement and Bell Inequalities*"* / *"Devon upgraded the Optics Laboratory to level 4."* / *"Aisha added a failure log entry."* / *"Devon deleted a project log entry."* Logged action types include paper upload/delete, quiz pass, topic change, phase advance, plan sync, member join, building purchase/upgrade, and project/failure log create/edit/delete (`log_created | log_edited | log_deleted`). Because deletes remove the underlying row, the feed is the durable audit trail for who removed an entry; in-place entries additionally show a **"last edited by"** attribution.
@@ -690,8 +689,8 @@ A Showcase entry can include any of the following:
 
 ### 12.4 Unlock & Publishing
 
-- Showcase Wing feature unlocks with **The Presenter figurine** (advancing to school/regional competition)
-- Available even if the student doesn't advance further — the Presenter figurine acknowledges the level most projects reach
+- Showcase Wing feature unlocks when the team reaches the `showcase` phase (teacher-validated advancement to school/regional competition)
+- Available even if the student doesn't advance further — reaching this phase acknowledges the level most projects reach
 - For minors, **public publishing requires verified parental consent** (separate from initial app consent)
 - For school-only publishing, **teacher approval is required**
 - Showcases can be edited or unpublished at any time by the team
@@ -890,9 +889,9 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 | **Building Upgrades** | `working` | Capped by Clearance Level |
 | **Building Mini-games** | `working` | Daily cap, KP reward |
 | **PvP Combat** | `working` | 2 battles/day cap; phase-locked matchmaking |
-| **Data Terminal** | `working` + Analyst figurine | Graphing and experiment tracking |
-| **Showcase Wing** | `showcase` + Presenter figurine | Public-facing portfolio system |
-| **Prestige Cosmetics** | `showcase` + Pioneer figurine | Unique aesthetic, title, legendary module |
+| **Data Terminal** | `working` | Graphing and experiment tracking |
+| **Showcase Wing** | `showcase` | Public-facing portfolio system |
+| **Prestige Cosmetics** | `showcase` | Unique aesthetic, title, legendary module — for teams that place at a higher-level competition |
 | **Building Upgrade Tiers** | `working` | Clearance Levels 1–5, each raises max upgrade by 3 |
 
 > **Enforcement:** Feature access is gated in **two places**: (a) the nav/UI shows locked items with a pixel padlock and disables navigation, and (b) every relevant API route calls `assertFeatureUnlocked()` from `lib/phase.ts` and returns HTTP 403 for requests outside the team's current phase. Client-only gating is not acceptable.
@@ -901,7 +900,7 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 
 ## 15. Teacher Dashboard
 
-> **⚠️ DEFERRED FOR PILOT.** The full teacher dashboard described below is **not part of the pilot release**. During the 120-student pilot, teachers validate progress in person — students show the teacher their app progress, demonstrate project work physically, and the teacher hands over the appropriate figurine directly. No teacher-facing app interface is required for the pilot. The dashboard design below is preserved for **post-pilot v1.1+** when classroom scaling makes physical validation unsustainable.
+> **⚠️ DEFERRED FOR PILOT.** The full teacher dashboard described below is **not part of the pilot release**. During the 120-student pilot, teachers validate progress in person — students show the teacher their app progress and demonstrate project work physically, and the teacher approves the team's phase advancement. Only the minimal phase-advance approval is needed for the pilot; the broader dashboard below is preserved for **post-pilot v1.1+** when classroom scaling makes in-person validation unsustainable.
 
 ### 15.1 Purpose
 The teacher dashboard is the central tool for educators running NOVA Lab. Its design philosophy reflects the reality of how teachers actually use software: they have 10 minutes between classes, not 2 hours after school, so the dashboard must surface what needs attention rather than requiring browsing through all students.
@@ -927,7 +926,7 @@ The dashboard home is a roster of every student in the teacher's class. Each row
 **Attention triggers:**
 | Trigger | Indicator |
 |---|---|
-| Figurine validation pending >2 days | Yellow dot |
+| Phase-advance request pending >2 days | Yellow dot |
 | No Project Log activity in >5 days | Yellow dot |
 | Showcase awaiting review | Orange dot |
 | Fair deadline within 7 days with stale progress | Red dot |
@@ -945,7 +944,7 @@ Each student appears as a single row — even team members. This is because teac
 | Tab | Purpose |
 |---|---|
 | **Roster** | Class-wide overview (default home) |
-| **Validations** | Figurine validation queue with badge count |
+| **Validations** | Phase-advance request queue with badge count |
 | **Showcase Review** | Showcase items awaiting moderation |
 | **Class Settings** | Manage roster, teams, fair targets |
 | **Reports** | On-demand exportable progress summaries |
@@ -964,7 +963,7 @@ When the teacher clicks a student, the view adapts to that student's current pha
 - Progress toward the 25-paper gate
 - Paper list with abstracts and student's relevance notes
 - Quiz performance per paper
-- *Teacher actions:* validate hypothesis/research stage (triggers The Analyst figurine), suggest additional sources, leave feedback on any paper
+- *Teacher actions:* review the hypothesis/research stage, suggest additional sources, leave feedback on any paper
 
 #### Working Phase
 - Virtual lab view (read-only) showing all buildings and their levels
@@ -972,7 +971,7 @@ When the teacher clicks a student, the view adapts to that student's current pha
 - Data Terminal contents (if unlocked)
 - Current rubric self-assessment scores (if completed)
 - Failure Wall summary
-- *Teacher actions:* validate data collection start (triggers The Experimenter), validate competition advancement (triggers The Presenter), leave feedback on any log entry, contribute teacher rubric ratings to compare against student self-assessment
+- *Teacher actions:* validate data collection start (advances the team to `working`), validate competition advancement (advances the team to `showcase`), leave feedback on any log entry, contribute teacher rubric ratings to compare against student self-assessment
 
 #### Showcase Phase
 - Showcase preview as it would appear publicly
@@ -981,16 +980,15 @@ When the teacher clicks a student, the view adapts to that student's current pha
 
 ### 15.6 Validation Workflows
 
-Figurine validation is the teacher's most consequential interaction. The flow:
+Phase-advance approval is the teacher's most consequential interaction. The teacher-gated transitions are **research_planning → working** (data collection start) and **working → showcase** (competition advancement); the earlier literature_review gate is a mechanical 25-source check that needs no teacher action. A student *requests* an advancement and the teacher approves it. The flow:
 
-1. Teacher sees pending validations via roster indicators or the Validations tab
-2. Clicks a pending validation card
+1. Teacher sees pending requests via roster indicators or the Validations tab
+2. Clicks a pending phase-advance card
 3. Sees the relevant evidence in context:
-   - **Analyst:** the student's hypothesis text, completed lit review summary, research question
-   - **Experimenter:** recent Project Log entries, explicit "data collection underway" confirmation checkbox (this is the most easily falsifiable, so the teacher may need to ask the student to demonstrate in person)
-   - **Presenter:** confirmation of competition advancement (school/regional fair)
+   - **→ Working (data collection):** recent Project Log entries, explicit "data collection underway" confirmation checkbox (the most easily falsifiable, so the teacher may need to ask the student to demonstrate in person)
+   - **→ Showcase (competition advancement):** confirmation of advancement to a school/regional fair
 4. Approves, requests changes, or rejects with a note
-5. On approval: figurine entitlement registered; teacher receives a physical figurine to distribute (or QR code is unlocked, depending on the final distribution model)
+5. On approval: the `phase_advance_requests` row is marked approved and the team's phase is bumped, unlocking the next set of features
 
 ### 15.7 Feedback & Annotations
 
@@ -1020,7 +1018,7 @@ Teacher can approve, request changes, or reject with a reason. Approved items go
 - Class-wide progress summary as a 1-page PDF for administration
 - Individual student progress reports for parent communication
 - Generated on demand, exported as PDF
-- Each report includes: phase reached, papers reviewed, project logs, failure logs, figurines earned, Showcase link (if published)
+- Each report includes: phase reached, papers reviewed, project logs, failure logs, Showcase link (if published)
 
 ### 15.11 Pilot Phase Minimum
 
@@ -1080,65 +1078,28 @@ showcase_review_queue      id, showcase_id, status, flagged_reasons_json,
 
 ---
 
-## 17. Physical Figurine System
-
-### 17.1 Figurine Tiers
-
-| Figurine | Variant Type | Distributed By | App Unlock |
-|---|---|---|---|
-| **The Apprentice** | Universal | Signup | Account / Discovery access |
-| **The Analyst** | Lab-type specific | Teacher confirms hypothesis + research stage | Data Terminal |
-| **The Experimenter** | Lab-type specific | Teacher confirms data collection underway | *(TBD)* |
-| **The Presenter** | Lab-type specific | Advances to school/regional competition | Showcase Wing |
-| **The Pioneer** | Lab-type specific | Places at higher-level competition | Prestige cosmetic / legendary module |
-
-### 17.2 Design Principles
-- Apprentice is universal (lab type not yet chosen at signup)
-- All later figurines have a distinct sculpt per lab type
-- QR code on the base preserves visual quality
-- Unlocks permanent
-- For teams: each member individually earns their own figurine
-
-### 17.3 Pilot Validation Flow
-
-During the pilot, figurine distribution is **fully in-person** — no teacher dashboard required:
-
-1. Student progresses in NOVA Lab
-2. Student demonstrates progress to teacher in person (shows app, explains hypothesis, presents data, etc.)
-3. Teacher hands over the corresponding physical figurine from a class supply
-4. Student scans the QR code on the base of the figurine
-5. App verifies the QR token and unlocks the associated capability
-
-This flow keeps the pilot logistically simple: each classroom receives a starter supply of figurines, and teachers manage distribution at their discretion. The student app remains the source of truth for what's unlocked; the teacher needs no separate interface.
-
-**Post-pilot scaling** introduces the Teacher Dashboard (Section 15) for in-app validation when in-person checks become impractical.
-
----
-
-## 18. Platform
+## 17. Platform
 
 | Phase | Platform |
 |---|---|
 | **Phase 1** | Web app (responsive, mobile-first design) |
 | **Phase 2** | iOS and Android native apps (React Native, shared business logic) |
 
-### 18.1 Security & Abuse Prevention
+### 17.1 Security & Abuse Prevention
 
 NOVA Lab serves minors and calls paid AI APIs, so abuse prevention is a first-class requirement, not an afterthought. (Implementation details live in `architecture.md` §7.)
 
 - **Rate limiting on all endpoints.** Every API route is rate-limited per authenticated user (with a coarse per-IP backstop tuned so a shared school/NAT network isn't penalized). The AI-backed actions — paper chat, quiz generation/grading, research-plan review, "has this been done before?" idea-check, and fair-deadline reads — are capped tightly because each call costs money; runaway or scripted use is throttled with a friendly "slow down" response rather than a hard failure. Idea-checks keep their per-team daily cap (3/day). Invite-code redemption is throttled to make code guessing impractical.
 - **Strict input validation.** All user input is validated against a schema: correct types, sensible length limits, and rejection of unexpected fields. Oversized or malformed submissions are refused with a clear error.
-- **Safe file uploads.** Uploaded research PDFs have a size cap and are verified to actually be PDFs (not just by their claimed type). *(Open: virus scanning and video-size caps for the Showcase phase — see §19.)*
+- **Safe file uploads.** Uploaded research PDFs have a size cap and are verified to actually be PDFs (not just by their claimed type). *(Open: virus scanning and video-size caps for the Showcase phase — see §18.)*
 - **No secrets in the browser.** All third-party API keys (AI, storage) are used only on the server; none are ever shipped to the client, and internal error details are never returned in API responses.
 - **Untrusted external content is sanitized.** Externally-sourced HTML (e.g. Wikipedia articles in Discovery) is run through an allowlist sanitizer before display, so it can't inject scripts.
 
 ---
 
-## 19. Open Design Questions
+## 18. Open Design Questions
 
 - [ ] Team Clearance Level: average, highest, or weighted?
-- [ ] What is The Experimenter figurine's specific app unlock?
-- [ ] Figurine production and distribution logistics
 - [ ] Visual/aesthetic direction of the virtual lab
 - [ ] Discovery depth soft cap to prevent infinite branching
 - [ ] File size and length caps for uploads (PDFs now capped at 20 MB; **video caps for Showcase still open**) + virus scanning for untrusted uploads
@@ -1166,14 +1127,14 @@ NOVA Lab serves minors and calls paid AI APIs, so abuse prevention is a first-cl
 
 ---
 
-## 20. Visual & Art Direction
+## 19. Visual & Art Direction
 
-> **Status:** Direction set; concrete sprite production pending. This section is the source of truth for the pixel-art look. Technical asset specs (dimensions, file paths, manifest) live in `architecture.md` §8.4.
+> **Status:** Direction set and **realized** — all **67 building sprites are drawn**: the 60 economy buildings across all 6 lab-type sets (Volt Lab, BioCore, ChemWorks, TerraBase, MindFrame, Axiom) plus the 7 gateways. Each is code-generated at 64×64 on its set's 16-colour palette and wired through the sprite manifest. Catalog of record: `art/building.md`. This section remains the source of truth for the pixel-art look; technical asset specs (dimensions, file paths, manifest) live in `architecture.md` §9.4.
 
-### 20.1 Overall Aesthetic
+### 19.1 Overall Aesthetic
 NOVA Lab is a **pixel-art** game. The target is a **chunkier, lower-resolution** look than the two reference images supplied during design — those references read as high-resolution/HD pixel art, and the intended style is more visibly pixelated (fewer, larger pixels; a tighter palette). Think classic 2D top-down/isometric game art rather than detailed illustration.
 
-### 20.2 Reference Decomposition (avoiding "lost in translation")
+### 19.2 Reference Decomposition (avoiding "lost in translation")
 Two reference images informed the look, and each contributes **one** thing — they are not to be blended literally:
 
 | Reference | Take **only** this | Do **not** take |
@@ -1183,14 +1144,14 @@ Two reference images informed the look, and each contributes **one** thing — t
 
 The brief in one line: **the approachable building silhouette of the first reference, rendered in the palette of the second, at a more pixelated resolution, as an original sculpt.**
 
-### 20.3 Generic (pre-specialization) Palette
+### 19.3 Generic (pre-specialization) Palette
 The shared base palette all gateway buildings start in:
 - **Structure:** lavender / grey-purple (cool, neutral)
 - **Glass / screens:** glowing cyan-teal
 - **Accents / lights:** warm orange
 - **Read:** clean sci-fi research facility, discipline-neutral
 
-### 20.4 Lab-Type Reskin Palettes (post-specialization)
+### 19.4 Lab-Type Reskin Palettes (post-specialization)
 On specialization, gateway buildings recolor to the chosen lab type. Palettes below are **starting direction**, to be refined in the design system:
 
 | Lab Type | Palette direction |
@@ -1202,10 +1163,10 @@ On specialization, gateway buildings recolor to the chosen lab type. Palettes be
 | **MindFrame** | Muted indigo/violet + soft magenta accents |
 | **Axiom** | Deep space navy + starlight gold/cyan accents |
 
-### 20.5 Reskin Scope
+### 19.5 Reskin Scope
 - **Only the gateway buildings reskin.** The background/environment stays constant for the pilot (no per-type biome).
 - The 60 economy buildings are already drawn per lab type, so they simply appear in their native look once purchased.
 
-### 20.6 UI / Panels
+### 19.6 UI / Panels
 - Feature panels open **over** the lab scene (modal/overlay), styled in the same pixel-art frame language (chunky borders, pixel font).
 - Pixel font for in-game UI with accessible fallbacks; locked buildings show a pixel padlock.

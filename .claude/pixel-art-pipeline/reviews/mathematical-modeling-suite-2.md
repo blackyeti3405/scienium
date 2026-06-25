@@ -1,0 +1,3 @@
+# Review — Mathematical Modeling Suite (rev 2) — FINAL
+
+**Verdict: SHIP.** The hero was rebuilt and now READS: a curved 3/4-view bowl/dish surface hovering over the stepped terrace, with a glowing marble at rest in the lit minimum trough + a gold "MIN" tick — a viewer reads "a ball came to rest at the bottom of a curved surface." (Axiom palette has no green; the optimum is marked with bright cyan + gold, the correct on-palette read.) All other criteria pass: iso 2:1, roof/terrace visible, front corner to viewer, crisp + on-palette, left-face atrium glass reads as glass, cohesive Axiom, one-of-one, attractive, unique built form (stepped terrace pavilion). Delivered at revision ≥ 2.
