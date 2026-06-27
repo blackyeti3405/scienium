@@ -30,7 +30,7 @@ import os
 import sys
 import json
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder  # noqa: F401  (cylinder available if needed)
 
@@ -382,7 +382,7 @@ def build():
     soil_pit(c, hall)                # exposed soil-pit + hand-auger (front-right)
 
     spec = {"width": 64, "height": 64, "palette": TERRA, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/terrabase_soil-analysis-lab.json"
+    out = "/path/to/scienium/art/src/buildings/terrabase_soil-analysis-lab.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

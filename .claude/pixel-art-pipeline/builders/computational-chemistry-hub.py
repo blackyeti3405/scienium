@@ -42,7 +42,7 @@ import sys
 import json
 import math
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
@@ -422,7 +422,7 @@ def main():
     molecule(c, emitter)
 
     spec = {"width": 64, "height": 64, "palette": CHEM, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/chemworks_computational-chemistry-hub.json"
+    out = "/path/to/scienium/art/src/buildings/chemworks_computational-chemistry-hub.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

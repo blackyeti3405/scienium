@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NOVA Lab gateway reskin via palette swap.
+scienium gateway reskin via palette swap.
 
 Every gateway building is authored once in the generic palette (build_sprites.py)
 using a fixed set of palette CHARS (K/L/M/D wall, c/g/G glass, o/O/r accent, W).

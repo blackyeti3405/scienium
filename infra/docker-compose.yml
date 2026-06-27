@@ -11,7 +11,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: nova_lab
+      POSTGRES_DB: scienium
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

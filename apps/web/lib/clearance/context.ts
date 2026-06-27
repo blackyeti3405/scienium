@@ -69,7 +69,7 @@ export async function getProjectContext(teamId: string): Promise<ProjectContext>
 /**
  * How much of a project a team has assembled, used to decide whether an exam can
  * be meaningfully generated. A bare topic is enough for Level 1; deeper levels
- * lean on the plan, but we don't hard-block on it (the rubric tells Nova to ask
+ * lean on the plan, but we don't hard-block on it (the rubric tells Vega to ask
  * the student to supply missing pieces in their own words).
  */
 export function hasMinimumContext(ctx: ProjectContext): boolean {

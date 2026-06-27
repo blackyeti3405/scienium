@@ -40,7 +40,7 @@ import sys
 import json
 import math
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
@@ -449,7 +449,7 @@ def build():
     society_plane(c)                                           # SIGNATURE flat society-sim plane
 
     spec = {"width": 64, "height": 64, "palette": MIND, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/mindframe_computational-social-science-lab.json"
+    out = "/path/to/scienium/art/src/buildings/mindframe_computational-social-science-lab.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

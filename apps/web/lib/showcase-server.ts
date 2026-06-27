@@ -16,7 +16,7 @@ export function makeSlug(title: string): string {
  * Dedicated salt for view fingerprinting — resolved + memoized on first use.
  *
  * Previously this reused `R2_SECRET_ACCESS_KEY` (a storage credential) with a
- * hardcoded `'nova-lab'` fallback. That widened a storage secret's blast radius
+ * hardcoded `'scienium'` fallback. That widened a storage secret's blast radius
  * into an unrelated code path and silently changed all fingerprints whenever R2
  * keys rotated. Now it has its own `VIEW_FINGERPRINT_SALT` and fails closed in
  * production: a missing/weak salt makes the view-tracking path throw rather than

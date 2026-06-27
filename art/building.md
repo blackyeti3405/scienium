@@ -1,4 +1,4 @@
-# NOVA Lab — Building Catalog
+# scienium — Building Catalog
 
 **The single source of truth for the `/pixel-art-pipeline`.** Every building the game
 will ever draw is listed here, grouped into **sets**. The pipeline reads this file

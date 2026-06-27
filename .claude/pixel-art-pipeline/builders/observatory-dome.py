@@ -21,7 +21,7 @@ import sys
 import json
 import math
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import cylinder
 
@@ -511,7 +511,7 @@ def build():
     star_and_tag(c, sight)             # 4) catalogued star + ID tag + sky stars
 
     spec = {"width": 64, "height": 64, "palette": AXIOM, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/axiom_observatory-dome.json"
+    out = "/path/to/scienium/art/src/buildings/axiom_observatory-dome.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

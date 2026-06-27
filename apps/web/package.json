@@ -18,7 +18,7 @@
     "@aws-sdk/client-s3": "^3.1065.0",
     "@aws-sdk/s3-request-presigner": "^3.1065.0",
     "@clerk/nextjs": "^5.3.5",
-    "@nova-lab/shared-types": "workspace:*",
+    "@scienium/shared-types": "workspace:*",
     "@prisma/client": "^5.18.0",
     "@tanstack/react-query": "^5.53.3",
     "@tiptap/extensions": "^3.27.1",
@@ -49,7 +49,7 @@
   },
   "devDependencies": {
     "@clerk/testing": "^2.1.5",
-    "@nova-lab/config": "workspace:*",
+    "@scienium/config": "workspace:*",
     "@playwright/test": "^1.61.0",
     "@types/node": "^20",
     "@types/react": "^18",

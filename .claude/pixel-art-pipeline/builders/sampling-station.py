@@ -31,7 +31,7 @@ import sys
 import json
 import math
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, RX, RY, LX, LY
 
@@ -482,7 +482,7 @@ def build():
     cataloguing_signature(c, slab)
 
     spec = {"width": 64, "height": 64, "palette": TERRA, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/terrabase_sampling-station.json"
+    out = "/path/to/scienium/art/src/buildings/terrabase_sampling-station.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

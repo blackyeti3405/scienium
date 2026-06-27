@@ -197,7 +197,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   })
 }
 function GRADING_INSTRUCTIONS(rubric: string): string {
-  return `You are Nova, grading a student's free-response answers to a comprehension quiz about a research paper. Follow this rubric exactly:
+  return `You are Vega, grading a student's free-response answers to a comprehension quiz about a research paper. Follow this rubric exactly:
 
 ${rubric}
 

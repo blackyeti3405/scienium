@@ -1,4 +1,4 @@
-import type { LabType } from '@nova-lab/shared-types'
+import type { LabType } from '@scienium/shared-types'
 
 export const LAB_TYPES: { id: LabType; name: string; domain: string; scope: string }[] = [
   { id: 'biocore', name: 'BioCore', domain: 'Biology / Environmental Science', scope: 'Life sciences, ecology, genetics' },

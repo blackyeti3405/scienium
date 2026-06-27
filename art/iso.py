@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Isometric gateway-building generator for NOVA Lab.
+Isometric gateway-building generator for scienium.
 
-Matches the style of art_ref/nova_lab_discovery.png (the canonical Discovery
+Matches the style of art_ref/scienium_discovery.png (the canonical Discovery
 building): a 2:1 isometric cube with a corner/edge facing the viewer, a visible
 lavender roof, glowing cyan glass on the two front faces, and warm orange trim —
 so the lab can expand right / left / up / down around the central building.
@@ -309,7 +309,7 @@ def build(key, roof_feature, windows=base_windows):
 def extract_discovery():
     """Import the canonical Discovery building from the reference PNG (native 64×64,
     10px blocks) into a char-grid so it reskins like the procedural buildings."""
-    im = Image.open(os.path.join(ROOT, "art_ref", "nova_lab_discovery.png")).convert("RGBA")
+    im = Image.open(os.path.join(ROOT, "art_ref", "scienium_discovery.png")).convert("RGBA")
     src = im.load()
     rows = []
     for y in range(SIZE):

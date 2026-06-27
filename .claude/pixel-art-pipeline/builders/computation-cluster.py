@@ -22,7 +22,7 @@ import sys
 import json
 import math
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
@@ -290,7 +290,7 @@ def build():
     gpu_rack_wall(c, h)     # HERO glowing GPU blade rack on the shaded RIGHT face
     load_gauge(c, h)        # load-balanced gauge on the right sill (the win)
     spec = {"width": 64, "height": 64, "palette": AXIOM, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/axiom_computation-cluster.json"
+    out = "/path/to/scienium/art/src/buildings/axiom_computation-cluster.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

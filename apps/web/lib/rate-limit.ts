@@ -149,7 +149,7 @@ function createStore(): RateLimitStore {
 const store: RateLimitStore = createStore()
 
 /**
- * The per-IP ceiling is this multiple of the per-user limit. NOVA Lab teams are
+ * The per-IP ceiling is this multiple of the per-user limit. scienium teams are
  * often a whole classroom or library behind a single NAT IP, so a flat per-IP
  * cap at the per-user limit would lock out legitimate shared-network users. The
  * **per-user** bucket is the precise control; the per-IP bucket is only a coarse

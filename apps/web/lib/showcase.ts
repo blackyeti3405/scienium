@@ -6,7 +6,7 @@
  * links). Public viewing is governed entirely by the showcase's own privacy level,
  * checked server-side — image bytes are streamed from PRIVATE R2 through an
  * access-controlled route, never a public bucket or signed URL (consistent with the
- * rest of NOVA Lab's storage posture).
+ * rest of scienium's storage posture).
  *
  * Security notes:
  *  - Video is paste-only and host-allowlisted (YouTube/Vimeo). We extract the id and

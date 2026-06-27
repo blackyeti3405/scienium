@@ -29,12 +29,12 @@ importers:
       '@clerk/nextjs':
         specifier: ^5.3.5
         version: 5.7.6(next@14.2.35(@playwright/test@1.61.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@nova-lab/shared-types':
-        specifier: workspace:*
-        version: link:../../packages/shared-types
       '@prisma/client':
         specifier: ^5.18.0
         version: 5.22.0(prisma@5.22.0)
+      '@scienium/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
       '@tanstack/react-query':
         specifier: ^5.53.3
         version: 5.101.0(react@18.3.1)
@@ -117,12 +117,12 @@ importers:
       '@clerk/testing':
         specifier: ^2.1.5
         version: 2.1.5(@playwright/test@1.61.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@nova-lab/config':
-        specifier: workspace:*
-        version: link:../../packages/config
       '@playwright/test':
         specifier: ^1.61.0
         version: 1.61.0
+      '@scienium/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@types/node':
         specifier: ^20
         version: 20.19.42
@@ -167,7 +167,7 @@ importers:
 
   packages/shared-types:
     devDependencies:
-      '@nova-lab/config':
+      '@scienium/config':
         specifier: workspace:*
         version: link:../config
       typescript:

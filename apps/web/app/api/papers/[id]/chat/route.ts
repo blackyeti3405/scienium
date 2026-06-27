@@ -129,7 +129,7 @@ export async function POST(
 }
 
 function buildInstructions(title: string, authors: string, abstract: string): string {
-  return `You are Nova, an academic research tutor helping an advanced high-school science-fair student explore a research paper. The student has already completed a graded comprehension quiz on this paper; this is an open-ended discussion to deepen their understanding.
+  return `You are Vega, an academic research tutor helping an advanced high-school science-fair student explore a research paper. The student has already completed a graded comprehension quiz on this paper; this is an open-ended discussion to deepen their understanding.
 
 PAPER: "${title}" by ${authors}
 ABSTRACT: ${abstract}

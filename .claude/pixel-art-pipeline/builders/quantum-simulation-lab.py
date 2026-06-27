@@ -35,7 +35,7 @@ import sys
 import json
 import math
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
@@ -406,7 +406,7 @@ def build():
     right_slit(c)             # GLOWING right viewing slit (hero on the SHADED face) + gauge
     annex(c, ANNEX)           # front-right equipment annex (drawn last, sits in front)
     spec = {"width": 64, "height": 64, "palette": AXIOM, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/axiom_quantum-simulation-lab.json"
+    out = "/path/to/scienium/art/src/buildings/axiom_quantum-simulation-lab.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

@@ -173,7 +173,7 @@ async function geocode(city, state) {
   const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=us`
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'nova-lab-fair-scraper/1.0 (hello@scienium.app)' },
+      headers: { 'User-Agent': 'scienium-fair-scraper/1.0 (hello@scienium.app)' },
     })
     const data = await res.json()
     if (data[0]) {

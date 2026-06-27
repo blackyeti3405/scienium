@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NOVA Lab pixel-art renderer.
+scienium pixel-art renderer.
 
 Reads a char-grid JSON sprite description and writes a native-resolution
 transparent PNG (one source pixel == one image pixel). Optionally writes an

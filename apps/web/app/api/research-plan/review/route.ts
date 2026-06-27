@@ -176,7 +176,7 @@ function clampInt(n: unknown): number {
 }
 
 function REVIEW_INSTRUCTIONS(rubric: string, typeLabel: string, subtypeLabel: string): string {
-  return `You are Nova, an experienced ISEF mentor reviewing a ${typeLabel} / ${subtypeLabel} research plan written by an advanced high-school student. Grade the PLAN (not finished results) against this rubric:
+  return `You are Vega, an experienced ISEF mentor reviewing a ${typeLabel} / ${subtypeLabel} research plan written by an advanced high-school student. Grade the PLAN (not finished results) against this rubric:
 
 ${rubric}
 

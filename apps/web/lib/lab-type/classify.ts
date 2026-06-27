@@ -20,7 +20,7 @@ const LAB_TYPE_DESCRIPTIONS: Record<LabType, string> = {
 
 /**
  * Uses Claude Haiku to classify a one-sentence research idea into one of the
- * six NOVA Lab lab types. Returns the classification plus a short rationale.
+ * six scienium lab types. Returns the classification plus a short rationale.
  *
  * Defaults to 'volt_lab' on parse failure to avoid blocking the advance.
  */

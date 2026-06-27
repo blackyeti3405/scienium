@@ -5,7 +5,7 @@ import { LAB_TYPES, LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
 
 export const metadata = {
   title: 'Project Gallery',
-  description: 'Browse student STEM project showcases on NOVA Lab.',
+  description: 'Browse student STEM project showcases on scienium.',
 }
 
 interface Props {
@@ -41,7 +41,7 @@ export default async function GalleryPage({ searchParams }: Props) {
       <header className="sc-gallery-page__head">
         <h1 className="sc-gallery-page__title">Project Gallery</h1>
         <p className="sc-gallery-page__sub">
-          Real STEM projects, built and published by students on NOVA Lab.
+          Real STEM projects, built and published by students on scienium.
         </p>
       </header>
 

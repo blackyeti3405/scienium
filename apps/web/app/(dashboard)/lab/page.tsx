@@ -9,7 +9,7 @@ import {
 } from '@/lib/team/advance'
 import { PHASE_ORDER, LAB_TYPES, type Phase, type LabType } from '@/lib/phase'
 
-export const metadata = { title: 'NOVA Lab' }
+export const metadata = { title: 'scienium' }
 
 /** Cheap stable numeric seed from the team id, so the tiled ground never reshuffles. */
 function seedFrom(id: string): number {

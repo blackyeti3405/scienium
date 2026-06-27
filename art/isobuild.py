@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Isometric BUILDING TOOLKIT for NOVA Lab economy buildings.
+Isometric BUILDING TOOLKIT for scienium economy buildings.
 
 Where `iso.py` stamps the ONE fixed gateway cube (draw_cube + base_windows), this
 module lets a painter compose a BESPOKE building from parametric iso primitives —

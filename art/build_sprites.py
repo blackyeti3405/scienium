@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NOVA Lab ground-tile + padlock builder.
+scienium ground-tile + padlock builder.
 
 (Gateway buildings live in iso.py — isometric, authored in the canon palette.)
 

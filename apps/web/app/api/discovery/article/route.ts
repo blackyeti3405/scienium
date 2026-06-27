@@ -50,7 +50,7 @@ const WIKI_REST = 'https://en.wikipedia.org/api/rest_v1'
 // which then makes *every* subsequent request fail until the block lapses.
 // https://meta.wikimedia.org/wiki/User-Agent_policy
 const UA =
-  'NOVALab/1.0 (https://nova-lab.app; contact: hello@nova-lab.app) node-fetch'
+  'scienium/1.0 (https://scienium.app; contact: hello@scienium.app) node-fetch'
 
 interface ArticlePayload {
   title: string

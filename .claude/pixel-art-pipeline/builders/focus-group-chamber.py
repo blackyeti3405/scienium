@@ -33,7 +33,7 @@ import sys
 import json
 import math
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder  # cylinder imported per spec; drum is bespoke open-top
 
@@ -419,7 +419,7 @@ def build():
     theme_cloud(c)
 
     spec = {"width": 64, "height": 64, "palette": MIND, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/mindframe_focus-group-chamber.json"
+    out = "/path/to/scienium/art/src/buildings/mindframe_focus-group-chamber.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

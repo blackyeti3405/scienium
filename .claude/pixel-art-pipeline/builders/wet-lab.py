@@ -28,7 +28,7 @@ droplet into the tube below. One tube froths harder (W/h cap) = the active assay
 """
 import os, sys, json
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
@@ -263,7 +263,7 @@ def main():
     assay_rack(c, hall)
 
     spec = {"width": 64, "height": 64, "palette": BIO, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/biocore_wet-lab.json"
+    out = "/path/to/scienium/art/src/buildings/biocore_wet-lab.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

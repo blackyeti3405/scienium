@@ -1,4 +1,4 @@
-# NOVA Lab — pixel-art pipeline
+# scienium — pixel-art pipeline
 
 All game sprites (gateway buildings, ground tiles, the padlock) are generated
 from code so they're reproducible and easy to re-skin. Nothing is hand-drawn in
@@ -6,12 +6,12 @@ an external editor.
 
 Buildings are **isometric** (2:1, a corner facing the viewer, roof visible) so the
 lab can expand right / left / up / down around the central Discovery building. The
-Discovery building is imported directly from `art_ref/nova_lab_discovery.png` (the
+Discovery building is imported directly from `art_ref/scienium_discovery.png` (the
 canonical design, native 64×64); the other six are generated to match its style.
 
 ```
 art/
-  canon.py              # the canonical NOVA palette (extracted from the Discovery ref)
+  canon.py              # the canonical scienium palette (extracted from the Discovery ref)
   render_pixel_art.py   # canonical char-grid JSON  -> PNG renderer
   iso.py                # isometric gateway buildings (imports Discovery + builds 6)
   isobuild.py           # iso BUILDING TOOLKIT — parametric Box/cylinder primitives

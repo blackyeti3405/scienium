@@ -806,7 +806,7 @@ function QAPanel({
                           }`}
                         >
                           <span className="text-[10px] uppercase text-white/30 block mb-1 font-medium tracking-wide">
-                            {msg.role === 'user' ? 'student' : 'nova'}
+                            {msg.role === 'user' ? 'student' : 'vega'}
                           </span>
                           <div className="prose prose-sm prose-invert max-w-none text-inherit">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>

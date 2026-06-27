@@ -1,6 +1,6 @@
 # Literature Review Quiz — Pedagogy & Grading Rubric
 
-> This file is the single source of truth for how Nova generates and grades the
+> This file is the single source of truth for how Vega generates and grades the
 > Literature Review comprehension quiz. It is loaded verbatim into the model's
 > instructions for **both** question generation and grading. Edit the prose here
 > to tune rigor, coverage, or tone — no code changes required.

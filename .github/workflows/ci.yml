@@ -30,10 +30,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build workspace packages
-        # @nova-lab/shared-types emits to dist/ (gitignored); the web app's
+        # @scienium/shared-types emits to dist/ (gitignored); the web app's
         # typecheck/build import its declarations. `prepare` builds it on install
         # too — this is explicit insurance so CI never depends on lifecycle order.
-        run: pnpm --filter @nova-lab/shared-types build
+        run: pnpm --filter @scienium/shared-types build
 
       - name: Generate Prisma client
         # Required: tsc + next build import @prisma/client types.
@@ -60,7 +60,7 @@ jobs:
           # pk_test_ + base64("clerk.example.com$") — format-valid dummy
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
           CLERK_SECRET_KEY: sk_test_ci_build_placeholder_00000000000000
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nova_lab
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/scienium
           ANTHROPIC_API_KEY: sk-ant-ci-build-placeholder
           R2_ACCOUNT_ID: ci
           R2_ACCESS_KEY_ID: ci

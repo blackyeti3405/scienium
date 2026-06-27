@@ -1,5 +1,5 @@
 {
-  "name": "nova-lab",
+  "name": "scienium",
   "private": true,
   "scripts": {
     "dev": "pnpm --filter web dev",

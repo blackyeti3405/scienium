@@ -1,4 +1,4 @@
-# NOVA Lab — Changelog
+# scienium — Changelog
 
 All notable changes to this project are documented here.  
 Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **Fixed**, **Removed**.
@@ -46,7 +46,7 @@ A focused pass on the **teacher dashboard**: a cleaner, information-dense **UI r
 
 ### Added — Features
 
-- **Read-only teacher literature view** (`GET /api/teacher/student/[id]/literature/[paperId]` + its `/file` PDF stream, `components/teacher/StudentDetail.tsx`) — the drill-down's Literature section lists every source with the student's proficiency, and a **Q&A** button opens that source's actual quiz (questions, the student's answers, per-question scores + Nova's rationale), the chat transcript, and the PDF. Read-only and class-scoped (IDOR-guarded via `requireTeacher` + `teacherOwnsTeam`); no new LLM calls.
+- **Read-only teacher literature view** (`GET /api/teacher/student/[id]/literature/[paperId]` + its `/file` PDF stream, `components/teacher/StudentDetail.tsx`) — the drill-down's Literature section lists every source with the student's proficiency, and a **Q&A** button opens that source's actual quiz (questions, the student's answers, per-question scores + Vega's rationale), the chat transcript, and the PDF. Read-only and class-scoped (IDOR-guarded via `requireTeacher` + `teacherOwnsTeam`); no new LLM calls.
 - **Research-plan review on the drill-down** (`overview` route now returns `googleDocUrl`; `StudentDetail` research-plan section) — an **"Open research plan"** link plus two read-only sections: an **Originality check** (the novelty/idea-check verdict + prior work) and a **Plan review** (readiness score, per-section scores, strengths / gaps / next-steps).
 
 ### Changed
@@ -303,12 +303,12 @@ A two-part release: the **Showcase Wing** and **Proof of Expertise / Clearance +
 - Pedagogy/grading rules externalized to `lib/literature/quiz-rubric.md` (tunable, loaded into both generation and grading prompts); knobs `QUIZ_QUESTION_COUNT` (5) and `QUIZ_PASS_THRESHOLD` (70) in `lib/literature/quiz.ts`
 - `POST /api/papers/[id]/quiz` generates a quiz; `POST …/quiz/grade` grades all answers in one call (aggregate score, pass/fail); `GET …/quiz` returns the last graded session
 - Persistence: `PaperQuizSession` + `PaperQuizAttempt`; proficiency persisted on `papers.proficiency_demonstrated`
-- Past results (answers + Nova's feedback) reload on reopen; header tabs switch between **Quiz results** and **Discuss with Nova** (active tab gold); pass → green "Proficiency demonstrated" banner (mirrored on the source slot)
+- Past results (answers + Vega's feedback) reload on reopen; header tabs switch between **Quiz results** and **Discuss with Vega** (active tab gold); pass → green "Proficiency demonstrated" banner (mirrored on the source slot)
 
 #### Literature Review — Viewer, Chat, Delete
 - **In-panel PDF viewer**: PDF bytes stored in `papers.pdf_data`, streamed inline (auth'd) via `GET /api/papers/[id]/file`
 - **Chat persistence**: `PaperChatMessage` model; `GET/POST /api/papers/[id]/chat` save and reload the per-user conversation
-- Nova replies rendered as **Markdown** (`react-markdown` + `remark-gfm`, styled via `.chat-md`)
+- Vega replies rendered as **Markdown** (`react-markdown` + `remark-gfm`, styled via `.chat-md`)
 - **Delete source** button (`DELETE /api/papers/[id]`, cascades quiz/chat/notes)
 
 #### Discovery — Persistence, Topic, Restyle
@@ -358,7 +358,7 @@ A two-part release: the **Showcase Wing** and **Proof of Expertise / Clearance +
 #### Landing Page (`apps/web/app/page.tsx`)
 - Replaced the old multi-section marketing homepage (hero, feature grid, footer) with a minimal pixel-art landing screen
 - Dark navy background (`#0d1b2e`), pixel font throughout, yellow accent (`#F5C518`)
-- SVG recreation of the NOVA Lab mascot (figure hunched over a table) rendered inline alongside the "NOVA / Lab" heading
+- SVG recreation of the scienium mascot (figure hunched over a table) rendered inline alongside the "scienium" heading
 - Single CTA button "↑ ENTER YOUR LAB" links to `/sign-in`
 - Logged-in users are still immediately redirected to `/lab`
 
@@ -376,7 +376,7 @@ A two-part release: the **Showcase Wing** and **Proof of Expertise / Clearance +
 - **Action buttons** per ready paper: "PDF" (opens file in new tab) and "Q&A" (opens split review view)
 - **Progress bar + counter**: yellow progress bar and `N / 25` readout in the panel header
 - **Q&A split view**: clicking Q&A replaces the panel body with a two-column layout — PDF iframe on the left, chat interface on the right (mirrors Discovery's Wikipedia reader + tree layout)
-- Chat is pre-seeded with Nova's opening message; user messages sent via `POST /api/papers/[id]/chat`; Enter key submits
+- Chat is pre-seeded with Vega's opening message; user messages sent via `POST /api/papers/[id]/chat`; Enter key submits
 - `PROFICIENCY_DEMONSTRATED` hidden signal stripped from display; triggers removal of the orange banner for that paper
 
 #### API Routes
@@ -387,7 +387,7 @@ A two-part release: the **Showcase Wing** and **Proof of Expertise / Clearance +
 
 #### Claude System Prompts
 - **Extraction prompt** (in `POST /api/papers`): instructs Claude to return a JSON object `{ title, authors, abstract }` from raw PDF text; used server-side only
-- **Q&A tutor prompt** (in `POST /api/papers/[id]/chat`): Nova persona; assesses comprehension across four criteria (hypothesis, methodology, findings, relevance); emits `PROFICIENCY_DEMONSTRATED` signal on a new line when all four are met; encourages genuine understanding over surface recitation
+- **Q&A tutor prompt** (in `POST /api/papers/[id]/chat`): Vega persona; assesses comprehension across four criteria (hypothesis, methodology, findings, relevance); emits `PROFICIENCY_DEMONSTRATED` signal on a new line when all four are met; encourages genuine understanding over surface recitation
 
 ### Changed
 

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { DiscoveryNode } from '@/stores/discoveryStore'
 
 // ── Layout constants ────────────────────────────────────────────────────────
-const NODE_W = 152
+const NODE_W = 170
 const NODE_H = 40
 const H_GAP = 14
 const V_GAP = 54
@@ -205,9 +205,37 @@ export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onTo
                   </text>
                 </g>
 
-                {/* Title text — offset after left star */}
+                {/* ── Delete button (always visible, next to the star) ── */}
+                <g
+                  onClick={(e) => { e.stopPropagation(); onDelete(n.id) }}
+                  style={{ cursor: 'pointer' }}
+                  role="button"
+                  aria-label={`Delete ${n.title} and all children`}
+                  className={`transition-colors ${isCurrent ? 'text-[#0d1b2e] hover:text-red-700' : 'text-white/40 hover:text-red-400'}`}
+                >
+                  {/* Invisible hit area for easier clicking */}
+                  <rect
+                    x={n.x + 20} y={n.y + 3}
+                    width={18} height={NODE_H - 6} rx={3}
+                    fill="transparent"
+                  />
+                  {/* Trash-can glyph (monochrome, drawn) */}
+                  <g
+                    transform={`translate(${n.x + 29}, ${n.y + 21})`}
+                    className="pointer-events-none"
+                    stroke="currentColor"
+                    fill="none"
+                    strokeLinecap="round"
+                  >
+                    <path d="M -5 -4 H 5 M -2 -6 H 2" strokeWidth={1.4} />
+                    <path d="M -4 -3 L -3.2 6 L 3.2 6 L 4 -3" strokeWidth={1.2} strokeLinejoin="round" />
+                    <path d="M -1.3 -1 V 4 M 1.3 -1 V 4" strokeWidth={0.9} />
+                  </g>
+                </g>
+
+                {/* Title text — offset after the left star + delete buttons */}
                 <text
-                  x={n.x + 22} y={n.y + 25}
+                  x={n.x + 42} y={n.y + 25}
                   fontSize={11.5}
                   fontWeight={isCurrent ? '600' : '400'}
                   fill={textFill}

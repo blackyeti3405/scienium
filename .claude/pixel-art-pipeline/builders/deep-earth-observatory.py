@@ -36,7 +36,7 @@ import sys
 import json
 import math
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
@@ -439,7 +439,7 @@ def build():
     surface_gauge(c, b)             #            K-framed surface gauge climbing to O mark
     derrick(c, b)                   # the open-lattice tapering derrick over the borehole
     spec = {"width": 64, "height": 64, "palette": TERRA, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/terrabase_deep-earth-observatory.json"
+    out = "/path/to/scienium/art/src/buildings/terrabase_deep-earth-observatory.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

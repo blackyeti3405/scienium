@@ -5,7 +5,7 @@ import { enforceRateLimit } from '@/lib/rate-limit'
 // Must match Wikimedia's User-Agent policy (descriptive UA + contact) to avoid
 // throttling / IP blocks that would also break article loading.
 const UA =
-  'NOVALab/1.0 (https://nova-lab.app; contact: hello@nova-lab.app) node-fetch'
+  'scienium/1.0 (https://scienium.app; contact: hello@scienium.app) node-fetch'
 
 export async function GET(req: NextRequest) {
   // Auth-gated by middleware; resolve the user so this Wikipedia proxy is limited

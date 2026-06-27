@@ -1,5 +1,5 @@
 {
-  "name": "@nova-lab/config",
+  "name": "@scienium/config",
   "version": "0.0.1",
   "private": true,
   "exports": {

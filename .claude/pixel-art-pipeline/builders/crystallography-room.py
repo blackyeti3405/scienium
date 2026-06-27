@@ -35,7 +35,7 @@ import os
 import sys
 import json
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
@@ -343,7 +343,7 @@ def build():
     nub = crystal_cap(c, b)      # faceted crystal-cut roof cap, returns X-ray nub
     floating_crystal(c, nub)     # SIGNATURE: floating crystal + diffraction spots
     spec = {"width": 64, "height": 64, "palette": CHEM, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/chemworks_crystallography-room.json"
+    out = "/path/to/scienium/art/src/buildings/chemworks_crystallography-room.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

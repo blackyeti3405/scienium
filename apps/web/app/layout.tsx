@@ -15,12 +15,12 @@ const pixelFont = Press_Start_2P({
 
 export const metadata: Metadata = {
   title: {
-    default: 'NOVA Lab',
-    template: '%s · NOVA Lab',
+    default: 'scienium',
+    template: '%s · scienium',
   },
   description: 'Build your virtual research lab. Advance real science.',
   openGraph: {
-    title: 'NOVA Lab',
+    title: 'scienium',
     description: 'Build your virtual research lab. Advance real science.',
     type: 'website',
   },

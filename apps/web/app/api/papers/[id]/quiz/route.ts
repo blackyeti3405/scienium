@@ -129,7 +129,7 @@ export async function POST(
 }
 
 function GENERATION_INSTRUCTIONS(rubric: string, count: number): string {
-  return `You are Nova, generating a ${count}-question comprehension quiz for a research paper. Follow this rubric exactly:
+  return `You are Vega, generating a ${count}-question comprehension quiz for a research paper. Follow this rubric exactly:
 
 ${rubric}
 

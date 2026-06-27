@@ -12,6 +12,6 @@ test('authenticated leader lands on the lab scene', async ({ page }) => {
   await page.goto('/dashboard')
 
   await expect(page).toHaveURL(/\/lab/)
-  await expect(page).toHaveTitle(/NOVA Lab/)
+  await expect(page).toHaveTitle(/scienium/)
   await expect(page.getByRole('button', { name: 'Open buildings shop' })).toBeVisible()
 })

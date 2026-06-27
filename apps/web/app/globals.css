@@ -691,7 +691,7 @@
   100% { transform: translateX(360%); }
 }
 
-/* ── Chat markdown (Nova replies) ──────────────────────────────────────────── */
+/* ── Chat markdown (Vega replies) ──────────────────────────────────────────── */
 .chat-md > :first-child { margin-top: 0; }
 .chat-md > :last-child { margin-bottom: 0; }
 .chat-md p { margin: 0 0 0.6rem; }

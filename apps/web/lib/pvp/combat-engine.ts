@@ -1,4 +1,4 @@
-import type { BattleAction, BattleCharacter, BattleEvent, BattleTurnResult, Move } from '@nova-lab/shared-types'
+import type { BattleAction, BattleCharacter, BattleEvent, BattleTurnResult, Move } from '@scienium/shared-types'
 
 const TYPE_EFFECTIVENESS: Record<string, Record<string, number>> = {
   empirical: { theoretical: 2, applied: 0.5, empirical: 1 },

@@ -1,4 +1,4 @@
-# NOVA Lab — Setup (Windows 10)
+# scienium — Setup (Windows 10)
 
 Everything you need to clone this repo on Windows 10 and resume development — running
 the web app, the local database, the pixel-art pipeline, and Claude Code with the
@@ -39,8 +39,8 @@ Open **Docker Desktop** once so the daemon is running.
 ## 1. Clone
 
 ```powershell
-git clone https://github.com/blackyeti3405/nova-lab.git
-Set-Location nova-lab
+git clone https://github.com/blackyeti3405/scienium.git
+Set-Location scienium
 ```
 
 ---
@@ -61,7 +61,7 @@ Then edit `apps/web/.env.local`:
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk dashboard → API Keys | `pk_test_…` |
 | `CLERK_SECRET_KEY` | Clerk dashboard → API Keys | `sk_test_…` |
 | `NEXT_PUBLIC_CLERK_*_URL` | leave as the defaults | sign-in/up + redirect routes |
-| `DATABASE_URL` | leave as default for local Docker | `postgresql://postgres:postgres@localhost:5432/nova_lab` |
+| `DATABASE_URL` | leave as default for local Docker | `postgresql://postgres:postgres@localhost:5432/scienium` |
 | `ANTHROPIC_API_KEY` | Anthropic console | required for paper metadata, quizzes, chat, lab-type classification, and relevance checks |
 | `R2_*` | Cloudflare R2 | required for PDF storage **and project-log photo attachments** (uploads + viewer) |
 | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | optional — only the Science Fair "sync deadlines" feature scrapes fair sites with it (`fc-…`) |
@@ -154,7 +154,7 @@ py -3 art/compose_scene.py    # optional full-scene previews -> art/scene_*.png
 ```
 
 Output PNGs land in `apps/web/public/sprites/`. The reference art (including
-`art_ref/nova_lab_discovery.png`, the canonical Discovery building) is committed,
+`art_ref/scienium_discovery.png`, the canonical Discovery building) is committed,
 so `art/iso.py` reproduces everything.
 
 ---
@@ -167,7 +167,7 @@ available automatically.
 
 ```powershell
 npm install -g @anthropic-ai/claude-code   # or use the Claude Code desktop app
-Set-Location nova-lab
+Set-Location scienium
 claude                                       # sign in with your Anthropic account
 ```
 
@@ -205,7 +205,7 @@ Set these in **Vercel → Project → Settings → Environment Variables**, scop
 | `ANTHROPIC_API_KEY` | Anthropic console | paper metadata, quizzes, chat, grading, classification |
 | `R2_ACCOUNT_ID` · `R2_ACCESS_KEY_ID` · `R2_SECRET_ACCESS_KEY` · `R2_BUCKET_NAME` · `R2_PUBLIC_URL` | Cloudflare R2 | PDF storage, project-log photos, showcase assets |
 | `VIEW_FINGERPRINT_SALT` | generate: `openssl rand -hex 32` (≥16 chars) | **Required in production.** Dedicated salt for showcase per-visitor view fingerprints. The view-tracking path **fails closed** without it (the rest of the app is unaffected). Use a value distinct from any dev salt. |
-| `NEXT_PUBLIC_APP_URL` | your production URL, e.g. `https://nova-lab.app` | — |
+| `NEXT_PUBLIC_APP_URL` | your production URL, e.g. `https://scienium.app` | — |
 
 **Optional**
 
@@ -286,7 +286,7 @@ It runs on **every pull request and every push to `main`**, and it is the green 
 (or red ✗) you see on a PR. In order, it:
 
 1. **Installs** dependencies (`pnpm install --frozen-lockfile`)
-2. **Builds `@nova-lab/shared-types`** — that package compiles to a git-ignored
+2. **Builds `@scienium/shared-types`** — that package compiles to a git-ignored
    `dist/`, and the web app imports its types (a `prepare` script also builds it
    on `pnpm install`, so fresh clones work too)
 3. **Generates the Prisma client** (needed for type-checking)

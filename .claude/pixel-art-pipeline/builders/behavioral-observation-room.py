@@ -34,7 +34,7 @@ import os
 import sys
 import json
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
@@ -310,7 +310,7 @@ def main():
     habitat_and_tracking(c, b, U0, U1, VT, VB)
 
     spec = {"width": 64, "height": 64, "palette": BIO, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/biocore_behavioral-observation-room.json"
+    out = "/path/to/scienium/art/src/buildings/biocore_behavioral-observation-room.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

@@ -1,4 +1,4 @@
-"""Canonical NOVA Lab palette + char mapping, derived from art_ref/nova_lab_discovery.png.
+"""Canonical scienium palette + char mapping, derived from art_ref/scienium_discovery.png.
 
 This is the single source of truth for the building palette. All gateways are
 authored with these chars; reskins (recolor.py) remap them per lab type.

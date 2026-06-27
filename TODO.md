@@ -1,4 +1,4 @@
-# NOVA Lab — TODO / deferred work
+# scienium — TODO / deferred work
 
 Tracked items intentionally deferred during development. Remove an entry once done.
 
@@ -34,7 +34,7 @@ Tracked items intentionally deferred during development. Remove an entry once do
 - **To go live (see SETUP.md §8 for the full walkthrough):**
   - **Supabase** (or other managed Postgres): create the project; set `DATABASE_URL`
     (pooled) + `DIRECT_URL` (direct, for `prisma migrate deploy`).
-  - **Vercel**: import the GitHub repo (`blackyeti3405/nova-lab`), set root to
+  - **Vercel**: import the GitHub repo (`blackyeti3405/scienium`), set root to
     `apps/web`, add all env vars (Clerk, `ANTHROPIC_API_KEY`, R2_*, `DATABASE_URL`,
     `DIRECT_URL`, `VIEW_FINGERPRINT_SALT`, Upstash, **`CRON_SECRET`**, optional
     `RESEND_API_KEY`). Vercel auto-runs the `apps/web/vercel.json` crons once deployed.

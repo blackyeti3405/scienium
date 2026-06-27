@@ -1,6 +1,6 @@
 import { FieldDispatchTab } from '@/components/ops/FieldDispatchTab'
 
-export const metadata = { title: 'Field Dispatch · NOVA Lab' }
+export const metadata = { title: 'Field Dispatch · scienium' }
 
 /**
  * Standalone Field Dispatch route (deep-link / back-compat). The primary surface

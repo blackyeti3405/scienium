@@ -8,7 +8,7 @@
  * Never throws — a delivery failure must never break the cron batch.
  */
 
-const FROM = process.env.NOTIFICATION_EMAIL_FROM ?? 'NOVA Lab <notifications@nova-lab.app>'
+const FROM = process.env.NOTIFICATION_EMAIL_FROM ?? 'scienium <notifications@scienium.app>'
 
 export function emailConfigured(): boolean {
   return !!process.env.RESEND_API_KEY

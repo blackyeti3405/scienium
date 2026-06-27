@@ -1,4 +1,4 @@
-# NOVA Lab — Product Specification
+# scienium — Product Specification
 
 > **Status:** Early Design / Pre-Development
 > **Last Updated:** 2026-06-17
@@ -8,9 +8,9 @@
 
 ## 1. Concept Overview
 
-NOVA Lab is a hybrid physical-digital STEM engagement game designed to motivate students through the science fair process. Students build and expand a personalized virtual research laboratory, earning upgrades through daily learning activities, demonstrated knowledge, and real science fair project progress. Teacher-validated real-world milestones unlock new phases and capabilities inside the app. Students can work solo or in shared-laboratory teams. Completed projects can be published as public Showcases visible beyond the app.
+scienium is a hybrid physical-digital STEM engagement game designed to motivate students through the science fair process. Students build and expand a personalized virtual research laboratory, earning upgrades through daily learning activities, demonstrated knowledge, and real science fair project progress. Teacher-validated real-world milestones unlock new phases and capabilities inside the app. Students can work solo or in shared-laboratory teams. Completed projects can be published as public Showcases visible beyond the app.
 
-**The lab is the interface.** NOVA Lab presents as a single pixel-art lab scene rather than a conventional tab-based web app. Navigation is spatial: each core feature lives behind a **building** on the student's plot, and the student enters a feature by clicking its building, which opens that feature's panel over the scene. New buildings appear on the plot as the student advances through phases, so the lab visibly grows alongside real project progress and the set of reachable features expands in lockstep. There are two distinct classes of building — **gateway buildings** (the navigation spine) and **economy buildings** (the game layer) — defined in Section 9.
+**The lab is the interface.** scienium presents as a single pixel-art lab scene rather than a conventional tab-based web app. Navigation is spatial: each core feature lives behind a **building** on the student's plot, and the student enters a feature by clicking its building, which opens that feature's panel over the scene. New buildings appear on the plot as the student advances through phases, so the lab visibly grows alongside real project progress and the set of reachable features expands in lockstep. There are two distinct classes of building — **gateway buildings** (the navigation spine) and **economy buildings** (the game layer) — defined in Section 9.
 
 ---
 
@@ -28,7 +28,7 @@ NOVA Lab is a hybrid physical-digital STEM engagement game designed to motivate 
 
 ## 3. Project Lifecycle
 
-NOVA Lab uses an explicit **phase** model stored on each team. Phases are sequential and non-skippable. Features from earlier phases remain available in all later phases.
+scienium uses an explicit **phase** model stored on each team. Phases are sequential and non-skippable. Features from earlier phases remain available in all later phases.
 
 | # | Phase | App Phase Key | Trigger to advance |
 |---|---|---|---|
@@ -87,7 +87,7 @@ Students can chase YouTube rabbit holes alongside Wikipedia. A **📄 Wiki / ▶
 - Resolution uses YouTube's public **oEmbed** endpoint (no API key, no quota) for the title; the video plays in an embedded IFrame player
 - Each added video **branches off the current node**, building the same kind of tree; videos and articles coexist in one forest with different icons (▶ vs text)
 - **Cross-source bridging:** a video can be added as a child of a Wikipedia node (and vice-versa); unrelated dives simply stay as separate roots
-- No personalized-recommendation capture — discovery happens on real YouTube; NOVA Lab captures and structures it
+- No personalized-recommendation capture — discovery happens on real YouTube; scienium captures and structures it
 
 *(Uploading research papers as Discovery nodes — the original `paper` source type — is reserved but not built; papers live in the Literature Review.)*
 
@@ -134,8 +134,8 @@ The Literature Review gateway building opens a single unified panel — no sub-t
 
 **Q&A split view** (entered by clicking "Review Q&A"):
 - Left side: the actual PDF, rendered in an `<iframe>` streamed from the database (`/api/papers/[id]/file`)
-- Right side: a graded **comprehension quiz** first (see §6.5); once graded, header tabs switch between **Quiz results** and **Discuss with Nova** (active tab in gold)
-- **Discuss with Nova** is an open-ended chat about the paper; messages persist per user and reload on reopen. The chat no longer grants proficiency — the quiz owns it.
+- Right side: a graded **comprehension quiz** first (see §6.5); once graded, header tabs switch between **Quiz results** and **Discuss with Vega** (active tab in gold)
+- **Discuss with Vega** is an open-ended chat about the paper; messages persist per user and reload on reopen. The chat no longer grants proficiency — the quiz owns it.
 
 **Header**: progress bar + `N / 25` counter tracking toward the gate.
 
@@ -145,8 +145,8 @@ The Literature Review gateway building opens a single unified panel — no sub-t
 - Progress visible in the panel header (progress bar + counter)
 - Off-topic detection deferred to v1.1
 
-### 6.4 Nova — AI Tutor Persona
-Nova is NOVA Lab's built-in research tutor. In the Literature Review:
+### 6.4 Vega — AI Tutor Persona
+Vega is scienium's built-in research tutor. In the Literature Review:
 - Encourages genuine understanding, not surface recitation
 - Asks follow-up questions when answers are vague
 - Celebrates real insight; gently corrects misconceptions
@@ -269,7 +269,7 @@ A specialized Project Log entry type for documenting failed experiments, dead en
 
 ### 9.1 Starting State & Building Classes
 
-NOVA Lab has **two distinct classes of building**, which look and behave differently and should never be conflated in design or data:
+scienium has **two distinct classes of building**, which look and behave differently and should never be conflated in design or data:
 
 | Class | Count | Purpose | Economy | PvP | Reskin |
 |---|---|---|---|---|---|
@@ -475,7 +475,7 @@ Every action records the acting user. A team activity feed (`activity_feed`, sur
 
 ### 11.1 Overview
 
-NOVA Lab includes a 6v6 turn-based battle system where students compete using characters derived from their lab buildings. Combat style is classic Pokémon-style: each character has a moveset, type advantages, and stats. Players pick moves manually — no STEM mini-challenges interrupt combat (those stay in the building mini-games).
+scienium includes a 6v6 turn-based battle system where students compete using characters derived from their lab buildings. Combat style is classic Pokémon-style: each character has a moveset, type advantages, and stats. Players pick moves manually — no STEM mini-challenges interrupt combat (those stay in the building mini-games).
 
 The system is intentionally designed as a daily reward and engagement loop **separate from project work**. Hard daily caps prevent it from displacing real research time, and rewards are leaderboard-only, so PvP cannot serve as a shortcut to project-related progression.
 
@@ -655,7 +655,7 @@ PvP is intentionally **not directly educational during combat** — the user exp
 
 ### 12.1 Purpose
 
-Inspired by how ISEF projects are displayed publicly to the world, the Showcase gives every NOVA Lab student a public-facing portfolio of their completed work — not just the top finalists. The motivation:
+Inspired by how ISEF projects are displayed publicly to the world, the Showcase gives every scienium student a public-facing portfolio of their completed work — not just the top finalists. The motivation:
 
 - Most students at lower-level competitions go completely unrecognized despite doing meaningful work
 - Parents, extended family, and friends often have no easy way to see what a student built
@@ -682,7 +682,7 @@ A Showcase entry can include any of the following:
 
 | Level | Visibility | Use Case |
 |---|---|---|
-| **Public** | Anyone — discoverable in NOVA Lab gallery | Default for confident students with parental consent |
+| **Public** | Anyone — discoverable in scienium gallery | Default for confident students with parental consent |
 | **School-only** | Visible only to same-school members | School-published items |
 | **Link-only** | Anyone with the URL, not discoverable | Shareable with family without full public exposure |
 | **Private** | Team members only | Default for new Showcases |
@@ -704,7 +704,7 @@ A Showcase entry can include any of the following:
 
 ### 12.6 Sharing
 
-- Each Showcase gets a unique URL: `nova-lab.app/showcase/{slug}`
+- Each Showcase gets a unique URL: `scienium.app/showcase/{slug}`
 - Open Graph meta tags so social previews render beautifully
 - "Share to family" button generates email/messaging-friendly summary
 - "Download for printing" option produces a one-page PDF summary
@@ -752,7 +752,7 @@ A Showcase entry can include any of the following:
 ## 13. Science Fair Information Hub
 
 ### 13.1 Purpose
-A reference center inside NOVA Lab providing everything a student needs to navigate the competition pathway: dates, deadlines, requirements, rubrics, and categories. Removes the friction of hunting down information across multiple official websites, and creates tight feedback loops between rubric criteria and the student's daily project work.
+A reference center inside scienium providing everything a student needs to navigate the competition pathway: dates, deadlines, requirements, rubrics, and categories. Removes the friction of hunting down information across multiple official websites, and creates tight feedback loops between rubric criteria and the student's daily project work.
 
 The Fair Hub is **always accessible** from day one — even before topic selection — so students understand the competitive landscape they're working toward from the start.
 
@@ -794,7 +794,7 @@ The 22 ISEF categories are listed with descriptions to help students identify wh
 - Plain-language description
 - Example sub-topics within the category
 - Sample previously-winning project titles (where publicly listed by Society for Science)
-- Cross-reference to the recommended NOVA Lab lab type
+- Cross-reference to the recommended scienium lab type
 
 This is particularly useful because students often pick a category mismatched to their actual project, hurting their chances. The category matcher recommends the best fit based on the student's topic and methodology.
 
@@ -903,7 +903,7 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 > **⚠️ DEFERRED FOR PILOT.** The full teacher dashboard described below is **not part of the pilot release**. During the 120-student pilot, teachers validate progress in person — students show the teacher their app progress and demonstrate project work physically, and the teacher approves the team's phase advancement. Only the minimal phase-advance approval is needed for the pilot; the broader dashboard below is preserved for **post-pilot v1.1+** when classroom scaling makes in-person validation unsustainable.
 
 ### 15.1 Purpose
-The teacher dashboard is the central tool for educators running NOVA Lab. Its design philosophy reflects the reality of how teachers actually use software: they have 10 minutes between classes, not 2 hours after school, so the dashboard must surface what needs attention rather than requiring browsing through all students.
+The teacher dashboard is the central tool for educators running scienium. Its design philosophy reflects the reality of how teachers actually use software: they have 10 minutes between classes, not 2 hours after school, so the dashboard must surface what needs attention rather than requiring browsing through all students.
 
 The teacher dashboard is critical for pilot success — student-facing polish doesn't matter if the teacher's experience is frustrating, because teachers who give up on the app take the class with them.
 
@@ -1087,7 +1087,7 @@ showcase_review_queue      id, showcase_id, status, flagged_reasons_json,
 
 ### 17.1 Security & Abuse Prevention
 
-NOVA Lab serves minors and calls paid AI APIs, so abuse prevention is a first-class requirement, not an afterthought. (Implementation details live in `architecture.md` §7.)
+scienium serves minors and calls paid AI APIs, so abuse prevention is a first-class requirement, not an afterthought. (Implementation details live in `architecture.md` §7.)
 
 - **Rate limiting on all endpoints.** Every API route is rate-limited per authenticated user (with a coarse per-IP backstop tuned so a shared school/NAT network isn't penalized). The AI-backed actions — paper chat, quiz generation/grading, research-plan review, "has this been done before?" idea-check, and fair-deadline reads — are capped tightly because each call costs money; runaway or scripted use is throttled with a friendly "slow down" response rather than a hard failure. Idea-checks keep their per-team daily cap (3/day). Invite-code redemption is throttled to make code guessing impractical.
 - **Strict input validation.** All user input is validated against a schema: correct types, sensible length limits, and rejection of unexpected fields. Oversized or malformed submissions are refused with a clear error.
@@ -1132,7 +1132,7 @@ NOVA Lab serves minors and calls paid AI APIs, so abuse prevention is a first-cl
 > **Status:** Direction set and **realized** — all **67 building sprites are drawn**: the 60 economy buildings across all 6 lab-type sets (Volt Lab, BioCore, ChemWorks, TerraBase, MindFrame, Axiom) plus the 7 gateways. Each is code-generated at 64×64 on its set's 16-colour palette and wired through the sprite manifest. Catalog of record: `art/building.md`. This section remains the source of truth for the pixel-art look; technical asset specs (dimensions, file paths, manifest) live in `architecture.md` §9.4.
 
 ### 19.1 Overall Aesthetic
-NOVA Lab is a **pixel-art** game. The target is a **chunkier, lower-resolution** look than the two reference images supplied during design — those references read as high-resolution/HD pixel art, and the intended style is more visibly pixelated (fewer, larger pixels; a tighter palette). Think classic 2D top-down/isometric game art rather than detailed illustration.
+scienium is a **pixel-art** game. The target is a **chunkier, lower-resolution** look than the two reference images supplied during design — those references read as high-resolution/HD pixel art, and the intended style is more visibly pixelated (fewer, larger pixels; a tighter palette). Think classic 2D top-down/isometric game art rather than detailed illustration.
 
 ### 19.2 Reference Decomposition (avoiding "lost in translation")
 Two reference images informed the look, and each contributes **one** thing — they are not to be blended literally:

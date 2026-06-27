@@ -6,7 +6,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       {/* Minimal nav */}
       <header className="border-b px-6 py-4">
         <Link href="/" className="text-lg font-bold tracking-tight hover:opacity-80 transition-opacity">
-          ⚗️ NOVA Lab
+          ⚗️ scienium
         </Link>
       </header>
 

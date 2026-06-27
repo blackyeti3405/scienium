@@ -1,5 +1,5 @@
 {
-  "extends": "@nova-lab/config/tsconfig",
+  "extends": "@scienium/config/tsconfig",
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src"

@@ -210,7 +210,7 @@ interface ParsedVerdict {
   recommendation?: string
 }
 
-const IDEA_CHECK_SYSTEM = `You are Nova, helping an advanced high-school science-fair team check the originality of their research idea. You have a web search tool — use it.
+const IDEA_CHECK_SYSTEM = `You are Vega, helping an advanced high-school science-fair team check the originality of their research idea. You have a web search tool — use it.
 
 STEPS:
 1. From the research plan, identify the core idea/approach in one or two sentences.

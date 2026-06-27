@@ -48,7 +48,7 @@ import os
 import sys
 import json
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, RX, RY, LX, LY
 
@@ -401,7 +401,7 @@ def build():
     core_scanner(c, shed)          # SIGNATURE: inclined glass drill-core + teal scanner
 
     spec = {"width": 64, "height": 64, "palette": TERRA, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/terrabase_geological-core-lab.json"
+    out = "/path/to/scienium/art/src/buildings/terrabase_geological-core-lab.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

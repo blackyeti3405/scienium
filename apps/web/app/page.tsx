@@ -17,18 +17,18 @@ export default async function HomePage() {
       <div className="flex flex-col items-center gap-8">
         {/* Logo + title */}
         <div className="flex items-center gap-5">
-          {/* Pixel-art nova-lab logo, scaled 24→72px with crisp edges. */}
+          {/* Pixel-art scienium logo (laurel wreath + atom). */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/nova-lab-logo.png"
-            alt="NOVA Lab logo"
+            src="/scienium-logo.png"
+            alt="scienium logo"
             width={72}
             height={72}
             className="pixel-art"
           />
 
           <h1 className="font-pixel text-white leading-snug text-center" style={{ fontSize: 'clamp(1.4rem, 3.5vw, 2.2rem)' }}>
-            NOVA<br />Lab
+            scienium
           </h1>
         </div>
 

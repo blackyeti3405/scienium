@@ -128,7 +128,7 @@ async function nominatimGeocode(city, state) {
   const query = `${city}, ${state}, USA`
   const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=us`
   return new Promise((resolve) => {
-    const req = https.get(url, { headers: { 'User-Agent': 'nova-lab-fair-geocoder/1.0' } }, (res) => {
+    const req = https.get(url, { headers: { 'User-Agent': 'scienium-fair-geocoder/1.0' } }, (res) => {
       let body = ''
       res.on('data', (d) => (body += d))
       res.on('end', () => {

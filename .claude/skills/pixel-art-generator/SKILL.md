@@ -1,11 +1,11 @@
 ---
 name: pixel-art-generator
-description: Generate and re-skin NOVA Lab pixel-art sprites (isometric gateway buildings, ground tiles, UI) using the reproducible code pipeline under art/. Use whenever creating, editing, or recoloring any game sprite for nova-lab.
+description: Generate and re-skin scienium pixel-art sprites (isometric gateway buildings, ground tiles, UI) using the reproducible code pipeline under art/. Use whenever creating, editing, or recoloring any game sprite for scienium.
 ---
 
-# NOVA Lab pixel-art generator
+# scienium pixel-art generator
 
-All NOVA Lab sprites are generated **from code** (reproducible, palette-swappable),
+All scienium sprites are generated **from code** (reproducible, palette-swappable),
 not hand-drawn in an external editor and not via image-generation models. The
 pipeline lives in `art/`. Full reference: [`art/README.md`](../../../art/README.md).
 
@@ -30,12 +30,12 @@ Source char-grids → `art/src/*.json`. Inspection previews → `art/preview/*.p
 ## Key facts
 
 - **Canonical palette** lives in `art/canon.py`, extracted from the reference
-  `art_ref/nova_lab_discovery.png`. Chars: `W/L/M/D/d` wall (light→dark),
+  `art_ref/scienium_discovery.png`. Chars: `W/L/M/D/d` wall (light→dark),
   `h/c/g/G` glass, `o/O/r` accent, `K` outline.
 - **Buildings are isometric** (2:1, a corner faces the viewer, roof visible) so
   the lab can expand right/left/up/down. They are 64×64 and share an iso cube;
   each gateway differs only by its **rooftop feature**.
-- **Discovery is imported** pixel-for-pixel from `art_ref/nova_lab_discovery.png`
+- **Discovery is imported** pixel-for-pixel from `art_ref/scienium_discovery.png`
   (native 64×64). Do not redraw it — re-run `art/iso.py` to regenerate.
 - **The app reads only the manifest** `apps/web/lib/sprites/manifest.ts`. Never
   hardcode a sprite path in a component.

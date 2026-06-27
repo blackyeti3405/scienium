@@ -29,7 +29,7 @@ import sys
 import json
 import math
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
@@ -448,7 +448,7 @@ def build():
     glass_dome_front(c)       # dome ribs + crown glint OVER the bed (seen through)
     vapor_wisp(c)             # thin vapor wisp off the relief valve (roofline)
     spec = {"width": 64, "height": 64, "palette": CHEM, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/chemworks_catalysis-lab.json"
+    out = "/path/to/scienium/art/src/buildings/chemworks_catalysis-lab.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

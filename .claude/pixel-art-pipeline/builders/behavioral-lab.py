@@ -40,7 +40,7 @@ import os
 import sys
 import json
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
@@ -307,7 +307,7 @@ def build():
     subject_and_panel(c, ch, U0, U1, V0, V1)
 
     spec = {"width": 64, "height": 64, "palette": MIND, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/mindframe_behavioral-lab.json"
+    out = "/path/to/scienium/art/src/buildings/mindframe_behavioral-lab.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

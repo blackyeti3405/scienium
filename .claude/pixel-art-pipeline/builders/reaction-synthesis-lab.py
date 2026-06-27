@@ -33,7 +33,7 @@ coiled-condenser / dripping-tip motif exists anywhere else in the catalog.
 """
 import os, sys, json
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
@@ -330,7 +330,7 @@ def main():
     liebig_condenser(c, hall)
 
     spec = {"width": 64, "height": 64, "palette": CHEM, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/chemworks_reaction-synthesis-lab.json"
+    out = "/path/to/scienium/art/src/buildings/chemworks_reaction-synthesis-lab.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

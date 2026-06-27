@@ -11,7 +11,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
     <div className="sc-public">
       <header className="sc-public__nav">
         <Link href="/showcase/gallery" className="sc-public__brand font-pixel">
-          ⚗ NOVA Lab
+          ⚗ scienium
         </Link>
         <Link href="/showcase/gallery" className="sc-public__navlink font-pixel">
           Project Gallery
@@ -19,7 +19,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
       </header>
       <main className="sc-public__main">{children}</main>
       <footer className="sc-public__footer">
-        <span>Built by students on NOVA Lab — build your virtual research lab, advance real science.</span>
+        <span>Built by students on scienium — build your virtual research lab, advance real science.</span>
       </footer>
     </div>
   )

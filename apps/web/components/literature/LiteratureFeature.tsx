@@ -417,7 +417,7 @@ function QAPanel({
                   phase === 'chat' ? 'text-[#F5C518]' : 'text-white/40 hover:text-white/70'
                 }`}
               >
-                <MessageSquare size={9} /> Discuss with Nova
+                <MessageSquare size={9} /> Discuss with Vega
               </button>
             </div>
           ) : (
@@ -433,7 +433,7 @@ function QAPanel({
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-white/40">
             <Loader2 size={20} className="animate-spin text-blue-400" />
             <span className="font-pixel text-[8px]">
-              {phase === 'loading' ? 'Nova is writing your quiz…' : 'Grading your answers…'}
+              {phase === 'loading' ? 'Vega is writing your quiz…' : 'Grading your answers…'}
             </span>
           </div>
         )}
@@ -554,7 +554,7 @@ function QAPanel({
                     {r?.rationale && (
                       <p className="text-[13px] text-white/45 leading-relaxed pl-5 italic">
                         <span className="font-pixel text-[6px] text-[#F5C518]/40 uppercase tracking-widest block mb-0.5 not-italic">
-                          Nova
+                          Vega
                         </span>
                         {r.rationale}
                       </p>
@@ -600,7 +600,7 @@ function QAPanel({
                   className={`flex flex-col gap-1 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                 >
                   <span className="font-pixel text-[6px] text-white/25 uppercase tracking-widest px-1">
-                    {msg.role === 'user' ? 'You' : 'Nova'}
+                    {msg.role === 'user' ? 'You' : 'Vega'}
                   </span>
                   <div
                     className={`text-sm leading-relaxed px-3 py-2 rounded-sm max-w-full ${
@@ -934,7 +934,7 @@ export function LiteratureFeature() {
         <div className="mx-6 mt-3 px-4 py-2.5 bg-[#F5C518]/8 border border-[#F5C518]/25 rounded-sm flex items-start gap-2.5">
           <span className="font-pixel text-[8px] text-[#F5C518]/60 shrink-0 mt-0.5">!</span>
           <p className="font-pixel text-[7px] text-[#F5C518]/60 leading-relaxed">
-            Set your final research topic in Discovery first. Once set, Nova will check that each source you upload is relevant.
+            Set your final research topic in Discovery first. Once set, Vega will check that each source you upload is relevant.
           </p>
         </div>
       )}

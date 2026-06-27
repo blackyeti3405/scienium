@@ -100,7 +100,7 @@ export default function OnboardingPage() {
   return (
     <div className="max-w-md w-full space-y-8">
       <div>
-        <h1 className="font-pixel text-white text-lg">Welcome to NOVA Lab</h1>
+        <h1 className="font-pixel text-white text-lg">Welcome to scienium</h1>
         <p className="font-pixel text-white/40 text-[9px] mt-2">
           Set up your researcher profile to get started.
         </p>

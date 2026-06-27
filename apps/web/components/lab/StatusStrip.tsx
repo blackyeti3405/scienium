@@ -42,8 +42,8 @@ export function StatusStrip({
       <div className="status-strip__left">
         <span className="font-pixel status-strip__brand">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/nova-lab-logo.png" alt="" width={24} height={24} className="pixel-art" />
-          NOVA Lab
+          <img src="/scienium-logo.png" alt="" width={24} height={24} className="pixel-art" />
+          scienium
         </span>
         {onOpenTeam ? (
           <button

@@ -150,7 +150,7 @@ apps/web/test-results/
 apps/web/playwright-report/
 apps/web/playwright/.cache/
 
-# NOVA Lab — derived pixel-art artifacts (sources + scripts are tracked)
+# scienium — derived pixel-art artifacts (sources + scripts are tracked)
 art/preview/
 art/scene_*.png
 art/sheet_*.png

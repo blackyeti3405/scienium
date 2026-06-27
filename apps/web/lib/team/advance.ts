@@ -4,7 +4,7 @@ import { PHASE_ORDER, type Phase } from '@/lib/phase'
 /**
  * Phase-advancement gate (Feature 1e).
  *
- * There is no automatic progression in NOVA Lab — a team advances by meeting an
+ * There is no automatic progression in scienium — a team advances by meeting an
  * explicit, checkable gate. The first such gate leaves `literature_review`:
  * the team must have uploaded the full set of sources AND every member must have
  * independently demonstrated proficiency (per-student `PaperProficiency`) on all

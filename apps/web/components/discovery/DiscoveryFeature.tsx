@@ -404,7 +404,16 @@ export function DiscoveryFeature() {
                 nodes={nodes}
                 currentNodeId={currentNodeId}
                 onNavigate={navigateToNode}
-                onDelete={deleteSubtree}
+                onDelete={async (nodeId) => {
+                  const target = nodes.find((n) => n.id === nodeId)
+                  const ok = await confirm({
+                    title: 'Delete node',
+                    message: `Delete “${target?.title ?? 'this node'}” and all of its children? This can’t be undone.`,
+                    confirmLabel: 'Delete',
+                    tone: 'danger',
+                  })
+                  if (ok) deleteSubtree(nodeId)
+                }}
                 onToggleStar={toggleStar}
               />
             </div>

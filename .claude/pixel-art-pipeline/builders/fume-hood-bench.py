@@ -37,7 +37,7 @@ import os
 import sys
 import json
 
-sys.path.insert(0, "/Users/redacted/Code/nova-lab/art")
+sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder  # noqa: F401  (cylinder kept available)
 
@@ -346,7 +346,7 @@ def main():
     reaction_flask(c, shed, bench)
 
     spec = {"width": 64, "height": 64, "palette": CHEM, "rows": c.rows()}
-    out = "/Users/redacted/Code/nova-lab/art/src/buildings/chemworks_fume-hood-bench.json"
+    out = "/path/to/scienium/art/src/buildings/chemworks_fume-hood-bench.json"
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(spec, open(out, "w"), indent=0)
     print("built", out)

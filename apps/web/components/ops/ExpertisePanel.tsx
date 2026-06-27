@@ -114,7 +114,7 @@ export function ExpertisePanel() {
   const [index, setIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [draft, setDraft] = useState('')
-  const [novaTyping, setNovaTyping] = useState(false)
+  const [vegaTyping, setVegaTyping] = useState(false)
   const [result, setResult] = useState<GradeResult | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -139,7 +139,7 @@ export function ExpertisePanel() {
   // Keep the chat scrolled to the newest turn.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [index, novaTyping, mode])
+  }, [index, vegaTyping, mode])
 
   /** Load an exam (fresh or resumed) into the chat, restoring any saved progress. */
   function enterExam(data: StartResponse) {
@@ -156,7 +156,7 @@ export function ExpertisePanel() {
     setError(null)
     setExam(null) // clear any prior exam so the "preparing" spinner shows
     setMode('grading') // reuse spinner overlay while generating
-    setNovaTyping(false)
+    setVegaTyping(false)
     try {
       const res = await fetch('/api/expertise', { method: 'POST' })
       const data = await res.json()
@@ -172,7 +172,7 @@ export function ExpertisePanel() {
   function resumeExam() {
     if (status?.activeExam) {
       setError(null)
-      setNovaTyping(false)
+      setVegaTyping(false)
       enterExam(status.activeExam)
     }
   }
@@ -200,10 +200,10 @@ export function ExpertisePanel() {
     saveProgress(exam.examId, nextAnswers, isLast ? exam.questions.length : index + 1)
 
     if (!isLast) {
-      // Advance with a brief "Nova is thinking" beat for a conversational feel.
-      setNovaTyping(true)
+      // Advance with a brief "Vega is thinking" beat for a conversational feel.
+      setVegaTyping(true)
       setTimeout(() => {
-        setNovaTyping(false)
+        setVegaTyping(false)
         setIndex((i) => i + 1)
       }, 650)
     } else {
@@ -262,7 +262,7 @@ export function ExpertisePanel() {
       <div className="ops-tab-body items-center justify-center">
         <div className="clr-thinking">
           <Sparkles size={20} className="text-[#7ff2e3] animate-pulse" />
-          <span className="font-pixel text-[9px] text-white/55">Nova is preparing your exam…</span>
+          <span className="font-pixel text-[9px] text-white/55">Vega is preparing your exam…</span>
         </div>
       </div>
     )
@@ -273,7 +273,7 @@ export function ExpertisePanel() {
       <div className="ops-tab-body items-center justify-center">
         <div className="clr-thinking">
           <ShieldCheck size={20} className="text-[#7ff2e3] animate-pulse" />
-          <span className="font-pixel text-[9px] text-white/55">Nova is reviewing your answers…</span>
+          <span className="font-pixel text-[9px] text-white/55">Vega is reviewing your answers…</span>
         </div>
       </div>
     )
@@ -314,7 +314,7 @@ export function ExpertisePanel() {
         </div>
 
         <div className="clr-chat" ref={scrollRef}>
-          <div className="clr-msg clr-msg--nova">
+          <div className="clr-msg clr-msg--vega">
             <span className="clr-msg__avatar font-pixel">N</span>
             <div className="clr-msg__bubble">
               Welcome to your <strong>Level {exam.targetLevel}</strong> clearance exam. I&apos;ll ask you {total}{' '}
@@ -328,7 +328,7 @@ export function ExpertisePanel() {
             const ans = answers[q.id]
             return (
               <div key={q.id}>
-                <div className="clr-msg clr-msg--nova">
+                <div className="clr-msg clr-msg--vega">
                   <span className="clr-msg__avatar font-pixel">N</span>
                   <div className="clr-msg__bubble">
                     <span className="clr-msg__focus font-pixel">{q.focus}</span>
@@ -344,8 +344,8 @@ export function ExpertisePanel() {
             )
           })}
 
-          {novaTyping && (
-            <div className="clr-msg clr-msg--nova">
+          {vegaTyping && (
+            <div className="clr-msg clr-msg--vega">
               <span className="clr-msg__avatar font-pixel">N</span>
               <div className="clr-msg__bubble clr-msg__typing">
                 <span /> <span /> <span />
@@ -361,7 +361,7 @@ export function ExpertisePanel() {
           </div>
         )}
 
-        {!novaTyping && (
+        {!vegaTyping && (
           <div className="clr-composer">
             <textarea
               value={draft}

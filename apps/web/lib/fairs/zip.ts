@@ -472,7 +472,7 @@ export async function geocodeZip(
   try {
     const url = `https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(zip)}&countrycodes=us&format=json&limit=1`
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'nova-lab/1.0 (science fair matching)' },
+      headers: { 'User-Agent': 'scienium/1.0 (science fair matching)' },
       signal: AbortSignal.timeout(6000),
     })
     if (!res.ok) return null

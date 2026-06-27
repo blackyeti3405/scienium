@@ -1,4 +1,4 @@
-# Parallelism in the NOVA Lab pipeline
+# Parallelism in the scienium pipeline
 
 Parallelism is applied only where the work is genuinely independent and verifiable. The model is **subagents + git worktrees** — not the experimental agent-teams flag, which we reserve for later.
 

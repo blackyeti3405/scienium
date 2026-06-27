@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
 /**
- * Dark card surface matching the NOVA aesthetic.
+ * Dark card surface matching the scienium aesthetic.
  * Gold pixel-font eyebrow label for section chrome; data uses regular fonts.
  */
 export function Card({

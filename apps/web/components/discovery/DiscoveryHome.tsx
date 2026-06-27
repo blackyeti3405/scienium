@@ -20,7 +20,7 @@ const ITEMS = [
           uncovering unexpected connections along the way.
         </p>
         <p>
-          NOVA Lab has adapted this into its current interactive form. As you click through
+          scienium has adapted this into its current interactive form. As you click through
           links, a <strong className="text-white">live branching tree diagram</strong> is
           built automatically, mapping your exact path. You can split into two directions at any
           article, star entries worth revisiting, prune dead ends, and backtrack through any
@@ -82,13 +82,13 @@ const ITEMS = [
       <div className="space-y-3 text-sm text-white/55 leading-relaxed">
         <p>
           YouTube is one of the richest places to fall down a research rabbit hole — one video&apos;s
-          recommendations lead to the next. NOVA Lab lets you <strong className="text-white">capture
+          recommendations lead to the next. scienium lets you <strong className="text-white">capture
           that rabbit hole as a tree</strong>, right alongside your Wikipedia explorations.
         </p>
         <p>
           In the explorer, flip the <strong className="text-white">📄 Wiki / ▶ YouTube</strong> toggle
           to YouTube. Keep watching videos on YouTube as you normally would — when one is worth keeping,
-          copy its link, come back to NOVA Lab, and press <strong className="text-white">⌘V / Ctrl+V</strong>.
+          copy its link, come back to scienium, and press <strong className="text-white">⌘V / Ctrl+V</strong>.
           The video is added to your tree and plays right inside the app.
         </p>
         <p>

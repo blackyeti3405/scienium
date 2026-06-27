@@ -1,4 +1,4 @@
-# NOVA Lab — Technical Architecture
+# scienium — Technical Architecture
 
 > **Companion to:** `spec.md`
 > **Last Updated:** 2026-06-19
@@ -8,7 +8,7 @@
 
 ## 1. Architecture Overview
 
-NOVA Lab is a **single-service architecture**: all UI, API routes, AI calls, and CRUD live in the Next.js app. The Python AI microservice originally planned has been removed.
+scienium is a **single-service architecture**: all UI, API routes, AI calls, and CRUD live in the Next.js app. The Python AI microservice originally planned has been removed.
 
 1. **Web app (Next.js on Vercel)** — UI, API routes, auth (Clerk), all CRUD operations, Claude API calls (paper processing, quizzes, chat, research plan review, idea-check, fair deadline sync), and public Showcase rendering
 2. **PostgreSQL (Supabase)** — single source of truth for all application state
@@ -55,7 +55,7 @@ NOVA Lab is a **single-service architecture**: all UI, API routes, AI calls, and
 | Styling | **Tailwind CSS + shadcn/ui** | Fast iteration, no runtime CSS overhead |
 | State | **Zustand** (client), **TanStack Query** (server state) | Lightweight |
 | Visualization | **Recharts** (charts); the Discovery tree is a **custom SVG** component (`DiscoveryTree.tsx`) | No react-flow dependency — the tree layout is hand-rolled |
-| Markdown | **react-markdown + remark-gfm** | Renders Nova's chat replies (styled via `.chat-md`) |
+| Markdown | **react-markdown + remark-gfm** | Renders Vega's chat replies (styled via `.chat-md`) |
 | Forms | **react-hook-form + zod** | Validation as types |
 | Video player | **video.js** (Showcase); YouTube via official **IFrame embed** | Mature; YouTube embed needs no key |
 | PDF viewer | Literature Review uses a native **`<iframe>`** streaming the stored PDF; `react-pdf` planned for report viewing | iframe needs no extra deps |
@@ -97,7 +97,7 @@ NOVA Lab is a **single-service architecture**: all UI, API routes, AI calls, and
 Single monorepo using **pnpm workspaces**.
 
 ```
-nova-lab/
+scienium/
 ├── apps/
 │   ├── web/                              # Next.js application
 │   │   ├── app/
@@ -459,7 +459,7 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 1. Opening a paper's Q&A panel calls `GET /api/papers/[id]/quiz`; if a graded session exists its results load, otherwise `POST /api/papers/[id]/quiz` generates a fresh quiz
 2. Generation: Claude reads the paper (prompt-cached) + the rubric (`lib/literature/quiz-rubric.md`) and returns N free-response questions, each with a server-only grading key, stored in `paper_quiz_sessions.questions_json`
 3. The student answers in natural language; `POST /api/papers/[id]/quiz/grade` grades all answers in one call against the keys + rubric, writes per-question rows to `paper_quiz_attempts`, sets the session score/passed, and on pass **upserts the current user's `paper_proficiency` row** (demonstrated + per-student KP high-water mark, max 100/source). KP is per student but accrues into the shared `team_currency` total shown identically to all members
-4. After grading, the panel exposes a **Discuss with Nova** chat tab; messages persist to `paper_chat_messages` via `GET/POST /api/papers/[id]/chat` (paper text prompt-cached). The chat no longer grants proficiency — the quiz owns it.
+4. After grading, the panel exposes a **Discuss with Vega** chat tab; messages persist to `paper_chat_messages` via `GET/POST /api/papers/[id]/chat` (paper text prompt-cached). The chat no longer grants proficiency — the quiz owns it.
 
 ### Phase-advance gate flow (literature_review → research_planning, with lab-type auto-assign)
 1. `lib/team/advance.ts#getLiteratureAdvanceProgress` computes readiness: 25 sources `ready` AND **every** member `demonstrated` on all 25 (per-student `paper_proficiency`)

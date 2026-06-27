@@ -183,7 +183,7 @@ export async function POST(req: NextRequest) {
 }
 
 function GRADING_INSTRUCTIONS(rubric: string, level: number): string {
-  return `You are Nova, grading a student's answers to a LEVEL ${level} clearance exam about their own science-fair project. Follow this rubric exactly:
+  return `You are Vega, grading a student's answers to a LEVEL ${level} clearance exam about their own science-fair project. Follow this rubric exactly:
 
 ${rubric}
 
