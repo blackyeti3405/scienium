@@ -5,6 +5,8 @@ import {
   computeQuizAward,
   computeClearanceRaise,
   evaluatePurchase,
+  upgradeKpCost,
+  upgradeLcCost,
 } from '@/lib/economy'
 
 describe('clampScore', () => {
@@ -172,5 +174,37 @@ describe('evaluatePurchase', () => {
       voltBuilding,
     )
     expect(r).toMatchObject({ ok: false, status: 403 })
+  })
+})
+
+describe('upgradeKpCost — round(base × 0.25 × (toLevel − 1))', () => {
+  it('scales with base cost and target level', () => {
+    expect(upgradeKpCost(1000, 2)).toBe(250)
+    expect(upgradeKpCost(1000, 4)).toBe(750)
+    expect(upgradeKpCost(1000, 8)).toBe(1750)
+    expect(upgradeKpCost(1000, 15)).toBe(3500)
+    // premium building (higher base) costs proportionally more
+    expect(upgradeKpCost(18000, 4)).toBe(13500)
+  })
+})
+
+describe('upgradeLcCost — LC only at tier-up levels 4/7/10/15', () => {
+  it('charges LC only on the four tier transitions', () => {
+    expect(upgradeLcCost(4)).toBe(2)
+    expect(upgradeLcCost(7)).toBe(4)
+    expect(upgradeLcCost(10)).toBe(6)
+    expect(upgradeLcCost(15)).toBe(10)
+  })
+
+  it('charges 0 LC on every non-tier upgrade', () => {
+    for (const l of [2, 3, 5, 6, 8, 9, 11, 12, 13, 14]) {
+      expect(upgradeLcCost(l)).toBe(0)
+    }
+  })
+
+  it('sum of LC across the full 1→15 climb equals 22', () => {
+    let total = 0
+    for (let l = 2; l <= 15; l++) total += upgradeLcCost(l)
+    expect(total).toBe(22)
   })
 })

@@ -259,9 +259,9 @@ A specialized Project Log entry type for documenting failed experiments, dead en
 
 | Currency | Earned By | Used For |
 |---|---|---|
-| **Knowledge Points (KP)** | Field Dispatch, mini-games, general engagement | Buying buildings, minor upgrades |
-| **Clearance Level** | Proof of Expertise | Gating max building upgrade level |
-| **Lab Credits (LC)** | Project Log + Failure Log milestones | Premium buildings, high-tier upgrades |
+| **Knowledge Points (KP)** | Field Dispatch, mini-games, general engagement | Buying buildings; **every** building upgrade (KP scales with the building's base cost × level) |
+| **Clearance Level** | Proof of Expertise | Gating **which** buildings can be purchased (each building has a minimum clearance tier) — it does **not** cap upgrade level |
+| **Lab Credits (LC)** | +1 per team member per real calendar day they file a Project or Failure log (capped 1/member/day, never backfilled) | The four **tier-up** upgrade transitions only (→4, →7, →10, →15) |
 
 ---
 
@@ -282,19 +282,30 @@ scienium has **two distinct classes of building**, which look and behave differe
 A brand-new lab begins with a single gateway building (the Discovery building) on a small plot. Economy buildings and upgrades are earned over time, and only after a lab type is selected.
 
 ### 9.2 How Buildings Work
-- KP buys new buildings and minor upgrades
-- Each building has upgrade levels 1–15
-- Clearance Level caps max upgrade:
 
-| Clearance Level | Max Building Upgrade Level |
-|---|---|
-| 1 | 3 |
-| 2 | 6 |
-| 3 | 9 |
-| 4 | 12 |
-| 5 | 15 |
+Economy buildings are bought from the shop and **placed on the lab's isometric
+plot** (Clash-of-Clans style): pick a building, drop it on a free tile — the drop
+*is* the purchase (KP debits on drop) — then rearrange it freely in **Arrange
+mode**, upgrade it, or sell it. Gateways share the same plot and can be moved, but
+never sold. (Implementation: `lib/plot.ts` grid math, `LabPlot`/`LabScene`,
+`/api/buildings/{place,move,sell,upgrade}`.)
 
-- LC unlocks premium/specialty buildings
+- **Placement** persists per team — economy positions + level in
+  `team_shop_buildings` (`pos_x`, `pos_y`, `level`, `cost_paid`), gateway position
+  overrides in `team_gateway_placements`. Each building occupies one 1×1 tile.
+- **Buying** costs KP (× team size) and is gated by the building's **lab type** and
+  **minimum clearance level**. (Clearance gates *purchase*, not leveling.)
+- **Upgrading** runs levels **1 → 15**. **Every** upgrade costs KP
+  = `round(baseCost × 0.25 × (level − 1))`. The four **tier-up** transitions —
+  **3→4, 6→7, 9→10, 14→15** — *also* cost Lab Credits: **2 / 4 / 6 / 10**. There is
+  **no clearance cap** on level. (`lib/economy.ts` `upgradeKpCost` / `upgradeLcCost`.)
+- **Skin tiers**: a building shows its base sprite at levels 1–3 and a **tier-2
+  reskin** (`{slug}_t2.png`) at level ≥ 4.
+- **Selling** an economy building refunds **90% of the *total* KP invested** in it
+  (purchase + every upgrade — tracked in `cost_paid`). Gateways are not sellable.
+- **Earning LC**: a member earns **+1 Lab Credit per real calendar day** they create
+  a Project or Failure log entry — capped at one per member per day and never
+  awarded for backfilled/backdated entries (`lab_credit_claims`).
 
 ### 9.3 Building Rosters (60 Total)
 
@@ -886,13 +897,13 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 | **Daily Activities** | `literature_review` | Field Dispatch, Expertise, Project Log, Failure Log |
 | **Research Plan** | `research_planning` | Google Doc connect + type-specific AI review + web-search idea check (§9.7) |
 | **Building Purchases** | `working` | KP-based; building catalog available |
-| **Building Upgrades** | `working` | Capped by Clearance Level |
+| **Building Upgrades** | `working` | Levels 1–15; KP every level + LC at tier-ups (→4/7/10/15); no clearance cap (§9.2) |
 | **Building Mini-games** | `working` | Daily cap, KP reward |
 | **PvP Combat** | `working` | 2 battles/day cap; phase-locked matchmaking |
 | **Data Terminal** | `working` | Graphing and experiment tracking |
 | **Showcase Wing** | `showcase` | Public-facing portfolio system |
 | **Prestige Cosmetics** | `showcase` | Unique aesthetic, title, legendary module — for teams that place at a higher-level competition |
-| **Building Upgrade Tiers** | `working` | Clearance Levels 1–5, each raises max upgrade by 3 |
+| **Building Skin Tiers** | `working` | Base sprite at L1–3, tier-2 reskin at L≥4 |
 
 > **Enforcement:** Feature access is gated in **two places**: (a) the nav/UI shows locked items with a pixel padlock and disables navigation, and (b) every relevant API route calls `assertFeatureUnlocked()` from `lib/phase.ts` and returns HTTP 403 for requests outside the team's current phase. Client-only gating is not acceptable.
 

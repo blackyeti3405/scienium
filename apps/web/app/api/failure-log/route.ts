@@ -88,6 +88,18 @@ export async function POST(req: NextRequest) {
 
   logActivity(ctx.teamId, ctx.dbUserId, 'log_created', { kind: 'failure' }).catch(console.error)
 
+  // +1 LC the first time this member files a log today (real calendar day, team pool).
+  try {
+    const today = new Date()
+    const day = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
+    await db.$transaction(async (tx) => {
+      await tx.labCreditClaim.create({ data: { userId: ctx.dbUserId, teamId: ctx.teamId, day } })
+      await tx.teamCurrency.update({ where: { teamId: ctx.teamId }, data: { lc: { increment: 1 } } })
+    })
+  } catch {
+    // P2002 (claim already exists today) = already credited; ignore. Never block the log.
+  }
+
   return NextResponse.json({
     entry: {
       id: entry.id,

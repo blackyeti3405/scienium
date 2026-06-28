@@ -1,12 +1,12 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { Lock, Check, Loader2 } from 'lucide-react'
-import { shopBuildingsForLabType, SHOP_SLOTS, type ShopBuilding } from '@/lib/shop'
+import { useEffect, useRef } from 'react'
+import { Lock } from 'lucide-react'
+import { shopBuildingsForLabType, type ShopBuilding } from '@/lib/shop'
 import { clearanceTitle } from '@/lib/clearance/expertise'
-import { useLabCurrency } from '@/lib/labCurrency'
 import { Sprite } from '@/components/lab/Sprite'
-import { getBuildingSprite } from '@/lib/sprites/manifest'
+import { getBuildingSprite, getGatewaySprite, type GatewaySkin, type SpriteEntry } from '@/lib/sprites/manifest'
+import { GATEWAYS } from '@/lib/gateways'
 import type { LabType } from '@/lib/phase'
 import type { Currency } from '@/components/lab/StatusStrip'
 
@@ -16,50 +16,41 @@ import type { Currency } from '@/components/lab/StatusStrip'
  * with the team's three currencies pinned along the bottom. Matches the lab's
  * pixel-frame chrome (chunky border, pixel-font labels, gold accents).
  *
- * Two gates apply (mirrored from POST /api/buildings):
+ * Picking an economy building here doesn't buy it outright — it hands the building
+ * to the plot as a cursor ghost (`onPlace`); the KP is debited when it's dropped
+ * (POST /api/buildings/place). The 7 gateway buildings are shown greyed-out as
+ * "Already placed" since they're the navigation spine, not purchasable.
+ *
+ * Two gates apply (mirrored on the server in lib/economy.ts):
  *   • KP — `baseCost × memberCount` (Feature 1c): a bigger lab pays proportionally.
  *   • Clearance — the team's Clearance Level (raised by Proof of Expertise) must
- *     meet the building's tier. This is the ceiling the shop pushes against: the
- *     best structures can't be grinded into without proving expertise.
+ *     meet the building's tier. This is the ceiling the shop pushes against.
  */
 export function ShopPanel({
   currency,
   memberCount,
   labType,
+  ownedKeys,
+  unplacedKeys,
+  onPlace,
   onClose,
 }: {
   currency: Currency
   memberCount: number
   /** The team's lab type — gates lab-type-specific buildings (e.g. Volt Lab). */
   labType: LabType | null
+  /** Economy keys already placed on the plot. */
+  ownedKeys: ReadonlySet<string>
+  /** Economy keys owned but not yet positioned (free to place). */
+  unplacedKeys: ReadonlySet<string>
+  /** Begin placing a building on the plot; `owned` = already paid for (free). */
+  onPlace: (building: ShopBuilding, owned: boolean) => void
   onClose: () => void
 }) {
   const closeRef = useRef<HTMLButtonElement>(null)
-  const { addCurrency } = useLabCurrency()
   const multiplier = Math.max(1, memberCount)
-  // Real, purchasable buildings for this lab first; the grid is always SHOP_SLOTS
-  // wide, with the remaining positions filled by non-purchasable placeholders.
   const buildings = shopBuildingsForLabType(labType)
-  const placeholderCount = Math.max(0, SHOP_SLOTS - buildings.length)
-
-  const [owned, setOwned] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
-  const [buyingKey, setBuyingKey] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let active = true
-    fetch('/api/buildings')
-      .then((r) => r.json())
-      .then((d) => {
-        if (active && Array.isArray(d.owned)) setOwned(new Set(d.owned))
-      })
-      .catch(() => {})
-      .finally(() => active && setLoading(false))
-    return () => {
-      active = false
-    }
-  }, [])
+  const skin: GatewaySkin = (labType ?? 'generic') as GatewaySkin
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -74,26 +65,6 @@ export function ShopPanel({
       document.body.style.overflow = prevOverflow
     }
   }, [onClose])
-
-  async function purchase(b: ShopBuilding, cost: number) {
-    setError(null)
-    setBuyingKey(b.key)
-    try {
-      const res = await fetch('/api/buildings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: b.key }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Purchase failed')
-      setOwned((prev) => new Set(prev).add(b.key))
-      addCurrency({ kp: -cost }) // optimistic StatusStrip update
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Purchase failed')
-    } finally {
-      setBuyingKey(null)
-    }
-  }
 
   return (
     <div
@@ -127,8 +98,6 @@ export function ShopPanel({
           </button>
         </header>
 
-        {error && <p className="shop-panel__error font-pixel">{error}</p>}
-
         <div className="shop-panel__shelf">
           <div className="shop-panel__grid">
             {buildings.map((b) => {
@@ -139,17 +108,16 @@ export function ShopPanel({
                   building={b}
                   labType={labType}
                   cost={cost}
-                  owned={owned.has(b.key)}
+                  placed={ownedKeys.has(b.key)}
+                  unplaced={unplacedKeys.has(b.key)}
                   clearance={currency.clearanceLevel}
                   affordable={currency.kp >= cost}
-                  busy={buyingKey === b.key}
-                  disabled={loading || buyingKey !== null}
-                  onBuy={() => purchase(b, cost)}
+                  onPlace={onPlace}
                 />
               )
             })}
-            {Array.from({ length: placeholderCount }, (_, i) => (
-              <PlaceholderCard key={`placeholder-${i}`} />
+            {GATEWAYS.map((g) => (
+              <GatewayCard key={g.key} label={g.label} sprite={getGatewaySprite(g.key, skin)} />
             ))}
           </div>
         </div>
@@ -173,41 +141,35 @@ function ShopCard({
   building,
   labType,
   cost,
-  owned,
+  placed,
+  unplaced,
   clearance,
   affordable,
-  busy,
-  disabled,
-  onBuy,
+  onPlace,
 }: {
   building: ShopBuilding
   labType: LabType | null
   cost: number
-  owned: boolean
+  placed: boolean
+  unplaced: boolean
   clearance: number
   affordable: boolean
-  busy: boolean
-  disabled: boolean
-  onBuy: () => void
+  onPlace: (building: ShopBuilding, owned: boolean) => void
 }) {
   const locked = clearance < building.minClearance
-  const buyable = !owned && !locked && affordable && !disabled
   const sprite = labType && building.sprite ? getBuildingSprite(labType, building.sprite) : null
 
   return (
-    <div className={`shop-card${owned ? ' shop-card--owned' : ''}${locked ? ' shop-card--locked' : ''}`}>
+    <div
+      className={`shop-card${placed ? ' shop-card--owned' : ''}${locked && !placed && !unplaced ? ' shop-card--locked' : ''}`}
+    >
       <div className="shop-card__image" aria-hidden="true">
         {sprite ? (
-          <Sprite entry={sprite} scale={2} />
+          <Sprite entry={sprite} scale={3} />
         ) : (
           <span className="font-pixel shop-card__placeholder">{building.name}</span>
         )}
-        {owned && (
-          <span className="shop-card__owned-badge font-pixel">
-            <Check size={9} /> OWNED
-          </span>
-        )}
-        {locked && !owned && (
+        {locked && !placed && !unplaced && (
           <span className="shop-card__lock" title={`Requires Clearance Level ${building.minClearance}`}>
             <Lock size={13} />
             <span className="font-pixel">CLR {building.minClearance}</span>
@@ -216,8 +178,17 @@ function ShopCard({
       </div>
       <span className="shop-card__name font-pixel">{building.name}</span>
 
-      {owned ? (
+      {placed ? (
         <span className="shop-card__status shop-card__status--owned font-pixel">In your lab</span>
+      ) : unplaced ? (
+        <button
+          type="button"
+          className="shop-card__buy font-pixel"
+          onClick={() => onPlace(building, true)}
+          title="Place this building (already owned)"
+        >
+          Place
+        </button>
       ) : locked ? (
         <span className="shop-card__status shop-card__status--locked font-pixel">
           Clearance {building.minClearance} required
@@ -226,18 +197,12 @@ function ShopCard({
         <button
           type="button"
           className={`shop-card__buy font-pixel${affordable ? '' : ' shop-card__buy--short'}`}
-          onClick={onBuy}
-          disabled={!buyable}
-          title={affordable ? 'Purchase' : 'Not enough Knowledge Points'}
+          onClick={() => onPlace(building, false)}
+          disabled={!affordable}
+          title={affordable ? 'Place on your plot' : 'Not enough Knowledge Points'}
         >
-          {busy ? (
-            <Loader2 size={11} className="animate-spin" />
-          ) : (
-            <>
-              <span className="shop-card__coin" aria-hidden="true" />
-              {cost.toLocaleString()}
-            </>
-          )}
+          <span className="shop-card__coin" aria-hidden="true" />
+          {cost.toLocaleString()}
         </button>
       )}
 
@@ -247,20 +212,20 @@ function ShopCard({
 }
 
 /**
- * An empty shop slot — a non-purchasable placeholder shown after the real
- * buildings so the grid is always a full SHOP_SLOTS wide. Deliberately generic
- * ("building name" / "description", 0 KP) so it reads as a reserved "coming soon"
- * slot rather than a real, buyable structure.
+ * A gateway building card — the 7 navigation buildings (lib/gateways.ts) shown in
+ * the shop greyed-out and marked "Already placed". They are the lab's permanent
+ * navigation spine, not purchasable, so the card is non-interactive and exists
+ * only to show the full roster of structures on the plot.
  */
-function PlaceholderCard() {
+function GatewayCard({ label, sprite }: { label: string; sprite: SpriteEntry }) {
   return (
-    <div className="shop-card shop-card--empty" aria-hidden="true">
+    <div className="shop-card shop-card--placed" aria-hidden="true">
       <div className="shop-card__image">
-        <span className="font-pixel shop-card__placeholder">building name</span>
+        <Sprite entry={sprite} scale={3} />
       </div>
-      <span className="shop-card__name font-pixel">building name</span>
-      <span className="shop-card__status font-pixel shop-card__status--empty">0 KP</span>
-      <span className="shop-card__desc">description</span>
+      <span className="shop-card__name font-pixel">{label}</span>
+      <span className="shop-card__status shop-card__status--placed font-pixel">Already placed</span>
+      <span className="shop-card__desc">Gateway building — part of your lab&apos;s navigation.</span>
     </div>
   )
 }

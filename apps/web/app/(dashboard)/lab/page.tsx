@@ -2,6 +2,8 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { LabScene } from '@/components/lab/LabScene'
+import { loadPlotState, type PlotState } from '@/lib/plot-server'
+import { GATEWAYS } from '@/lib/gateways'
 import {
   getLiteratureAdvanceProgress,
   TEACHER_GATED_TRANSITIONS,
@@ -82,6 +84,21 @@ export default async function LabPage({
     }
   }
 
+  // Buildings already placed on the plot (+ effective gateway positions). For a
+  // brand-new user with no team, fall back to the gateways at their default cells.
+  let plot: PlotState = {
+    economy: [],
+    unplaced: [],
+    gateways: GATEWAYS.map((g) => ({ key: g.key, gx: g.cell.gx, gy: g.cell.gy })),
+  }
+  if (teamId) {
+    try {
+      plot = await loadPlotState(teamId)
+    } catch {
+      // Non-fatal: render the gateway defaults.
+    }
+  }
+
   // Literature-phase advance gate (Feature 1e): progress toward 25 sources with
   // every member proficient. Only meaningful during literature_review.
   let advance: AdvanceProgress | null = null
@@ -120,6 +137,9 @@ export default async function LabPage({
       advanceRequest={advanceRequest}
       seed={teamId ? seedFrom(teamId) : 1}
       initialPanel={searchParams.panel === 'feedback' ? 'feedback' : undefined}
+      placedBuildings={plot.economy}
+      unplacedKeys={plot.unplaced}
+      gatewayPositions={plot.gateways}
     />
   )
 }

@@ -111,6 +111,46 @@ export function clampScoreGain(aggregate: number, priorBest: number, maxGain = 1
   return Math.min(aggregate, ceiling)
 }
 
+// ─── Building upgrade cost (KP always; LC only at tier-up levels) ────────────
+
+/** Max upgrade level for a placed economy building. */
+export const MAX_BUILDING_LEVEL = 15
+
+/**
+ * KP cost to raise a building TO `toLevel` (it starts at level 1). Every upgrade
+ * costs KP, scaled by the building's base purchase cost and the level reached:
+ *   round(baseCost × 0.25 × (toLevel − 1))
+ * so premium buildings cost proportionally more to level up. Caller validates the
+ * building is below MAX_BUILDING_LEVEL before charging.
+ */
+export function upgradeKpCost(baseCost: number, toLevel: number): number {
+  return Math.round(baseCost * 0.25 * (toLevel - 1))
+}
+
+/**
+ * Lab-Credit cost to raise a building TO `toLevel`. LC is charged ONLY on the four
+ * tier-up transitions (3→4, 6→7, 9→10, 14→15); every other upgrade costs 0 LC.
+ * Total to fully max one building = 2+4+6+10 = 22 LC.
+ */
+const LC_TIER_COST: Record<number, number> = { 4: 2, 7: 4, 10: 6, 15: 10 }
+export function upgradeLcCost(toLevel: number): number {
+  return LC_TIER_COST[toLevel] ?? 0
+}
+
+// ─── Building sell refund ─────────────────────────────────────────────────────
+
+/** Fraction of the KP paid that a sold building refunds (the rest is the sink). */
+export const SELL_REFUND_RATE = 0.9
+
+/**
+ * KP refunded when an economy building is sold — 90% of what the team paid for it
+ * (`costPaid`), floored to a whole KP. Selling at a loss is the deliberate sink;
+ * gateways are never sellable (enforced at the route, not here).
+ */
+export function sellRefund(costPaid: number): number {
+  return Math.floor(Math.max(0, costPaid) * SELL_REFUND_RATE)
+}
+
 // ─── Building purchase pre-check ──────────────────────────────────────────────
 
 export interface ShopStateLike {

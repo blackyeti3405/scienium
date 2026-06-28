@@ -13,6 +13,7 @@ export type ActivityAction =
   | 'plan_reviewed'
   | 'idea_checked'
   | 'building_purchased'
+  | 'building_sold'
   | 'building_upgraded'
   | 'clearance_raised'
   | 'showcase_published'
@@ -75,6 +76,8 @@ export function describeActivity(action: string, payload: Record<string, unknown
       return `published the project showcase${payload.title ? ` "${payload.title}"` : ''}`
     case 'building_purchased':
       return `purchased ${payload.buildingName ?? 'a building'}`
+    case 'building_sold':
+      return `sold ${payload.buildingName ?? 'a building'}${payload.refund ? ` for ${payload.refund} KP` : ''}`
     case 'building_upgraded':
       return `upgraded ${payload.buildingName ?? 'a building'} to level ${payload.level ?? '?'}`
     case 'log_created':

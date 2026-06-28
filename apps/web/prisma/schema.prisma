@@ -31,6 +31,7 @@ model User {
   expertiseAttempts    ExpertiseAttempt[]
   expertiseExams       ExpertiseExam[]
   shopPurchases        TeamShopBuilding[]
+  labCreditClaims      LabCreditClaim[]
   miniGamePlays        MiniGamePlay[]
   rubricAssessments    RubricSelfAssessment[]
   activityFeedEntries  ActivityFeed[]
@@ -112,6 +113,8 @@ model Team {
   currency        TeamCurrency?
   buildings       TeamBuilding[]
   shopBuildings   TeamShopBuilding[]
+  gatewayPlacements TeamGatewayPlacement[]
+  labCreditClaims LabCreditClaim[]
   expertiseExams  ExpertiseExam[]
   discoveryNodes  DiscoveryNode[]
   topicInterests  TopicInterest[]
@@ -482,12 +485,60 @@ model TeamShopBuilding {
   buildingKey       String   @map("building_key")
   purchasedByUserId String   @map("purchased_by_user_id")
   purchasedAt       DateTime @default(now()) @map("purchased_at")
+  // Isometric plot position (1×1 footprint, lib/plot.ts). Null = owned but not
+  // yet placed (legacy rows from before placement existed); the plot treats such
+  // rows as unplaced and the team can drop them anywhere free.
+  posX              Int?     @map("pos_x")
+  posY              Int?     @map("pos_y")
+  // KP actually paid at placement (cost × team-size multiplier at the time), so a
+  // sell refund (90%, lib/economy.ts) is exact even if the team size later changes.
+  costPaid          Int      @default(0) @map("cost_paid")
+
+  // Upgrade level (1 = freshly placed; increments via POST /api/buildings/upgrade).
+  level       Int      @default(1)
 
   team        Team @relation(fields: [teamId], references: [id])
   purchasedBy User @relation(fields: [purchasedByUserId], references: [id])
 
   @@unique([teamId, buildingKey])
   @@map("team_shop_buildings")
+}
+
+// Per-team position override for a gateway navigation building (lib/gateways.ts).
+// Gateways are not purchasable and not stored per-team by default — they render at
+// their hardcoded `cell`. A row here exists only once a team MOVES a gateway, and
+// pins its new isometric cell. Selling a gateway is not allowed (see lib/plot.ts).
+model TeamGatewayPlacement {
+  id         String   @id @default(cuid())
+  teamId     String   @map("team_id")
+  gatewayKey String   @map("gateway_key")
+  posX       Int      @map("pos_x")
+  posY       Int      @map("pos_y")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([teamId, gatewayKey])
+  @@map("team_gateway_placements")
+}
+
+// Durable ledger that LC was already granted to a member for a given real
+// calendar day. The first Project/Failure log a member files that day inserts a
+// row and credits +1 LC to the team pool; the @@unique makes it idempotent so
+// later entries that day grant nothing. Keyed to the real `day` so a backdated
+// entry (if ever added) never mints LC for a past day.
+model LabCreditClaim {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  teamId    String   @map("team_id")
+  day       DateTime @db.Date
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([userId, day])
+  @@map("lab_credit_claims")
 }
 
 // ─── Daily Activities ─────────────────────────────────────────────────────────

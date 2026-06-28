@@ -15,6 +15,7 @@
  */
 
 import type { LabType } from '@/lib/phase'
+import { BUILDING_ANCHORS, GATEWAY_ANCHORS, type SpriteAnchor } from '@/lib/sprites/anchors.generated'
 
 export interface SpriteEntry {
   /** Path relative to /public (leading slash). */
@@ -29,6 +30,12 @@ export interface SpriteEntry {
   description: string
   /** Placeholder background color (hex) — used when PNG is missing. */
   placeholderColor: string
+  /**
+   * Footprint anchor in SOURCE px (silhouette bottom-centre / ground contact),
+   * for placing the sprite on an isometric tile. Absent for non-plot sprites
+   * (tiles, UI). See lib/plot.ts + scripts/gen-sprite-anchors.py.
+   */
+  anchor?: SpriteAnchor
 }
 
 // ─── Gateway buildings ────────────────────────────────────────────────────────
@@ -91,6 +98,7 @@ export function getGatewaySprite(key: GatewayKey, skin: GatewaySkin): SpriteEntr
     scale: GATEWAY_SCALE,
     description: `${GATEWAY_LABELS[key]} (${skin})`,
     placeholderColor: SKIN_PLACEHOLDER[skin],
+    anchor: GATEWAY_ANCHORS[key],
   }
 }
 
@@ -180,15 +188,17 @@ export const BUILDING_SPRITES: Partial<Record<LabType, readonly string[]>> = {
 }
 
 /** Resolve the sprite for an economy building, or null if none has been generated. */
-export function getBuildingSprite(labType: LabType, slug: string): SpriteEntry | null {
+export function getBuildingSprite(labType: LabType, slug: string, level = 1): SpriteEntry | null {
   if (!BUILDING_SPRITES[labType]?.includes(slug)) return null
+  const tier2 = level >= 4
   return {
-    path: `/sprites/buildings/${labType}/${slug}.png`,
+    path: `/sprites/buildings/${labType}/${slug}${tier2 ? '_t2' : ''}.png`,
     srcWidth: BUILDING_SRC,
     srcHeight: BUILDING_SRC,
     scale: BUILDING_SCALE,
-    description: `${slug.replace(/-/g, ' ')} building (${labType})`,
+    description: `${slug.replace(/-/g, ' ')} building (${labType})${tier2 ? ' (tier 2)' : ''}`,
     placeholderColor: SKIN_PLACEHOLDER[labType],
+    anchor: BUILDING_ANCHORS[`${labType}/${slug}`],
   }
 }
 

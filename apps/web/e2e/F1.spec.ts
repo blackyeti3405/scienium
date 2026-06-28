@@ -55,9 +55,14 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
       throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
     }
     const { students } = await rosterRes.json()
-    // The first student in the roster that has a team gives us the teamId to seed.
+    // Seed feedback to the E2E leader's own team (the dedicated E2E Test Lab) so
+    // the leader sees it in their inbox — and so we never touch a real lab that
+    // happens to share the teacher's class. Fall back to any team with a member.
+    const TEST_TEAM_ID = 'e2e_test_lab_01'
     const teamId: string | null =
-      students.find((s: { teamId: string | null }) => s.teamId)?.teamId ?? null
+      students.find((s: { teamId: string | null }) => s.teamId === TEST_TEAM_ID)?.teamId ??
+      students.find((s: { teamId: string | null }) => s.teamId)?.teamId ??
+      null
     if (!teamId) {
       await teacherCtx.dispose()
       throw new Error(

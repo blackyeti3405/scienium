@@ -372,6 +372,270 @@
   white-space: nowrap;
 }
 
+/* ── Buildable plot (isometric grid + placement) ────────────────────────────── */
+.lab-plot {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.lab-plot--editing { cursor: crosshair; }
+
+/* Grid overlay — drawn only while arranging or placing. */
+.lab-plot__grid {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.lab-plot__cell {
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: rgba(255, 255, 255, 0.34);
+  stroke-width: 1;
+}
+.lab-plot__cell--valid {
+  fill: rgba(94, 240, 138, 0.32);
+  stroke: #5ef08a;
+  stroke-width: 2;
+}
+.lab-plot__cell--invalid {
+  fill: rgba(255, 138, 138, 0.32);
+  stroke: #ff8a8a;
+  stroke-width: 2;
+}
+
+/* A building standing on the plot (gateway or economy). Anchored at the sprite
+   image's top-left (JS computes left/top from the footprint anchor), so the
+   building's base sits on its tile regardless of height. */
+.plot-building {
+  position: absolute;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  line-height: 0;
+}
+.plot-building--interactive { cursor: pointer; }
+.plot-building--inert { pointer-events: none; }
+.plot-building--arrange { cursor: grab; }
+.plot-building__art {
+  position: relative;
+  display: block;
+  filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.35));
+  transition: transform 0.12s ease;
+}
+.plot-building--interactive:hover .plot-building__art {
+  transform: translateY(-3px) scale(1.04);
+}
+.plot-building--arrange .plot-building__art {
+  animation: plot-wiggle 0.9s ease-in-out infinite;
+}
+@keyframes plot-wiggle {
+  0%, 100% { transform: rotate(-1.5deg); }
+  50% { transform: rotate(1.5deg); }
+}
+/* The translucent building attached to the cursor while placing/moving.
+   Anchored at the sprite's top-left (JS-computed), matching placed buildings. */
+.plot-ghost {
+  position: absolute;
+  line-height: 0;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.plot-ghost--valid { filter: drop-shadow(0 0 6px #5ef08a); }
+.plot-ghost--invalid { filter: drop-shadow(0 0 6px #ff8a8a) grayscale(0.3); }
+
+/* Top-of-screen banner: the hovered building's name, or the current edit-mode
+   instruction. Pinned to the very top of the green viewport, centred. */
+.plot-banner {
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%);
+  z-index: 5;
+  font-size: 9px;
+  color: #ffe566;
+  background: rgba(8, 10, 18, 0.82);
+  padding: 7px 14px;
+  border: 1px solid #2a3048;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Delete affordance — shown in ARRANGE mode while an economy building is picked up.
+   A single centred red button; removes the building for a 90% KP refund. */
+.plot-delete {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 6;
+  font-size: 9px;
+  color: #2a0a0a;
+  background: linear-gradient(#ff8a8a, #e23c3c);
+  border: 3px solid #8a1010;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px #10131f, 0 6px 14px rgba(0, 0, 0, 0.5);
+  padding: 9px 16px;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+.plot-delete:hover { transform: translateX(-50%) translateY(-2px); filter: brightness(1.06); }
+
+/* Sell + Upgrade menu — shown in REGULAR mode when a placed economy building is
+   clicked. A bottom-centre pixel panel with the two actions side by side. */
+.plot-menu {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 30px 12px 16px;
+  background: rgba(8, 10, 18, 0.94);
+  border: 3px solid #2a3048;
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px #10131f, 0 6px 14px rgba(0, 0, 0, 0.5);
+}
+.plot-menu__title { font-size: 9px; color: #ffe566; white-space: nowrap; }
+.plot-menu__actions { display: flex; gap: 10px; }
+.plot-menu__sell,
+.plot-menu__upgrade {
+  font-size: 9px;
+  color: #2a1d05;
+  border-radius: 4px;
+  padding: 8px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+.plot-menu__sell { background: linear-gradient(#ff9d6e, #f5783c); border: 3px solid #8a3d10; }
+.plot-menu__upgrade { background: linear-gradient(#ffe066, #f5c018); border: 3px solid #8a6a00; }
+.plot-menu__sell:hover,
+.plot-menu__upgrade:hover { transform: translateY(-2px); filter: brightness(1.06); }
+.plot-menu__upgrade--max {
+  cursor: default;
+  background: linear-gradient(#706050, #5a4a38);
+  border-color: #3a3028;
+  color: #c8b898;
+}
+.plot-menu__close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 9px;
+  color: #9aa3c0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.plot-menu__close:hover { color: #ff8a8a; }
+
+/* Level badge — shown directly above a building while hovering it. */
+.plot-level {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translateX(-50%);
+  margin-bottom: 4px;
+  z-index: 2;
+  font-size: 8px;
+  color: #0d1b2e;
+  background: #ffe566;
+  border: 1px solid #8a6d10;
+  border-radius: 3px;
+  padding: 2px 5px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.plot-building:hover .plot-level { opacity: 1; }
+
+/* Green upgrade particles: big, slow orbs that rise up the building in a tight
+   snake (sine) curve and fade out. Anchored at the building centre; staggered
+   per-particle delays (set inline) trace one rising snake. */
+.upgrade-burst {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+  pointer-events: none;
+}
+/* Wrapper: steady vertical rise + fade. The horizontal sine lives on the inner
+   sprite so the two compose into a smooth snaking curve. */
+.upgrade-burst__p {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  animation: upgrade-rise 0.8s ease-out forwards;
+}
+/* Inner sprite: a small, crisp pixel sparkle (no soft glow) + a smooth sine sway. */
+.upgrade-burst__spark {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: -7px;
+  image-rendering: pixelated;
+  shape-rendering: crispEdges;
+  animation: upgrade-sway 0.28s ease-in-out infinite alternate;
+}
+@keyframes upgrade-rise {
+  0% { transform: translateY(2px); opacity: 0; }
+  15% { opacity: 1; }
+  60% { opacity: 0.45; }
+  100% { transform: translateY(-64px); opacity: 0; }
+}
+@keyframes upgrade-sway {
+  from { transform: translateX(-7px); }
+  to { transform: translateX(7px); }
+}
+
+/* Transient toast (placed / sold / errors). */
+.plot-toast {
+  position: absolute;
+  left: 50%;
+  top: 48px;
+  transform: translateX(-50%);
+  z-index: 7;
+  font-size: 8px;
+  color: #e8ecfb;
+  background: rgba(8, 10, 18, 0.9);
+  padding: 8px 14px;
+  border: 1px solid #3a4060;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* Arrange-mode toggle — stacked just above the shop button. */
+.arrange-button {
+  position: absolute;
+  right: 18px;
+  bottom: 86px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 9px 12px;
+  color: #e8ecfb;
+  background: #1b2236;
+  border: 3px solid #2a3048;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px #10131f, 0 6px 14px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+.arrange-button:hover { transform: translateY(-2px); filter: brightness(1.1); }
+.arrange-button--on {
+  color: #2a1d05;
+  background: linear-gradient(#7ff2e3, #46c8b6);
+  border-color: #1f7d70;
+}
+.arrange-button__label { font-size: 8px; letter-spacing: 0.5px; }
+
 /* ── Feature overlay panel ──────────────────────────────────────────────────── */
 .feature-panel__backdrop {
   position: fixed;
@@ -592,10 +856,10 @@
 }
 .shop-panel__grid {
   display: grid;
-  grid-template-rows: repeat(2, 1fr);
+  grid-template-rows: 1fr;
   grid-auto-flow: column;
-  grid-auto-columns: 168px;
-  gap: 14px;
+  grid-auto-columns: 236px;
+  gap: 16px;
   height: 100%;
 }
 /* Chunky pixel-styled scrollbar. */
@@ -1590,6 +1854,10 @@
 /* Empty "coming soon" slot — dimmed, non-interactive placeholder. */
 .shop-card--empty { opacity: 0.5; }
 .shop-card__status--empty { color: #6b7396; }
+/* Gateway "already placed" card — greyed, non-interactive. */
+.shop-card--placed { opacity: 0.55; }
+.shop-card--placed .shop-card__image { filter: grayscale(0.85) brightness(0.8); }
+.shop-card__status--placed { color: #6b7396; }
 .shop-card__buy {
   display: inline-flex;
   align-items: center;
