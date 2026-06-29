@@ -15,13 +15,16 @@ vendored `pixel-art-generator` skill.
 These examples use PowerShell.
 
 ```powershell
-# Install Git, Node.js, Python, and Docker Desktop (if you don't already have them)
+# Install Git, Node.js, Python (Docker is OPTIONAL — only for the local-Postgres alternative)
 winget install --id Git.Git -e
 winget install --id OpenJS.NodeJS.LTS -e
 winget install --id Python.Python.3.12 -e
 npm install -g pnpm
-winget install --id Docker.DockerDesktop -e
+winget install --id Docker.DockerDesktop -e   # OPTIONAL — see §4
 ```
+
+The default database is **Supabase** (cloud), so Docker is **optional** — install it
+only if you want to run Postgres locally instead (see §4).
 
 Verify:
 
@@ -29,10 +32,11 @@ Verify:
 node -v        # >= 20
 pnpm -v        # >= 9
 py -3 --version   # >= 3.11
-docker -v
+docker -v      # only if you'll use the local-Postgres alternative
 ```
 
-Open **Docker Desktop** once so the daemon is running.
+If you'll use the local-Postgres alternative, open **Docker Desktop** once so the
+daemon is running. For the default Supabase setup you don't need Docker at all.
 
 ---
 
@@ -60,16 +64,17 @@ Then edit `apps/web/.env.local`:
 |---|---|---|
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk dashboard → API Keys | `pk_test_…` |
 | `CLERK_SECRET_KEY` | Clerk dashboard → API Keys | `sk_test_…` |
-| `NEXT_PUBLIC_CLERK_*_URL` | leave as the defaults | sign-in/up + redirect routes |
-| `DATABASE_URL` | leave as default for local Docker | `postgresql://postgres:postgres@localhost:5432/scienium` |
+| `NEXT_PUBLIC_CLERK_*_URL` | leave as the defaults | sign-in/up + `FALLBACK_REDIRECT` / `SIGN_UP_FORCE_REDIRECT` routes |
+| `DATABASE_URL` + `DIRECT_URL` | Supabase → Project → Connect | pooled (port 6543, `?pgbouncer=true`) for runtime + session (port 5432) for migrations — see §4 |
 | `ANTHROPIC_API_KEY` | Anthropic console | required for paper metadata, quizzes, chat, lab-type classification, and relevance checks |
 | `R2_*` | Cloudflare R2 | required for PDF storage **and project-log photo attachments** (uploads + viewer) |
 | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | optional — only the Science Fair "sync deadlines" feature scrapes fair sites with it (`fc-…`) |
+| `AI_SERVICE_URL` / `AI_SERVICE_API_KEY` | leave as-is | only for the optional external Python AI service; the web app doesn't read them |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | — |
 
-You need **Clerk keys + `DATABASE_URL` + `ANTHROPIC_API_KEY`** to run the core
-app; add the `R2_*` values to enable PDF upload/viewing and Operations-Hub photo
-attachments. `FIRECRAWL_API_KEY` is only needed if you use the fair deadline sync.
+You need **Clerk keys + `DATABASE_URL` + `DIRECT_URL` + `ANTHROPIC_API_KEY`** to run
+the core app; add the `R2_*` values to enable PDF upload/viewing and Operations-Hub
+photo attachments. `FIRECRAWL_API_KEY` is only needed if you use the fair deadline sync.
 
 ### Clerk redirect URLs
 In your Clerk dashboard, allow `http://localhost:3000` as a development origin.
@@ -88,22 +93,34 @@ pnpm install
 
 ---
 
-## 4. Local database (Docker)
+## 4. Database (Supabase)
 
-Start Postgres:
+The app uses **Supabase Postgres**. Create a free project at
+[supabase.com](https://supabase.com), then from **Project → Connect** copy the two
+connection strings into `apps/web/.env.local`:
 
-```powershell
-docker compose -f infra/docker-compose.yml up -d postgres
-```
+- **`DATABASE_URL`** — the **Transaction** pooler (port **6543**); keep the
+  `?pgbouncer=true&connection_limit=1` suffix (required so Prisma works through PgBouncer).
+- **`DIRECT_URL`** — the **Session** pooler (port **5432**); used only by migrations.
 
-Then generate the Prisma client and apply migrations:
+Then generate the Prisma client and build the schema:
 
 ```powershell
 Set-Location apps/web
 pnpm prisma generate
-pnpm prisma migrate deploy      # applies existing migrations to the local DB
+pnpm prisma migrate deploy      # applies the single squashed baseline — all 57 tables from zero
 Set-Location ..\..
 ```
+
+> The migration history was squashed to one baseline
+> (`prisma/migrations/00000000000000_init`), so `migrate deploy` builds a fresh
+> database from scratch — there is no incremental history to replay.
+
+> **Local-Postgres alternative (optional):** instead of Supabase you can run Postgres
+> in Docker — `docker compose -f infra/docker-compose.yml up -d postgres` — and point
+> **both** `DATABASE_URL` and `DIRECT_URL` at
+> `postgresql://postgres:postgres@localhost:5432/scienium`, then run the same
+> `prisma generate` + `migrate deploy`.
 
 > Seed data (buildings, lab types, ISEF categories, moves) lives in `infra/seed/*.ts`
 > but isn't wired to a runner yet. The lab UI works without it — the page falls
@@ -157,6 +174,13 @@ Output PNGs land in `apps/web/public/sprites/`. The reference art (including
 `art_ref/scienium_discovery.png`, the canonical Discovery building) is committed,
 so `art/iso.py` reproduces everything.
 
+> **Economy buildings** (the per-lab catalog) are bespoke iso forms built by
+> `.claude/pixel-art-pipeline/builders/{slug}.py`. Each is refactored to `build(stage)`
+> so it emits the base plus four cumulative **upgrade-evolution** stages (`_t2.._t5`,
+> shown in-game at L4/7/10/15). Assemble or inspect them with `art/montage.py`
+> (`py -3 art/montage.py lab <labType>`, `... building <labType> <slug>`, or `... all`).
+> Rules + per-stage language: [`.claude/pixel-art-pipeline/UPGRADE_EVOLUTION.md`](.claude/pixel-art-pipeline/UPGRADE_EVOLUTION.md).
+
 ---
 
 ## 7. Claude Code on your Windows machine
@@ -199,7 +223,7 @@ Set these in **Vercel → Project → Settings → Environment Variables**, scop
 |---|---|---|
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk **production** instance | `pk_live_…` |
 | `CLERK_SECRET_KEY` | Clerk **production** instance | `sk_live_…` |
-| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` / `…SIGN_UP_URL` / `…AFTER_SIGN_IN_URL` / `…AFTER_SIGN_UP_URL` | keep the defaults from `.env.example` | sign-in/up + redirect routes |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` / `…SIGN_UP_URL` / `…FALLBACK_REDIRECT_URL` / `…SIGN_UP_FORCE_REDIRECT_URL` | keep the defaults from `.env.example` | sign-in/up + redirect routes |
 | `DATABASE_URL` | Supabase/managed Postgres — **pooled** connection string | runtime queries |
 | `DIRECT_URL` | same DB — **direct** (non-pooled) connection | used only for `prisma migrate deploy` |
 | `ANTHROPIC_API_KEY` | Anthropic console | paper metadata, quizzes, chat, grading, classification |
@@ -331,13 +355,13 @@ green `verify`, and get **one review** before merging. Don't push straight to
 ## Quick reference
 
 ```powershell
-# day-to-day
-docker compose -f infra/docker-compose.yml up -d postgres
+# day-to-day (Supabase = no local DB daemon needed)
 pnpm dev                                   # web app at :3000
 
 # regenerate all sprites
 py -3 art/iso.py; py -3 art/build_sprites.py; py -3 art/recolor.py
 
-# stop local infra
-docker compose -f infra/docker-compose.yml down
+# local-Postgres alternative (instead of Supabase)
+docker compose -f infra/docker-compose.yml up -d postgres   # start
+docker compose -f infra/docker-compose.yml down             # stop
 ```
