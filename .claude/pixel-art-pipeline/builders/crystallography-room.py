@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Crystallography Room — ChemWorks economy building (BESPOKE iso form).
+Crystallography Room — ChemWorks economy building (BESPOKE iso form) + its
+4-stage UPGRADE-EVOLUTION sprites.
 
 The most GEOMETRIC building in the set: a FACETED GEM-CUT PRISM PAVILION whose
 body is a chamfered blue-grey prism and whose roof is a low CRYSTAL-CUT cap of
@@ -30,6 +31,21 @@ connector to a tiny g index tag = the structure being decoded from the spots.
 A soft o->O violet halo backs the whole pattern.
 
 Composed entirely from art/isobuild.Box (NO iso.draw_cube / base_windows).
+
+UPGRADE EVOLUTION (cumulative — the gem-cut crystallography room grows into a
+full crystal-growth & diffraction works; the crystal/diffraction theme intensifies;
+gold is a t5 flourish only):
+  t2  small functional add : extra seed-crystal facets + a c GONIOMETER head on the
+                             growth bed (the body roof), with a brightened o
+                             nucleation glint under the cap
+  t3  structural add       : a low DIFFRACTOMETER ANNEX abutting the shaded RIGHT
+                             end — a rotating g-glass sample stage + a detector arm
+  t4  major add            : a SECOND crystal-growth DOME (a smaller glass dome on a
+                             stepped base) sitting on the left-front ground with an
+                             e-glowing supersaturated solution bath
+  t5  crowning feature     : the main bed ERUPTS into a glowing macro-crystal CLUSTER
+                             of tall E faceted prisms + q gold dome ribs arcing over
+                             the body roof and a gold apex finial
 """
 import os
 import sys
@@ -39,9 +55,16 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
+# Base ChemWorks palette (shared keys) + the EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so crystallography-room.png is
+# unchanged). These exact keys+hexes are the lab-wide chemworks evolved accents:
+#   b  deepened structure steel — matured tone for t4+ new masses
+#   e  energized reagent/solution glow (mid)   E  energized glow (bright) — t4/t5 power
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 CHEM = {"K": "#161a2e", "W": "#e6ecfb", "L": "#c2cdee", "M": "#9aa8d8", "D": "#6f7cb0", "d": "#4b5688",
         "h": "#d6ecff", "c": "#a8d4ff", "g": "#4aa0e6", "G": "#2166b0",
-        "o": "#c89cf0", "O": "#e0c2ff", "r": "#6a34a8"}
+        "o": "#c89cf0", "O": "#e0c2ff", "r": "#6a34a8",
+        "b": "#363c5e", "e": "#36e0c8", "E": "#c2fff2", "q": "#f0c64a"}
 
 
 # ── low-level helpers ────────────────────────────────────────────────────────
@@ -334,20 +357,377 @@ def floating_crystal(c, nub):
     c.set(cxp + 2, cyp, "W")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS crystal-growth /
+# diffraction structure onto the prior gem-cut form — never restarts, never recolors
+# the whole building. Theme: the gem-cut crystallography room grows into a full
+# crystal-growth & X-ray diffraction works. Colours mature stage by stage; the
+# energized solution glow (e/E teal) arrives at t4; gold (q) only as a t5 flourish.
+#
+# Every addition is anchored to the BODY and kept clear of the front-most signature
+# (the floating crystal + Laue pattern hovering above the roof cap), which is drawn
+# LAST so no upgrade paints over it.
+#
+#   t2  small functional add : seed-crystal facets + a c goniometer head on the bed
+#   t3  structural add        : a low DIFFRACTOMETER ANNEX off the shaded right end
+#   t4  major add             : a SECOND crystal-growth DOME on the left-front ground
+#   t5  crowning feature      : a glowing macro-crystal CLUSTER + gold dome ribs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Front-roof "growth bed" anchor (px). Both the t2 seed crystals/goniometer and the
+# t5 macro-crystal cluster erupt from this SAME bed point on the body roof's open
+# FRONT-LEFT quadrant — forward of and BELOW the back-centre cap, so the cluster
+# rises in front of the cap (never beside/through it) and stays clear of the
+# overhead floating-crystal signature.
+def _bed_anchor(b):
+    return pt(b.roof_pt(0.5, 0.24))
+
+
+def stage2_goniometer(c, b):
+    """t2 — SMALL FUNCTIONAL ADD: the growth BED on the body roof's front half gains
+    a couple of extra SEED-CRYSTAL facets and a small c GONIOMETER head (the goniometer
+    being the instrument that orients a crystal in the X-ray beam), plus a brightened
+    o NUCLEATION glint. On-theme (more crystal growth), modest, base palette + the one
+    brightened o spark. Seated on the open FRONT roof half so it never touches the
+    back-centre cap or the floating-crystal signature overhead."""
+    bx, by = _bed_anchor(b)
+    # ---- a clear dark bed PLINTH the seeds + goniometer sit on. Drawn with a K front
+    #      lip + D top so the additions separate cleanly from the light lavender roof
+    #      (low-contrast was the failure mode — the seeds blended into the roof). ----
+    for dx in range(-5, 5):
+        c.set(bx + dx, by + 1, "K")                  # K front lip (the grounding shadow)
+    for dx in range(-5, 5):
+        c.set(bx + dx, by, "D")                      # D plinth top
+    c.set(bx - 5, by, "K"); c.set(bx + 4, by, "K")   # K end caps
+
+    # ---- two SEED-CRYSTAL prisms growing on the LEFT of the bed: each FULLY K-outlined
+    #      so it reads as a discrete little gem against the roof, with a lit-left c/h
+    #      face, a G shaded face, and a bright W tip (mini versions of the t5 cluster). ----
+    def seed(x0, hgt):
+        topY = by - 1 - hgt
+        # K silhouette: outline both sides + the tip
+        for yy in range(topY, by):
+            c.set(x0 - 1, yy, "K")                    # left K edge
+            c.set(x0 + 1, yy, "K")                    # right K edge
+        c.set(x0, topY - 1, "K")                      # K tip cap above the bright tip
+        # lit core column: brightens base->tip
+        ramp = ["c", "c", "h", "h", "W"]
+        for j in range(hgt):
+            c.set(x0, by - 1 - j, ramp[min(j, len(ramp) - 1)])
+        c.set(x0, topY, "W")                          # bright faceted tip
+    seed(bx - 4, 4)                                   # seed A (taller, 4px)
+    seed(bx - 1, 3)                                   # seed B (shorter, 3px)
+
+    # ---- the GONIOMETER on the RIGHT of the bed: a clearly taller K-edged steel post
+    #      topped by a bright c goniometer-head RING (the cradle that orients a crystal
+    #      in the X-ray beam) holding a tiny mounted seed. ----
+    gx = bx + 3
+    for yy in range(by - 3, by):                      # taller steel post, K-edged
+        c.set(gx, yy, "D")
+        c.set(gx - 1, yy, "K")
+    c.set(gx + 1, by - 1, "K")
+    head_y = by - 4
+    # a closed c ring head (reads as the goniometer cradle), K-ringed so it pops
+    c.set(gx, head_y, "M")                            # hub
+    c.set(gx - 1, head_y, "c"); c.set(gx + 1, head_y, "c")
+    c.set(gx, head_y - 1, "h"); c.set(gx, head_y + 1, "g")
+    c.set(gx - 2, head_y, "K"); c.set(gx + 2, head_y, "K")
+    c.set(gx, head_y - 2, "K")
+    c.set(gx, head_y - 1, "h")
+    # the tiny mounted crystal seed held in the cradle (bright)
+    c.set(gx, head_y - 3, "W"); c.set(gx, head_y - 4, "h")
+
+    # ---- a single brightened o->O NUCLEATION glint rising between the seeds (t2 spark) ----
+    c.set(bx - 3, by - 3, "o")
+    c.set(bx - 3, by - 4, "O")
+
+
+def stage3_diffractometer_annex(c, b):
+    """t3 — STRUCTURAL ADD: a low DIFFRACTOMETER ANNEX — a secondary box bolted onto
+    the shaded RIGHT END of the body, housing a rotating g-glass SAMPLE STAGE in a
+    round port with a swinging DETECTOR ARM that reads the diffracted beam. A real new
+    structural mass (its own little prism + roof), extending the building OUT to the
+    right while staying lower than the gem body. Introduces the matured deep-steel
+    tone `b`. (Mirrors the fume-hood storage-annex placement but is uniquely a
+    diffractometer: a sample-stage port + a detector arm, not a reagent closet.)"""
+    # seat a small prism abutting the body's RIGHT corner, growing toward the right.
+    ax, ay = pt(b.right_pt(0.5, 2.0))                 # midway down the shaded face
+    annex = Box(top=(ax + 2, ay + 1), wx=5, wy=4, h=8)
+    annex.shadow(c, "K")
+    c.fill_poly([annex.r_top, annex.r_right, annex.r_front, annex.r_left], "D")
+    c.fill_poly([annex.r_left, annex.r_front, annex.w_front, annex.w_left], "D")
+    c.fill_poly([annex.r_front, annex.r_right, annex.w_right, annex.w_front], "b")
+    c.fill_poly([annex.r_top, annex.r_left, annex.r_front], "M")   # lit roof triangle
+    c.line(annex.r_top, annex.r_left, "L")
+    c.line(annex.r_top, annex.r_right, "L")
+    for a, bb in [(annex.r_top, annex.r_right), (annex.r_right, annex.r_front),
+                  (annex.r_front, annex.r_left), (annex.r_left, annex.r_top),
+                  (annex.r_left, annex.w_left), (annex.r_front, annex.w_front),
+                  (annex.r_right, annex.w_right),
+                  (annex.w_left, annex.w_front), (annex.w_front, annex.w_right)]:
+        c.line(a, bb, "K")
+
+    # ---- a round rotating SAMPLE-STAGE port (g glass) on the annex lit-left face ----
+    px, py = pt(annex.left_pt(0.42, 3.6))
+    for dx, dy in [(0, -1), (-1, 0), (0, 0), (1, 0), (0, 1),
+                   (-1, -1), (1, -1), (-1, 1), (1, 1)]:
+        c.set(px + dx, py + dy, "g")
+    c.set(px, py, "c")                                # lit centre of the glass port
+    c.set(px - 1, py - 1, "h")                        # glass glint
+    # K ring around the round port
+    for dx, dy in [(0, -2), (-2, 0), (2, 0), (0, 2), (-2, -1), (2, -1),
+                   (-2, 1), (2, 1), (-1, -2), (1, -2), (-1, 2), (1, 2)]:
+        c.set(px + dx, py + dy, "K")
+    # a tiny mounted crystal pip at the stage centre + its rotation tick marks
+    c.set(px, py - 1, "h")
+
+    # ---- the swinging DETECTOR ARM: a goniometer arm reaching off the stage up-right
+    #      to a small flat detector head reading the diffracted beam ----
+    armx0, army0 = px + 2, py - 1
+    dhx, dhy = px + 6, py - 4                         # detector head up-right (on-canvas)
+    dhx = min(dhx, 61)
+    c.line((armx0, army0), (dhx, dhy), "M")           # the arm
+    c.set(armx0, army0, "D")                          # arm pivot on the stage
+    # the flat detector head (a small D panel with a g sensing face)
+    c.set(dhx, dhy, "g"); c.set(dhx, dhy - 1, "c")
+    c.set(dhx + 1, dhy, "b"); c.set(dhx + 1, dhy - 1, "b")
+    c.set(dhx, dhy + 1, "K"); c.set(dhx + 1, dhy + 1, "K")
+    c.set(dhx + 2, dhy, "K"); c.set(dhx + 2, dhy - 1, "K")
+    # a faint o diffracted-beam pip leaving the stage toward the detector
+    c.set(px + 4, py - 3, "o")
+
+
+def stage4_second_dome(c, b):
+    """t4 — MAJOR ADD: a SECOND crystal-growth DOME — a smaller glass dome on a stepped
+    steel base — set on the OPEN GROUND off the body's LEFT-FRONT corner, housing an
+    e-glowing SUPERSATURATED SOLUTION bath with a tiny seed crystal growing in it. The
+    prominent new mass that says 'this room now runs a second growth line'. Palette
+    matures: deep `b` stepped base + energized `e/E` solution glow. Placed low and
+    forward-left so it clears the gem body and the floating-crystal signature."""
+    # ---- stepped steel BASE on the ground off the body's front-left, drawn as a
+    #      small low prism so the dome reads as seated on a real plinth ----
+    base = Box(top=(11, 41), wx=4, wy=4, h=5)
+    base.shadow(c, "K")
+    c.fill_poly([base.r_top, base.r_right, base.r_front, base.r_left], "D")
+    c.fill_poly([base.r_left, base.r_front, base.w_front, base.w_left], "b")
+    c.fill_poly([base.r_front, base.r_right, base.w_right, base.w_front], "b")
+    c.fill_poly([base.r_top, base.r_left, base.r_front], "M")     # lit step top
+    for a, bb in [(base.r_top, base.r_right), (base.r_right, base.r_front),
+                  (base.r_front, base.r_left), (base.r_left, base.r_top),
+                  (base.r_left, base.w_left), (base.r_front, base.w_front),
+                  (base.r_right, base.w_right),
+                  (base.w_left, base.w_front), (base.w_front, base.w_right)]:
+        c.line(a, bb, "K")
+    # a lit step ledge band around the base top (the 'stepped' read)
+    c.line(base.r_left, base.r_front, "L")
+
+    # ---- the e-glowing SUPERSATURATED SOLUTION bath sitting in the base top ----
+    bcx, bcy = pt(base.roof_pt(0.5, 0.5))
+    for dx in range(-2, 3):
+        c.set(bcx + dx, bcy, "e")
+    c.set(bcx - 2, bcy, "G"); c.set(bcx + 2, bcy, "G")           # bath rim shade
+    c.set(bcx, bcy, "E"); c.set(bcx - 1, bcy, "E")               # bright solution core
+    c.set(bcx, bcy - 1, "E")                                     # a tiny seed in the bath
+
+    # ---- the glass DOME over the bath: a 2:1 iso half-ellipse shell of c/g glass ----
+    import math
+    dome_cx = bcx
+    dome_base_y = bcy - 1                                        # dome springs from the bath rim
+    rx, ry = 5, 4
+    # filled glass shell (upper hemisphere only), lit-left brighter
+    for yy in range(-ry, 1):
+        t = 1 - (yy / ry) ** 2
+        if t < 0:
+            continue
+        half = rx * (t ** 0.5)
+        for xx in range(int(-half), int(half) + 1):
+            gx, gy = dome_cx + xx, dome_base_y + yy
+            if gy < 0:
+                continue
+            # bright top-left glass, c body, G shaded right — and let the e bath glow show
+            if yy <= -ry + 1:
+                col = "h"
+            elif xx < -1:
+                col = "c"
+            elif xx > 1:
+                col = "G"
+            else:
+                col = "g"
+            c.set(gx, gy, col)
+    # K rim arc over the dome + a bright W crown glint
+    for a in range(0, 181, 12):
+        x = dome_cx + (rx + 1) * math.cos(math.radians(a))
+        y = dome_base_y - (ry + 1) * math.sin(math.radians(a))
+        if y >= 0:
+            c.set(x, y, "K")
+    c.set(dome_cx, dome_base_y - ry, "W")                        # dome crown highlight
+    c.set(dome_cx - 2, dome_base_y - ry + 1, "h")               # left-shoulder glint
+    # a small K base ring closing the dome onto the bath
+    c.line((dome_cx - rx, dome_base_y), (dome_cx + rx, dome_base_y), "K")
+    # a thin e vapor/solution wisp curling off the dome crown (the active-growth tell)
+    c.set(dome_cx + 1, dome_base_y - ry - 2, "e")
+    c.set(dome_cx, dome_base_y - ry - 3, "E")
+
+
+def stage5_macro_cluster(c, b):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED crystallography works. The main growth BED
+    (the SAME front-roof anchor the t2 seeds grew on) ERUPTS into a glowing MACRO-CRYSTAL
+    CLUSTER — a fan of tall E/c faceted PRISMS refracting light — and the gem body's front
+    facets are dressed out with a GOLD eave RIBBON. (The gold CAP facet-ribs + apex FINIAL
+    are added separately by stage5_cap_gold, drawn AFTER the cap so the cap's own ridge
+    lines don't paint over them.) Reads as elite, still recognizably the same gem-cut
+    room, just maxed out.
+
+    Re-anchors the cluster from the SAME _bed_anchor(b) the t2 seeds used (don't hardcode
+    a 2nd guess), so the macro crystals grow exactly where the seeds were. Kept on the
+    open front roof half + clamped so the tallest prism tip stays below the floating-
+    crystal signature (which hovers above the back-centre cap)."""
+    bx, by = _bed_anchor(b)
+
+    # ---- the glowing MACRO-CRYSTAL CLUSTER: a fan of tall faceted prisms erupting from
+    #      the bed (the t5 hero). Each prism is a thin 2px tapered column with a bright
+    #      lit-left edge, a darker right facet, and a bright E/W tip glint; heights/leans
+    #      fan them like a natural crystal cluster. Heights are clamped MODEST so the
+    #      tallest tip stays BELOW the back-centre cap (cap front corner ~y=22) and well
+    #      clear of the floating-crystal signature overhead. (lean, height, base-x offset)
+    prisms = [(-1, 8, -3),     # tall left-leaning prism
+              (0, 9, 0),       # tallest central prism (tip ~ y = by-9 ≈ 22, just clear)
+              (1, 7, 3),       # tall right-leaning prism
+              (-1, 5, -5),     # short outer-left
+              (1, 6, 5)]       # short outer-right
+    # draw shortest-first so taller central prisms occlude the outer ones correctly
+    for lean, hgt, off in sorted(prisms, key=lambda p: p[1]):
+        baseX = bx + off
+        tipX = baseX + lean
+        tipY = max(2, by - hgt)
+        for s in range(hgt + 1):
+            t = s / hgt
+            x = int(round(baseX + t * (tipX - baseX)))
+            y = int(round(by - t * hgt))
+            wide = t < 0.6                            # taper: 2px base -> 1px tip
+            c.set(x - 1, y, "c" if t < 0.5 else "h")  # lit-left facet edge, brighter up top
+            c.set(x, y, "e")                          # glowing crystal core
+            if wide:
+                c.set(x + 1, y, "G")                  # shaded-right facet
+        # bright faceted TIP glint
+        c.set(tipX, tipY, "E")
+        c.set(tipX, tipY - 1, "W")
+        c.set(tipX - 1, tipY, "h")
+        c.set(baseX, by + 1, "K")                     # K base notch grounding the prism
+
+    # a soft e->E nucleation glow pooled at the cluster base (the supersaturated bed)
+    for dx in (-3, -2, -1, 0, 1, 2, 3):
+        c.set(bx + dx, by, "e")
+    c.set(bx, by, "E"); c.set(bx - 1, by, "E")
+
+    # ---- GOLD eave RIBBON along the two FRONT roof edges of the body (t5 flourish):
+    #      the maxed-out premium trim outlining the gem's front facets. This sits on the
+    #      body roof (drawn before the cap) so it is safe here; the cap-ridge gold +
+    #      finial are applied AFTER the cap is drawn (see stage5_cap_gold). ----
+    c.line(b.r_left, b.r_front, "q")
+    c.line(b.r_front, b.r_right, "q")
+    fr = pt(b.r_front)
+    c.set(fr[0], fr[1] - 1, "O")                      # bright gold boss at the front corner
+    fl = pt(b.r_left); frr = pt(b.r_right)
+    c.set(fl[0] + 1, fl[1], "O"); c.set(frr[0] - 1, frr[1], "O")  # gold corner bosses
+
+
+def stage5_cap_gold(c, b):
+    """t5 GOLD trim that must land ON the crystal CAP — so it is drawn AFTER crystal_cap
+    in build() (otherwise the cap's own W/K ridge lines paint over it, which is the
+    volt-lab 'gold vanished' pitfall). Adds premium GOLD facet-ridge ribs along the
+    cap's three FRONT ridges + a GOLD apex FINIAL crowning the cap. Re-derives the cap
+    + apex EXACTLY as crystal_cap does (same Box, same apex formula) so the gold lands
+    precisely on the cap, not a 2nd guess. Drawn just BEFORE floating_crystal so the
+    signature gem/beam still sit on top where they overlap the apex."""
+    cap = Box((33, 12), wx=5, wy=5, h=3)
+    T = pt(cap.r_top); R = pt(cap.r_right); F = pt(cap.r_front); Lf = pt(cap.r_left)
+    cap_cx = int(round((Lf[0] + R[0]) / 2))
+    cap_cy = int(round((T[1] + F[1]) / 2))
+    apex = (cap_cx, cap_cy - 5)
+    # gold ribs running the three FRONT cap ridges from the apex down to the corners
+    c.line(apex, Lf, "q")     # apex -> back-left corner ridge
+    c.line(apex, F, "q")      # apex -> front corner ridge
+    c.line(apex, R, "q")      # apex -> back-right corner ridge
+    # a gold finial spike crowning the apex (a short stack + a bright gold tip)
+    c.set(apex[0] - 1, apex[1], "q")
+    c.set(apex[0] + 1, apex[1], "q")
+    c.set(apex[0], apex[1], "q")
+    c.set(apex[0], apex[1] - 1, "O")                  # bright gold finial tip
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the crystallography-room at upgrade `stage` (1..5). Stage 1 is IDENTICAL
+    to the shipped base; each higher stage keeps every prior addition and bolts on the
+    next (t2 goniometer/seeds → t3 diffractometer-annex → t4 second-growth-dome → t5
+    macro-crystal cluster + gold). Painter's order keeps rooftop/overhead additions on
+    top of the masses they grow from, and the floating-crystal SIGNATURE is drawn LAST
+    so no upgrade ever paints over it (the gem must stay the front-most hero)."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     b = body(c)                  # the chamfered gem body (back/lower mass first)
     chamfer_seams(c, b)          # K facet seams down each corner
     left_opening(c, b)           # OPENING ON THE LEFT — viewing door + slot window
     right_plain(c, b)            # plainer shaded RIGHT face
+
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    # The diffractometer annex (t3) extends right; the second dome (t4) sits on the
+    # left-front ground; the t2 goniometer + t5 cluster grow on the body-roof bed. Draw
+    # these BEFORE the cap + floating crystal so the signature stays the front-most hero.
+    if stage >= 2:
+        stage2_goniometer(c, b)
+    if stage >= 3:
+        stage3_diffractometer_annex(c, b)
+    if stage >= 4:
+        stage4_second_dome(c, b)
+    if stage >= 5:
+        stage5_macro_cluster(c, b)
+
+    # the faceted crystal-cut roof cap + the floating-crystal signature are ALWAYS the
+    # front-most hero (drawn last) so no upgrade addition occludes them.
     nub = crystal_cap(c, b)      # faceted crystal-cut roof cap, returns X-ray nub
+    if stage >= 5:
+        stage5_cap_gold(c, b)    # t5 gold cap-ridge ribs + finial — drawn ON the cap
     floating_crystal(c, nub)     # SIGNATURE: floating crystal + diffraction spots
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/chemworks"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "crystallography-room"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped crystallography-room.png, so it does NOT overwrite the
+    base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": CHEM, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/chemworks_crystallography-room.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"chemworks_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"chemworks_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

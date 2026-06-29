@@ -26,6 +26,31 @@ ROUND-2 REBUILD (rounds 0 + 1 both failed on the same two issues):
      panel background so the colored bands pop; clean K frame; the panel GLOWS.
 
 Composed from art/isobuild.{Box} — NO iso.draw_cube / base_windows.
+
+═══════════════════════════════════════════════════════════════════════════════════
+UPGRADE-EVOLUTION pass (this file follows the MindFrame code pattern set by the
+reference interview-room.py / workshop.py: build(stage) + cumulative stageN helpers +
+emit/build_all). The base form (stage 1) is byte-identical to the shipped PNG.
+
+MindFrame evolution language — theme: a calm INDIGO EEG/biofeedback booth grows into a
+fully built-out, MULTI-CHANNEL neuro-recording instrument — more electrodes, more
+signal, more subjects, a live full-montage brain-map. The lab's own magenta `o/O`
+stays the HUMAN / pulse accent; the evolved glow is cool SIGNAL-CYAN `e/E` (data/EEG
+channels) so the two never blur. Colours mature stage by stage; gold (`q`) is a t5
+flourish only, never a whole-building recolor.
+
+  t2  small functional add : an ELECTRODE-CAP STAND prop beside the rack (with one
+                             extra cyan trace band on its mini-readout) + a brighter
+                             o/O PULSE BLIP on the roof lead-junction node.
+  t3  structural add       : a shielded BIOFEEDBACK BOOTH ANNEX — a slim dark `b`
+                             Faraday box on the far left with a glowing `g` porthole
+                             where a wired subject sits (a dedicated session booth).
+  t4  major add            : a MULTI-CHANNEL AMPLIFIER TOWER raising the roofline with
+                             stacked glowing cyan `e` channel-meters (more channels).
+  t5  crowning feature     : the rack becomes a live FULL-MONTAGE BRAIN-MAP — a glowing
+                             bright-cyan `E` topographic head-map + synced bands + a
+                             coherence node crowning the amp tower, `q` gold master-amp
+                             trim + a gold PULSE FINIAL on the roof node.
 """
 import os
 import sys
@@ -36,9 +61,17 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
+# Base MindFrame palette (shared keys) + the EVOLVED accent shades reserved for the
+# upgrade stages only (they appear in NO stage-1 sprite, so the base PNG is unchanged).
+# These exact evolved keys+hexes are reused by all 10 mindframe buildings for lab
+# consistency (see mindframe-evolution-plan.md):
+#   b  deep indigo steel — matured structure tone for t3+ new masses
+#   e  energized signal-cyan glow (mid)   E  signal-cyan glow (bright) — the t4/t5 data
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 MIND = {"K": "#181428", "W": "#e8e2f6", "L": "#cabfe6", "M": "#9f90c8", "D": "#6f5fa0", "d": "#4a3c70",
         "h": "#ecc8f4", "c": "#d0a8ee", "g": "#a45ce0", "G": "#6a2fb0",
-        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80"}
+        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80",
+        "b": "#2b2440", "e": "#7fd4ff", "E": "#d6f4ff", "q": "#f3c63a"}
 
 
 def _stamp(c, x0, y0, rows):
@@ -262,19 +295,339 @@ def signature(c, b):
     c.set(gx, gy + 1, "o")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS neuro-recording
+# structure onto the prior form — never restarts, never recolors the whole building.
+# Theme: the compact EEG booth grows into a fully built-out, MULTI-CHANNEL montage
+# instrument. Additions grow onto the ROOF / BACK / FAR-LEFT masses + the open LEFT
+# ground, so they NEVER occlude the front-right hero monitor panel (the brainwave
+# trace rack). The lab's magenta o/O stays the human/pulse accent; the evolved glow is
+# cool signal-cyan e/E (EEG channels/data). Gold (q) only at t5.
+#
+#   t2  small functional add   : an ELECTRODE-CAP STAND prop on the left ground + a
+#                                brighter o/O pulse blip on the roof lead-junction node
+#   t3  structural add         : a shielded BIOFEEDBACK BOOTH ANNEX (far-left Faraday box)
+#   t4  major add              : a MULTI-CHANNEL AMPLIFIER TOWER raising the roofline
+#   t5  crowning feature       : a live FULL-MONTAGE BRAIN-MAP head + coherence node + gold
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_capstand(c, pod):
+    """t2 — SMALL FUNCTIONAL ADD: an ELECTRODE-CAP STAND prop standing on the open
+    ground to the RIGHT-FRONT of the pod (the open right-foreground deck, clear of the
+    front-right hero monitor panel + the pod's lit-left glass), plus a BRIGHTER o/O PULSE
+    BLIP rising off the roof lead-junction node.
+
+    The stand is a small clinical cap fixture: a slim K/D pole on a foot, topped by an
+    L/W EEG-CAP DOME dotted with cyan electrode pips, with a tiny K-framed mini-readout
+    card hung on the pole carrying ONE extra cyan TRACE BAND (the plan's "one more
+    brainwave trace band"). On-theme (more electrodes prepped), modest, base palette +
+    one brighter calibration pip. Seated in the open ground just RIGHT of the pod so it
+    never crowds the front-left Faraday booth that arrives at t3."""
+    # ground anchor: RIGHT-front of the pod, in the open right-foreground (the pod's right
+    # wall ends at x46; x≈49 sits just clear of it, fully on-canvas at x47..52).
+    sx, foot_y = 49, 46
+    top_y = foot_y - 9                     # short stand, well under the roofline
+    # --- stand pole + splayed foot (K/D, a small built fixture) ---
+    c.line((sx, foot_y), (sx, top_y + 2), "D")
+    c.line((sx + 1, foot_y), (sx + 1, top_y + 2), "K")
+    c.set(sx - 1, foot_y, "K"); c.set(sx + 2, foot_y, "K")   # foot
+    c.set(sx, foot_y, "K"); c.set(sx + 1, foot_y, "K")
+    # --- EEG-CAP DOME on top (L lit / M shade, K rim) — the electrode cap fixture ---
+    _stamp(c, sx - 2, top_y - 2, [
+        ".LLL.",   # cap crown (lit L)
+        "LLMMM",   # cap dome, shaded toward the right
+        "KMMMK",   # cap brim / K rim
+    ])
+    # cyan electrode pips dotted across the cap + one BRIGHTER magenta calibration pip
+    c.set(sx - 1, top_y - 2, "c")
+    c.set(sx + 1, top_y - 2, "c")
+    c.set(sx, top_y - 3, "O")              # bright calibration pip (the brighter accent)
+    c.set(sx - 1, top_y - 1, "c")
+    c.set(sx + 2, top_y - 1, "c")
+    # --- mini-readout card hung on the pole: a tiny K-framed screen with ONE extra cyan
+    #     TRACE BAND (the plan's "one more brainwave trace band") ---
+    cardx, cardy = sx + 2, top_y + 3
+    _stamp(c, cardx, cardy, [
+        "KKKK",
+        "KddK",
+        "KeeK",   # the extra cyan trace band
+        "KKKK",
+    ])
+    c.set(cardx + 1, cardy + 2, "E")       # a bright crest blip on the new trace
+
+    # --- BRIGHTER PULSE BLIP on the roof lead-junction node (recompute from the SAME
+    #     pod roof_pt(0.5,0.55) the base junction used — the node now pulses brighter) ---
+    jp = pod.roof_pt(0.5, 0.55)
+    jx, jy = int(round(jp[0])), int(round(jp[1]))
+    c.set(jx, jy - 4, "O")                 # brighter blip lifting off the node
+    c.set(jx, jy - 5, "o")
+    c.set(jx - 1, jy - 4, "o")
+
+
+def stage3_booth(c, pod):
+    """t3 — STRUCTURAL ADD: a shielded BIOFEEDBACK BOOTH — a compact DARK Faraday-cage box
+    standing on the open FRONT-LEFT ground beside the pod (a dedicated session booth a
+    wired subject sits in). A real new structural Box (not a prop): matured deep-indigo
+    `b` shielded walls (the Faraday cage reads DARKER than the indigo pod), a banded K
+    shielding mesh, a parapet cap, and a glowing `g` PORTHOLE on its viewer-facing right
+    face holding a small seated wired-subject silhouette, with a thin `c` lead running up
+    toward the pod (wired to the rig). Seated front-LEFT (x1..13, grounded to the same
+    deck as the pod) so it stays fully ON-canvas and clear of BOTH the pod's lit-left
+    observation glass (screen-x 19..26) and the front-right hero monitor panel.
+
+    Drawn AFTER the pod (in build()) so the booth reads as a distinct mass standing in
+    front-left of the suite, fully visible rather than buried behind the pod."""
+    # FRONT-LEFT foreground anchor: apex (9,22), 3x4 footprint, h=15 so the booth bottom
+    # lands ~y44 (grounded with the pod). Its lit-LEFT face spans screen-x 1..7 (fully
+    # visible on the far left) — that face carries the glowing porthole. Its right corner
+    # reaches x15 (1px past the pod corner x14), harmless since the booth is foreground and
+    # the pod's observation glass is well inboard (screen-x 19..26).
+    booth = Box(top=(9, 22), wx=3, wy=4, h=15)
+    booth.shadow(c, "K")
+    # DARK Faraday shielding: deep-indigo `b` lit-left, darker `d` shaded-right, `d` roof
+    # (a dark box — the shielded cage reads DARKER than the M/D indigo pod, but not pitch
+    # black, so its form still reads).
+    booth.draw(c, roof="d", lwall="b", rwall="d", roof_hi="D", outline="K", with_shadow=False)
+    # a thin parapet along the booth roof front edges (a built cap)
+    c.line(booth.r_left, booth.r_front, "D")
+    c.line(booth.r_front, booth.r_right, "K")
+    # --- a bright glowing PORTHOLE on the lit-LEFT face (fully viewer-visible) — bright
+    #     `c` glass with an `h` sky-band + `W` sheen so it POPS off the dark Faraday box,
+    #     with a seated wired subject silhouetted inside (the session in progress) ---
+    booth.window(c, "left", 0.20, 0.82, 3.0, 9.2, glass="c", hi="h", shade="G",
+                 frame="K", mullions=0, sheen="W")
+    # a tiny d/K seated subject silhouette inside the glowing porthole (capped head + body)
+    pcx, pcy = booth.left_pt(0.5, 6.6)
+    pcx, pcy = int(round(pcx)), int(round(pcy))
+    _stamp(c, pcx - 1, pcy - 3, [
+        ".c.",   # capped crown (cyan electrode glow on the subject)
+        "KdK",   # head
+        "Kdd",   # shoulders
+        ".d.",   # torso
+    ])
+    # K shielding-mesh bands ABOVE + BELOW the porthole (the Faraday cage grid lines) so
+    # the cage reads woven without muddying the glowing porthole itself
+    for vv in (2.0, 11.0, 13.0):
+        c.line(booth.left_pt(0.12, vv), booth.left_pt(0.88, vv), "K")
+    # a thin D seam down the shaded RIGHT face so the dark slab reads as a built panel
+    c.line(booth.right_pt(0.5, 1.0), booth.right_pt(0.5, float(booth.h - 2)), "K")
+    c.line(booth.right_pt(0.5, 1.0), booth.right_pt(0.5, 3.0), "D")
+    # --- bright c ELECTRODE-LEAD pips on the booth roof + a thin c LEAD running UP toward
+    #     the pod roof (the subject is wired to the rig) — clamp the endpoint on-canvas. ---
+    rp = booth.roof_pt(0.4, 0.5)
+    rx0, ry0 = int(round(rp[0])), int(round(rp[1]))
+    c.set(rx0, ry0, "c"); c.set(rx0 + 1, ry0, "h")     # lead junction on the booth roof
+    lp = booth.roof_pt(0.7, 0.4)
+    lx0, ly0 = int(round(lp[0])), int(round(lp[1]))
+    c.set(lx0, ly0, "K")
+    c.line((lx0, ly0 - 1), (lx0 + 4, ly0 - 4), "c")   # cable up-right toward the pod
+    return booth
+
+
+def stage4_amptower(c, pod):
+    """t4 — MAJOR ADD: a MULTI-CHANNEL AMPLIFIER TOWER raising the roofline — a prominent
+    new vertical mass bolted onto the BACK of the pod roof, a slim chassis carrying a
+    STACK of glowing cyan `e` CHANNEL-METERS (more electrodes feeding more channels). The
+    big upgrade that says 'this rig now records many channels at once'. Palette matures:
+    cooler deep-indigo `b` chassis + energized signal-cyan `e/E` meters. Seated toward the
+    BACK-LEFT of the pod roof (recompute from pod.roof_pt) so the tall mass rises clear of
+    the front-right hero monitor panel + sits behind the roof lead-junction node."""
+    # anchor on the pod roof toward the BACK-LEFT (u→0.36, v→0.45) so the tower rises off
+    # the back roof with clear headroom above (for the t5 crown) and stays clear of the
+    # front-right signature panel (panel lives lower, on the front-right FACE at y27..43).
+    bxf, byf = pod.roof_pt(0.36, 0.45)
+    bx = int(round(bxf))
+    roof_y = int(round(byf))
+    tw = 6                                  # chassis width (px)
+    top_y = roof_y - 8                      # a moderate tower clearly raising the roofline
+    # --- amplifier CHASSIS: a b box (lit-left b / shaded-right K), K outline ---
+    c.fill_poly([(bx, roof_y), (bx + tw, roof_y), (bx + tw, top_y), (bx, top_y)], "b")
+    c.fill_poly([(bx + tw - 2, roof_y), (bx + tw, roof_y), (bx + tw, top_y), (bx + tw - 2, top_y)], "K")
+    for a, b2 in [((bx, roof_y), (bx, top_y)), ((bx + tw, roof_y), (bx + tw, top_y)),
+                  ((bx, top_y), (bx + tw, top_y))]:
+        c.line(a, b2, "K")
+    # a lit M top-edge highlight + a thin D shelf so the chassis reads built
+    c.line((bx, top_y), (bx + tw, top_y), "M")
+    c.line((bx, top_y + 1), (bx + tw, top_y + 1), "D")
+    # --- STACK of glowing cyan CHANNEL-METERS down the chassis face (the multi-channel
+    #     tell): rows of small e meters, each with a brighter E lit segment = a live VU. ---
+    for row in range(4):
+        my = top_y + 3 + row * 2
+        if my >= roof_y - 1:
+            break
+        # two meter cells per row (left + right channel), e body + E lit segment
+        for cellx in (bx + 1, bx + 4):
+            c.set(cellx, my, "E")          # bright lit segment (the live channel level)
+            c.set(cellx + 1, my, "e")
+        c.set(bx + 3, my, "K")             # 1px gutter between the two meter columns
+    # a small K vent cap on the chassis top + a faint e status pip (the amp head)
+    c.line((bx + 1, top_y - 1), (bx + tw - 1, top_y - 1), "K")
+    c.set(bx + tw - 2, top_y - 1, "e")
+    return bx, roof_y, tw, top_y
+
+
+def stage5_brainmap(c, pod):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED neuro-recording suite. The rig becomes a live
+    FULL-MONTAGE BRAIN-MAP: a glowing bright-cyan `E` TOPOGRAPHIC HEAD-MAP (a head outline
+    filled with a hot-spot heat blob + electrode grid) crowns the t4 amplifier tower on a
+    clear neck, flanked by a couple of synced cyan WAVE BANDS and topped by a bright
+    COHERENCE NODE; the suite is then dressed in GOLD premium trim — a `q` master-amp band
+    across the tower + a gold PULSE FINIAL crowning the roof lead-junction node. Reads as
+    elite, still recognizably the same EEG booth, just maxed out.
+
+    Re-anchors off the SAME pod.roof_pt the t4 tower used so the head-map stacks cleanly
+    ON the tower top (no second hardcoded guess), lifted by a CLEAR neck gap so the map
+    reads as a discrete crown, not fused to the chassis."""
+    # recompute the t4 tower geometry from its OWN anchor (same roof_pt + height) so the
+    # crown lands exactly on the tower top — no second hardcoded guess.
+    bxf, byf = pod.roof_pt(0.36, 0.45)
+    bx = int(round(bxf))
+    roof_y = int(round(byf))
+    tw = 6
+    top_y = roof_y - 8                     # the tower top (same as stage4)
+    tcx = bx + tw // 2                      # tower centre x
+
+    # --- a short b/K NECK lifting the head-map off the tower top (a CLEAR ~2px gap so the
+    #     map reads as a discrete crowning element, not fused to the chassis) ---
+    neck_top = top_y - 2
+    c.line((tcx, top_y - 1), (tcx, neck_top), "b")
+    c.line((tcx + 1, top_y - 1), (tcx + 1, neck_top), "K")
+
+    # --- TOPOGRAPHIC BRAIN-MAP head crowning the neck: a COMPACT head disc (radius 3) —
+    #     a hot-spot heat blob (G core → g → e → E rings) inside a crisp E head-outline,
+    #     with a nose tick + electrode-grid pips. This is the live full-montage brain-map
+    #     (the trace rack's data, now resolved into a topographic head). ---
+    hcx, hcy = tcx, neck_top - 3           # head-map centre, up on the neck (radius 3)
+    R = 3.0
+    for yy in range(-3, 4):
+        for xx in range(-3, 4):
+            rr = (xx / (R + 0.4)) ** 2 + (yy / (R + 0.4)) ** 2
+            if rr > 1.0:
+                continue
+            X, Y = hcx + xx, hcy + yy
+            if not (0 <= X <= 63 and 0 <= Y <= 63):
+                continue
+            if rr < 0.10:
+                ch = "W"                    # bright COHERENCE node = the hot core itself
+            elif rr < 0.30:
+                ch = "G"                    # hot-spot ring (max activity)
+            elif rr < 0.55:
+                ch = "g"
+            elif rr < 0.80:
+                ch = "e"
+            else:
+                ch = "E"                    # bright cool rim (the head outline glow)
+            c.set(X, Y, ch)
+    # crisp E head-outline rim so it reads as a round topo HEAD
+    for a in range(0, 360, 24):
+        X = hcx + R * math.cos(math.radians(a))
+        Y = hcy + R * math.sin(math.radians(a))
+        if 0 <= X <= 63 and 0 <= Y <= 63:
+            c.set(int(round(X)), int(round(Y)), "E")
+    # a tiny nose tick at the map's front so it reads as a head (topo convention)
+    if 0 <= hcy + 4 <= 63:
+        c.set(hcx, hcy + 4, "e")
+    # bright W electrode-grid pips dotted on the map flanks (the montage of sensors)
+    for ex, ey in [(-2, -1), (2, -1), (-2, 1), (2, 1)]:
+        X, Y = hcx + ex, hcy + ey
+        if 0 <= X <= 63 and 0 <= Y <= 63:
+            c.set(X, Y, "W")
+    # --- a couple of synced cyan WAVE-BAND crests flanking the map (the live montage
+    #     traces still running alongside the topo head) — clamp on-canvas. ---
+    for by_off in (-1, 1):
+        yy = hcy + by_off
+        if hcx - 8 >= 0 and 0 <= yy <= 63:
+            c.line((hcx - 8, yy), (hcx - 5, yy - by_off), "e")   # left trace crest
+        if hcx + 8 <= 63 and 0 <= yy <= 63:
+            c.line((hcx + 5, yy - by_off), (hcx + 8, yy), "e")   # right trace crest
+
+    # --- GOLD premium trim (t5 flourish only) ---
+    # a gold MASTER-AMP band across the amplifier tower's lit face (the tower is now the
+    # gilded master amp). Recompute from the SAME tower anchor (no second guess).
+    band_y = top_y + 2
+    c.line((bx + 1, band_y), (bx + tw - 1, band_y), "q")
+    c.set(bx + 1, band_y, "O")             # a bright gold boss at the band's left end
+    c.set(bx + tw - 1, band_y, "O")        # and right end
+    # a gold PULSE FINIAL crowning the roof lead-junction node (recompute from the SAME
+    # pod.roof_pt(0.5,0.55) the base junction used so it lands exactly on the node).
+    jp = pod.roof_pt(0.5, 0.55)
+    jx, jy = int(round(jp[0])), int(round(jp[1]))
+    c.line((jx, jy - 4), (jx, jy - 7), "q")          # short gold finial spike
+    c.set(jx, jy - 8, "O")                            # bright gold pip on top
+    c.set(jx - 1, jy - 6, "q")
+    c.set(jx + 1, jy - 6, "q")
+    # gold corner bosses on the pod's front-corner eave node (sparse elite trim)
+    c.set(int(round(pod.r_front[0])), int(round(pod.r_front[1])) - 1, "O")
+    c.set(int(round(pod.r_front[0])) - 1, int(round(pod.r_front[1])), "q")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the EEG/biofeedback room at upgrade `stage` (1..5). Stage 1 is IDENTICAL
+    to the shipped base; each higher stage keeps every prior addition and bolts on the
+    next (t2 cap-stand + pulse blip → t3 shielded booth → t4 amp tower → t5 brain-map +
+    gold). Painter's order keeps rooftop/overhead additions on top of the masses they
+    grow from; the far-left booth (t3) draws before the roof tower/crown so occlusion is
+    correct; every addition grows onto the roof/back/far-left so the front-right hero
+    monitor panel is never occluded."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     base_shadow(c)              # contact shadow under the whole footprint
     monitor_annex(c, ANNEX)     # lower decoder/monitor annex (back-left, behind pod)
     recording_pod(c, POD)       # the compact GROUNDED clinical recording booth (front)
     signature(c, POD)           # UPRIGHT screen-space monitor panel over the glowing right face
 
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    # Draw the far-left shielded booth (t3) BEFORE the roof-mounted amp tower/brain-map
+    # (t4/t5) so the back-left mass sits correctly behind the rooftop additions. The t2
+    # cap-stand stands on the open front-left deck (drawn after the booth so it reads in
+    # front of it).
+    if stage >= 3:
+        stage3_booth(c, POD)
+    if stage >= 2:
+        stage2_capstand(c, POD)
+    if stage >= 4:
+        stage4_amptower(c, POD)
+    if stage >= 5:
+        stage5_brainmap(c, POD)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/mindframe"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "eeg-biofeedback-room"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must keep
+    matching the shipped eeg-biofeedback-room.png, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": MIND, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/mindframe_eeg-biofeedback-room.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"mindframe_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"mindframe_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

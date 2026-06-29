@@ -40,9 +40,19 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
+# Base TerraBase palette (shared keys) + the EVOLVED-accent keys reserved for the
+# upgrade stages only (chars NOT used by the base palette, so they appear in NO
+# stage-1 sprite and deep-earth-observatory.png stays byte-identical). These four
+# exact keys+hexes are reused by ALL 10 terrabase buildings for lab-wide consistency:
+#   b  deep basalt/bedrock  — matured warm structure tone for t3+ new masses
+#   e  energized mineral-seismic glow (mid)    E  energized glow (bright) — t4/t5 power
+#   q  premium survey gold  — t5 flourish ONLY (NOT a whole-building recolor)
+# This building leans on the base warm o/O for the magma at the shaft mouth/core
+# (the plan allows it — o/O read hot enough here, so no extra magma hue is needed).
 TERRA = {"K": "#20190f", "W": "#efe6cf", "L": "#d6c8a0", "M": "#b09a6e", "D": "#7e6c47", "d": "#54462c",
          "h": "#d6f2ea", "c": "#a4e2d4", "g": "#34b6a2", "G": "#1d8474",
-         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e"}
+         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e",
+         "b": "#3a3326", "e": "#5fe0c4", "E": "#c4fff0", "q": "#f3c63a"}
 
 
 # ── equipment base geometry (a LOW rig house the derrick straddles) ───────────
@@ -276,17 +286,38 @@ def surface_gauge(c, b):
 
 
 # ── 4. LATTICE DERRICK — the open tapering four-leg drill tower (over the shaft)─
+# Shared derrick geometry so the upgrade stages (t4 headframe, t5 geo-core column +
+# gold caps + apex beacon) recompute from the SAME source the base derrick uses —
+# never a hardcoded second guess that drifts off the real pylon spine.
+DERRICK_FOOT_Y = COLLAR_Y - 1          # the legs spring from near the deck top edge
+DERRICK_HALF_W = 13                    # half-width of the leg spread at the feet
+DERRICK_CROWN_Y = 4                    # crown platform y (high, keeps headroom)
+DERRICK_CROWN_HW = 2                   # half-width at the crown (tapered in tight)
+DERRICK_DEPTH = 4                      # iso depth offset between near + far leg pairs
+
+
+def _pylon_x_at(y):
+    """Screen-x of the LIT (near-left) pylon leg at a given screen-y, interpolated on
+    the SAME near-left leg the base derrick draws (CX-half_w .. CX-crown_hw over
+    foot_y+1 .. crown_y). Used to hang t2 guy-stays + run the t5 spine up the leg."""
+    y0, y1 = DERRICK_FOOT_Y + 1, DERRICK_CROWN_Y
+    x0, x1 = CX - DERRICK_HALF_W, CX - DERRICK_CROWN_HW
+    t = (y - y0) / (y1 - y0)
+    t = max(0.0, min(1.0, t))
+    return x0 + t * (x1 - x0)
+
+
 def derrick(c, b):
     """Four D/M steel legs rising from a wide base footprint and tapering inward to
     a small crown platform near the canvas top, drawn as converging K/D lines with
     d cross-bracing rungs (an open lattice you can see through). A D crown block + c
     work-light cap the top; a thin D draw-line runs from the crown into the borehole."""
     # foot footprint: the four legs spring from near the deck top-edge corners
-    foot_y = COLLAR_Y - 1
-    half_w = 13                        # half-width of the leg spread at the feet
-    crown_y = 4                        # crown platform y (high, keeps headroom)
-    crown_hw = 2                       # half-width at the crown (tapered in tight)
-    depth = 4                          # iso depth offset between near + far leg pairs
+    foot_y = DERRICK_FOOT_Y
+    half_w = DERRICK_HALF_W            # half-width of the leg spread at the feet
+    crown_y = DERRICK_CROWN_Y         # crown platform y (high, keeps headroom)
+    crown_hw = DERRICK_CROWN_HW       # half-width at the crown (tapered in tight)
+    depth = DERRICK_DEPTH             # iso depth offset between near + far leg pairs
 
     # near legs (front pair) + far legs (back pair, lifted & pulled toward centre).
     legs = [
@@ -426,9 +457,288 @@ def right_opening(c, b):
     c.set(gx, gy + 2, "o")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS deep-drilling /
+# geothermal structure onto the prior form — never restarts, never recolors the
+# whole building. Theme: the lone drill-pylon observatory grows into a fully built-
+# out, powered DEEP-CORE geothermal observatory. Colours mature stage by stage; gold
+# (q) is a t5 flourish only. Every add is anchored to a base part (pad corner / pylon
+# leg / shaft mouth) recomputed from the SAME source, clamped fully on-canvas, and
+# NONE occlude the front cutaway planetary-shaft signature or the glowing right
+# control room (both live at the FRONT of the base).
+#
+#   t2  small functional add : a planted SEISMIC SENSOR STATION (intake-vent box + c
+#                              strain-gauge dial + short reflector mast) on the right deck
+#   t3  structural add        : a low b DRILL-MUD / SAMPLE SHED annex on the lit-left
+#   t4  major add             : a tall bolt-on CORE-SAMPLE SILO / drill-spoil TANK rising
+#                              on the right deck beside the derrick, warm o/O magma at the mouth
+#   t5  crowning feature      : the shaft ERUPTS into a glowing E GEOTHERMAL DEEP-CORE
+#                              column up the pylon spine + e strata rings + a pulsing O
+#                              magma core, gold pylon-edge caps + a gold apex beacon
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_sensor_station(c, b):
+    """t2 — SMALL FUNCTIONAL ADD (round-2 rebuild): a real planted SEISMIC SENSOR
+    STATION on the lit-right back DECK beside the drill-core — a small K-framed
+    INTAKE-VENT / instrument box (its own ~3x3 footprint with a louvered face + a c
+    strain-gauge dial) topped by a short SEISMOGRAPH MAST with a bright reflector
+    head, plus two stubby ground STAYS pinning the box to the deck with o tensioner
+    nuts. This is a genuine new on-theme object with its own opaque footprint (NOT
+    a recolor of the derrick lattice — the r1 stays just overwrote existing leg
+    pixels). It sits on the open right-deck band (≈x42..49, y38..45), clear of the
+    FRONT cutaway slice, clear of the borehole collar glow, and ABOVE the glowing
+    right control-room window — a low instrument that reads as fresh monitoring gear.
+    No gold here. Uses only base palette tones."""
+    # The deck top is a SOLID silhouette, so a flat box flush on the deck adds ZERO
+    # new-area px (that was the r1 no-op). This sensor is therefore a TALL mast +
+    # raised sensor head that RISES off the right-back deck shoulder into the clear
+    # empty wedge between the derrick's right leg and the right deck edge (≈x46..50,
+    # y29..38 is transparent canvas), so it contributes a genuine new opaque footprint.
+    # It seats just LEFT of where the t4 silo will later stand (the silo is x49+), so
+    # both read side-by-side; clear of the FRONT cutaway + the right control-room face.
+    foot_x = 47                               # mast column, in the open right wedge
+    foot_y = 39                               # deck shoulder seat
+    head_y = 29                               # sensor head rises into the empty wedge
+
+    # --- a small K/d FOOTING + instrument cabinet seated on the deck shoulder ---
+    _stamp(c, foot_x - 1, foot_y, [
+        "KKK",                                # cabinet lid
+        "Mbd",                                # cabinet body: lit M / b / shaded d
+        "Kdd",                                # foot on the deck shoulder
+    ])
+    c.set(foot_x, foot_y + 1, "g")            # a tiny c/g strain-gauge dial on the box
+    c.set(foot_x - 1, foot_y, "o")            # o live-reading tick on the lid corner
+
+    # --- the SEISMOGRAPH MAST rising into the clear wedge with a reflector sensor ---
+    c.line((foot_x, foot_y - 1), (foot_x, head_y), "M")   # lit mast shaft
+    c.line((foot_x + 1, foot_y - 1), (foot_x + 1, head_y + 1), "d")  # 1px shaded edge
+    c.set(foot_x, foot_y - 1, "K")            # mast foot collar on the cabinet
+    c.set(foot_x - 1, head_y + 3, "K")        # hard K edge separating mast from the leg
+    # reflector / sensor DISH at the mast top (a small bowl with a bright glint + a K
+    # underside rim so it reads as a distinct dish poking clear of the tower, not as
+    # part of the derrick lattice beside it).
+    _stamp(c, foot_x - 1, head_y - 1, [
+        "chh",                                # teal dish bowl + h rim (base tones only)
+        "KhW",                                # underside rim + W glint
+        "KMK",                                # dish mount on the mast
+    ])
+    c.set(foot_x, head_y - 2, "c")            # a tiny teal sensor pip above the dish
+    c.set(foot_x + 2, head_y - 1, "G")        # shaded outer lip of the dish bowl
+
+    # --- a single stubby GUY STAY tying the mast head back to the deck shoulder (the
+    #     'stay' read survives, now with its OWN pixels in the open wedge, not over the
+    #     dark derrick lattice) ---
+    ax, ay = foot_x + 3, foot_y + 1           # ground anchor out on the deck shoulder
+    ax = max(1, min(62, ax))
+    c.line((foot_x, head_y + 1), (ax, ay), "K")   # taut stay cable
+    c.set(ax, ay, "K")                            # K ground anchor plate
+    c.set(ax, ay - 1, "o")                        # o tensioner nut
+    c.set(ax, ay - 2, "O")                        # bright top of the nut
+
+
+def stage3_mud_shed(c, b):
+    """t3 — STRUCTURAL ADD: a low DRILL-MUD / SAMPLE SHED annex abutting the base on the
+    LIT-LEFT, servicing the bore. A small b basalt-timber lean-to box (K-skirted plank
+    wall) with a g-glow mud-tank window on its lit face and a short return pipe tying it
+    back toward the rig. A real new structural mass (its own little prism), introducing
+    the deepened basalt tone b. Sits LEFT of the base so it never crowds the FRONT
+    cutaway signature or the RIGHT control room, and stays low so the derrick reads."""
+    # seat the shed against the lit-LEFT base wall, its back-top corner on the base's
+    # left edge so it abuts cleanly and grows OUT to the left.
+    anchor = b.left_pt(0.06, 1.0)
+    sx, sy = int(round(anchor[0])), int(round(anchor[1]))
+    shed = Box(top=(sx - 1, sy + 1), wx=4, wy=5, h=8)
+    # body: basalt-timber — b walls (matured structure tone), darker d shaded face,
+    # M warm-lit roof so it still reads as TerraBase timber, K outline.
+    shed.draw(c, roof="M", lwall="b", rwall="d", roof_hi="L", outline="K")
+    # a couple of d plank seams across the lit roof
+    for v in (0.36, 0.66):
+        c.line(shed.roof_pt(0.08, v), shed.roof_pt(0.92, v), "d")
+    # vertical plank grain down the lit (left) face
+    for u in (0.30, 0.55, 0.80):
+        c.line(shed.left_pt(u, 1.2), shed.left_pt(u, shed.h - 1.0), "d")
+    # K plank SKIRT board at the base of the lit face (the K-skirted plank wall)
+    c.line(shed.left_pt(0.04, shed.h - 0.4), shed.left_pt(0.96, shed.h - 0.4), "K")
+    c.line(shed.left_pt(0.04, shed.h - 1.4), shed.left_pt(0.96, shed.h - 1.4), "d")
+    # g-GLOW MUD-TANK WINDOW on the lit face — a green-lit sludge tank behind glass
+    shed.window(c, "left", 0.30, 0.74, 2.2, 5.6, glass="g", hi="c", shade="G",
+                frame="K", mullions=1)
+    c.set(int(round(shed.left_pt(0.52, 5.0)[0])), int(round(shed.left_pt(0.52, 5.0)[1])), "G")  # settled sludge
+    # short return MUD-PIPE running from the shed's front-top back toward the rig deck
+    p0 = shed.roof_pt(0.9, 0.2)
+    p1 = b.roof_pt(0.10, 0.30)
+    c.line(p0, p1, "D")
+    c.line((p0[0], p0[1] - 1), (p1[0], p1[1] - 1), "M")    # lit top of the pipe
+    c.set(int(round(p0[0])), int(round(p0[1])), "K")
+
+
+def stage4_core_silo(c, b):
+    """t4 — MAJOR ADD (round-2 rebuild): a tall bolt-on CORE-SAMPLE SILO / drill-spoil
+    TANK rising on the RIGHT-BACK DECK beside the derrick — a genuine prominent NEW
+    volume OUTSIDE the existing derrick silhouette (the r1 headframe was only ~21 px
+    INSIDE the mast, a recolor). A heavy b basalt cylinder on a visible K/d plinth,
+    banded by D hoop rings, capped with a domed M/L head + a short fill-spout elbow
+    tying it back to the rig; a glowing e core-sample VIEWPORT slot reads on its lit
+    face (secondary detail), and warm o/O magma now wells brighter at the shaft mouth.
+    Sits at ≈x47..53 (clear to the RIGHT of the derrick's right leg the whole way up),
+    rises into open canvas above the right deck, and stays ABOVE the glowing control-
+    room window so it never occludes it — and never overwrites the derrick lattice."""
+    # --- warm o/O MAGMA welling brighter at the shaft mouth (the silo now stores hot
+    #     core, so the bore reads re-fired) — kept as a small pool inside the collar. ---
+    for (dx, ch) in [(-2, "o"), (-1, "O"), (0, "O"), (1, "O"), (2, "o")]:
+        c.set(CX + dx, COLLAR_Y, ch)
+    c.set(CX, COLLAR_Y - 1, "O")
+    c.set(CX - 1, COLLAR_Y - 1, "o")
+
+    # --- the SILO: a vertical cylinder seated on the right-back deck. Authored in
+    #     screen space; body columns x_l..x_r, deck seat sy_bot up to dome sy_top. ---
+    x_l, x_r = 49, 53                      # body span (right of the t2 sensor mast x47)
+    sy_bot = 41                            # deck seat (on the right-deck surface)
+    sy_top = 19                            # tank shoulder (dome sits above this)
+    cxr = (x_l + x_r) // 2                 # silo centre column
+
+    # visible PLINTH the tank stands on (a short K/d footing block on the deck)
+    for x in range(x_l - 1, x_r + 2):
+        c.set(x, sy_bot + 1, "K")
+        c.set(x, sy_bot + 2, "d")
+    c.set(x_l - 1, sy_bot + 2, "K"); c.set(x_r + 1, sy_bot + 2, "K")
+
+    # tank BODY — shaded basalt cylinder: lit-left column L→M, core M/b, shaded-right d,
+    # hard K side edges. A vertical highlight seam keeps the round read.
+    for y in range(sy_top, sy_bot + 1):
+        c.set(x_l, y, "K")                 # K left edge
+        c.set(x_l + 1, y, "M")             # lit-left highlight column
+        c.set(x_l + 2, y, "b")             # body
+        c.set(x_l + 3, y, "b")             # body
+        c.set(x_r - 1, y, "d")             # shaded-right column
+        c.set(x_r, y, "K")                 # K right edge
+    # D HOOP RINGS banding the tank (stiffener rings — sells the cylinder + scale)
+    for hy in range(sy_top + 3, sy_bot, 5):
+        for x in range(x_l + 1, x_r):
+            c.set(x, hy, "D")
+        c.set(x_l + 1, hy, "M")            # ring catches a glint on the lit side
+
+    # domed CAP on the shoulder (M lit / L crest / d shaded), K-outlined, body-width
+    _stamp(c, x_l, sy_top - 3, [
+        ".KKK.",
+        "KLMdK",
+        "KMbdK",
+    ])
+    c.set(cxr, sy_top - 4, "K")            # short K vent stub on the dome crown
+    c.set(cxr, sy_top - 5, "M")
+
+    # glowing e CORE-SAMPLE VIEWPORT slot on the lit face (secondary detail) — a small
+    # K-framed window showing the fresh teal core inside the tank.
+    vy = sy_top + 7
+    _stamp(c, x_l + 1, vy, [
+        "KKK",
+        "KeK",
+        "KEK",
+        "KeK",
+        "KKK",
+    ])
+    c.set(x_l + 2, vy + 5, "G")           # faint glow bleed under the viewport
+
+    # short FILL-SPOUT ELBOW off the tank's lower-left, dropping into the x46..49 gap
+    # toward the deck ('core piped into the tank'). Kept SHORT so it stays in the open
+    # gap beside the silo and never crosses / overwrites the derrick lattice.
+    sp0 = (x_l, sy_top + 5)                # off the lit-left body, below the viewport
+    sp1 = (x_l - 2, sy_top + 9)            # elbow dropping into the gap toward the deck
+    c.line(sp0, sp1, "D")
+    c.set(int(sp0[0]) - 1, int(sp0[1]), "M")   # lit top of the elbow
+    c.set(int(sp1[0]), int(sp1[1]), "K")       # spout mouth
+
+
+def stage5_geocore(c, b):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED deep-core observatory at full power. The
+    shaft ERUPTS into a glowing GEOTHERMAL DEEP-CORE COLUMN: a bright E energy column
+    lances UP the pylon's spine from the shaft mouth toward the crown, banded by e
+    strata-rings, fed by a pulsing O magma core welling at the base; the pylon is then
+    dressed with GOLD survey trim — gold edge-caps on the pylon legs and a gold APEX
+    BEACON crowning the derrick. Reads as elite/maxed, still clearly the same drilling
+    observatory. The column runs UP the pylon axis (CX), behind the derrick lattice it
+    already has, so it reads as energy coursing through the tower — not a new object."""
+    # --- pulsing O MAGMA CORE welling at the shaft base, brighter/larger than t4's mouth
+    #     (the deep core is now fully tapped) ---
+    for (dx, dy, ch) in [(0, 0, "W"), (-1, 0, "O"), (1, 0, "O"), (0, -1, "O"),
+                         (-2, 0, "o"), (2, 0, "o"), (0, 1, "o")]:
+        x, y = CX + dx, COLLAR_Y + dy
+        if 0 <= x < 64 and 0 <= y < 64:
+            c.set(x, y, ch)
+
+    # --- the GEOTHERMAL DEEP-CORE COLUMN lancing UP the pylon spine ---
+    # runs from just above the magma core up the derrick axis to near the crown, hugging
+    # the CX spine so it reads as energy in the tower. Bright E core flanked by e bleed.
+    col_top = DERRICK_CROWN_Y + 4          # stop just below the crown block
+    col_bot = COLLAR_Y - 2                 # start just above the magma mouth
+    for y in range(col_top, col_bot + 1):
+        c.set(CX, y, "E")                  # bright core line up the spine
+        # e glow bleed on either side, pulsing (alternate rows wider) so it shimmers
+        c.set(CX - 1, y, "e")
+        c.set(CX + 1, y, "e")
+        if y % 3 == 0:
+            c.set(CX - 2, y, "G")
+            c.set(CX + 2, y, "G")
+    # e STRATA-BAND RINGS crossing the column at intervals (deep-earth layer bands) —
+    # short horizontal e ticks so the column reads as banded geothermal strata.
+    for ry in range(col_top + 3, col_bot, 6):
+        for dx in (-2, -1, 1, 2):
+            x = CX + dx
+            if 0 <= x < 64:
+                c.set(x, ry, "e")
+        c.set(CX - 3, ry, "G")
+        c.set(CX + 3, ry, "G")
+        c.set(CX, ry, "E")                 # bright node where strata meets the spine
+
+    # --- GOLD premium survey trim (t5 flourish only) ---------------------------------
+    # gold EDGE-CAPS on the pylon legs: a few sparse gold pixels riding the LIT near-left
+    # leg, recomputed from the shared geometry so they land exactly on the real leg.
+    for ly in (DERRICK_FOOT_Y - 6, DERRICK_FOOT_Y - 18, DERRICK_FOOT_Y - 30):
+        lx = int(round(_pylon_x_at(ly)))
+        if 0 <= lx < 64 and 0 <= ly < 64:
+            c.set(lx, ly, "q")
+            c.set(lx - 1, ly, "O")         # a warm glint inboard of the gold cap
+    # mirror a couple of gold caps onto the near-RIGHT leg (CX+ side) for symmetry
+    for ly in (DERRICK_FOOT_Y - 10, DERRICK_FOOT_Y - 24):
+        rx = CX + (CX - int(round(_pylon_x_at(ly))))   # mirror of the left leg about CX
+        if 0 <= rx < 64 and 0 <= ly < 64:
+            c.set(rx, ly, "q")
+
+    # gold APEX BEACON crowning the derrick: a small gold cap + a bright O beacon flare
+    # at the very crown (recomputed from the shared crown_y, not a guessed point).
+    ax, ay = CX, DERRICK_CROWN_Y
+    c.set(ax - 1, ay - 3, "q")
+    c.set(ax + 1, ay - 3, "q")
+    c.set(ax, ay - 4, "q")                 # gold cap on the apex
+    c.set(ax, ay - 5, "O")                 # bright beacon flare
+    c.set(ax, ay - 6, "E")                 # a tiny E spark at the very top
+    c.set(ax - 1, ay - 5, "o")             # warm halo on the beacon
+    c.set(ax + 1, ay - 5, "o")
+
+
+# ── small pixel helper (shared by the stage helpers) ──────────────────────────
+def _stamp(c, x0, y0, rows):
+    """Stamp a small pixel-art object (list of strings) at top-left (x0,y0).
+    '.' = skip (transparent)."""
+    for j, row in enumerate(rows):
+        for i, ch in enumerate(row):
+            if ch != ".":
+                c.set(x0 + i, y0 + j, ch)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the deep-earth observatory at upgrade `stage` (1..5). Stage 1 is IDENTICAL
+    to the shipped base PNG; each higher stage keeps every prior addition and bolts on the
+    next (t2 guy-stays → t3 mud shed → t4 headframe+core-cage → t5 geo-core column + gold).
+    Painter's order keeps the base masses + SIGNATURE cutaway shaft first; the upgrade
+    masses are layered after, but the magma-mouth / core-cage / geo-core are drawn so they
+    sit IN the bore without burying the front cutaway planetary-shaft reveal."""
     c = Canvas()
     b = BASE
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     contact_shadow(c)               # contact shadow (under/back), grounds the rig
     base_block(c, b)                # equipment rig house (drawn behind shaft + derrick)
     borehole_collar(c, b)           # glowing K-rimmed borehole mouth in the deck centre
@@ -438,12 +748,53 @@ def build():
     right_opening(c, b)             # GLOWING control-room window+door on the SHADED RIGHT
     surface_gauge(c, b)             #            K-framed surface gauge climbing to O mark
     derrick(c, b)                   # the open-lattice tapering derrick over the borehole
+
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    if stage >= 2:
+        stage2_sensor_station(c, b)
+    if stage >= 3:
+        stage3_mud_shed(c, b)
+    if stage >= 4:
+        stage4_core_silo(c, b)
+    if stage >= 5:
+        stage5_geocore(c, b)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/terrabase"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "deep-earth-observatory"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped deep-earth-observatory.png, so it does NOT overwrite the
+    base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": TERRA, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/terrabase_deep-earth-observatory.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"terrabase_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"terrabase_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

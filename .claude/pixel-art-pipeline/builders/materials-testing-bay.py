@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Materials Testing Bay — ChemWorks economy building (BESPOKE open-portal bay).
+Materials Testing Bay — ChemWorks economy building (BESPOKE open-portal bay) +
+its 4-stage UPGRADE-EVOLUTION sprites.
 
 NOT the gateway cube. NOT the Volt Mechanical Testing Rig (that was a bare TALL
 skeletal four-post load-frame crushing a specimen). NOT the Volt Robotics roll-up
@@ -19,6 +20,25 @@ gauge whose o needle has dropped into a red r failure zone.
 
 Composed entirely from art/isobuild.Box + Canvas primitives. No draw_cube /
 base_windows. ChemWorks palette only (blue-grey walls, BLUE glass, VIOLET glow).
+
+UPGRADE EVOLUTION (cumulative — the single-column test bay grows into a built-out
+twin-post load-frame works; the load-testing theme intensifies; gold is a t5
+flourish). The shaded RIGHT face is the OPEN MOUTH that holds the hero, so every
+add grows UP / along the columns / onto the LIT-LEFT flank and NEVER drops into
+the mouth over the corroding coupon (the hero stays the front-most, drawn LAST):
+  t2  small functional add : a compact REAGENT-FUME EXTRACTION STACK rising off the
+                             back-left main roof (an e-glow extraction fan at its foot
+                             venting the test bay) — a modest add that EXTENDS the
+                             silhouette above the roofline, clear of the open mouth
+  t3  structural add       : a SECOND LOAD COLUMN rising off the bay's front corner,
+                             joined to the existing rig by a CROSS-HEAD BEAM spanning
+                             the mouth top — a twin-post load frame (b columns)
+  t4  major add            : a HYDRAULIC POWER-PACK (a cylinder accumulator + pump
+                             housing) on the LIT-LEFT flank feeding glowing e rams up
+                             the two columns (the rig now actually drives load)
+  t5  crowning feature     : a glass ENVIRONMENTAL TEST CHAMBER mounted on the
+                             cross-head over a crushed E-stress-glow specimen + a
+                             redlined master gauge + q gold frame caps on the beam
 """
 import os
 import sys
@@ -27,11 +47,27 @@ import math
 
 sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
-from isobuild import Box
+from isobuild import Box, cylinder  # noqa: F401  (cylinder used by the t4 power-pack)
 
+# Base ChemWorks palette (shared keys) + the EVOLVED accent shades reserved for the
+# upgrade stages only (they appear in NO stage-1 helper, so materials-testing-bay.png
+# is unchanged). These exact keys+hexes are the lab-wide chemworks evolved accents:
+#   b  deepened structure steel — matured tone for the t3+ new columns / masses
+#   e  energized reagent glow (mid)   E  energized reagent glow (bright) — t4/t5 power
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 CHEM = {"K": "#161a2e", "W": "#e6ecfb", "L": "#c2cdee", "M": "#9aa8d8", "D": "#6f7cb0", "d": "#4b5688",
         "h": "#d6ecff", "c": "#a8d4ff", "g": "#4aa0e6", "G": "#2166b0",
-        "o": "#c89cf0", "O": "#e0c2ff", "r": "#6a34a8"}
+        "o": "#c89cf0", "O": "#e0c2ff", "r": "#6a34a8",
+        "b": "#363c5e", "e": "#36e0c8", "E": "#c2fff2", "q": "#f0c64a"}
+
+# Height (px) of the upgrade load-frame columns ABOVE the bay roof front edge. Defined
+# ONCE here because stage3_twin_column (which raises the columns + cross-head),
+# stage4_hydraulics (which runs rams up to the SAME column tops) and
+# stage5_test_chamber (which seats the glass cell on the SAME cross-head) must all
+# derive the column tops from the identical source — never a hardcoded 2nd guess.
+# Tuned so the cross-head + chamber + finial land fully on-canvas (cross-head ~row 6,
+# chamber roof ~row 1, master gauge just inside y=0).
+COLUMN_RISE = 13
 
 
 # ── low-level pixel helpers ───────────────────────────────────────────────────
@@ -286,18 +322,350 @@ def cooling_pipe(c, a, b):
     c.set((x0 + x1) // 2, y0 - 4, "g")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION shared geometry — the LOAD-FRAME columns.
+#
+# The base rig has ONE load apparatus (the hook+coupon) hanging at the TOP of the
+# open mouth on the near/left portal column. The evolution grows that into a TWIN-
+# POST LOAD FRAME: an EXISTING-column top (over the mouth's near portal) and a NEW
+# second column rising off the bay's FRONT corner, joined by a cross-head beam.
+# t3 raises the frame, t4 runs rams up BOTH posts, t5 seats a chamber on the beam —
+# all three recompute the SAME post tops + cross-head from this one helper so a
+# higher stage never re-guesses where a lower stage put a part.
+# ═══════════════════════════════════════════════════════════════════════════════
+def _frame_geometry(b, m):
+    """Return the load-frame anchor points (all in screen space), recomputed from the
+    bay Box `b` + mouth dict `m` so every stage agrees. The two posts rise from the
+    bay's FRONT-RIGHT roof EDGE, one directly above each PORTAL COLUMN of the open
+    mouth, so the frame STRADDLES the opening (the hero tank sits between/below them,
+    never occluded):
+        front (foot,top) : the original load path — above the NEAR (front, uL) portal
+                           column, nearer the viewer / lower on screen.
+        back  (foot,top) : the NEW second column — above the FAR (back, uR) portal
+                           column, deeper / higher on screen. The twin post.
+        cross (a,b)      : the cross-head beam joining the two post tops (front→back),
+                           an iso-tilted load beam crossing the mouth top.
+    Tops are COLUMN_RISE px above each foot, clamped on-canvas."""
+    # the front-right roof edge runs r_front -> r_right; param t aligns with the
+    # mouth's u on the shaded face. Seat each post foot on that edge, just inboard of
+    # the two portal columns (uL=0.10, uR=0.92) so they cap the actual portals.
+    def edge(t):
+        return (b.r_front[0] + t * (b.r_right[0] - b.r_front[0]),
+                b.r_front[1] + t * (b.r_right[1] - b.r_front[1]))
+    ff = edge(m["uL"] + 0.02)                 # above the NEAR/front portal (~x45)
+    bf = edge(m["uR"] - 0.04)                 # above the FAR/back portal  (~x56)
+    front_foot = (int(round(ff[0])), int(round(ff[1])))
+    back_foot = (int(round(bf[0])), int(round(bf[1])))
+    front_top = (front_foot[0], max(1, front_foot[1] - COLUMN_RISE))
+    back_top = (back_foot[0], max(1, back_foot[1] - COLUMN_RISE))
+    return {
+        "front_foot": front_foot, "front_top": front_top,
+        "back_foot": back_foot, "back_top": back_top,
+        "cross": (front_top, back_top),
+    }
+
+
+def stage2_fume_extractor(c, b, m):
+    """t2 — SMALL FUNCTIONAL ADD: a compact REAGENT-FUME EXTRACTION STACK rising off
+    the BACK-LEFT main roof — a short steel duct that draws the corrosion/stress-test
+    fumes up out of the open bay. A modest on-theme element that actually EXTENDS the
+    silhouette above the roofline (the prior version sat inside the open mouth and was
+    fully occluded by the hero tank — a no-op).
+
+    Body in the matured deep-steel `b` (a NEW evolved-accent char, legible against the
+    light L/M roof), with an M lit near-edge + K outline and a flared vent cowl cap. A
+    small energized `e` EXTRACTION-FAN glow band sits at the duct foot (the live intake)
+    and a single bright `E` vapor bead escapes the cowl — the first hit of the energized
+    teal accent the rig will run on. Seated on the back-left roof deck, well LEFT of the
+    twin-column foot zone (x>=46), RIGHT of the cooling pipe (x~34), and ABOVE the t4
+    feed-line which hugs the front roof edge — so no higher stage paints over it and it
+    never reaches the shaded-right test rack / hero mouth."""
+    # anchor the duct foot on the back-left roof deck, clear of every neighbour.
+    fx, fy = b.roof_pt(0.36, 0.45)
+    sx = int(round(fx))                # duct centre x (~37)
+    base_y = int(round(fy))            # duct foot on the roof (~20)
+    top_y = base_y - 10                # stack rises ~10px above the deck (clamped >0)
+    # ── the duct BODY: 3px-wide b column, an M lit near-edge (left) + a K outline so
+    #    the dark stack reads cleanly as a new vertical mass on the light roof ──
+    for yy in range(top_y, base_y + 1):
+        c.set(sx - 1, yy, "M")         # lit near (left) flange
+        c.set(sx, yy, "b")             # deep-steel body
+        c.set(sx + 1, yy, "K")         # shaded right edge / outline
+    c.set(sx - 1, base_y + 1, "K")     # foot seat on the roof
+    c.set(sx, base_y + 1, "K")
+    # two D corrugation bands girdling the duct (a fabricated steel stack read)
+    for yy in (base_y - 3, base_y - 6):
+        c.set(sx - 1, yy, "D")
+        c.set(sx, yy, "D")
+    # ── a flared VENT COWL cap (wider lip) on top so it reads as an extraction hood ──
+    c.set(sx - 2, top_y, "M"); c.set(sx - 1, top_y, "L")
+    c.set(sx, top_y, "M"); c.set(sx + 1, top_y, "D"); c.set(sx + 2, top_y, "D")
+    c.set(sx - 2, top_y - 1, "K"); c.set(sx + 2, top_y - 1, "K")
+    c.set(sx - 1, top_y - 1, "M"); c.set(sx, top_y - 1, "M"); c.set(sx + 1, top_y - 1, "D")
+    for dx in range(-2, 3):            # K cowl rim
+        c.set(sx + dx, top_y - 2, "K")
+    # ── an energized `e` EXTRACTION-FAN glow band at the duct foot (the live intake
+    #    drawing fumes up out of the bay) + a bright `E` core pip ──
+    for dx in (-1, 0, 1):
+        c.set(sx + dx, base_y - 1, "e")
+    c.set(sx, base_y - 1, "E")         # bright fan hub
+    c.set(sx - 2, base_y - 1, "K"); c.set(sx + 2, base_y - 1, "K")  # fan housing edges
+    # ── a single bright `E` vapor bead escaping the cowl (the extracted fume) ──
+    c.set(sx, top_y - 4, "e")
+    c.set(sx + 1, top_y - 5, "E")
+
+
+def stage3_twin_column(c, b, m):
+    """t3 — STRUCTURAL ADD: a SECOND LOAD COLUMN rising off the bay's FRONT roof
+    corner, joined to the original near post by a CROSS-HEAD BEAM spanning the top of
+    the open mouth — turning the single-column rig into a proper TWIN-POST LOAD
+    FRAME. A real new structural mass (two posts + a spanning beam) standing proud of
+    the roofline, framing (NOT covering) the open mouth. Introduces the matured
+    deep-steel tone `b` for the new structure."""
+    g = _frame_geometry(b, m)
+    # ── the two posts: 2px b columns with a lit M near-edge + K outline. The FRONT
+    #    post (nearer/lower) gets the brighter lit flange; the BACK post (deeper) is
+    #    shaded. Each rises straight up from its roof-edge foot above a portal. ──
+    for foot, top, body, lit in ((g["back_foot"], g["back_top"], "D", "b"),   # back: shaded
+                                 (g["front_foot"], g["front_top"], "b", "M")):  # front: lit
+        x = foot[0]
+        c.line((x, foot[1]), (x, top[1]), body)                # post body (2px)
+        c.line((x + 1, foot[1]), (x + 1, top[1]), "K")         # K shaded right edge
+        c.line((x - 1, foot[1]), (x - 1, top[1]), lit)         # lit near flange
+        c.set(x, top[1] - 1, "K")                              # post head cap
+        c.set(x, foot[1], "K")                                 # foot seat on roof
+    # ── the CROSS-HEAD BEAM joining the post tops (front→back, an iso-tilted load
+    #    beam crossing the mouth top) ──
+    a_pt, b_pt = g["cross"]                                     # a=front top, b=back top
+    c.line((a_pt[0], a_pt[1] - 1), (b_pt[0], b_pt[1] - 1), "M")   # lit top chord
+    c.line(a_pt, b_pt, "b")                                       # beam body
+    c.line((a_pt[0], a_pt[1] + 1), (b_pt[0], b_pt[1] + 1), "K")   # under-edge shadow
+    for ex, ey in (a_pt, b_pt):                                   # bright corner gussets
+        c.set(ex, ey - 1, "L")
+    # ── crisp TOP-CORNER GUSSET triangles where each post meets the beam (reads as
+    #    rigid welded steelwork, not a leaning ladder) ──
+    fx_t, bx_t = a_pt, b_pt
+    c.set(fx_t[0] + 2, fx_t[1] + 1, "D"); c.set(fx_t[0] + 1, fx_t[1] + 2, "D")  # front knee
+    c.set(bx_t[0] - 2, bx_t[1] + 1, "D"); c.set(bx_t[0] - 1, bx_t[1] + 2, "D")  # back knee
+    # ── a hung crosshead ACTUATOR boss mid-beam (the moving load head) — sits high
+    #    above the mouth centre, well clear of the tank far below; a short ram stub
+    #    points DOWN from it into the open frame (reads as 'this presses down'). ──
+    mxb = (a_pt[0] + b_pt[0]) // 2
+    myb = (a_pt[1] + b_pt[1]) // 2 + 1
+    _rect(c, mxb - 1, myb, mxb + 1, myb + 2, fill="D", outline="K")
+    c.set(mxb, myb, "M")                                         # lit boss top
+    c.line((mxb, myb + 3), (mxb, myb + 5), "D")                  # short ram stub down
+    c.set(mxb, myb + 5, "K")
+
+
+def stage4_hydraulics(c, b, m):
+    """t4 — MAJOR ADD: a HYDRAULIC POWER-PACK on the LIT-LEFT flank of the bay — a
+    stout cylindrical ACCUMULATOR over a boxy PUMP HOUSING, plumbed by a feed line
+    that climbs the bay corner and drives glowing energized `e` hydraulic RAMS up
+    BOTH load posts into the cross-head. The prominent new mass that says 'this rig
+    now actually drives load'. Palette matures: deep `b` housing + energized teal
+    `e/E` ram glow. Placed on the LIT-LEFT flank (NOT the open mouth) so it never
+    occludes the hero tank; rams re-use the SAME post geometry as t3."""
+    g = _frame_geometry(b, m)
+    # ── PUMP HOUSING: a small iso BOX standing on the GROUND in front of the bay's
+    #    LIT-LEFT face (in the wedge between the annex and the bay), well clear of the
+    #    open mouth on the right. A real 3D ground unit (its own faces), not a panel
+    #    punched into the wall. Deep-steel b body so it reads as new machinery. ──
+    pp = Box(top=(22, 44), wx=4, wy=4, h=6)
+    pp.shadow(c, "K")
+    c.fill_poly([pp.r_top, pp.r_right, pp.r_front, pp.r_left], "M")        # lit roof
+    c.fill_poly([pp.r_left, pp.r_front, pp.w_front, pp.w_left], "b")       # lit-left face
+    c.fill_poly([pp.r_front, pp.r_right, pp.w_right, pp.w_front], "D")     # shaded face
+    c.fill_poly([pp.r_top, pp.r_left, pp.r_front], "L")                    # back roof tri
+    for a2, b2 in [(pp.r_top, pp.r_right), (pp.r_right, pp.r_front),
+                   (pp.r_front, pp.r_left), (pp.r_left, pp.r_top),
+                   (pp.r_left, pp.w_left), (pp.r_front, pp.w_front),
+                   (pp.r_right, pp.w_right),
+                   (pp.w_left, pp.w_front), (pp.w_front, pp.w_right)]:
+        c.line(a2, b2, "K")
+    # cooling-fin grooves + a g sight-glass + an o pump-status pip on the lit face
+    for u in (0.34, 0.58, 0.82):
+        c.line(pp.left_pt(u, 1.2), pp.left_pt(u, 5.0), "D")
+    sgx, sgy = pp.left_pt(0.20, 2.4)
+    c.set(int(round(sgx)), int(round(sgy)), "g")
+    c.set(int(round(sgx)), int(round(sgy)) + 1, "G")
+    olx, oly = pp.right_pt(0.5, 1.6)
+    c.set(int(round(olx)), int(round(oly)), "o")
+    c.set(int(round(olx)), int(round(oly)) - 1, "O")
+    # ── ACCUMULATOR: a short fat cylinder standing on the housing roof ──
+    accx = int(round(pp.roof_pt(0.5, 0.5)[0]))
+    accy = int(round(pp.roof_pt(0.5, 0.5)[1])) - 6
+    cylinder(c, accx, accy, rx=3, h=4, top="M", side_l="b", side_r="K", outline="K")
+    c.set(accx, accy - 1, "L")                               # domed cap glint
+    c.set(accx, accy, "c")                                   # c pressure pip
+    # ── FEED LINE: an e high-pressure hose from the accumulator top up onto the bay
+    #    ROOF, then run ALONG the roof front-left edge (r_left→r_front) to a tee at the
+    #    FRONT post foot — so the hose reads as lying on the roof, not stuck to the lit
+    #    wall — which splits to both post feet (powered rams fed from this pack) ──
+    tee_x, tee_y = g["front_foot"]
+    # the point on the roof front-left edge directly above the pump (climb-on point)
+    fe = b.roof_pt(0.30, 0.06)                               # on r_left→r_front, near pump
+    fex, fey = int(round(fe[0])), int(round(fe[1]))
+    c.line((accx, accy - 2), (accx, fey), "e")               # rise from the pack to roof level
+    c.line((accx, fey), (fex, fey), "e")                     # short hop onto the roof edge
+    c.line((fex, fey), (tee_x, tee_y), "e")                  # run ALONG the roof edge to the foot
+    c.set(accx, accy - 2, "E")                               # bright coupling at pump
+    c.set(fex, fey, "E")                                     # bright elbow on the roof
+    # ── glowing e RAMS climbing inside both posts up to the cross-head ──
+    for foot, top in ((g["front_foot"], g["front_top"]),
+                      (g["back_foot"], g["back_top"])):
+        x = foot[0]
+        if foot is not g["front_foot"]:                      # branch to the back post
+            c.line((tee_x, tee_y), (x, foot[1]), "e")
+        for j, yy in enumerate(range(top[1] + 1, foot[1])):  # bright energized ram core
+            c.set(x, yy, "E" if j % 3 == 0 else "e")
+        c.set(x, top[1] + 1, "E")                            # bright ram head at top
+    c.set(tee_x, tee_y, "E")                                 # bright tee flare
+
+
+def stage5_test_chamber(c, b, m):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED load-frame works. A glass ENVIRONMENTAL
+    TEST CHAMBER is mounted ON the t3 cross-head between the two posts — a clear c/h
+    glass cell enclosing a small CRUSHED specimen lit by an energized `E` stress-glow,
+    capped by a redlined MASTER GAUGE on top and dressed out with `q` GOLD frame caps
+    on the cross-head ends + gold chamber corner posts. Reads as elite, still
+    recognizably the same open testing bay, just maxed out.
+
+    Re-derives the cross-head from the SAME _frame_geometry source t3/t4 used (never a
+    hardcoded 2nd guess) so the chamber seats exactly on the beam, fully on-canvas."""
+    g = _frame_geometry(b, m)
+    a_pt, b_pt = g["cross"]                                   # a=front top, b=back top
+    # seat the chamber CENTRED over the beam midpoint on a short platform with two
+    # support legs down to the (tilted) beam, so it reads as MOUNTED ON the cross-head
+    # rather than floating. Recomputed from the SAME cross-head source t3/t4 used.
+    midx = (a_pt[0] + b_pt[0]) // 2
+    beam_my = (a_pt[1] + b_pt[1]) // 2                        # beam top at centre
+    # ── a short steel PLATFORM deck bridging the beam, holding the chamber ──
+    plat_y = beam_my - 3
+    _rect(c, midx - 4, plat_y, midx + 4, plat_y + 1, fill="b", outline="K")
+    c.line((midx - 4, plat_y), (midx + 4, plat_y), "M")      # lit deck top
+    # two short support legs from the platform down onto the beam
+    c.line((midx - 3, plat_y + 1), (midx - 3, beam_my), "b")
+    c.line((midx + 3, plat_y + 1), (midx + 3, beam_my + 1), "b")
+    c.set(midx - 3, beam_my, "K"); c.set(midx + 3, beam_my + 1, "K")
+    # ── glass CELL: a c body with an h sky-band, K frame, set on the platform deck ──
+    cl, cr = midx - 4, midx + 4                              # 9px-wide chamber
+    base_y = plat_y - 1
+    top_y = max(1, base_y - 8)                                # chamber is ~9px tall, clamped
+    _rect(c, cl, top_y, cr, base_y, fill="c")
+    _rect(c, cl, top_y, cr, top_y + 2, fill="h")             # bright upper sky-band
+    _rect(c, cl, base_y - 1, cr, base_y, fill="G")           # shaded sill
+    _rect(c, cl, top_y, cr, base_y, outline="K")             # clean K frame
+    # a vertical h shine streak (the glass tell)
+    c.line((cl + 1, top_y + 1), (cl + 1, base_y - 1), "h")
+    # ── the CRUSHED specimen inside, lit by an energized E stress-glow ──
+    sx = (cl + cr) // 2
+    sy = base_y - 2
+    # a squat fractured block: a d core with a ragged r crack + bright E stress lines
+    c.set(sx - 1, sy, "d"); c.set(sx, sy, "d"); c.set(sx + 1, sy, "d")
+    c.set(sx, sy - 1, "d")
+    c.set(sx, sy, "r")                                        # the fracture
+    c.set(sx - 1, sy - 1, "E")                               # stress-glow flare
+    c.set(sx + 1, sy - 1, "E")
+    c.set(sx, sy - 2, "e")                                    # glow rising off the crush
+    # ── redlined MASTER GAUGE perched on the chamber roof (the maxed readout) ──
+    mgx = (cl + cr) // 2
+    mgy = top_y - 2
+    if mgy - 3 >= 0:                                          # only if it fits on-canvas
+        _disk_ring(c, (mgx, mgy), 2, fill="c", ring="K")
+        for ang in range(40, 141, 25):                       # r redline arc (failing)
+            rx = mgx + 2 * math.cos(math.radians(ang))
+            ry = mgy + 2 * math.sin(math.radians(ang))
+            c.set(int(round(rx)), int(round(ry)), "r")
+        c.set(mgx, mgy, "r")                                  # needle pinned to red
+        c.set(mgx + 1, mgy - 1, "O")
+        c.set(mgx, mgy - 3, "M")                             # short stem to the chamber
+    # ── q GOLD premium trim (t5 flourish only) ──
+    # gold frame CAPS on the two cross-head beam ends
+    for ex, ey in (a_pt, b_pt):
+        c.set(ex, ey - 2, "q")
+        c.set(ex, ey - 3, "O")
+    # gold corner posts up the two front edges of the glass chamber
+    c.set(cl, top_y, "q"); c.set(cr, top_y, "q")
+    c.set(cl, top_y + 1, "q"); c.set(cr, top_y + 1, "q")
+    # a thin gold sill ribbon along the chamber base (premium trim)
+    c.line((cl, base_y), (cr, base_y), "q")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the materials-testing-bay at upgrade `stage` (1..5). Stage 1 is
+    IDENTICAL to the shipped base; each higher stage keeps every prior addition and
+    bolts on the next (t2 fume-extraction stack → t3 twin-column frame → t4 hydraulic
+    power-pack → t5 environmental chamber + gold).
+
+    Painter's order: the back-left annex first, then the bay box, then the cooling
+    pipe; the UPGRADE rig (posts/beam/rams/chamber) rises off the bay ROOF and is
+    drawn BEFORE the hero corrosion-test so it occludes correctly while the open mouth
+    + corroding coupon stay the FRONT-MOST hero (drawn LAST). The t2 fume-extraction
+    stack sits on the back-left main roof (clear of the rig zone), so it is drawn just
+    before the hero (after the rig) and never reaches the mouth / tank."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     a = annex(c)                  # closed instrument annex (back-left), drawn first
     b, m = bay(c)                 # tall open-portal bay carved open on the RIGHT
     cooling_pipe(c, a, b)         # thin cyan pipe linking the two roofs
+
+    # --- CUMULATIVE UPGRADE STAGES (rooftop load-frame + lit-left power-pack) ------
+    # The twin-post frame (t3), the hydraulic rams (t4) and the chamber (t5) all rise
+    # off the bay roof / cross-head; draw them BEFORE the hero so the front-most mouth
+    # stays clean. t4's pump-pack stands on the lit-left flank (never the mouth).
+    if stage >= 3:
+        stage3_twin_column(c, b, m)
+    if stage >= 4:
+        stage4_hydraulics(c, b, m)
+    if stage >= 5:
+        stage5_test_chamber(c, b, m)
+    # t2 fume-extraction stack sits on the BACK-LEFT main roof, clear of the rig
+    # zone; draw it after the rig so nothing paints over it, before the hero tank.
+    if stage >= 2:
+        stage2_fume_extractor(c, b, m)
+
+    # the corroding coupon in the glass tank is ALWAYS the front-most hero (drawn last)
     corrosion_test(c, b, m)       # hero: clamped coupon corroding in a glass tank
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/chemworks"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "materials-testing-bay"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped materials-testing-bay.png, so it does NOT overwrite the
+    base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": CHEM, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/chemworks_materials-testing-bay.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"chemworks_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"chemworks_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

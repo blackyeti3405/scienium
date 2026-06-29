@@ -35,6 +35,28 @@ No A/B human-choice panel / predicted-choice needle / reaction-time readout moti
 exists anywhere in the catalog.
 
 Composed from art/isobuild.Box — NO iso.draw_cube / base_windows.
+
+═══════════════════════════════════════════════════════════════════════════════════
+This file follows the MindFrame UPGRADE-EVOLUTION pattern (build(stage) + cumulative
+stageN helpers + emit/build_all), copied from workshop.py and matching the in-lab
+reference interview-room.py for evolved-stage style + palette use.
+
+MindFrame evolution language — theme: a calm INDIGO behavioral-OBSERVATION block
+grows into a fully built-out multi-channel COGNITIVE-OBSERVATION SUITE that watches
+MORE SUBJECTS at once and looks DOWN on them from a gallery. The intensity ramp adds
+OBSERVATION / DATA-CAPTURE structure on-theme to THIS building's two-glass-room form.
+The lab's own magenta `o/O` stays the HUMAN/voice accent; the evolved glow is a cool
+SIGNAL-CYAN `e/E` (data/observe) so the two never blur. Colours mature stage by stage;
+gold (`q`) is a t5 flourish only, never a whole-building recolor.
+
+  t2  small functional add : a ceiling observation-camera DOME on the chamber roof +
+                             a c status light on the obs-room roof + a brighter o glow
+  t3  structural add       : a SECOND glass observation room stepped off the pair
+                             (repeat glass Box, b mullions) — more subjects at once
+  t4  major add            : a raised one-way observation GALLERY DECK spanning above
+                             the rooms (glazed cyan-glowing mezzanine on b posts)
+  t5  crowning feature     : a synced behavior-analytics SCREEN-WALL on the gallery
+                             (bright e/E live subject-tracking) + a gold observation rail
 """
 import os
 import sys
@@ -44,9 +66,16 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
+# Base MindFrame palette (shared keys) + the EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so behavioral-lab.png is unchanged).
+# These exact evolved keys are shared by all 10 mindframe buildings for lab consistency:
+#   b  deep indigo steel — matured structure tone for t4+ new masses (posts/frames)
+#   e  energized signal-cyan glow (mid)   E  signal-cyan glow (bright) — the t4/t5 data
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 MIND = {"K": "#181428", "W": "#e8e2f6", "L": "#cabfe6", "M": "#9f90c8", "D": "#6f5fa0", "d": "#4a3c70",
         "h": "#ecc8f4", "c": "#d0a8ee", "g": "#a45ce0", "G": "#6a2fb0",
-        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80"}
+        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80",
+        "b": "#2b2440", "e": "#7fd4ff", "E": "#d6f4ff", "q": "#f3c63a"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
@@ -294,24 +323,314 @@ def one_way_mirror(c, ch_box, obs_box):
     c.set(cnx - 1, cny - 1, "h")             # tiny lens glint
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS observation /
+# data-capture structure onto the prior form — never restarts, never recolors the
+# whole building. Theme: the two-glass-room behavior lab grows into a fully built-out
+# multi-channel COGNITIVE-OBSERVATION SUITE that watches MORE subjects from a gallery.
+# Additions sit on the two ROOFS + the back-right air + a high gallery deck and grow
+# UP, so they never occlude the front-left LIT chamber pane signature (subject + A/B
+# panel + needle + RT readout, cols ~10..28 / rows ~25..46). Colours mature stage by
+# stage; the evolved glow is cool signal-cyan e/E (data/observe), kept distinct from
+# the lab's magenta o/O human accent. Gold (q) only at t5.
+#
+#   t2  small functional add   : a ceiling observation-camera DOME on the chamber roof
+#                                + a c status light on the obs-room roof + brighter o glow
+#   t3  structural add         : a SECOND glass observation room stepped off the pair
+#   t4  major add              : a raised observation GALLERY DECK over the rooms (b posts)
+#   t5  crowning feature       : a behavior-analytics SCREEN-WALL on the gallery + gold rail
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_camera_dome(c, ch, obs):
+    """t2 — SMALL FUNCTIONAL ADD: a ceiling OBSERVATION-CAMERA DOME planted on the
+    chamber roof (back-right, clear of the front glass), a cyan c STATUS LIGHT pip on
+    the observation-room roof, and a brightened o interior light strip — the rooms are
+    now actively monitored. On-theme (observation), modest, base palette + one cyan c
+    status pip. The dome is a small smoked half-orb in a K ring (a classic ceiling
+    security-cam dome) sitting on the chamber roof's back-right so it never touches the
+    lit-LEFT signature pane below."""
+    # --- camera dome on the chamber roof, back-RIGHT quadrant (toward the obs room),
+    #     well away from the front-left glass face. Seated on a roof point + tiny base.
+    dxf, dyf = ch.roof_pt(0.80, 0.46)
+    dx, dy = int(round(dxf)), int(round(dyf))
+    # a thin K mounting ring/base flat on the roof
+    c.set(dx - 2, dy, "K"); c.set(dx + 2, dy, "K")
+    c.line((dx - 2, dy), (dx + 2, dy), "d")
+    # the smoked DOME — a small dark half-orb (D shell, d shade, a c lens glint + h spec)
+    stamp(c, dx - 2, dy - 3, [
+        ".KKK.",     # dome cap rim
+        "KDDDK",     # smoked shell (lit-left D)
+        "KDddK",     # shaded-right d
+    ])
+    c.set(dx - 1, dy - 2, "c")     # cyan lens glint (the live eye)
+    c.set(dx, dy - 2, "h")         # tiny highlight on the smoked glass
+    c.set(dx + 1, dy - 1, "K")     # under-shadow seam
+
+    # --- cyan c STATUS LIGHT on the OBSERVATION-ROOM roof (a small post + pip): the
+    #     monitoring console is now powered. Back-left of the obs roof, clear + small.
+    sxf, syf = obs.roof_pt(0.40, 0.55)
+    sx, sy = int(round(sxf)), int(round(syf))
+    c.set(sx, sy, "K")             # post foot
+    c.set(sx, sy - 1, "D")         # short post
+    c.set(sx, sy - 2, "c")         # cyan status pip
+    c.set(sx, sy - 3, "e")         # bright cyan tip (live)
+
+    # --- one BRIGHTER o interior light: re-hit the chamber roof-lip accent strip a
+    #     touch hotter near the front so the monitored room glows a bit warmer (the
+    #     accent already exists at v=0.7; add a couple of O hot pixels, no new mass).
+    p0 = ch.left_pt(0.30, 0.7)
+    p1 = ch.left_pt(0.60, 0.7)
+    c.set(int(round(p0[0])), int(round(p0[1])), "O")
+    c.set(int(round(p1[0])), int(round(p1[1])), "O")
+
+
+def stage3_second_room(c, obs):
+    """t3 — STRUCTURAL ADD: a SECOND glass OBSERVATION ROOM stepped off the existing
+    pair toward the back-right — a real new Box (smaller than the chamber, similar
+    height to the obs room) repeating the lab's glass-room language so MORE subjects
+    are observed at once. Its lit-LEFT face carries a glowing g/c observation pane (a
+    smaller echo of the chamber's hero glass), framed with the matured deep-indigo `b`
+    mullion/frame so the new mass reads as the upgraded extension. Kept fully on-canvas
+    (max x≈59) and behind/right of the obs room so it never reaches the front glass."""
+    # seat the second room stepped UP-RIGHT off the observation room's back-right, a
+    # bit lower + smaller than the chamber so the silhouette gains a clear THIRD step.
+    room = Box(top=(49, 11), wx=5, wy=4, h=9)
+    room.shadow(c)
+    room.draw(c, roof="M", lwall="M", rwall="D", roof_hi="W", outline="K")
+    # thin parapet curb (matches the other two roofs)
+    c.line(room.r_left, room.r_front, "D")
+    c.line(room.r_top, room.r_right, "D")
+    # a glowing g/c OBSERVATION PANE on its lit-LEFT face (a smaller echo of the hero
+    # glass) — b deep-indigo frame + b mullion = the matured upgrade tone.
+    room.window(c, "left", 0.16, 0.84, 2.2, 7.0, glass="g", hi="c", shade="G",
+                frame="b", mullions=1, sheen="h")
+    # a tiny d subject silhouette behind the new glass (another watched subject)
+    sp = room.left_pt(0.5, 4.6)
+    spx, spy = int(round(sp[0])), int(round(sp[1]))
+    stamp(c, spx - 1, spy - 2, [
+        ".d.",     # head
+        "ddd",     # shoulders
+        ".d.",     # torso
+    ])
+    # a b deep-indigo seam linking the new room back to the obs room (reads as bolted-on)
+    lk = room.left_pt(0.0, 3.0)
+    c.set(int(round(lk[0])), int(round(lk[1])), "b")
+    c.set(int(round(lk[0])) - 1, int(round(lk[1])) + 1, "b")
+    return room
+
+
+def stage4_gallery(c, ch, obs):
+    """t4 — MAJOR ADD: a raised one-way observation GALLERY DECK floated ABOVE the
+    rooms — a thin glazed mezzanine the observers stand on to look DOWN through the
+    glass at every subject at once. A prominent new horizontal mass, but a LIGHT one:
+    a thin deck PLANE (not a solid box, so the t2 dome + t3 room behind stay visible)
+    floated HIGH on visible deep-indigo `b` POSTS that clearly stand UP off the chamber
+    + obs roofs, with a continuous glazed `e/E` cyan-glowing observation band along its
+    front fascia (the one-way gallery glass). Palette matures: deep `b` posts/soffit,
+    energized signal-cyan `e/E` on the glazing. Kept SMALL in footprint (max x≈40) so
+    the t3 second room stays visible to its right, and fully on-canvas (top y≈6)."""
+    # the deck floats over the CHAMBER + the chamber/obs junction only (max x≈40) so the
+    # t3 second room (x≈41..59) stays clearly visible to its right. h is tiny — a slab.
+    deck = Box(top=(28, 6), wx=6, wy=6, h=1)
+
+    # --- VISIBLE POSTS FIRST (drawn BEFORE the deck plane so the deck caps them and they
+    #     read as legs RISING to the deck underside). Four slim deep-indigo `b` posts that
+    #     clearly stand UP off the roofs into the clear gap below the floated deck. Each:
+    #     a 2px b shaft + a K shadow edge + a K foot where it lands on a real roof point. ---
+    def post(top_xy, bot_xy):
+        tx, ty = int(round(top_xy[0])), int(round(top_xy[1]))
+        bxp, byp = int(round(bot_xy[0])), int(round(bot_xy[1]))
+        c.line((tx, ty), (bxp, byp), "b")
+        c.line((tx + 1, ty), (bxp + 1, byp), "K")
+        c.set(bxp, byp, "K")                      # foot on the roof
+    # left + front posts land on the CHAMBER roof; right + back posts on the OBS roof.
+    post(deck.w_left,  ch.roof_pt(0.16, 0.30))    # left post  -> chamber roof back-left
+    post(deck.w_front, ch.roof_pt(0.74, 0.34))    # front post -> chamber roof front-right
+    post(deck.w_right, obs.roof_pt(0.34, 0.40))   # right post -> obs roof
+    post(deck.r_right, obs.roof_pt(0.10, 0.62))   # back-right post -> obs roof back
+
+    # --- the DECK PLANE: a THIN floated slab — just the walk-surface diamond + a 1px
+    #     deep-indigo `b` soffit lip under its front edges (NOT a full solid Box, so the
+    #     masses behind it stay visible). Reads as a floor you look down from. ---
+    # 1px b soffit/underside along the two front edges (gives the thin slab depth)
+    c.fill_poly([deck.r_left, deck.r_front, (deck.r_front[0], deck.r_front[1] + 1),
+                 (deck.r_left[0], deck.r_left[1] + 1)], "b")
+    c.fill_poly([deck.r_front, deck.r_right, (deck.r_right[0], deck.r_right[1] + 1),
+                 (deck.r_front[0], deck.r_front[1] + 1)], "K")
+    # WALK-SURFACE: an M deck floor (lighter than the rooms so the floated mezzanine
+    # reads as its own bright plane), lighter L back-left triangle, W lit back edges.
+    c.fill_poly([deck.r_top, deck.r_right, deck.r_front, deck.r_left], "M")
+    c.fill_poly([deck.r_top, deck.r_left, deck.r_front], "L")
+    c.line(deck.r_top, deck.r_left, "W")
+    c.line(deck.r_top, deck.r_right, "W")
+    for a, b in [(deck.r_top, deck.r_right), (deck.r_right, deck.r_front),
+                 (deck.r_front, deck.r_left), (deck.r_left, deck.r_top)]:
+        c.line(a, b, "K")                         # crisp deck outline
+
+    # --- the GALLERY GLAZING: a continuous glowing cyan one-way band standing along the
+    #     deck's lit-LEFT front edge (the gallery glass observers look down through). e
+    #     mid-cyan body + E bright sheen line + b mullion posts = a glazed balustrade. ---
+    c.line(deck.r_left, deck.r_front, "e")                                 # cyan glazing band
+    gA = (deck.r_left[0], deck.r_left[1] - 1)
+    gB = (deck.r_front[0], deck.r_front[1] - 1)
+    c.line(gA, gB, "e")                                                    # 2px tall glazing
+    # bright E sheen pips + b mullion posts along the glazed front
+    for t in (0.2, 0.45, 0.7, 0.9):
+        gx = deck.r_left[0] + t * (deck.r_front[0] - deck.r_left[0])
+        gy = deck.r_left[1] + t * (deck.r_front[1] - deck.r_left[1])
+        c.set(int(round(gx)), int(round(gy)) - 1, "E")
+    for t in (0.33, 0.66):
+        gx = deck.r_left[0] + t * (deck.r_front[0] - deck.r_left[0])
+        gy = deck.r_left[1] + t * (deck.r_front[1] - deck.r_left[1])
+        c.set(int(round(gx)), int(round(gy)), "b")
+    return deck
+
+
+def stage5_screenwall(c, deck, ch):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED cognitive-observation suite. A synced
+    behavior-analytics SCREEN-WALL rises along the BACK of the gallery deck — a row of
+    bright e/E panels showing LIVE subject-tracking overlays (gaze dots, a tracked
+    figure, a climbing readout) so the gallery now AGGREGATES every observed subject at
+    once — and the gallery is dressed out in GOLD premium trim (a q observation RAIL
+    along the deck's front edge + a q finial). Reads as elite, still recognizably the
+    same two-room behavior lab, just maxed out. Re-anchors off the SAME deck Box the t4
+    gallery used (deck.r_top / deck.left edge) so the screen-wall + rail stack cleanly
+    on it (no second hardcoded guess)."""
+    # --- SCREEN-WALL: a compact UPRIGHT billboard cabinet standing on the BACK of the
+    #     deck floor, rising STRAIGHT UP into clear sky behind the gallery so it never
+    #     occludes the front glass. Anchored from the deck's OWN back apex (r_top) so it
+    #     sits exactly on the t4 deck (no second guess). Built as a clean vertical K-framed
+    #     box (constant columns — NOT tilted along the steep back edge) so it reads as a
+    #     flat analytics screen-wall, not a diagonal mast. ---
+    rtx, rty = int(round(deck.r_top[0])), int(round(deck.r_top[1]))
+    sw, sh = 11, 5                                # screen-wall width, height (px)
+    sx0 = rtx - sw // 2                           # centre the billboard on the back apex
+    sbase = rty + 2                               # seat its base one step FRONT onto the deck floor
+    stop = sbase - sh                             # top row (>=0)
+    stop = max(stop, 0)
+    # cabinet: deep-indigo b body in a crisp K frame (a clean upright billboard)
+    for col in range(sx0, sx0 + sw):
+        for row in range(stop + 1, sbase):
+            c.set(col, row, "b")
+    for col in range(sx0, sx0 + sw):              # top + bottom K rails
+        c.set(col, stop, "K")
+        c.set(col, sbase, "K")
+    for row in range(stop, sbase + 1):            # left + right K jambs
+        c.set(sx0, row, "K")
+        c.set(sx0 + sw - 1, row, "K")
+    # THREE synced analytics panels glowing on the wall face (bright cyan e, E overlays):
+    #   p1 live GAZE-SCATTER, p2 tracked SUBJECT (E box), p3 climbing metric bars.
+    py0 = stop + 1
+    # panel 1 — gaze scatter (e field + E fixation dots)
+    stamp(c, sx0 + 1, py0, [
+        "eee",
+        "eEe",
+        "Eee",
+    ])
+    # panel 2 — tracked subject framed by a bright E tracking box
+    stamp(c, sx0 + 4, py0, [
+        "EEE",
+        "EdE",
+        "EEE",
+    ])
+    c.set(sx0 + 5, py0 + 1, "W")                  # the tracked subject blip
+    # panel 3 — climbing metric bars (aggregated read)
+    stamp(c, sx0 + 7, py0, [
+        ".E",
+        "eE",
+        "EE",
+    ])
+    screen_topleft = (sx0, stop)
+
+    # --- GOLD premium trim (t5 flourish only) ---
+    # a GOLD OBSERVATION RAIL along the gallery deck's lit-LEFT front edge (capping the
+    # cyan glazing band — the gallery balustrade is now gilded). Recompute from the
+    # deck's own r_left->r_front edge so it lands exactly on the t4 glazed fascia.
+    rA = (deck.r_left[0], deck.r_left[1] - 2)
+    rB = (deck.r_front[0], deck.r_front[1] - 2)
+    c.line(rA, rB, "q")                           # gold top rail (above the cyan glazing)
+    # a few q rail stanchions ticking down from the rail (so it reads as a railing)
+    for t in (0.2, 0.45, 0.7, 0.92):
+        sx = rA[0] + t * (rB[0] - rA[0])
+        sy = rA[1] + t * (rB[1] - rA[1])
+        c.set(int(round(sx)), int(round(sy)) + 1, "q")
+    # a bright O glint on the rail's front corner
+    c.set(int(round(rB[0])), int(round(rB[1])), "O")
+    # a small GOLD finial on the screen-wall's top-left corner (elite cap, sparse)
+    c.set(screen_topleft[0], screen_topleft[1] - 1, "q")
+    c.set(screen_topleft[0], screen_topleft[1] - 2, "O")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the behavioral lab at upgrade `stage` (1..5). Stage 1 is IDENTICAL to
+    the shipped base; each higher stage keeps every prior addition and bolts on the
+    next (t2 camera dome → t3 second glass room → t4 gallery deck → t5 screen-wall+gold).
+    Painter's order keeps rooftop/overhead additions on top of the masses they grow
+    from; the back-right second room (t3) is drawn before the gallery deck (t4) so the
+    deck + its posts read correctly in front of it, and every addition stays on the
+    ROOF / BACK / OVERHEAD so the front-left LIT chamber pane signature is never
+    occluded."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     # painter's order: lower observation room (back) -> taller chamber (front) ->
     # the one-way mirror on the shared wall -> the hero left pane (LIT glass) ->
-    # the signature (seated subject + A/B panel + predicted needle + RT readout)
-    # ON TOP of the lit glass.
+    # the signature (seated subject + A/B panel + predicted needle + RT readout).
     obs = observation_room(c)
     ch = experiment_chamber(c)
     one_way_mirror(c, ch, obs)
     U0, U1, V0, V1 = chamber_window(c, ch)
     subject_and_panel(c, ch, U0, U1, V0, V1)
 
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    # Draw the second observation room (t3) BEFORE the gallery deck (t4/t5) so the
+    # back-right room sits correctly behind the deck-mounted additions.
+    if stage >= 3:
+        stage3_second_room(c, obs)
+    if stage >= 2:
+        stage2_camera_dome(c, ch, obs)
+    if stage >= 4:
+        deck = stage4_gallery(c, ch, obs)
+    if stage >= 5:
+        stage5_screenwall(c, deck, ch)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/mindframe"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "behavioral-lab"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped behavioral-lab.png, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": MIND, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/mindframe_behavioral-lab.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"mindframe_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"mindframe_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

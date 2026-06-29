@@ -36,6 +36,25 @@ Composed from art/isobuild.{Box} — NO iso.draw_cube / base_windows.
 Draw order: contact shadow + long wing BOX (back) -> end annex -> roof ridge + eave +
 rooflights -> lit-LEFT cohort-office glass ribbon (hero) -> shaded-right plainer face
 -> rooftop Year 1->5 timeline (ridge ticks + medallions + trend-line + token).
+
+═══════════════════════════════════════════════════════════════════════════════════
+UPGRADE-EVOLUTION pass (this building) — cumulative _t2.._t5 sprites unlocked at level
+tier-ups. The base form (stage 1) is UNCHANGED. Theme for THIS building: the running
+study accumulates WAVES and COHORTS over the YEARS — it grows another wave on the
+timeline, enrolls another cohort bay, then stands up a data-warehouse of stored waves,
+and finally the timeline blooms into a glowing multi-wave trend-ribbon. The evolved
+glow is the lab's shared SIGNAL-CYAN e/E (stored data), kept distinct from the building's
+own magenta o/O (the human retention/people accent). Gold (q) is a t5 flourish only.
+
+  t2  small functional add : two more milestone nodes extending the timeline track past
+                             Y5 + a brighter o/O "current-wave" pip on the latest node
+  t3  structural add       : an additional COHORT BAY extending the wing front (repeat
+                             the windowed Box module, b frame) — another cohort enrolled
+  t4  major add            : a DATA-WAREHOUSE TOWER off the back end with stacked glowing
+                             cyan archive-drawers of accumulated waves (years stored)
+  t5  crowning feature     : the timeline becomes a glowing multi-wave TREND-RIBBON — a
+                             dense bright-cyan trend-line with pulsing milestone nodes
+                             across the roof, + gold ridge rail + gold warehouse-tower cap
 """
 import os
 import sys
@@ -45,9 +64,17 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder, RX, RY, LX, LY
 
+# Base MindFrame palette (shared keys) + the EVOLVED accent shades reserved for the
+# upgrade stages only (they appear in NO stage-1 geometry, so the shipped base PNG is
+# byte-identical). These exact evolved keys+hexes are the lab-wide set shared by all
+# 10 mindframe buildings:
+#   b  deep indigo steel — matured structure tone for the t3 bay frame + t4 tower mass
+#   e  energized signal-cyan glow (mid)   E  signal-cyan glow (bright) — the t4/t5 data
+#   q  premium gold trim — t5 flourish ONLY (NOT a whole-building recolor)
 MIND = {"K": "#181428", "W": "#e8e2f6", "L": "#cabfe6", "M": "#9f90c8", "D": "#6f5fa0", "d": "#4a3c70",
         "h": "#ecc8f4", "c": "#d0a8ee", "g": "#a45ce0", "G": "#6a2fb0",
-        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80"}
+        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80",
+        "b": "#2b2440", "e": "#7fd4ff", "E": "#d6f4ff", "q": "#f3c63a"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
@@ -58,6 +85,12 @@ def _stamp(c, x0, y0, rows):
         for i, ch in enumerate(row):
             if ch != ".":
                 c.set(x0 + i, y0 + j, ch)
+
+
+def _clamp_pt(p):
+    """Clamp a point inside the 0..63 canvas so long beams/arcs never overshoot the
+    edge and read as flat antennas (a volt-lab pitfall)."""
+    return (max(0, min(63, int(round(p[0])))), max(0, min(63, int(round(p[1])))))
 
 
 # ── 1. LONG WING BLOCK — the stretched-out study corridor (drawn FIRST) ───────
@@ -323,6 +356,12 @@ def timeline(c, ridge):
         c.set(tx + dx, ty + dy, "K")        # clean K halo ring
     c.set(tx, ty, "O")                      # bright O participant dot at the centre
 
+    # Return the rooftop signature anchors the upgrade stages reuse so they extend the
+    # SAME timeline (no second hardcoded guess): the per-year disc centres, the flat
+    # tick row, and the trend-line vertices (crown points).
+    return {"med_cx": med_cx, "med_cy": med_cy, "tick_y": TICK_Y, "trend": tl,
+            "ridge": ridge}
+
 
 # ── 7. RETENTION READOUT — tiny climbing "%" gauge on the end annex ───────────
 def retention_readout(c, annex):
@@ -348,25 +387,303 @@ def retention_readout(c, annex):
     c.set(gx + 1, gy - 3, "O")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS years-of-study
+# structure onto the prior form — never restarts, never recolors the whole building.
+# Theme: the long cohort wing accumulates WAVES and COHORTS over time. Additions grow
+# the EXISTING timeline (right, past Y5), extend the wing's OWN front module, and rise
+# off the BACK/annex end as stored data — so the lit-LEFT cohort ribbon + the rooftop
+# Year1->5 timeline signature are never occluded. The evolved glow is the lab's shared
+# signal-cyan e/E (stored waves of data), kept distinct from the building's magenta o/O
+# (the people/retention accent). Gold (q) only at t5.
+#
+#   t2  small functional add   : two more milestone nodes past Y5 + a brighter current-wave pip
+#   t3  structural add         : an additional COHORT BAY extending the wing front (b frame)
+#   t4  major add              : a DATA-WAREHOUSE TOWER off the back end, cyan archive-drawers
+#   t5  crowning feature       : a glowing multi-wave TREND-RIBBON + gold ridge rail + tower cap
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_more_waves(c, sig):
+    """t2 — SMALL FUNCTIONAL ADD: the study runs MORE WAVES, so the timeline track grows
+    two more milestone nodes (Y6, Y7) continuing PAST the Y5 summit, with the magenta
+    trend-line extended onto them, and the latest node (Y7) carries a brighter o/O
+    "current-wave" marker pip (the wave running right now). Extends the building's OWN
+    rooftop timeline signature to the right rather than adding a foreign prop. Stays on
+    the wing roof, climbing into the clear strip just above the back/annex end so it
+    never touches the front cohort ribbon."""
+    med_cx, med_cy = sig["med_cx"], sig["med_cy"]
+    tl = sig["trend"]
+    # continue the same per-year step the base discs used: Y5 is the last, at
+    # (med_cx[-1], med_cy[-1]); the discs march in x by ~6px and climb by ~1px/yr. Keep
+    # the SAME march so Y6/Y7 read as the next two beads on the existing string. Clamp x
+    # so the right node stays well inside the canvas (x<=56).
+    dx = med_cx[-1] - med_cx[-2]                 # per-year x march (~6)
+    dy = med_cy[-1] - med_cy[-2]                 # per-year y climb (slightly up: negative)
+    x5, y5 = med_cx[-1], med_cy[-1]
+    crown5 = tl[-1]                              # the trend summit at Y5 (line endpoint)
+    new_centres = []
+    prev_crown = crown5
+    for k in (1, 2):                             # Y6, Y7
+        nx = min(56, int(round(x5 + k * dx)))
+        ny = max(4, int(round(y5 + k * dy)))    # keep climbing gently, stay on-canvas
+        new_centres.append((nx, ny))
+        # a SMALL 3x3 milestone node (a beadier waypoint than the 5x5 portrait discs, so
+        # it reads clearly as "future wave marker", not another full cohort portrait).
+        # Kept in the timeline's OWN warm magenta/people palette (h rim around an o core,
+        # K-framed) so it stays part of the pink retention track and does NOT pre-empt the
+        # cool signal-cyan e/E reserved for the t4 data warehouse.
+        _stamp(c, nx - 1, ny - 1, [
+            "KhK",
+            "hoh",
+            "KhK",
+        ])
+        # extend the magenta trend-line from the previous crown up to this node's crown
+        crown = (nx, ny - 1)
+        a = _clamp_pt((prev_crown[0], prev_crown[1]))
+        b = _clamp_pt(crown)
+        c.line((a[0], a[1] + 1), (b[0], b[1] + 1), "o")   # warm body, continues the climb
+        c.line(a, b, "O")                                 # bright hot core
+        prev_crown = crown
+    # the latest node (Y7) is the CURRENT wave — a brighter o/O pip crowning it + a tiny
+    # O spark so the eye reads "this is the live wave running now".
+    lx, ly = new_centres[-1]
+    c.set(lx, ly, "O")                          # hot centre of the current node
+    c.set(lx, ly - 2, "O")                      # pip rising above it
+    c.set(lx, ly - 3, "o")
+    c.set(lx + 1, ly - 2, "o")
+
+
+def stage3_cohort_bay(c, wing):
+    """t3 — STRUCTURAL ADD: another COHORT is enrolled, so a new windowed cohort-office BAY
+    module is built abutting the wing's FRONT-LEFT, projecting TOWARD the viewer as a short
+    second corridor — a real new Box mass that repeats the lit-LEFT glazed-study-room module
+    (g/c glass, soft sheen) so it keeps the long-wing corridor language, framed in the matured
+    deep-indigo `b`. Grows the footprint OUT toward the viewer (NOT past the canvas's left
+    edge — the wing already reaches x≈6, so a leftward extension would clip col 0; this
+    forward module stays fully on-canvas at x∈[10,32]). Sits LOW + in FRONT so it never rises
+    into the rooftop timeline signature. Returns the new bay Box."""
+    # A short low front-parallel module: seated forward-left of the wing apex and stepped DOWN
+    # so it reads as a second cohort corridor abutting the wing front and projecting toward the
+    # viewer. Tuned (apex 16,30 / wx8 wy3 h8) to sit fully on-canvas: x∈[10,32], y∈[30,49].
+    bay = Box(top=(16, 30), wx=8, wy=3, h=8)
+    # draw with the same indigo walls, but a deep-indigo `b` shaded right face + a `b` frame
+    # band so the new module reads as a matured, freshly-built addition seamed to the wing.
+    bay.draw(c, roof="M", lwall="M", rwall="b", roof_hi="W", outline="K")
+    # repeat the hero glazing: two evenly-spaced glazed cohort-office bays on the lit-LEFT face
+    # (matches the wing's rhythmic study-room corridor, just shorter — a new enrolled cohort).
+    for (u0, u1) in [(0.10, 0.45), (0.55, 0.90)]:
+        bay.window(c, "left", u0, u1, 2.4, 6.4,
+                   glass="g", hi="h", shade="G", mullions=1, sheen="W")
+        # a subtle d desk-line + a tiny c monitor-glow dot (same study-room motif as the wing)
+        c.line(bay.left_pt(u0 + 0.02, 5.6), bay.left_pt(u1 - 0.02, 5.6), "d")
+        cm = bay.left_pt((u0 + u1) / 2, 5.0)
+        c.set(int(round(cm[0])), int(round(cm[1])), "c")
+    # a clean K base sill under the new bay's glazing (ties it to the wing's sill band)
+    c.line(bay.left_pt(0.06, 6.6), bay.left_pt(0.94, 6.6), "K")
+    # a `b` frame seam down the lit back-left vertical edge = the new-built joint to the wing
+    c.line(bay.r_left, (bay.r_left[0], bay.r_left[1] + 8), "b")
+    # a small "new cohort enrolled" tell: a fresh c enrollment pip glowing on the bay roof
+    rp = bay.roof_pt(0.5, 0.4)
+    c.set(int(round(rp[0])), int(round(rp[1])), "c")
+    c.set(int(round(rp[0])), int(round(rp[1])) - 1, "h")
+    return bay
+
+
+def stage4_warehouse(c, wing, annex):
+    """t4 — MAJOR ADD: years of accumulated waves need STORAGE, so a DATA-WAREHOUSE TOWER
+    rises off the BACK end of the wing, just behind/above the records annex — a prominent
+    tall new mass of deep-indigo `b` with a stack of glowing signal-cyan `e/E` ARCHIVE-
+    DRAWERS (each drawer = a stored wave of cohort data), a bright `E` active read-head on
+    the top drawer, and a `b` lattice spine. The clear new vertical mass that says 'this
+    study now warehouses years of data'. Rises in the clear sky ABOVE the annex (back-
+    right), kept fully on-canvas and clear of the rooftop timeline (which lives further
+    left). Returns (tx_centre, top_y) so the t5 gold cap re-anchors off the SAME tower."""
+    # base the tower ON the annex roof (its top is the highest back-right mass), centred
+    # over the annex and rising straight up into clear sky. Recompute from the annex's own
+    # roof centre so it sits ON the building, not floating.
+    bxf, byf = annex.roof_pt(0.5, 0.5)
+    bx = int(round(bxf))                         # tower x-centre (~39)
+    base_y = int(round(byf))                     # tower foot on the annex roof (~21)
+    twr_w = 5                                    # 5px-wide tower body
+    top_y = max(4, base_y - 16)                  # TALL — rises well above the annex
+    x0 = bx - twr_w // 2                          # left edge of the tower body
+    x1 = x0 + twr_w - 1                           # right edge
+    # --- tower body: a deep-indigo `b` slab with a lit-left M edge + shaded-right D edge
+    #     and a K outline, so it reads as a solid built chassis (not a flat bar). ---
+    c.fill_poly([(x0, base_y), (x1, base_y), (x1, top_y), (x0, top_y)], "b")
+    c.line((x0, base_y), (x0, top_y), "M")        # lit left edge
+    c.line((x1, base_y), (x1, top_y), "D")        # shaded right edge
+    c.line((x0, top_y), (x1, top_y), "K")         # top cap edge
+    c.line((x0, base_y), (x0, top_y), "K")
+    c.line((x1, base_y), (x1, top_y), "K")
+    c.line((x0, base_y), (x1, base_y), "K")       # foot seam onto the annex roof
+    # --- stacked glowing ARCHIVE-DRAWERS: 4 horizontal drawer faces up the tower, each a
+    #     bright cyan slot (a stored wave) with a K lip — like pulled-out data drawers. ---
+    drawer_h = 3
+    n_draw = 4
+    for d in range(n_draw):
+        dy0 = base_y - 2 - d * drawer_h
+        dy1 = dy0 - (drawer_h - 1)
+        if dy1 < top_y + 2:
+            break
+        # drawer face: bright E on the lit side fading to mid e on the shaded side
+        c.fill_poly([(x0 + 1, dy0), (x1 - 1, dy0), (x1 - 1, dy1), (x0 + 1, dy1)], "e")
+        c.line((x0 + 1, dy1), (x1 - 1, dy1), "E")     # bright lit drawer top edge
+        c.set(x0 + 1, dy1, "E")
+        c.line((x0 + 1, dy0 + 1), (x1 - 1, dy0 + 1), "K")  # K drawer lip / gap below
+    # --- a bright E active READ-HEAD glint riding the top drawer (the warehouse is being
+    #     queried right now) + a small `b` cap plinth on the very top (t5 caps this). ---
+    head_y = base_y - 2 - (n_draw - 1) * drawer_h
+    c.set(bx, max(top_y + 1, head_y - 1), "E")
+    c.set(bx + 1, max(top_y + 1, head_y - 1), "W")
+    # a slim `b`/K finial plinth on the tower top for the crown cap to land on
+    c.set(bx, top_y, "b")
+    c.set(bx, top_y - 1, "K")
+    # a couple of `b` lattice ticks down a side edge so the chassis reads as built framing
+    for yy in range(top_y + 3, base_y - 1, 4):
+        c.set(x1 - 1, yy, "b")
+    return (bx, top_y)
+
+
+def stage5_ribbon_gold(c, sig, tower_top):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED longitudinal study. The whole rooftop timeline
+    blooms into a glowing multi-wave TREND-RIBBON: a dense bright signal-cyan `e/E` trend
+    band riding just above the existing magenta retention line, threading every milestone,
+    with a pulsing `E` node crowning each cohort medallion (years of waves now shimmer as
+    one live ribbon). Plus GOLD premium trim — a `q` gold RIDGE RAIL capping the spine beam
+    and a `q` gold CAP on the data-warehouse tower. Reads as elite/maxed, still clearly the
+    same cohort wing. Re-anchors off the SAME signature points (disc crowns from `timeline`,
+    tower top from `stage4_warehouse`) so nothing is a second hardcoded guess."""
+    import math
+    med_cx, med_cy = sig["med_cx"], sig["med_cy"]
+    tl = sig["trend"]                            # base trend-line vertices (per-year crowns)
+    tick_y = sig["tick_y"]                       # the FLAT year-axis tick row (the visible track)
+
+    # --- 1) GOLD RIDGE RAIL gilding the timeline TRACK: a clean q rail riding the FLAT
+    #     year-axis row just above the year ticks, spanning the medallion run — so the gold
+    #     reads as the polished timeline track now gilded, NOT a stray diagonal. (It rides
+    #     the VISIBLE flat track the medallions sit on, not the descending structural spine
+    #     beam, which is mostly hidden under the disc row.) Drawn FIRST so the glowing
+    #     ribbon + pulse nodes layer ON TOP of it. ---
+    rail_y = tick_y - 1                           # one row above the flat ticks
+    rx0, rx1 = med_cx[0], med_cx[-1]              # span the year-axis run, on-canvas
+    for x in range(min(rx0, rx1), max(rx0, rx1) + 1):
+        c.set(max(0, min(63, x)), rail_y, "q")    # gold track rail
+    c.set(max(0, min(63, rx0)), rail_y - 1, "O")  # a bright gold glint capping the Y1 rail end
+
+    # --- 2) the multi-wave TREND-RIBBON: a dense bright band of signal-cyan riding ~1px
+    #     ABOVE the existing magenta line, threading the same per-year crowns, so the two
+    #     read as a layered ribbon (warm people-line + cool data-wave). Build the full
+    #     vertex chain = the 5 base crowns; ribbon = an E hot core with an e under-glow. ---
+    ribbon = list(tl)                            # the same per-year crown vertices
+    for i in range(len(ribbon) - 1):
+        a = _clamp_pt(ribbon[i])
+        b = _clamp_pt(ribbon[i + 1])
+        c.line((a[0], a[1] - 1), (b[0], b[1] - 1), "E")   # bright cyan ribbon core (above)
+        c.line((a[0], a[1]), (b[0], b[1]), "e")           # cyan under-glow hugging the line
+    # --- 3) a pulsing E NODE crowning each cohort medallion (the waves shimmer live) ---
+    for i in range(len(med_cx)):
+        nx, ny = med_cx[i], med_cy[i] - 4        # just above each disc crown
+        ny = max(2, ny)
+        c.set(nx, ny, "E")                       # bright pulse node
+        c.set(nx, ny + 1, "e")                   # soft glow under it
+        if i % 2 == 0:                           # alternate a tiny W sparkle (pulsing)
+            c.set(nx, ny - 1, "W")
+    # a brighter W summit sparkle re-crowning the Y5 peak (the ribbon's high point)
+    px, py = med_cx[-1], max(2, med_cy[-1] - 5)
+    c.set(px, py, "W")
+    c.set(px - 1, py + 1, "E")
+    c.set(px + 1, py + 1, "E")
+
+    # --- 4) GOLD CAP on the data-warehouse tower top (recompute from the SAME tower-top
+    #     point stage4 returned, so the cap lands exactly on the tower, not a 2nd guess).
+    #     A small q pyramidal cap + a bright O finial spark = the maxed archive crown. ---
+    if tower_top is not None:
+        tx, ty = tower_top
+        cap_y = max(2, ty - 2)
+        # a small gold pyramidal cap seated on the tower's finial plinth
+        c.fill_poly([(tx - 2, ty), (tx + 2, ty), (tx, cap_y)], "q")
+        c.line((tx - 2, ty), (tx, cap_y), "O")    # lit gold edge
+        c.set(tx, max(1, cap_y - 1), "O")         # bright finial spark on the very top
+        c.set(tx, cap_y, "q")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the longitudinal study wing at upgrade `stage` (1..5). Stage 1 is IDENTICAL
+    to the shipped base; each higher stage keeps every prior addition and bolts on the next
+    (t2 more-waves → t3 cohort bay → t4 warehouse tower → t5 trend-ribbon + gold). Painter's
+    order keeps rooftop additions on top of the masses they grow from, and every addition
+    stays clear of the lit-LEFT cohort ribbon + rooftop Year1->5 timeline signature."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     # painter's order: long wing body (back) -> end annex cap -> roofline ridge +
     # eave + rooflights -> lit-LEFT cohort-office glass ribbon (HERO face) ->
     # shaded-right plainer face -> rooftop Year 1->5 timeline signature -> readout.
     wing = long_wing(c, WING)
     annex = end_annex(c, wing)
+    # t4 warehouse tower mounts on the annex roof and rises up: draw it AFTER the annex so
+    # it sits on it, but BEFORE the rooftop timeline so the timeline (further left/front)
+    # is never occluded by the back tower.
+    tower_top = None
+    if stage >= 4:
+        tower_top = stage4_warehouse(c, wing, annex)
     ridge = roofline(c, wing)
     office_ribbon(c, wing)
     right_face(c, wing)
-    timeline(c, ridge)
+    # t3 cohort bay is a NEW low module projecting TOWARD the viewer off the wing front-left:
+    # draw it AFTER the wing's front face (office_ribbon/right_face) so it correctly occludes
+    # the lower-left front as a nearer mass, but it is LOW so it never reaches the rooftop
+    # timeline drawn next.
+    new_bay = None
+    if stage >= 3:
+        new_bay = stage3_cohort_bay(c, wing)
+    sig = timeline(c, ridge)
     retention_readout(c, annex)
 
+    # --- CUMULATIVE UPGRADE STAGES (rooftop layers, drawn last so they read on top) ---
+    if stage >= 2:
+        stage2_more_waves(c, sig)
+    if stage >= 5:
+        stage5_ribbon_gold(c, sig, tower_top)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/mindframe"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "longitudinal-study-wing"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped base PNG, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": MIND, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/mindframe_longitudinal-study-wing.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"mindframe_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"mindframe_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

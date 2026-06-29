@@ -33,9 +33,16 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
+# Base ChemWorks palette (shared keys) + a few EVOLVED accent shades reserved for
+# the upgrade stages only (they never appear in stage 1, so catalysis-lab.png is
+# unchanged). These exact keys+hexes match the chemworks reference builder:
+#   b  deepened structure steel — matured tone for t3+ new masses
+#   e  energized reagent glow (mid)   E  energized reagent glow (bright) — t4/t5 power
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 CHEM = {"K": "#161a2e", "W": "#e6ecfb", "L": "#c2cdee", "M": "#9aa8d8", "D": "#6f7cb0", "d": "#4b5688",
         "h": "#d6ecff", "c": "#a8d4ff", "g": "#4aa0e6", "G": "#2166b0",
-        "o": "#c89cf0", "O": "#e0c2ff", "r": "#6a34a8"}
+        "o": "#c89cf0", "O": "#e0c2ff", "r": "#6a34a8",
+        "b": "#363c5e", "e": "#36e0c8", "E": "#c2fff2", "q": "#f0c64a"}
 
 
 # ── low-level helpers ────────────────────────────────────────────────────────
@@ -89,6 +96,17 @@ DOME_CX = CX
 DOME_CY = TOP_Y - 1             # dome spring line (just above the drum rim)
 DRX = RX - 2                    # dome radius inset from the drum rim
 DRY_TOP = 11                    # dome height (a WIDE bell, not a tall egg)
+
+# ── UPGRADE-EVOLUTION geometry (constants shared by stageN helpers so a later
+# stage that references an earlier add re-derives from the SAME source) ───────
+# The t4 fluidized-bed RISER tower seats on the drum's back-RIGHT top shoulder,
+# clear of the dome (dome right edge ~x=40) and clear of the central product jet
+# (x≈29..30). Its foot + top are defined ONCE here because both stage4_riser
+# (draws the tower) and the painter's-order assembly read them.
+RISER_CX = 39                   # back-right of the dome, on the drum top shoulder
+RISER_FOOT_Y = TOP_Y - 1        # springs off the drum top rim (≈y27)
+RISER_RX = 3                    # slim tower radius
+RISER_TOP_Y = 7                 # tower top (clamped: cyclone head lands ≥ y2)
 
 
 def drum_hw(yy):
@@ -434,25 +452,327 @@ def rate_dial(c, base_y):
     c.set(dx + 1, dy - 2, "O")                 # O peak mark (rate maximized)
 
 
-# ── ASSEMBLE (painter's order: back→front, ground→sky) ───────────────────────
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS catalysis /
+# fluidized-bed / multi-jet structure onto the prior form — never restarts, never
+# recolors the whole vessel. Theme: the single glass-dome reactor grows into a
+# fully built-out catalytic process plant. Colours mature stage by stage; the
+# energized glow (e/E teal) arrives at t4; gold (q) only as a t5 flourish.
+#
+# The signature is the bright PRODUCT JET erupting up through the clear dome crown
+# (core at x≈29..30, tip burst ≈(30,10)). EVERY add stays clear of that jet and of
+# the glass dome, growing off the drum's RIGHT shoulder / FRONT-LEFT ground / back.
+#
+#   t2  small functional add : a catalyst-pellet HOPPER + feed nozzle on the right
+#                              drum shoulder; a brighter O droplet at the jet crown
+#   t3  structural add       : a packed-bed reactor ANNEX (low covered Box w/ a
+#                              g-glazed catalyst-bed window of stacked o pellets)
+#   t4  major add            : a fluidized-bed RISER tower off the back-right roof
+#                              (tall cylinder, e bubbling-bed core + cyclone head)
+#   t5  crowning feature     : a glowing multi-jet CATALYTIC CROWN — three E plumes
+#                              off a hot core ring + q gold nozzle collars + band
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# the signature product-jet crown, derived ONCE so t2 + t5 anchor to the same spot
+JET_CX = DOME_CX                       # jet core column x (=30)
+JET_CROWN_Y = (DOME_CY - 4) - 13       # bed_cy - 13 => burst tip ≈ y10
+
+
+def _clset(c, x, y, ch):
+    """Set a pixel only if it lands inside the 64x64 canvas (clamp/skip guard so a
+    stray overshoot can never paint off-canvas or wrap)."""
+    xi, yi = int(round(x)), int(round(y))
+    if 0 <= xi < 64 and 0 <= yi < 64:
+        c.set(xi, yi, ch)
+
+
+def stage2_hopper(c):
+    """t2 — SMALL FUNCTIONAL ADD: a catalyst-pellet HOPPER — a clear inverted-funnel
+    bin heaped with o/O pellets — standing on a short leg on the drum's back-RIGHT
+    top rim (well right of the dome, clear of the LEFT charge door + the jet), with
+    an angled feed PIPE carrying its charge line LEFT toward the dome base so the
+    reactor is now actively dosed with fresh catalyst. Modest, base palette + one
+    brightened O droplet spat off the product-jet crown (the t2 fountain accent).
+
+    Drawn as a distinct standing bin (a 2px stand lifts it clear of the drum rim so
+    it reads as a fixture ON the rim, not a lump fused into the dome glass)."""
+    hx = CX + 12                        # back-right drum top rim (~x42), right of dome
+    rim_y = TOP_Y - 3                   # the drum's back-right top rim height here
+    # ---- a short K/D STAND lifting the bin clear of the rim (reads as mounted) ----
+    for dy in range(0, 3):
+        _clset(c, hx, rim_y - dy, "D")
+        _clset(c, hx - 1, rim_y - dy, "K")
+        _clset(c, hx + 1, rim_y - dy, "K")
+    btm = rim_y - 3                     # bin sits on top of the stand
+    # ---- the HOPPER bin: a clear inverted funnel (wide lit-M top -> narrow spout) ----
+    bin_rows = [                        # (half-width, fill) TOP->bottom, funnels in
+        (3, "M"), (3, "L"), (2, "D"), (1, "d"),
+    ]
+    btop = btm - (len(bin_rows) - 1)
+    for i, (hw, fl) in enumerate(bin_rows):
+        y = btop + i
+        for dx in range(-hw, hw + 1):
+            _clset(c, hx + dx, y, fl)
+        _clset(c, hx - hw - 1, y, "K"); _clset(c, hx + hw + 1, y, "K")
+    _clset(c, hx - 3, btop, "W")        # bright lit-left rim glint
+    # ---- o/O catalyst PELLETS heaped proud of the open hopper mouth ----
+    for dx, ch in ((-2, "o"), (-1, "O"), (0, "O"), (1, "o"), (2, "o")):
+        _clset(c, hx + dx, btop - 1, ch)
+    _clset(c, hx - 1, btop - 2, "O"); _clset(c, hx + 1, btop - 2, "o")  # heaped crest
+    # ---- feed PIPE: an angled D charge line from the bin spout running LEFT-down
+    #      toward the dome base collar (the dose path), with an o pellet in transit
+    sx, sy = hx, btm + 1                # spout exit (under the funnel)
+    feed = [(sx, sy), (sx - 2, sy + 1), (sx - 4, sy + 2), (sx - 6, sy + 3)]
+    for i in range(len(feed) - 1):
+        c.line(feed[i], feed[i + 1], "D")
+    for fxp, fyp in feed:
+        _clset(c, fxp, fyp + 1, "K")    # K underside so the pipe reads
+    _clset(c, sx - 3, sy + 2, "o")      # a pellet tumbling down the feed
+    # ---- brighter O droplet spat off the product-jet crown (t2 fountain accent) ----
+    _clset(c, JET_CX, JET_CROWN_Y - 1, "O")
+    _clset(c, JET_CX + 1, JET_CROWN_Y - 2, "O")
+    _clset(c, JET_CX - 1, JET_CROWN_Y - 2, "o")
+
+
+def stage3_packed_bed_annex(c):
+    """t3 — STRUCTURAL ADD: a low PACKED-BED REACTOR annex — a secondary covered Box
+    bolted onto the lit (LEFT-FRONT) side at ground, showing a g-glazed catalyst-bed
+    WINDOW packed with stacked o pellet beads. A real new structural mass (its own
+    prism + roof) extending the plant OUT to the front-left while staying LOWER than
+    the drum, so it never rises into the charge door, the dome, or the jet.
+    Introduces the matured deep-steel tone `b` for the annex's shaded shell."""
+    # seat a small prism forward-and-left of the drum foot, on the plinth, growing
+    # toward the front-left. Top-back corner sits low (well under the charge door).
+    annex = Box(top=(19, 37), wx=6, wy=5, h=9)
+    annex.shadow(c, "K")
+    # cool/deep shell tones so it reads as an attached service block (b shaded face)
+    c.fill_poly([annex.r_left, annex.r_front, annex.w_front, annex.w_left], "M")
+    c.fill_poly([annex.r_front, annex.r_right, annex.w_right, annex.w_front], "b")
+    c.fill_poly([annex.r_top, annex.r_right, annex.r_front, annex.r_left], "D")
+    c.fill_poly([annex.r_top, annex.r_left, annex.r_front], "M")   # lit roof triangle
+    c.line(annex.r_top, annex.r_left, "L")
+    c.line(annex.r_top, annex.r_right, "L")
+    for a, b in [(annex.r_top, annex.r_right), (annex.r_right, annex.r_front),
+                 (annex.r_front, annex.r_left), (annex.r_left, annex.r_top),
+                 (annex.r_left, annex.w_left), (annex.r_front, annex.w_front),
+                 (annex.r_right, annex.w_right),
+                 (annex.w_left, annex.w_front), (annex.w_front, annex.w_right)]:
+        c.line(a, b, "K")
+    # ---- the CATALYST-BED WINDOW on the lit-left face: a big clear pane so the
+    #      packed bed shows through. Bright c glass with an h sky band so it reads
+    #      unmistakably as a glazed reactor sight-window (no dark mush). ----
+    annex.window(c, "left", 0.14, 0.86, 1.4, 6.8, glass="c", hi="h", shade="g",
+                 mullions=1)
+    # ---- stacked o/O PELLET BEADS packed behind the glass (the catalyst bed): a
+    #      few staggered rows of 2px beads so it reads as a heaped packed bed. ----
+    bed_rows = [(4.0, (0.26, 0.46, 0.66)), (5.0, (0.34, 0.56, 0.74)),
+                (5.9, (0.28, 0.50, 0.70))]
+    for v, us in bed_rows:
+        for u in us:
+            p = annex.left_pt(u, v)
+            _clset(c, p[0], p[1], "o")
+            _clset(c, p[0] + 1, p[1], "O")        # 2px bead, bright crest
+            _clset(c, p[0], p[1] + 1, "r")        # each bead's shaded underside
+    # a soft O glow on the topmost bead row (the bed runs warm violet)
+    for u in (0.40, 0.60):
+        p = annex.left_pt(u, 3.4); _clset(c, p[0], p[1], "O")
+    # ---- a short b feed PIPE tying the annex roof back up to the drum (plumbed) ----
+    px, py = int(round(annex.r_top[0])), int(round(annex.r_top[1]))
+    for k in range(4):
+        _clset(c, px + k, py - k, "b")
+        _clset(c, px + k, py - k - 1, "D")
+    _clset(c, px, py, "K")
+
+
+def stage4_riser(c):
+    """t4 — MAJOR ADD: a tall FLUIDIZED-BED RISER tower rising off the drum's back-
+    RIGHT top shoulder, BESIDE the glass dome — a slim steel `cylinder` with a
+    glowing energized bubbling-bed CORE climbing it and a CYCLONE separator head
+    flaring at the top. The prominent new vertical mass that says 'this reactor now
+    runs a continuous fluidized process'. Palette matures: deep `b` steel shell +
+    energized `e/E` fluidized core. Foot/top from the module RISER_* constants so
+    it stays clear of the dome (right edge ~x40) and the central jet (x≈29..30)."""
+    rcx = RISER_CX
+    foot_y = RISER_FOOT_Y
+    top_y = RISER_TOP_Y
+    rx = RISER_RX
+    # ---- the steel riser SHELL (deep-steel b cylinder, lit-left M edge, K outline) ----
+    for xx in range(-rx, rx + 1):
+        col = "M" if xx < 0 else ("b" if xx > 0 else "b")
+        for y in range(top_y, foot_y + 1):
+            _clset(c, rcx + xx, y, col)
+    c.line((rcx - rx, top_y), (rcx - rx, foot_y), "K")
+    c.line((rcx + rx, top_y), (rcx + rx, foot_y), "K")
+    c.line((rcx - rx, top_y), (rcx - rx, foot_y), "K")
+    _clset(c, rcx - rx + 1, top_y + 1, "L")          # lit edge glint
+    # a short b plinth where the riser seats on the drum top
+    for dx in range(-rx - 1, rx + 2):
+        _clset(c, rcx + dx, foot_y + 1, "K")
+    for dx in range(-rx, rx + 1):
+        _clset(c, rcx + dx, foot_y, "b")
+    # ---- a few steel TRAY bands girdling the riser (process stages) ----
+    for ty in range(top_y + 4, foot_y, 5):
+        c.line((rcx - rx, ty), (rcx + rx, ty), "K")
+        c.line((rcx - rx, ty - 1), (rcx + rx, ty - 1), "M")
+    # ---- the glowing fluidized BED CORE bubbling up the riser centre (energized) ----
+    for j, y in enumerate(range(top_y + 2, foot_y - 1)):
+        ch = "E" if j % 3 == 0 else "e"
+        _clset(c, rcx, y, ch)
+        if j % 3 == 1:
+            _clset(c, rcx - 1, y, "e")               # a bubble fattening the column
+    # ---- the CYCLONE separator HEAD flaring at the top (a wider conical cap) ----
+    cy = top_y - 1
+    for dx in range(-rx - 1, rx + 2):                # wide cyclone shoulder
+        _clset(c, rcx + dx, cy, "M" if dx < 0 else "b")
+    _clset(c, rcx - rx - 1, cy, "K"); _clset(c, rcx + rx + 1, cy, "K")
+    for dx in range(-rx, rx + 1):                    # the conical taper up
+        _clset(c, rcx + dx, cy - 1, "D")
+    for dx in (-1, 0, 1):
+        _clset(c, rcx + dx, cy - 2, "M")
+    _clset(c, rcx, cy - 3, "L")                      # cyclone apex glint
+    _clset(c, rcx, cy - 4, "K")
+    # a short b return DOWNCOMER off the cyclone back to the drum (closes the loop)
+    for k in range(3):
+        _clset(c, rcx + rx + 1, cy + 1 + k, "b")
+        _clset(c, rcx + rx + 2, cy + 1 + k, "K")
+
+
+def stage5_catalytic_crown(c):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED catalytic plant. The single product jet
+    blooms into a glowing MULTI-JET CATALYTIC CROWN: a hot CORE RING girdles the jet
+    base at the dome crown and THREE bright E reaction plumes fountain up off it
+    (the centre plume capping the original jet, two flanking) — and the plant is
+    dressed out with GOLD premium trim (q nozzle collars at each plume foot + a gold
+    reactor BAND wrapping the drum). Reads as elite/maxed, still recognizably the
+    same glass-dome reactor. Anchored to the SAME jet crown the signature uses."""
+    import math
+    cx = JET_CX
+    crown_y = JET_CROWN_Y + 2          # hot ring sits just below the jet burst tip
+    # ---- a hot CORE RING (energized teal ellipse) girdling the jet base ----
+    for a in range(0, 360, 30):
+        rxp = cx + 4 * math.cos(math.radians(a))
+        ryp = crown_y + 2 * math.sin(math.radians(a))
+        _clset(c, rxp, ryp, "e")
+    for a in range(0, 360, 60):        # a few bright nodes on the ring
+        rxp = cx + 4 * math.cos(math.radians(a))
+        ryp = crown_y + 2 * math.sin(math.radians(a))
+        _clset(c, rxp, ryp, "E")
+    _clset(c, cx, crown_y, "E")        # bright ring core
+    # ---- THREE reaction PLUMES fountaining up off the ring (centre + 2 flanks) ----
+    # each plume: a short bright E column tapering to an O droplet burst, clamped on
+    # canvas (top ≈ y1..2). Flanks lean outward so the trio fans like a fountain.
+    plumes = [(-4, 2, -1), (0, 0, 0), (4, 2, 1)]   # (foot dx, shorten, lean-dir)
+    for fdx, shorten, lean_dir in plumes:
+        fx = cx + fdx                              # plume foot x (on the ring)
+        ftop = max(1, crown_y - 7 + shorten)       # centre plume is the tallest
+        # bright E column rising from the ring foot to the tip; flank plumes drift
+        # outward (lean_dir) as they rise so the trio fans out like a fountain.
+        for y in range(ftop, crown_y + 1):
+            lean = int(round(lean_dir * 0.34 * (crown_y - y)))
+            _clset(c, fx + lean, y, "E")
+        tip_x = fx + int(round(lean_dir * 0.34 * (crown_y - ftop)))
+        _clset(c, tip_x, ftop - 1, "O")            # O droplet bursting off the tip
+        _clset(c, tip_x + lean_dir, ftop - 1, "e")
+        # ---- q GOLD nozzle COLLAR at each plume foot on the ring (premium trim) ----
+        _clset(c, fx - 1, crown_y + 1, "q")
+        _clset(c, fx, crown_y + 1, "O")
+        _clset(c, fx + 1, crown_y + 1, "q")
+    # ---- a GOLD reactor BAND wrapping the drum (the maxed-out premium hoop) ----
+    band_y = TOP_Y + 4                  # high on the drum, below the dome collar
+    for col in range(-RX + 1, RX):
+        t = 1 - (col / RX) ** 2
+        if t < 0:
+            continue
+        edge = RY * (t ** 0.5)
+        y = int(round(band_y + (RY - edge) * 0.5))
+        _clset(c, CX + col, y, "q")
+    # two gold bosses where the band meets the drum rim corners
+    _clset(c, CX - RX + 1, band_y + 2, "O")
+    _clset(c, CX + RX - 1, band_y + 2, "O")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the catalysis-lab at upgrade `stage` (1..5). Stage 1 is IDENTICAL to
+    the shipped base; each higher stage keeps every prior addition and bolts on the
+    next (t2 hopper → t3 packed-bed annex → t4 fluidized riser → t5 multi-jet crown
+    + gold). Painter's order keeps rooftop/overhead additions on top of the masses
+    they grow from, and keeps the glass-dome catalyst bed + product jet (the hero)
+    reading on top of everything around it."""
     c = Canvas()
+    # ---- BASE FORM (stage 1, unchanged) — painter's order: ground → drum → faces
+    #      → pipework → glass dome wash → catalyst bed → dome glazing → vapor wisp.
     base_plinth(c)            # low plinth (under/behind)
+
+    # t3 packed-bed ANNEX sits forward-left on the plinth; draw it AFTER the plinth
+    # but BEFORE the drum so the drum's near edge occludes the annex's back corner.
+    if stage >= 3:
+        stage3_packed_bed_annex(c)
+
     base_y = drum(c)          # the round steel reactor drum
     charge_door(c)            # HERO: LEFT charge door + viewing window (opening LEFT)
     right_porthole(c)         # plainer shaded RIGHT face
     rate_dial(c, base_y)      # optimization rate dial on the drum
+
+    # t4 fluidized RISER rises off the back-right drum top; draw it AFTER the drum
+    # (so it seats on the shoulder) but BEFORE pipework/dome so the dome's near
+    # glass and the front pipes read in front of the tower base.
+    if stage >= 4:
+        stage4_riser(c)
+
     pipework(c)               # feed/coolant pipes + relief valve
     glass_dome_back(c)        # transparent glass dome WASH + D collar (back)
     catalyst_bed(c)           # SIGNATURE: glowing bed + 2 slow in / 1 fast out
     glass_dome_front(c)       # dome ribs + crown glint OVER the bed (seen through)
     vapor_wisp(c)             # thin vapor wisp off the relief valve (roofline)
+
+    # t2 hopper sits on the right drum shoulder; draw it AFTER the dome so its bin
+    # reads in front of the dome's right flank (it is a near, right-side fixture).
+    if stage >= 2:
+        stage2_hopper(c)
+    # t5 multi-jet crown blooms off the product-jet crown — the very front-most
+    # overhead feature; drawn LAST so its plumes cap the hero jet.
+    if stage >= 5:
+        stage5_catalytic_crown(c)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/chemworks"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "catalysis-lab"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped catalysis-lab.png, so it does NOT overwrite the base
+    PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": CHEM, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/chemworks_catalysis-lab.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"chemworks_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"chemworks_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

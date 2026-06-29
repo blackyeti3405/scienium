@@ -25,6 +25,26 @@ Composed from art/isobuild.{Box} — NO iso.draw_cube / base_windows.
 Draw order: contact shadow + ops blockhouse (back) -> tilted roof SCREEN on its
 A-frame + whip antenna -> orbital ring + satellite + cascading raster tiles +
 resolving terrain map on the screen -> the GLOWING right control-room opening (front).
+
+──────────────────────────────────────────────────────────────────────────────
+UPGRADE-EVOLUTION lab member. The build() body below is the UNCHANGED base form
+(stage 1 == shipped remote-sensing-hub.png). On top of it four CUMULATIVE upgrade
+stages bolt on ground-station / orbital-sensing structure (build up, never restart),
+copying the sampling-station.py / workshop.py pattern (build(stage) + stageN_*
+helpers + emit/build_all). Theme: the lone ops hub grows into a fully-instrumented
+multi-ring downlink station. See terrabase-evolution-plan.md (#8 remote-sensing-hub).
+  t2  small functional add : a 2nd K whip antenna (o tip beacon) + a faint c
+                             telemetry-bead ring along the roof eave + a brightened
+                             O orbit-ring node.
+  t3  structural add        : a b-housed ground-station DISH ANNEX abutting the
+                             shaded right wall, carrying a tilted L/D parabolic dish
+                             aimed up with a g feed glint.
+  t4  major add             : a 2nd larger inclined e-lit SCAN-RING crossing the
+                             first over the rooftop, with a glowing e sensor pod
+                             riding it + a deep b mast collar on the screen stand.
+  t5  crowning feature      : the rings resolve into a glowing E global-coverage
+                             SWATH/ground-track lattice with traveling e data pulses
+                             + a pulsing E downlink node, + q gold dish rim & finial.
 """
 import os
 import sys
@@ -35,9 +55,17 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
+# Base TerraBase palette (shared keys) + the EVOLVED-accent keys reserved for the
+# upgrade stages only (chars NOT used by the base palette, so they appear in NO
+# stage-1 sprite and remote-sensing-hub.png stays byte-identical). These four exact
+# keys+hexes are the lab-wide evolved accents reused by every terrabase building:
+#   b  deep basalt/bedrock  — matured warm structure tone for t3+ new masses
+#   e  energized mineral-seismic glow (mid)    E  energized glow (bright) — t4/t5 power
+#   q  premium survey gold  — t5 flourish ONLY (NOT a whole-building recolor)
 TERRA = {"K": "#20190f", "W": "#efe6cf", "L": "#d6c8a0", "M": "#b09a6e", "D": "#7e6c47", "d": "#54462c",
          "h": "#d6f2ea", "c": "#a4e2d4", "g": "#34b6a2", "G": "#1d8474",
-         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e"}
+         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e",
+         "b": "#3a3326", "e": "#5fe0c4", "E": "#c4fff0", "q": "#f3c63a"}
 
 
 # ── tiny pixel helper ─────────────────────────────────────────────────────────
@@ -53,6 +81,14 @@ def _stamp(c, x0, y0, rows):
 # A low, wide, pale block. Headroom above (small h, dropped top) reserved for the
 # orbital ring + satellite + falling raster tiles.
 BLOCK = Box(top=(30, 30), wx=11, wy=9, h=12)
+
+# SIGNATURE orbital ground-track ring geometry (single source of truth so the
+# upgrade stages can recompute the ring + satellite from the SAME numbers the base
+# uses — never a hardcoded second guess). Used by orbital_ring() (base) and by the
+# t4 second-ring / t5 coverage-swath stages.
+RING_CX, RING_CY = 28, 13
+RING_RX, RING_RY = 16, 6
+SAT_ANGLE_DEG = 38         # where the satellite rides the front arc
 
 
 def blockhouse(c, b):
@@ -182,8 +218,8 @@ def orbital_ring(c, b):
     # ring centre well above the blockhouse, in the reserved headroom. Shift the
     # centre LEFT and narrow the X-radius so the ring's FAR (right) arc runs OFF the
     # right screen frame instead of tangling with the screen's top-right K corner.
-    cx, cy = 28, 13
-    rx, ry = 16, 6     # wide flat tilted ellipse (a ground-track loop seen at angle)
+    cx, cy = RING_CX, RING_CY
+    rx, ry = RING_RX, RING_RY     # wide flat tilted ellipse (a ground-track loop seen at angle)
 
     # paint the ring as a 1px ellipse; the BACK half (upper arc) is faint G/g, the
     # FRONT half (lower arc) is brighter c/g so it reads as a tilted loop. SKIP the
@@ -203,7 +239,7 @@ def orbital_ring(c, b):
     # the SATELLITE riding the front arc on the right side (so it can beam down-left
     # onto the roof screen). Sits clear ABOVE the front arc so its body + wings read
     # as a discrete cube, not merged into the ring line.
-    sat_a = math.radians(38)
+    sat_a = math.radians(SAT_ANGLE_DEG)
     sx = int(round(cx + rx * math.cos(sat_a)))
     sy = int(round(cy + ry * math.sin(sat_a))) - 3   # lift it clear above the arc
     # A tight, discrete K-OUTLINED satellite glyph: a 2x2 W/O body with one o solar
@@ -409,10 +445,342 @@ def left_detail(c, b):
     c.set(cx + 1, cy - 4, "c")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS ground-station /
+# orbital-sensing structure onto the prior form — never restarts, never recolors the
+# whole building. Theme: the lone ops hub grows into a fully-instrumented multi-ring
+# downlink station. Colours mature stage by stage; gold (q) is a t5 flourish only.
+# Every add is anchored to a base part (deck corner / eave / right wall / screen
+# stand / the SIGNATURE ring itself) and clamped on-canvas, and NONE occlude the hero
+# tilted SCREEN face (overhead rings are clipped where they cross the screen quad so
+# they pass cleanly BEHIND it) nor smother the orbital ring + satellite.
+#
+#   t2  small functional add : 2nd whip antenna + c telemetry-bead eave ring + O node
+#   t3  structural add        : a b-housed ground-station DISH ANNEX off the right wall
+#   t4  major add             : a 2nd larger inclined SCAN-RING + glowing e sensor pod
+#   t5  crowning feature      : E global-coverage SWATH + e data pulses + E downlink
+#                               node + q gold dish rim & antenna finial
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# screen-face quad (bottom-left, bottom-right, top-right, top-left in screen space),
+# recomputed from the SAME numbers tilted_screen() uses so the overhead-ring clip
+# lands exactly on the real screen slab (never a hardcoded second guess).
+def _screen_quad(b):
+    base = b.roof_pt(0.46, 0.40)
+    sbx, sby = base[0], base[1] - 9
+    W, TILT_UP, TILT_BACK = 19, 13, 4
+    bl = (sbx - W // 2, sby)
+    br = (sbx + W // 2, sby + 2)
+    tl = (bl[0] + TILT_BACK, bl[1] - TILT_UP)
+    tr = (br[0] + TILT_BACK, br[1] - TILT_UP)
+    return [bl, br, tr, tl]
+
+
+def _in_quad(px, py, quad, pad=1.0):
+    """True if (px,py) lies inside the (optionally padded) convex screen quad — used
+    to hide overhead ring/swath samples that cross the screen face so the ring reads
+    as passing BEHIND the hero screen instead of painting over it."""
+    cx = sum(p[0] for p in quad) / 4.0
+    cy = sum(p[1] for p in quad) / 4.0
+    qpad = [(p[0] + (p[0] - cx) * (pad / 10.0), p[1] + (p[1] - cy) * (pad / 10.0)) for p in quad]
+    inside = False
+    n = len(qpad)
+    for i in range(n):
+        ax, ay = qpad[i]
+        bx, by = qpad[(i + 1) % n]
+        if (ay > py) != (by > py):
+            xint = ax + (py - ay) / (by - ay) * (bx - ax)
+            if px < xint:
+                inside = not inside
+    return inside
+
+
+# the SIGNATURE satellite body bbox (recomputed from the SAME numbers orbital_ring()
+# uses to stamp it) — a protect-zone so the t4 second ring + t5 coverage swath never
+# paint over / recolor the hero satellite (they pass behind it).
+def _sat_box():
+    sat_a = math.radians(SAT_ANGLE_DEG)
+    sx = int(round(RING_CX + RING_RX * math.cos(sat_a)))
+    sy = int(round(RING_CY + RING_RY * math.sin(sat_a))) - 3
+    return sx - 5, sy - 3, sx + 5, sy + 3      # 1px-padded body bbox (x0,y0,x1,y1)
+
+
+def _blocked(px, py, quad):
+    """True if (px,py) must NOT be drawn over by an overhead ring/swath sample —
+    i.e. it falls on the hero SCREEN face or the hero SATELLITE body, so the overhead
+    geometry passes cleanly BEHIND both signature elements."""
+    if _in_quad(px, py, quad, pad=1.2):
+        return True
+    x0, y0, x1, y1 = _sat_box()
+    return x0 <= px <= x1 and y0 <= py <= y1
+
+
+def stage2_telemetry(c, b):
+    """t2 — SMALL FUNCTIONAL ADD: the hub gains a 2nd downlink instrument. A second
+    thin K WHIP ANTENNA rises off the back-RIGHT deck corner (mirroring the existing
+    back-left whip) topped with an o tip BEACON; a faint c TELEMETRY-BEAD ring is
+    dotted along the lit-left roof EAVE trim (the closest 'drum rim' on this block);
+    and one node of the SIGNATURE orbital ring is brightened to O (a live telemetry
+    ping). Modest, on-theme, base palette + a brightened O. Anchored on the deck +
+    eave + the ring, well clear of the centre screen + satellite."""
+    # --- 2nd whip antenna on the back-RIGHT deck corner — rises up-RIGHT into the
+    #     CLEAR right-side space (past the screen's right frame x~42 and below the
+    #     satellite), mirroring the base back-left whip so it reads as a second mast,
+    #     not a stray beacon. A small K base mount + a thin D mast w/ lit M edge + an
+    #     o/O tip BEACON. ---
+    ap = b.roof_pt(0.82, 0.74)                 # back-right deck corner (~43,41)
+    ax, ay = int(round(ap[0])), int(round(ap[1]))
+    c.set(ax, ay, "K")                          # base mount on the deck
+    c.set(ax + 1, ay, "d")                      # tiny mount shadow
+    top = (min(ax + 4, 48), ay - 12)            # leans up-RIGHT into clear sky, clamped
+    c.line((ax, ay), top, "D")                  # mast core
+    c.line((ax + 1, ay - 1), (top[0] + 1, top[1]), "M")   # lit edge of the whip
+    c.set(top[0], top[1] - 1, "o")              # o tip BEACON (warm downlink blink)
+    c.set(top[0] + 1, top[1] - 1, "O")          # bright beacon core
+    c.set(top[0] + 1, top[1], "r")              # warm under-glow on the mast tip
+
+    # --- faint c TELEMETRY-BEAD ring dotted along the lit-left roof EAVE trim line ---
+    # ride the existing o eave trim (left_pt(.,1.4)); space the beads so it reads as a
+    # rim of running telemetry lights, not a solid bar.
+    for u in (0.16, 0.34, 0.52, 0.70, 0.88):
+        p = b.left_pt(u, 1.4)
+        c.set(int(round(p[0])), int(round(p[1])), "c")
+    # one brighter h bead so the telemetry rim has a live pulse
+    p = b.left_pt(0.52, 1.4)
+    c.set(int(round(p[0])), int(round(p[1])), "h")
+
+    # --- brighten ONE orbital-ring node to O (a live telemetry ping on the signature
+    #     ring's bright FRONT arc, on the LEFT side well clear of the satellite) ---
+    a = math.radians(150)
+    nx = RING_CX + RING_RX * math.cos(a)
+    ny = RING_CY + RING_RY * math.sin(a)
+    c.set(int(round(nx)), int(round(ny)), "O")
+    c.set(int(round(nx)), int(round(ny)) - 1, "h")   # tiny glint above the pinged node
+
+
+def stage3_dish_annex(c, b):
+    """t3 — STRUCTURAL ADD: a ground-station DISH ANNEX bolted onto the SHADED RIGHT
+    wall, growing the hub sideways-right. A small b-housed (deep basalt) box mass
+    seats against the right wall foot and carries a tilted L/D parabolic DISH cup on a
+    short post, aimed up-right at the sky, with a g feed-horn glint. A real new
+    structural mass (a boxed annex + dish), distinct from the rooftop screen and from
+    the Operations Hub's stand-alone dish. Introduces the matured `b` tone. Stays
+    fully on-canvas (right edge clamped < 63) and below/right of the screen."""
+    # annex box: seated against the lower SHADED-RIGHT wall, projecting toward +x. Its
+    # back-top corner sits on the right wall a little below the eave so it reads as a
+    # lean-to annex, not a second tower.
+    ax0, ay0 = 52, 44                           # back-top corner against the right wall
+    annex = Box(top=(ax0, ay0), wx=4, wy=2, h=6)
+    # deep-basalt housing: b walls, D shaded face, M lit-ish roof so it reads as a new
+    # cool structural mass distinct from the warm M/L blockhouse.
+    annex.draw(c, roof="M", lwall="b", rwall="D", roof_hi="L", outline="K")
+    # a small g equipment-status window on the annex lit (left) face
+    annex.window(c, "left", 0.22, 0.78, 1.6, 3.6, glass="g", hi="h", shade="G", mullions=0)
+    # a couple of d seam lines on the basalt face for paneling
+    for u in (0.4, 0.7):
+        c.line(annex.left_pt(u, 0.8), annex.left_pt(u, 5.2), "d")
+
+    # --- the parabolic DISH on a short post rising off the annex roof, aimed up-right.
+    #     A small tilted ellipse CUP: L lit face / D shaded back, with a g feed glint
+    #     on a short K feed-arm. Anchored ON the annex roof (visible plinth) so it is
+    #     never an unmoored rooftop blob. ---
+    dp = annex.roof_pt(0.5, 0.45)
+    dmx, dmy = int(round(dp[0])), int(round(dp[1]))
+    post_top = dmy - 4
+    c.line((dmx, dmy), (dmx, post_top), "b")     # short dish post on the annex roof
+    c.line((dmx + 1, dmy), (dmx + 1, post_top), "d")
+    c.set(dmx, dmy, "K")                         # post foot on the roof
+    # dish cup tilted up-right: a small ellipse (4 wide), lit L upper-left / D lower
+    # back, clamped so its right rim stays < 63.
+    cxn = min(dmx, 58)
+    _stamp(c, cxn - 1, post_top - 3, [
+        ".LL.",
+        "LLMD",
+        "DMDD",
+        ".DD.",
+    ])
+    c.set(cxn + 1, post_top - 2, "g")            # g feed-horn glint at the dish centre
+    c.set(cxn + 3, post_top - 4, "K")            # K feed-horn arm tip reaching up-right
+    c.set(cxn + 2, post_top - 3, "d")            # feed-arm shaft
+    # ground contact shadow under the annex so it seats on the earth
+    for dx in range(-1, 6):
+        c.set(int(round(annex.w_front[0])) + dx, int(round(annex.w_front[1])) + 1, "K")
+
+
+def _second_ring_geom():
+    """Shared geometry for the t4 SECOND scan-ring (and the t5 swath that nests
+    between the two rings), so t5 recomputes from the SAME source as t4. A larger,
+    STEEPER/more-upright ellipse at a different tilt than the flat base ring, centred
+    a touch lower-right so it visibly CROSSES the base ring. Returns (cx, cy, rx, ry)."""
+    return RING_CX + 4, RING_CY + 3, 12, 10      # (32, 16, 12, 10)
+
+
+def stage4_second_ring(c, b):
+    """t4 — MAJOR ADD: a SECOND, larger inclined SCAN-RING crossing the first — a wide
+    e-lit orbital ground-track loop at a STEEPER tilt than the flat base ring, sweeping
+    up over the rooftop mast/screen so the hub now reads as a denser multi-ring sensing
+    constellation. A glowing e SENSOR POD rides its upper-left arc. The prominent new
+    overhead mass. Palette matures: energized teal e/E on the ring + a deep b mast
+    COLLAR clamping it onto the screen stand. The ring is CLIPPED where it crosses the
+    screen quad so it passes cleanly BEHIND the hero screen; its near (front/lower) arc
+    reads brighter (e) and its far (back/upper) arc fainter (G), and it never runs
+    off-canvas (samples beyond the frame are dropped)."""
+    quad = _screen_quad(b)
+    cx, cy, rx, ry = _second_ring_geom()
+    # --- deep-basalt MAST COLLAR seating the new ring on the screen stand. The screen
+    #     A-frame stand top is the anchor; a short b collar + 2 stay struts tie the
+    #     ring's lower crossing to the structure so the overhead ring is moored. ---
+    base = b.roof_pt(0.46, 0.40)
+    sbx, sby = int(round(base[0])), int(round(base[1] - 9))
+    _stamp(c, sbx - 1, sby - 2, [
+        "KbK",
+        "bbb",
+        "KbK",
+    ])
+    c.set(sbx, sby - 3, "b")                     # collar neck rising toward the ring
+    c.set(sbx, sby - 4, "D")
+
+    # --- the second scan-ring itself (steeper tilted ellipse). Draw the BACK (upper)
+    #     arc first faint, then the FRONT (lower) arc brighter, clipping screen-crossing
+    #     samples so it ducks behind the screen. ---
+    for a in range(0, 360, 6):
+        rad = math.radians(a)
+        x = cx + rx * math.cos(rad)
+        y = cy + ry * math.sin(rad)
+        if not (0 <= x <= 63 and 0 <= y <= 63):
+            continue                            # never run off-canvas
+        if _blocked(x, y, quad):
+            continue                            # duck BEHIND the hero screen + satellite
+        if math.sin(rad) < -0.1:                # back/upper arc — faint cool teal
+            c.set(x, y, "G" if (a // 6) % 2 == 0 else "e")
+        else:                                   # front/lower arc — brighter energized
+            c.set(x, y, "e" if (a // 6) % 2 == 0 else "E")
+
+    # --- glowing e SENSOR POD riding the ring's UPPER-LEFT arc (clear of screen +
+    #     satellite + the base ring's busy right side). A tight K-outlined pod with a
+    #     bright E core + tiny e fins, anchored ON the ring line. ---
+    pa = math.radians(206)
+    sx = int(round(cx + rx * math.cos(pa)))
+    sy = int(round(cy + ry * math.sin(pa)))
+    sx = max(2, sx)
+    _stamp(c, sx - 1, sy - 1, [
+        "KeK",
+        "eEe",
+        "KeK",
+    ])
+    c.set(sx, sy, "E")                          # bright pod core
+    c.set(sx - 2, sy, "e")                      # tiny sensing fins off the pod sides
+    c.set(sx + 2, sy, "e")
+    # a faint e trailing motion tick behind the pod along the ring (it sweeps)
+    ta = math.radians(218)
+    tx = int(round(cx + rx * math.cos(ta)))
+    ty = int(round(cy + ry * math.sin(ta)))
+    if 0 <= tx <= 63 and 0 <= ty <= 63 and not _blocked(tx, ty, quad):
+        c.set(tx, ty, "e")
+
+
+def stage5_coverage_swath(c, b):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED downlink station. The two scan-rings
+    resolve into a glowing GLOBAL-COVERAGE SWATH: a bright E ground-track LATTICE of a
+    few meridian + parallel arcs strung BETWEEN the two rings (recomputed from BOTH
+    rings' shared geometry), with traveling e DATA PULSES sliding along it and a pulsing
+    E DOWNLINK NODE where the swath funnels down toward the dish. The hub is then dressed
+    with GOLD premium trim — a gold rim on the t3 parabolic dish and a gold finial on the
+    t2 second whip. Reads as an elite, fully-instrumented coverage station, still clearly
+    the same remote-sensing hub. All lattice samples are clamped on-canvas and clipped
+    off the hero screen quad so the swath arcs cleanly OVER and BESIDE the screen."""
+    quad = _screen_quad(b)
+    cx2, cy2, rx2, ry2 = _second_ring_geom()
+
+    # --- E ground-track COVERAGE LATTICE: TWO clean bright-E parallel arcs nested
+    #     inside the second (steeper) ring, reading as mapped ground-track swathes
+    #     (latitude bands), crossed by a few e meridian spokes — a deliberate GRID, not
+    #     a teal cloud. Only the UPPER band (arc over the top of the constellation) is
+    #     drawn so it crowns the hub above the screen without touching its face. The
+    #     two arcs are spaced apart (0.80 / 0.52) so the band reads as a lattice. ---
+    for scale, ch in ((0.80, "E"), (0.52, "e")):
+        rx = rx2 * scale
+        ry = ry2 * scale
+        for a in range(154, 387, 10):           # upper coverage band, sparse clean step
+            rad = math.radians(a)
+            x = cx2 + rx * math.cos(rad)
+            y = cy2 + ry * math.sin(rad)
+            if not (0 <= x <= 63 and 0 <= y <= 63):
+                continue
+            if _blocked(x, y, quad):
+                continue
+            c.set(x, y, ch)
+    # e MERIDIAN spokes linking the two parallel arcs (the lattice cross-threads) —
+    # short radial ticks from the inner band out to the outer band, top side only, so
+    # the grid reads as a lat/long coverage mesh.
+    for a in (172, 208, 250, 296, 332):
+        rad = math.radians(a)
+        x0 = cx2 + (rx2 * 0.52) * math.cos(rad)
+        y0 = cy2 + (ry2 * 0.52) * math.sin(rad)
+        x1 = cx2 + (rx2 * 0.80) * math.cos(rad)
+        y1 = cy2 + (ry2 * 0.80) * math.sin(rad)
+        if _blocked(x1, y1, quad) or _blocked(x0, y0, quad):
+            continue
+        c.line((x0, y0), (x1, y1), "e")
+
+    # --- traveling e DATA PULSES sliding along the coverage swath (a few bright e/E
+    #     beads at distinct points on the upper band so it reads as live data moving) ---
+    for a in (165, 230, 320):
+        rad = math.radians(a)
+        x = cx2 + (rx2 * 0.82) * math.cos(rad)
+        y = cy2 + (ry2 * 0.82) * math.sin(rad)
+        if 0 <= x <= 63 and 0 <= y <= 63 and not _blocked(x, y, quad):
+            c.set(int(round(x)), int(round(y)), "E")
+            c.set(int(round(x)), int(round(y)) - 1, "e")
+
+    # --- pulsing E DOWNLINK NODE where the swath funnels down toward the dish annex.
+    #     Placed clearly BELOW-RIGHT of the hero satellite (not on it) in the open band
+    #     between the constellation and the dish, so it reads as the live downlink
+    #     focus. A bright W/E core haloed by e. ---
+    x0s, y0s, x1s, y1s = _sat_box()
+    dx = min(x1s + 2, 49)                       # just right of the satellite bbox
+    dy = y1s + 3                                # just below it, toward the dish
+    for ox, oy, ch in [(0, 0, "E"), (-1, 0, "e"), (1, 0, "e"), (0, -1, "e"), (0, 1, "E")]:
+        c.set(dx + ox, dy + oy, ch)
+    c.set(dx, dy, "W")                          # bright pulse core
+    # a faint e downlink beam dropping from the node down-right toward the dish annex
+    for j, yy in enumerate(range(dy + 2, dy + 9, 2)):
+        c.set(min(dx + 1 + j, 50), yy, "e")
+
+    # --- GOLD premium trim (t5 flourish only) -----------------------------------
+    # gold RIM on the t3 parabolic dish — recompute the dish centre from the SAME
+    # annex geometry stage3 used (never a hardcoded second guess).
+    annex = Box(top=(52, 44), wx=4, wy=2, h=6)
+    adp = annex.roof_pt(0.5, 0.45)
+    admx, admy = int(round(adp[0])), int(round(adp[1]))
+    dish_cx = min(admx, 58)
+    dish_top = admy - 4 - 3                      # post_top - 3 (the dish cup top row)
+    c.set(dish_cx, dish_top, "q")               # gold rim ticks along the dish lip
+    c.set(dish_cx + 1, dish_top, "q")
+    c.set(dish_cx - 1, dish_top + 1, "O")       # bright gold glint on the rim
+    # gold FINIAL capping the t2 second whip tip — recompute from the SAME stage2
+    # anchor (roof_pt(0.82,0.74) → mast top), never a hardcoded second guess.
+    ap = b.roof_pt(0.82, 0.74)
+    wax, way = int(round(ap[0])), int(round(ap[1]))
+    wtop = (min(wax + 4, 48), way - 12)
+    c.set(wtop[0], wtop[1] - 2, "q")            # gold finial above the beacon
+    c.set(wtop[0], wtop[1] - 3, "O")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the remote-sensing hub at upgrade `stage` (1..5). Stage 1 is IDENTICAL
+    to the shipped base PNG; each higher stage keeps every prior addition and bolts on
+    the next (t2 telemetry → t3 dish annex → t4 second ring → t5 coverage swath + gold).
+    Painter's order: the base form + its SIGNATURE (orbital ring + satellite + screen
+    map) is composed first; then the dish annex grows off the right wall; then the
+    overhead second ring + coverage swath are drawn LAST so they read on top yet are
+    CLIPPED off the hero screen face so they pass behind it."""
     c = Canvas()
     b = BLOCK
-    # painter's order
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     blockhouse(c, b)                 # clean low ops blockhouse (back)
     whip_antenna(c, b)               # thin downlink whip antenna at back-left (behind screen base)
     face_pt = tilted_screen(c, b)    # tilted rooftop SCREEN slab on its A-frame stand
@@ -422,12 +790,52 @@ def build():
     right_opening(c, b)              # GLOWING control room on the SHADED RIGHT face
     left_detail(c, b)                # plainer lit-left wall + ribbon window + crates
 
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    if stage >= 2:
+        stage2_telemetry(c, b)
+    if stage >= 3:
+        stage3_dish_annex(c, b)
+    if stage >= 4:
+        stage4_second_ring(c, b)
+    if stage >= 5:
+        stage5_coverage_swath(c, b)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/terrabase"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "remote-sensing-hub"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped remote-sensing-hub.png, so it does NOT overwrite the
+    base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": TERRA, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/terrabase_remote-sensing-hub.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"terrabase_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"terrabase_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

@@ -39,10 +39,18 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
-# Axiom set palette — author on these chars->hex EXACTLY (<=16 colors, K hard outline)
+# Axiom set palette — author on these chars->hex EXACTLY (<=16 colors, K hard outline).
+# Base keys (shared across all 10 Axiom buildings) + the four LAB-WIDE EVOLVED accent
+# shades reserved for the upgrade stages ONLY (they never appear in stage 1, so the
+# shipped quantum-simulation-lab.png is unchanged). These four keys+hexes are the Axiom
+# convention reused by every building's _t2.._t5:
+#   b  deep indigo steel   — matured structure tone for t3+ new masses (He drum, riser)
+#   e  quantum-stellar glow (mid)    E  quantum-stellar glow (bright) — t4/t5 energy
+#   q  premium gold trim — t5 flourish ONLY (NOT a whole-building recolor)
 AXIOM = {"K": "#0e1124", "W": "#dfe6f6", "L": "#b4bee0", "M": "#7c88b8", "D": "#4e5888", "d": "#333a60",
          "h": "#d6ecff", "c": "#aad8ff", "g": "#4a9ce6", "G": "#2060b0",
-         "o": "#ffe27a", "O": "#fff3c0", "r": "#c89a2a"}
+         "o": "#ffe27a", "O": "#fff3c0", "r": "#c89a2a",
+         "b": "#2a3158", "e": "#7ad0ff", "E": "#cdeeff", "q": "#f6c945"}
 
 
 # ── cryostat-tower geometry (TALL + NARROW => a slender needle, not a fat drum) ─
@@ -395,8 +403,287 @@ def annex(c, b):
     return b
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). The slender cryostat tower grows into a
+# fully built-out, maxed quantum-computing rig. Every addition is cryo/quantum
+# on-theme + UNIQUE to THIS building (frost vent + qubit gauge -> helium reservoir
+# sub-drum -> microwave-horn control array climbing the tower -> a superposition
+# orb-cloud crowning the open mouth). All additions grow OUT and UP from the
+# existing form and STAY CLEAR of the two hero features — the open-mouth gold
+# CHANDELIER (top-centre, cols -3..+1) and the glowing right VIEWING SLIT (shaded
+# right, cols +3..+5). Colours mature stage by stage; gold (q) is the t5 flourish.
+#
+# Anchors (recomputed from the SAME base constants every stage, no second guesses):
+#   tower: CX=30, RX=7, TOP_Y=14, BASE_Y=40 (body x≈23..37, y≈10..44)
+#   chandelier mouth: x≈27..31, y≈10..27   ·   right slit: x≈33..35, y≈18..36
+#   FRONT-LEFT foot (x≈16..27) is the open ground the He drum + riser grow from;
+#   the front-right ANNEX (x≈32..50) carries the qubit gauge.
+#
+#   t2  small functional add : a frost-VENT puff at the tower foot + a qubit
+#                              probability MINI-GAUGE on the annex
+#   t3  structural add       : a HELIUM-RESERVOIR sub-drum (short fat cylinder)
+#                              abutting the tower's front-left foot
+#   t4  major add            : a 2nd CRYO-LINE riser + MICROWAVE-HORN array climbing
+#                              the lit-left tower curve, horns aimed at the mouth
+#   t5  crowning feature     : a glowing SUPERPOSITION ORB-CLOUD haloing the open
+#                              mouth + a gold cryostat RIM RING + gold chandelier discs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Shared anchor for the helium reservoir so t3/t4 recompute the SAME drum (the t4
+# cryo-riser climbs from the drum top — no hardcoded second guess for its foot).
+# Seated at the FRONT-LEFT of the tower foot: low top_y so the drum's cap clears the
+# tower's own foot skirt, stout (short) so it reads as a sub-drum twinning the tower.
+HE_CX, HE_TOPY, HE_RX, HE_RY, HE_H = 19, 42, 4, 2, 5
+
+
+def stage2_frostvent_gauge(c):
+    """t2 — SMALL FUNCTIONAL ADD: (a) a short frost-VENT nozzle at the tower's
+    front-left foot blowing a soft `c`/`h` cryo puff (more cold, modest), and (b) a
+    small qubit-probability MINI-GAUGE on the front-right equipment ANNEX's shaded
+    face (a `g` bar + a taller lit `O` bar = the predicted state). Base palette +
+    brightened `c`/`O`. Both sit LOW and to the sides, well clear of the chandelier
+    mouth and the right viewing slit."""
+    # (a) frost-VENT: a tiny K/D nozzle on the lit-left foot of the tower throwing a
+    # rounded c/h vapour puff out over the ground (distinct from the base frost band).
+    nx, ny = 25, 41                              # on the lit-left foot, low
+    c.set(nx, ny, "K")                           # nozzle mouth
+    c.set(nx - 1, ny, "D")
+    puff = [(-2, 0, "c"), (-3, 0, "h"), (-4, 1, "c"), (-3, 1, "h"), (-2, 1, "c"),
+            (-4, 0, "c"), (-5, 1, "c"), (-3, 2, "c"), (-4, 2, "h")]
+    for dx, dy, ch in puff:
+        c.set(nx + dx, ny + dy, ch)
+
+    # (b) qubit probability MINI-GAUGE on the annex shaded-RIGHT face, upper area —
+    # a small K-framed readout puck (clear of the door lower on that face). Two bars:
+    # a short g bar + a taller O bar (predicted state), with a tiny o ticked top.
+    gp = ANNEX.right_pt(0.30, 1.7)
+    gx, gy = int(round(gp[0])), int(round(gp[1]))
+    c.fill_poly([(gx - 1, gy - 1), (gx + 4, gy - 1), (gx + 4, gy + 3), (gx - 1, gy + 3)], "K")  # puck backing
+    c.fill_poly([(gx, gy), (gx + 3, gy), (gx + 3, gy + 2), (gx, gy + 2)], "d")                  # dark readout face
+    for k in range(2):                           # short g (lower-probability) bar
+        c.set(gx, gy + 2 - k, "g")
+    c.set(gx, gy, "G")
+    for k in range(3):                           # taller O (predicted) bar
+        c.set(gx + 2, gy + 2 - k, "O")
+    c.set(gx + 2, gy, "o")
+    c.set(gx + 3, gy - 1, "o")                   # tiny gold status tick on the rim
+
+
+def stage3_helium_drum(c):
+    """t3 — STRUCTURAL ADD: a HELIUM-RESERVOIR sub-drum — a short fat `cylinder`
+    abutting the tower's FRONT-LEFT foot, twinning the tower's round language at a
+    smaller scale (a real new mass). Deep-indigo `b` shell (matured structure) with
+    a round `M`/`b` shade, a `c` liquid-LEVEL window band, an `o` valve wheel + a
+    thin `o` transfer line curving up to the tower base. Foot of the drum sits on the
+    same ground line; clear of the annex (front-right) and the slit (right face)."""
+    cx, ty, rx, ry, h = HE_CX, HE_TOPY, HE_RX, HE_RY, HE_H
+    bot = ty + h
+    # the drum body: a clean L-topped cylinder so the cap reads as a lit steel lid
+    cylinder(c, cx, ty, rx, h, top="L", side_l="M", side_r="b", outline="K", ry=ry)
+    # round steel shading on the walls: bright L/M highlight just left of centre grading
+    # to deep-indigo b and a deep d far-right edge — a polished, READABLE rounded tank.
+    for col in range(-rx, rx + 1):
+        t = 1 - (col / rx) ** 2
+        if t < 0:
+            continue
+        edge = ry * (t ** 0.5)
+        if col == -rx:
+            ch = "M"          # lit left rim
+        elif col in (-rx + 1, -rx + 2):
+            ch = "L"          # bright polished highlight band (lit-left)
+        elif col <= 0:
+            ch = "M"
+        elif col == 1:
+            ch = "b"
+        elif col in (2, 3):
+            ch = "b"
+        else:
+            ch = "d"          # deep shaded far-right
+        x = cx + col
+        for y in range(int(ty + edge), bot + 1):
+            if c.px[y][x] in ("b", "d", "M", "L"):
+                c.set(x, y, ch)
+    # a clear K-framed liquid-LEVEL sight WINDOW on the lit face (cyan He level, half
+    # filled): a 2-wide x 3-tall pane, c liquid in the lower part, dark vapour above.
+    wx0, wy0 = cx - rx + 1, ty + 1
+    for yy in range(wy0, wy0 + 3):
+        for xx in range(wx0, wx0 + 2):
+            c.set(xx, yy, "c" if yy >= wy0 + 1 else "d")   # liquid below, vapour above
+    c.set(wx0, wy0 + 1, "h")                      # bright meniscus glint
+    for a, b in [((wx0 - 1, wy0 - 1), (wx0 + 2, wy0 - 1)), ((wx0 - 1, wy0 + 3), (wx0 + 2, wy0 + 3)),
+                 ((wx0 - 1, wy0 - 1), (wx0 - 1, wy0 + 3)), ((wx0 + 2, wy0 - 1), (wx0 + 2, wy0 + 3))]:
+        c.line(a, b, "K")                         # K frame around the sight window
+    # one thin K stage band low on the drum (twins the tower's fridge rings, subtle)
+    for col in range(-rx + 1, rx):
+        c.set(cx + col, bot - 1, "K")
+    # an o valve wheel + stub on the drum's top-right shoulder
+    vx, vy = cx + rx, ty
+    c.set(vx, vy, "o")
+    c.set(vx, vy - 1, "O")                        # lit top of the valve wheel
+    c.set(vx - 1, vy, "r")
+    # a thin o transfer LINE arcing up-right from the valve to the tower foot
+    for (lx, ly, ch) in ((vx + 1, vy - 1, "o"), (vx + 2, vy - 1, "r"),
+                         (CX - RX - 1, BASE_Y - 1, "r"), (CX - RX, BASE_Y - 2, "o")):
+        c.set(lx, ly, ch)
+
+
+def stage4_cryo_horns(c):
+    """t4 — MAJOR ADD: a second CRYO-LINE + MICROWAVE-HORN array climbing the tower —
+    the prominent new vertical mass that says the qubits now get real control lines.
+    A deep-indigo `b` riser pipe runs UP the lit-left curve of the drum (from the
+    helium reservoir top), feeding three glowing `e` control-HORN cones that branch
+    off and aim UP-RIGHT at the open cryostat mouth. Palette matures: `b` armature +
+    energized `e`/`E` glow. Climbs the LIT-LEFT flank (cols -5..-6) so it clears the
+    chandelier shaft (cols -3..+1) AND the right viewing slit entirely; horn tips
+    stop short of the mouth (col ≈ -2) so they point at the qubits without occluding
+    the hero chandelier. Recomputes its foot from the SAME helium-drum anchor."""
+    # riser foot: top-left shoulder of the helium reservoir (SAME anchor as stage3 —
+    # no hardcoded second guess; the riser visibly rises OUT of the He drum) and climbs
+    # the OUTER lit-left edge UP PAST the mouth rim, so it ADDS to the silhouette (a
+    # major add) and lifts the horn manifold into the CLEAR SKY above/left of the mouth.
+    foot_x = HE_CX - 1                  # the drum's lit-left shoulder
+    foot_y = HE_TOPY
+    rise_x = CX - 8                     # the riser column, on the OUTER lit-left edge
+    man_y = TOP_Y - 6                   # the horn-manifold height (above the mouth rim)
+    # a short b elbow from the drum shoulder up onto the outer tower edge
+    c.line((foot_x, foot_y), (rise_x, foot_y - 2), "b")
+    # the riser pipe (3px: K outline + M lit edge + b body) climbing from the drum up
+    # past the rim to the manifold — a real standalone cryo-line, distinct from the drum.
+    for y in range(man_y, foot_y - 1):
+        c.set(rise_x - 1, y, "K")       # K left outline
+        c.set(rise_x, y, "M")           # lit body edge
+        c.set(rise_x + 1, y, "b")       # shaded body
+    # K pipe clamps strapping the riser at intervals down the tower
+    for cyy in (TOP_Y + 2, TOP_Y + 9, foot_y - 4):
+        c.set(rise_x + 2, cyy, "K")
+    # the MICROWAVE-HORN array: TWO clearly-separated flared horn antennas mounted on the
+    # riser, their wide APERTURES facing UP-LEFT into the CLEAR SKY (so each reads as an
+    # unmistakable trumpet against the dark background, not a smear on the chandelier),
+    # each feeding a short bright E CONTROL-BEAM in toward the open mouth from the left.
+    # A FEW clear horns beat many tiny merged ones. Apertures clamped on-canvas (x>=1,
+    # y>=1); beams stop at x=CX-3 so they POINT AT the qubits without occluding them.
+    jx, jy = rise_x, man_y              # the riser-top manifold junction
+    c.fill_poly([(jx - 1, jy), (jx + 2, jy), (jx + 2, jy + 2), (jx - 1, jy + 2)], "b")
+    c.set(jx - 1, jy, "K")
+    c.set(jx + 2, jy + 2, "K")
+    c.set(jx, jy + 1, "E")              # bright feed node in the manifold
+    # horn A (upper): aperture up-left in open sky; horn B (lower): aperture left, lower.
+    # (throat on riser) -> (wide aperture out in the clear). Drawn as a SOLID b cone with
+    # an M lit edge + a bright e/E aperture RIM; then a short E beam from the throat in.
+    horns = [(jx, jy, jx - 4, jy - 4, jx - 2, jy - 6),    # throat, aperture-near, apex
+             (jx, jy + 2, jx - 5, jy + 1, jx - 4, jy - 1)]
+    for (thx, thy, apx, apy, apx2, apy2) in horns:
+        apx, apx2 = max(1, apx), max(1, apx2)
+        apy, apy2 = max(1, apy), max(1, apy2)
+        # SOLID flared cone: throat (narrow, on the riser) -> two splayed aperture lips
+        c.fill_poly([(thx, thy), (apx, apy), (apx2, apy2)], "b")
+        c.line((thx, thy), (apx2, apy2), "M")            # lit upper lip of the horn
+        c.line((apx, apy), (apx2, apy2), "e")            # bright aperture RIM (the mouth)
+        c.set(apx, apy, "E")
+        c.set(apx2, apy2, "E")
+        c.set((apx + apx2) // 2, (apy + apy2) // 2, "h")  # faint dish glint inside
+        # a short E control-beam leaving the throat IN toward the chandelier (down-right)
+        for k in range(1, 4):
+            bx, by = thx + k, thy + 1
+            if bx <= CX - 3 and 0 <= by < 64:
+                c.set(bx, by, "E" if k < 3 else "e")
+
+
+def stage5_orbcloud(c):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED quantum rig. A glowing SUPERPOSITION
+    ORB-CLOUD blooms above the open cryostat mouth — a halo of bright `E`/`e` qubit
+    ghost-orbs orbiting the chandelier core (the maxed quantum state, the qubit held
+    in many states at once) — finished with premium GOLD: a `q` cryostat RIM RING
+    girdling the mouth lip and `q` gold highlights on the chandelier discs. Reads as
+    elite, still unmistakably the same cryostat tower. The orb halo sits ABOVE and to
+    the SIDES of the chandelier crown so the hero stays legible (orbs never bury it).
+    Gold ONLY here. All points clamped on-canvas (y>=0)."""
+    import math
+    mcx, mcy = CX - 1, TOP_Y                      # the chandelier/mouth centre
+    # --- gold cryostat RIM RING tracing the mouth lip (on the K lip ring at radius
+    #     RX-1) — a premium machined rim girdling the open mouth. Lay gold only on the
+    #     existing steel lip so the open bore stays dark. ---
+    for a in range(0, 360, 10):
+        x = mcx + (RX - 1) * math.cos(math.radians(a))
+        y = mcy + (RY - 0.5) * math.sin(math.radians(a))
+        yy, xx = int(round(y)), int(round(x))
+        if 0 <= yy < 64 and 0 <= xx < 64 and c.px[yy][xx] in ("K", "L", "M", "D", "d"):
+            c.set(xx, yy, "q")
+    c.set(mcx - 3, mcy + 1, "O")                  # bright O sparkle on the front rim
+    c.set(mcx + 3, mcy, "o")
+
+    # --- gold flourish on the CHANDELIER discs: re-tint each plate to q gold + a bright
+    #     O lit crest (recompute the SAME plate positions used in chandelier()) ---
+    plates = [(TOP_Y + 2, 3), (TOP_Y + 6, 2), (TOP_Y + 10, 1)]
+    for (py, hw) in plates:
+        for col in range(-hw, hw + 1):
+            if 0 <= py < 64 and c.px[py][mcx + col] in ("o", "O"):
+                c.set(mcx + col, py, "q")
+        for col in range(-hw, hw + 1):             # bright lit crest across the gold disc
+            if 0 <= py - 1 < 64 and c.px[py - 1][mcx + col] in ("O", "o", "d", "D"):
+                c.set(mcx + col, py - 1, "O")
+
+    # --- SUPERPOSITION ORB-CLOUD: a flat HALO of qubit ghost-orbs ORBITING the core,
+    #     crowning the open mouth. Orbs ride ONE wide tilted ellipse (rx=8, ry=3) centred
+    #     just above the rim, each drawn as a HORIZONTAL 2px ball (a bright core + a soft
+    #     side-glow pixel) so the cloud reads as round orbs sweeping around the crown —
+    #     NOT vertical spikes. Brighter E orbs at the ring's lit front/sides; dimmer e at
+    #     the back. Skipped over the chandelier centre column so the hero stays legible. ---
+    halo_cy = mcy - 4                              # halo centre lifted above the rim
+    orx, ory = 8, 3
+    for a in range(0, 360, 30):                    # 12 orbs evenly spaced around the ring
+        x = mcx + orx * math.cos(math.radians(a))
+        y = halo_cy + ory * math.sin(math.radians(a))
+        xx, yy = int(round(x)), int(round(y))
+        if not (1 <= xx < 63 and 1 <= yy < 63):
+            continue
+        if abs(xx - mcx) <= 1 and yy >= mcy - 1:   # don't sit on the chandelier crown
+            continue
+        if xx <= (CX - 8) + 2 and yy <= TOP_Y - 4:  # don't collide with the horn manifold (riser x = CX-8)
+            continue
+        # front/side orbs (lower + flanks of the ellipse) glow bright E; back orbs e
+        tone = "E" if y >= halo_cy - 0.5 else "e"
+        if c.px[yy][xx] in (".", "d", "D", "K"):
+            c.set(xx, yy, tone)
+            # a soft HORIZONTAL side-glow (1px to the outer side) so it reads as a ball
+            sdx = 1 if xx >= mcx else -1
+            if c.px[yy][xx + sdx] == ".":
+                c.set(xx + sdx, yy, "e" if tone == "E" else "h")
+    # one bright "measured-outcome" orb crowning the apex of the halo, centred above the
+    # mouth (a clear E ball with e flanks) — the maxed qubit state landing on top.
+    ax, ay = mcx, halo_cy - ory
+    if 1 <= ay < 63:
+        c.set(ax, ay, "E")
+        c.set(ax - 1, ay, "e")
+        c.set(ax + 1, ay, "e")
+        if c.px[ay - 1][ax] == ".":
+            c.set(ax, ay - 1, "h")                 # a soft upward glow off the apex orb
+    # one faint orbit-trail sparkle on each side INSIDE the ring (sparse) so the halo
+    # reads as a 3-D cloud, not a flat outline — kept clear of the chandelier + horns.
+    for (dx, dy) in ((5, -1), (3, -3)):
+        xx, yy = mcx + dx, halo_cy + dy
+        if 1 <= xx < 63 and 1 <= yy < 63 and c.px[yy][xx] == ".":
+            c.set(xx, yy, "h")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the quantum-simulation lab at upgrade `stage` (1..5). Stage 1 is
+    IDENTICAL to the shipped base; each higher stage keeps every prior addition and
+    bolts on the next (t2 frost-vent+gauge -> t3 helium reservoir sub-drum -> t4
+    cryo-line + microwave-horn array -> t5 superposition orb-cloud + gold rim). The
+    slender cryostat tower grows OUT (He drum at its foot) and UP (control horns) into
+    a fully built-out quantum rig, crowned by a glowing orb-cloud — while the open-mouth
+    gold CHANDELIER signature and the right VIEWING SLIT stay clear and legible.
+
+    Painter's order matches the base draw order; the cumulative stage masses are added
+    AFTER the base so they occlude correctly: the He drum + horns sit in front of /
+    beside the tower foot and flank, and the t5 orb-cloud + gold rim crown the mouth on
+    top of the chandelier context (haloing AROUND the hero, never over its centre)."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     base_shadow(c)            # contact shadow + foot skirt (under / back)
     tower(c)                  # the tall slender free-standing CRYOSTAT TOWER cylinder
     stage_rings(c)            # K dilution-fridge stage rings girdling the drum
@@ -405,12 +692,53 @@ def build():
     chandelier(c)             # SIGNATURE: suspended gold quantum chandelier + qubit + ghosts
     right_slit(c)             # GLOWING right viewing slit (hero on the SHADED face) + gauge
     annex(c, ANNEX)           # front-right equipment annex (drawn last, sits in front)
+
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    if stage >= 2:
+        stage2_frostvent_gauge(c)
+    if stage >= 3:
+        stage3_helium_drum(c)
+    if stage >= 4:
+        stage4_cryo_horns(c)
+    if stage >= 5:
+        stage5_orbcloud(c)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/axiom"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "quantum-simulation-lab"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped quantum-simulation-lab.png, so it does NOT overwrite the
+    base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": AXIOM, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/axiom_quantum-simulation-lab.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"axiom_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"axiom_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

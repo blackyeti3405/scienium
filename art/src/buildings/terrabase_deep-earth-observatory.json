@@ -14,7 +14,11 @@
 "G": "#1d8474",
 "o": "#e0a850",
 "O": "#ffce80",
-"r": "#9a5e1e"
+"r": "#9a5e1e",
+"b": "#3a3326",
+"e": "#5fe0c4",
+"E": "#c4fff0",
+"q": "#f3c63a"
 },
 "rows": [
 ".................................KK.h...........................",
@@ -60,9 +64,9 @@
 "..............KMMMMKKLLLLLLcoooKKKdoDddKccLLLLLLLLLoKDK.........",
 "..............KMMMKKMoKLLLLLcccoocdoOddKcLLLLLLLLKKDDDK.........",
 "..............KMMMKhKKMKKoLLLLLLOhdKKKdKLLLLLLLKKDDDDKK.........",
-"..............KMMMKcKhKKMKKKLLLLKcdKWKdLKLLLLKKooDDDDKK.........",
-"..............KMMMKcKchKMMMKKoLLKgdKcKdLKLLKKooKKKDKKKK.........",
-"..............KMMMMKKccKMMMMMKKKLcdKOKdLLKoDoKKggKchKKK.........",
+"..............KMMMKWGhKKMKKKLLLLKcdKWKdLKLLLLKKooDDDDKK.........",
+"..............KMMMKhGhcKMMMKKoLLKgdKcKdLKLLKKooKKKDKKKK.........",
+"..............KMMMMKKGGKMMMMMKKKLcdKOKdLLKoDoKKggKchKKK.........",
 "..............KMMMMMMKKKMMMMMMMKOdddKddddKDDKgghhKhcKKK.........",
 "..............KMMMMMMMMKMMMMMMMKdddddddddKDDKhhccKooKKK.........",
 "..............KMMMMMMMMMMMMMMMKdddddrdddddKDKccOOKooKKK.........",

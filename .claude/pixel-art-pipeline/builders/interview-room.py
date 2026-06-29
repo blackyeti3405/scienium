@@ -32,6 +32,24 @@ identified). No two-figures-in-dialogue / voiceprint-bubble / subject-ID-tag mot
 exists anywhere else in the catalog.
 
 Composed from art/isobuild.{Box} — NO iso.draw_cube / base_windows.
+
+═══════════════════════════════════════════════════════════════════════════════════
+REFERENCE BUILDING for the MindFrame lab's UPGRADE-EVOLUTION pass. This file sets
+the code pattern (build(stage) + cumulative stageN helpers + emit/build_all, copied
+from workshop.py) and the quality bar for all 10 mindframe buildings.
+
+MindFrame evolution language — theme: a calm INDIGO behavioral-OBSERVATION booth
+grows into a full multi-channel COGNITIVE-OBSERVATION SUITE. The intensity ramp adds
+SIGNAL / DATA-CAPTURE structure (the lab's "read the mind" motif): an uplink mast, a
+recording annex, a scanning sensor dish, and finally a glowing neural-data beacon.
+The lab's own magenta `o/O` stays the HUMAN/voice accent; the evolved glow is a cool
+SIGNAL-CYAN `e/E` (data) so the two never blur. Colours mature stage by stage; gold
+(`q`) is a t5 flourish only, never a whole-building recolor.
+
+  t2  small functional add : a slim DATA-UPLINK MAST + pin-light on the mirror-wall roof
+  t3  structural add       : a tall slim RECORDING / CAMERA ANNEX tower on the back-right
+  t4  major add            : a rooftop SCANNING SENSOR DISH on a plinth + cyan data glow
+  t5  crowning feature     : a glowing NEURAL-DATA BEACON orb + signal arcs, gold trim
 """
 import os
 import sys
@@ -41,9 +59,16 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder, RX, RY, LX, LY
 
+# Base MindFrame palette (shared keys) + a few EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so interview-room.png is unchanged).
+# These exact evolved keys are reused by all 10 mindframe buildings for lab consistency:
+#   b  deep indigo steel — matured structure tone for t4+ new masses
+#   e  energized signal-cyan glow (mid)   E  signal-cyan glow (bright) — the t4/t5 data
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 MIND = {"K": "#181428", "W": "#e8e2f6", "L": "#cabfe6", "M": "#9f90c8", "D": "#6f5fa0", "d": "#4a3c70",
         "h": "#ecc8f4", "c": "#d0a8ee", "g": "#a45ce0", "G": "#6a2fb0",
-        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80"}
+        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80",
+        "b": "#2b2440", "e": "#7fd4ff", "E": "#d6f4ff", "q": "#f3c63a"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
@@ -272,23 +297,298 @@ def signature(c, slab):
     c.set(tx + 1, ty + 6, "d")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS signal/data-
+# capture structure onto the prior form — never restarts, never recolors the whole
+# building. Theme: the intimate one-on-one observation booth grows into a fully
+# built-out, multi-channel COGNITIVE-OBSERVATION SUITE. Additions sit on the BACK
+# masses (mirror-wall roof / canopy / back-right air) and grow UP, so they never
+# occlude the open front booth signature (figures + voiceprint bubble + ID tag).
+# Colours mature stage by stage; the evolved glow is cool signal-cyan e/E (data),
+# kept distinct from the lab's magenta o/O human accent. Gold (q) only at t5.
+#
+#   t2  small functional add   : a slim DATA-UPLINK MAST + pin-light on the wall roof
+#   t3  structural add         : a tall slim RECORDING / CAMERA ANNEX tower (back-right)
+#   t4  major add              : a rooftop SCANNING SENSOR DISH on a plinth + cyan glow
+#   t5  crowning feature       : a glowing NEURAL-DATA BEACON orb + signal arcs + gold
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_uplink(c, cap):
+    """t2 — SMALL FUNCTIONAL ADD: a slim DATA-UPLINK MAST rising off the BACK of the
+    canopy roof, topped by a magenta pin-light and a couple of signal-tick crossbars
+    — the booth starts streaming its captured session out. On-theme (signal), modest,
+    base palette + one brightened o/O pin-light. Seated toward the BACK-LEFT of the
+    canopy roof so it rises into clear sky and never touches the open front booth."""
+    # anchor on the canopy roof at the LEFT corner (u→0 is toward r_left) so the whip
+    # rises in clear sky on the FAR LEFT (x≈26), well clear of the t4 dish that later
+    # mounts right-of-centre (x≈39) — 13px apart so they never crowd.
+    bxf, byf = cap.roof_pt(0.0, 0.40)
+    bx = int(round(bxf))
+    base_y = int(round(byf))
+    top = base_y - 11                     # tall slim whip, well into clear sky
+    top = max(top, 1)
+    # mast shaft: lit M with a K shadow edge, a small K foot collar on the roof
+    c.line((bx, base_y), (bx, top), "M")
+    c.line((bx + 1, base_y), (bx + 1, top + 2), "K")
+    c.set(bx, base_y, "K"); c.set(bx + 1, base_y, "K")
+    # two signal-tick crossbars (the antenna reads as a data whip, not a flagpole)
+    c.line((bx - 2, top + 4), (bx + 2, top + 4), "L")
+    c.line((bx - 1, top + 7), (bx + 2, top + 7), "M")
+    # magenta pin-light cap + a tiny O spark = live uplink
+    c.set(bx, top, "o")
+    c.set(bx, top - 1, "O")
+    c.set(bx + 1, top, "r")
+
+
+def stage3_annex(c, fin):
+    """t3 — STRUCTURAL ADD: a tall slim RECORDING / CAMERA ANNEX tower bolted onto the
+    BACK-RIGHT, rising off (and just behind) the existing side-fin so it extends the
+    suite's massing upward without crowding the booth. A real new structural Box (not
+    a prop): M/D indigo walls, a glowing c data-slit on its lit face, and a small
+    swivel CAMERA head leaning out toward the booth. Introduces the matured deep-indigo
+    `b` tone on the camera arm / shaded base shadow."""
+    # seat the annex on the back-right: lift its apex up + slightly right off the fin's
+    # back-top corner so it stacks behind the fin and reads as a taller back tower.
+    apex = (fin.top[0] + 1, fin.top[1] - 12)
+    tower = Box(top=apex, wx=3, wy=3, h=18)
+    tower.draw(c, roof="L", lwall="M", rwall="D", roof_hi="W", outline="K")
+    # a glowing c reception/recording data-slit high on the lit LEFT face
+    tower.window(c, "left", 0.26, 0.74, 2.2, 9.5, glass="c", hi="h", shade="G", mullions=1)
+    # K rivet seam down the lit front vertical edge (reads as a built tower)
+    for vv in (3, 7, 11, 15):
+        c.set(int(round(tower.r_left[0])), int(round(tower.r_left[1])) + vv, "K")
+    # --- swivel CAMERA head perched ON the tower's front roof corner, leaning FORWARD
+    #     over the front edge toward the booth (the suite is now RECORDING the session).
+    #     Sat directly on the tower roof (the topmost back-right mass here) so it can
+    #     never be occluded, with the lens barrel poking out the booth-facing front. ---
+    axf, ayf = tower.roof_pt(0.5, 0.30)              # front-ish point on the tower roof
+    ax, ay = int(round(axf)), int(round(ayf))
+    # a tiny K/b pan-tilt mount stub on the roof
+    c.set(ax, ay, "K"); c.set(ax, ay - 1, "b")
+    # camera body: a small K-framed M/D box sitting on the stub, lens out the front-left
+    cbx, cby = ax - 2, ay - 4
+    _stamp(c, cbx, cby, [
+        ".KKK",
+        "KMMK",    # lit top of the camera housing
+        "KDDK",    # shaded body
+        "cK.K",    # c lens barrel poking out the booth-facing front-left corner
+    ])
+    c.set(cbx - 1, cby + 3, "h")                      # lens front glint (catches light)
+    return tower
+
+
+def stage4_dish(c, cap, wall):
+    """t4 — MAJOR ADD: a prominent rooftop SCANNING SENSOR DISH on a tilt-mount —
+    a parabolic data dish whose CONCAVE cup we look down into, aimed up-front, with a
+    feed-horn on a tripod at its focus, all on a short K/b/D mast + plinth bolted to
+    the canopy roof so it reads as built-on (not a floating blob). The suite now
+    actively SCANS / aggregates signal. Palette matures: deep `b` dish back-shell +
+    plinth, energized signal-cyan `e/E` on the concave reflective cup. Pushed RIGHT of
+    the t2 uplink mast and kept fully on-canvas + clear of the open booth.
+
+    The dish READS as a dish (not a cloud) via: a crisp K elliptical rim; a CONCAVE
+    shade across the cup (darker `b` back-top half + bright `e/E` lower-front lip =
+    the lit inside of a bowl); a visible mast/plinth; and a tripod feed-horn at focus."""
+    import math
+    # plinth seated on the canopy roof, pushed RIGHT-of-centre so it clears the t2
+    # uplink mast (which sits back-left at roof_pt(0.30,0.74)).
+    pxf, pyf = cap.roof_pt(0.66, 0.42)
+    px = int(round(pxf))
+    roof_y = int(round(pyf))
+    # a slim LIGHT pylon (M lit / D shade, K foot) lifting the dish UP off the roof so
+    # the dish floats high + clear — a light pylon avoids the heavy dark bar a wide
+    # b plinth made. Two short outrigger feet seat it on the roof.
+    dcx, dcy = px + 1, roof_y - 9         # dish FACE centre, up on the pylon
+    c.line((px, roof_y), (px, dcy + 3), "M")
+    c.line((px + 1, roof_y), (px + 1, dcy + 3), "D")
+    c.set(px, roof_y, "K"); c.set(px + 1, roof_y, "K")
+    c.set(px - 1, roof_y, "D"); c.set(px + 2, roof_y, "D")   # outrigger feet
+    # DISH FACE: a satellite dish tilted toward the VIEWER so we see mostly its bright
+    # CONCAVE inner reflective face — a near-round ellipse (rx≈ry so it reads as a disc,
+    # not a bar), filled as a bowl that brightens toward the lower-front lip (E) from a
+    # mid cyan (e) up-back, with a single darker G rim-shadow arc seating the cup. NO
+    # dark back-shell band (that read as a separate lump); the rim is a crisp K ellipse.
+    rx, ry = 6, 5
+    for yy in range(-ry, ry + 1):
+        t = 1 - (yy / ry) ** 2
+        if t < 0:
+            continue
+        half = rx * (t ** 0.5)
+        for xx in range(int(-half), int(half) + 1):
+            X, Y = dcx + xx, dcy + yy
+            if not (0 <= X <= 63 and 0 <= Y <= 63):
+                continue
+            # concave shade: brighten toward lower-front lip; faint G near the rim
+            rr = (xx / rx) ** 2 + (yy / ry) ** 2
+            ny = yy / ry
+            if rr > 0.78:
+                ch = "G"                    # rim-shadow ring (seats the cup)
+            elif ny > 0.25:
+                ch = "E"                    # bright lit lower-front inner face
+            else:
+                ch = "e"                    # mid cyan upper cup
+            c.set(X, Y, ch)
+    # a small bright E specular glint in the upper-left of the cup (reflective tell)
+    c.set(dcx - 2, dcy - 2, "E"); c.set(dcx - 1, dcy - 2, "W")
+    # crisp K elliptical rim outline (this is what makes it read as a dish, not a blob)
+    for a in range(0, 360, 8):
+        X = dcx + rx * math.cos(math.radians(a))
+        Y = dcy + ry * math.sin(math.radians(a))
+        if 0 <= X <= 63 and 0 <= Y <= 63:
+            c.set(int(round(X)), int(round(Y)), "K")
+    # FEED-HORN on a single ARM crossing UP-FRONT from the lower rim to the focus in
+    # front of the cup — one clean M arm + one bright focus dot (legible, not a drip).
+    fx, fy = dcx + 1, dcy + 1             # focus, just in front of the cup centre
+    c.line((dcx - 3, dcy + 4), (fx, fy), "M")        # feed arm up from lower-left rim
+    c.set(dcx - 3, dcy + 4, "K")
+    c.set(fx, fy, "E")                               # glowing feed-horn (signal focus)
+    c.set(fx + 1, fy, "e")
+
+
+def stage5_beacon(c, cap, wall, slab):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED cognitive-observation suite. A glowing
+    NEURAL-DATA BEACON — a bright cyan orb wrapped in two signal-halo rings — crowns
+    the dish on a short plinth, throwing a couple of forked SIGNAL ARCS down toward the
+    booth + the uplink mast (the suite is now a live aggregating data node), and the
+    whole suite is dressed out in GOLD premium trim (a canopy-lip ridge banner + a
+    gold finial pennant on the uplink mast). Reads as elite, still recognizably the
+    same interview booth, just maxed out. Re-anchors off the SAME canopy roof point the
+    dish used so the beacon stacks cleanly on top of it (no second hardcoded guess)."""
+    import math
+    # --- beacon orb mounted ABOVE the t4 dish: recompute from the dish's own anchor
+    #     (cap.roof_pt(0.66,0.40)) so it stacks on the dish, then rise CLEARLY above it
+    #     with a visible neck gap so the orb reads as a discrete element, not fused to
+    #     the dish cup. ---
+    pxf, pyf = cap.roof_pt(0.66, 0.42)
+    px = int(round(pxf))
+    roof_y = int(round(pyf))
+    dcx, dcy = px + 1, roof_y - 9          # the dish FACE centre (same as stage4)
+    ocx, ocy = dcx + 2, dcy - 13           # SMALL beacon orb high above the dish
+    ocy = max(ocy, 3)
+    # a slim b/K neck-mast from the dish TOP rim up to the orb — a CLEAR tall gap (the
+    # orb sits ~5px above the dish rim) so the small orb reads as a beacon finial
+    # CROWNING the larger dish, not fused to it.
+    c.line((dcx + 1, dcy - 5), (ocx, ocy + 3), "b")
+    c.line((dcx + 2, dcy - 5), (ocx + 1, ocy + 3), "K")
+    c.set(dcx + 1, dcy - 5, "K")
+    # ONE clean signal-halo ring around the SMALL orb (energized cyan, compact 2:1
+    # ellipse) — distinctly smaller than the dish so the two read as dish + beacon.
+    for a in range(0, 360, 30):
+        X = ocx + 3 * math.cos(math.radians(a))
+        Y = ocy + 3 * 0.5 * math.sin(math.radians(a))
+        if 0 <= X <= 63 and 0 <= Y <= 63:
+            c.set(int(round(X)), int(round(Y)), "e")
+    # bright cyan beacon CORE — a compact 3px-ish bright node (smaller than the dish).
+    for xx, yy, ch in [(0, 0, "W"), (-1, 0, "E"), (1, 0, "E"), (0, -1, "E"), (0, 1, "E")]:
+        X, Y = ocx + xx, ocy + yy
+        if 0 <= X <= 63 and 0 <= Y <= 63:
+            c.set(X, Y, ch)
+    # --- two forked SIGNAL ARCS leaping DOWN-LEFT from the beacon, dropping toward the
+    #     booth/mast below (the live data node feeding the suite). Always go DOWN (+y)
+    #     so they read as fed signal, not an upward plume. Clamp on-canvas. ---
+    arc1 = [(ocx - 2, ocy + 2), (ocx - 4, ocy + 4), (ocx - 6, ocy + 7), (ocx - 7, ocy + 10)]
+    arc2 = [(ocx - 1, ocy + 3), (ocx - 2, ocy + 6), (ocx - 3, ocy + 9)]
+    for arc in (arc1, arc2):
+        for i in range(len(arc) - 1):
+            a0 = (max(0, min(63, arc[i][0])), max(0, min(63, arc[i][1])))
+            a1 = (max(0, min(63, arc[i + 1][0])), max(0, min(63, arc[i + 1][1])))
+            c.line(a0, a1, "E")
+        for px2, py2 in arc:
+            if 0 <= px2 <= 63 and 0 <= py2 - 1 <= 63:
+                c.set(px2, py2 - 1, "e")
+
+    # --- GOLD premium trim (t5 flourish only) ---
+    # a gold ridge banner hung along the canopy's lit front-left lip (over the magenta
+    # accent strip — the suite's eave is now gilded)
+    c.line(cap.left_pt(0.10, 0.4), cap.left_pt(0.90, 0.4), "q")
+    c.set(int(round(cap.left_pt(0.5, 0.0)[0])), int(round(cap.left_pt(0.5, 0.0)[1])), "O")
+    # gold corner bosses on the slab front kerb (sparse elite trim on the booth ring)
+    cf = slab.r_front
+    c.set(int(cf[0]), int(cf[1]) - 1, "O")
+    c.set(int(cf[0]) - 1, int(cf[1]), "q")
+    c.set(int(cf[0]) + 1, int(cf[1]), "q")
+    # a small GOLD finial pennant flying from the t2 uplink-mast top. Recompute from
+    # the SAME canopy anchor the mast used (cap.roof_pt(0.0,0.40) raised 11px) so the
+    # pennant lands exactly on the mast tip on the FAR LEFT, not a second guess.
+    mxf, myf = cap.roof_pt(0.0, 0.40)
+    mx = int(round(mxf))
+    mtop = int(round(myf)) - 11
+    mtop = max(mtop, 1)
+    c.line((mx, mtop - 1), (mx, mtop + 2), "K")            # short pennant staff
+    fly = [(mx + 1, mtop), (mx + 5, mtop + 1), (mx + 1, mtop + 2)]
+    fly = [(max(0, min(63, fx)), max(0, min(63, fyv))) for fx, fyv in fly]
+    c.fill_poly(fly, "q")
+    c.line(fly[0], fly[1], "O")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the interview room at upgrade `stage` (1..5). Stage 1 is IDENTICAL to
+    the shipped base; each higher stage keeps every prior addition and bolts on the
+    next (t2 uplink mast → t3 recording annex → t4 sensor dish → t5 beacon+gold).
+    Painter's order keeps rooftop/overhead additions on top of the masses they grow
+    from, and all additions stay on the BACK masses so the open front booth signature
+    is never occluded."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     # painter's order: floor slab (foundation) -> back mirror-wall -> canopy slab ->
     # right side fin -> the two seated figures + voiceprint bubble + ID tag signature
     # standing in the OPEN front booth.
     slab = floor_slab(c)
     wall = mirror_wall(c, slab)
-    canopy(c, wall)
-    side_fin(c, slab)
+    cap = canopy(c, wall)
+    fin = side_fin(c, slab)
     signature(c, slab)
 
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    # Draw the recording annex (t3) BEFORE the rooftop dish/beacon (t4/t5) so the
+    # back-right tower sits correctly behind the canopy-mounted additions.
+    if stage >= 3:
+        stage3_annex(c, fin)
+    if stage >= 2:
+        stage2_uplink(c, cap)
+    if stage >= 4:
+        stage4_dish(c, cap, wall)
+    if stage >= 5:
+        stage5_beacon(c, cap, wall, slab)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/mindframe"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "interview-room"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped interview-room.png, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": MIND, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/mindframe_interview-room.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"mindframe_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"mindframe_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

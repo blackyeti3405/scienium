@@ -43,9 +43,17 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
+# Base TerraBase palette (shared keys) + the EVOLVED-accent keys reserved for the
+# upgrade stages only (chars NOT used by the base palette, so they appear in NO
+# stage-1 sprite and seismograph-array.png stays byte-identical). These four exact
+# keys+hexes are the lab-wide terrabase evolved accents:
+#   b  deep basalt/bedrock  — matured warm structure tone for the t3 vault + t4 mast
+#   e  energized mineral-seismic glow (mid)    E  energized glow (bright) — t4/t5 power
+#   q  premium survey gold  — t5 flourish ONLY (NOT a whole-building recolor)
 TERRA = {"K": "#20190f", "W": "#efe6cf", "L": "#d6c8a0", "M": "#b09a6e", "D": "#7e6c47", "d": "#54462c",
          "h": "#d6f2ea", "c": "#a4e2d4", "g": "#34b6a2", "G": "#1d8474",
-         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e"}
+         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e",
+         "b": "#3a3326", "e": "#5fe0c4", "E": "#c4fff0", "q": "#f3c63a"}
 
 
 # ── geometry: a LOW WIDE bunker (lower + wider than the gateway cube) ──────────
@@ -453,28 +461,357 @@ def shock_ripple(c, b, deck_pt):
     c.set(int(round(ecx)), int(round(ecy + 1)), "r")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS seismic-
+# monitoring structure onto the prior form — never restarts, never recolors the
+# whole bunker. Theme: a hardened seismic station grows into a fully instrumented
+# strong-motion observatory. Colours mature stage by stage; gold (q) is a t5
+# flourish only. Every add is anchored to a base part (parapet deck / rim / wall /
+# back-right corner) and clamped on-canvas, and NONE collide with the signature
+# (the paper-drum back-left + the shock-ripple disc front-right).
+#
+#   t2  small functional add : a 2nd RECORDING-DRUM + ink-pen beside the signature
+#                              + a brighter O event-LED on the parapet rim
+#   t3  structural add        : a half-sunk `b` concrete SEISMOMETER VAULT annex off
+#                              the shaded-right base (louver vent + g status slit)
+#   t4  major add             : a tall STRONG-MOTION SENSOR MAST off the back-right
+#                              roof corner (stacked glowing e accel-pods + guy-wires
+#                              + a swinging e pendulum-bob)
+#   t5  crowning feature      : the roof disc ERUPTS into a live SEISMIC WAVEFIELD
+#                              (concentric E shock-rings + E epicentre flash +
+#                              jagged e trace) + GOLD corner bosses + ridge band
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_second_drum(c, b, deck_pt, drum_anchor):
+    """t2 — SMALL FUNCTIONAL ADD: a SECOND, smaller recording-drum logging more traces,
+    planted in the CLEAR back-centre deck pocket BESIDE the signature shock-ripple disc
+    (between the hero drum on the left and the antenna on the back-right, ABOVE the disc
+    rings) so it pairs with the signature without touching the hero drum or occluding
+    the disc. A short W/L paper drum on a K mount with an `o` ink-PEN nib scratching a
+    tiny `c` trace, plus one brighter `O` EVENT-LED winking on the lit back-left parapet
+    rim. On-theme (more seismographs being logged), modest, base palette + one brightened
+    O. Anchored at a fixed offset from the hero drum (`drum_anchor`) into the open pocket,
+    never a hardcoded screen guess."""
+    dcx, dcy, dbase = drum_anchor      # hero drum centre-top (27,20) + base_y
+    # seat the small drum in the OPEN back-centre pocket: right of the hero drum and
+    # above the shock-ripple disc (the disc rings begin ~5px below this). A small drum
+    # so it sits clear in the tight pocket and clearly reads as the lesser logger.
+    sx = dcx + 13                      # into the clear lit deck right of the hero drum
+    scy = dcy + 5                      # high on the back deck, above the disc rings
+    srx, sry, sdh = 2, 1, 5            # a SMALL drum (hero is rx=6,h=11)
+    sbase = scy + sdh
+    # paper side-wrap: lit-left W -> L -> shaded-right M/D, keyed to a short can
+    for col in range(-srx, srx + 1):
+        frac = (col + srx) / (2 * srx)
+        if   frac < 0.25: ch = "W"
+        elif frac < 0.55: ch = "L"
+        elif frac < 0.80: ch = "M"
+        else:             ch = "D"
+        for y in range(scy, sbase + 1):
+            c.set(sx + col, y, ch)
+    # elliptical top cap
+    for col in range(-srx, srx + 1):
+        t = 1 - (col / srx) ** 2
+        if t < 0:
+            continue
+        dip = sry * (t ** 0.5)
+        frac = (col + srx) / (2 * srx)
+        cap = "W" if frac < 0.5 else "L"
+        for y in range(int(round(scy - dip)), int(round(scy + dip)) + 1):
+            c.set(sx + col, y, cap)
+    # crisp K silhouette: top rim ellipse + sides + base arc
+    for a in range(0, 360, 10):
+        c.set(sx + srx * math.cos(math.radians(a)), scy + sry * math.sin(math.radians(a)), "K")
+    c.line((sx - srx, scy), (sx - srx, sbase), "K")
+    c.line((sx + srx, scy), (sx + srx, sbase), "K")
+    for a in range(0, 181, 10):
+        c.set(sx + srx * math.cos(math.radians(a)), sbase + sry * math.sin(math.radians(a)), "K")
+    # a faint c trace already scratched around the small drum's wrap (more logging)
+    for col, dy in [(-1, 2), (0, 3), (1, 2)]:
+        c.set(sx + col, scy + dy, "c")
+    # K mounting foot bar under the small drum
+    c.set(sx - srx, sbase + 1, "K"); c.set(sx + srx, sbase + 1, "K")
+    c.line((sx - srx, sbase + 1), (sx + srx, sbase + 1), "K")
+    # short K ink-PEN arm on a pivot reaching in from the LEFT onto the drum + o nib
+    pen_post_x = sx - srx - 1
+    pen_top = scy + 1
+    c.set(pen_post_x, pen_top, "K")
+    c.set(pen_post_x, pen_top + 1, "K")
+    c.line((pen_post_x, pen_top + 1), (sx - srx + 1, scy + 2), "K")   # pen arm
+    c.set(sx - srx + 1, scy + 2, "o")                                 # o ink-pen nib
+    c.set(sx - srx, scy + 2, "O")                                     # bright wet-ink tip
+
+    # one brighter O EVENT-LED winking on the lit BACK-LEFT parapet rim (a logged
+    # event), seated on the raised lip band where it reads against the bright rim,
+    # clear of all deck instruments.
+    led = b.roof_pt(0.16, 0.62)        # back-left rim band, lit + uncluttered
+    lx, ly = int(round(led[0])), int(round(led[1])) - 2   # up on the raised lip cap
+    c.set(lx, ly, "O")
+    c.set(lx, ly - 1, "o")                                 # tiny halo above the LED
+
+
+def stage3_vault(c, b):
+    """t3 — STRUCTURAL ADD: a half-sunk concrete SEISMOMETER VAULT annex stepped off
+    the SHADED-RIGHT base of the bunker — a low `b` basalt instrument bunker bolted to
+    the right wall, stepped FORWARD-RIGHT so its lit-LEFT face + flat cap read clearly,
+    its own lower third banded as buried strata, carrying a slatted Box.louver vent on
+    the lit face + a glowing `g` status slit on the shaded face (houses the
+    seismometers). A real new structural mass (its own Box), not a prop. Drawn AFTER
+    the bunker so it reads as a smaller block half-sunk into the same bedrock, abutting
+    the bunker's right wall."""
+    # seat the annex IN FRONT of the bunker's right (shaded) wall, stepped out to the
+    # RIGHT + FORWARD and lower, so its cap sits below the parapet and its full lit
+    # face shows in the open front-right ground (a clearly bolted-on sunk vault).
+    rr = b.r_right                       # right roof corner (55,32)
+    # back-top corner: forward of the right wall (toward the front apex) + lower, so
+    # the annex tucks against the lower-front third of the bunker's right wall.
+    ax = int(round(rr[0])) - 11          # step in toward the front apex (=44)
+    ay = int(round(rr[1])) + 12          # drop the cap low against the right wall (=44)
+    vault = Box(top=(ax, ay), wx=5, wy=4, h=6)
+    # body: deep basalt b walls, a flat M cap (concrete), K outline — a hardened vault
+    vault.draw(c, roof="M", lwall="b", rwall="b", roof_hi="L", outline="K")
+    # re-lay the cap a touch brighter on the lit back-left so it reads as a flat slab
+    c.fill_poly([vault.r_top, vault.r_left, vault.r_front], "L")
+    c.line(vault.r_top, vault.r_left, "W")
+    # buried STRATA banding on the annex's lower third (matches the half-sunk bunker)
+    for v, ch in [(vault.h - 2.4, "r"), (vault.h - 1.5, "d"), (vault.h - 0.5, "d")]:
+        c.line(vault.left_pt(0.04, v), vault.left_pt(0.96, v), ch)
+        c.line(vault.right_pt(0.04, v), vault.right_pt(0.96, v), ch)
+    # a low strata toe banked against the annex front foot so it sits IN the rock
+    fy = int(round(vault.w_front[1]))
+    for row, ch, span in [(0, "d", 3), (1, "r", 2), (2, "d", 1)]:
+        xc = int(round(vault.w_front[0]))
+        for dx in range(-span, span + 1):
+            c.set(xc + dx, fy + 1 - row, ch)
+        c.set(xc - span, fy + 1 - row, "K")
+    # slatted LOUVER VENT on the annex's lit-LEFT face (the seismometer breather)
+    vault.louver(c, "left", 0.20, 0.78, 1.4, 4.2, body="d", slat="K", edge="M", frame="K")
+    # a glowing g STATUS SLIT on the shaded-RIGHT face (instruments live below)
+    s0 = vault.right_pt(0.28, 1.8)
+    s1 = vault.right_pt(0.80, 1.8)
+    c.line((s0[0], s0[1] - 0.5), (s1[0], s1[1] - 0.5), "K")   # K hood above the slit
+    c.line(s0, s1, "g")                                        # the g status glow slit
+    c.line((s0[0], s0[1] + 0.5), (s1[0], s1[1] + 0.5), "K")   # K sill below
+    c.set(int(round(s0[0])), int(round(s0[1])), "G")          # shaded end
+    c.set(int(round(s1[0])), int(round(s1[1])), "h")          # lit glint end
+    # a stout K cable conduit linking the annex cap up to the bunker right wall foot
+    cc0 = vault.r_top
+    c.line((int(round(cc0[0])), int(round(cc0[1])) - 1),
+           (int(round(b.w_right[0])) - 2, int(round(b.w_right[1])) - 3), "K")
+
+
+def _mast_geom(b, deck_pt):
+    """Shared strong-motion-mast geometry so t5's gold crown band recomputes from the
+    SAME source as t4 (never a hardcoded second guess). Returns the mast foot on the
+    back-right roof corner and the clamped mast top."""
+    fp = deck_pt(0.86, 0.24)             # back-right roof corner (by the antenna)
+    fx, fy = int(round(fp[0])), int(round(fp[1]))
+    top_y = 5                            # tall mast; top kept on-canvas (>=0)
+    return fx, fy, top_y
+
+
+def stage4_mast(c, b, deck_pt):
+    """t4 — MAJOR ADD: a tall STRONG-MOTION SENSOR MAST rising straight off the
+    BACK-RIGHT roof corner (beside the base antenna), carrying a vertical stack of
+    glowing `e` ACCELEROMETER PODS up its shaft, braced by two guy-wires down to the
+    deck, and SWINGING a glowing `e` PENDULUM-BOB on a short arm below the pods. The
+    prominent new vertical mass: 'this station now records strong ground motion'.
+    A mast/pods (NOT a derrick — distinct from sampling-station). Palette matures:
+    deep basalt `b` mast + energized mineral `e/E` glow on the pods/bob. Fully on-
+    canvas, rises clear above the deck, and stands to the RIGHT/BACK of the centre
+    signature so it never occludes the drum or the shock-ripple disc."""
+    fx, fy, top_y = _mast_geom(b, deck_pt)
+    # --- the MAST: a 3px basalt lattice column, lit-left D edge, K rails ---
+    c.line((fx, fy), (fx, top_y), "b")                 # core
+    c.line((fx - 1, fy - 1), (fx - 1, top_y + 1), "D") # lit-left edge
+    c.line((fx + 1, fy - 1), (fx + 1, top_y + 1), "K") # shaded-right edge / outline
+    for yy in range(top_y + 3, fy - 1, 4):             # X-lattice rungs up the mast
+        c.line((fx - 1, yy), (fx + 1, yy + 2), "b")
+        c.line((fx + 1, yy), (fx - 1, yy + 2), "b")
+    c.set(fx, top_y, "K")
+    c.set(fx, fy, "K")                                 # foot plate on the roof corner
+    # --- two GUY-WIRES bracing the mast down to the deck (taut K lines + anchors).
+    #     Anchored back-LEFT + front so BOTH wires sweep down clear of the t2 second-
+    #     drum pocket (back-centre, x≈38-42) — they never cross/occlude that earlier
+    #     add, keeping the evolution cleanly cumulative. ---
+    for gx, gy in [(int(round(deck_pt(0.58, 0.18)[0])), int(round(deck_pt(0.58, 0.18)[1]))),
+                   (int(round(deck_pt(0.46, 0.74)[0])), int(round(deck_pt(0.46, 0.74)[1])))]:
+        gy = min(gy, 62)
+        c.line((fx, top_y + 6), (gx, gy), "K")
+        c.set(gx, gy, "d")                             # anchor cleat on the deck
+    # --- stacked glowing ACCELEROMETER PODS up the mast shaft (3 e-lit drums) ---
+    pod_ys = [top_y + 5, top_y + 12, top_y + 19]
+    for py in pod_ys:
+        if py >= fy - 1:
+            continue
+        # a small 3-wide pod: K frame, e body, bright E read-lamp on the lit face
+        c.fill_poly([(fx - 1, py), (fx + 1, py), (fx + 1, py + 2), (fx - 1, py + 2)], "e")
+        for a, bb in [((fx - 1, py), (fx + 1, py)), ((fx - 1, py + 2), (fx + 1, py + 2)),
+                      ((fx - 1, py), (fx - 1, py + 2)), ((fx + 1, py), (fx + 1, py + 2))]:
+            c.line(a, bb, "K")
+        c.set(fx - 1, py, "E")                          # bright read-lamp glint
+        c.set(fx, py + 1, "G")                          # shaded core
+    # bright E sensor cap crowning the mast top (the strong-motion head)
+    c.set(fx, top_y, "E")
+    c.set(fx, top_y - 1, "e")
+    c.set(fx - 1, top_y, "E")
+    # --- swinging PENDULUM-BOB on a short K arm hung off the lowest pod ---
+    arm_y = pod_ys[-1] + 4 if pod_ys[-1] + 4 < fy - 2 else fy - 4
+    bob_x = fx - 3                                      # swung out to the lit-left
+    c.line((fx, arm_y - 3), (bob_x, arm_y), "K")        # pendulum suspension wire
+    # the bob: a small glowing e mass with an E glint + K under-rim
+    c.set(bob_x, arm_y, "e")
+    c.set(bob_x - 1, arm_y, "e")
+    c.set(bob_x, arm_y + 1, "G")
+    c.set(bob_x - 1, arm_y + 1, "K")
+    c.set(bob_x - 1, arm_y - 1, "E")                    # lit glint on the bob
+
+
+def stage5_wavefield(c, b, deck_pt):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED strong-motion observatory. The rooftop
+    shock-ripple DISC ERUPTS into a live SEISMIC WAVEFIELD: big concentric `E` SHOCK-
+    RINGS radiate outward across the whole flat deck from a bright `E` EPICENTRE FLASH
+    (over the base shock-ripple marker), with a jagged `e` seismograph TRACE tearing
+    across the deck — the station now reads as fully energized/maxed. Dressed out with
+    GOLD survey trim: q corner BOSSES on the parapet corners + a gold RIDGE BAND along
+    the lit back rim. Reads as elite, still clearly the seismograph bunker. Drawn so
+    the rings wash the deck around — never over — the drum + mast that own the back."""
+    # epicentre = the base shock-ripple marker (deck_pt(0.68,0.64)) so the wavefield
+    # erupts FROM the existing signature disc, not a second guess.
+    ep = deck_pt(0.68, 0.64)
+    ecx, ecy = ep[0], ep[1]
+    # --- concentric E/e SHOCK-RINGS radiating across the deck (iso-flattened 2:1 so
+    #     they lie on the roof plane). The INNER ring is a full circle right on the
+    #     disc; the larger OUTER rings render only across the OPEN front/right deck so
+    #     the wavefield erupts outward WITHOUT washing over the hero drum (back-left)
+    #     or the sensor mast (back-right). Sparse angular step so the rings stay clean
+    #     arcs, not mush. E on the live inner front, fading to e outward. ---
+    HERO_X = 32      # don't paint rings left of here (protects the hero/2nd drum)
+    rings = [(4.0, "E", True), (6.5, "e", False), (9.0, "E", False), (11.5, "e", False)]
+    for rr, ch, full in rings:
+        for a in range(0, 360, 12):
+            x = ecx + rr * math.cos(math.radians(a))
+            y = ecy + (rr * 0.5) * math.sin(math.radians(a))
+            xi, yi = int(round(x)), int(round(y))
+            if not (0 <= xi < 64 and 0 <= yi < 64):
+                continue
+            # protect the hero/second drum at back-left for ALL rings
+            if xi < HERO_X:
+                continue
+            # for the outer rings, also keep off the back band where the mast + its
+            # pods stand (so the wavefield reads as erupting toward the open front,
+            # not smearing over the major mast); the inner ring stays a full disc.
+            if not full and yi < ecy - 1 and xi > ecx - 1:
+                continue
+            c.set(xi, yi, ch)
+    # bright E EPICENTRE FLASH at the centre (the live jolt)
+    for dx, dy, ch in [(0, 0, "W"), (-1, 0, "E"), (1, 0, "E"), (0, -1, "E"),
+                       (0, 1, "e"), (-1, -1, "e"), (1, 1, "e")]:
+        c.set(int(round(ecx)) + dx, int(round(ecy)) + dy, ch)
+    # a jagged `e` seismograph TRACE tearing across the OPEN FRONT-RIGHT deck from the
+    # epicentre (down-and-right toward the front rim, away from the hero drum) so it
+    # reads as the live wavefield rippling across clear deck, never over the drum.
+    amp = [0, -2, 1, -1, 2, -1, 1, -2, 0]
+    tx = int(round(ecx))
+    ty = int(round(ecy))
+    trace = []
+    for k in range(0, 9):
+        px = tx + k * 2                                 # tear toward the front-RIGHT
+        py = ty + 1 + amp[k % len(amp)]                 # drift toward the front rim
+        if px > 61 or py > 61:
+            break
+        trace.append((px, py))
+    for k in range(1, len(trace)):
+        c.line(trace[k - 1], trace[k], "e")
+    for px, py in trace[::2]:
+        c.set(px, py, "E")                              # bright trace nodes
+
+    # --- GOLD premium survey trim (t5 flourish only) ---------------------------
+    # gold RIDGE BAND along the lit BACK rim of the parapet (the elite crown band)
+    c.line((b.r_top[0], b.r_top[1] - 2), (b.r_left[0], b.r_left[1] - 2), "q")
+    c.set(int(round(b.r_top[0])), int(round(b.r_top[1])) - 3, "O")   # bright band glint
+    # gold CORNER BOSSES on the four parapet corners (sparse elite trim, on the lip)
+    for corner in (b.r_left, b.r_front, b.r_right, b.r_top):
+        cxp, cyp = int(round(corner[0])), int(round(corner[1]))
+        c.set(cxp, cyp - 2, "q")
+    c.set(int(round(b.r_front[0])), int(round(b.r_front[1])) - 3, "O")  # brightest front boss
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the seismograph array at upgrade `stage` (1..5). Stage 1 is IDENTICAL
+    to the shipped base PNG; each higher stage keeps every prior addition and bolts on
+    the next (t2 2nd-drum → t3 vault annex → t4 sensor mast → t5 wavefield + gold).
+    Painter's order keeps rooftop/overhead additions above the masses they grow from;
+    the t4 mast + t5 wavefield draw AFTER the base signature so they sit on the deck,
+    but the wavefield rings are placed to wash the deck around the drum, not over it."""
     c = Canvas()
     b = BUNKER
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     contact_shadow(c)            # flat iso ground-pool (drawn first, underneath)
     strata_berm(c, b)            # ochre/rust rock berm banked against the back-left
     bunker(c, b)                 # the low wide concrete blockhouse
-    bunker_strata = None
     # over-paint strata bands + faces is done inside bunker(); now the openings:
     deck_pt = parapet(c, b)      # flat parapet roof (K-edged L/M lip + flat deck)
     left_opening(c, b)           # HERO armored door + ribbon window + EPICENTER placard (LIT-LEFT)
     right_detail(c, b)           # plainer shaded-right vent grille
     roof_kit(c, b, deck_pt)      # K-rimmed sensor wells + antenna post on the deck
     underglow(c, b, deck_pt)     # soft c seismic underglow on the deck
-    ink_drum(c, b, deck_pt)      # SIGNATURE: rotating paper-drum seismograph + teal trace + stylus
-    shock_ripple(c, b, deck_pt)  # SIGNATURE: concentric shock-ripples + brighter predicted jolt
 
+    # --- t3 VAULT annex draws on the SHADED-RIGHT base, before the roof signature so
+    #     it sits as a side block; it never touches the deck instruments. ----------
+    if stage >= 3:
+        stage3_vault(c, b)
+
+    drum_anchor = ink_drum(c, b, deck_pt)   # SIGNATURE: rotating paper-drum + teal trace + stylus
+    shock_ripple(c, b, deck_pt)             # SIGNATURE: concentric shock-ripples + predicted jolt
+
+    # --- CUMULATIVE UPGRADE STAGES (deck/overhead adds, after the base signature) --
+    if stage >= 2:
+        stage2_second_drum(c, b, deck_pt, drum_anchor)
+    if stage >= 4:
+        stage4_mast(c, b, deck_pt)
+    if stage >= 5:
+        stage5_wavefield(c, b, deck_pt)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/terrabase"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "seismograph-array"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped seismograph-array.png, so it does NOT overwrite the
+    base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": TERRA, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/terrabase_seismograph-array.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"terrabase_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"terrabase_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

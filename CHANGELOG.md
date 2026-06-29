@@ -5,6 +5,24 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.15.0] — 2026-06-29
+
+The 4-stage upgrade evolution from 0.13.0 (Volt Lab) is **extended to the remaining five lab
+types** — biocore, chemworks, terrabase, mindframe, axiom. Every economy building now visibly
+grows from its base form into a fully built-out, high-tech version by L15, each on its own lab
+palette. **200 new stage sprites** (5 labs × 10 buildings × 4 stages). No app or schema changes:
+the level→stage machinery (`buildingStageSuffix` / `getBuildingSprite`) already shipped in
+0.13.0, so these are pure static assets that render live at L4/7/10/15. Each building passed an
+independent generator→reviewer loop; base L1–3 sprites are byte-identical to the shipped forms.
+
+### Added
+
+- **200 upgrade-stage sprites** (`apps/web/public/sprites/buildings/{biocore,chemworks,terrabase,mindframe,axiom}/{slug}_t2..t5.png`) — cumulative, on-theme build-ups per building (e.g. biocore greenhouse: vine planters → trellis annex → climbing-plant tower → spore-burst + gold ridge; chemworks distillation-tower: reflux condenser → reboiler drum → second tray-column → condenser-orb crown; axiom cosmology-visualization-theater: expanding cosmic-web dome → gold-ringed theater). Colours mature across stages; gold reserved as the L15 flourish only. Char-grid sources in `art/src/buildings/`.
+- **Reproducible staged builders** for all 50 buildings — each `.claude/pixel-art-pipeline/builders/{slug}.py` refactored to `build(stage=1)` layering cumulative geometry, following the Volt Lab `workshop.py` pattern. Per-lab evolved-accent palettes (deepened structure tone + energized glow + premium gold) tuned to each lab's mood: biocore bio-green, chemworks reagent-teal, terrabase basalt/earth, mindframe signal-violet, axiom stellar-blue.
+- **Per-lab evolution plans** (`.claude/pixel-art-pipeline/{lab}-evolution-plan.md`) and a montage / contact-sheet helper (`art/montage.py`) used by the review loop and for sign-off.
+
+---
+
 ## [0.14.0] — 2026-06-28
 
 Database moves from a local Postgres instance to **Supabase Postgres**, and the migration

@@ -21,6 +21,27 @@ Draw order: contact shadow + gallery hall (back) -> skylight lantern on the ridg
 display windows on the lit-left + plainer right -> entry terrace stub (front) ->
 hovering dashboard board + 3D bar-chart skyline + line-graph ribbon + scatter-dots +
 color legend (above the lantern).
+
+═══════════════════════════════════════════════════════════════════════════════════
+UPGRADE-EVOLUTION pass (mindframe lab). build(stage) + cumulative stageN helpers +
+emit/build_all, copied from workshop.py / interview-room.py. Stage 1 is byte-identical
+to the shipped data-visualization-studio.png. Theme: the dataviz studio grows into a
+fully built-out, multi-screen analytics floor — it gains the gear to RENDER more, plot
+on a bigger wall, and drive a wraparound synced array. All additions grow on the RIGHT
+flank / right foreground (cols 54+ are empty ground) and stay BELOW the centered
+hovering dashboard signature (rows ~1-17), never occluding the lit-left glass hero.
+The lab's magenta o/O stays the HUMAN/series accent; the evolved compute/data glow is
+cool signal-cyan e/E. Colours mature stage by stage; gold (q) is a t5 flourish only.
+
+  t2  small functional add : a 2nd small CHART PANEL (cyan sparkline tile) clipped
+                             left of the wall + a brighter o cursor dot on the main plot
+  t3  structural add       : a RENDER-RACK ANNEX on the right flank — a b-housed box of
+                             glowing g GPU bays driving the visualizations (real compute)
+  t4  major add            : a curved VIDEO-WALL TOWER rising on the right, raising the
+                             roofline with twin glowing e dashboard panels (a big plot wall)
+  t5  crowning feature     : a WRAPAROUND SYNCED ANALYTICS ARRAY — bright-E live line +
+                             bar + scatter mini-charts animating in unison + a KPI node,
+                             q gold master bezel on the hero screen + a gold tower finial
 """
 import os
 import sys
@@ -30,9 +51,16 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
+# Base MindFrame palette (shared keys) + the EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so the base PNG is unchanged).
+# These exact evolved keys are reused by all 10 mindframe buildings for lab consistency:
+#   b  deep indigo steel — matured structure tone for t3+ new masses
+#   e  energized signal-cyan glow (mid)   E  signal-cyan glow (bright) — the t4/t5 data
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 MIND = {"K": "#181428", "W": "#e8e2f6", "L": "#cabfe6", "M": "#9f90c8", "D": "#6f5fa0", "d": "#4a3c70",
         "h": "#ecc8f4", "c": "#d0a8ee", "g": "#a45ce0", "G": "#6a2fb0",
-        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80"}
+        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80",
+        "b": "#2b2440", "e": "#7fd4ff", "E": "#d6f4ff", "q": "#f3c63a"}
 
 
 def _stamp(c, x0, y0, rows):
@@ -276,8 +304,258 @@ def hovering_dashboard(c, lan):
     c.set(stem_x, top_lan + 1, "h")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS render / screen /
+# analytics structure onto the prior form — never restarts, never recolors the whole
+# building. Theme: the dataviz studio grows into a fully built-out multi-screen
+# ANALYTICS FLOOR. Every addition grows on the RIGHT flank / right-foreground (cols
+# 54+ are empty ground) and stays BELOW the centered hovering-dashboard signature
+# (rows ~1-17) and clear of the lit-left glass hero, so neither is occluded. Colours
+# mature stage by stage; the evolved compute/data glow is cool signal-cyan e/E,
+# distinct from the lab's magenta o/O series accent. Gold (q) only at t5.
+#
+#   t2  small functional add   : a 2nd CHART PANEL (cyan sparkline tile) + brighter o cursor
+#   t3  structural add         : a RENDER-RACK ANNEX of glowing g GPU bays on the right flank
+#   t4  major add              : a curved VIDEO-WALL TOWER with twin e panels (a big plot wall)
+#   t5  crowning feature       : a WRAPAROUND SYNCED ANALYTICS ARRAY + KPI node + gold trim
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_sparkline(c):
+    """t2 — SMALL FUNCTIONAL ADD: a second small CHART PANEL clipped on the LEFT beside
+    the wall, just under the existing color LEGEND (cols 13-18, rows 11-16) — a tiny
+    K-framed cyan SPARKLINE tile (a mini line-plot reading as a second monitored series),
+    plus a brighter o/O CURSOR dot crosshair landing on the main plot's tallest
+    highlighted bar. On-theme (more charts), modest, base palette + one brightened o.
+    Seated on the empty left ground (cols 6-12) so it never touches the glass hero or
+    the centered dashboard."""
+    # --- mini SPARKLINE tile: a small K-framed dark panel with a bright c line-plot.
+    # Sits left of / below the legend on the empty left ground (cols 6..12, rows 18..24).
+    tx, ty = 6, 18
+    _stamp(c, tx, ty, [
+        "KKKKKKK",
+        "KdddddK",   # dark panel body (a small screen)
+        "KdddddK",
+        "KdddddK",
+        "KKKKKKK",
+    ])
+    # a tiny cyan sparkline running across the panel interior (a mini line-chart)
+    spark = [(1, 2), (2, 1), (3, 2), (4, 1), (5, 3)]
+    for sx, sy in spark:
+        c.set(tx + sx, ty + sy, "c")
+    c.set(tx + 5, ty + 3, "h")                 # bright end node
+    c.set(tx + 1, ty + 1, "h")                 # bright start node
+    # a faint o title pip on the tile's top-left (it's a tracked series)
+    c.set(tx + 1, ty, "o")
+
+    # --- brighter o/O CURSOR dot crosshair on the main plot's tallest (highlighted)
+    # bar. The dashboard baseline is board_y=17; the highlighted warm bar stands at
+    # x = bx0 + 6 + 15 where bx0 = ax-18, ax≈39 -> x≈42, height 10 -> top ≈ row 7.
+    cux, cuy = 42, 6                            # just above the tallest bar's lit top
+    c.set(cux, cuy, "O")                        # hot cursor dot
+    c.set(cux - 1, cuy, "o"); c.set(cux + 1, cuy, "o")   # tiny crosshair arms
+    c.set(cux, cuy - 1, "o")
+
+
+def stage3_render_rack(c, hall):
+    """t3 — STRUCTURAL ADD: a RENDER-RACK ANNEX bolted to the studio's RIGHT shaded
+    flank — a slim deep-indigo Box of glowing GPU/compute bays that drive the
+    visualizations (the studio now renders its own frames). A real new structural mass
+    on the empty right ground (cols 54+), seated just right of the hall's right corner
+    (r_right=(54,30), w_right=(54,42)) so it extends the floor sideways without crowding
+    the glass hero or the centered dashboard. Introduces the matured deep-indigo `b`
+    housing + energized `g` bay glow."""
+    # seat the annex apex tucked against the hall's right shaded flank (slightly LEFT of
+    # the corner so it overlaps the flank and reads as bolted on, not free-standing far
+    # out at the canvas edge). Slim in wx/wy + shorter than the hall, and kept with a
+    # clear right margin (right face lands ≈col 58, well inside the 63 edge).
+    apex = (hall.r_right[0] - 2, hall.r_right[1] + 3)     # ≈ (52, 33)
+    rack = Box(top=apex, wx=3, wy=3, h=10)
+    rack.draw(c, roof="L", lwall="M", rwall="D", roof_hi="W", outline="K")
+    # deep-indigo `b` base shadow band along the rack foot (matured structure tone)
+    c.line(rack.w_left, rack.w_front, "b")
+    c.line(rack.w_front, rack.w_right, "b")
+    # --- stacked GLOWING GPU BAYS on the lit-LEFT face (facing the viewer): three
+    # short glowing `g` slots with bright `h` indicator pips = compute bays running.
+    # Kept in the LOWER half of the face (v>=4.5) so they stay visible BELOW the t4
+    # video-wall tower that later stacks onto this rack's roof. ---
+    for v in (4.6, 6.4, 8.2):
+        # a thin recessed bay slot (b housing) with a glowing g core + h status pip
+        a = rack.left_pt(0.20, v)
+        b = rack.left_pt(0.80, v)
+        c.line((int(round(a[0])), int(round(a[1]))), (int(round(b[0])), int(round(b[1]))), "b")
+        a2 = rack.left_pt(0.24, v + 0.6)
+        b2 = rack.left_pt(0.76, v + 0.6)
+        c.line((int(round(a2[0])), int(round(a2[1]))), (int(round(b2[0])), int(round(b2[1]))), "g")
+        pip = rack.left_pt(0.86, v + 0.3)
+        c.set(int(round(pip[0])), int(round(pip[1])), "h")
+    # a small dark intake louver low on the shaded-RIGHT face (it's a real rack)
+    rack.louver(c, "right", 0.30, 0.72, 5.6, 9.2, body="d", slat="K", edge="D")
+    return rack
+
+
+def stage4_videowall(c, hall, rack):
+    """t4 — MAJOR ADD: a curved VIDEO-WALL TOWER rising on the RIGHT, raising the
+    roofline with ONE big glowing cyan PLOT WALL (the large dashboard screen the studio
+    now drives). A prominent new vertical mass: a deep-indigo `b` chassis Box stacked
+    directly on the render rack (the compute below, the screen wall above), its lit-LEFT
+    face a single bright energized `e/E` screen carrying a bold bar+line plot. A slim
+    tower can't host two legible mini-panels at 64px, so the front is ONE clean tall
+    video-wall screen — the *multiple* synced charts arrive at t5 (the wraparound array).
+    Kept on the right (cols 46-58), fully on-canvas, framing the hovering dashboard
+    rather than occluding it. Palette matures: `b` chassis + `e/E` screen glow."""
+    # stack the tower DIRECTLY ON the render rack's roof (same right-side footprint) so
+    # it reads as the same massing growing UP — the compute rack below, the screen wall
+    # above (this is what "raises the roofline"). Recompute off the SAME hall corner the
+    # rack used so the stack stays aligned (rack apex = hall.r_right - (2,-3) at (52,33);
+    # the tower apex sits 12px higher at the rack roof, rising to a roof at row ~21).
+    apex = (hall.r_right[0] - 2, hall.r_right[1] - 9)     # ≈ (52, 21): up on the rack roof
+    tower = Box(top=apex, wx=3, wy=3, h=12)
+    # b deep-indigo chassis (matured structure) with a lighter M roof + bright bezel edges
+    tower.draw(c, roof="M", lwall="b", rwall="D", roof_hi="W", outline="K")
+    # a bright M bezel rim down the tower's lit front-left edge (the curved wall sweeps)
+    for v in range(0, 12):
+        p = tower.left_pt(0.0, v)
+        c.set(int(round(p[0])), int(round(p[1])), "M")
+    # --- ONE big glowing PLOT WALL filling the lit-LEFT face: a BRIGHT cyan screen field
+    # (a glowing screen reads far better bright-field than dark-field at this size) with
+    # an E lit sky-band and a crisp K frame. The plot glyph is kept SPARSE (the face is
+    # only ~3px wide — dense glyphs swallow the glow and read as speckle), so just one
+    # minimal `G` trend line + a couple of short baseline bars sit on the bright field. ---
+    v0, v1 = 1.4, 10.4
+    c.fill_poly([tower.left_pt(0.14, v0), tower.left_pt(0.86, v0),
+                 tower.left_pt(0.86, v1), tower.left_pt(0.14, v1)], "e")
+    # brighter E lit band across the top of the screen (the glow)
+    c.fill_poly([tower.left_pt(0.14, v0), tower.left_pt(0.86, v0),
+                 tower.left_pt(0.86, v0 + 2.0), tower.left_pt(0.14, v0 + 2.0)], "E")
+    # a brighter E vertical sheen streak (reads as a lit glass screen)
+    c.line((int(round(tower.left_pt(0.30, v0 + 1)[0])), int(round(tower.left_pt(0.30, v0 + 1)[1]))),
+           (int(round(tower.left_pt(0.30, v1 - 1)[0])), int(round(tower.left_pt(0.30, v1 - 1)[1]))), "E")
+    # crisp K frame
+    for a, b in [(tower.left_pt(0.14, v0), tower.left_pt(0.86, v0)),
+                 (tower.left_pt(0.14, v1), tower.left_pt(0.86, v1)),
+                 (tower.left_pt(0.14, v0), tower.left_pt(0.14, v1)),
+                 (tower.left_pt(0.86, v0), tower.left_pt(0.86, v1))]:
+        c.line((int(round(a[0])), int(round(a[1]))), (int(round(b[0])), int(round(b[1]))), "K")
+    # a SPARSE dark `G` trend line zig-zagging down the screen (one clear plot, not a mush)
+    lpts = [(0.30, v0 + 2.6), (0.50, v0 + 4.2), (0.66, v0 + 3.0), (0.78, v0 + 4.6)]
+    prev = None
+    for u, vv in lpts:
+        p = tower.left_pt(u, vv)
+        pt = (int(round(p[0])), int(round(p[1])))
+        if prev is not None:
+            c.line(prev, pt, "G")
+        prev = pt
+    # two short G baseline bars at the screen foot (a hint of a bar chart, kept minimal)
+    base_v = v1 - 1.0
+    for u, hh in ((0.42, 2.0), (0.62, 2.8)):
+        p = tower.left_pt(u, base_v)
+        x, y = int(round(p[0])), int(round(p[1]))
+        for k in range(int(round(hh))):
+            c.set(x, y - k, "G")
+    return tower
+
+
+def stage5_array(c, hall, tower, lan):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED analytics floor. The dashboard + video-wall
+    become a WRAPAROUND SYNCED ANALYTICS ARRAY: three bright signal-cyan `E` live
+    mini-charts (a LINE panel, a BAR panel, a SCATTER panel) wrap around the right side
+    in unison, anchored to the video-wall tower, with a bright KPI NODE pulsing above
+    them; and the whole studio is dressed out in GOLD premium trim (a `q` master BEZEL
+    framing the hero video-wall screens + a `q` gold FINIAL crowning the tower). Reads
+    as elite, still recognizably the same dataviz studio, just maxed out. Re-anchors off
+    the SAME hall.r_right corner the tower used so the array stacks cleanly (no second
+    hardcoded guess)."""
+    # recompute the tower apex from the SAME source + dims the tower used (stacked on the
+    # rack roof), then work off its own roof/faces so the array sits exactly on it.
+    apex = (hall.r_right[0] - 2, hall.r_right[1] - 9)     # ≈ (52, 21), matches stage4
+    twr = Box(top=apex, wx=3, wy=3, h=12)
+
+    # --- GOLD master BEZEL framing the video-wall's twin screens (t5 flourish only).
+    # Hugs the lit-LEFT face screen zone (v 1.4..10.4, matching stage4's two screens) so
+    # the hero plot wall reads as gilded — gold trim, NOT a recolor. ---
+    v0, v1 = 1.2, 10.6
+    for v in (v0, v1):
+        a = twr.left_pt(0.12, v); b = twr.left_pt(0.88, v)
+        c.line((int(round(a[0])), int(round(a[1]))), (int(round(b[0])), int(round(b[1]))), "q")
+    for u in (0.12, 0.88):
+        a = twr.left_pt(u, v0); b = twr.left_pt(u, v1)
+        c.line((int(round(a[0])), int(round(a[1]))), (int(round(b[0])), int(round(b[1]))), "q")
+    # a bright O gold glint on the top-left bezel corner
+    g0 = twr.left_pt(0.12, v0)
+    c.set(int(round(g0[0])), int(round(g0[1])) - 1, "O")
+
+    # --- WRAPAROUND SYNCED mini-charts wrapping the tower's shaded-RIGHT face (the array
+    # curves AROUND the side, synced with the front screens). Three small bright-E live
+    # panels stacked down the right face: a BAR panel, a LINE panel, a SCATTER panel. ---
+    # BAR mini-panel (top of the right face)
+    for i, hh in enumerate((2, 1, 2)):
+        p = twr.right_pt(0.34 + i * 0.16, 3.0)
+        x, y = int(round(p[0])), int(round(p[1]))
+        for k in range(hh):
+            c.set(x, y - k, "E")
+    # LINE mini-panel (middle)
+    lpts = [(0.32, 6.4), (0.48, 5.6), (0.64, 6.2), (0.80, 5.6)]
+    prev = None
+    for u, v in lpts:
+        p = twr.right_pt(u, v)
+        pt = (int(round(p[0])), int(round(p[1])))
+        if prev is not None:
+            c.line(prev, pt, "e")
+        c.set(pt[0], pt[1], "E")
+        prev = pt
+    # SCATTER mini-panel (lower; a few bright cyan dots)
+    for u, v in ((0.38, 8.8), (0.54, 8.2), (0.48, 9.4), (0.72, 8.6)):
+        p = twr.right_pt(u, v)
+        c.set(int(round(p[0])), int(round(p[1])), "E")
+
+    # --- bright KPI NODE: the array's headline metric, mounted on a short mast rising
+    # off the tower roof's RIGHT corner and CANTILEVERED into the clear sky to the lower-
+    # right of the hovering dashboard (cols ~56-58, rows ~16-22 are empty; the dashboard
+    # frame stops at col 55 and its scatter is up at rows 1-10). This keeps the KPI clear
+    # of both the dashboard bars and the screen wall. Anchored on the roof (visible mast),
+    # not floating. ---
+    rrx, rry = twr.r_right                       # tower roof right corner (≈58,24)
+    mx = int(round(rrx)) - 1                      # mast base, just inboard of the corner
+    mbase = int(round(rry))
+    ky = max(mbase - 6, 2)                        # node sits up the mast, in clear sky
+    # short b/K mast from the roof corner up to the node
+    c.line((mx, mbase), (mx, ky + 2), "b")
+    c.set(mx + 1, mbase - 1, "K")
+    c.set(mx, mbase, "K")
+    kx = mx
+    # one compact signal-halo ring (2:1 ellipse) + a bright cyan core
+    import math
+    for a in range(0, 360, 36):
+        X = kx + 3 * math.cos(math.radians(a))
+        Y = ky + 3 * 0.5 * math.sin(math.radians(a))
+        if 0 <= X <= 63 and 0 <= Y <= 63:
+            c.set(int(round(X)), int(round(Y)), "e")
+    for xx, yy, ch in [(0, 0, "W"), (-1, 0, "E"), (1, 0, "E"), (0, -1, "E"), (0, 1, "E")]:
+        if 0 <= kx + xx <= 63 and 0 <= ky + yy <= 63:
+            c.set(kx + xx, ky + yy, ch)
+
+    # --- GOLD KPI FINIAL: a small q spire + O spark crowning the KPI node (premium cap).
+    # Recompute off the SAME node centre so it sits exactly on top (no second guess). ---
+    fy = max(ky - 4, 1)
+    c.line((kx, ky - 2), (kx, fy), "q")
+    c.set(kx, fy, "O")
+    if fy - 1 >= 0:
+        c.set(kx, fy - 1, "q")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the data-visualization studio at upgrade `stage` (1..5). Stage 1 is
+    IDENTICAL to the shipped base; each higher stage keeps every prior addition and
+    bolts on the next (t2 sparkline tile → t3 render rack → t4 video-wall tower →
+    t5 wraparound array + gold). Painter's order keeps rooftop/overhead additions on
+    top of the masses they grow from, and every addition stays on the RIGHT flank /
+    right-foreground, below the centered hovering dashboard signature, so neither the
+    dashboard nor the lit-left glass hero is occluded."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     # painter's order: shadow -> hall -> lantern -> display glass -> entry terrace
     # -> hovering dashboard signature above the lantern.
     hall = HALL
@@ -288,12 +566,56 @@ def build():
     entry_terrace(c, hall)
     hovering_dashboard(c, lan)
 
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    # The render rack (t3) and video-wall tower (t4) are right-side masses; draw the
+    # rack BEFORE the tower so the taller tower behind it occludes correctly. The
+    # t2 left-side sparkline tile is independent.
+    if stage >= 2:
+        stage2_sparkline(c)
+    rack = None
+    if stage >= 3:
+        rack = stage3_render_rack(c, hall)
+    tower = None
+    if stage >= 4:
+        tower = stage4_videowall(c, hall, rack)
+    if stage >= 5:
+        stage5_array(c, hall, tower, lan)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/mindframe"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "data-visualization-studio"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG +
+    scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must keep
+    matching the shipped data-visualization-studio.png, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": MIND, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/mindframe_data-visualization-studio.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"mindframe_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"mindframe_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

@@ -44,14 +44,26 @@ import math
 
 sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
-from isobuild import Box
+from isobuild import Box, cylinder  # noqa: F401  (cylinder used by t4 cooling tower)
 
+# Base ChemWorks palette (shared keys) + the EVOLVED accent shades reserved for the
+# upgrade stages ONLY (they never appear in stage 1, so the shipped base PNG is
+# byte-identical). These exact keys+hexes match the chemworks reference builder
+# (fume-hood-bench.py) so the whole lab evolves with one consistent accent set:
+#   b  deepened structure steel — matured tone for t3 annex housing / t4 tower
+#   e  energized coolant glow (mid)   E  electron-density pulse (bright) — t4/t5 power
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 CHEM = {"K": "#161a2e", "W": "#e6ecfb", "L": "#c2cdee", "M": "#9aa8d8", "D": "#6f7cb0", "d": "#4b5688",
         "h": "#d6ecff", "c": "#a8d4ff", "g": "#4aa0e6", "G": "#2166b0",
-        "o": "#c89cf0", "O": "#e0c2ff", "r": "#6a34a8"}
+        "o": "#c89cf0", "O": "#e0c2ff", "r": "#6a34a8",
+        "b": "#363c5e", "e": "#36e0c8", "E": "#c2fff2", "q": "#f0c64a"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
+def P(p):
+    return (int(round(p[0])), int(round(p[1])))
+
+
 def lerp(a, b, t):
     return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
 
@@ -293,7 +305,7 @@ def rooftop(c, b):
 
 
 # ── 5. SIGNATURE — hovering BALL-AND-STICK MOLECULE + predicted-pose ghost ────
-def molecule(c, emitter):
+def molecule(c, emitter, stage: int = 1):
     """A translucent slowly-rotating BALL-AND-STICK MOLECULE hovers above the roof:
     a small 3D cluster of coloured atom spheres (violet O/o accents, blue c/g/G,
     light W/L) joined by short M/L bond sticks, each sphere with an h highlight + K
@@ -301,7 +313,16 @@ def molecule(c, emitter):
     conformation offset to one side, with a thin O arrow from the solid model to the
     ghost (the forecast). A faint c orbit ellipse + index tick sells slow rotation; a
     thin o/O beam rises from the emitter; a soft c glow halo + h sparkles. The
-    one-of-one signature of the ChemWorks set."""
+    one-of-one signature of the ChemWorks set.
+
+    Upgrade-evolution (cumulative, drawn within this front-most hero pass):
+      stage>=2  grows the cluster: ONE extra atom node + bond on the orbit (a 6th
+                sphere on a new branch) and a brightened orbiting node.
+      stage>=5  the model DOUBLES into a twin-molecule simulation cluster — a second
+                solid cluster mirrored off to the right (replacing the faint ghost as
+                the now-realised second model) with bright E electron-density pulses
+                arcing between the two + a gold orbit gimbal (see stage5_twin_cluster).
+    Stage 1 draws EXACTLY the shipped molecule (no extra node, no twin)."""
     ex, ey = emitter
     gx, gy = ex - 5, ey - 14                   # SOLID molecule centre floats above-left
     ox, oy = 14, 1                             # ghost cluster offset (clearly to the RIGHT)
@@ -344,42 +365,51 @@ def molecule(c, emitter):
         "w1": (-5, 4, 1.5, "W"),      # light atom (lower-left)
     }
     bonds = [("C", "v1"), ("C", "v2"), ("C", "b1"), ("C", "w1")]
+    # t2 SMALL ADD — grow the cluster by ONE atom: a 6th blue node 'g1' on a new
+    # branch off the central atom (down, between w1 and b1), with its own bond. The
+    # node sits inside the existing orbit so the silhouette grows without clipping.
+    if stage >= 2:
+        nodes["g1"] = (0, 6, 1.6, "g")        # new blue atom on a downward branch
+        bonds.append(("C", "g1"))
 
-    # ===== PREDICTED-POSE GHOST (drawn FIRST, behind the solid model) ============
-    # a faint translucent c/h copy of the whole cluster offset clearly to the RIGHT
-    # (a slightly rotated forecast conformation). Ghost bonds = faint c sticks; ghost
-    # atoms = hollow h/c rim circles, so it reads as a second, fainter molecule.
-    # The ghost is rotated a touch (branch angles nudged) = the predicted fold.
-    gnodes = {
-        "C":  (0, 0, 2.4, ),
-        "v1": (-5, -4, 1.9),          # nudged = forecast rotation
-        "v2": (6, -2, 1.7),
-        "b1": (5, 4, 1.8),
-        "w1": (-6, 2, 1.5),
-    }
-    # ghost bond sticks (faint c rods)
-    for a, b in bonds:
-        p0 = (gx + gnodes[a][0] + ox, gy + gnodes[a][1] + oy)
-        p1 = (gx + gnodes[b][0] + ox, gy + gnodes[b][1] + oy)
-        c.line(p0, p1, "c")
-    # ghost atoms = small SOLID faint-blue discs with an h glint = translucent twin
-    for key, (dx, dy, rr) in gnodes.items():
-        cx, cy = gx + dx + ox, gy + dy + oy
-        disc(c, cx, cy, rr - 0.2, (rr - 0.2) * 0.9, "c", rim="g", hi="h")
+    # ===== PREDICTED-POSE GHOST + forecast ARROW (stages 1..4 only) ==============
+    # A faint translucent c/h copy of the whole cluster offset clearly to the RIGHT (a
+    # slightly rotated forecast conformation) with a bright O arrow pointing at it.
+    # At t5 the forecast is REALISED: the twin solid cluster + E pulses take this slot,
+    # so the faint ghost & arrow are suppressed (drawn only when stage < 5).
+    if stage < 5:
+        gnodes = {
+            "C":  (0, 0, 2.4, ),
+            "v1": (-5, -4, 1.9),          # nudged = forecast rotation
+            "v2": (6, -2, 1.7),
+            "b1": (5, 4, 1.8),
+            "w1": (-6, 2, 1.5),
+        }
+        # ghost bond sticks (faint c rods). The ghost stays the original 5-node
+        # forecast, so skip any bond (e.g. the t2-grown 'g1') the ghost lacks.
+        for a, b in bonds:
+            if a not in gnodes or b not in gnodes:
+                continue
+            p0 = (gx + gnodes[a][0] + ox, gy + gnodes[a][1] + oy)
+            p1 = (gx + gnodes[b][0] + ox, gy + gnodes[b][1] + oy)
+            c.line(p0, p1, "c")
+        # ghost atoms = small SOLID faint-blue discs with an h glint = translucent twin
+        for key, (dx, dy, rr) in gnodes.items():
+            cx, cy = gx + dx + ox, gy + dy + oy
+            disc(c, cx, cy, rr - 0.2, (rr - 0.2) * 0.9, "c", rim="g", hi="h")
 
-    # ===== a bright O ARROW from the solid model to the ghost (the prediction) =====
-    # drawn AFTER the ghost so it sits clearly on top of it; the solid atoms overlap
-    # its tail. Reads as: solid pose --predict--> forecast pose.
-    a0 = (gx + 7, gy + 0)                      # tail near the solid cluster's right
-    a1 = (gx + ox - 5, gy + oy + 0)           # head near the ghost's left
-    for p in [lerp(a0, a1, k / 6) for k in range(7)]:
-        xi, yi = int(round(p[0])), int(round(p[1]))
-        c.set(xi, yi, "O")
-        c.set(xi, yi - 1, "o")                # a little thickness so the arrow reads
-    # solid arrowhead pointing at the ghost
-    c.set(a1[0], a1[1], "O")
-    c.set(a1[0] - 1, a1[1] - 1, "O"); c.set(a1[0] - 1, a1[1] + 1, "O")
-    c.set(a1[0] - 2, a1[1], "O")
+        # a bright O ARROW from the solid model to the ghost (the prediction), drawn
+        # AFTER the ghost so it sits on top of it (the solid atoms overlap its tail).
+        a0 = (gx + 7, gy + 0)                      # tail near the solid cluster's right
+        a1 = (gx + ox - 5, gy + oy + 0)           # head near the ghost's left
+        for p in [lerp(a0, a1, k / 6) for k in range(7)]:
+            xi, yi = int(round(p[0])), int(round(p[1]))
+            c.set(xi, yi, "O")
+            c.set(xi, yi - 1, "o")                # a little thickness so the arrow reads
+        # solid arrowhead pointing at the ghost
+        c.set(a1[0], a1[1], "O")
+        c.set(a1[0] - 1, a1[1] - 1, "O"); c.set(a1[0] - 1, a1[1] + 1, "O")
+        c.set(a1[0] - 2, a1[1], "O")
 
     # ===== the SOLID ball-and-stick molecule (drawn LAST, in front) ==============
     def npos(key):
@@ -391,8 +421,11 @@ def molecule(c, emitter):
         c.line(p0, p1, "M")
         c.line((p0[0], p0[1] - 1), (p1[0], p1[1] - 1), "L")
         c.line((p0[0], p0[1] + 1), (p1[0], p1[1] + 1), "K")
-    # ATOM SPHERES on the bond ends, back (upper) -> front order
+    # ATOM SPHERES on the bond ends, back (upper) -> front order. The t2 extra node
+    # 'g1' is the nearest (lowest) branch, so it draws FRONT-most when present.
     order = ["v1", "v2", "C", "b1", "w1"]
+    if stage >= 2:
+        order.append("g1")
     shade_map = {"g": "G", "O": "o", "o": "r", "c": "g", "W": "L"}
     for key in order:
         dx, dy, rr, col = nodes[key]
@@ -404,14 +437,249 @@ def molecule(c, emitter):
     c.set(gx - 1, gy - 8, "h")
     c.set(gx + ox + 8, gy + oy + 5, "c")
 
+    # ── t2 BRIGHTEN: re-pop the upper-right violet node 'v2' with a bright O/E core
+    #    so one orbiting atom reads as 'energised' (the t2 spark on the molecule). ──
+    if stage >= 2:
+        vx, vy = gx + nodes["v2"][0], gy + nodes["v2"][1]
+        c.set(vx, vy, "O"); c.set(vx - 1, vy, "E"); c.set(vx, vy - 1, "E")
 
-# ── assemble + emit ──────────────────────────────────────────────────────────
-def main():
+    # ── t5 TWIN: the model DOUBLES into a twin-molecule simulation cluster — a full
+    #    SECOND solid cluster off to the right (where the ghost forecast was), with
+    #    bright E electron-density pulses arcing between the two + a gold orbit gimbal.
+    if stage >= 5:
+        stage5_twin_cluster(c, gx, gy, ox, oy, nodes, bonds, shade_map)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS compute / cooling
+# / simulation structure onto the prior form — never restarts, never recolors the
+# whole building. Theme: the quiet in-silico data-center scales up into a built-out
+# HPC simulation cluster. Colours mature stage by stage; the energized coolant glow
+# (e/E teal) arrives at t4; gold (q) only as a t5 flourish.
+#
+#   t2  small functional add : extra atom node+bond on the molecule (in molecule())
+#                              + a c DATA-LIGHT RING on the server-rack roof rim
+#   t3  structural add        : a GPU-BLADE RACK ANNEX abutting the server wing
+#                              (a louvered b box, Box.louver vents glowing faint g)
+#   t4  major add             : a LIQUID-COOLING TOWER beside the racks (a cylinder
+#                              w/ an e coolant-glow window + radiator fins) feeding it
+#   t5  crowning feature      : the molecule DOUBLES into a TWIN SIMULATION CLUSTER
+#                              w/ bright E pulses arcing between models + GOLD rack
+#                              trim ring + a gold orbit gimbal
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_data_ring(c, wing):
+    """t2 — SMALL FUNCTIONAL ADD (the structure half; the molecule half lives in
+    molecule()): a bright c DATA-LIGHT RING traced along the server-rack roof rim — a
+    strip of running status LEDs ringing the rack roof, so the racks visibly read as
+    'powered up' at this tier. Base palette only (c/h), modest, sits flat ON the
+    existing roof so it never adds a colliding mass. Runs the full front rim (the most
+    visible edge) brightly, with a few back-rim ticks to close the ring read."""
+    # bright running LEDs along BOTH front roof edges (left→front, then front→right),
+    # alternating c/h so it reads as a live data strip rather than a flat line.
+    for k, u in enumerate([i / 14 for i in range(15)]):
+        p = wing.roof_pt(u, 0.16)                  # left→front rim
+        c.set(int(round(p[0])), int(round(p[1])), "c" if k % 2 == 0 else "h")
+        q = wing.roof_pt(0.16, u)                  # front→top rim (the right-front edge)
+        c.set(int(round(q[0])), int(round(q[1])), "h" if k % 2 == 0 else "c")
+    # a couple of brighter LED ticks on the back rim too (closing the ring read)
+    for u in (0.35, 0.60, 0.85):
+        p = wing.roof_pt(u, 0.86)
+        c.set(int(round(p[0])), int(round(p[1])), "c")
+
+
+def stage3_gpu_annex(c, wing):
+    """t3 — STRUCTURAL ADD: a low GPU-BLADE RACK ANNEX abutting the server wing on its
+    FRONT — a secondary louvered prism in deepened-steel `b`, its lit-left face a band
+    of Box.louver blade vents leaking a faint g GPU glow, growing the building OUT
+    toward the viewer while staying lower than the wing. A real new structural mass
+    (its own prism + roof + vents), the data-center sprouting a compute pod. Returns
+    the annex Box so later stages can reference it."""
+    # seat a low square rack pod ABUTTING the server wing's FRONT: its back-top corner
+    # tucks right under the wing's front apex so the pod's back edges hug the wing's
+    # front-bottom edge (no detached gap) while it grows toward the viewer at ground
+    # level, clearly lower than the wing and biased LEFT so it never reaches the t4
+    # cooling tower on the front-right. (Derived from wing.r_front, not hardcoded.)
+    fx, fy = P(wing.r_front)                        # wing front apex (45,39)
+    annex = Box(top=(fx - 5, fy + 1), wx=4, wy=4, h=8)   # -> back corner under the wing front
+    annex.shadow(c, "K")
+    # cooler/darker b-led tones so it reads as an attached compute pod, not the wing
+    c.fill_poly([annex.r_top, annex.r_right, annex.r_front, annex.r_left], "b")
+    c.fill_poly([annex.r_top, annex.r_left, annex.r_front], "D")     # lit roof triangle
+    c.fill_poly([annex.r_left, annex.r_front, annex.w_front, annex.w_left], "D")
+    c.fill_poly([annex.r_front, annex.r_right, annex.w_right, annex.w_front], "b")
+    c.line(annex.r_top, annex.r_left, "M")
+    c.line(annex.r_top, annex.r_right, "M")
+    for a, b in [(annex.r_top, annex.r_right), (annex.r_right, annex.r_front),
+                 (annex.r_front, annex.r_left), (annex.r_left, annex.r_top),
+                 (annex.r_left, annex.w_left), (annex.r_front, annex.w_front),
+                 (annex.r_right, annex.w_right),
+                 (annex.w_left, annex.w_front), (annex.w_front, annex.w_right)]:
+        c.line(a, b, "K")
+    # ---- GPU-BLADE VENTS: a Box.louver band on the lit-left annex face, then a faint
+    #      g glow bleeding between a couple of blades (warm GPUs inside) ----
+    annex.louver(c, "left", 0.16, 0.84, 1.4, 6.8, body="b", slat="K", edge="D")
+    for v in (2.6, 4.2, 5.8):                       # faint g GPU glow between blades
+        c.line(annex.left_pt(0.22, v), annex.left_pt(0.78, v), "g")
+    # a single brighter blade-status LED on the shaded right face
+    pl = P(annex.right_pt(0.5, 3.0))
+    c.set(pl[0], pl[1], "g"); c.set(pl[0], pl[1] + 1, "G")
+    return annex
+
+
+def stage4_cooling_tower(c, wing):
+    """t4 — MAJOR ADD: a LIQUID-COOLING TOWER standing beside the racks on the front-
+    RIGHT — an iso `cylinder` shell in deepened-steel `b/D` with a glowing `e` coolant-
+    glow sight WINDOW and a stack of radiator FINS, capped by a fan cowl, with a short
+    coolant feed pipe running into the compute mass. The prominent new vertical mass
+    that says 'this cluster now runs hot and is liquid-cooled'. Palette matures: deep
+    `b` shell + energized teal `e/E` coolant. Clamped to stay fully on-canvas (cx+rx
+    inside x=63) and clear of the molecule overhead and the t3 annex to the left."""
+    # foot on the ground to the front-RIGHT of the wing (its own slab footprint), so
+    # it rises clear of the wing front and the annex. cx chosen so cx+rx <= 62.
+    cx = 56
+    rx = 5
+    top_y = 30                                      # top ellipse sits below the molecule
+    h = 17                                          # tall coolant column (bottom ~ y=52)
+    cylinder(c, cx, top_y, rx, h, top="L", side_l="b", side_r="D", outline="K")
+    ry = max(2.0, rx * 0.5)
+    # ---- a glowing e COOLANT sight-WINDOW band on the lit-left of the shell ----
+    win_y = top_y + 6
+    for yy in range(win_y, win_y + 4):
+        for dx in range(-rx + 1, 0):                # lit-left half only
+            c.set(cx + dx, yy, "e")
+        c.set(cx - rx, yy, "K")
+    c.line((cx - rx + 1, win_y), (cx - 1, win_y), "E")           # bright coolant meniscus
+    c.line((cx - rx + 1, win_y + 3), (cx - 1, win_y + 3), "G")   # darker sill
+    # ---- radiator FINS: thin horizontal M/K rings banding the lower shell ----
+    for fy in (win_y + 6, win_y + 8, win_y + 10):
+        if fy < top_y + h:
+            c.line((cx - rx, fy), (cx + rx, fy), "M")
+            c.line((cx - rx, fy + 1), (cx + rx, fy + 1), "K")
+    # ---- a fan-cowl CAP on the tower top (a darker inner ellipse + hub) ----
+    for dx in range(-rx + 1, rx):
+        for dy in range(int(-ry + 1), int(ry)):
+            if (dx / (rx - 1)) ** 2 + (dy / max(1.0, ry - 1)) ** 2 <= 1.0:
+                c.set(cx + dx, top_y + dy, "D")
+    c.set(cx, top_y, "L"); c.set(cx - 1, top_y - 1, "M")          # fan hub + glint
+    for a in (30, 150, 270):                                      # 3 fan blades
+        import math
+        bx = cx + (rx - 1) * math.cos(math.radians(a))
+        by = top_y + (ry - 1) * math.sin(math.radians(a))
+        c.line((cx, top_y), (bx, by), "M")
+    # ---- a short coolant FEED PIPE arcing from the tower into the server wing ----
+    p0 = (cx - rx, win_y + 1)                        # take-off low on the lit shell
+    p1 = P(wing.right_pt(0.86, 4.0))                # into the wing's shaded-right face
+    c.line(p0, (p1[0] + 2, p0[1]), "e")
+    c.line((p1[0] + 2, p0[1]), p1, "D")
+    c.set(p1[0], p1[1], "K"); c.set(p0[0], p0[1], "K")
+    c.set((p0[0] + p1[0]) // 2, p0[1], "E")          # coolant glint in the feed run
+
+
+def stage5_twin_cluster(c, gx, gy, ox, oy, nodes, bonds, shade_map):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED simulation cluster. The single hovering
+    model DOUBLES: a full SECOND solid ball-and-stick cluster materialises off to the
+    RIGHT (occupying where the faint forecast ghost was — the forecast is now realised
+    as a live twin), with bright E ELECTRON-DENSITY PULSES arcing between the two
+    models, and a GOLD orbit GIMBAL ring + gold node bands crowning the pair. Reads as
+    elite, still recognizably the same hovering molecule signature, just doubled and
+    maxed out.
+
+    Re-anchors from the SAME source the molecule used (gx,gy + the ghost offset ox,oy)
+    so the twin lands exactly where the forecast ghost was — no hardcoded 2nd guess."""
+    import math
+    # Twin centre sits where the forecast ghost was, nudged DOWN-RIGHT so a clear gap
+    # opens between the two models (the primary's right nodes reach ~gx+8; this keeps
+    # the twin's left nodes clear of them). Re-derived from gx,gy + the ghost offset.
+    tx, ty = gx + ox + 3, gy + oy + 4               # twin cluster centre (down-right of ghost slot)
+    # a COMPACT twin pose (pulled-in branches + smaller radii) so the second cluster
+    # reads as its own tight model in the limited space, not a sprawl that merges with
+    # the primary. Violet accents swapped L/R = a distinct-but-related conformation.
+    tnodes = {
+        "C":  (0, 0, 2.0, "g"),
+        "v1": (-4, -3, 1.5, "o"),                   # violet accents swapped L/R
+        "v2": (4, -2, 1.4, "O"),
+        "b1": (4, 3, 1.5, "c"),
+        "w1": (-4, 2, 1.3, "W"),
+        "g1": (0, 4, 1.3, "g"),                     # the grown 6th node, on the twin too
+    }
+    tbonds = [("C", "v1"), ("C", "v2"), ("C", "b1"), ("C", "w1"), ("C", "g1")]
+    # ---- BOND STICKS of the twin (drawn first; spheres overlap their ends) ----
+    for a, b in tbonds:
+        p0 = (tx + tnodes[a][0], ty + tnodes[a][1])
+        p1 = (tx + tnodes[b][0], ty + tnodes[b][1])
+        c.line(p0, p1, "M")
+        c.line((p0[0], p0[1] - 1), (p1[0], p1[1] - 1), "L")
+        c.line((p0[0], p0[1] + 1), (p1[0], p1[1] + 1), "K")
+    # ---- ATOM SPHERES of the twin (back→front) ----
+    for key in ["v1", "v2", "C", "b1", "w1", "g1"]:
+        dx, dy, rr, col = tnodes[key]
+        cxp, cyp = tx + dx, ty + dy
+        if cyp - rr < 0:                            # safety: keep fully on-canvas
+            continue
+        disc(c, cxp, cyp, rr, rr * 0.92, col, rim="K", hi="h", shade=shade_map.get(col))
+
+    # ---- ONE bold, clean E ELECTRON-DENSITY ARC bridging the GAP between the two
+    #      model centres (a single bright bowed pulse reads far better at 64px than a
+    #      tangle of arcs). A couple of E density beads pulse along it. ----
+    a0 = (gx + 8, gy + 1)                            # off the primary cluster's right edge
+    a1 = (tx - 5, ty - 1)                           # into the twin cluster's left edge
+    bridge = [a0, (int((a0[0] + a1[0]) / 2), int((a0[1] + a1[1]) / 2) - 3), a1]
+    for i in range(len(bridge) - 1):
+        c.line(bridge[i], bridge[i + 1], "E")
+    for px, py in bridge:                            # soft e under-glow on the arc
+        c.set(px, py + 1, "e")
+    midx, midy = int((a0[0] + a1[0]) / 2), int((a0[1] + a1[1]) / 2) - 3
+    c.set(midx, midy, "W"); c.set(midx - 2, midy + 1, "E"); c.set(midx + 2, midy + 1, "E")
+
+    # --- GOLD premium trim (t5 flourish only) ---
+    # a single clean gold ORBIT GIMBAL ellipse girdling BOTH clusters (the elite
+    # simulation frame). Centre is the midpoint of the two models; the radii just
+    # enclose the pair with a small margin. Drawn with a FINE angular step so it reads
+    # as a continuous thin gold hoop, not a scatter of dots, and clamped on-canvas.
+    ccx = (gx + tx) // 2                            # centre between the two models
+    ccy = (gy + ty) // 2 - 1
+    grx, gry = 13, 7
+    for a in range(0, 360, 9):
+        x = ccx + grx * math.cos(math.radians(a))
+        y = ccy + gry * math.sin(math.radians(a))
+        xi, yi = int(round(x)), int(round(y))
+        if 0 <= xi < 64 and 1 <= yi < 64:
+            c.set(xi, yi, "q")
+    # two gold gimbal PIVOT bosses on the ring's left/right extremes (the gimbal axis)
+    c.set(max(0, ccx - grx), ccy, "O"); c.set(min(63, ccx + grx), ccy, "O")
+    c.set(max(0, ccx - grx), ccy - 1, "q"); c.set(min(63, ccx + grx), ccy + 1, "q")
+
+
+def stage5_rack_trim(c, wing, annex):
+    """t5 GOLD rack trim (structure half of the crowning flourish): a thin gold trim
+    RING along the server-wing roof rim + the GPU-annex roof rim, dressing the racks
+    as elite hardware. Gold (q) only — a sparse premium accent, never a recolor."""
+    # gold trim along the wing front roof rim (over the t2 data-light ring)
+    for u in [i / 8 for i in range(9)]:
+        p = wing.roof_pt(u, 0.06)
+        c.set(int(round(p[0])), int(round(p[1])), "q" if int(u * 8) % 2 == 0 else "O")
+    # gold trim along the GPU-annex roof front rim too
+    if annex is not None:
+        for u in (0.1, 0.4, 0.7, 1.0):
+            p = annex.roof_pt(u, 0.10)
+            c.set(int(round(p[0])), int(round(p[1])), "q")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the computational-chemistry-hub at upgrade `stage` (1..5). Stage 1 is
+    IDENTICAL to the shipped base; each higher stage keeps every prior addition and
+    bolts on the next (t2 data-ring + grown molecule → t3 GPU-annex → t4 cooling-tower
+    → t5 twin-cluster + gold). Painter's order keeps rooftop/overhead additions on top
+    of the masses they grow from; the hovering molecule (with its cumulative extra
+    node and t5 twin) stays the front-most hero, drawn LAST."""
     c = Canvas()
-    # painter's order: taller compute core (back) + its data strip, its parapet, then
-    # the lower server wing (front-right) + louvers + plain left, then the LEFT
-    # operator-room hero opening, the rooftop mechanicals, and finally the floating
-    # ball-and-stick molecule last (in front of all).
+    # painter's order (BASE, unchanged): taller compute core (back) + its data strip,
+    # its parapet, then the lower server wing (front-right) + louvers + plain left,
+    # then the LEFT operator-room hero opening, the rooftop mechanicals.
     core = compute_core(c)
     core_parapet(c, core)
     wing = server_wing(c)
@@ -419,14 +687,58 @@ def main():
     wing_left_plain(c, wing)
     operator_room(c, core)
     emitter = rooftop(c, core)
-    molecule(c, emitter)
 
+    # --- CUMULATIVE UPGRADE STAGES (rack/cooling structure, drawn before the molecule
+    #     so the hovering model stays front-most) -------------------------------------
+    annex = None
+    if stage >= 2:
+        stage2_data_ring(c, wing)
+    if stage >= 3:
+        annex = stage3_gpu_annex(c, wing)
+    if stage >= 4:
+        stage4_cooling_tower(c, wing)
+    if stage >= 5:
+        stage5_rack_trim(c, wing, annex)
+
+    # the hovering ball-and-stick molecule signature is ALWAYS the front-most hero
+    # (drawn last). It carries its OWN cumulative upgrades (t2 extra node + brighten,
+    # t5 twin-cluster) keyed off `stage`.
+    molecule(c, emitter, stage)
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/chemworks"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "computational-chemistry-hub"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped base PNG, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": CHEM, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/chemworks_computational-chemistry-hub.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"chemworks_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"chemworks_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    main()
+    build_all()

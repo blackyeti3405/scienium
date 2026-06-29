@@ -23,14 +23,21 @@ import math
 
 sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
-from isobuild import cylinder
+from isobuild import Box, cylinder
 
-# ── Axiom set palette (chars -> hex EXACTLY per blueprint) ────────────────────
+# ── Axiom set palette (chars -> hex EXACTLY per blueprint) + the LAB-WIDE EVOLVED
+# accent shades reserved for the upgrade stages ONLY (they never appear in stage 1,
+# so the shipped observatory-dome.png is unchanged). These four evolved keys are the
+# same convention every Axiom building's _t2.._t5 reuses:
+#   b  deep indigo steel   — matured structure tone for t3+ new masses
+#   e  quantum-stellar glow (mid)    E  quantum-stellar glow (bright) — t4/t5 energy
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 AXIOM = {
     "K": "#0e1124",
     "W": "#dfe6f6", "L": "#b4bee0", "M": "#7c88b8", "D": "#4e5888", "d": "#333a60",
     "h": "#d6ecff", "c": "#aad8ff", "g": "#4a9ce6", "G": "#2060b0",
     "o": "#ffe27a", "O": "#fff3c0", "r": "#c89a2a",
+    "b": "#2a3158", "e": "#7ad0ff", "E": "#cdeeff", "q": "#f6c945",
 }
 
 # ── drum geometry (the rotunda) ───────────────────────────────────────────────
@@ -499,10 +506,366 @@ def star_and_tag(c, sight_origin):
             c.set(bx, by, ch)
 
 
-# ── assemble + emit ──────────────────────────────────────────────────────────
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). The lone optical observatory grows into a
+# full multi-wavelength survey OBSERVATORY. Every addition is astronomy + cosmic
+# on-theme to THIS building (a dome catwalk + finder-scope -> a spectrograph
+# analysis wing -> a radio-dish on a mast -> a catalogued-star survey sweep), and
+# each grows from the dome/drum it sits on. Stages anchor to the SAME drum/dome/slit
+# geometry the base returns (no hardcoded second guesses), and stay clear of the
+# OPTICAL BARREL + catalogued-star signature up-LEFT. Colours mature stage by stage;
+# gold (q) appears ONLY as the t5 flourish.
+#
+#   t2  small functional add : a solid FINDER-SCOPE (right shoulder) + a CATWALK tread band
+#   t3  structural add       : a SPECTROGRAPH WING annex at the drum base (right)
+#   t4  major add            : a RADIO-DISH on a STOUT braced MAST up-right beside the dome
+#   t5  crowning feature     : gold dome BAND + APEX CUPOLA + dish FEED-RIB array (+thin halo)
+#
+# Anchors: drum centre CX=31; dome hemisphere x≈18..43 (crown apex ~y14, spring/rim
+# ~y32); the optical barrel + star sign occupy x≈5..28, y≈3..28 (up-LEFT). So the
+# spectrograph wing seats at the drum base on the RIGHT (x≈40..56), and the radio
+# dish climbs the OPEN sky up-RIGHT (x≈44..62) — both clear of the optical sign.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _finder_anchor(drum_info, dome_geom):
+    """Shared anchor for the t2 FINDER-SCOPE so t2 (draw) and any later stage agree on
+    where it sits. A clear point on the dome's RIGHT shoulder (clean silver shell, well
+    away from the up-LEFT main barrel + slit), returned as (saddle_x, saddle_y)."""
+    cx, drx, dbase_y, height, base_ry, crown_y, base_y_fn = dome_geom
+    sax = cx + drx - 4                    # right shoulder of the dome (x≈37), on the shell
+    say = int(round(dbase_y - height * 0.42))   # mid-upper right flank
+    return sax, say
+
+
+def stage2_catwalk_finder(c, drum_info, dome_geom, slit):
+    """t2 — SMALL FUNCTIONAL ADD: one CLEARLY READABLE FINDER-SCOPE (a solid 2px M/L
+    tube on a D saddle, with a bright L/W objective, mounted on the dome's RIGHT shoulder
+    and aimed up-and-RIGHT) — deliberately OFFSET from the up-LEFT main barrel so the two
+    read as distinct instruments — plus a short solid CATWALK TREAD band that OVERWRITES
+    the lit-left dome shell with a bright L tread over a dark D/K underside line, so it
+    reads as a banded ring (not a tint lost in the silver shading), and a brighter o/O
+    glint on the catalogued star. ~20 solid finder px + ~10 tread px = obviously distinct
+    from base. On-theme (more optics), base palette + a brighter o. No barrel occlusion."""
+    cx, drx, dbase_y, height, base_ry, crown_y, base_y_fn = dome_geom
+    slit_cx_rel = slit["slit_cx"] - cx
+
+    # --- CATWALK TREAD band on the LIT-LEFT belly of the dome: a short solid 2px band
+    #     that OVERWRITES the shell — a bright L/W tread on TOP and a forced dark D/K
+    #     underside line directly beneath it — so it reads as a discrete railed band
+    #     standing off the silver, not a same-tone glint. Lit-left arc only; the slit,
+    #     fork-mount, and shaded-right columns are skipped. ---
+    band_ny = -0.20                       # low latitude on the belly (0=rim .. -1=crown)
+    for xx in range(-drx + 2, 1):         # lit-left front arc only (nx ≤ 0)
+        nx = xx / drx
+        rr = nx * nx + band_ny * band_ny
+        if rr > 1.0:
+            continue
+        if abs(xx - slit_cx_rel) <= 4:    # leave the slit + fork-mount columns clean
+            continue
+        yi = int(round(dbase_y + band_ny * height))
+        if not (0 <= yi < c.h) or c.px[yi][cx + xx] not in ("W", "L", "M", "D"):
+            continue
+        c.set(cx + xx, yi, "W" if nx < -0.5 else "L")        # bright tread (top)
+        if 0 <= yi + 1 < c.h and c.px[yi + 1][cx + xx] in ("W", "L", "M", "D"):
+            c.set(cx + xx, yi + 1, "D")                      # shaded tread underside
+        if 0 <= yi + 2 < c.h and c.px[yi + 2][cx + xx] in ("W", "L", "M", "D"):
+            c.set(cx + xx, yi + 2, "K")                      # K shadow groove -> reads railed
+    # two short stanchions standing UP off the tread (lit-left) so it reads as a railing
+    y0 = int(round(dbase_y + band_ny * height))
+    for sxx in (-9, -5):
+        if 0 <= y0 - 1 < c.h and c.px[y0 - 1][cx + sxx] in ("W", "L", "M", "D"):
+            c.set(cx + sxx, y0 - 1, "L")
+
+    # --- FINDER-SCOPE on the dome's RIGHT shoulder, aimed up-and-RIGHT (offset away
+    #     from the up-LEFT main barrel). A D saddle on the shell + a SOLID 2px M-core
+    #     tube with an L lit upper edge + a D shaded lower edge, capped by a bright L/W
+    #     objective ring at the sky end. Endpoints clamped on-canvas. ~20 solid px. ---
+    sax, say = _finder_anchor(drum_info, dome_geom)
+    # D saddle bracket clamping the finder onto the dome shell (a small solid block)
+    c.fill_poly([(sax - 1, say), (sax + 1, say), (sax + 1, say + 2), (sax - 1, say + 2)], "D")
+    c.set(sax - 1, say + 2, "K"); c.set(sax + 1, say + 2, "K")
+    # finder tube: eyepiece on the saddle, objective out up-RIGHT into clear sky
+    fa = (sax + 1, say)                   # eyepiece end (on the saddle, inner)
+    fb = (min(sax + 9, 61), max(say - 7, 1))   # objective end up-right (clamped on-canvas)
+    for (px, py) in _bres(fa, fb):
+        c.set(px, py, "M")                # solid 2px tube core (this row)
+        c.set(px, py - 1, "L")            # lit upper edge
+        if 0 <= py + 1 < c.h and c.px[py + 1][px] == ".":
+            c.set(px, py + 1, "D")        # shaded lower edge
+    # bright L/W objective ring at the finder's sky end + a tiny o lens glint
+    ox, oy = fb
+    c.set(ox, oy, "L")
+    c.set(ox + 1, oy - 1, "W")            # objective lit corner (up-right)
+    c.set(ox + 1, oy, "K")               # objective rim
+    c.set(ox, oy - 1, "o")               # tiny lens glint
+    c.set(ox - 1, oy + 1, "K")           # eyepiece-side cap (inner)
+
+    # --- a brighter catalogued-star glint: pop one extra O/h sparkle near the star
+    #     (the survey gets a touch keener). The star core is up-LEFT ~ (8..10, 7..9). ---
+    for (gx, gy, ch) in [(9, 5, "O"), (11, 7, "h"), (6, 8, "o")]:
+        if 0 <= gy < c.h and 0 <= gx < c.w and c.px[gy][gx] == ".":
+            c.set(gx, gy, ch)
+
+
+def _spectro_box(drum_info):
+    """Shared anchor for the spectrograph wing (t3) so any later stage that needs it
+    recomputes the SAME Box. A low annex abutting the drum base on the RIGHT, its
+    base resting on the ground line so it reads as built onto the rotunda foot."""
+    return Box(top=(46, 42), wx=5, wy=3, h=8)
+
+
+def stage3_spectrograph(c, drum_info, slit):
+    """t3 — STRUCTURAL ADD: a low SPECTROGRAPH WING annex butts onto the drum base on
+    the RIGHT — a real new Box mass (lit M left, D shaded right, L roof, deep-indigo
+    `b` base band so it reads as matured structure) carrying a g/c instrument window on
+    its lit face (the analysis room). A thin diagonal LIGHT-PIPE runs up from the wing
+    roof toward the dome slit (the captured starlight now feeds the spectrograph). The
+    light feeds an analysis room. Seated right of centre, clear of the optical barrel /
+    door / placard on the left, fully on-canvas."""
+    wing = _spectro_box(drum_info)
+    wing.draw(c, roof="L", lwall="M", rwall="D", roof_hi="W", outline="K")
+    # deep-indigo base band so the new annex reads as matured structure
+    c.line(wing.w_left, wing.w_front, "b")
+    c.line(wing.w_front, wing.w_right, "b")
+    # calm starlight-gold accent line along the wing's lit eave (matches the lab)
+    c.line(wing.r_left, wing.r_front, "o")
+    # a g/c instrument window on the lit (left) face — the spectrograph readout
+    wing.window(c, "left", 0.20, 0.84, 1.6, 5.4, glass="g", hi="h", shade="G",
+                frame="K", mullions=1)
+    # a thin grating/conduit detail on the shaded right face
+    c.line(wing.right_pt(0.5, 1.4), wing.right_pt(0.5, wing.h - 0.8), "d")
+
+    # --- LIGHT-PIPE: a thin diagonal c/h conduit from the wing roof up toward the
+    #     dome slit, so the captured starlight visibly feeds the analysis wing. Anchor
+    #     both ends from real geometry (wing roof + slit base), clamp on-canvas. ---
+    rpx, rpy = wing.roof_pt(0.30, 0.5)
+    a = (int(round(rpx)), int(round(rpy)))
+    b = (slit["slit_cx"] + 2, slit["slit_top"] + 9)     # just below the slit crown
+    pts = _bres(a, b)
+    for i, (px, py) in enumerate(pts):
+        if not (0 <= px < c.w and 0 <= py < c.h):
+            continue
+        # only lay the pipe over open sky / the wing roof, never over the dome shell
+        if c.px[py][px] in (".", "L", "W"):
+            c.set(px, py, "c" if i % 2 == 0 else "h")
+    # a small K-framed coupling box where the pipe meets the wing roof
+    c.set(a[0], a[1] - 1, "K")
+    c.set(a[0] + 1, a[1] - 1, "c")
+
+
+def _uplink_anchor(drum_info):
+    """Shared anchor for the t4 RADIO-DISH mast so t4 (draw) and t5 (gold ribs) compute
+    the SAME geometry from one source (no hardcoded second guess). Returns a dict with the
+    mast FOOT, the mast TOP, and the dish-bowl CENTRE + radii."""
+    cx0 = drum_info["cx"]; rx = drum_info["rx"]; rim_y = drum_info["rim_y"]
+    foot_x = cx0 + rx - 2                 # x≈42, just inside the drum's right rim
+    foot_y = rim_y + 2                    # on the upper drum, a touch below the rim
+    top_y = foot_y - 22                   # mast head — rises high into clear sky
+    RXd, RYd = 6, 5                       # dish radii — wide round mouth
+    dcx = min(foot_x + 6, 63 - RXd - 1)   # bowl centre up-right of the head (clamped)
+    dcy = top_y - 1
+    return {"foot_x": foot_x, "foot_y": foot_y, "top_y": top_y,
+            "dcx": dcx, "dcy": dcy, "RXd": RXd, "RYd": RYd}
+
+
+def stage4_radio_dish(c, drum_info, dome_geom):
+    """t4 — MAJOR ADD: a RADIO-DISH on a stout MAST rises in the OPEN sky up-RIGHT of the
+    dome — a SOLID 3px deep-indigo `b` mast (lit `M` left edge, `D` shaded right) on a
+    clear K plinth with an angled BRACE GUSSET tying its foot to the drum shoulder, so it
+    reads planted (not a spindly pole). It carries a parabolic M/L dish with a glowing `e`
+    feed-horn on a tripod aimed up-and-RIGHT — the prominent new mass that says this is now
+    a MULTI-WAVELENGTH observatory. Palette matures: deep `b` mast + energized `e`/`E` glow.
+    Anchored on the drum's right shoulder (shared `_uplink_anchor`, so t5 reuses it exactly),
+    rising clear of and well right of the optical barrel, fully on-canvas."""
+    import math
+    a = _uplink_anchor(drum_info)
+    foot_x, foot_y, top_y = a["foot_x"], a["foot_y"], a["top_y"]
+    # --- STOUT MAST: a solid 3px column (b body), lit M left edge + D shaded right edge,
+    #     K-capped — thick enough to clearly carry the heavy dish, never reads as 1px. ---
+    for yy in range(top_y, foot_y + 1):
+        c.set(foot_x, yy, "M")            # lit-left edge of the mast
+        c.set(foot_x + 1, yy, "b")        # mast body (deep indigo)
+        c.set(foot_x + 2, yy, "D")        # shaded-right edge
+    c.set(foot_x + 1, top_y, "K")         # capped head
+    # a couple of K cross-ties banding the mast so it reads as built structure, not a pipe
+    for yy in (top_y + 6, top_y + 13):
+        c.set(foot_x, yy, "K"); c.set(foot_x + 2, yy, "K")
+    # K plinth pad on the drum shoulder + an angled BRACE GUSSET down-left to the shell
+    c.fill_poly([(foot_x - 1, foot_y), (foot_x + 3, foot_y),
+                 (foot_x + 3, foot_y + 1), (foot_x - 1, foot_y + 1)], "K")   # plinth pad
+    c.fill_poly([(foot_x, foot_y - 4), (foot_x, foot_y),
+                 (foot_x - 4, foot_y)], "b")                                 # brace gusset
+    c.line((foot_x, foot_y - 4), (foot_x - 4, foot_y), "D")                  # gusset hypotenuse
+    c.line((foot_x - 4, foot_y), (foot_x, foot_y), "K")                      # gusset foot (on shell)
+
+    # --- parabolic DISH on the mast head: a SOLID round bowl seen near-face-on, so it
+    #     reads unmistakably as a satellite dish (a wide filled ellipse), tilted to aim
+    #     up-and-RIGHT. Drawn as a filled ellipse disc (mouth) with a bright L lit-left
+    #     crescent, M body, D shaded-right, a K rim ring, and a small d concave shadow
+    #     at the bowl bottom so the cup reads concave. WIDER than tall (RXd>RYd). ---
+    dcx, dcy = a["dcx"], a["dcy"]         # dish bowl centre (shared anchor)
+    RXd, RYd = a["RXd"], a["RYd"]         # dish radii — wide round mouth (a real dish)
+    # solid disc fill, shaded by horizontal position across the mouth (lit-left)
+    for yy in range(-RYd, RYd + 1):
+        for xx in range(-RXd, RXd + 1):
+            if (xx / RXd) ** 2 + (yy / RYd) ** 2 <= 1.0:
+                nx = xx / RXd
+                if nx <= -0.55:
+                    ch = "L"              # bright lit-left crescent of the bowl
+                elif nx <= 0.1:
+                    ch = "M"
+                elif nx <= 0.6:
+                    ch = "D"
+                else:
+                    ch = "d"              # deep shaded-right edge
+                c.set(dcx + xx, dcy + yy, ch)
+    # concave tell: a small darker d pool low-centre + a bright W shine high-left
+    for (sxx, syy, ch) in [(-1, 1, "d"), (0, 1, "d"), (-2, -2, "W"), (-3, -1, "L")]:
+        if (sxx / RXd) ** 2 + (syy / RYd) ** 2 <= 1.0:
+            c.set(dcx + sxx, dcy + syy, ch)
+    # crisp K rim ring around the whole mouth (so the disc reads as a solid dish)
+    for a in range(0, 360, 7):
+        x = dcx + (RXd + 0.4) * math.cos(math.radians(a))
+        y = dcy + (RYd + 0.4) * math.sin(math.radians(a))
+        c.set(x, y, "K")
+    # short pedestal yoke joining the bowl back to the mast head (K so it reads solid)
+    c.line((foot_x + 1, top_y), (dcx - 2, dcy + 2), "K")
+    c.set(dcx - 1, dcy + RYd - 1, "D")
+
+    # --- glowing FEED-HORN on a little tripod at the dish FOCUS, standing clearly OFF
+    #     the bowl mouth toward up-RIGHT (the bright energized tell). Two short K struts
+    #     from the lit rim converge on a glowing e/E node held out past the rim, so the
+    #     glow reads as a feed-horn at the focus (not a mark on the bowl face). ---
+    fhx, fhy = min(dcx + RXd, 62), dcy - 3   # focus held out up-right past the rim
+    for (rx0, ry0) in [(dcx, dcy - RYd + 1), (dcx + 2, dcy)]:
+        c.line((rx0, ry0), (fhx, fhy), "K")   # two tripod struts to the feed-horn
+    c.set(fhx, fhy, "E")                  # bright feed-horn core
+    c.set(fhx - 1, fhy, "e")
+    c.set(fhx, fhy + 1, "e")
+    c.set(fhx + 1, fhy - 1, "e")          # a tiny up-right emission glint
+
+
+def stage5_catalog_sweep(c, drum_info, dome_geom, slit):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED survey observatory, built out in premium GOLD
+    as real CONNECTED structure (not free-floating sparkles). Three attached gold pieces:
+      (1) a q equatorial BAND ringing the hemisphere at the spring line;
+      (2) a small gold-trimmed APEX CUPOLA built on the dome crown (a q/O lantern cap with
+          a short antenna spike) — physically on the dome;
+      (3) a radial GOLD FEED-RIB ARRAY fanning off the radio-dish pod rim (recomputed from
+          the SAME `_uplink_anchor` as t4) — the maxed multi-feed dish.
+    Only a THIN sparse HALO of a few E/e glints hugs the catalogued star + the dish horn
+    (no large arcs of free dots). Reads elite/maxed, still unmistakably the same observatory.
+    Gold ONLY here."""
+    import math
+    cx, drx, dbase_y, height, base_ry, crown_y, base_y_fn = dome_geom
+
+    # --- GOLD equatorial BAND: a thin q ring tracing the hemisphere right at the rim
+    #     SPRING LINE (the equator), well BELOW the t2 catwalk so the two read as
+    #     distinct rings — a premium gold equator band. Full front arc (lit-left O glint
+    #     -> q gold -> r shaded-right), skipping the slit so it reads as trim, not a
+    #     recolor. Lands on the apron/rim where it meets the drum. ---
+    band_ny = -0.02                       # the rim spring line (the equator)
+    slit_cx_rel = slit["slit_cx"] - cx
+    for xx in range(-drx + 1, drx):
+        nx = xx / drx
+        rr = nx * nx + band_ny * band_ny
+        if rr > 1.0:
+            continue
+        if abs(xx - slit_cx_rel) <= 2:    # leave the slit uncrossed
+            continue
+        y = dbase_y + band_ny * height
+        yi = int(round(y))
+        if 0 <= yi < c.h and c.px[yi][cx + xx] in ("W", "L", "M", "D"):
+            c.set(cx + xx, yi, "O" if nx < -0.4 else ("q" if nx < 0.45 else "r"))
+
+    # --- GOLD slit FINIAL crowning the open observation slit (a small gold cap + apex
+    #     spike at the dome crown, lifted 1px so it reads as a separate crowning piece). ---
+    fx = slit["slit_cx"]
+    fy = slit["slit_top"] - 1
+    c.set(fx, fy, "q")
+    c.set(fx - 1, fy, "q")
+    c.set(fx + 1, fy, "q")
+    c.set(fx, fy - 1, "O")                # bright apex boss
+    c.set(fx, fy - 2, "o")                # short upward spike
+
+    # --- GOLD APEX CUPOLA: a small built LANTERN seated ON the dome crown, RIGHT of the
+    #     slit finial so the two read separately. A K plinth line seats it on the shell, a
+    #     solid L/M/D mini-drum body with K sides, a bright q gold dome CAP + O boss, and a
+    #     short antenna spike — real connected structure crowning the dome (not a glint).
+    #     Anchored on the crown arc; guard the None return at the silhouette edge. ---
+    cux = cx + 5                          # right of the slit crown, clear of the finial
+    cuy_f = crown_y(cux - cx)             # crown silhouette y at that column (may be None)
+    if cuy_f is not None:
+        cuy = int(round(cuy_f))
+        # K plinth line seating the cupola ON the dome shell (so it reads built-on)
+        for dx in range(-2, 3):
+            c.set(cux + dx, cuy, "K")
+        # mini-drum body (2px tall, 5px wide): lit-left L, M, shaded-right D, K sides
+        for dx in range(-2, 3):
+            c.set(cux + dx, cuy - 1, "L" if dx <= -1 else ("M" if dx <= 0 else "D"))
+            c.set(cux + dx, cuy - 2, "L" if dx <= -1 else ("M" if dx <= 1 else "D"))
+        c.set(cux - 3, cuy - 1, "K"); c.set(cux + 3, cuy - 1, "K")   # body sides
+        c.set(cux - 3, cuy - 2, "K"); c.set(cux + 3, cuy - 2, "K")
+        # gold dome cap ring + bright boss crowning the little drum
+        for dx in range(-2, 3):
+            c.set(cux + dx, cuy - 3, "q")
+        c.set(cux, cuy - 3, "O")                                     # bright gold boss
+        c.set(cux - 3, cuy - 3, "r"); c.set(cux + 3, cuy - 3, "r")   # gold cap eaves
+        # a short antenna spike + tip glint rising off the cupola cap
+        c.set(cux, cuy - 4, "q")
+        c.set(cux, cuy - 5, "O")                                     # tip glint
+
+    # --- GOLD FEED-RIB CROWN on the RADIO-DISH pod: a tidy UPWARD fan of 3 short gold ribs
+    #     rising off the TOP of the dish rim (the maxed multi-feed antenna crown). Recompute
+    #     the dish centre/radii from the SAME `_uplink_anchor` t4 used, so the ribs sit
+    #     exactly on the pod. Each rib starts ON the rim and rises ~2-3px up-and-out, tipped
+    #     O — CONNECTED to the bowl (not free dots), and only over the UPPER mouth so it
+    #     reads as a clean feed crown, never a downward spike. Clamp tips on-canvas. ---
+    a = _uplink_anchor(drum_info)
+    dcx, dcy, RXd, RYd = a["dcx"], a["dcy"], a["RXd"], a["RYd"]
+    for deg in (-72, -45, -18):           # a tidy upward fan over the TOP of the bowl
+        rad = math.radians(deg)
+        rx0 = dcx + (RXd - 1) * math.cos(rad)
+        ry0 = dcy + (RYd - 1) * math.sin(rad)
+        rx1 = dcx + (RXd + 2) * math.cos(rad)
+        ry1 = dcy + (RYd + 2) * math.sin(rad)
+        rx1 = max(1, min(62, rx1)); ry1 = max(1, min(62, ry1))
+        c.line((rx0, ry0), (rx1, ry1), "q")           # solid gold rib (rim -> tip)
+        c.set(int(round(rx1)), int(round(ry1)), "O")  # bright rib tip
+    # a small gold collar tying the rib bases together along the upper rim (so the ribs
+    # read as one feed crown rooted on the bowl, not loose spikes)
+    c.set(dcx, dcy - RYd + 1, "q")
+    c.set(dcx - 1, dcy - RYd + 1, "q")
+    c.set(dcx + 1, dcy - RYd + 1, "O")
+
+    # --- THIN sparse HALO: a few bright E/e glints hugging ONLY the catalogued star
+    #     (up-left) and the dish feed-horn (up-right) — the survey 'sharpens', with NO
+    #     large free-floating arcs across the sky. Clamp on-canvas, sky pixels only. ---
+    horn = (min(dcx + RXd, 62), dcy - 3)             # the dish feed-horn (== t4 focus)
+    halo = [
+        (5, 6, "E"), (4, 9, "e"),                    # 2 glints by the catalogued star
+        (horn[0], horn[1] - 2, "E"),                 # 1 glint above the dish horn
+        (min(horn[0] + 2, 62), horn[1], "e"),        # 1 glint up-right of the horn
+    ]
+    for (gx, gy, ch) in halo:
+        if 0 <= gy < c.h and 0 <= gx < c.w and c.px[gy][gx] == ".":
+            c.set(gx, gy, ch)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the observatory at upgrade `stage` (1..5). Stage 1 is IDENTICAL to the
+    shipped base; each higher stage keeps every prior addition and bolts on the next
+    (t2 catwalk+finder -> t3 spectrograph wing -> t4 radio-dish mast -> t5 catalogue
+    sweep + gold). The lone optical observatory grows into a multi-wavelength survey
+    observatory, while the optical barrel + catalogued-star signature up-LEFT stays
+    clear. Painter's order: base form (back-to-front) first, then the spectrograph wing
+    (a ground mass) BEFORE the rooftop catwalk/finder so nearer instruments occlude
+    correctly; the radio mast + sky sweep go on top of the open sky."""
     c = Canvas()
-    # BACK-TO-FRONT (painter's algorithm):
+    # --- BASE FORM (stage 1, unchanged) — back-to-front painter's algorithm ---------
     di = drum(c)                       # 1) rotunda drum (backdrop wall)
     dome_geom = dome(di)
     slit = draw_dome(c, dome_geom)     # 2) hemispherical dome with open slit
@@ -510,12 +873,53 @@ def build():
     sight = telescope(c, slit)         # 3) telescope barrel through the slit
     star_and_tag(c, sight)             # 4) catalogued star + ID tag + sky stars
 
+    # --- CUMULATIVE UPGRADE STAGES --------------------------------------------------
+    # ground/structural masses first (spectrograph wing), then dome-mounted catwalk /
+    # finder, then the tall radio mast + the sky-filling catalogue sweep last.
+    if stage >= 3:
+        stage3_spectrograph(c, di, slit)
+    if stage >= 2:
+        stage2_catwalk_finder(c, di, dome_geom, slit)
+    if stage >= 4:
+        stage4_radio_dish(c, di, dome_geom)
+    if stage >= 5:
+        stage5_catalog_sweep(c, di, dome_geom, slit)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/axiom"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "observatory-dome"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped observatory-dome.png, so it does NOT overwrite the base."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": AXIOM, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/axiom_observatory-dome.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"axiom_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"axiom_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

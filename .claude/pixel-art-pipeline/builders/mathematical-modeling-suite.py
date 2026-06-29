@@ -33,10 +33,18 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
-# Axiom set palette — author on these chars→hex exactly (≤16 colors, K hard outline)
+# Axiom set palette — author on these chars→hex exactly (≤16 colors, K hard outline).
+# Base keys (shared across all 10 Axiom buildings) + the four LAB-WIDE EVOLVED accent
+# shades reserved for the upgrade stages ONLY (they never appear in stage 1, so the
+# shipped mathematical-modeling-suite.png is unchanged). Same four chars+hexes every
+# Axiom building's _t2.._t5 reuses (see axiom-evolution-plan.md):
+#   b  deep indigo steel   — matured structure tone for t3+ new masses
+#   e  quantum-stellar glow (mid)    E  quantum-stellar glow (bright) — the t4/t5 energy
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 AXIOM = {"K": "#0e1124", "W": "#dfe6f6", "L": "#b4bee0", "M": "#7c88b8", "D": "#4e5888", "d": "#333a60",
          "h": "#d6ecff", "c": "#aad8ff", "g": "#4a9ce6", "G": "#2060b0",
-         "o": "#ffe27a", "O": "#fff3c0", "r": "#c89a2a"}
+         "o": "#ffe27a", "O": "#fff3c0", "r": "#c89a2a",
+         "b": "#2a3158", "e": "#7ad0ff", "E": "#cdeeff", "q": "#f6c945"}
 
 
 # ── geometry: a stepped two-box terrace pavilion ─────────────────────────────
@@ -364,20 +372,324 @@ def function_surface(c, anchor):
     ])
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). The humble two-step terrace pavilion grows
+# into a maxed-out OPTIMIZATION INSTITUTE / solver. Every addition is mathematical +
+# on-theme to THIS building (a live solver readout -> a bolted-on SOLVER-SUBSTATION
+# annex cabinet -> a compute "tensor" lattice mast -> a full phase-space ensemble of
+# surfaces). The rooftop masses grow UP / toward the BACK so they never collide with
+# the front-left hovering FUNCTION-SURFACE signature (re-drawn LAST every stage, like
+# the slate); the t3 annex sits OUT on the open RIGHT deck where there is clear sky.
+# Colours mature stage by stage; gold (q) appears ONLY as the t5 flourish.
+#
+#   t2  small functional add : a terrace SOLVER-MONITOR probe on the right deck
+#   t3  structural add       : a SOLVER-SUBSTATION annex CABINET on the right deck
+#   t4  major add            : a rooftop TENSOR-ARRAY MAST of glowing node-cells
+#   t5  crowning feature     : a PHASE-SPACE MULTI-SURFACE ensemble + gold caps/rail
+#
+# Anchors: BASE roof diamond spans x≈8..52, y≈18..40; UPPER roof x≈20..46, y≈12..25.
+# The hero bowl floats front-CENTER at x≈19..43, y≈1..21. The t2 SOLVER-MONITOR probe
+# stands on the right deck (screen x≈47..52,y16..20; post x49..50 down to the deck at
+# y28). The t3 ANNEX is a real Box mass seated on the right-deck wedge JUST FRONT-LEFT
+# of that probe (footprint x≈38..50, roof y≈25..31 — well below the probe screen, so
+# the probe reads as rising from the cabinet's back shoulder): a genuine secondary
+# structure, clearly bigger than the probe rod yet a smaller beat than the t4 mast.
+# The t4 mast keeps its OWN frozen anchor `_mast_base_box()` (roof point (37,14)) so
+# changing the t3 annex never moves the approved t4/t5 mast — t3/t4 are independent.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_solver_monitor(c, base):
+    """t2 — SMALL FUNCTIONAL ADD: a live SOLVER-MONITOR mast rising off the RIGHT-front
+    terrace deck — a short post plants on the deck and lifts a K-framed g/c screen up
+    into the OPEN RIGHT-DECK SKY, plotting a FALLING COST-CURVE (the optimization
+    converging) with a brighter o status pip, topped by a slim telemetry ANTENNA-PROBE
+    with a glowing e data-node. The suite gains a real, free-standing readout tower
+    beside the surface — a genuine new silhouette element (it stands proud of the roof
+    in clear sky, ~17px of new footprint), not a flat decal painted on the wall.
+
+    Seated on the OPEN right-front deck at screen x≈47..52 — well RIGHT of the hovering
+    bowl (x≤43), the front cost-gauge, AND clear of every later add (the t3 tier x≤44,
+    the t4 mast x=37 + its node-grid x≤46) — so it never collides as stages stack.
+    Modest, on-theme (more solver telemetry), base palette + a brightened o/e."""
+    # plant the monitor on the right-front deck in CLEAR SKY (screen space, x≈47..52):
+    # the deck surface there is opaque from y≈29 down, with open sky above — so the post
+    # foot grounds on the deck and the screen + antenna float in transparent pixels,
+    # giving the stage REAL new footprint instead of a no-op recolor on the wall.
+    foot_y = 28                              # post foot on the deck surface
+    px = 49                                  # post screen-x (open right-deck column)
+    # short M/D post grounding the monitor on the deck (lit edge + shaded body)
+    for vy in range(22, foot_y + 1):
+        c.set(px, vy, "M")
+        c.set(px + 1, vy, "D")
+    c.set(px, foot_y, "K")
+    c.set(px + 1, foot_y, "K")
+    # monitor head: a K-framed screen body (6 wide x 6 tall) lifted into open sky
+    sx0, sy0 = px - 2, 16
+    sx1, sy1 = sx0 + 5, sy0 + 5
+    c.fill_poly([(sx0, sy0), (sx1, sy0), (sx1, sy1), (sx0, sy1)], "K")        # bezel
+    c.fill_poly([(sx0 + 1, sy0 + 1), (sx1 - 1, sy0 + 1),
+                 (sx1 - 1, sy1 - 1), (sx0 + 1, sy1 - 1)], "d")                # dark screen
+    # a falling cost-curve plotted across the screen: high-left -> low-right, settling
+    curve = [(sx0 + 1, sy0 + 1), (sx0 + 2, sy0 + 2), (sx0 + 3, sy0 + 3),
+             (sx0 + 4, sy0 + 3)]
+    for i in range(len(curve) - 1):
+        c.line(curve[i], curve[i + 1], "c")
+    c.set(sx0 + 1, sy0 + 1, "h")            # bright start of the trace (high cost)
+    c.set(sx0 + 4, sy0 + 3, "g")            # converged tail (settled low)
+    c.line((sx0 + 1, sy1 - 1), (sx0 + 4, sy1 - 1), "G")   # dim baseline / axis
+    c.set(sx0 + 4, sy1 - 1, "g")            # a tiny green "solved" tick at the baseline
+    # a brighter o status pip on the bezel (the live solver heartbeat)
+    c.set(sx0 + 1, sy0, "o")
+    c.set(sx1 - 1, sy0, "O")
+    # slim telemetry ANTENNA-PROBE rising off the screen top into clear sky, tipped
+    # with a glowing e data-node + a tiny E ping (the live solver beaming its status)
+    for ay in range(12, sy0):
+        c.set(px, ay, "b")
+    c.set(px, 12, "e")                       # antenna data-node (apex at y=12, air above)
+    c.set(px - 1, 13, "E")                   # a tiny telemetry ping off the node
+    c.set(px + 1, 13, "e")
+
+
+# FROZEN anchor box for the TENSOR-MAST only — it is NEVER drawn; it exists solely so
+# t4 (draws the mast) and t5 (re-anchors off it) compute the SAME foot from ONE source
+# (no hardcoded second guess — the volt re-anchoring pitfall). Its roof point lands the
+# mast foot at (37,14) on the UPPER-box roof shoulder. Kept independent of the t3 annex
+# so editing the annex can never move the approved t4/t5 mast.
+def _mast_base_box():
+    return Box(top=(33, 8), wx=5, wy=3, h=6)
+
+
+def _mast_anchor():
+    tier = _mast_base_box()
+    bxf, byf = tier.roof_pt(0.82, 0.32)        # RIGHT shoulder -> mast foot (37,14)
+    return int(round(bxf)), int(round(byf))    # (cx, roof_y) == mast foot
+
+
+MAST_TOP_Y = 4                                 # mast head y (flare apex = MAST_TOP_Y-1 = 3)
+
+
+# Shared anchor for the t3 SOLVER-SUBSTATION annex CABINET. It is a REAL drawn Box mass
+# seated on the open RIGHT-DECK wedge of the base roof, right beside the t2 probe so the
+# probe reads as rising from its back shoulder (cohesive, not a detached blob). Compact
+# footprint x≈48..56, grounded on the deck (y≈38) and rising to a roof at y≈25..31 —
+# clearly above the deck silhouette in open sky, well below the probe screen (y16..20)
+# and far below the t4 mast/rack (y≤16) so it never collides as stages stack. ~60px of
+# genuinely new silhouette: a clear secondary structure, bigger than the t2 probe rod
+# yet a deliberately SMALLER beat than the t4 tensor mast that towers to y≈3 (preserving
+# the smooth t2 < t3 < t4 ramp in both prominence and pixel count). Stays x≤56.
+def _annex_box():
+    return Box(top=(52, 25), wx=2, wy=2, h=7)
+
+
+def stage3_solver_substation(c, base):
+    """t3 — STRUCTURAL ADD: a SOLVER-SUBSTATION annex CABINET bolted onto the open
+    RIGHT DECK of the lower roof, beside (front-left of) the t2 telemetry probe — a
+    genuine new secondary MASS (not a recolor): a compact deep-indigo `b`-banded Box
+    with lit `M` left / `D` shaded-right walls and an `L` roof, carrying a tall cyan
+    `g`/`c` solver-readout WINDOW on its lit face, a vent `louver` block + a thin `d`
+    conduit on the shaded face, an `o` eave accent, and a small `o` status node on the
+    roof. Grounded on the base deck (an existing roof point), it rises so the t2 probe
+    now reads as mounted on the cabinet's back shoulder — one cohesive solver station.
+    Clearly visible as new structure at 64px, yet a smaller beat than the t4 data mast
+    (preserving the smooth t2 < t3 < t4 ramp). Fully on-canvas (x≤50), clear of the
+    bowl (x≤43) and of every later add."""
+    a = _annex_box()
+    a.draw(c, roof="L", lwall="M", rwall="D", roof_hi="W", outline="K")
+    # deep-indigo `b` base band so the new cabinet reads as matured structure (t3 tone)
+    c.line(a.w_left, a.w_front, "b")
+    c.line(a.w_front, a.w_right, "b")
+    # calm starlight-gold eave accent on the lit-left roof edge (matches the suite)
+    c.line(a.r_left, a.r_front, "o")
+    # tall cyan SOLVER-READOUT window on the lit (left) cabinet face (live compute)
+    a.window(c, "left", 0.22, 0.82, 1.2, 4.6, glass="g", hi="h", shade="G",
+             frame="K", mullions=1)
+    # a vent LOUVER block + a thin D conduit on the shaded (right) cabinet face
+    a.louver(c, "right", 0.24, 0.72, 1.4, 3.4, body="d", slat="K", edge="M", frame="K")
+    c.line(a.right_pt(0.86, 1.2), a.right_pt(0.86, a.h - 0.8), "d")
+    # a small warm `o` status node on the cabinet roof (the substation is live)
+    nx, ny = a.roof_pt(0.34, 0.40)
+    nx, ny = int(round(nx)), int(round(ny))
+    c.set(nx, ny, "o")
+    c.set(nx, ny - 1, "O")
+    return a
+
+
+def stage4_tensor_mast(c):
+    """t4 — MAJOR ADD: a rooftop TENSOR-ARRAY MAST rising off the third tier — a slim
+    deep-steel `b` mast on a clear K plinth carrying a stacked GRID of glowing `e`
+    node-cells (a compute lattice the model now runs on: rows×cols of energized cells
+    wired together), topped by a bright `E` SOLVE-LIGHT. The prominent new vertical
+    mass that says this is now a real solver engine. Palette matures: deep `b` mast +
+    energized `e`/`E` cells. Anchored ON the tier roof centre (recomputed from the SAME
+    Box) and rising UP-RIGHT in clear sky so it stays well clear of the front bowl,
+    fully on-canvas with a visible plinth."""
+    cx, roof_y = _mast_anchor()                    # SAME source as stage3/5 (no 2nd guess)
+    # mast foot ≈ x37 on the tier3 right shoulder so it clears the bowl.
+    # K plinth on the tier roof + a slim b/M mast rising clear above the silhouette.
+    top_y = MAST_TOP_Y                             # mast head lowered to y=4 (apex y=3, air above)
+    c.fill_poly([(cx - 1, roof_y), (cx + 2, roof_y),
+                 (cx + 2, roof_y + 1), (cx - 1, roof_y + 1)], "K")           # plinth
+    c.line((cx, roof_y), (cx, top_y), "M")         # lit mast edge
+    c.line((cx + 1, roof_y), (cx + 1, top_y), "b") # shaded mast body
+    c.set(cx, roof_y, "K")
+    c.set(cx + 1, roof_y, "K")
+    # the TENSOR node-cell GRID: a clean 3-row x 2-col lattice of glowing cells
+    # CANTILEVERED to the RIGHT of the mast into clear sky, each a discrete 2x2 e cell in
+    # a crisp K frame. ONE vertical G bus down the left column + a short G spar per row
+    # wire it to the mast — kept SPARSE so it reads as a compute lattice, not mush. The
+    # whole grid sits right of the bowl's rim (x≥41), fully on-canvas.
+    gx0 = cx + 4                                   # left column x, out in clear right sky
+    col_dx = 4                                     # gap to the right column
+    rows_y = [top_y + 11, top_y + 7, top_y + 3]    # three node rows down the upper mast
+    # ONE clean vertical bus spine just left of the cell grid (ties the rows together)
+    c.line((gx0 - 1, rows_y[2] - 1), (gx0 - 1, rows_y[0] + 1), "G")
+    for ry in rows_y:
+        # a single short G spar from the mast across to the bus spine (the lattice arm)
+        c.line((cx + 2, ry), (gx0 - 1, ry), "G")
+        for cxoff in (0, col_dx):                  # two columns of cells, spaced apart
+            nx = gx0 + cxoff
+            # crisp K cell frame, then a 2x2 glowing e cell with a bright E lit corner
+            c.fill_poly([(nx - 1, ry - 1), (nx + 2, ry - 1),
+                         (nx + 2, ry + 2), (nx - 1, ry + 2)], "K")
+            c.fill_poly([(nx, ry), (nx + 1, ry), (nx + 1, ry + 1), (nx, ry + 1)], "e")
+            c.set(nx, ry, "E")                     # bright lit corner of the cell
+    # bright E SOLVE-LIGHT crowning the mast top (the array has converged)
+    for xx, yy, ch in [(0, 0, "E"), (-1, 0, "e"), (1, 0, "e"), (0, 1, "G")]:
+        c.set(cx + xx, top_y + yy, ch)
+    if top_y - 1 >= 0:
+        c.set(cx, top_y - 1, "e")                  # a tiny upward solve-flare
+
+
+def stage5_phase_space(c, base):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED optimization institute. The single hero
+    surface blooms into a PHASE-SPACE MULTI-SURFACE: two extra glowing wireframe SHEETS
+    hover in PARALLEL above the main bowl (an ensemble of candidate solutions), each a
+    dashed `E`/`e` saddle curve with a bright `E` MINIMUM marker — so the suite now
+    explores a whole family of surfaces at once. The building is then dressed in premium
+    GOLD: `q` gold CAPS on the front terrace corners + a `q` gold RAIL along the front
+    deck edge. Reads as elite, still unmistakably the same terrace pavilion. Gold ONLY
+    here. Drawn BEFORE the hero bowl is re-laid, so the main bowl stays in front/lowest
+    of the stacked ensemble (nearest the viewer); these sheets read as hovering above it."""
+    # --- PHASE-SPACE ensemble: 2 extra wireframe solution-sheets hovering in the CLEAR
+    # UPPER-RIGHT sky beside the hero bowl (x≈45..60, y≈4..15), so they read as a stacked
+    # FAMILY of candidate surfaces the suite now explores at once — NOT overdrawn by the
+    # bowl (which fills x≈18..43). A faint dotted e LIFT-LINE ties the nearest sheet back
+    # to the bowl's right rim so the ensemble reads as CAST from the surface, not unmoored. ---
+    ecx = 52                                       # ensemble centre x (clear right sky)
+    # faint dotted lift-line from the bowl's right rim (≈x43,y5) up to the first sheet
+    for k, (lx, ly) in enumerate([(44, 6), (46, 7), (48, 8), (50, 9)]):
+        if k % 2 == 0:
+            c.set(lx, ly, "e")
+    # each sheet: (centre-y, half-width, dip, wire-char, minima-char)
+    sheets = [(11, 7, 3, "e", "E"),    # lower/near sheet (wider, mid-glow)
+              (6, 5, 2, "E", "E")]     # upper/far  sheet (smaller, bright — the apex)
+    for syc, hw, dip, ch, mch in sheets:
+        # a shallow saddle wireframe: a dashed parabolic arc sagging to a centre minimum.
+        for x in range(ecx - hw, ecx + hw + 1):
+            if x < 0 or x > 63:
+                continue
+            t = (x - ecx) / float(hw)
+            y = syc + int(round(dip * (t * t - 1.0)))  # high at edges, low at centre
+            if 0 <= y <= 63 and (x % 2 == 0):      # DASHED → reads as open wireframe
+                c.set(x, y, ch)
+        # two faint cross-ribs so each sheet reads as a SURFACE patch, not a single line
+        for rxo in (-hw // 2, hw // 2):
+            rxp = ecx + rxo
+            ry0 = syc + int(round(dip * ((rxo / float(hw)) ** 2 - 1.0)))
+            if 0 <= rxp <= 63 and 0 <= ry0 + 1 <= 63:
+                c.set(rxp, ry0 + 1, ch)
+        # the bright minimum marker pooled at the centre of this sheet (its solution)
+        my = syc - dip
+        if 0 <= my <= 63:
+            c.set(ecx, my, mch)
+            c.set(ecx - 1, my, "e")
+            c.set(ecx + 1, my, "e")
+
+    # --- GOLD premium trim (t5 flourish only) -------------------------------------
+    # a gold RAIL re-tracing the FRONT terrace deck edges (over the existing L/D rail)
+    c.line(base.r_left, base.r_front, "q")
+    c.line(base.r_front, base.r_right, "q")
+    # bright gold CAPS on the three front terrace corners (elite trim, sparse + clean)
+    for cap in (base.r_left, base.r_front, base.r_right):
+        cxp, cyp = int(round(cap[0])), int(round(cap[1]))
+        c.set(cxp, cyp - 1, "O")               # bright corner boss
+        c.set(cxp, cyp, "q")
+    # a small gold cap on the upper-setback's lit front corner too (ties the zigurat)
+    fcx, fcy = int(round(UPPER.r_front[0])), int(round(UPPER.r_front[1]))
+    c.set(fcx, fcy - 1, "q")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, layers cumulative stages, and
+# RE-DRAWS the hovering function-surface signature LAST so the hero always reads in
+# front of the new structure (as chalkboard-room does with its slate easel).
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the mathematical-modeling-suite at upgrade `stage` (1..5). Stage 1 is
+    IDENTICAL to the shipped base; each higher stage keeps every prior addition and
+    bolts on the next (t2 solver-monitor -> t3 third terrace tier -> t4 tensor-array
+    mast -> t5 phase-space multi-surface + gold caps/rail). The terrace pavilion grows
+    UP and toward the BACK into a maxed-out optimization institute, while the front-
+    CENTER hovering FUNCTION-SURFACE signature stays clear and on top.
+
+    Painter's order: base form first; the upgrade masses grow on the UPPER box / its
+    new top tier and rise up-right (away from the bowl); the hovering function-surface
+    is RE-DRAWN last at every stage so the hero signature always reads in front."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     contact_shadow(c)               # contact shadow under the whole footprint
     lower_base(c, BASE)             # broad ground floor: LEFT atrium glass (HERO)
     upper_setback(c, UPPER)         # narrower back setback box (stepped terrace)
     anchor = terrace_deck(c, BASE, UPPER)   # open front terrace + cost gauge
-    function_surface(c, anchor)     # SIGNATURE: hovering surface + rolling marble
 
+    # --- CUMULATIVE UPGRADE STAGES (grown UP / BACK, clear of the front bowl) ------
+    if stage >= 2:
+        stage2_solver_monitor(c, BASE)
+    if stage >= 3:
+        stage3_solver_substation(c, BASE)
+    if stage >= 4:
+        stage4_tensor_mast(c)
+    if stage >= 5:
+        stage5_phase_space(c, BASE)
+
+    # --- SIGNATURE LAST: the hovering function-surface always reads in front --------
+    function_surface(c, anchor)     # SIGNATURE: hovering surface + rolling marble
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/axiom"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "mathematical-modeling-suite"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped mathematical-modeling-suite.png, so it does NOT overwrite
+    the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": AXIOM, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/axiom_mathematical-modeling-suite.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"axiom_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"axiom_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

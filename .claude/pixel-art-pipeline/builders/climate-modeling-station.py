@@ -34,9 +34,17 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
+# Base TerraBase palette (shared keys) + the EVOLVED-accent keys reserved for the
+# upgrade stages only (chars NOT used by the base palette, so they appear in NO
+# stage-1 sprite and climate-modeling-station.png stays byte-identical). These four
+# exact keys+hexes are the lab-wide terrabase evolved accents (see sampling-station):
+#   b  deep basalt/bedrock  — matured warm structure tone for t3+ new masses
+#   e  energized mineral-seismic glow (mid)    E  energized glow (bright) — t4/t5 power
+#   q  premium survey gold  — t5 flourish ONLY (NOT a whole-building recolor)
 TERRA = {"K": "#20190f", "W": "#efe6cf", "L": "#d6c8a0", "M": "#b09a6e", "D": "#7e6c47", "d": "#54462c",
          "h": "#d6f2ea", "c": "#a4e2d4", "g": "#34b6a2", "G": "#1d8474",
-         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e"}
+         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e",
+         "b": "#3a3326", "e": "#5fe0c4", "E": "#c4fff0", "q": "#f3c63a"}
 
 
 # ── small helper: stamp a tiny pixel block ('.' = skip) ───────────────────────
@@ -311,6 +319,13 @@ def layer_stack(c, ocx, ocy):
     c.set(gcx, gcy + 4, "O")
     c.set(gcx + 1, gcy + 4, "o")
 
+    # Return the stack geometry so the cumulative evolved stages (t2 orbital bead,
+    # t5 twin-hemisphere model) re-anchor from the SAME source — never a hardcoded
+    # second guess. (ocx, ocy) is the oculus mouth; base_y/gap drive every sheet;
+    # the ocean sheet sits at base_y (widest), the ice sheet at base_y-3*gap (top).
+    return {"ocx": ocx, "ocy": ocy, "base_y": base_y, "gap": gap,
+            "ocean_hw": 8, "ice_y": base_y - 3 * gap}
+
 
 # ── contact shadow under the whole hall (drawn first) ─────────────────────────
 def contact_shadow(c, b):
@@ -324,22 +339,347 @@ def contact_shadow(c, b):
                 c.set(x, y, "K")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS climate-compute
+# structure onto the prior form — never restarts, never recolors the whole building.
+# Theme: a lone simulation hall matures into a fully powered, instrumented climate-
+# modeling station. Colours mature stage by stage; gold (q) is a t5 flourish only.
+# Each add lives in a DIFFERENT zone so nothing stacks into mush, every add is clamped
+# on-canvas, and NONE collide with the centre exploded-layer-stack signature column:
+#   t2  small functional add : a real roof SKY-RADIOMETER instrument (upward dish on a
+#                              short plinth, back-left deck) feeding the model + a faint
+#                              orbital SATELLITE BEAD riding a thin arc round the model
+#   t3  structural add        : a server-blade COMPUTE ANNEX of louvered blade bays on
+#                              the shaded-right flank, glowing faint g (the model's compute)
+#   t4  major add             : a rooftop COOLING-TOWER chiller stack on b legs venting an
+#                              e cooling halo beside a finned e-glow RADIATOR wall
+#   t5  crowning feature      : the model doubles into a TWIN-HEMISPHERE climate model
+#                              (atmosphere + ocean) with bright E circulation pulses +
+#                              e jet-stream arcs, a gold orbit ring + gold armature
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_sky_radiometer(c, b):
+    """t2 — SMALL FUNCTIONAL ADD (the REAL on-theme element, review r2): a small upward-
+    looking SKY RADIOMETER instrument bolted onto the clear BACK-LEFT roof deck — a stout
+    2-3px `D`/`M` plinth standing on the slab, topped by a little tilted dish CUP (D back,
+    L lit face) aimed up-LEFT at the open sky with a `c` feed-horn glint. A real new
+    geometry mass (outline + fill), NOT a recolor: a sky-radiation sensor feeding the
+    climate model. Seated on the BACK-LEFT deck (well left of the cooling-fin bank and
+    clear BELOW the hovering orbital sensor stack at canvas centre, so it never occludes
+    the signature). Base palette only (D/M/L/K + one c sensor glint) — no warm/gold here."""
+    # anchor on the clear back-left roof slab (all-L deck, away from oculus/fins/centre)
+    rp = b.roof_pt(0.125, 0.30)              # ≈ (23,31) back-left deck, clear patch
+    px, py = int(round(rp[0])), int(round(rp[1]))
+    # --- short plinth post standing ON the deck (a clean 2px column: lit M left, shaded
+    #     D right, a K base sill + K feet so it reads crisply off the bright L deck) ---
+    plinth_h = 4
+    for t in range(plinth_h):
+        c.set(px, py - t, "M")               # lit post core
+        c.set(px + 1, py - t, "D")           # shaded right edge -> reads as a 2px post
+    c.set(px - 1, py, "K"); c.set(px, py, "K"); c.set(px + 1, py, "K"); c.set(px + 2, py, "K")  # K base sill on deck
+    head_y = py - plinth_h                     # the dish bowl sits atop the plinth
+    # --- the tilted radiometer DISH BOWL aimed UP-LEFT at the open sky. A small upturned
+    #     cup drawn as real outline+fill: a bright W/L lit upper-left rim catching the sky,
+    #     an L/M bowl body, a D shaded under-curve, a K back-rim, and a c feed-horn eye on
+    #     a short mast at the focus — unmistakably a sky-pointing sensor, not a recolor. ---
+    _stamp(c, px - 3, head_y - 3, [
+        "WL..",      # bright lit top rim (catches the sky)
+        "LLMD",      # bowl mouth: lit-left -> shaded-right
+        ".LMD",      # bowl body curving down-right
+        "..K.",      # K under-rim / stem collar
+    ])
+    # K outline along the bowl's lower-left curve so the cup silhouettes off the deck
+    c.set(px - 3, head_y - 2, "K")
+    c.set(px - 2, head_y, "K")
+    # c FEED-HORN eye on a 1px mast at the bowl focus (the radiometer detector) + a faint
+    # h sky-catch glint on the rim — the teal eye reads it as a climate sky-sensor.
+    c.set(px - 1, head_y - 2, "c")           # teal feed-horn detector eye
+    c.set(px - 1, head_y - 3, "h")           # bright sky-catch glint above the eye
+    c.set(px,     head_y - 1, "K")           # short feed-mast arm down to the bowl
+
+
+def stage2_orbital_bead(c, sig):
+    """t2 — SECONDARY ON-MODEL TOUCH (paired with the roof radiometer): the hovering
+    exploded climate model gains a small ORBITAL SATELLITE BEAD that rides a thin DASHED
+    elliptical orbit ARC around the lowest (ocean) sheet — a tiny lit cubesat body with a
+    sun glint + a 1px c solar-panel wing, plus one faint constellation bead on the back-
+    left of the arc. Augments the model subtly (on-theme) without touching the building
+    mass below. NOTE (review r2): the solid c equatorial band + the warm O/o pulse pixels
+    at (35,28/29) were removed — that band read as a flat recolor of the emission disc and
+    the warm pixels read as stray gold. Re-anchored from the SAME stack geometry the
+    signature returned (ocx, base_y, ocean_hw)."""
+    ocx = sig["ocx"]
+    oy = sig["base_y"]                       # ocean sheet centre row (the model's base)
+    arx, ary = sig["ocean_hw"] + 2, 4        # orbit ellipse a touch wider than the sheet
+    # a thin DASHED c orbit arc ringing the ocean sheet (every other step => dashes so it
+    # reads as a discrete orbit ring, not a solid recolor). Clamped well inside the canvas.
+    for a in range(0, 360, 18):
+        x = int(round(ocx + arx * math.cos(math.radians(a))))
+        y = int(round(oy + ary * math.sin(math.radians(a))))
+        if 0 <= x <= 63 and 0 <= y <= 63 and (a // 18) % 2 == 0:
+            c.set(x, y, "c")
+    # the SATELLITE BEAD riding the orbit's front-right, drawn as a tiny lit body with a
+    # h glint + a 1px c solar-panel wing behind it (a small cubesat catching the sun).
+    bax = int(round(ocx + arx * math.cos(math.radians(35))))
+    bay = int(round(oy + ary * math.sin(math.radians(35))))
+    c.set(bax, bay, "h")                     # bright bead body
+    c.set(bax + 1, bay, "c")                 # solar-panel wing / contrail
+    c.set(bax - 1, bay, "W")                 # sun glint
+    # a second smaller bead on the orbit's back-left, fainter (a constellation hint)
+    bbx = int(round(ocx + arx * math.cos(math.radians(205))))
+    bby = int(round(oy + ary * math.sin(math.radians(205))))
+    c.set(bbx, bby, "c")
+
+
+def stage3_compute_annex(c, b):
+    """t3 — STRUCTURAL ADD: a slim SERVER-BLADE COMPUTE ANNEX bolted onto the SHADED-
+    RIGHT flank of the hall — a low deep-basalt `b` housing of louvered blade bays
+    glowing a faint g (the model's compute back-end), with a K plank skirt. A real new
+    structural mass (its own little prism abutting the hall), kept LOW and to the RIGHT
+    so it never fights the LIT-LEFT hero door/window or the centre signature. First use
+    of the matured structure tone `b`."""
+    # seat the annex against the RIGHT (shaded) face, its back-top corner partway up the
+    # hall's right wall so its roofline breaks clearly PROUD of the lower-right wall and
+    # it reads as a real bolt-on compute box, not a flush panel. Runs out toward the
+    # front-right corner (long wx), kept slim (wy) and a step TALLER so it stands out.
+    seat = b.right_pt(0.50, 1.2)
+    sx, sy = int(round(seat[0])), int(round(seat[1]))
+    annex = Box(top=(sx, sy), wx=4, wy=3, h=7)
+    # body in matured basalt: the SHADED-RIGHT wall stays a clean deep-basalt `b` face
+    # (a clear, unbroken first showing of the matured structure tone), the lit-left wall
+    # carries the louver bank, D roof + M lit-back tri.
+    annex.draw(c, roof="D", lwall="b", rwall="b", roof_hi="M", outline="K")
+    c.fill_poly([annex.r_top, annex.r_left, annex.r_front], "D")   # lit-back roof tri
+    c.fill_poly([annex.r_front, annex.r_right, annex.w_right, annex.w_front], "b")  # solid b shaded face
+    # a bank of LOUVERED SERVER-BLADE BAYS on the annex's lit-left face: a `b` rack body
+    # with soft `d` slat shadows + `D` slat highlights, so the basalt `b` shows BETWEEN
+    # the slats (the matured structure tone reads on the rack) rather than tiling to black.
+    annex.louver(c, "left", 0.12, 0.88, 1.6, annex.h - 0.8, body="b", slat="d", edge="D")
+    # g blade-glow slits showing between two louver slats (the compute light) — kept to
+    # two short lines so the `b` rack body still reads between them at 64px.
+    for v in (2.6, 4.4):
+        c.line(annex.left_pt(0.20, v), annex.left_pt(0.64, v), "g")
+    c.set(int(round(annex.left_pt(0.32, 3.5)[0])), int(round(annex.left_pt(0.32, 3.5)[1])), "c")  # a teal core glint
+    # two stacked status LEDs (one teal, one warm) on the lit face — 'compute online'
+    c.set(int(round(annex.left_pt(0.82, 2.2)[0])), int(round(annex.left_pt(0.82, 2.2)[1])), "c")
+    c.set(int(round(annex.left_pt(0.82, 3.6)[0])), int(round(annex.left_pt(0.82, 3.6)[1])), "o")
+    # a couple of d vent slats on the shaded-right face + a K skirt board at the base
+    for v in (2.4, 3.8):
+        c.line(annex.right_pt(0.18, v), annex.right_pt(0.82, v), "d")
+    c.line(annex.left_pt(0.06, annex.h - 0.4), annex.left_pt(0.94, annex.h - 0.4), "K")
+    return annex
+
+
+def _chiller_geom(b):
+    """Shared cooling-tower geometry so t5's gold trim (if it ever references the
+    chiller) recomputes from the SAME source as t4 — never a hardcoded second guess.
+    Anchors the chiller on the clear BACK-LEFT roof zone (left of the signature
+    column), returns the cylinder centre/top and the radiator-wall base."""
+    rp = b.roof_pt(0.14, 0.28)               # back-left roof, clear LEFT of the centre signature
+    cx, roof_y = int(round(rp[0])), int(round(rp[1]))
+    return cx, roof_y
+
+
+def stage4_cooling_tower(c, b):
+    """t4 — MAJOR ADD: a rooftop COOLING-TOWER CHILLER plant rises on the clear BACK-
+    LEFT roof (well clear of the centre exploded-stack signature) — a stout `cylinder`
+    chiller stack standing on short deep-basalt `b` legs, venting a glowing `e` cooling
+    HALO out of its capped mouth, beside a finned `e`-glow RADIATOR WALL that dumps the
+    compute heat. The prominent new rooftop mass: 'this station now runs powered, cooled
+    climate compute'. Palette matures — `b` legs/frame + energized `e/E` cooling glow.
+    Clamped fully on-canvas; sits LEFT of the signature column so nothing collides."""
+    cx, roof_y = _chiller_geom(b)
+    # --- the CHILLER STACK: a stout cylinder rising off a leg plinth into clear sky.
+    # Author the tank first so we know its BOTTOM, then run the legs UP to meet it (no
+    # floating gap — the classic 'detached rooftop blob' pitfall).
+    tank_top_y = roof_y - 15                  # top ellipse centre above the roof
+    tank_h = 8
+    tank_bot = tank_top_y + tank_h            # the tank's bottom row
+    # --- b PLINTH LEGS from the roof deck UP to the tank bottom (a planted base) ---
+    for dx in (-3, 3):
+        c.line((cx + dx, tank_bot - 1), (cx + dx, roof_y), "b")   # leg runs deck->tank
+        c.set(cx + dx, roof_y, "K")                                # foot pressed on the deck
+    c.line((cx - 3, roof_y), (cx + 3, roof_y), "K")               # K base sill on the deck
+    c.line((cx - 3, tank_bot - 1), (cx + 3, tank_bot - 1), "b")   # top cross-tie under the tank
+    cylinder(c, cx, tank_top_y, rx=4, h=tank_h, top="M", side_l="D", side_r="d", outline="K")
+    # two M cooling-band ribs around the stack (chiller fins) + a K rim under the cap
+    for yy in (tank_top_y + 3, tank_top_y + 6):
+        c.line((cx - 4, yy), (cx + 4, yy), "M")
+    # --- capped mouth venting a glowing `e` COOLING HALO up/left into clear air ---
+    cap_y = tank_top_y - 2
+    c.fill_poly([(cx - 4, tank_top_y), (cx + 4, tank_top_y), (cx + 3, cap_y), (cx - 3, cap_y)], "b")
+    c.line((cx - 3, cap_y), (cx + 3, cap_y), "K")
+    # the e halo: a small rising ellipse of energized cooling vapour above the mouth
+    for a in range(0, 360, 30):
+        hx = int(round(cx + 4 * math.cos(math.radians(a))))
+        hy = int(round((cap_y - 3) + 2 * math.sin(math.radians(a))))
+        if 0 <= hx <= 63 and 0 <= hy <= 63:
+            c.set(hx, hy, "e")
+    c.set(cx, cap_y - 3, "E")                # bright halo core
+    c.set(cx - 1, cap_y - 4, "e")
+    c.set(cx + 1, cap_y - 5, "e")
+    # --- finned `e`-glow RADIATOR WALL standing on the open roof just LEFT of the
+    # chiller plinth (the clear back-left zone), a low ribbed bank dumping compute heat
+    # — energized `e` glow leaking between the D fins. Steps DOWN-LEFT along the back-
+    # left roof edge so it sits clearly in the open, never near the centre signature. ---
+    rwx = cx - 5                              # start just LEFT of the chiller legs
+    rwy = roof_y + 2                          # a touch down the roof from the chiller feet
+    # a continuous b base ledge stepping down-left (the radiator's manifold) + K underline
+    n = 5
+    pts = [(int(round(rwx - k * 1.6)), int(round(rwy + k * 0.8))) for k in range(n)]
+    for (x, y) in pts:
+        c.set(x, y, "b")
+        c.set(x, y + 1, "K")                 # K underline grounds the bank on the deck
+    # vertical radiator fins rising 3px off the ledge, alternating D fin / e glow gap
+    for k, (x, y) in enumerate(pts):
+        for t in range(3):
+            c.set(x, y - 1 - t, "D")         # the fin
+        c.set(x, y - 4, "K")                 # K cap on each fin
+        if k % 2 == 0:
+            c.set(x, y - 2, "e")             # energized glow leaking between fins
+    return cx, roof_y
+
+
+def stage5_twin_hemisphere(c, sig):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED climate model. The hovering exploded stack
+    is crowned by a TWIN-HEMISPHERE climate model floating just above the ice sheet: two
+    linked bright-E hemispheres (an ATMOSPHERE globe + an OCEAN globe) joined by bright E
+    CIRCULATION pulses and swept by faint e JET-STREAM arcs, ringed by a premium GOLD
+    orbit ring on a slim gold ARMATURE rising off the stack. Reads as elite/maxed while
+    still clearly the same climate-modeling station. Gold (q) appears ONLY here. Re-
+    anchored from the SAME stack geometry the signature returned (ice_y at the top)."""
+    ocx = sig["ocx"]
+    crown_y = sig["ice_y"] - 6               # the twin model hovers above the top ice sheet
+    crown_y = max(7, crown_y)                # keep the whole crown on-canvas (top margin)
+
+    # --- slim GOLD ARMATURE rising from the ice sheet up to the twin model (so the
+    #     crown reads as MOUNTED on the model, not a detached blob) ---
+    c.line((ocx, sig["ice_y"] - 1), (ocx, crown_y + 3), "q")
+    c.set(ocx, sig["ice_y"] - 1, "O")        # bright armature foot on the ice sheet
+
+    # --- the TWIN HEMISPHERES: two small E globes side by side, atmosphere (left) +
+    #     ocean (right), each a filled disc with a bright E rim and a tinted core ---
+    def globe(gx, gy, r, core):
+        for yy in range(-r, r + 1):
+            for xx in range(-r, r + 1):
+                if xx * xx + yy * yy <= r * r:
+                    px, py = gx + xx, gy + yy
+                    if 0 <= px <= 63 and 0 <= py <= 63:
+                        rim = xx * xx + yy * yy >= (r - 1) * (r - 1)
+                        c.set(px, py, "E" if rim else core)
+        c.set(gx, gy - r, "W")               # top sun glint
+
+    lhx, lhy = ocx - 3, crown_y              # atmosphere hemisphere (left), c-cored
+    rhx, rhy = ocx + 3, crown_y              # ocean hemisphere (right), g-cored
+    globe(lhx, lhy, 2, "c")
+    globe(rhx, rhy, 2, "g")
+
+    # --- bright E CIRCULATION PULSES linking the two hemispheres (energy exchange) ---
+    for px in range(lhx + 1, rhx):
+        c.set(px, crown_y, "E")
+    c.set(ocx, crown_y - 1, "E")             # a pulse bead riding above the link
+    c.set(ocx, crown_y + 1, "e")
+
+    # --- faint e JET-STREAM arcs sweeping around/between the hemispheres ---
+    for a in range(200, 341, 20):            # upper sweeping arc over both globes
+        jx = int(round(ocx + 6 * math.cos(math.radians(a))))
+        jy = int(round(crown_y + 3 * math.sin(math.radians(a))))
+        if 0 <= jx <= 63 and 0 <= jy <= 63:
+            c.set(jx, jy, "e")
+    for a in range(20, 161, 20):             # lower sweeping arc under both globes
+        jx = int(round(ocx + 6 * math.cos(math.radians(a))))
+        jy = int(round(crown_y + 4 * math.sin(math.radians(a))))
+        if 0 <= jx <= 63 and 0 <= jy <= 63:
+            c.set(jx, jy, "e")
+
+    # --- premium GOLD ORBIT RING circling the twin model (t5 flourish only) ---
+    orx, ory = 8, 4
+    for a in range(0, 360, 14):
+        ox = int(round(ocx + orx * math.cos(math.radians(a))))
+        oy = int(round(crown_y + ory * math.sin(math.radians(a))))
+        if 0 <= ox <= 63 and 0 <= oy <= 63:
+            # front arc bright O, back arc deeper q, so the ring reads as a 3D loop
+            c.set(ox, oy, "O" if 20 <= a <= 160 else "q")
+    # two small q orbit-node beads riding the gold ring (elite trim)
+    c.set(ocx - orx, crown_y, "q")
+    c.set(ocx + orx, crown_y, "O")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the climate-modeling station at upgrade `stage` (1..5). Stage 1 is
+    IDENTICAL to the shipped base PNG; each higher stage keeps every prior addition and
+    bolts on the next (t2 orbital bead → t3 compute annex → t4 cooling tower → t5 twin-
+    hemisphere model + gold). Painter's order: the building masses (annex on the right
+    flank, cooling tower on the back-left roof) are drawn BEFORE the hovering signature
+    so the exploded-layer-stack hero reads over the whole building; the model-augmenting
+    stages (t2 bead, t5 twin globes) are drawn AFTER the signature since they ARE part
+    of the hovering climate model."""
     c = Canvas()
     b = HALL
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     contact_shadow(c, b)        # soft K ground shadow under the broad hall (back/under)
     hall(c, b)                  # the WIDE LOW simulation hall body (M/L walls, L deck)
     ocx, ocy = oculus(c, b)     # round K-rimmed glowing roof OCULUS in the deck centre
     cooling_fins(c, b)          # low ribbed cooling-fin bank on the back-right roof edge
     left_face(c, b)             # HERO control door + operator window on the LIT-LEFT face
-    layer_stack(c, ocx, ocy)    # SIGNATURE: exploded Earth-system layer stack + opt. fork
 
+    # --- CUMULATIVE UPGRADE STAGES (building masses BEFORE the hovering signature) -
+    if stage >= 2:
+        stage2_sky_radiometer(c, b)   # real roof instrument (a building mass, drawn here)
+    if stage >= 3:
+        stage3_compute_annex(c, b)
+    if stage >= 4:
+        stage4_cooling_tower(c, b)
+
+    # SIGNATURE — exploded Earth-system layer stack + opt. fork. Returns the stack
+    # geometry so the model-augmenting evolved stages re-anchor from the SAME source.
+    sig = layer_stack(c, ocx, ocy)
+
+    # --- model-augmenting evolved stages, drawn AFTER the signature (part of it) ---
+    if stage >= 2:
+        stage2_orbital_bead(c, sig)
+    if stage >= 5:
+        stage5_twin_hemisphere(c, sig)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/terrabase"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "climate-modeling-station"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped climate-modeling-station.png, so it does NOT overwrite
+    the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": TERRA, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/terrabase_climate-modeling-station.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"terrabase_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"terrabase_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

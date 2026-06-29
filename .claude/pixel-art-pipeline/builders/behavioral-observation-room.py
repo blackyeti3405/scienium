@@ -38,9 +38,17 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
+# Base BioCore palette (shared keys) + the lab-wide EVOLVED accent shades reserved for
+# the upgrade stages only (they appear in NO stage-1 sprite, so the shipped base PNG is
+# unchanged). BioCore's evolved glow is BIO-LUMINESCENT (a living green-teal bloom), so a
+# maxed building reads as a glowing vivarium, not a power plant:
+#   b  deep mossy bark-green  — matured structure tone for t3+ new masses/frames
+#   e  bioluminescent glow (mid)   E  bioluminescent glow (bright) — the t4/t5 life-glow
+#   q  premium gold trim — t5 flourish ONLY (NOT a whole-building recolor)
 BIO = {"K": "#1a2417", "W": "#e8f2d8", "L": "#c4dba6", "M": "#9fc07e", "D": "#6f9456", "d": "#4a6e3a",
        "h": "#d2f7ec", "c": "#9fefcf", "g": "#36cc9e", "G": "#1d8f70",
-       "o": "#f0b24d", "O": "#ffd488", "r": "#b9701e"}
+       "o": "#f0b24d", "O": "#ffd488", "r": "#b9701e",
+       "b": "#2f4a2a", "e": "#74f0b6", "E": "#ccffe4", "q": "#f3c63a"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
@@ -50,6 +58,15 @@ def lerp(a, b, t):
 
 def dot(c, p, ch):
     c.set(int(round(p[0])), int(round(p[1])), ch)
+
+
+def clamp(v, lo=0, hi=63):
+    return max(lo, min(hi, v))
+
+
+def cset(c, x, y, ch):
+    """set() with a hard on-canvas clamp — every stage-add point stays inside 0..63."""
+    c.set(clamp(int(round(x))), clamp(int(round(y))), ch)
 
 
 # ── 1. MAIN HALL — a wide low box, M/D walls on a wood base band ──────────────
@@ -165,6 +182,7 @@ def rooftop_gear(c, ridge_l, ridge_r, L, F):
     c.set(cx, cy - 1, "h")                                  # dome glint
     c.set(cx - 1, cy, "g"); c.set(cx + 1, cy, "G")          # dome sides
     c.set(cx - 2, cy + 1, "K")                              # lens nub aimed down-left
+    return hp, cp
 
 
 # ── 3. LEFT VIVARIUM OBSERVATION WINDOW — the hero glass front (the opening) ───
@@ -236,12 +254,17 @@ def observation_window(c, b, base):
 
 
 # ── 4. SIGNATURE — naturalistic habitat + tracked critter + motion-path ───────
-def habitat_and_tracking(c, b, U0, U1, VT, VB):
+def habitat_and_tracking(c, b, U0, U1, VT, VB, stage=1):
     """Behind the glass: a tiny diorama (branch perch, foliage, rock, litter floor)
     where one small critter is mid-stride, trailing a glowing c/g motion-path that
     fades G->c, a faint h ghost marker + o arrow ahead = predicted next step, and a
     couple of o/O heat-map blobs on the floor. A c/O tracking pip sits on the frame.
-    Drawn INSIDE the left window, between the mullions (the one-of-one feature)."""
+    Drawn INSIDE the left window, between the mullions (the one-of-one feature).
+
+    At `stage>=5` the tracking goes FULL AI: the same diorama is overlaid with a DENSE
+    `e` floor heat-map, several `E` predicted-step ghosts strung ahead of the critter,
+    and a `c/O` multi-subject readout — drawn here (still inside the glass) so the
+    signature simply BLOOMS rather than getting a second, detached feature."""
     def L(u, v):
         return b.left_pt(u, v)
 
@@ -250,6 +273,16 @@ def habitat_and_tracking(c, b, U0, U1, VT, VB):
     # The interior is small, so commit to ONE legible read: a clear branch diagonal,
     # one unmistakable critter on it, a short bright dotted motion-path behind, a ghost
     # marker ahead, and a couple of floor heat blobs. No rock/foliage clutter.
+
+    # --- t5 FULL-AI overlay (drawn FIRST so the branch + critter sit ON TOP of it):
+    # a dense bio-luminescent floor HEAT-MAP across the enclosure floor. ---
+    if stage >= 5:
+        for hu in (0.16, 0.24, 0.32, 0.40, 0.48, 0.56):
+            hp5 = L(hu, floor_v + 0.5)
+            hx5, hy5 = int(round(hp5[0])), int(round(hp5[1]))
+            cset(c, hx5, hy5, "e")
+            cset(c, hx5 + 1, hy5, "E" if hu in (0.32, 0.40) else "e")
+            cset(c, hx5, hy5 - 1, "e")
 
     # --- one O/o HEAT-MAP blob on the floor where the animal lingered (single, clear)
     hp = L(0.22, floor_v + 0.4)
@@ -266,10 +299,16 @@ def habitat_and_tracking(c, b, U0, U1, VT, VB):
     c.line((p0[0] + 1, p0[1]), (p1[0] + 1, p1[1]), "M")    # 2px body, mid-green
 
     # --- MOTION-PATH: 3 bright, well-SPACED dots fading G->c->h trailing the critter --
-    for t, ch in ((0.20, "G"), (0.44, "c"), (0.64, "h")):
-        pt = lerp(p0, p1, t)
-        px, py = int(round(pt[0])), int(round(pt[1]) - 2)  # float just above the branch
-        c.set(px, py, ch)
+    # at t5 the path densifies into a brighter bio-luminescent trail (e/E dots).
+    if stage >= 5:
+        for t, ch in ((0.12, "e"), (0.28, "E"), (0.44, "e"), (0.58, "E")):
+            pt = lerp(p0, p1, t)
+            cset(c, pt[0], pt[1] - 2, ch)
+    else:
+        for t, ch in ((0.20, "G"), (0.44, "c"), (0.64, "h")):
+            pt = lerp(p0, p1, t)
+            px, py = int(round(pt[0])), int(round(pt[1]) - 2)  # float just above the branch
+            c.set(px, py, ch)
 
     # --- THE CRITTER: a chunky high-contrast O lizard standing ON the branch top -----
     an = lerp(p0, p1, 0.76)
@@ -290,31 +329,338 @@ def habitat_and_tracking(c, b, U0, U1, VT, VB):
     c.set(gx - 2, gy, "O"); c.set(gx - 1, gy, "o")         # bright arrow toward ghost
     c.set(gx - 3, gy - 1, "o"); c.set(gx - 3, gy + 1, "o") # arrowhead barbs
 
+    # --- t5: a STRING of predicted-step ghosts marching ahead of the critter, each a
+    # fainter E->e mote, so the AI is forecasting MANY steps, not one. ---
+    if stage >= 5:
+        for t, ch in ((1.14, "E"), (1.30, "e"), (1.48, "e")):
+            gp = lerp(p0, p1, t)
+            gx5, gy5 = int(round(gp[0])), int(round(gp[1])) - 1
+            if 0 <= gx5 <= 63 and 0 <= gy5 <= 63:
+                cset(c, gx5, gy5, ch)
+                cset(c, gx5, gy5 - 1, "e")
+
     # --- tracking-readout PIP on the window frame (a c/O HUD chip, upper-right) ---
     pip = L(U1 - 0.05, VT + 1.0)
     px, py = int(round(pip[0])), int(round(pip[1]))
     c.set(px, py, "c"); c.set(px, py - 1, "O"); c.set(px - 1, py, "g")
     c.set(px, py + 1, "K"); c.set(px + 1, py, "K")
 
+    # --- t5: a MULTI-SUBJECT readout column beside the pip (now tracking several
+    # critters at once) — a stacked c/O HUD strip on the upper-right window frame. ---
+    if stage >= 5:
+        rp = L(U1 - 0.05, VT + 2.4)
+        rx5, ry5 = int(round(rp[0])), int(round(rp[1]))
+        for j, ch in enumerate(("O", "c", "O")):
+            cset(c, rx5, ry5 + j, ch)
+            cset(c, rx5 - 1, ry5 + j, "e" if j == 1 else "K")
 
-def main():
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS observation /
+# enclosure / bio-glow structure onto the prior vivarium — never restarts, never
+# recolors the whole building. Theme: the starter observation room grows into a fully
+# instrumented, AI-tracked, multi-level VIVARIUM. Colours mature stage by stage
+# (matured bark-green `b`, bio-luminescent `e/E`); gold (`q`) only as a t5 flourish.
+# Every add is anchored OFF the hall/roof geometry and kept clear of the LEFT
+# observation-window signature (which fills the lit-left face).
+#
+#   t2  small functional add   : a 2nd roof CAMERA POD + an IR `c` FLOODLIGHT on the hip slope
+#   t3  structural add         : an OBSERVER ANTEROOM annex on the shaded right wall
+#   t4  major add              : a raised ENCLOSURE-CANOPY mezzanine over the back of the hall
+#   t5  crowning feature       : tracking goes FULL AI inside the glass + GOLD window/ridge trim
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_camera_floodlight(c, ridge_l, ridge_r, L, F, cp):
+    """t2 — SMALL FUNCTIONAL ADD: more observation kit on the existing hip slope. A SECOND
+    camera POD is bolted just up-slope of the base camera (so the pair reads as a stereo
+    rig), and a small IR FLOODLIGHT box below it throws a short beam DOWN the slope into the
+    enclosure. On-theme (more watching), modest, base palette + one brightened `o` glow pip
+    near the floodlight. Both sit ON the roof plane between the ridge and the front eave, so
+    they never reach the lit-left observation window.
+
+    REVIEW-FIX (round 2): the prior version scattered single pixels that read as roof noise
+    (only 17 isolated specks). This rebuilds the pair as two SOLID, K-OUTLINED masses — a
+    filled ~4x3 dome on a visible stalk + a fully-framed floodlight housing with a bright
+    contrasting lens face (its body no longer disappears into the green roof) — joined by a
+    short mount rail so the whole cluster reads as one contiguous ~50px camera rig at 64px.
+    Everything is recomputed from the SAME source point `cp` (the base camera)."""
+    # Anchor off the base camera `cp` so the new rig nests beside it as a clear stereo pair.
+    bx, by = int(round(cp[0])), int(round(cp[1]))            # base camera dome centre (~45,18)
+
+    # --- SECOND camera pod: a SOLID filled dome, up-slope (lower y) + a touch back-left of the
+    # base camera, on a short visible K stalk. Drawn as contiguous filled rows + a full K
+    # outline ring so it coalesces into one readable dome (not scattered pixels). ---
+    dcx, dcy = bx - 2, by - 6                                # dome centre, up the slope from cp
+    # stalk first (under the dome), 2px tall onto the roof plane
+    for sy in range(dcy + 2, dcy + 4):
+        cset(c, dcx, sy, "K")
+    # solid dome body: a filled 4-wide crown narrowing to the base (contiguous fill)
+    for ddx in range(-1, 3):                                 # mid body row (widest), bright c
+        cset(c, dcx + ddx, dcy, "c")
+    for ddx in range(-1, 3):                                 # lower body row, shaded g
+        cset(c, dcx + ddx, dcy + 1, "g")
+    cset(c, dcx, dcy - 1, "h"); cset(c, dcx + 1, dcy - 1, "h")   # bright domed crown (2px; base `h` glint — bio-glow E is reserved for t4+)
+    cset(c, dcx - 1, dcy + 1, "G"); cset(c, dcx + 2, dcy + 1, "G")  # darker dome cheeks
+    # K outline ring hugging the dome so the silhouette is crisp on the green roof
+    cset(c, dcx - 2, dcy, "K"); cset(c, dcx + 3, dcy, "K")       # side jambs
+    cset(c, dcx - 2, dcy + 1, "K"); cset(c, dcx + 3, dcy + 1, "K")
+    cset(c, dcx - 1, dcy - 1, "K"); cset(c, dcx + 2, dcy - 1, "K")
+    cset(c, dcx, dcy - 2, "K"); cset(c, dcx + 1, dcy - 2, "K")   # crown cap
+    cset(c, dcx - 1, dcy + 2, "K"); cset(c, dcx + 2, dcy + 2, "K")  # under-rim
+    cset(c, dcx + 3, dcy + 1, "K")                               # lens nub aimed down-right (into enclosure)
+
+    # --- short mount RAIL joining the new dome down to the floodlight, so the kit reads as ONE
+    # contiguous rig rather than two stray objects on the slope. ---
+    fx, fy = bx - 4, by + 2                                  # floodlight housing top-left, down-slope
+    for ry in range(dcy + 4, fy):                            # 2px K bracket between dome stalk + housing
+        cset(c, dcx - 1, ry, "K")
+
+    # --- IR FLOODLIGHT box: a fully K-FRAMED housing (so its silhouette reads on the green
+    # roof) with a bright contrasting lens FACE, mounted down-slope/front of the cameras and
+    # aimed DOWN-LEFT into the front observation enclosure. ~4x4, solid. ---
+    # housing body: dark `d` (darker than the roof) so the bright lens pops, then a full K frame
+    c.fill_poly([(fx, fy), (fx + 3, fy), (fx + 3, fy + 3), (fx, fy + 3)], "d")
+    # bright lens face (contrasting cyan/white) filling the lower-left of the housing, aimed down
+    cset(c, fx + 1, fy + 1, "h"); cset(c, fx + 2, fy + 1, "c")   # upper lens row (bright)
+    cset(c, fx + 1, fy + 2, "c"); cset(c, fx + 2, fy + 2, "g")   # lower lens row
+    cset(c, fx, fy, "K"); cset(c, fx + 3, fy, "K")              # full K frame: top corners
+    cset(c, fx + 1, fy, "K"); cset(c, fx + 2, fy, "K")          # top edge
+    cset(c, fx, fy + 1, "K"); cset(c, fx + 3, fy + 1, "K")      # side edges
+    cset(c, fx, fy + 2, "K"); cset(c, fx + 3, fy + 2, "K")
+    cset(c, fx, fy + 3, "K"); cset(c, fx + 1, fy + 3, "K")      # bottom edge
+    cset(c, fx + 2, fy + 3, "K"); cset(c, fx + 3, fy + 3, "K")
+    # --- TIGHT directed beam: a short contiguous 3px cyan stub off the lens toward the
+    # front-left enclosure (no loose fading dots), ending in one warm `o` glow pip. ---
+    for j in range(1, 4):
+        cset(c, fx - j, fy + 3 + j, "c")                       # beam shaft (down-left, contiguous)
+    cset(c, fx - 4, fy + 7, "o")                               # warm glow pip where the beam lands
+
+
+def stage3_anteroom(c, b, base):
+    """t3 — STRUCTURAL ADD: an OBSERVER ANTEROOM annex bolted to the SHADED RIGHT wall — the
+    watchers' room where staff stand to view the one-way glass. A self-contained matured
+    bark-green `b` box stepped out from the right face toward the viewer (front), drawn as a
+    proper little PRISM (lit front face + shaded right-return face + flat roof) so it reads as
+    a 3D room, not a flat strip on the canvas edge. Carries a one-way `g` glass viewing SLIT
+    and a small `o/r` HVAC vent, and sits fully on the shaded right side, clear of the
+    lit-left observation window. Kept inboard of x=62 so nothing clips. Introduces the
+    matured bark-green tone `b`."""
+    # Anchor the annex as its OWN small Box abutting the right wall: its back-top corner sits
+    # just in front of the hall's front-right wall, stepped out toward the viewer (+wy) and
+    # short (so it stays well below the eave + inboard of the canvas wall).
+    # hall front-right base corner w_front=(43,53). Place the annex back-top a few px above
+    # the ground there, then run it toward the right corner (+wx) and out front (+wy).
+    bt = (int(b.w_front[0]) + 1, int(b.w_front[1]) - 9)       # back-top of the annex
+    AW, AY, AH = 6, 3, 8                                      # wx, wy(out toward viewer), height
+    ann = Box(top=bt, wx=AW, wy=AY, h=AH)
+    # clamp guard: the right corner is the rightmost point — verify it stays inboard.
+    # (AW=6 -> +12px in x from bt.x=44 -> 56; +AY left-step keeps the front face left of that.)
+    # --- draw the prism: shaded right-return face (back), then lit front face, then roof ---
+    # right-return face (the +wx face, shaded D) — gives the box its 3D depth
+    c.fill_poly([ann.r_right, ann.r_front, ann.w_front, ann.w_right], "d")
+    # lit FRONT face (the +wy face toward the viewer, matured bark-green `b`)
+    c.fill_poly([ann.r_left, ann.r_front, ann.w_front, ann.w_left], "b")
+    # flat roof cap (lit D top diamond)
+    c.fill_poly([ann.r_top, ann.r_right, ann.r_front, ann.r_left], "D")
+    c.fill_poly([ann.r_top, ann.r_left, ann.r_front], "M")   # brighter back-left roof triangle
+    # crisp K silhouette + the lit roof back edges
+    c.line(ann.r_top, ann.r_left, "L")
+    c.line(ann.r_top, ann.r_right, "M")
+    for p, q in [(ann.r_top, ann.r_right), (ann.r_right, ann.r_front), (ann.r_front, ann.r_left),
+                 (ann.r_left, ann.r_top), (ann.r_left, ann.w_left), (ann.r_front, ann.w_front),
+                 (ann.r_right, ann.w_right), (ann.w_left, ann.w_front), (ann.w_front, ann.w_right)]:
+        c.line(p, q, "K")
+    c.line(ann.r_front, ann.w_front, "d")                    # front vertical recess
+    # --- one-way `g` glass viewing SLIT on the lit FRONT face (a short horizontal band) ---
+    c.fill_poly([ann.left_pt(0.18, 2.4), ann.left_pt(0.82, 2.4),
+                 ann.left_pt(0.82, 4.2), ann.left_pt(0.18, 4.2)], "g")
+    c.line(ann.left_pt(0.18, 2.4), ann.left_pt(0.82, 2.4), "c")      # bright top edge (one-way sheen)
+    c.line(ann.left_pt(0.18, 3.0), ann.left_pt(0.50, 2.6), "h")      # diagonal glass glint
+    for p, q in [(ann.left_pt(0.18, 2.4), ann.left_pt(0.82, 2.4)),
+                 (ann.left_pt(0.18, 4.2), ann.left_pt(0.82, 4.2)),
+                 (ann.left_pt(0.18, 2.4), ann.left_pt(0.18, 4.2)),
+                 (ann.left_pt(0.82, 2.4), ann.left_pt(0.82, 4.2))]:
+        c.line(p, q, "K")
+    # --- small `o/r` HVAC vent louver low on the right-return face (warm exhaust) ---
+    c.fill_poly([ann.right_pt(0.30, 4.6), ann.right_pt(0.78, 4.6),
+                 ann.right_pt(0.78, 6.4), ann.right_pt(0.30, 6.4)], "r")
+    for vv in (5.1, 5.8):
+        c.line(ann.right_pt(0.30, vv), ann.right_pt(0.78, vv), "o")  # warm louver slats
+    for p, q in [(ann.right_pt(0.30, 4.6), ann.right_pt(0.78, 4.6)),
+                 (ann.right_pt(0.30, 6.4), ann.right_pt(0.78, 6.4)),
+                 (ann.right_pt(0.30, 4.6), ann.right_pt(0.30, 6.4)),
+                 (ann.right_pt(0.78, 4.6), ann.right_pt(0.78, 6.4))]:
+        c.line(p, q, "K")
+
+
+def stage4_mezzanine(c, b, ridge_l, ridge_r):
+    """t4 — MAJOR ADD: a raised ENCLOSURE-CANOPY MEZZANINE built over the BACK of the hall —
+    a prominent new upper mass that says 'the habitat now goes tall + multi-level'. A
+    deep bark-green `b`-framed open MESH CAGE is lifted on short posts above the back ridge,
+    and a glowing bio-luminescent `e` UV / day-cycle LIGHT BAR runs under it, lighting a
+    taller habitat. Sits squarely over the back ridge line (well behind + above the
+    lit-left observation window). Palette matures to deep `b` + energized bio-glow `e/E`.
+
+    Kept fully ON-canvas: the cage top is clamped to y>=1 and the right edge to x<=62, so
+    the frame never reads as a flat strip clipped on the canvas wall."""
+    # The cage spans most of the ridge, lifted on posts. Author its 4 corners directly so we
+    # can hard-clamp the TOP to y=1 and the RIGHT to x=62 (the ridge_r end is near the wall).
+    H = 5                                      # cage height
+    TOP_MIN = 1                                # never let the cage cross the canvas ceiling
+    RIGHT_MAX = 62                             # keep the right uprights inboard of the wall
+    lift = 6                                   # how far the cage floats above the ridge
+    # bottom rail follows the ridge raised by `lift`; pull the ends in a touch from the rake.
+    blx = clamp(int(round(ridge_l[0])) + 2, hi=RIGHT_MAX)
+    brx = clamp(int(round(ridge_r[0])) - 3, hi=RIGHT_MAX)
+    # the bottom rail must leave H px of headroom above it for the cage, so floor it at
+    # TOP_MIN+H (the high LEFT ridge end would otherwise lift the cage off the top of canvas).
+    bl_y = clamp(int(round(ridge_l[1])) - lift, lo=TOP_MIN + H)
+    br_y = clamp(int(round(ridge_r[1])) - lift, lo=TOP_MIN + H)
+    # top rail = bottom rail minus H, but never above TOP_MIN
+    tl_y = max(TOP_MIN, bl_y - H)
+    tr_y = max(TOP_MIN, br_y - H)
+    bl = (blx, bl_y); br = (brx, br_y)
+    tl = (blx, tl_y); tr = (brx, tr_y)
+    # --- short support POSTS from the ridge UP to the cage bottom rail (deep `b`) ---
+    for (foot, top_y) in (((blx, int(round(ridge_l[1]))), bl_y),
+                          ((brx, int(round(ridge_r[1]))), br_y)):
+        c.line((foot[0], foot[1]), (foot[0], top_y), "b")
+        c.set(foot[0], foot[1], "K")
+    mid_x = (blx + brx) // 2                    # a centre post (the ridge sags between ends)
+    mid_ridge_y = int(round(lerp(ridge_l, ridge_r, 0.5)[1]))
+    c.line((mid_x, mid_ridge_y), (mid_x, (bl_y + br_y) // 2), "b")
+    # --- the open MESH CAGE: a light back wash + an AIRY cross-hatch (reads as wire), not a
+    # solid slab. Back wash is the matured `b`; the wire is a brighter M so the cage breathes. ---
+    c.fill_poly([tl, tr, br, bl], "b")                     # cage back wash (matured bark-green)
+    x_lo, x_hi = min(tl[0], bl[0]), max(tr[0], br[0])
+    y_lo, y_hi = min(tl[1], tr[1]), max(bl[1], br[1])
+    for mx in range(x_lo + 2, x_hi - 1, 4):                # sparse vertical wires
+        c.line((mx, y_lo + 1), (mx, y_hi - 1), "M")
+    for my in range(y_lo + 2, y_hi - 1, 3):                # sparse horizontal wires
+        c.line((x_lo + 1, my), (x_hi - 1, my), "M")
+    # crisp `b`/K frame (bright lit top rail)
+    c.line(tl, tr, "L")
+    for p, q in [(tl, tr), (tr, br), (br, bl), (bl, tl)]:
+        c.line(p, q, "K")
+    # --- glowing `e` UV / day-cycle LIGHT BAR running UNDER the cage (the grow-light) ---
+    bar_y = clamp(y_hi + 1)
+    bx0 = clamp(x_lo + 1)
+    bx1 = clamp(x_hi - 1, hi=RIGHT_MAX)
+    c.line((bx0, bar_y), (bx1, bar_y), "e")                # bio-luminescent light bar
+    c.line((bx0, clamp(bar_y + 1)), (bx1, clamp(bar_y + 1)), "E")   # bright underside spill
+    c.set(clamp(bx0 - 1), bar_y, "K"); c.set(clamp(bx1 + 1, hi=RIGHT_MAX), bar_y, "K")  # end caps
+    # a couple of soft `e` glow motes drifting just under the bar (UV haze)
+    for dx in (0.30, 0.62):
+        cset(c, bx0 + dx * (bx1 - bx0), bar_y + 2, "e")
+
+
+def stage5_gold_trim(c, b, ridge_l, ridge_r, base):
+    """t5 — CROWNING FEATURE (the AI tracking-bloom lives inside `habitat_and_tracking`
+    via stage>=5; this helper adds the EXTERNAL premium GOLD flourish only). The maxed
+    observation room gets a `q` GOLD frame around the hero observation WINDOW + a gold
+    RIDGE FINIAL crowning the roof. Gold (`q`) appears ONLY here. Reads as elite, still
+    recognizably the same vivarium."""
+    # --- GOLD trim on the hero observation WINDOW (lit-left face) — a thin gold edge
+    # along the window's top + side frame so the signature reads as premium curation. ---
+    U0, U1 = 0.06, 0.94
+    VT = 1.2
+    VB = base + 1.2
+    # gold along the top edge of the window frame + down the two vertical frame edges
+    c.line(b.left_pt(U0, VT - 0.3), b.left_pt(U1, VT - 0.3), "q")        # gold head rail
+    c.line(b.left_pt(U0 - 0.02, VT - 0.3), b.left_pt(U0 - 0.02, VB * 0.62), "q")  # gold left jamb (upper)
+    c.line(b.left_pt(U1 + 0.02, VT - 0.3), b.left_pt(U1 + 0.02, VB * 0.62), "q")  # gold right jamb (upper)
+    # bright O corner bosses at the two top corners of the frame
+    tlp = b.left_pt(U0, VT - 0.3)
+    trp = b.left_pt(U1, VT - 0.3)
+    cset(c, tlp[0], tlp[1] - 1, "O")
+    cset(c, trp[0], trp[1] - 1, "O")
+
+    # --- GOLD RIDGE FINIAL crowning the roof — a small gold spike + boss seated on the
+    # ridge, toward the high (back-left) end so it crowns the silhouette without touching
+    # the mezzanine box or the window. ---
+    fp = lerp(ridge_l, ridge_r, 0.22)
+    fx, fy = int(round(fp[0])), int(round(fp[1]))
+    c.set(fx, fy - 1, "q")                                  # finial base on the ridge
+    c.set(fx, fy - 2, "q")                                  # gold spike
+    c.set(fx, fy - 3, "O")                                  # bright tip
+    c.set(fx - 1, fy - 1, "q"); c.set(fx + 1, fy - 1, "q") # finial cross-arms (a small crest)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the behavioral-observation-room at upgrade `stage` (1..5). Stage 1 is
+    IDENTICAL to the shipped base; each higher stage keeps every prior addition and bolts
+    on the next (t2 stereo-camera+floodlight → t3 observer anteroom → t4 enclosure-canopy
+    mezzanine → t5 full-AI tracking + gold trim). Painter's order keeps the hero LEFT
+    observation window + its habitat/tracking signature drawn LAST, so no rooftop / annex /
+    mezzanine addition can ever occlude the one-of-one feature."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     # painter's order: body+walls, base band, plain right face, half-hipped roof,
-    # rooftop gear, the LEFT observation window, then the habitat/tracking inside it.
+    # rooftop gear. The LEFT observation window + the habitat/tracking are drawn LAST
+    # (after the stages) so the signature is never occluded.
     b = hall(c)
     base = base_band(c, b)
     right_face_plain(c, b, base)
     ridge_l, ridge_r, Lc, Fc = half_hip_roof(c, b)
-    rooftop_gear(c, ridge_l, ridge_r, Lc, Fc)
-    U0, U1, VT, VB = observation_window(c, b, base)
-    habitat_and_tracking(c, b, U0, U1, VT, VB)
+    hp, cp = rooftop_gear(c, ridge_l, ridge_r, Lc, Fc)
 
+    # --- CUMULATIVE UPGRADE STAGES (drawn before the hero window so it stays on top) --
+    # t3 anteroom abuts the RIGHT wall and t4 mezzanine sits over the BACK ridge — both
+    # clear of the lit-left face — so they are safe to draw before the window. t2 sits on
+    # the roof slope. The t5 gold trim that touches the window frame is re-applied AFTER
+    # the window is drawn (below).
+    if stage >= 2:
+        stage2_camera_floodlight(c, ridge_l, ridge_r, Lc, Fc, cp)
+    if stage >= 3:
+        stage3_anteroom(c, b, base)
+    if stage >= 4:
+        stage4_mezzanine(c, b, ridge_l, ridge_r)
+
+    # --- HERO LEFT observation window + the habitat/tracking signature, drawn LAST -----
+    U0, U1, VT, VB = observation_window(c, b, base)
+    # t5 gold trim frames the window, so it must be drawn AFTER the window itself.
+    if stage >= 5:
+        stage5_gold_trim(c, b, ridge_l, ridge_r, base)
+    # the habitat/tracking signature is always last (the t5 AI-bloom is keyed inside it).
+    habitat_and_tracking(c, b, U0, U1, VT, VB, stage=stage)
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/biocore"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "behavioral-observation-room"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG +
+    scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must keep
+    matching the shipped {SLUG}.png, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": BIO, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/biocore_behavioral-observation-room.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"biocore_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"biocore_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    main()
+    build_all()

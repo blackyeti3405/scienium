@@ -23,8 +23,15 @@ ring motif exists elsewhere in the catalog.
 Composed from art/isobuild.{Box} + small pixel helpers — NO iso.draw_cube /
 base_windows. Draw order: contact shadow -> earth work-yard slab (+ survey striping
 + strata seam) -> back wings -> corner poles + slack tarp awning + pennant -> sample
-crate stack -> the bench + hovering rotating sample + teal scanner ring + fanned ID
-tags signature in the OPEN court.
+crate stack -> the bench + hovering rotating sample + teal scanner ring + fanned
+ID tags signature in the OPEN court.
+
+──────────────────────────────────────────────────────────────────────────────
+REFERENCE for the whole "terrabase" upgrade-evolution lab. The build() body below
+is the UNCHANGED base form (stage 1 == shipped sampling-station.png). On top of it
+four CUMULATIVE upgrade stages bolt on expedition-geology structure (build up, never
+restart) — copy this code pattern (build(stage) + stageN_* helpers + emit/build_all)
+for the other 9 terrabase builders. See terrabase-evolution-plan.md.
 """
 import os
 import sys
@@ -35,9 +42,17 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, RX, RY, LX, LY
 
+# Base TerraBase palette (shared keys) + the EVOLVED-accent keys reserved for the
+# upgrade stages only (chars NOT used by the base palette, so they appear in NO
+# stage-1 sprite and sampling-station.png stays byte-identical). These four exact
+# keys+hexes are reused by ALL 10 terrabase buildings for lab-wide consistency:
+#   b  deep basalt/bedrock  — matured warm structure tone for t4+ new masses
+#   e  energized mineral-seismic glow (mid)    E  energized glow (bright) — t4/t5 power
+#   q  premium survey gold  — t5 flourish ONLY (NOT a whole-building recolor)
 TERRA = {"K": "#20190f", "W": "#efe6cf", "L": "#d6c8a0", "M": "#b09a6e", "D": "#7e6c47", "d": "#54462c",
          "h": "#d6f2ea", "c": "#a4e2d4", "g": "#34b6a2", "G": "#1d8474",
-         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e"}
+         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e",
+         "b": "#3a3326", "e": "#5fe0c4", "E": "#c4fff0", "q": "#f3c63a"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
@@ -468,25 +483,383 @@ def cataloguing_signature(c, slab):
     c.set(lx + 3, rcy + 1, "c")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS expedition-
+# geology structure onto the prior form — never restarts, never recolors the whole
+# building. Theme: the field sampling depot grows into a fully built-out, surveyed
+# basecamp. Colours mature stage by stage; gold (q) is a t5 flourish only. Every
+# add is anchored to a base part (pad corner / wing roof / borehole) and clamped
+# on-canvas, and NONE collide with the centre scanner-ring/ID-tag signature.
+#
+#   t2  small functional add : a SAMPLE-CANISTER / collection-tube RACK in the open court
+#   t3  structural add        : a SPECIMEN DRYING-RACK lean-to bolted onto the left wing
+#   t4  major add             : a tall CORE-DRILL DERRICK winching a glowing core tube up
+#   t5  crowning feature      : a GEO-SURVEY MAPPING ARRAY (uplink dish + holo contour
+#                               map) over the ridge + gold survey trim
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_canister_rack(c, slab):
+    """t2 — SMALL FUNCTIONAL ADD: a SAMPLE-CANISTER / collection-tube RACK standing on
+    the open front court just right of the cataloguing bench — a short slanted timber
+    rack (lit M boards, K frame, d shaded back) holding THREE capped specimen tubes,
+    one already glinting with a fresh mineral-teal core sample. A real raised object
+    (its tubes rise into the small open pocket between the scanner ring and the holo
+    ID-tag fan), reading as the field rack the freshly collected cores are slotted into
+    before cataloguing — on-theme to a SAMPLING station, modest, base palette + one
+    brightened O cap.
+
+    IMPORTANT — this rack is drawn AFTER the hero signature (see build()): the court is
+    silhouette-saturated (deck + tarp + ring + ID-tags), so the only court cells a small
+    add can occupy are the thin transparent gaps the ID-tag fan clears around its cards.
+    Every pixel below is clamped to cells verified transparent in base+signature AND in
+    all later upgrade tiers, so the rack reads at every stage yet sits ENTIRELY in those
+    gaps — it never paints over the scanner-ring / clod / tag glyphs, so the hero still
+    reads on top of and around it. The carcass (base plate y36 x33-40, cradle rail y32
+    x35-42, two K-edged uprights x33/x40) plus a tray of capped sample canisters poking
+    up off the cradle reads as the field rack the freshly collected cores are slotted
+    into — on-theme to a SAMPLING station; a deep `b` frame + glowing teal `e/E` sample
+    tubes (evolved-accent keys, stage2+) give it strong contrast and a clear 64px read.
+    Clear of the t3 drying-rack on the LEFT wing and clear of the t4 derrick to the
+    right (which both extend the silhouette elsewhere)."""
+    # --- rack CARCASS — a DARK basalt-framed stand so it silhouettes hard against the
+    #     tan deck behind it (the deck is M-tan, so a tan frame would vanish; a deep
+    #     `b`/K frame reads instantly as an added object). Only on cells transparent at
+    #     every tier (the ID-tag gaps): base plate y36 x33-40, cradle shelf y32 x35-42,
+    #     two uprights x33 / x40. `b` is an evolved-accent key (stage2+ only). ----------
+    base_y = 36
+    c.line((33, base_y), (40, base_y), "M")        # LIT base board top (reads over shadow)
+    c.set(33, base_y, "K"); c.set(40, base_y, "K")  # K end-feet pressed into the earth
+    c.set(34, base_y, "K"); c.set(39, base_y, "K")  # darker foot blocks (read as legs)
+    c.set(37, base_y, "b")                         # one deep-basalt board (timber variation)
+    cradle_y = 32
+    c.line((35, cradle_y), (42, cradle_y), "M")    # LIT cradle shelf top (catches light)
+    c.set(35, cradle_y, "K"); c.set(42, cradle_y, "K")  # K cradle ends
+    c.set(39, cradle_y, "b")                       # a shaded shelf board
+    c.line((33, base_y - 1), (33, cradle_y), "b")  # LEFT dark upright (gap col x33, y32-36)
+    c.set(33, base_y - 1, "M")                     # lit top of the left post
+    c.set(33, cradle_y, "K")                       # left post cap on the shelf
+    c.line((40, base_y - 1), (40, cradle_y + 1), "b")   # RIGHT dark upright (gap col x40)
+    c.set(40, base_y - 1, "M")                     # lit top of the right post
+
+    # --- TWO TALL GLOWING mineral-sample TUBES standing on the dark shelf — the
+    #     eye-catchers. They glow energized teal (e/E, evolved-accent keys, stage2+),
+    #     echoing the hero scanner's mineral-teal so they read instantly at 64px and
+    #     stay on-theme (this station's whole job is teal mineral assay). Each rises
+    #     the full transparent gap beside the ring; both columns (x35, x42) are clear
+    #     of the ring/tag glyphs at every tier, and a third ochre jar lid sits flush. --
+    # left tube (x35, gap col y27-31): bright cream glass with a warm rock core so it
+    # separates cleanly from the teal scanner ring beside it (figure-ground contrast).
+    c.set(35, 31, "K")                             # K tube foot seam on the shelf
+    c.set(35, 30, "r")                             # warm rock-core sample inside
+    c.set(35, 29, "W")                             # bright lit glass body
+    c.set(35, 28, "L")                             # glass body
+    c.set(35, 27, "o")                             # ochre screw-cap at the top
+    # right tube (x42, gap col y28-31): bright cream glass holding a fresh teal core —
+    # the single teal accent (ties subtly to the assay ring) sits AWAY from the ring.
+    c.set(42, 31, "K")                             # K tube foot seam
+    c.set(42, 30, "e")                             # fresh teal core sample inside
+    c.set(42, 29, "W")                             # bright lit glass body
+    c.set(42, 28, "O")                             # bright screw-cap
+    # a third ochre-capped jar sitting flush on the shelf (shelf gap row y32)
+    c.set(37, cradle_y, "o")                       # ochre jar lid (x37,y32)
+    # a tiny o field SAMPLE TAG riding the base plate (labelled specimens)
+    c.set(38, base_y, "o")
+
+
+def stage3_drying_rack(c, slab, lw):
+    """t3 — STRUCTURAL ADD: a SPECIMEN DRYING-RACK lean-to bolted onto the LEFT
+    back wing, extending the depot sideways-left with a slatted timber rack roof on
+    two posts, hung with sample sieves/screens drying in the field. A real new
+    structural mass (a roof plane + posts + hung trays), not a prop. Introduces the
+    deepened basalt tone `b` for the rack posts/underside shadow."""
+    # roof plane: a small slatted lean-to sloping down-LEFT off the left wing's roof
+    # edge, authored directly in screen space so it abuts the wing cleanly.
+    hx, hy = lw.r_left                            # high inner edge = left wing's left corner
+    hx, hy = int(round(hx)), int(round(hy))
+    inA = (hx, hy)                                # inner-top (against wing)
+    inB = (hx + 1, hy + 5)                        # inner-bottom (down the wing's left edge)
+    outA = (inA[0] - 7, inA[1] + 4)              # outer-top (out to the left, lower)
+    outB = (inB[0] - 7, inB[1] + 4)              # outer-bottom
+    # underside shadow first (deep basalt), then the lit slatted top board plane
+    c.fill_poly([inA, inB, outB, outA], "b")
+    topA = (inA[0], inA[1] - 1)
+    topB = (inB[0], inB[1] - 1)
+    c.fill_poly([topA, topB, (outB[0], outB[1] - 1), (outA[0], outA[1] - 1)], "M")
+    # slat ribs running across the rack roof (drying-screen lath) in d
+    for t in (0.25, 0.5, 0.75):
+        a = (topA[0] + t * (topB[0] - topA[0]), topA[1] + t * (topB[1] - topA[1]))
+        b = (outA[0] + t * (outB[0] - outA[0]), outA[1] - 1 + t * (outB[1] - outA[1]))
+        c.line(a, b, "d")
+    # bright lit front lip + K outline of the rack roof
+    c.line((outA[0], outA[1] - 1), (outB[0], outB[1] - 1), "L")
+    for a, b in [(topA, topB), (topB, (outB[0], outB[1] - 1)),
+                 ((outB[0], outB[1] - 1), (outA[0], outA[1] - 1)),
+                 ((outA[0], outA[1] - 1), topA)]:
+        c.line(a, b, "K")
+    # two slim basalt support posts dropping from the outer corners to the pad
+    for px, py in (outA, outB):
+        c.line((px, py), (px, py + 8), "b")
+        c.line((px + 1, py), (px + 1, py + 8), "d")
+        c.set(px, py + 8, "K")                    # foot on the earth
+    # hung drying SIEVE/SCREEN trays under the rack (sample screens): two small
+    # M-framed mesh squares dangling on short K cords from the rack underside.
+    for i, ux in enumerate((0.32, 0.66)):
+        tx = int(round(outA[0] + ux * (outB[0] - outA[0])))
+        ty = int(round(outA[1] + ux * (outB[1] - outA[1]))) + 2
+        c.set(tx, ty - 1, "K")                    # hang cord
+        _stamp(c, tx - 1, ty, [
+            "KMK",
+            "KcK" if i == 0 else "KMK",           # one screen catches a faint c glint
+        ])
+
+
+def _derrick_geom(slab):
+    """Shared derrick geometry so t5's gold crown band recomputes from the SAME
+    source as t4 (never a hardcoded second guess). Returns the borehole collar, the
+    two splayed feet, the apex, and the tapered tower outline points."""
+    bc = slab.roof_pt(0.80, 0.88)                 # borehole on the back-RIGHT pad
+    cxb, cyb = int(round(bc[0])), int(round(bc[1]))
+    apex_x, apex_y = cxb, 4                        # tall, narrow crown high above tarp
+    # base half-width tapering to a narrow crown — the classic derrick silhouette.
+    foot_hw = 7                                    # base half-width at the pad (wide base)
+    crown_hw = 2                                    # crown half-width at the apex
+    return cxb, cyb, apex_x, apex_y, foot_hw, crown_hw
+
+
+def stage4_derrick(c, slab, rw):
+    """t4 — MAJOR ADD: a tall CORE-DRILL DERRICK rising straight off the OPEN RIGHT
+    pad — the iconic TAPERED TRUSSED TOWER (wide trussed base narrowing to a crown
+    sheave) so it reads as a drill rig even though its base sits among the depot; its
+    upper half rises CLEAR above the tarp ridge in open canvas, the unmistakable
+    derrick read. A crown sheave winches a glowing mineral CORE-SAMPLE TUBE up out
+    of a borehole collar on the pad. The prominent new vertical mass: 'this depot now
+    pulls deep core'. Palette matures: deep basalt `b` truss + energized mineral
+    `e/E` glow on the raised core. Fully on-canvas; stands to the RIGHT of the centre
+    scanner-ring + ID-tag signature."""
+    cxb, cyb, apex_x, apex_y, foot_hw, crown_hw = _derrick_geom(slab)
+    H = cyb - apex_y                               # tower height in px
+    # small K/D collar ring around the borehole mouth on the earth
+    _stamp(c, cxb - 2, cyb - 1, [
+        "KDDK",
+        "KbbK",
+    ])
+    c.set(cxb, cyb, "K")                          # dark borehole mouth
+
+    def hw_at(t):                                  # half-width at height fraction t
+        return crown_hw + (foot_hw - crown_hw) * t  # t=0 crown … t=1 foot
+
+    # two TAPERED legs (basalt b, lit D left edge) from crown out to the splayed feet
+    for side in (-1, +1):
+        c.line((apex_x + side * crown_hw, apex_y), (cxb + side * foot_hw, cyb), "b")
+        c.line((apex_x + side * crown_hw - (1 if side < 0 else -1), apex_y + 1),
+               (cxb + side * foot_hw - (1 if side < 0 else -1), cyb - 1),
+               "D" if side < 0 else "b")
+        c.set(cxb + side * foot_hw, cyb, "K")     # foot plate on the earth
+    # trussed cross-bracing: horizontal ties + an X zig up the tapering tower
+    levels = [t / 7 for t in range(1, 7)]         # 6 evenly spaced truss levels
+    rail = []
+    for t in levels:
+        yy = int(apex_y + t * H)
+        hw = hw_at(t)
+        lxl = int(round(apex_x - hw))
+        lxr = int(round(apex_x + hw))
+        # girts above the tarp ridge (the visible upper tower) read brighter so the
+        # truss is legible against open canvas; lower girts stay deep basalt.
+        c.line((lxl, yy), (lxr, yy), "M" if yy < 20 else "b")
+        rail.append((lxl, lxr, yy))
+    for i in range(len(rail) - 1):                # diagonal zig braces (the truss X)
+        (l0, r0, y0), (l1, r1, y1) = rail[i], rail[i + 1]
+        col = "M" if y0 < 20 else "D"
+        if i % 2 == 0:
+            c.line((l0, y0), (r1, y1), col)
+        else:
+            c.line((r0, y0), (l1, y1), col)
+    # CROWN sheave block at the apex (the winch head) + a bright glint
+    _stamp(c, apex_x - 1, apex_y - 1, [
+        "KbK",
+        "KMK",
+    ])
+    c.set(apex_x, apex_y - 1, "M")
+    # winch CABLE from the crown straight down to the raised core tube
+    core_top = apex_y + 4
+    core_bot = cyb - 4
+    c.line((apex_x, apex_y + 1), (apex_x, core_top - 1), "K")
+    # the glowing CORE-SAMPLE TUBE hauled up the derrick centre (a slim 2px cylinder
+    # of fresh mineral core, energized teal e + a bright E top cap)
+    for yy in range(core_top, core_bot + 1):
+        c.set(apex_x, yy, "e")
+        c.set(apex_x - 1, yy, "G")                # shaded left edge of the tube
+    c.set(apex_x, core_top, "E")                  # bright top cap of the core
+    c.set(apex_x - 1, core_top, "E")
+    c.set(apex_x + 1, core_top + 1, "e")          # faint glow bleed
+    c.set(apex_x, core_bot, "K")                 # tube foot shadow into the collar
+
+
+def stage5_survey_array(c, slab, rw, tarp):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED surveyed basecamp. A GEO-SURVEY MAPPING
+    ARRAY crowns the depot: a small satellite UPLINK DISH on a mast off the right
+    wing roof, beaming up a glowing holographic CONTOUR/TERRAIN MAP that hovers over
+    the tarp ridge (energized E grid + e contour rings), and the camp is dressed out
+    with GOLD survey trim — a gold pennant flying over the back pole, gold corner
+    caps on the pad's survey kerb, and a gold band on the derrick crown. Reads as an
+    elite, fully-instrumented expedition station, still clearly the sampling depot."""
+    # --- satellite UPLINK DISH on a short mast seated on the RIGHT wing roof,
+    #     back-right, so it sits clearly ON the building (not floating) ---
+    dp = rw.roof_pt(0.72, 0.34)
+    dmx, dmy = int(round(dp[0])), int(round(dp[1]))
+    mast_top = dmy - 6
+    c.line((dmx, dmy), (dmx, mast_top), "b")      # short dish mast on the wing roof
+    c.line((dmx + 1, dmy), (dmx + 1, mast_top), "d")
+    c.set(dmx, dmy, "K")                          # foot on the roof
+    # the dish: a small tilted ellipse cup (D back, L lit face) aimed up-right
+    _stamp(c, dmx - 1, mast_top - 3, [
+        ".LL.",
+        "LMML",
+        "DMMD",
+        ".DD.",
+    ])
+    c.set(dmx + 1, mast_top - 2, "c")             # feed-horn glint at the dish centre
+    c.set(dmx + 3, mast_top - 4, "K")             # feed-horn arm tip
+
+    # --- holographic CONTOUR/TERRAIN MAP hovering above the tarp RIDGE, beamed up
+    #     from the dish. A flat glowing iso plane of energized E grid + e contour
+    #     rings, anchored over the ridge (tarp back-top) so it crowns the camp. ---
+    rp = tarp.r_top
+    mcx, mcy = int(round(rp[0])), int(round(rp[1])) - 5   # hover gap above the ridge
+    mcy = max(6, mcy)                              # keep the map's top (mcy-mry) on-canvas
+    # thin beam line from the dish up to the holo map (so it reads as projected)
+    c.line((dmx, mast_top - 2), (mcx + 4, mcy + 2), "e")
+    # the holo map plane: a small flat diamond (iso), E grid lattice + e contours
+    mrx, mry = 8, 4
+    # faint e fill of the map plane
+    for yy in range(-mry, mry + 1):
+        t = 1 - (yy / mry) ** 2
+        if t < 0:
+            continue
+        half = mrx * (t ** 0.5)
+        for xx in range(int(-half), int(half) + 1):
+            # checker the fill so it reads as a translucent data plane, not a solid
+            if (xx + yy) % 2 == 0:
+                c.set(mcx + xx, mcy + yy, "e")
+    # bright E grid lines across the plane (lat/long survey grid)
+    for gx in (-5, 0, 5):
+        c.line((mcx + gx, mcy - mry + 1), (mcx + gx, mcy + mry - 1), "E")
+    for gy in (-2, 0, 2):
+        c.line((mcx - mrx + 2, mcy + gy), (mcx + mrx - 2, mcy + gy), "E")
+    # a couple of e contour rings (terrain elevation) nested in the centre
+    for rr, rry in ((3, 1.5), (5, 2.5)):
+        for a in range(0, 360, 18):
+            x = mcx + rr * math.cos(math.radians(a))
+            y = mcy + rry * math.sin(math.radians(a))
+            c.set(x, y, "e")
+    c.set(mcx, mcy, "E")                          # bright survey peak marker at centre
+    c.set(mcx, mcy - 1, "W")
+
+    # --- GOLD premium survey trim (t5 flourish only) ---------------------------
+    # gold PENNANT replacing the ochre weather flag on the back pole (elite colours)
+    bx = int(round(tarp.r_top[0]))
+    by = int(round(tarp.r_top[1]))
+    _stamp(c, bx + 1, by - 6, [
+        "qO.",
+        "qqO",
+        "qq.",
+    ])
+    c.set(bx, by - 6, "q")                        # gold flag root
+    # gold CORNER CAPS on the pad's front survey kerb (sparse elite trim)
+    cf = slab.r_front
+    c.set(int(round(cf[0])), int(round(cf[1])) - 1, "O")
+    c.set(int(round(cf[0])) - 1, int(round(cf[1])), "q")
+    c.set(int(round(cf[0])) + 1, int(round(cf[1])), "q")
+    cl = slab.r_left
+    cr = slab.r_right
+    c.set(int(round(cl[0])), int(round(cl[1])), "q")
+    c.set(int(round(cr[0])), int(round(cr[1])), "q")
+    # a thin gold band on the derrick CROWN — recompute from the SHARED _derrick_geom
+    # source (not a hardcoded second guess) so it lands exactly on t4's apex.
+    _cxb, _cyb, apex_x, apex_y, _fhw, _chw = _derrick_geom(slab)
+    c.set(apex_x - 1, apex_y - 1, "q")            # gold cap on the winch crown
+    c.set(apex_x + 1, apex_y - 1, "q")
+    c.set(apex_x, apex_y - 2, "O")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the sampling station at upgrade `stage` (1..5). Stage 1 is IDENTICAL
+    to the shipped base PNG; each higher stage keeps every prior addition and bolts
+    on the next (t2 canister-rack → t3 drying-rack → t4 core derrick → t5 survey-array +
+    gold). Painter's order keeps rooftop/overhead additions above the masses they
+    grow from; the centre scanner-ring/ID-tag signature is drawn LAST so nothing
+    occludes it."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     # painter's order: contact shadow -> earth work-yard slab -> back wings ->
     # corner poles + slack tarp awning + pennant -> sample crate stack -> the
     # cataloguing bench + hovering rotating sample + teal scanner ring + fanned
     # ID-tags signature standing in the OPEN front court.
     contact_shadow(c)
     slab = yard_slab(c)
-    back_wings(c, slab)
-    tarp_awning(c, slab)
+    lw, rw = back_wings(c, slab)
+    tarp = tarp_awning(c, slab)
     sample_crates(c, slab)
+
+    # --- CUMULATIVE UPGRADE STAGES (silhouette-extending masses) -------------------
+    # Drawn AFTER the base masses but BEFORE the centre signature, so the derrick /
+    # rack / array sit on the depot yet never occlude the hero scanner ring. These
+    # all EXTEND the silhouette outward (left / up-right), so signature order is safe.
+    if stage >= 3:
+        stage3_drying_rack(c, slab, lw)
+    if stage >= 4:
+        stage4_derrick(c, slab, rw)
+    if stage >= 5:
+        stage5_survey_array(c, slab, rw, tarp)
+
+    # SIGNATURE — the hero scanner ring + ID tags read over everything above.
     cataloguing_signature(c, slab)
 
+    # t2 EXCEPTION — the small canister rack sits INSIDE the saturated court (the
+    # only space a modest add fits), so it is drawn LAST, into the transparent gaps
+    # the ID-tag fan clears around its cards. Its cells are verified to never touch
+    # the ring/clod/tag glyphs, so the hero still reads on top of and around it.
+    if stage >= 2:
+        stage2_canister_rack(c, slab)
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/terrabase"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "sampling-station"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped sampling-station.png, so it does NOT overwrite the
+    base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": TERRA, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/terrabase_sampling-station.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"terrabase_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"terrabase_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

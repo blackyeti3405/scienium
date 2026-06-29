@@ -28,9 +28,18 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
+# Axiom set palette — author on these chars exactly (<=16 colors).
+# Base keys (shared across all 10 Axiom buildings) + the four EVOLVED accent shades
+# reserved for the upgrade stages ONLY (they never appear in stage 1, so the shipped
+# theoretical-physics-annex.png is unchanged). These four evolved keys+hexes are the
+# LAB-WIDE convention — every Axiom building's _t2.._t5 reuses them:
+#   b  deep indigo steel   — matured structure tone for t3+ new masses
+#   e  quantum-stellar glow (mid)    E  quantum-stellar glow (bright) — the t4/t5 energy
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 AXIOM = {"K": "#0e1124", "W": "#dfe6f6", "L": "#b4bee0", "M": "#7c88b8", "D": "#4e5888", "d": "#333a60",
          "h": "#d6ecff", "c": "#aad8ff", "g": "#4a9ce6", "G": "#2060b0",
-         "o": "#ffe27a", "O": "#fff3c0", "r": "#c89a2a"}
+         "o": "#ffe27a", "O": "#fff3c0", "r": "#c89a2a",
+         "b": "#2a3158", "e": "#7ad0ff", "E": "#cdeeff", "q": "#f6c945"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
@@ -41,6 +50,15 @@ def _setp(c, x, y, ch):
 def _empty(c, x, y):
     xi, yi = int(round(x)), int(round(y))
     return 0 <= xi < 64 and 0 <= yi < 64 and c.px[yi][xi] == "."
+
+
+def _stamp(c, x0, y0, rows):
+    """Stamp a small pixel-art object (list of strings) at top-left (x0,y0).
+    '.' = skip (transparent)."""
+    for j, row in enumerate(rows):
+        for i, ch in enumerate(row):
+            if ch != ".":
+                c.set(x0 + i, y0 + j, ch)
 
 
 # ── 1. STUDY BLOCK — the taller back mass (the L's tall leg) ──────────────────
@@ -338,14 +356,344 @@ def spacetime_grid(c, w):
             _setp(c, bx, by, "o" if k % 2 else "O")
 
 
-# ── assemble + emit ──────────────────────────────────────────────────────────
-def main():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). The compact L-shape study annex grows into
+# a maxed-out gravitation institute. Every addition is theory/cosmos on-theme to THIS
+# building's decoding-the-curved-spacetime hero (a solved-term tablet -> a third study
+# storey -> a physical gravity-well orrery model -> the holographic grid blooming into
+# a full curved lattice). Adds grow UP off the STUDY BLOCK (left) and ON the reading
+# WING, kept clear of the hovering spacetime GRID hero (centred over the wing, x≈26..52,
+# y≈2..30) — and the grid is RE-DRAWN LAST every stage so the hero always reads in
+# front. Colours mature stage by stage; gold (q) appears ONLY as the t5 flourish.
+#
+#   t2  small functional add : a propped CHALK-TABLET easel + decode bar on the lit wing roof deck
+#   t3  structural add       : a raised slim STUDY-TOWER setback storey on the study block
+#   t4  major add            : a GRAVITY-WELL ORRERY MAST on the wing (core + tilted orbit)
+#   t5  crowning feature     : the grid deepens into a CURVED LATTICE BLOOM + gold banner
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_tablet(c, w):
+    """t2 — SMALL FUNCTIONAL ADD: a propped CHALK-TABLET easel standing on the reading
+    wing's LIT roof deck — a dark `K`-framed slate (so its outline separates crisply from
+    the bright `L` roof) carrying one bright `O` equation glyph over a row of energized
+    `e`/`E` index ticks, with a short DECODE BAR (e→E ticks, one `O` solved tick lit) on a
+    little easel beside it. One more 'term solved', echoing the decoding hero. On-theme,
+    modest — base palette + the energized `e`/`E` accents so it actually READS as new.
+
+    Round-2 fix: the old version sat flush on the lit-left WALL in wall-matching tones and
+    rendered to pixels identical to the wall. This relocates it onto the high-contrast lit
+    ROOF DECK and draws the readout in the brighter energized accents + a `K` frame lifted
+    off the wall seam, so the slate's silhouette + glyphs pop. Seated on the lit LEFT-FRONT
+    of the wing roof (clear `L` deck), well left of the grid emitter / orrery pocket and far
+    below the floating grid hero — and clear of the grid's drawn pixels so the grid's final
+    redraw never paints over it."""
+    # anchor on the clean lit-LEFT wing roof deck (bright L field), left of the grid
+    # emitter at x≈39 and below the block roof staircase, so the slate sits on open deck.
+    ax, ay = w.roof_pt(0.24, 0.42)
+    ax, ay = int(round(ax)), int(round(ay))           # ~ (35, 29)
+    sx0, sy0 = ax - 3, ay - 4                          # slate top-left (6 wide x 6 tall)
+    # --- a short dark easel/stand under the slate so it reads as PROPPED on the deck ---
+    c.set(sx0, sy0 + 6, "K")
+    c.set(sx0 + 5, sy0 + 6, "K")
+    c.line((sx0 + 1, sy0 + 6), (sx0 + 4, sy0 + 6), "d")   # the easel cross-rail (dark)
+    # --- the slate board: a crisp K frame around a dark `d` body, with an `M` lit top
+    #     sheen + a glowing self-written equation. The dark board on the bright L roof
+    #     gives a clean separating silhouette; the energized glyphs make it read as NEW.
+    _stamp(c, sx0, sy0, [
+        "KKKKKK",   # K top frame
+        "KMMMMK",   # lit top sheen (catches the upper-left light)
+        "KKOEeK",   # written line 1: bright O glyph + energized E/e index ticks
+        "KdEeOK",   # written line 2 (already solved): energized term + warm O result
+        "KddEdK",   # a faint trailing chalk index on the lower slate
+        "KKKKKK",   # K base frame (closes the board)
+    ])
+    # --- a short DECODE BAR hugging the board's right frame (mini progress strip) ---
+    # placed immediately right of the slate (x = sx0+6) so it reads as ATTACHED to the
+    # board, and kept above the grid emitter at (39,30) so the grid never overpaints it.
+    bx, by = sx0 + 6, sy0 + 1
+    c.set(bx, by, "K")                    # K cap so the bar reads as a mounted instrument
+    c.line((bx, by + 1), (bx, by + 3), "e")   # the energized progress column
+    c.set(bx, by + 1, "E")                # bright top tick
+    c.set(bx, by + 2, "O")                # one solved tick lit warm-bright
+
+
+# a single shared anchor for the rooftop STUDY-TOWER so t3 (and any later stage that
+# references it) recompute the SAME Box — no hardcoded second guess. A slim setback
+# storey resting on the LEFT half of the study-block roof deck, rising into clear sky
+# LEFT of the hovering grid hero (grid body centres at x≈39).
+def _tower_box():
+    return Box(top=(21, 7), wx=5, wy=4, h=9)
+
+
+def stage3_study_tower(c, block):
+    """t3 — STRUCTURAL ADD: a slim raised STUDY-TOWER — a setback third storey resting on
+    the LEFT of the study-block roof so the taller leg of the L grows UP one clear level
+    (the L silhouette is kept). A real new Box mass (lit M / shaded D / L roof, deep-indigo
+    `b` base band so it reads as matured structure) with a tall warm-o/g glowing study
+    window high on its lit face + a calm o eave line matching the block. Seated LEFT of
+    the spacetime grid (which hovers over the wing to the right), so it never occludes the
+    hero. Returns the tower Box so later stages can recompute from the SAME anchor."""
+    t = _tower_box()
+    t.draw(c, roof="L", lwall="M", rwall="D", roof_hi="W", outline="K")
+    # deep-indigo base band so the new storey reads as matured structure
+    c.line(t.w_left, t.w_front, "b")
+    c.line(t.w_front, t.w_right, "b")
+    # calm starlight-gold accent line along the tower's lit eave (matches the block)
+    c.line(t.r_left, t.r_front, "o")
+    # tall warm/cyan glowing study window high on the lit (left) tower face
+    t.window(c, "left", 0.26, 0.78, 1.4, 5.4, glass="g", hi="h", shade="G",
+             frame="K", mullions=1)
+    # warm o lamplight pooling at the foot of the study window (a lit study upstairs)
+    c.line(t.left_pt(0.30, 5.6), t.left_pt(0.74, 5.6), "o")
+    # a thin conduit + a small academic placard on the shaded right tower face
+    c.line(t.right_pt(0.5, 1.2), t.right_pt(0.5, t.h - 0.8), "d")
+    c.fill_poly([t.right_pt(0.24, 1.6), t.right_pt(0.52, 1.6),
+                 t.right_pt(0.52, 2.4), t.right_pt(0.24, 2.4)], "o")
+    return t
+
+
+# a single shared anchor for the ORRERY model so t4 and t5 recompute the SAME geometry —
+# no hardcoded second guess. Seated on the wing roof's RIGHT-FRONT corner, the core lifted
+# clear UP into the lower-right airspace to the lower-right of the grid funnel mass (which
+# sits at x≈39). Returns (cx, top_y, foot, rx, ry) so both stages share the mast top AND
+# the orbit-ring extents. rx kept so the ring's lit FRONT arc reads big at 64px while its
+# left tip clears the grid mass (x≈39) — a prominent tabletop gravity-well model.
+def _orrery_core(w):
+    bxf, byf = w.roof_pt(0.95, 0.78)        # mast foot on the wing's right-front roof
+    foot = (int(round(bxf)), int(round(byf)))   # (47, 30)
+    cx = foot[0]
+    # core lifted ~9px (a TALLER mast than r2's 6px) so the model rises as a real vertical
+    # mass — its core sits at y≈21, in the clear pocket lower-RIGHT of the grid funnel.
+    top_y = foot[1] - 9
+    rx, ry = 6, 3                            # BIG 2:1 orbit ring (was 4/2 — too tiny)
+    return cx, top_y, foot, rx, ry
+
+
+def stage4_orrery(c, w):
+    """t4 — MAJOR ADD: a GRAVITY-WELL ORRERY MAST rising off the reading-wing's RIGHT-FRONT
+    roof — a physical brass-and-steel model of the warped grid hovering above it. A slim
+    `b`/`M` mast on a clear K plinth carries a glowing quantum-stellar CORE MASS (a bright
+    `E`/`e` orb in a K cage) circled by ONE bold tilted ORBIT RING (a wide clean 2:1 ellipse
+    with a THICK lit front arc — the sole orbit, legible at 64px) with one bright `E`
+    orbiting BEAD. The prominent new vertical mass that says this is now a gravitation
+    institute. Palette matures: deep `b` mast + energized `e`/`E` core.
+
+    Round-3 fix: r2's orrery was undersized for the 'major add' beat (~45 px, rx4/ry2 ring
+    read as a tiny flask). This GROWS it — a taller 9px mast + a bigger rx6/ry3 ring with a
+    doubled-up lit front arc — so it reads as a prominent model. Seated in the clear pocket
+    lower-right of the grid funnel (mass at x≈39); the ring's left tip lands at x≈41, just
+    clearing the mass, and its right reaches x≈54 (on-canvas). The grid is re-drawn last (in
+    front), so it cleanly owns the airspace above and the funnel reads in front where they
+    meet."""
+    import math
+    cx, top_y, foot, rx, ry = _orrery_core(w)
+    roof_y = foot[1]
+    # K plinth + slim mast rising from the wing's right-front roof into the clear pocket
+    c.line((cx, roof_y), (cx, top_y + 1), "M")          # lit mast edge
+    c.line((cx + 1, roof_y), (cx + 1, top_y + 1), "b")  # shaded mast body
+    c.set(cx, roof_y, "K")
+    c.set(cx + 1, roof_y, "K")
+    c.fill_poly([(cx - 1, roof_y), (cx + 2, roof_y),
+                 (cx + 2, roof_y + 1), (cx - 1, roof_y + 1)], "K")  # plinth
+    # two mast bracket collars (a taller mast reads as an engine-mast, not a lamppost)
+    for midy in ((roof_y * 2 + top_y) // 3, (roof_y + top_y * 2) // 3):
+        c.fill_poly([(cx - 1, midy), (cx + 2, midy), (cx + 2, midy + 1), (cx - 1, midy + 1)], "M")
+        c.set(cx + 2, midy + 1, "K")
+    # a soft cyan GRAVITY-WELL halo hugging the core (space curving into the model mass),
+    # drawn first so the orb sits on top — tight ring at radius ~3 (only fills empty px).
+    for dy in range(-3, 4):
+        for dx in range(-3, 4):
+            d2 = dx * dx + dy * dy
+            if 6 < d2 <= 10 and _empty(c, cx + dx, top_y + dy):
+                c.set(cx + dx, top_y + dy, "e")
+    # ONE bold tilted orbit ring around the core (wide clean 2:1 ellipse). Back half dim
+    # (D), front (lower) half lit (L); the lit FRONT arc is drawn DOUBLE-thick (a 2nd row
+    # 1px below) so the big ring reads boldly at 64px. Left tip ≈ cx-rx = 41 (clears the
+    # grid mass at x≈39); right tip ≈ cx+rx = 53 (on-canvas).
+    for a in range(0, 360, 10):
+        x = cx + rx * math.cos(math.radians(a))
+        y = top_y + ry * math.sin(math.radians(a))
+        if y >= top_y:                                   # lit front arc — thickened
+            c.set(x, y, "L")
+            c.set(x, y + 1, "M")
+        else:                                            # dim back arc
+            c.set(x, y, "D")
+    # core MASS: a bright quantum-stellar orb (a rounded 5px-wide ball) in a K cage at the
+    # mast top — bigger than a single pip so it reads as the prominent gravity-well mass.
+    for dy in range(-2, 3):
+        for dx in range(-2, 3):
+            if dx * dx + dy * dy <= 4:
+                c.set(cx + dx, top_y + dy, "e")
+    for xx, yy, ch in [(0, 0, "E"), (-1, 0, "E"), (0, -1, "E"), (1, 0, "e"), (0, 1, "e")]:
+        c.set(cx + xx, top_y + yy, ch)      # bright E core, lit upper-left
+    c.set(cx - 1, top_y - 1, "W")           # white-hot glint (lit corner)
+    for xx, yy in [(-2, -2), (2, -2), (-2, 2), (2, 2)]:   # K cage corners around the orb
+        c.set(cx + xx, top_y + yy, "K")
+    # one bright orbiting BEAD riding the front (right) of the ring (the orrery planet)
+    c.set(cx + rx, top_y + 1, "E")
+    c.set(cx + rx - 1, top_y + 1, "e")
+
+
+def stage5_lattice_bloom(c, w):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED gravitation institute. The decoding completes:
+    the holographic spacetime grid DEEPENS into a full CURVED LATTICE BLOOM (its energized
+    funnel rim is brightened in place by stage5_grid_bloom, layered onto the re-drawn grid),
+    the orrery energizes, and the building is dressed in premium GOLD. Reads as elite, still
+    unmistakably the same spacetime-annex, just maxed out. Gold ONLY here.
+
+    Round-3 fix: r2's gold was invisible — a 1.1-row sill banner whose `q` fill was fully
+    overpainted by its own `O`/`r` edge lines (0 surviving `q`). This puts gold in THREE
+    readable clusters the eye registers as the premium flourish: (1) a SOLID 2-row gold
+    CORNICE MARQUEE high on the wing right-face just under the eave (the `q` interior rows
+    are drawn FIRST, then `O`/`r` edges sit ABOVE/BELOW them, never over them); (2) a gold
+    COLLAR ring high on the orrery mast; (3) a gold STAR FINIAL crowning the study-tower
+    roof. Together ~20+ visible `q` px — clear gold without a whole-building recolor."""
+    import math
+    # ---- energize the ORRERY (recompute from the SAME wing anchor + ring extents) ----
+    cx, top_y, foot, rx, ry = _orrery_core(w)
+    # brighten the lit front arc of the (now bigger) orbit ring to a bright `e` glow
+    for a in range(20, 160, 15):
+        x = cx + rx * math.cos(math.radians(a))
+        y = top_y + ry * math.sin(math.radians(a))
+        xi, yi = int(round(x)), int(round(y))
+        if 0 <= yi < 64 and 0 <= xi < 64 and c.px[yi][xi] in ("L", "M", "D"):
+            c.set(xi, yi, "e")
+    # ---- a GOLD COLLAR ring high on the orrery mast (a premium t5 flourish, readable) ----
+    cy_collar = top_y + 3                      # just under the core orb, on the upper mast
+    c.fill_poly([(cx - 1, cy_collar), (cx + 2, cy_collar),
+                 (cx + 2, cy_collar + 1), (cx - 1, cy_collar + 1)], "q")
+    c.set(cx, cy_collar, "O")                  # a lit glint on the collar
+    c.set(cx + 2, cy_collar + 1, "r")          # shaded collar underside
+
+    # ---- GOLD CORNICE MARQUEE high on the wing right-face (premium academic trim) ----
+    # a solid 2-row gold band on the SHADED RIGHT wing face, just UNDER the roof eave and
+    # ABOVE the glowing study window-wall (over plain wall, so it reads as a mounted gold
+    # marquee, NOT a stray pool at the canvas edge). The `q` plate rows are filled FIRST;
+    # the `O` lit crest sits one row ABOVE and the `r` shade one row BELOW — so neither edge
+    # line covers the solid `q` interior (r2's bug). Diagonal band ≈ (39,34)->(49,30).
+    pu0, pu1 = 0.12, 0.92
+    pv_top, pv_bot = 0.7, 1.3                   # two solid plate rows above the window (vt=1.8)
+    c.fill_poly([w.right_pt(pu0, pv_top), w.right_pt(pu1, pv_top),
+                 w.right_pt(pu1, pv_bot), w.right_pt(pu0, pv_bot)], "q")   # solid gold plate
+    c.fill_poly([w.right_pt(pu0 + 0.02, pv_top + 0.15), w.right_pt(pu1 - 0.02, pv_top + 0.15),
+                 w.right_pt(pu1 - 0.02, pv_bot - 0.15), w.right_pt(pu0 + 0.02, pv_bot - 0.15)],
+                "q")                            # second pass guarantees a solid interior
+    c.line(w.right_pt(pu0, pv_top - 0.45), w.right_pt(pu1, pv_top - 0.45), "O")  # lit crest ABOVE
+    c.line(w.right_pt(pu0, pv_bot + 0.45), w.right_pt(pu1, pv_bot + 0.45), "r")  # shade BELOW
+    c.line(w.right_pt(pu0, pv_top), w.right_pt(pu0, pv_bot), "K")  # K ends frame the plate
+    c.line(w.right_pt(pu1, pv_top), w.right_pt(pu1, pv_bot), "K")
+    # bright O 'solved equation' glyph ticks engraved along the gold marquee
+    for t in (0.28, 0.50, 0.72):
+        p = w.right_pt(pu0 + t * (pu1 - pu0), (pv_top + pv_bot) / 2)
+        c.set(int(round(p[0])), int(round(p[1])), "O")
+
+    # ---- a GOLD STAR FINIAL crowning the study-tower roof (gold high on the maxed form) ----
+    # recompute from the SAME tower Box as stage3 (no hardcoded second guess). A small 4-point
+    # gold star lifted a touch above the tower roof centre — clear of the grid (left rim x≈26).
+    t = _tower_box()
+    fxf, fyf = t.roof_pt(0.5, 0.42)
+    fx, fy = int(round(fxf)), int(round(fyf)) - 2
+    c.set(fx, fy, "O")                          # bright centre
+    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        _setp(c, fx + dx, fy + dy, "q")         # gold arms
+    c.set(fx, fy - 2, "o")                      # a short upward apex spike
+
+
+def stage5_grid_bloom(c, w):
+    """t5 bloom layered ONTO the re-drawn spacetime grid (called right AFTER the final
+    spacetime_grid() pass so it reads in front): the curved lattice fully ENERGIZES — its
+    funnel rim edges + the upper run of every spoke are brightened IN PLACE to glowing
+    `E`/`e`, and a brilliant `E` flare bursts on the central mass. Recomputes the grid's
+    rim/well geometry from the SAME wing anchor the hero uses, so the bloom HUGS the actual
+    funnel silhouette and reads as the lattice maxed out — connected to the hero, not
+    confetti above it.
+
+    Round-3 fix: r2 traced a WIDER halo ring into empty `.` cells just OUTSIDE the dense
+    grid, so 30/52 diff px landed as floating dots in the sky. This instead re-traces the
+    grid's OWN rim diamond + the rim->mid spoke segments and OVERPAINTS the existing
+    `c/g/h/G` wire chars with bright `E`/`e` (no empty-cell guard on the silhouette), so the
+    glow thickens the funnel edges where they already are. Only the on-mass flare may fill
+    fresh px; nothing is sprayed into the sky."""
+    import math
+    gx, gy = w.roof_pt(0.5, 0.5)
+    gx, gy = int(round(gx)), int(round(gy)) - 21     # SAME rim-plane centre as the hero
+    RX, RY = 13.0, 6.5
+    WELL = 12.0
+    mass_xy = (gx, gy + WELL)
+
+    def clamp(x, y):
+        return max(1, min(62, int(round(x)))), max(1, min(62, int(round(y))))
+
+    GRID_CH = ("c", "g", "h", "G", "o", "O")         # the funnel's own wire/glyph tones
+
+    # rebuild the SAME three nested rings the hero draws, so we energize the real funnel.
+    def ring(scale, dip):
+        return {"T": (gx, gy - RY * scale + dip), "R": (gx + RX * scale, gy + dip),
+                "B": (gx, gy + RY * scale + dip), "L": (gx - RX * scale, gy + dip)}
+    rim = ring(1.00, 0.0)
+    mid = ring(0.58, WELL * 0.50)
+    inn = ring(0.26, WELL * 0.88)
+
+    # ---- ENERGIZE the rim diamond edges IN PLACE: overpaint the existing wire px with a
+    # bright glow so the outer silhouette of the funnel lights up. Lit-left edges -> bright
+    # `E`, shaded-right edges -> `e`. Solid (every px) so the rim reads as a lit ring. ----
+    def glow_edge(a, b, ch):
+        n = max(abs(int(round(b[0])) - int(round(a[0]))),
+                abs(int(round(b[1])) - int(round(a[1]))), 1)
+        for k in range(n + 1):
+            x = a[0] + (b[0] - a[0]) * k / n
+            y = a[1] + (b[1] - a[1]) * k / n
+            xi, yi = clamp(x, y)
+            if c.px[yi][xi] in GRID_CH or c.px[yi][xi] == ".":
+                c.set(xi, yi, ch)
+    glow_edge(rim["L"], rim["T"], "E")               # back-left rim (lit)
+    glow_edge(rim["L"], rim["B"], "E")               # front-left rim (lit)
+    glow_edge(rim["T"], rim["R"], "e")               # back-right rim (shaded)
+    glow_edge(rim["B"], rim["R"], "e")               # front-right rim (shaded)
+    # also brighten the mid (inner) ring's lit edges so the energizing reaches into the well
+    glow_edge(mid["L"], mid["T"], "e")
+    glow_edge(mid["L"], mid["B"], "e")
+
+    # ---- ENERGIZE the upper run of each spoke (rim corner -> mid corner) IN PLACE, so the
+    # funnel's longitude wires glow where they meet the lit rim (the lattice charging up). --
+    def mid_of(d, ka, kb):
+        return ((d[ka][0] + d[kb][0]) / 2, (d[ka][1] + d[kb][1]) / 2)
+    for key in ("T", "R", "B", "L"):
+        glow_edge(rim[key], mid[key], "E" if key in ("L", "T", "B") else "e")
+    for ka, kb in (("T", "L"), ("L", "B"), ("B", "R"), ("R", "T")):
+        lit = "L" in (ka, kb)
+        glow_edge(mid_of(rim, ka, kb), mid_of(mid, ka, kb), "E" if lit else "e")
+
+    # ---- a brilliant E flare burst ON the central mass (the lattice's deepened core) ----
+    # this hugs the funnel bottom; it may light fresh px immediately around the mass orb.
+    mx, my = clamp(mass_xy[0], mass_xy[1])
+    for dx, dy in [(0, -2), (0, 2), (-3, 0), (3, 0), (-2, -2), (2, -2), (-2, 2), (2, 2)]:
+        xi, yi = clamp(mx + dx, my + dy)
+        if c.px[yi][xi] in (".", "o", "O") or c.px[yi][xi] in GRID_CH:
+            c.set(xi, yi, "E")
+    for dx, dy in [(-1, -1), (1, -1), (-1, 1), (1, 1)]:   # bright inner flare
+        c.set(*clamp(mx + dx, my + dy), "E")
+    c.set(mx, my - 1, "W")                            # white-hot apex glint
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the theoretical-physics annex at upgrade `stage` (1..5). Stage 1 is
+    IDENTICAL to the shipped base; each higher stage keeps every prior addition and bolts
+    on the next (t2 solved-term tablet -> t3 raised study-tower storey -> t4 gravity-well
+    orrery mast -> t5 curved-lattice bloom + gold banner). The compact L grows UP off the
+    study block (left) and gains a physical orrery on the wing, while the hovering
+    holographic SPACETIME GRID hero is RE-DRAWN LAST at every stage so it always reads in
+    front of the new structure.
+
+    Painter's order matches the base: taller STUDY BLOCK + parapet, then the lower READING
+    WING and its faces, then the glowing RIGHT-face study window-wall + decode strip; then
+    the cumulative upgrade masses (grown LEFT on the block + on the wing, clear of the
+    grid); then the spacetime GRID hero LAST; then (t5) the grid-bloom layered on top."""
     c = Canvas()
-    # painter's order: taller STUDY BLOCK (back) + its parapet, then the lower
-    # READING WING (front-right) so it steps the silhouette and puts the opening on
-    # the RIGHT; the wing's plain LEFT face; the block's plain LEFT face; then the
-    # glowing RIGHT-face STUDY WINDOW-WALL hero + decode strip; finally the floating
-    # spacetime-curvature grid last (in front of all).
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     block = study_block(c)
     block_parapet(c, block)
     wing = reading_wing(c)
@@ -353,14 +701,57 @@ def main():
     block_left_plain(c, block)
     study_window_wall(c, wing)
     decode_strip(c, wing)
-    spacetime_grid(c, wing)
 
+    # --- CUMULATIVE UPGRADE MASSES (grown clear of the floating grid hero) ---------
+    if stage >= 2:
+        stage2_tablet(c, wing)
+    if stage >= 3:
+        stage3_study_tower(c, block)
+    if stage >= 4:
+        stage4_orrery(c, wing)
+    if stage >= 5:
+        stage5_lattice_bloom(c, wing)        # orrery energize + gold banner (under grid)
+
+    # --- SIGNATURE LAST: the hovering spacetime GRID always reads in front ----------
+    spacetime_grid(c, wing)
+    if stage >= 5:
+        stage5_grid_bloom(c, wing)           # the curved-lattice bloom, layered on top
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/axiom"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "theoretical-physics-annex"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG +
+    scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must keep
+    matching the shipped theoretical-physics-annex.png, so it does NOT overwrite the base."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": AXIOM, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/axiom_theoretical-physics-annex.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"axiom_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"axiom_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    main()
+    build_all()

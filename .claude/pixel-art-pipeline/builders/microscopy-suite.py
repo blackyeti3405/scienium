@@ -35,7 +35,14 @@ from isobuild import Box, cylinder
 
 BIO = {"K": "#1a2417", "W": "#e8f2d8", "L": "#c4dba6", "M": "#9fc07e", "D": "#6f9456", "d": "#4a6e3a",
        "h": "#d2f7ec", "c": "#9fefcf", "g": "#36cc9e", "G": "#1d8f70",
-       "o": "#f0b24d", "O": "#ffd488", "r": "#b9701e"}
+       "o": "#f0b24d", "O": "#ffd488", "r": "#b9701e",
+       # EVOLVED accent keys — used ONLY in stage2+ helpers (stage 1 unchanged). BioCore's
+       # mature glow is bio-luminescent green-teal (a confocal-laser bloom here, not electric
+       # cyan); gold (`q`) is a t5 flourish only, never a whole-building recolor.
+       #   b  deep cool optics-housing green  — matured structure tone (t3 darkroom, t4 drum)
+       #   e  confocal glow (mid)   E  confocal glow (bright) — the t4 laser dome / t5 channels
+       #   q  premium gold trim — t5 only
+       "b": "#2f4a2a", "e": "#74f0b6", "E": "#ccffe4", "q": "#f3c63a"}
 
 
 # ── low-level helpers ────────────────────────────────────────────────────────
@@ -367,21 +374,327 @@ def cell_hologram(c, lens_tip):
     c.set(dcx - 1, sb_y - 1, "g")   # right tick
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS imaging / optics
+# instrumentation onto the prior pavilion — never restarts, never recolors the whole
+# building. Theme: the starter imaging suite grows into a fully built-out CONFOCAL /
+# MULTI-CHANNEL microscopy facility. Colours mature stage by stage (deep optics-housing
+# `b`, confocal-glow `e/E`); gold (`q`) only as a t5 flourish. Every addition is anchored
+# OFF the body/turret geometry and kept clear of the front-LEFT floating CELL HOLOGRAM
+# signature (which hovers high up-left, disc centre ~x22 y5, reaching x~32 / y~14).
+#
+#   t2  small functional add   : a SPECIMEN-FEED RACK (slide-tray tower + feed pipe) on the open
+#                                front-left roof + c FOCUS-KNOB box; brighten the o imaging-bay lamp
+#   t3  structural add         : a windowless DARKROOM / SAMPLE-PREP annex on the right wall
+#   t4  major add              : a second, TALLER OPTICS DRUM raised on the back-right roof, capped
+#                                by a glowing e CONFOCAL-LASER dome (dome rises into open sky)
+#   t5  crowning feature       : the hologram doubles into a MULTI-CHANNEL CELL ARRAY +
+#                                gold rim ring on the optics dome & a gold barrel collar
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_feedrack(c, b):
+    """t2 — SMALL FUNCTIONAL ADD: a SPECIMEN-FEED RACK standing PROUD on the OPEN front-left roof
+    wedge — a short slim sample-tray tower (a stack of K-framed `c` slide trays on a little `M/D`
+    post) that pokes a few px ABOVE the roof slope, fed by a thin `c` feed pipe arcing down from the
+    turret drum's lit foot. This is the real new on-theme mass: the kit you load specimens with. It
+    fills empty roof-slope sky to the LEFT of the turret (x~17..23, y~31..40) so it extends the
+    silhouette, while sitting well below + right of the floating cell HOLOGRAM (which ends ~y10) and
+    clear of the up-left eyepiece. Also brighten the `o` interior lamp dot in the imaging-bay door
+    (the scope lights up). Modest, base palette + one brightened lamp."""
+    base_y = TURRET_TOP_Y + TURRET_H                       # drum foot on the roof (~y28)
+    # --- SAMPLE-TRAY TOWER: seat its FOOT on the LEFT roof slope and build UPWARD into the OPEN SKY
+    #     band just LEFT of the turret (x~15..20, y~25..33 is empty roof-apex sky) so its trays add
+    #     genuinely NEW silhouette, not a recolor of roof pixels. Kept clear of the turret (x>=23)
+    #     and BELOW the up-left eyepiece root (the eyepiece barrel sits x16..27, y11..24; this rack
+    #     tops out ~y25, under it) and far below the floating hologram (ends ~y10). ---
+    mx = 16                                                # left of the turret, on the open roof slope
+    foot_y = 34                                            # foot on the lit roof slope
+    PW = 3                                                  # post is 3px wide
+    top_y = foot_y - 9                                     # rises ~9px -> trays clear the roofline (~y25)
+    # the slim post body (lit M left edge, shaded D right edge, K outline) — a clean standing column
+    c.fill_poly([(mx, top_y), (mx + PW, top_y), (mx + PW, foot_y), (mx, foot_y)], "M")
+    c.line((mx + PW, top_y), (mx + PW, foot_y), "D")       # shaded right edge of the post
+    c.line((mx, top_y), (mx, foot_y), "K")
+    c.line((mx + PW, top_y), (mx + PW, foot_y), "K")
+    c.set(mx, foot_y, "K"); c.set(mx + PW, foot_y, "K")    # crisp feet seam on the roof slope
+    # three stacked slide-TRAYS climbing the post (each = a bright c glass tray on a D pan lip), so
+    # it clearly reads as a loaded specimen rack. Trays overhang the post a touch so they read.
+    for k, ty in enumerate((top_y + 1, top_y + 4, foot_y - 2)):
+        c.line((mx - 1, ty), (mx + PW + 1, ty), "D")       # tray pan lip (overhangs both sides)
+        c.line((mx - 1, ty - 1), (mx + PW + 1, ty - 1), "c")   # the slide-glass tray (lit)
+        c.set(mx - 1, ty - 1, "K"); c.set(mx + PW + 1, ty - 1, "K")
+        c.set(mx, ty - 1, "h" if k == 0 else "c")          # bright glint on the top tray
+    c.set(mx + 1, top_y, "L")                               # lit cap pip on the post top
+    # --- thin c FEED PIPE arcing from the turret drum's lit foot DOWN-LEFT into the rack top (the
+    #     sample feed line). Two short legs (down off the drum, then across to the post), kept on the
+    #     roof so it reads as one clean conduit, not a stray vertical. ---
+    fx0 = TURRET_CX - 4                                    # tap the drum's lit-left foot
+    fy0 = base_y - 1
+    c.line((fx0, fy0), (fx0 - 2, fy0 + 2), "D")            # elbow down off the drum (shaded conduit)
+    c.line((fx0 - 2, fy0 + 2), (mx + PW, top_y + 1), "c")  # the c feed line over to the rack top
+    c.set(fx0, fy0, "L")                                   # bright tap glint at the drum foot
+    c.set(mx + PW, top_y + 1, "h")                          # feed entering the top tray
+    # --- FOCUS-KNOB box: a tiny control box with a bright c dial, on the drum's LIT-LEFT shoulder
+    #     (clear of the porthole mullions and of the rack) ---
+    kx, ky = TURRET_CX - 4, base_y - 4
+    c.fill_poly([(kx, ky), (kx + 2, ky), (kx + 2, ky + 2), (kx, ky + 2)], "D")
+    for a, e in [((kx, ky), (kx + 2, ky)), ((kx, ky + 2), (kx + 2, ky + 2)),
+                 ((kx, ky), (kx, ky + 2)), ((kx + 2, ky), (kx + 2, ky + 2))]:
+        c.line(a, e, "K")
+    c.set(kx + 1, ky + 1, "c")                              # the glowing focus dial
+    # --- brighten the imaging-bay interior LAMP: a hotter O/o glow pip on the lit-left door
+    #     threshold (the door span is u0..u1 = 0.10..0.92, vb≈BODY_H-0.6). ---
+    lamp = b.left_pt(0.5, BODY_H - 2.4)
+    lx2, ly2 = int(round(lamp[0])), int(round(lamp[1]))
+    c.set(lx2, ly2, "O"); c.set(lx2 - 1, ly2, "o"); c.set(lx2 + 1, ly2, "o")
+    c.set(lx2, ly2 - 1, "O")                               # lamp flares a touch up the doorway
+
+
+def stage3_darkroom(c, b):
+    """t3 — STRUCTURAL ADD: a windowless DARKROOM / SAMPLE-PREP annex abutting the RIGHT (shaded)
+    wall — controlled-light prep for the scope. A self-contained new mass: a small matured
+    optics-housing `b` Box stepped onto the open ground at the building's lower-right, its only
+    opening a thin `c` SAFELIGHT slit + a `d` light-trap door. Tied to the host by sharing its
+    back edge with the right wall. Introduces the matured structure tone `b`. Kept fully
+    on-canvas (x ~ 41..61) and away from the up-left hologram."""
+    # a low annex box seated against the right wall, pushed to the front-right open ground.
+    ann = Box((44, 41), 5, 6, 9)                           # small, lower than the main body
+    ann.draw(c, roof="b", lwall="b", rwall="b", roof_hi="d", outline="K")  # windowless, dark housing
+    # one faint roof seam so the flat dark roof reads as a built lid, not a void
+    c.line(ann.roof_pt(0.0, 0.5), ann.roof_pt(1.0, 0.5), "d")
+    # --- thin c SAFELIGHT slit high on the annex's lit-left face (the only light it shows) ---
+    s0 = ann.left_pt(0.2, 2.2)
+    s1 = ann.left_pt(0.8, 2.2)
+    c.line(s0, s1, "c")
+    c.line((s0[0], s0[1] + 1), (s1[0], s1[1] + 1), "G")    # the slit's shaded under-edge
+    c.set(int(round(s0[0])), int(round(s0[1])), "K")
+    c.set(int(round(s1[0])), int(round(s1[1])), "K")
+    # --- a d light-trap DOOR low on the lit-left face (a revolving dark entry) ---
+    d0u, d1u, dv0, dv1 = 0.30, 0.70, 5.0, 8.6
+    c.fill_poly([ann.left_pt(d0u, dv0), ann.left_pt(d1u, dv0),
+                 ann.left_pt(d1u, dv1), ann.left_pt(d0u, dv1)], "d")
+    for a, e in [(ann.left_pt(d0u, dv0), ann.left_pt(d1u, dv0)),
+                 (ann.left_pt(d0u, dv1), ann.left_pt(d1u, dv1)),
+                 (ann.left_pt(d0u, dv0), ann.left_pt(d0u, dv1)),
+                 (ann.left_pt(d1u, dv0), ann.left_pt(d1u, dv1))]:
+        c.line(a, e, "K")
+    c.line(ann.left_pt(0.5, dv0), ann.left_pt(0.5, dv1), "K")  # light-trap centre seam
+    return ann
+
+
+def stage4_confocal(c, b):
+    """t4 — MAJOR ADD: a SECOND, TALLER OPTICS DRUM raised on the BACK-RIGHT roof beside the
+    signature turret, capped by a glowing `e` CONFOCAL-LASER dome — a prominent new turret mass that
+    breaks the roofline and says 'this suite now does confocal imaging'. Distinct from the t3
+    incubator vessel (which is a low rounded centrifuge down at the front-right ground, x37..54
+    y45..63): THIS is a tall standing drum on the roof whose dome rises into the EMPTY sky to the
+    RIGHT of the first turret (x~37..50, y~26..40), adding dozens of new silhouette pixels. The drum
+    body uses cooler matured `b/d` housing tones; the dome is a bright bio-luminescent `e/E` laser
+    lens. Seated back-right so a clear band of open roof shows between the two turrets, and kept well
+    clear of the first turret's dome/eyepiece and the up-left hologram."""
+    # seat the 2nd drum on the RIGHT roof, pushed RIGHT + a touch FORWARD of the signature turret so
+    # it stands as its OWN squat drum on the open right roof (a clear gap of bare roof between the two
+    # turrets), its upper body + dome rising into the OPEN SKY band right of the turret (x~38..49,
+    # y~28..38 is empty roof sky). roof_pt(0.98,0.60) ≈ (42, 42) -> drum FOOT.
+    seat = b.roof_pt(0.98, 0.60)                           # right roof, right + forward of the turret
+    cx2 = int(round(seat[0])) + 1                          # ~ x43 (nudged right for a clear gap)
+    base2 = int(round(seat[1]))                            # drum FOOT sits here on the roof (~y42)
+    RX2, RY2, H2 = 6, 3, 9                                 # a wider, squatter drum -> reads as its own mass
+    top2 = base2 - H2                                      # top ellipse centre (~y33)
+    # drum body in cooler matured tones: b lit-left, d shaded-right (darker so the curved
+    # cylinder form reads against the green roof + open sky), b top
+    cylinder(c, cx2, top2, RX2, H2, top="b", side_l="b", side_r="d", outline="K", ry=RY2)
+    # a soft L sheen column on the lit half so the tall curved drum reads with volume
+    for col, ch in ((-3, "M"), (-2, "L")):
+        edge = RY2 * max(0.0, 1 - (col / RX2) ** 2) ** 0.5
+        for y in range(int(top2 + edge), base2 + 1):
+            c.set(cx2 + col, y, ch)
+    # a couple of K hoop rings + two thin c instrument bands wrapping the taller drum
+    for yy in (top2 + 2, top2 + 5, base2 - 1):
+        for col in range(-RX2 + 1, RX2):
+            t = 1 - (col / RX2) ** 2
+            if t < 0:
+                continue
+            edge = RY2 * (t ** 0.5)
+            yc = int(round(top2 + (RY2 - edge) * 0.5)) + (yy - top2)
+            c.set(cx2 + col, yc, "K")
+    for bandc in (top2 + 3, base2 - 3):                    # two lit c instrument bands
+        for col in range(-RX2 + 2, RX2 - 1):
+            t = 1 - (col / RX2) ** 2
+            if t < 0:
+                continue
+            edge = RY2 * (t ** 0.5)
+            yc = int(round(bandc + (RY2 - edge) * 0.5))
+            c.set(cx2 + col, yc, "c" if col <= 0 else "G")
+    # --- glowing e CONFOCAL-LASER dome capping the new drum (bright e body, E crown) ---
+    dcx2, dcy2 = cx2, top2 - 1
+    drx2, dry2 = RX2 - 1, RY2 + 1
+    for yy in range(int(-dry2), 1):
+        t = 1 - (yy / dry2) ** 2
+        if t < 0:
+            continue
+        hw = drx2 * (t ** 0.5)
+        for x in range(int(dcx2 - hw), int(dcx2 + hw) + 1):
+            c.set(x, dcy2 + yy, "e" if x <= dcx2 else "G")  # lit-left glow, shaded-right
+    # bright E crown highlight + a confocal scan glint off the top
+    c.set(dcx2 - 1, dcy2 - 2, "E"); c.set(dcx2, dcy2 - 2, "E")
+    c.set(dcx2 - 2, dcy2 - 1, "e")
+    c.set(dcx2, dcy2 - 3, "E")                              # a short scan-beam pip rising
+    # K rim along the dome base front arc
+    for a in range(0, 181, 12):
+        x = dcx2 + drx2 * math.cos(math.radians(a))
+        y = dcy2 + dry2 * 0.5 * math.sin(math.radians(a))
+        c.set(x, y, "K")
+    # a short b cable conduit tying the new drum foot back down onto the roof toward the body front
+    for i in range(4):
+        c.set(cx2 + RX2 - 1 + i, base2 + i, "b")
+        c.set(cx2 + RX2 - 1 + i, base2 + 1 + i, "K")
+    return (dcx2, dcy2)
+
+
+def stage5_multichannel(c, b, lens_tip, dome2_center):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED confocal suite. The single live-cell hologram blooms
+    into a MULTI-CHANNEL CELL ARRAY: a SECOND smaller cell disc is projected stacked above-left of
+    the original (a fluorescence-channel split), rendered in bright bio-luminescent `E` with `c`
+    channel sparkles + a thin `o` co-projection ray tying it to the eyepiece. Then GOLD premium
+    trim (t5 only): a gold RIM RING around the t4 confocal dome and a gold BARREL COLLAR on the
+    eyepiece. Reads as elite, still recognizably the same microscopy suite, just maxed out. The
+    second disc rises into the empty sky LEFT of the original so the signature stays uncrowded;
+    all `q` gold lives ONLY here."""
+    lx, ly = lens_tip
+    # original hologram disc centre (recomputed from the lens, same as cell_hologram) so we anchor
+    # the 2nd channel off the SAME source point, not a hardcoded guess.
+    dcx, dcy = lx - 2, ly - 9                               # primary disc centre (~22,5)
+    DR = 8
+    # --- SECOND CHANNEL DISC: a smaller fluorescence-split view floating in the open sky to the
+    #     LEFT of (and a touch below) the primary so it reads as a DISTINCT second bloom, not part
+    #     of the primary halo. The primary spans x~14..30; place this one's centre well left (x~9)
+    #     and lower (y~12) so only its rim brushes the primary. Clamped on-canvas. ---
+    d2x = 9
+    d2y = 12
+    R2 = 4                                                  # smaller channel view
+    # a faint e halo, then the E translucent field, then a c channel membrane ring
+    for a in range(0, 360, 24):
+        x = d2x + (R2 + 1) * math.cos(math.radians(a))
+        y = d2y + (R2 + 1) * 0.9 * math.sin(math.radians(a))
+        xi, yi = int(round(x)), int(round(y))
+        if 0 <= xi < 64 and 0 <= yi < 64 and c.px[yi][xi] == ".":
+            c.set(xi, yi, "e")
+    disc(c, d2x, d2y, R2, R2 - 0.5, "E")                   # bright fluorescence field
+    disc(c, d2x, d2y, R2 - 2, R2 - 2, "e")                 # inner glow core
+    for a in range(0, 360, 30):                            # c channel membrane ring (broken)
+        x = d2x + R2 * math.cos(math.radians(a))
+        y = d2y + R2 * math.sin(math.radians(a))
+        if (a // 30) % 2 == 0:
+            xi, yi = int(round(x)), int(round(y))
+            if 0 <= xi < 64 and 0 <= yi < 64:
+                c.set(xi, yi, "c")
+    c.set(d2x, d2y, "W")                                   # bright nucleus pip of the 2nd channel
+    # c CHANNEL SPARKLES ringing the 2nd disc (the multi-channel shimmer)
+    for sx, sy in ((-R2 - 1, 0), (R2 + 1, -1), (0, -R2 - 1), (R2 - 1, R2 - 1)):
+        xi, yi = d2x + sx, d2y + sy
+        if 0 <= xi < 64 and 0 <= yi < 64:
+            c.set(xi, yi, "c")
+    # a short c CHANNEL BRIDGE of dashes linking the 2nd disc to the primary (reads as one array)
+    for t in (0.35, 0.55, 0.75):
+        bx = int(round(d2x + (dcx - d2x) * t))
+        by = int(round(d2y + (dcy - d2y) * t))
+        if 0 <= bx < 64 and 0 <= by < 64 and c.px[by][bx] == ".":
+            c.set(bx, by, "c")
+    # a thin o co-projection ray from the eyepiece lens up into the 2nd disc (shares the projector)
+    for t in range(0, 9):
+        f = t / 8.0
+        x = lx + (d2x - lx) * f
+        y = ly + ((d2y + R2 - 1) - ly) * f
+        xi, yi = int(round(x)), int(round(y))
+        if 0 <= xi < 64 and 0 <= yi < 64 and c.px[yi][xi] == ".":
+            c.set(xi, yi, "o")
+
+    # --- GOLD premium trim (t5 flourish ONLY) ---
+    # gold RIM RING around the t4 CONFOCAL DOME — a THIN front-base collar only, so the dome's
+    # e/E confocal glow still reads above it (gold is a flourish, not a recolor of the lens).
+    if dome2_center is not None:
+        dcx2, dcy2 = dome2_center
+        drx2, dry2 = 4, 4
+        for a in range(20, 161, 28):                       # sparse gold studs along the dome base rim
+            x = dcx2 + drx2 * math.cos(math.radians(a))
+            y = dcy2 + (dry2 * 0.5) * math.sin(math.radians(a)) + 1
+            xi, yi = int(round(x)), int(round(y))
+            if 0 <= xi < 64 and 0 <= yi < 64:
+                c.set(xi, yi, "q")
+        c.set(dcx2, dcy2 - 4, "O")                         # a bright gold finial pip above the dome crown
+    # gold BARREL COLLAR on the signature eyepiece barrel (a premium band near the lens)
+    bcx, bcy = lx + 2, ly + 4                              # a few px down the barrel from the lens
+    if 0 <= bcx <= 63 and 0 <= bcy <= 63:
+        c.set(bcx, bcy, "q"); c.set(bcx + 1, bcy, "q")
+        c.set(bcx, bcy + 1, "O")                           # collar glint
+
+
 # ── ASSEMBLE (painter's order: back→front, ground→sky) ───────────────────────
-def build():
+def build(stage: int = 1):
+    """Compose the microscopy suite at upgrade `stage` (1..5). Stage 1 is IDENTICAL to the
+    shipped base; each higher stage keeps every prior addition and bolts on the next (t2 carousel
+    → t3 darkroom → t4 confocal drum → t5 multi-channel hologram + gold). Painter's order keeps
+    the floating hologram signature LAST (in front of all), and each rooftop/wall addition is
+    drawn after the masses it grows from."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     b = body(c)                 # the low imaging-room box
     bay_door(c, b)              # HERO: wide LEFT imaging-bay door (opening LEFT)
     right_porthole(c, b)        # plain RIGHT face: one small c porthole
-    dome = optics_turret(c)     # optics drum turret riding the back roof
+
+    # --- CUMULATIVE UPGRADE STAGES (ground/wall/roof masses BEFORE the turret + signature) --
+    # t3 darkroom (ground annex) and t4 2nd drum (roof) are drawn here so the turret + hologram,
+    # composed last, sit in front of them; t2 carousel clamps to the (already-needed) turret, so
+    # we draw the turret first, then layer t2 onto it, then the higher roof/ground masses behind.
+    dome = optics_turret(c)     # optics drum turret riding the back roof (base signature mass)
+    dome2_center = None
+    if stage >= 3:
+        stage3_darkroom(c, b)   # windowless darkroom annex on the right wall (ground)
+    if stage >= 4:
+        dome2_center = stage4_confocal(c, b)  # second optics drum + confocal-laser dome (roof)
+    if stage >= 2:
+        stage2_feedrack(c, b)   # specimen-feed rack on the front-left roof + focus-knob + brighter bay lamp
     lens = eyepiece(c, dome)    # tilted eyepiece barrel up-left
-    cell_hologram(c, lens)      # projected live-cell hologram (signature)
+    cell_hologram(c, lens)      # projected live-cell hologram (signature) — drawn LAST/on top
+    if stage >= 5:
+        stage5_multichannel(c, b, lens, dome2_center)  # 2nd channel disc + gold trim (topmost)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/biocore"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "microscopy-suite"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG + scaled
+    preview to the manifest paths. Stage 1 only re-emits the JSON; it must keep matching the
+    shipped microscopy-suite.png, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": BIO, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/biocore_microscopy-suite.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"biocore_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"biocore_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

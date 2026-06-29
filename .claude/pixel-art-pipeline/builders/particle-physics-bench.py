@@ -45,9 +45,18 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
+# Axiom set palette — author on these chars exactly (<=16 colors).
+# Base keys (shared across all 10 Axiom buildings) + the four EVOLVED accent shades
+# reserved for the upgrade stages ONLY (they never appear in stage 1, so the shipped
+# particle-physics-bench.png is unchanged). These four evolved keys+hexes are the
+# LAB-WIDE convention — every Axiom building's _t2.._t5 reuses them:
+#   b  deep indigo steel   — matured structure tone for t3+ new masses (shield/gantry)
+#   e  quantum-stellar glow (mid)    E  quantum-stellar glow (bright) — the t4/t5 energy
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 AXIOM = {"K": "#0e1124", "W": "#dfe6f6", "L": "#b4bee0", "M": "#7c88b8", "D": "#4e5888", "d": "#333a60",
          "h": "#d6ecff", "c": "#aad8ff", "g": "#4a9ce6", "G": "#2060b0",
-         "o": "#ffe27a", "O": "#fff3c0", "r": "#c89a2a"}
+         "o": "#ffe27a", "O": "#fff3c0", "r": "#c89a2a",
+         "b": "#2a3158", "e": "#7ad0ff", "E": "#cdeeff", "q": "#f6c945"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
@@ -72,6 +81,15 @@ def _line_pts(a, b):
             err += dx
             y0 += sy
     return pts
+
+
+def _clampx(x):
+    """Clamp an x coordinate inside the 0..63 canvas (avoid off-canvas overshoot)."""
+    return max(0, min(63, int(round(x))))
+
+
+def _clampy(y):
+    return max(0, min(63, int(round(y))))
 
 
 def hazard_stripe(c, p0, p1):
@@ -301,7 +319,8 @@ def particle_tracks(c, dcx, dcy, dr):
     """ONE clear hero track + 1-2 faint background arcs (decluttered per review).
     The hero is a bright O/W cosmic-ray SPIRAL curling clearly through the vapor and
     ending in a detection FLASH; behind it sit one or two faint c arcs for depth.
-    Clipped to the dome interior so they read as INSIDE the glass."""
+    Clipped to the dome interior so they read as INSIDE the glass. Returns the flash
+    point so upgrade stages can brighten it (t2) and bloom from it (t5)."""
     cy_int = dcy - 1   # interior is above the springing line
 
     def inside(x, y):
@@ -402,24 +421,372 @@ def id_tag(c, dcx, dcy, dr):
     c.set(tx0 + tw - 2, ty0 + 3, "o")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). The open cloud-chamber yard grows into a
+# fully-built BEAMLINE BENCH: it gains more detectors, a radiation shield, an overhead
+# particle-beam gantry, and finally fires a real collision event. Every addition is
+# on-theme to THIS building (particle detection / radiation / accelerator beam) and
+# UNIQUE to it — no cloud-chamber/beamline motif exists elsewhere. Each stage KEEPS
+# every prior addition. Colours mature stage by stage; gold (q) appears ONLY at t5.
+#
+# The signature CLOUD CHAMBER stands in the YARD CENTRE (chamber centre ~x31,y41;
+# glass dome crown ~y30; the ID TAG crowns up to ~y7). So stage masses grow on the
+# YARD EDGES + a high OVERHEAD ARCH, and the t5 event blooms in the gap just ABOVE
+# the dome but BELOW the tag — the dome + tag are RE-DRAWN last so they always read.
+#
+#   t2  small functional add : a 2nd detector PUCK on a post at the yard's left edge
+#                              + a c dosimeter readout, + one brighter O flash spark
+#   t3  structural add       : a radiation SHIELDING blast-wall annex (thick b block)
+#                              bolted to the back-RIGHT HV wing, o/K hazard-stripe caps
+#   t4  major add            : an overhead BEAM-COLLIMATOR GANTRY straddling the yard —
+#                              a b lattice arch on two legs, glowing e beam-line down
+#   t5  crowning feature     : a PARTICLE-COLLISION BURST above the chamber (radial
+#                              E/e track-jets from a bright E vertex) + q gold banner
+#                              + q gold field-ring
+#
+# Shared anchors (so t4/t5 recompute from the SAME source, never a 2nd guess):
+#   _yard_left_post(slab)  -> the t2 puck-post foot on the left yard edge
+#   _gantry(slab)          -> the t4 portal feet + collimator head (t5 reuses the head)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _yard_left_post(slab):
+    """Foot of the t2 detector-puck post — planted OUT in the OPEN FRONT-LEFT yard margin.
+    The left-wing FRONT FACE occupies x10..15; the columns x2..9 are EMPTY top-to-bottom,
+    so a free-standing instrument mast in that strip protrudes entirely into clear canvas
+    (real new pixels, not a wall recolour) and the dome-topped puck head clears in OPEN SKY
+    above the wall foot. Well clear of the centre chamber (x>=22). A single shared anchor —
+    returns the mast FOOT (bottom) screen px."""
+    return 7, 48
+
+
+def stage2_detector_puck(c, slab, flash):
+    """t2 — SMALL FUNCTIONAL ADD: a SECOND detector PUCK on a free-standing MAST planted OUT
+    in the open FRONT-LEFT yard margin (the bench gains a second sensor head), a small c
+    DOSIMETER readout box at its foot, and one BRIGHTER O track-flash spark added at the
+    existing detection flash inside the dome. Modest, on-theme (more apparatus, more
+    detection), base palette + a brighter `c`/`O`. The mast stands in the EMPTY left strip
+    (x2..9) so the whole instrument reads PROUD against clear canvas — not glued to the
+    wall — with the domed puck head lifted into open sky above the wall foot. Kept fully
+    clear of the centre chamber + its tracks."""
+    px, py = _yard_left_post(slab)               # (7, 48) — mast foot in the empty margin
+    # a tiny d/K contact nub on the deck so the free-standing mast reads grounded
+    c.set(px, py + 1, "d"); c.set(px - 1, py + 1, "K"); c.set(px + 1, py + 1, "K")
+    # the MAST: a clean vertical K post (lit D near-edge) rising up through the empty strip
+    # so the puck head clears into open sky (foot y48 -> neck y40)
+    neck_y = py - 8
+    for y in range(neck_y, py + 1):
+        c.set(px, y, "K")                        # mast core
+        c.set(px - 1, y, "D")                    # lit near-edge of the mast
+    for by in (py - 2, py - 5):                  # two small support brackets off the mast
+        c.set(px + 1, by, "D")
+        c.set(px + 1, by - 1, "K")
+    # the detector PUCK head — a clear domed c sensor disc (h shine crown -> c body -> G
+    # shaded sill, K rim), bigger than the wing pucks so it reads as a real 2nd head.
+    # Centred on the mast top, sitting in OPEN SKY (x3..9) above the wall foot.
+    hx, hy = px - 1, neck_y - 1
+    c.fill_poly([(hx - 3, hy + 1), (hx + 3, hy + 1), (hx + 3, hy + 2), (hx - 3, hy + 2)], "G")  # sill
+    c.fill_poly([(hx - 3, hy), (hx + 3, hy), (hx + 2, hy + 1), (hx - 2, hy + 1)], "c")          # body
+    c.fill_poly([(hx - 2, hy - 1), (hx + 2, hy - 1), (hx + 1, hy), (hx - 1, hy)], "h")          # lit crown
+    c.set(hx - 1, hy - 1, "W")                   # bright shine glint on the dome
+    for (a, b) in [((hx - 2, hy - 1), (hx + 2, hy - 1)), ((hx - 3, hy), (hx - 3, hy + 2)),
+                   ((hx + 3, hy), (hx + 3, hy + 2)), ((hx - 3, hy + 2), (hx + 3, hy + 2)),
+                   ((hx - 2, hy - 1), (hx - 3, hy)), ((hx + 2, hy - 1), (hx + 3, hy))]:
+        c.line(a, b, "K")
+    c.set(hx, hy - 2, "o")                        # a tiny gold status glint on top
+    c.set(px, neck_y, "K")                        # tie the head onto the mast top
+
+    # a small c DOSIMETER readout box on the deck at the mast FOOT, to the LEFT in the empty
+    # wedge (K frame, c face, an o needle) — a second instrument, kept tiny + clear of mast
+    dx0, dy0 = px - 5, py - 1
+    for y in range(dy0, dy0 + 3):
+        for x in range(dx0, dx0 + 4):
+            c.set(x, y, "c")
+    for (a, b) in [((dx0, dy0), (dx0 + 3, dy0)), ((dx0, dy0 + 2), (dx0 + 3, dy0 + 2)),
+                   ((dx0, dy0), (dx0, dy0 + 2)), ((dx0 + 3, dy0), (dx0 + 3, dy0 + 2))]:
+        c.line(a, b, "K")
+    c.set(dx0 + 1, dy0 + 1, "o")                 # the dosimeter needle/reading
+    c.set(dx0 + 2, dy0, "h")                     # a top shine on the readout
+
+    # one BRIGHTER O flash spark at the existing in-dome detection flash (the bench
+    # detects a little hotter now). flash is the (fx,fy) returned by particle_tracks.
+    fxi, fyi = int(round(flash[0])), int(round(flash[1]))
+    c.set(fxi, fyi - 1, "O")
+    c.set(fxi + 1, fyi - 1, "o")
+
+
+def stage3_shield_wall(c, slab, rw):
+    """t3 — STRUCTURAL ADD: a radiation SHIELDING blast-wall annex — a THICK concrete
+    wall prism (matured deep-indigo `b` walls, lit `M` left face, `L` crest) standing
+    PROUD on the OPEN RIGHT-FRONT yard lip, just OUTSIDE the current building bbox (the
+    HV wing's lower-right edge recedes to x~53 and everything x>=54 / x>=52-below-y46 is
+    clear canvas). Seating it on that empty lip — not on top of the wing — means its
+    silhouette occupies new pixels in front of / beyond the wing, so it reads as a real
+    annex that visibly breaks the base outline (not a recolour). Its flat TOP is capped
+    with the yard's own o/K hazard-stripe motif (radiation-area teeth) + an o trefoil so
+    it reads unmistakably as 'radiation shielding', not a generic crate. Fully on-canvas
+    (right edge clamps to x58), low enough that the dome + HV wing still read."""
+    # a thick blast-wall prism seated on the empty front-right lip BEYOND the wing: its
+    # near (right) face + base push out into the transparent x52..58 wedge so the mass
+    # stands proud of the silhouette. Authored as an iso Box for a clean wall shape.
+    wall = Box(top=(54, 41), wx=2, wy=3, h=9)
+    wall.draw(c, roof="L", lwall="M", rwall="D", roof_hi="W", outline="K")
+    # deepen the lower wall band to the matured `b` so it reads as heavy poured concrete
+    c.fill_poly([wall.left_pt(0.0, wall.h - 4), wall.left_pt(1.0, wall.h - 4),
+                 wall.w_front, wall.w_left], "b")
+    c.fill_poly([wall.right_pt(0.0, wall.h - 4), wall.right_pt(1.0, wall.h - 4),
+                 wall.w_right, wall.w_front], "b")
+    # two cast-concrete form-lines across the shaded near (right) face (poured-slab texture)
+    for vv in (3.0, 6.0):
+        c.line(wall.right_pt(0.12, vv), wall.right_pt(0.88, vv), "K")
+    # o/K HAZARD-STRIPE caps along the wall's TOP front edges (reuses the yard motif)
+    hazard_stripe(c, wall.r_left, wall.r_front)
+    hazard_stripe(c, wall.r_front, wall.r_right)
+    # a small o radiation TREFOIL marker on the shaded near (right) face (hazard placard):
+    # a K hub ringed by three o lobes so it reads as the radiation symbol, not a stray dot
+    tp = wall.right_pt(0.5, 4.6)
+    tcx, tcy = int(round(tp[0])), int(round(tp[1]))
+    for (dx, dy) in [(0, -1), (-1, 1), (1, 1)]:   # three lobes at 12 / 8 / 4 o'clock
+        c.set(_clampx(tcx + dx), _clampy(tcy + dy), "o")
+    c.set(_clampx(tcx), _clampy(tcy), "K")        # dark hub of the trefoil
+
+
+def _gantry(slab):
+    """Shared anchor for the t4 BEAM-COLLIMATOR GANTRY: returns (leftfoot, rightfoot,
+    head, beam_top_y) in screen px. Two legs straddle the yard on its LEFT and RIGHT
+    front lips; the collimator `head` hangs under the top-beam and aims the beam-line
+    DOWN onto the dome crown, kept LEFT of the ID tag. The top-beam rides well above the
+    dome crown (~y22) so it never occludes the glass. t5 reuses `head` (the beam target)."""
+    lf = (21, 47)                            # left leg foot, on the front-left yard lip
+    rf = (43, 47)                            # right leg foot, on the front-right yard lip
+    # collimator head: shifted LEFT of the ID-tag stalk (tag spans x32..42) so its
+    # beam-line drops onto the dome crown clear of the tag. Beam-top at y15.
+    head = (28, 15)
+    beam_top_y = 13                          # the portal top-beam height
+    return lf, rf, head, beam_top_y
+
+
+def stage4_beam_gantry(c, slab):
+    """t4 — MAJOR ADD: an overhead BEAM-COLLIMATOR GANTRY straddling the OPEN yard — a
+    deep-steel `b` PORTAL FRAME on two braced legs planted on the LEFT and RIGHT front
+    yard lips, carrying a flat lattice top-beam and a central collimator head that aims
+    a glowing quantum `e`/`E` BEAM-LINE straight DOWN at the cloud chamber (the bench
+    now takes a real particle beam). The prominent new overhead mass that says 'this is
+    a beamline bench'. Palette matures: deep `b` lattice with lit `M`/`L` near-edges so
+    it reads against the dark sky + energized `e`/`E` beam. Kept fully on-canvas; the
+    top-beam rides high above the dome crown so the glass dome + ID tag stay clear."""
+    lf, rf, head, beam_y = _gantry(slab)
+    leg_top_y = beam_y + 1                    # legs rise to just under the top-beam
+
+    def portal_leg(fx, fy, lean):
+        """A 3px-wide near-vertical lattice leg from foot (fx,fy) up to leg_top_y, with
+        a tiny inward `lean` so the frame tapers gently. Lit `M` near-edge + `b` body +
+        `K` far-edge so it reads in 3-D against the dark sky. Returns the leg-top x."""
+        topx = fx + lean
+        c.line((fx - 1, fy), (topx - 1, leg_top_y), "K")    # far (shaded) edge
+        c.line((fx, fy), (topx, leg_top_y), "b")            # body
+        c.line((fx + 1, fy), (topx + 1, leg_top_y), "M")    # lit near-edge
+        # X-bracing ladder rungs every few px (reads as a lattice, not a solid post)
+        pts_out = _line_pts((fx, fy), (topx, leg_top_y))
+        for k in range(2, len(pts_out) - 1, 3):
+            ax, ay = pts_out[k]
+            c.set(_clampx(ax - 1), _clampy(ay), "D")
+            c.set(_clampx(ax + 1), _clampy(ay), "D")
+        # foot base-plate on the yard lip
+        for dx in (-1, 0, 1, 2):
+            c.set(_clampx(fx + dx), _clampy(fy + 1), "K")
+        return topx
+
+    ltx = portal_leg(lf[0], lf[1], +2)
+    rtx = portal_leg(rf[0], rf[1], -2)
+
+    # --- flat lattice TOP-BEAM spanning the two leg tops (a clear portal lintel) -----
+    # a 3px-tall truss: L lit top chord, b body, K under-chord, with short web ticks.
+    bx0, bx1 = ltx, rtx
+    c.line((bx0, beam_y - 1), (bx1, beam_y - 1), "L")      # lit top chord
+    c.line((bx0, beam_y), (bx1, beam_y), "b")              # body
+    c.line((bx0, beam_y + 1), (bx1, beam_y + 1), "K")      # under chord
+    for x in range(bx0 + 2, bx1 - 1, 4):                  # diagonal web ticks
+        c.set(x, beam_y, "M")
+        c.set(x + 1, beam_y + 1, "D")
+    # tie the beam ends square onto the leg tops
+    c.set(_clampx(bx0), _clampy(beam_y - 1), "M")
+    c.set(_clampx(bx1), _clampy(beam_y - 1), "M")
+
+    # --- central COLLIMATOR HEAD hung under the beam + glowing beam-line down ---------
+    hx, hy = head
+    # a small K-framed b collimator block, lit `M` on its near edge
+    c.fill_poly([(hx - 2, hy), (hx + 2, hy), (hx + 2, hy + 3), (hx - 2, hy + 3)], "b")
+    for (a, b) in [((hx - 2, hy), (hx + 2, hy)), ((hx - 2, hy + 3), (hx + 2, hy + 3)),
+                   ((hx - 2, hy), (hx - 2, hy + 3)), ((hx + 2, hy), (hx + 2, hy + 3))]:
+        c.line(a, b, "K")
+    c.set(hx - 1, hy + 1, "M"); c.set(hx, hy + 1, "M")    # lit face of the collimator
+    c.line((hx, beam_y + 1), (hx, hy), "b")               # short hanger to the top-beam
+    # the glowing beam-line: a bright `e` core with an `E` hot aperture, aimed DOWN at
+    # the dome crown (stops ABOVE the glass at ~y28 so it doesn't punch into the fill)
+    beam_top = hy + 4
+    beam_bot = 28
+    for yy in range(beam_top, beam_bot + 1):
+        c.set(hx, yy, "e")
+    c.set(hx, beam_top, "E"); c.set(hx, beam_top + 1, "E")   # hot aperture under the head
+    c.set(hx - 1, beam_bot, "e"); c.set(hx + 1, beam_bot, "e")  # beam splays at the target
+    c.set(hx, beam_bot, "E")                              # bright impact node above the dome
+
+
+def stage5_collision_burst(c, slab, ccx, dome_cy, dr):
+    """t5 — CROWNING FEATURE = the bench FIRES. A PARTICLE-COLLISION BURST blooms in the
+    gap ABOVE the chamber dome: a bright `E` collision VERTEX throwing a radial spray of
+    `E`/`e` track-JETS (the event the beamline gantry just delivered), seated right at
+    the beam's impact point so it reads as caused by the t4 beam. The yard is then
+    dressed in premium GOLD: a `q` gold 'PARTICLE BENCH' BANNER strung across the wings
+    and a `q` gold FIELD-RING re-tracing the chamber's magnet coil. Reads as fully maxed
+    / elite, still unmistakably the same cloud-chamber bench. Gold ONLY here.
+
+    Anchored from the SAME gantry head (the t4 beam target) so the burst reads as the
+    event the beam delivered (no 2nd guess); clamped on canvas; sits BELOW the ID tag
+    (re-drawn after) so the tag still crowns on top. Draw order within t5: gold banner
+    + field-ring FIRST (premium trim), then the collision burst LAST so its bright jets
+    read on top of the banner where they cross."""
+    _lf, _rf, head, _beam_y = _gantry(slab)
+
+    # === GOLD trim (drawn first, so the burst overlays it) =========================
+    # --- GOLD 'PARTICLE BENCH' BANNER strung high between the two wing-roof crests
+    # (left wing crest ~y19, right wing crest ~y18) — a taut q gold ribbon dipping
+    # gently at centre with O lit highlights + a centre pennant, reads as bunting. It
+    # rides ABOVE the chamber/burst zone so it never tangles with the collision spray. -
+    b0 = (14, 20)                                # on the left wing roof crest
+    b1 = (47, 20)                                # on the right wing roof crest
+    band = []
+    steps = 12
+    for i in range(steps + 1):
+        t = i / steps
+        x = b0[0] + t * (b1[0] - b0[0])
+        y = b0[1] + t * (b1[1] - b0[1]) + int(round(1.5 * math.sin(math.pi * t)))  # gentle sag
+        band.append((_clampx(x), _clampy(y)))
+    for i in range(len(band) - 1):
+        c.line(band[i], band[i + 1], "q")
+    c.line(band[0], (band[0][0], band[0][1] + 2), "q")     # short drop tie, left
+    c.line(band[-1], (band[-1][0], band[-1][1] + 2), "q")  # short drop tie, right
+    for i in (3, 6, 9):                                     # O lit highlights on the banner
+        c.set(band[i][0], band[i][1] - 1, "O")
+
+    # --- GOLD FIELD-RING re-tracing the chamber's magnet coil (elite trim). Recompute
+    # the SAME 2:1 ellipse pad_glow drew (rr=7, +2 offset) but in q gold, brightening
+    # only the FRONT arc so it doesn't smother the base. ---
+    ccy_ring = dome_cy + 1 + 2                    # base_top = dome_cy+1; ring sits +2 (== pad_glow)
+    rr = 7.0
+    for a in range(20, 161, 14):                  # front arc only (lower half)
+        x = ccx + rr * math.cos(math.radians(a))
+        y = ccy_ring + (rr * 0.5) * math.sin(math.radians(a))
+        c.set(_clampx(x), _clampy(y), "q")
+    # two gold field-coil bosses at the ring's left/right extremes
+    c.set(_clampx(ccx - rr), _clampy(ccy_ring), "O")
+    c.set(_clampx(ccx + rr), _clampy(ccy_ring), "O")
+
+    # === COLLISION BURST (drawn LAST — the bright crowning hero) ====================
+    # collision VERTEX at the t4 beam's impact point: the beam comes down at head[0]
+    # and lands just above the dome crown (dome crown y = dome_cy - dr ~22). Seat the
+    # vertex right at the crown so the spray clearly reads as struck out of the chamber.
+    vx = head[0]                                # == beam-line x (left of the ID tag)
+    vy = (dome_cy - dr)                          # right at the dome crown / beam impact
+    # a COMPACT radial STAR of straight track-jets fanning out from the vertex into the
+    # clear band between the dome crown and the banner. Skewed LEFT so they stay clear
+    # of the ID tag on the right (tag spans x32..42). Each ray is a crisp single line:
+    # solid bright `E` for its inner ~65%, mid `e` at the tip, so the jets read distinct.
+    jets = [(-7, -1), (-6, -4), (-3, -6), (0, -7), (3, -5), (-7, 2), (2, 2)]
+    for (dx, dy) in jets:
+        ex, ey = _clampx(vx + dx), _clampy(vy + dy)
+        pts = _line_pts((vx, vy), (ex, ey))
+        n = max(1, len(pts))
+        for k, (px, py) in enumerate(pts):
+            if py < 0 or py > 63 or px < 0 or px > 63:
+                continue
+            c.set(px, py, "E" if k <= int(n * 0.65) else "e")
+    # bright collision VERTEX core (a hot W/E bloom), drawn LAST so it caps the star
+    for (dx, dy, ch) in [(0, 0, "W"), (-1, 0, "E"), (1, 0, "E"), (0, -1, "E"), (0, 1, "E")]:
+        c.set(_clampx(vx + dx), _clampy(vy + dy), ch)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the particle-physics bench at upgrade `stage` (1..5). Stage 1 is
+    IDENTICAL to the shipped base; each higher stage keeps every prior addition and
+    bolts on the next (t2 detector puck -> t3 shield wall -> t4 beam gantry -> t5
+    collision burst + gold). The open cloud-chamber yard grows into a full beamline
+    bench, while the hero CLOUD CHAMBER (dome) and its ID TAG are RE-DRAWN LAST at
+    every stage so the signature always reads in front of / above the new structure.
+
+    Painter's order: base yard + wings first; then upgrade masses on the yard EDGES
+    and a high overhead arch; the t5 burst blooms above the dome; finally the dome
+    tracks-flash and the ID tag are re-stamped on top so nothing occludes the hero."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     contact_shadow(c)               # flat iso ground-pool (drawn first, underneath)
     slab = yard_pad(c)              # open navy concrete pad + hazard striping
-    left_wing(c, slab)              # back-left instrument/electronics wing
+    lw = left_wing(c, slab)         # back-left instrument/electronics wing
     rw = right_wing(c, slab)        # back-right power/HV wing (meets L at back corner)
     hv_conduit(c, rw)               # o HV conduit + "PARTICLE BENCH" placard
     ccx, ccy = pad_glow(c, slab)    # SIGNATURE A: pad underglow + magnet-coil field ring
-    dcx, dcy, dr = cloud_chamber(c, ccx, ccy)   # SIGNATURE B: base + glass dome + vapor
-    particle_tracks(c, dcx, dcy, dr)            # SIGNATURE C: spiraling tracks + flash
-    id_tag(c, dcx, dcy, dr)         # SIGNATURE D: lit particle ID tag crowning above
 
+    # --- CUMULATIVE UPGRADE STAGES that grow on the YARD EDGES / overhead ----------
+    # (drawn BEFORE the dome so the chamber + tag, re-stamped below, occlude them) ---
+    if stage >= 3:
+        stage3_shield_wall(c, slab, rw)     # t3 mass on the back-right HV wing
+    if stage >= 4:
+        stage4_beam_gantry(c, slab)         # t4 overhead arch + beam-line down
+
+    # --- SIGNATURE B/C: the chamber dome + tracks (hero, drawn over the gantry) ----
+    dcx, dcy, dr = cloud_chamber(c, ccx, ccy)        # base + glass dome + vapor
+    flash = particle_tracks(c, dcx, dcy, dr)         # spiraling tracks + flash
+
+    # t2 detector-puck reads in the open yard edge; the brighter flash spark needs the
+    # tracks already drawn, so apply t2 here (after the hero tracks).
+    if stage >= 2:
+        stage2_detector_puck(c, slab, flash)
+
+    # t5 collision burst blooms ABOVE the dome (after the dome, before the tag) -------
+    if stage >= 5:
+        stage5_collision_burst(c, slab, dcx, dcy, dr)
+
+    # --- SIGNATURE D LAST: the lit particle ID tag always crowns on top -------------
+    id_tag(c, dcx, dcy, dr)
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/axiom"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "particle-physics-bench"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped particle-physics-bench.png, so it does NOT overwrite the
+    base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": AXIOM, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/axiom_particle-physics-bench.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"axiom_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"axiom_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

@@ -23,6 +23,30 @@ widest lowest closed mass in the set, distinct from the reactor hall and towers.
 Composed from art/isobuild.{Box,cylinder} — NO iso.draw_cube / base_windows.
 ChemWorks palette ONLY (blue-grey walls, BLUE glassware, VIOLET glow; never
 yellow/green).
+
+UPGRADE EVOLUTION (cumulative — the calm optics hall grows into a full dual-beam
+spectro-array; the dispersion/optics theme intensifies; the energized teal e/E
+"powered" glow arrives at t4; gold is a t5 flourish). Each stage keeps every prior
+addition and bolts on the next, and is placed to NEVER collide with / occlude the
+signature prism (centre-ridge) or its spectral fan (which sweeps the upper-RIGHT) —
+all evolution grows to the LEFT of the prism on the clerestory bench-rail and DOWN
+onto the open front-roof step:
+  t2  small functional add : a sample-cuvette TURRET + a calibration LASER DIODE on a
+                             short bench rail seated on the OPEN front-LEFT body-roof
+                             deck (well clear of the clerestory/prism clutter, rising
+                             into the empty deck airspace so it reads at 64px), with a
+                             brightened o source LED relighting the beam
+  t3  structural add       : a tall louvered DETECTOR-RACK ANNEX (g PMT-tube bays in a
+                             b housing) seated on the open front-RIGHT body-roof deck
+                             and raised so its lit roof clears the body roofline +
+                             overhangs the front eave — a real mass that EXTENDS the
+                             silhouette, catching the dispersed beam
+  t4  major add            : a second MONOCHROMATOR ARM + a DIFFRACTION-GRATING TOWER
+                             raising the bench off the clerestory left end, widening
+                             the streak into an e-cored spectrum fan
+  t5  crowning feature     : a DUAL-BEAM spectro-array throwing a bright E rainbow
+                             dispersion ARC from the twin gratings + q gold optical-
+                             rail trim and a gold prism mount
 """
 import os
 import sys
@@ -31,14 +55,35 @@ import math
 
 sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
-from isobuild import Box, cylinder
+from isobuild import Box, cylinder  # noqa: F401  (cylinder kept available)
 
+# Base ChemWorks palette (shared keys) + the EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so spectroscopy-suite.png is
+# unchanged). These exact keys+hexes are the lab-wide chemworks evolved accents:
+#   b  deepened structure steel — matured tone for t4+ new masses
+#   e  energized dispersion glow (mid)   E  energized dispersion glow (bright) — t4/t5
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 CHEM = {"K": "#161a2e", "W": "#e6ecfb", "L": "#c2cdee", "M": "#9aa8d8", "D": "#6f7cb0", "d": "#4b5688",
         "h": "#d6ecff", "c": "#a8d4ff", "g": "#4aa0e6", "G": "#2166b0",
-        "o": "#c89cf0", "O": "#e0c2ff", "r": "#6a34a8"}
+        "o": "#c89cf0", "O": "#e0c2ff", "r": "#6a34a8",
+        "b": "#363c5e", "e": "#36e0c8", "E": "#c2fff2", "q": "#f0c64a"}
+
+# Height (px) of the t4 diffraction-grating tower above its clerestory-cap foot.
+# Defined ONCE here because BOTH stage4_grating_tower (which draws the tower) and
+# stage5_dual_beam (which throws the dispersion arc off the tower's grating head)
+# must derive the grating-head point from the SAME number — kept short enough that
+# the tower head + t5 arc land fully on-canvas (head ~row 4, clear of y=0). The
+# tower foot is on the clerestory cap LEFT of the prism so it never fouls the
+# signature beam/fan.
+GRATING_TOWER_H = 11
 
 
 # ── low-level helpers ────────────────────────────────────────────────────────
+def P(p):
+    """Round an (x, y) point to integer pixel coords."""
+    return (int(round(p[0])), int(round(p[1])))
+
+
 def hline(c, x0, x1, y, ch):
     if x1 < x0:
         x0, x1 = x1, x0
@@ -290,20 +335,317 @@ def prism_spectrum(c, m):
     c.set(px + 4, py - 1, "O")
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS optics / detector
+# / dispersion structure onto the prior form — never restarts, never recolors the
+# whole building. Theme: the calm optics hall grows into a full dual-beam spectro-
+# array. Every add grows to the LEFT of the prism (on the clerestory bench rail) and
+# DOWN onto the open front-roof step, so nothing ever fouls the centre-ridge prism or
+# its upper-RIGHT spectral fan (the one-of-one signature). Colours mature stage by
+# stage; the energized teal e/E dispersion glow arrives at t4; gold (q) only at t5.
+#
+#   t2  small functional add : a sample-cuvette TURRET + a calibration LASER DIODE
+#   t3  structural add       : a louvered DETECTOR-RACK ANNEX on the front-roof step
+#   t4  major add            : a 2nd MONOCHROMATOR ARM + DIFFRACTION-GRATING TOWER
+#   t5  crowning feature     : a DUAL-BEAM dispersion ARC + gold optical-rail trim
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_cuvette_turret(c, b):
+    """t2 — SMALL FUNCTIONAL ADD: a sample-cuvette TURRET (an upright K-outlined carousel
+    of c/h cuvette cells) plus a calibration LASER DIODE on a short bench rail, seated on
+    the OPEN front-LEFT BODY-ROOF deck (NOT the cramped clerestory cap — round 1 buried it
+    in the prism/strip-chart clutter and only 2px read). The deck pocket around x16..21,
+    y26..31 is clean lit `L` roof with empty airspace above it (y20..25), so the turret
+    rises a clear 5px into open canvas and reads unmistakably as a new instrument at 64px,
+    well LEFT of the strip-chart (x>=22) and far from the signature prism/fan to the right.
+    On-theme (more optics on the bench), modest, base palette + the one bright o source."""
+    # --- a short bench RAIL plate across the lit front-left deck corner; turret+diode sit on it ---
+    r0 = P(b.roof_pt(0.02, 0.12))                   # left end of the rail (deck front-LEFT corner)
+    r1 = P(b.roof_pt(0.16, 0.12))                   # right end, short of the strip-chart (x>=22)
+    c.line(r0, r1, "M")                             # lit rail top
+    c.line((r0[0], r0[1] + 1), (r1[0], r1[1] + 1), "d")   # rail underside shade
+
+    # --- sample-cuvette TURRET: a slim upright K-framed carousel rising OFF the deck corner
+    #     into the open upper-LEFT airspace (its upper rows land in transparent sky => real
+    #     NEW pixels, and it sits in FRONT of the taller t3 detector rack once that arrives) ---
+    tp = P(b.roof_pt(0.08, 0.12))                   # turret foot on the rail, deck front-left
+    tx, ty = tp[0], tp[1]
+    top = ty - 7                                    # tall+slim -> upper rows poke clear into void
+    # K silhouette frame (so it pops off the deck + reads against sky), 3px wide
+    for yy in range(top, ty + 1):
+        c.set(tx - 1, yy, "K"); c.set(tx + 1, yy, "K")
+    c.line((tx - 1, top), (tx + 1, top), "K")
+    # carousel body column of bright c/h/g cuvette cells (lit), one per row -> a stack of cuvettes
+    cells = ["h", "c", "h", "c", "h", "g"]
+    for i, ch in enumerate(cells):
+        c.set(tx, top + 1 + i, ch)
+    c.set(tx, top, "M")                              # lit cap nub on the carousel
+    # a contact shadow grounding the turret on the deck
+    c.set(tx - 1, ty + 1, "d"); c.set(tx + 1, ty + 1, "d")
+
+    # --- calibration LASER DIODE on the rail, RIGHT of the turret (toward the prism) ---
+    lx, ly = tx + 3, ty - 1
+    c.set(lx, ly, "D"); c.set(lx, ly - 1, "M")      # small diode block w/ lit cap
+    c.set(lx - 1, ly, "K"); c.set(lx + 1, ly, "K")
+    c.set(lx, ly + 1, "K")
+    # the o source LED on the diode nose + a short bright o->O calibration beam firing UP
+    # into the open air (fresh-lit), kept clear of the signature prism to the right
+    c.set(lx, ly - 2, "o")                          # brightened source LED
+    c.set(lx, ly - 3, "O")
+    c.set(lx, ly - 4, "o")
+
+
+def stage3_detector_rack(c, b):
+    """t3 — STRUCTURAL ADD: a DETECTOR-RACK ANNEX — a TALL upright cabinet of g-glazed
+    PMT-tube bays in a b steel housing — bolted onto the front-RIGHT corner of the body so
+    it EXTENDS THE SILHOUETTE (round 1 sat flush on the existing roof and only recolored the
+    centre bay). Seated on the open front-right deck foot roof_pt(0.66,0.34) but RAISED 5px
+    so its lit roof (y~29) clears the local body roofline (y~31..34) AND its right corner
+    overhangs to x44 / its front face steps DOWN past the eave (y~47) — real new pixels
+    appear ABOVE and BESIDE the prior outline. Kept BELOW the spectral fan (y<28) and clear
+    of the loading bay on the left face, so it catches the dispersed beam without fouling the
+    signature. Introduces the matured deep-steel tone `b`; clearly LIT roof + bright glazing
+    so it lifts off the deck."""
+    # foot on the front-LEFT deck, then RAISE the back-top corner a full 9px so the cabinet
+    # ROOF + upper walls rise into the open upper-LEFT airspace (transparent above ~y24 at
+    # x12..18) — that is where real NEW pixels appear ABOVE the existing roofline. Kept narrow
+    # (wx=wy=3) and LEFT of the strip-chart/clerestory (x>=20) so it never buries the signature
+    # readout, and it stands clearly BEHIND + taller than the small t2 turret in front of it.
+    DECK_FOOT = (0.02, 0.18)
+    RAISE = 8
+    fx0, fy0 = P(b.roof_pt(*DECK_FOOT))
+    rack = Box(top=(fx0, fy0 - RAISE), wx=3, wy=2, h=8)
+    rack.shadow(c, "K")
+    # faces: lit-left in mid M steel (reads on the deck), shaded-right deep b, LIT roof
+    c.fill_poly([rack.r_left, rack.r_front, rack.w_front, rack.w_left], "M")     # lit face
+    c.fill_poly([rack.r_front, rack.r_right, rack.w_right, rack.w_front], "b")   # shaded face (deep steel)
+    c.fill_poly([rack.r_top, rack.r_right, rack.r_front, rack.r_left], "L")      # lit roof
+    c.fill_poly([rack.r_top, rack.r_left, rack.r_front], "W")                    # bright back roof triangle
+    c.line(rack.r_top, rack.r_left, "W")
+    c.line(rack.r_top, rack.r_right, "W")
+    for a, bb in [(rack.r_top, rack.r_right), (rack.r_right, rack.r_front),
+                  (rack.r_front, rack.r_left), (rack.r_left, rack.r_top),
+                  (rack.r_left, rack.w_left), (rack.r_front, rack.w_front),
+                  (rack.r_right, rack.w_right),
+                  (rack.w_left, rack.w_front), (rack.w_front, rack.w_right)]:
+        c.line(a, bb, "K")
+    # a small b cowl ridge across the roof so the raised cabinet reads as a detector head
+    c.line(rack.roof_pt(0.2, 0.5), rack.roof_pt(0.8, 0.5), "b")
+    # ---- a TALL stack of glowing g/c PMT-tube bays glazed into the lit-left face ----
+    rack.window(c, "left", 0.18, 0.82, 1.4, 6.6, glass="g", hi="c", shade="G", mullions=1)
+    # two crisp K bay-divider seams + bright c/h PMT highlights so the detector tubes
+    # read as a column of discrete live cells (a real instrument rack)
+    for v in (3.0, 4.8):
+        c.line(rack.left_pt(0.18, v), rack.left_pt(0.82, v), "K")
+    c.set(*P(rack.left_pt(0.34, 2.3)), "c")
+    c.set(*P(rack.left_pt(0.58, 4.0)), "h")
+    c.set(*P(rack.left_pt(0.42, 5.6)), "c")
+    # an o detector-armed light on the shaded right face
+    pl = P(rack.right_pt(0.5, 3.0))
+    c.set(pl[0], pl[1], "o"); c.set(pl[0], pl[1] - 1, "O")
+
+
+def stage4_grating_tower(c, m):
+    """t4 — MAJOR ADD: a second MONOCHROMATOR ARM plus a slender DIFFRACTION-GRATING
+    TOWER raising the bench off the clerestory's LEFT end — a banded glass-and-steel
+    tower with an e-glowing grating CORE climbing it and a tilted grating HEAD at the
+    top — widening the dispersion into an e-cored spectrum streak. The prominent new
+    vertical mass that says 'this bench now resolves real spectra'. Palette matures:
+    deep `b` chassis + energized teal `e/E` core. Foot anchored on the clerestory cap
+    LEFT of the prism (prism base ~u0.44); height clamped via GRATING_TOWER_H so the
+    head + streak stay on-canvas and clear of the signature."""
+    fx, fy = P(m.roof_pt(0.10, 0.5))                # foot on the cap, far LEFT of prism
+    base_y = fy
+    top_y = max(2, base_y - GRATING_TOWER_H)        # TALL but clamped on-canvas
+    half = 1                                         # slim 3px tower
+    # ---- a short b plinth seating the tower on the cap ----
+    for dx in range(-half, half + 1):
+        c.set(fx + dx, base_y, "b")
+    for dx in range(-half - 1, half + 2):
+        c.set(fx + dx, base_y + 1, "K")            # plinth base shadow line
+    # ---- the tower SHELL: alternating glass sections + steel grating bands ----
+    yy = base_y - 1
+    section = 0
+    while yy > top_y:
+        seg_h = 3 if section % 2 == 0 else 1        # glass section / thin grating band
+        for k in range(seg_h):
+            row = yy - k
+            if row < top_y:
+                break
+            if section % 2 == 0:                    # glass section: lit-left c, shaded-right b
+                for dx in range(-half, half + 1):
+                    col = "c" if dx < 0 else ("g" if dx == 0 else "b")
+                    c.set(fx + dx, row, col)
+            else:                                   # steel grating band
+                for dx in range(-half, half + 1):
+                    c.set(fx + dx, row, "b")
+        if section % 2 == 1:
+            c.line((fx - half - 1, yy), (fx + half + 1, yy), "M")   # band lip catches light
+        yy -= seg_h
+        section += 1
+    # ---- K outline up both sides + a lit-left highlight ----
+    c.line((fx - half - 1, base_y - 1), (fx - half - 1, top_y), "K")
+    c.line((fx + half + 1, base_y - 1), (fx + half + 1, top_y), "K")
+    c.line((fx - half, base_y - 1), (fx - half, top_y), "L")        # lit edge glint
+    # ---- glowing grating CORE climbing the tower centre (energized teal) ----
+    for j, row in enumerate(range(top_y + 1, base_y - 1)):
+        ch = "E" if j % 3 == 0 else "e"
+        c.set(fx, row, ch)
+    # ---- the tilted DIFFRACTION-GRATING HEAD on top (a small e-edged plate) ----
+    hx, hy = fx, top_y - 1
+    c.set(hx, hy, "L")                              # head crown
+    c.set(hx - 1, hy, "b"); c.set(hx + 1, hy, "D")
+    c.set(hx - 2, hy, "K"); c.set(hx + 2, hy, "K")
+    c.set(hx, hy - 1, "e")                          # energized grating face glint
+    c.set(hx - 1, hy - 1, "K"); c.set(hx + 1, hy - 1, "K")
+    # ---- the second MONOCHROMATOR ARM: a short M arm reaching from the tower head
+    #      down-RIGHT toward the prism's lit face, carrying an e-cored spectrum streak
+    #      that widens the dispersion (kept clear of the prism body itself) ----
+    arm_x0, arm_y0 = hx + 1, hy + 1
+    arm_x1, arm_y1 = hx + 6, hy + 4                 # ends short of the prism (prism bx~32)
+    c.line((arm_x0, arm_y0), (arm_x1, arm_y1), "M")          # arm top chord
+    c.line((arm_x0, arm_y0 + 1), (arm_x1, arm_y1 + 1), "b")  # arm body
+    c.set(arm_x1, arm_y1, "D")                               # arm elbow
+    # an e-cored spectrum streak fanning short off the arm elbow (the widened streak)
+    for t in range(0, 4):
+        c.set(arm_x1 + t, arm_y1 + 1 + (t // 2), "e")
+    c.set(arm_x1 + 3, arm_y1 + 2, "E")
+
+
+def stage5_dual_beam(c, m):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED dual-beam spectro-array. The t4 grating
+    tower + the signature prism become a TWIN-GRATING pair throwing a bright E rainbow
+    dispersion ARC across the gap between them — the suite now reads as maxed/elite —
+    dressed out with GOLD premium trim (a gold optical-rail along the clerestory cap +
+    a gold prism MOUNT seated under the signature prism + a gold finial on the grating
+    tower). Reads as elite, still recognizably the same calm optics hall, just maxed.
+
+    Re-anchors from the SAME source the tower used (m.roof_pt(0.10,0.5) + the clamped
+    GRATING_TOWER_H) so the arc leaves exactly the tower's grating head."""
+    # recompute the tower grating-head EXACTLY as stage4 did (no hardcoded 2nd guess)
+    fx, fy = P(m.roof_pt(0.10, 0.5))
+    base_y = fy
+    top_y = max(2, base_y - GRATING_TOWER_H)
+    head = (fx, top_y - 1)                          # grating head point (matches stage4)
+
+    # the signature prism base/apex, recomputed from prism_spectrum's own anchor so the
+    # arc lands on the prism's lit face (NOT a hardcoded guess)
+    pbase = m.roof_pt(0.44, 0.5)
+    pbx = int(round(pbase[0]))
+    pby = int(round(pbase[1])) - 1
+    prism_face = (pbx - 2, pby - 5)                 # the prism's lit-left facet midpoint
+
+    # ---- the DUAL-BEAM rainbow DISPERSION ARC arcing from the grating head across to
+    #      the prism's lit face: a bright E spine with a CLEAN spectral edge sweeping
+    #      violet→blue (r/o/O/c/g/G) along its length, bowed UP over the gap so it reads
+    #      as a single thrown dispersion rainbow (not a scramble) ----
+    x0, y0 = head[0] + 1, head[1] + 1
+    x1, y1 = prism_face
+    steps = 13
+    bow = 3                                          # gentle peak rise of the arc
+    pts = []
+    for s in range(steps + 1):
+        t = s / float(steps)
+        x = x0 + (x1 - x0) * t
+        y = y0 + (y1 - y0) * t - bow * math.sin(math.pi * t)   # parabolic bow upward
+        pts.append((int(round(x)), int(round(y))))
+    # a clean violet→blue spectral sweep just BELOW the spine (the rainbow under the arc)
+    sweep = ["r", "o", "o", "O", "O", "c", "c", "g", "g", "G"]
+    for i, (px, py) in enumerate(pts):
+        c.set(px, py + 1, sweep[int(i / max(1, len(pts) - 1) * (len(sweep) - 1))])
+    # bright E spine drawn ON TOP so the arc reads as one clean energized band
+    for px, py in pts:
+        c.set(px, py, "E")
+    # a soft e haze a row higher at the arc crown so it glows
+    crown = pts[len(pts) // 2]
+    c.set(crown[0], crown[1] - 1, "e")
+
+    # --- GOLD premium trim (t5 flourish only) ---
+    # a gold OPTICAL-RAIL running along the clerestory cap ridge (the maxed-out bench)
+    e0 = m.roof_pt(0.06, 0.5)
+    e1 = m.roof_pt(0.40, 0.5)                        # stop short of the prism base (u0.44)
+    c.line(e0, e1, "q")
+    # a gold PRISM MOUNT: a small gold plinth seated UNDER the signature prism base,
+    # so the hero prism now reads as premium-mounted (does NOT touch the prism glass).
+    # a clean 5px gold band with bright O end-caps + a centred foot = a deliberate mount.
+    for dx in (-2, -1, 0, 1, 2):
+        c.set(pbx + dx, pby + 1, "q")
+    c.set(pbx - 2, pby + 1, "O"); c.set(pbx + 2, pby + 1, "O")
+    c.set(pbx - 1, pby + 2, "q"); c.set(pbx + 1, pby + 2, "q")
+    # a gold FINIAL capping the grating tower head
+    c.set(head[0], head[1] - 1, "q")
+    c.set(head[0], head[1] - 2, "O")
+
+
 # ── ASSEMBLE (painter's order: back→front, ground→sky) ───────────────────────
-def build():
+def build(stage: int = 1):
+    """Compose the spectroscopy-suite at upgrade `stage` (1..5). Stage 1 is IDENTICAL
+    to the shipped base; each higher stage keeps every prior addition and bolts on the
+    next (t2 cuvette-turret+laser → t3 detector-rack annex → t4 grating tower+arm →
+    t5 dual-beam arc + gold). Painter's order keeps rooftop/overhead additions on top
+    of the masses they grow from, and the signature prism+fan are drawn LAST so no
+    upgrade ever paints over the one-of-one feature."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) ---
     b = body(c)                 # low wide instrument hall
     loading_bay(c, b)           # HERO: wide LEFT sample-loading bay (opening LEFT)
     right_face(c, b)            # plain RIGHT face: vents + conduit
     m = clerestory(c, b)        # glazed clerestory monitor ridge
-    prism_spectrum(c, m)        # prism splitting a beam into a spectral rainbow (signature)
+
+    # --- CUMULATIVE UPGRADE STAGES ---
+    # The detector-rack (t3) sits on the open FRONT-roof step; the grating tower (t4) +
+    # dual-beam arc (t5) rise from the clerestory LEFT end. All are drawn BEFORE the
+    # signature so the prism + spectral fan remain the front-most hero.
+    if stage >= 3:
+        stage3_detector_rack(c, b)
+    if stage >= 4:
+        stage4_grating_tower(c, m)
+    if stage >= 5:
+        stage5_dual_beam(c, m)
+    # t2 props sit on the OPEN front-LEFT body-roof deck (well clear of the prism); draw
+    # after the tower so a t4+ monochromator arm never paints over them, but before the
+    # prism so the signature still reads on top.
+    if stage >= 2:
+        stage2_cuvette_turret(c, b)
+
+    # the prism splitting a beam into a spectral rainbow is ALWAYS the front-most hero
+    prism_spectrum(c, m)        # signature (one-of-one) — drawn LAST
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/chemworks"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "spectroscopy-suite"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped spectroscopy-suite.png, so it does NOT overwrite the
+    base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": CHEM, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/chemworks_spectroscopy-suite.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"chemworks_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"chemworks_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

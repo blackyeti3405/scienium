@@ -40,9 +40,16 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, RX, RY, LX, LY
 
+# Base BioCore palette (shared keys) + the four EVOLVED accent shades reserved for the
+# upgrade stages only (they appear in no stage-1 helper, so field-station.png is
+# unchanged). Lab-wide BioCore evolved accents (same keys+hexes as greenhouse.py):
+#   b  deep mossy bark-green — matured timber/structure tone for t3+ new masses/frames
+#   e  bioluminescent glow (mid)   E  bioluminescent glow (bright) — the t4/t5 life-glow
+#   q  premium gold trim — t5 flourish ONLY (NOT a whole-building recolor)
 BIO = {"K": "#1a2417", "W": "#e8f2d8", "L": "#c4dba6", "M": "#9fc07e", "D": "#6f9456", "d": "#4a6e3a",
        "h": "#d2f7ec", "c": "#9fefcf", "g": "#36cc9e", "G": "#1d8f70",
-       "o": "#f0b24d", "O": "#ffd488", "r": "#b9701e"}
+       "o": "#f0b24d", "O": "#ffd488", "r": "#b9701e",
+       "b": "#2f4a2a", "e": "#74f0b6", "E": "#ccffe4", "q": "#f3c63a"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
@@ -323,24 +330,333 @@ def sensor_mast(c, slab):
         c.set(gx, gy, "h")
     # a hot O glint on the catching cup
     c.set(cr[0] + 3, cr[1] - 2, "O")
+    # return the mast's source points so the upgrade stages anchor off the SAME
+    # geometry (second weather-tower beside it; the t5 telemetry array on its crown).
+    return bx, by, top_y
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS field / climate /
+# telemetry kit onto the prior expedition-camp form — never restarts, never recolors
+# the whole cabin. Theme: the rustic field station grows into a fully-rigged remote
+# RESEARCH OUTPOST. The rustic TIMBER identity is kept (matured bark-green `b` framing,
+# planks, tarps); the evolved glow is BioCore's BIO-LUMINESCENT green-teal (`e/E`),
+# never electric cyan. Gold (`q`) appears ONLY at t5, as the pennant + anchor caps.
+#
+#   t2  small functional add : rain-gauge + solar-panel on the back-LEFT wing roof,
+#                              an extra `o` ground-anchor lantern at the court edge,
+#                              and a brightened `O` wash on the hero lit-bay glow.
+#   t3  structural add       : a lean-to SPECIMEN-DRYING RACK + tarp annex off the
+#                              RIGHT wing — a `b` timber frame with hanging M/g plant
+#                              bundles + `d` netting (rustic, plank-consistent).
+#   t4  major add            : a SECOND TALLER guyed WEATHER-TOWER from the court
+#                              beside the signature mast, carrying a glowing `e`
+#                              data-uplink dish + stacked sensor booms; `b` frame.
+#   t5  crowning feature     : the signature mast maxes into a FULL TELEMETRY ARRAY —
+#                              a brighter spinning `E` anemometer, an `E` camera-eye,
+#                              a swarm of `e` data-blip pings + a `q` GOLD pennant and
+#                              gold anchor caps. (Rustic identity kept; gold = trim only.)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_fieldkit(c, slab, lw, rw):
+    """t2 — SMALL FUNCTIONAL ADD: more field instrumentation, all base-palette + one
+    brightened glow. Three modest, well-spaced elements so they read as kit, not noise:
+      • a RAIN-GAUGE cylinder + a small tilted SOLAR-PANEL prop on the back-LEFT plank
+        wing roof (up-left, clear of the central sensor mast);
+      • an extra `o` GROUND-ANCHOR LANTERN staked at the open front court edge;
+      • a brighter `O` wash pooled into the hero lit-bay so the lamp reads warmer.
+    Nothing here touches the base functions, so stage 1 stays byte-identical."""
+    # --- RAIN-GAUGE: a slim funnel-topped tube standing UP-LEFT on the LEFT wing roof.
+    #     Drawn as a HARD K-outlined post so it pops off the green plank roof instead of
+    #     blending: a K left edge + L lit body + a clean wide W/L funnel cone on top, and
+    #     a short c water-read column. Kept thin (2px) and pulled to the back-left so it
+    #     never crowds the solar panel (now well to its lower-right). ---
+    gp = lw.roof_pt(0.26, 0.66)
+    gx, gy = int(round(gp[0])), int(round(gp[1]))
+    GH = 6
+    c.line((gx, gy), (gx, gy - GH), "K")             # hard dark left edge — reads off the roof
+    c.line((gx + 1, gy), (gx + 1, gy - GH), "L")     # lit metal body
+    c.set(gx, gy - 2, "c"); c.set(gx + 1, gy - 4, "c")  # water-level read marks
+    # wide funnel catch-cone on top (a clear 4px lip so it reads as a rain gauge, not a stick)
+    fy = gy - GH - 1
+    c.set(gx - 1, fy, "L"); c.set(gx, fy, "W"); c.set(gx + 1, fy, "W"); c.set(gx + 2, fy, "L")
+    c.set(gx - 1, fy, "K"); c.set(gx + 2, fy - 1, "M")
+    c.set(gx, fy - 1, "h"); c.set(gx + 1, fy - 1, "W")  # bright rim glint
+    c.set(gx, gy, "K"); c.set(gx + 1, gy, "K")          # feet on the roof
+    # --- SOLAR-PANEL: a tilted teal-cell panel on a short post, placed clearly DOWN-RIGHT
+    #     of the gauge with open roof between them so the two read as two distinct props.
+    #     A solid K-outlined quad with a flat g cell face, one G shade band + a single hard
+    #     W glint — simple + crisp (no h/g speckle that turned the old panel to mush). ---
+    pp = lw.roof_pt(0.66, 0.30)
+    px, py = int(round(pp[0])), int(round(pp[1]))
+    c.line((px, py), (px, py - 2), "D")          # short support post (lit)
+    c.set(px + 1, py - 1, "d")                    # post shade
+    c.set(px, py, "K")                            # post foot
+    # tilted panel face — an iso quad: solid g cells, lower-right G shade, one W sun glint.
+    q0, q1, q2, q3 = (px - 3, py - 4), (px, py - 6), (px + 3, py - 4), (px, py - 2)
+    c.fill_poly([q0, q1, q2, q3], "g")           # flat lit cell field (one clean tone)
+    c.fill_poly([q3, q2, (q2[0] - 1, q2[1] + 1), (q3[0], q3[1] - 1)], "G")  # lower-right shade
+    c.set(q1[0], q1[1] + 1, "W"); c.set(q1[0] - 1, q1[1] + 1, "h")          # single sun glint
+    c.set((q0[0] + q2[0]) // 2, (q0[1] + q2[1]) // 2, "G")                  # cell-seam tick
+    for a, b in [(q0, q1), (q1, q2), (q2, q3), (q3, q0)]:
+        c.line(a, b, "K")                         # hard K frame all round
+    # --- EXTRA GROUND-ANCHOR LANTERN staked at the open front court edge (front-left
+    #     vertex area), matching the signature's o ground anchors. ---
+    ap = slab.roof_pt(0.22, 0.18)
+    ax, ay = int(round(ap[0])), int(round(ap[1]))
+    c.set(ax, ay + 2, "K")                       # peg in the earth
+    c.set(ax, ay + 1, "K")                       # stake base (darker so the lantern reads)
+    c.set(ax, ay, "r")                           # short wood stake
+    c.set(ax, ay - 1, "o")                       # lantern body
+    c.set(ax, ay - 2, "O")                       # warm flame core
+    for dx, dy in [(-1, -1), (1, -1), (0, -3)]:  # tiny glow halo (a touch taller)
+        c.set(ax + dx, ay + dy, "o")
+    # --- BRIGHTEN the hero lit-bay: pool a couple extra O highlights into the upper-
+    #     inner glow (over-painted on top of the base bay, so the lamp reads warmer). ---
+    for (u, v) in [(0.20, 3.0), (0.16, 4.0), (0.24, 3.6)]:
+        p = rw.right_pt(u, v)
+        c.set(int(round(p[0])), int(round(p[1])), "O")
+
+
+def stage3_dryrack(c, slab, rw):
+    """t3 — STRUCTURAL ADD: a rustic SPECIMEN-DRYING RACK — a LOW, WIDE timber trestle in
+    the clear ground off the RIGHT wing's front-right corner (the shaded side, away from the
+    central mast). A matured bark-green `b` frame: two short splayed leg-pairs holding a long
+    horizontal TOP BAR, a small sun-bleached `L/M` tarp lean-to angled over the bar, and a
+    row of tied `M/g` plant BUNDLES hanging down to dry. Built WIDE + LOW (not tall) so it
+    reads as a drying rack, not furniture; tucked snug against the wing's front-right base so
+    it connects to the building. Introduces the matured bark-green `b`. Lesson applied: tarp
+    in LIGHT `L/M` so it pops on the dark earth; kept short so it never reads as a chair."""
+    # the rack sits low+wide in the right-front ground (x44..56, y44..51). Author in screen
+    # space. Anchor the TOP BAR first (the spine of the rack), then legs, tarp, bundles.
+    bar_l = (45, 45)                              # left end of the horizontal drying bar
+    bar_r = (55, 47)                              # right end (recedes down-right in iso)
+    # --- small sun-bleached TARP lean-to angled OVER the bar (drawn first, behind) ---
+    tA = (bar_l[0] - 1, bar_l[1] - 4)             # tarp back-ridge (raised above the bar)
+    tB = (bar_r[0] - 1, bar_r[1] - 4)
+    c.fill_poly([tA, tB, (bar_r[0], bar_r[1] - 1), (bar_l[0], bar_l[1] - 1)], "M")  # canvas
+    c.line(tA, tB, "L")                           # bright ridge of the tarp
+    c.fill_poly([tB, (bar_r[0], bar_r[1] - 1), (bar_r[0] + 1, bar_r[1] - 1), (tB[0] + 1, tB[1])], "D")  # shade fold
+    c.line((bar_l[0], bar_l[1] - 1), (bar_r[0], bar_r[1] - 1), "d")   # tarp front hem
+    for a, b in [(tA, (bar_l[0], bar_l[1] - 1)), (tB, (bar_r[0], bar_r[1] - 1))]:
+        c.line(a, b, "K")                         # crisp side edges
+    # --- the long horizontal TOP BAR (the drying spine) ---
+    c.line(bar_l, bar_r, "b")
+    c.line((bar_l[0], bar_l[1] - 1), (bar_r[0], bar_r[1] - 1), "M")   # lit top of the bar
+    c.set(bar_l[0], bar_l[1], "K"); c.set(bar_r[0], bar_r[1], "K")
+    # --- two short SPLAYED leg-pairs (A-frame trestles) under the bar ends, kept SHORT ---
+    for (lx, ly) in (bar_l, (bar_r[0] - 1, bar_r[1])):
+        c.line((lx, ly), (lx - 2, ly + 5), "b")   # front-splayed leg
+        c.line((lx + 1, ly), (lx + 2, ly + 5), "b")   # back-splayed leg
+        c.set(lx - 2, ly + 5, "K"); c.set(lx + 2, ly + 5, "K")   # feet
+        c.set(lx - 2, ly + 6, "d"); c.set(lx + 2, ly + 6, "d")   # contact shadow
+    # --- a row of tied plant BUNDLES hanging from the bar to dry (M stems, g leaf, G base) -
+    for k, bxh in enumerate((47, 49, 51, 53)):
+        topy = bar_l[1] + (1 if k < 2 else 2)     # follow the bar's slight down-slope
+        c.set(bxh, topy, "r")                     # tie at the bar
+        c.line((bxh, topy + 1), (bxh, topy + 3), "M")   # bundle stems
+        c.set(bxh + (1 if k % 2 else -1), topy + 2, "g")   # a leaf tip to one side
+        c.set(bxh, topy + 4, "G")                 # darker bundle base
+
+
+def stage4_weathertower(c, slab, bx, by, top_y):
+    """t4 — MAJOR ADD: a SECOND, TALLER guyed WEATHER-TOWER rising from the court a little
+    to the LEFT of the signature sensor mast (the camera + pennant flutter to the LEFT and
+    RIGHT of the signature respectively, so the new tower sits left-rear, framing — never
+    occluding — the hero). A slim deep bark-green `b` lattice mast, its own `d` guy-wires to
+    `o` anchors, crowned by a glowing bio-luminescent `e` DATA-UPLINK DISH on a short gimbal
+    plus two stacked `M` sensor booms. The prominent new vertical mass that says 'this camp
+    now uplinks data'. Palette matures to deep `b` + energized `e/E`. Anchored off the SAME
+    base point (bx,by) as the signature mast; kept fully on-canvas and clear of the crown."""
+    # foot a few px LEFT of the signature mast base, slightly back, so the two masts read
+    # as a paired rig (the new one a touch shorter so the hero stays dominant).
+    tx = max(2, bx - 8)
+    tby = by - 2                                  # foot sits just back of the hero foot
+    ttop = tby - 27                               # tall, but ~3px under the hero crown
+    ttop = max(2, ttop)
+    # --- guy-wires first (behind the mast): from a mid collar to two o ground anchors ---
+    collar_y = tby - 16
+    for axp, ayp in [(tx - 6, tby - 1), (tx - 3, tby + 3)]:
+        axp = max(0, axp)
+        c.line((tx, collar_y), (axp, ayp), "d")
+        c.set(axp, ayp, "o")                      # o ground anchor peg
+        c.set(axp, ayp + 1, "K")
+    c.set(tx, collar_y, "M")                      # collar
+    # --- LATTICE MAST: twin bark-green uprights + X-bracing rungs (a built tower) ---
+    c.line((tx, tby), (tx, ttop), "b")            # lit left upright
+    c.line((tx + 2, tby), (tx + 2, ttop), "K")    # shaded right upright
+    for yy in range(ttop + 3, tby - 1, 4):        # X-bracing
+        c.line((tx, yy), (tx + 2, yy + 2), "b")
+        c.line((tx + 2, yy), (tx, yy + 2), "b")
+    c.set(tx, ttop, "K"); c.set(tx + 2, ttop, "K")
+    for dx in (-1, 0, 1, 2, 3):                   # foot plate + contact shadow
+        c.set(tx + dx, tby + 1, "K")
+    # --- two stacked SENSOR BOOMS arming out from the mast (thin M cross-arms + tip pods) ---
+    for boom_y, blen in [(ttop + 7, -4), (ttop + 12, 4)]:
+        bxe = max(0, min(63, tx + 1 + blen))
+        c.line((tx + 1, boom_y), (bxe, boom_y), "M")
+        c.set(bxe, boom_y, "c")                   # a small c sensor pod at the tip
+        c.set(bxe, boom_y - 1, "h")
+    # --- DATA-UPLINK DISH on a short gimbal at the crown (glowing bio-luminescent e),
+    #     drawn as a clear up-tilted bowl so it reads as a dish, not a smudge. ---
+    dcx, dcy = tx + 1, ttop - 2                   # dish hub above the mast top
+    c.line((tx + 1, ttop), (dcx, dcy + 1), "M")   # short gimbal post
+    c.set(dcx, dcy + 1, "K")                      # gimbal pivot
+    # bowl: a wider e arc with an E bright upper rim + a G shaded under-curve (depth)
+    for ddx in (-3, -2, -1, 0, 1, 2, 3):
+        rim = dcy - 1 - (1 if abs(ddx) <= 1 else 0)    # shallow concave rim
+        c.set(max(0, min(63, dcx + ddx)), rim, "E")    # bright dish rim catches light
+    for ddx in (-2, -1, 0, 1, 2):
+        c.set(max(0, min(63, dcx + ddx)), dcy, "e")    # the e bowl face
+    c.set(dcx, dcy + 1, "G")                      # bowl under-shade (depth)
+    c.set(dcx - 1, dcy + 1, "G")
+    c.set(dcx, dcy - 1, "W")                      # bright feed-horn nub at the focus
+    # a faint e uplink blip rising off the dish (the data link)
+    for j, dyb in enumerate((3, 5, 7)):
+        if dcy - dyb >= 0:
+            c.set(max(0, min(63, dcx + (j % 2))), dcy - dyb, "e")
+
+
+def stage5_telemetry(c, slab, bx, by, top_y):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED outpost. The signature sensor mast maxes into a
+    FULL TELEMETRY ARRAY, drawn AFTER the base mast (so it layers onto the SAME crown): the
+    anemometer cups brighten to `E` with a wider motion-ghost halo, a new `E` CAMERA-EYE pod
+    bolts onto the crown scanning the court, and a swarm of `e` DATA-BLIP pings radiates out
+    into the empty sky flanking the mast. Then the rustic outpost is dressed with GOLD premium
+    trim — a `q` GOLD PENNANT replacing-over the data flag, and gold caps on the mast's three
+    ground anchors. Reads as elite; still the same plank field-station. Gold (`q`) lives ONLY
+    here, as the pennant + anchor caps (rustic timber identity preserved)."""
+    cr = (bx, top_y)                              # SAME crown source point as the base mast
+    # --- brighten the ANEMOMETER crown to bio-luminescent E + a wider spin-ghost halo ---
+    arms = [(-3, -1), (3, -1), (0, -3)]
+    for ax, ay in arms:
+        c.set(cr[0] + ax, cr[1] + ay, "E")        # cups energize to bright bio-glow
+        c.set(cr[0] + ax + (1 if ax >= 0 else -1), cr[1] + ay, "E")
+    for (gx, gy) in [(cr[0] - 2, cr[1] - 4), (cr[0] + 3, cr[1] - 3), (cr[0] - 4, cr[1] + 1),
+                     (cr[0] + 1, cr[1] - 5)]:      # wider whirling motion halo
+        if 0 <= gx <= 63 and 0 <= gy <= 63:
+            c.set(gx, gy, "e")
+    # --- a new CAMERA-EYE pod bolted to the crown, just under the cups, scanning right ---
+    eye_y = top_y + 3
+    _stamp(c, bx + 1, eye_y, [
+        "KKK",
+        "KEK",   # bright bio-glow camera iris
+        "KKK",
+    ])
+    c.set(bx + 4, eye_y + 1, "e")                 # a short e scan-beam tick off the eye
+    c.set(bx + 5, eye_y + 1, "h")
+    # --- DATA-BLIP SWARM: glowing e/E pings radiating into the empty sky flanking the mast
+    #     (kept WIDER than the pennant/booms so each reads as a discrete mote). ---
+    blips = [(-6, -2), (-8, -6), (-7, -11), (6, -3), (8, -7), (7, -12), (5, 4)]
+    for dx, dy in blips:
+        sx, sy = bx + dx, top_y + 6 + dy
+        if 0 <= sx <= 63 and 0 <= sy <= 63:
+            c.set(sx, sy, "E")                    # bright ping core
+            if 0 <= sy + 1 <= 63:
+                c.set(sx, sy + 1, "e")            # faint trail
+    # --- GOLD premium trim (t5 flourish ONLY) ---
+    # a GOLD PENNANT flying up-right near the top, over-painted on the base data-pennant
+    # (same anchor: the base pennant is at bx+1, top_y+4). Recompute from top_y, don't guess.
+    # The base flag is a SOFT o/O triangle that reads near-identical to gold at 64px, so the
+    # upgrade has to differ in SILHOUETTE + BRIGHTNESS: a slightly larger swallow-tail flag
+    # with a HARD K outline (the base flag has none), a solid q gold field, a bright O hoist
+    # streak, and an r shaded lower fold — so it clearly reads as a crisp PREMIUM banner. All
+    # points clamped on-canvas (bx≈33 so bx+5≤63). ---
+    pen_y = top_y + 4
+    c.set(bx, pen_y, "r")                         # pennant tie to the pole (kept)
+    # gold flag body: a 4-wide swallow-tail triangle fluttering out to the RIGHT
+    flag = [
+        "KKKK.",   # hard top edge — the K outline the base pennant lacks
+        "qqOK.",   # gold field with a bright O hoist streak
+        "qqqOK",   # widest gold band -> swallow-tail point
+        "qqOK.",   # gold field, O lower-mid streak
+        "rKK..",   # r shaded lower fold + K hem (the flag droops)
+    ]
+    for j, row in enumerate(flag):
+        for i, ch in enumerate(row):
+            if ch != "." and 0 <= bx + 1 + i <= 63 and 0 <= pen_y - 1 + j <= 63:
+                c.set(bx + 1 + i, pen_y - 1 + j, ch)
+    c.set(bx, pen_y - 1, "q"); c.set(bx, pen_y + 1, "q")   # gold finial collar on the staff
+    # GOLD CAPS on the signature mast's three ground anchors (recompute from base geometry:
+    # sensor_mast used anchors at (bx-9,by-1),(bx+9,by-2),(bx+2,by+4)). A 2px q+O cap each so
+    # the gold registers as deliberate premium trim, not a single-pixel speck. ---
+    for axp, ayp in [(bx - 9, by - 1), (bx + 9, by - 2), (bx + 2, by + 4)]:
+        if 0 <= axp <= 63 and 0 <= ayp <= 63:
+            c.set(axp, ayp, "q")                  # gold anchor cap over the o peg
+            if 0 <= axp + 1 <= 63:
+                c.set(axp + 1, ayp, "q")          # widen the cap (reads as a fitting)
+            if 0 <= ayp - 1 <= 63:
+                c.set(axp, ayp - 1, "O")          # bright boss on top
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the field station at upgrade `stage` (1..5). Stage 1 is IDENTICAL to the
+    shipped base; each higher stage keeps every prior addition and bolts on the next
+    (t2 field-kit → t3 drying-rack → t4 weather-tower → t5 telemetry array + gold).
+    Painter's order: court slab (foundation) → back wings → corner lantern → the ground/
+    roof/annex stage adds → the guyed eco-sensor mast signature LAST (so nothing occludes
+    it), then the t5 telemetry array layered onto the SAME mast crown."""
     c = Canvas()
-    # painter's order: court slab (foundation) -> back wings -> corner lantern ->
-    # the guyed eco-sensor mast signature standing in the OPEN front court.
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     slab = court_slab(c)
     lw = left_wing(c, slab)
     rw = right_wing(c, slab)
     corner_lantern(c, lw, rw)
-    sensor_mast(c, slab)
 
+    # --- CUMULATIVE GROUND/ROOF/ANNEX STAGE ADDS (drawn before the mast so the hero
+    #     mast stays in front of them; the second tower is placed to the side) --------
+    if stage >= 2:
+        stage2_fieldkit(c, slab, lw, rw)
+    if stage >= 3:
+        stage3_dryrack(c, slab, rw)
+
+    # --- SIGNATURE: the guyed eco-sensor mast (drawn after the wings/annex so it reads
+    #     in front in the open court). Returns its source points for the upgrade rigs. ---
+    bx, by, top_y = sensor_mast(c, slab)
+
+    if stage >= 4:
+        stage4_weathertower(c, slab, bx, by, top_y)
+    if stage >= 5:
+        stage5_telemetry(c, slab, bx, by, top_y)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/biocore"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "field-station"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG +
+    scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must keep
+    matching the shipped field-station.png, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": BIO, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/biocore_field-station.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"biocore_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"biocore_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

@@ -33,9 +33,17 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
+# Base BioCore palette (shared keys) + a few EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so aquatic-habitat.png is
+# unchanged). BioCore's evolved glow is BIO-LUMINESCENT — a living green-teal bloom —
+# so a maxed tank reads as a glowing vivarium, not a power plant:
+#   b  deep mossy bark-green  — matured structure tone for t3+ new masses/collars
+#   e  bioluminescent glow (mid)   E  bioluminescent glow (bright) — the t4/t5 life-glow
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 BIO = {"K": "#1a2417", "W": "#e8f2d8", "L": "#c4dba6", "M": "#9fc07e", "D": "#6f9456", "d": "#4a6e3a",
        "h": "#d2f7ec", "c": "#9fefcf", "g": "#36cc9e", "G": "#1d8f70",
-       "o": "#f0b24d", "O": "#ffd488", "r": "#b9701e"}
+       "o": "#f0b24d", "O": "#ffd488", "r": "#b9701e",
+       "b": "#2f4a2a", "e": "#74f0b6", "E": "#ccffe4", "q": "#f3c63a"}
 
 
 # ── tank geometry (tall + narrow => a vertical water column, not a wide drum) ──
@@ -352,8 +360,208 @@ def entry_annex(c):
     return a
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS life-support /
+# aquaculture structure onto the prior rotunda — never restarts, never recolors the
+# whole tank. Theme: the starter aquarium grows into a fully built-out, bio-luminescent
+# AQUACULTURE RIG. Colours mature stage by stage (matured bark-green `b`, bio-glow
+# `e/E`); gold (`q`) only as a t5 flourish. Every add is anchored OFF the tank/cap/annex
+# geometry and kept CLEAR of the living KELP-AND-FISH ECOSYSTEM signature (which swirls
+# inside the lit-LEFT half of the glass column), so the signature is never occluded.
+#
+#   t2  small functional add   : a roof SKIMMER box + a `c` water-quality probe pipe
+#   t3  structural add         : a QUARANTINE SUMP-TANK annex (short cylinder) by the entry
+#   t4  major add              : a tall STANDPIPE / PROTEIN-REACTOR column on the right
+#   t5  crowning feature       : the reef blooms FULLY + a `q` GOLD cap-ring & window trim
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_skimmer(c, annex):
+    """t2 — SMALL FUNCTIONAL ADD: a chunky roof SKIMMER box standing UP on the
+    front-CENTRE of the tank cap, with a tall external GOOSENECK water-quality probe
+    arcing up off it into the clear sky ABOVE the rim and dipping back DOWN into the
+    water — so the rooflite reads as a distinct new life-support unit, not just more
+    cap. Body is the LIGHT teal `c` (with `g/G` shading) so it pops as a solid object;
+    one lit `e` probe tip + the entry-annex `o` gauge brightened to a lit `O`/`e`
+    readout are the t2 accent pops. Seated front-CENTRE on the cap — well clear of the
+    back-right base FILTER box, the lit-left VIEWING-WINDOW head below, and the reef
+    inside the column."""
+    cap_cy = TOP_Y
+    # A clearly-readable box on the cap front-CENTRE, sitting on the water surface in
+    # the open gap between the lit-left window head and the back-right filter box.
+    # Drawn directly in screen space so it perches cleanly on the rim, not hovering.
+    bx, by = CX - 5, cap_cy - 2            # front-centre of the cap (cols 25..29)
+    BW, BH = 4, 4                          # body width / height
+    # body block: light `c` lit face, `g` shaded right strip, `D` rim, `K` outline
+    c.fill_poly([(bx, by), (bx + BW, by), (bx + BW, by + BH), (bx, by + BH)], "c")
+    c.fill_poly([(bx + BW - 1, by + 1), (bx + BW, by + 1),
+                 (bx + BW, by + BH), (bx + BW - 1, by + BH)], "g")     # shaded right
+    c.line((bx, by), (bx + BW, by), "L")                              # lit top edge
+    c.line((bx, by + 1), (bx + BW, by + 1), "D")                      # under-lip shade
+    for a, e in [((bx, by), (bx, by + BH)), ((bx + BW, by), (bx + BW, by + BH)),
+                 ((bx, by + BH), (bx + BW, by + BH)), ((bx, by), (bx + BW, by))]:
+        c.line(a, e, "K")
+    # a small `g` intake louver slit on the lit face (reads as a skimmer)
+    c.line((bx + 1, by + 2), (bx + 2, by + 2), "G")
+    c.set(bx + 1, by + 3, "h")                                        # one bright glint
+    # GOOSENECK probe: rises off the box top, arcs UP into the clear sky above the rim,
+    # then dips back DOWN through the rim into the water to the box's right. A clear,
+    # tall external `c` arc so it reads as its own probe. All points clamped on-canvas.
+    ax, ay = bx + 1, by - 1                # springs off the box top-left post
+    arc = [(ax, ay), (ax, ay - 3), (ax + 2, ay - 5), (ax + 5, ay - 5),
+           (ax + 7, ay - 3), (ax + 7, ay - 1), (ax + 7, ay + 2)]
+    arc = [(min(63, max(0, px)), min(63, max(0, py))) for px, py in arc]
+    for i in range(len(arc) - 1):
+        c.line(arc[i], arc[i + 1], "c")
+    c.set(arc[2][0], arc[2][1] - 1, "h")              # bright crown of the gooseneck
+    tipx, tipy = arc[-1]
+    c.set(tipx, min(63, tipy + 1), "e")               # lit probe tip dipping into water
+    # brighten the entry-annex water-quality GAUGE to a lit readout (the t2 accent pop)
+    g0 = annex.left_pt(0.80, 3.0)
+    gx, gy = int(round(g0[0])), int(round(g0[1]))
+    c.set(gx, gy, "O"); c.set(gx + 1, gy, "e")      # energized gauge readout
+
+
+def stage3_sump(c):
+    """t3 — STRUCTURAL ADD: a QUARANTINE SUMP-TANK — a short, fat second cylinder of its
+    own `c/g` water — standing in the OPEN GROUND to the FRONT-LEFT of the rotunda, just
+    forward of the entry annex (annex base ≈x14..22), so it reads as a distinct smaller
+    tank tied to the rig. A matured bark-green `b` housing COLLAR rings its base and a
+    short `b` pipe ties it to the entry annex (the quarantine feed). Introduces the
+    matured bark-green tone `b`. Sited low-left (x≈9..17, y≈38..47) so it neither tangles
+    the rotunda's base plinth nor reaches the reef inside."""
+    scx, stop = 13, 39                              # sump centre-x, top-ellipse y
+    srx, sh = 5, 7                                  # short + fat: a stout sump tank
+    sry = 2.5
+    # the second water cylinder (lighter `c` lit-left, deeper `g/G` right) — its own water
+    cylinder(c, scx, stop, srx, sh, top="g", side_l="c", side_r="G", outline="K", ry=sry)
+    # bright `h` waterline + `W` sparkle a couple px below its rim
+    for col in range(-srx + 1, srx):
+        t = 1 - (col / srx) ** 2
+        if t < 0:
+            continue
+        edge = sry * (t ** 0.5)
+        y = int(stop + 1.5 + (sry - edge) * 0.5)
+        c.set(scx + col, y, "h" if col <= 0 else "c")
+    c.set(scx - 2, int(stop + 1.5), "W")
+    # --- matured bark-green `b` housing COLLAR ringing the sump base (the quarantine rig) ---
+    base_cy = stop + sh
+    for a in range(0, 181, 5):                      # front arc of a `b` collar band
+        x = scx + (srx + 1) * math.cos(math.radians(a))
+        y = base_cy + (sry + 0.5) * math.sin(math.radians(a))
+        c.set(int(round(x)), int(round(y)), "b")
+    c.line((scx - srx - 1, base_cy), (scx - srx - 1, base_cy + 2), "b")  # collar feet
+    c.line((scx + srx + 1, base_cy), (scx + srx + 1, base_cy + 2), "b")
+    for a in range(0, 181, 8):                      # K outline under the collar
+        x = scx + (srx + 1) * math.cos(math.radians(a))
+        y = base_cy + 2 + (sry + 0.5) * math.sin(math.radians(a))
+        c.set(int(round(x)), int(round(y)), "K")
+    # a short `b` quarantine feed pipe tying the sump up to the entry-annex base (to the
+    # right of the sump). Kept low + short so it reads as one tie, not a stray line.
+    c.line((scx + srx - 1, stop + 1), (scx + srx + 3, stop + 1), "b")
+    c.set(scx + srx + 3, stop + 1, "D")
+    c.set(scx + srx - 1, stop, "c")                 # water in the feed
+
+
+def stage4_standpipe(c):
+    """t4 — MAJOR ADD: a tall STANDPIPE / PROTEIN-REACTOR column rising alongside the
+    rotunda on the plainer RIGHT side (clear of the lit-LEFT reef), so it reads as one
+    aquaculture rig: a slim deep bark-green `b` column climbing well above the tank rim,
+    carrying a glowing bio-luminescent `e` UV-STERILIZER band and a bubbling `h` water
+    column inside. The prominent new vertical mass: 'this habitat now scrubs + sterilizes
+    its water'. Palette matures to deep `b` + energized `e/E`. Kept fully on-canvas
+    (column at x≈44..48) and well to the RIGHT of the tank so it never occludes the reef."""
+    px = 45                                         # left edge of the reactor column
+    PW = 3                                          # 3px-wide column
+    base_y = BASE_Y - 1                             # foot at the tank base level
+    top_y = 8                                       # TALL — climbs above the tank rim
+    # column body: lit `b` left edge, deep `G` core, `K` shaded right edge
+    c.line((px, base_y), (px, top_y), "b")
+    c.fill_poly([(px + 1, top_y), (px + PW - 1, top_y),
+                 (px + PW - 1, base_y), (px + 1, base_y)], "G")
+    c.line((px + PW - 1, top_y), (px + PW - 1, base_y), "K")
+    c.set(px, base_y, "K"); c.set(px + PW - 1, base_y, "K")
+    # a domed `D` cap closing the column top + a `b` collar rib
+    c.line((px, top_y), (px + PW - 1, top_y), "D")
+    c.set(px + 1, top_y - 1, "L"); c.set(px + 1, top_y - 2, "M")   # small cap nub
+    # a bubbling `h`/`W` water column rising INSIDE the reactor (over the G core)
+    for k in range(0, 14):
+        y = base_y - 1 - k * 2
+        if y <= top_y:
+            break
+        xx = px + 1 + (k % 2)                        # gentle wobble of the bubble train
+        c.set(xx, y, "W" if k % 3 == 0 else "h")
+    # the glowing bio-luminescent `e` UV-STERILIZER band wrapping the column mid-height
+    band_y = top_y + 9
+    for yy in (band_y, band_y + 1, band_y + 2):
+        c.line((px - 1, yy), (px + PW, yy), "e")
+    c.line((px - 1, band_y), (px + PW, band_y), "E")        # bright top edge of the band
+    c.set(px - 1, band_y + 1, "K"); c.set(px + PW, band_y + 1, "K")  # band end frames
+    # a soft `e` glow halo bleeding off the lit band into the dark to its left
+    for dx, dy in [(-2, 0), (-2, 1), (-3, 1)]:
+        gx2, gy2 = px - 1 + dx, band_y + dy
+        if 0 <= gx2 <= 63 and 0 <= gy2 <= 63:
+            c.set(gx2, gy2, "e")
+    # a short `b` cross-brace tying the column back to the tank wall (so it reads tied-on)
+    brace_y = top_y + 4
+    c.line((px - 4, brace_y + 1), (px, brace_y), "b")
+    c.set(px - 4, brace_y + 1, "D")
+
+
+def stage5_bloom(c):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED vivarium. The reef inside BLOOMS: a bright
+    `E`-lit CORAL bloom fans up off the gravel, the fish school grows (extra `E`/`O` fish),
+    and a glowing bio-luminescent `e/E` JELLYFISH drifts high in the column — the living
+    column now reads maxed. The rig is dressed with GOLD premium trim: a `q` GOLD cap-RING
+    on the tank rim and gold trim on the lit-LEFT VIEWING WINDOW. Reads as elite, still
+    recognizably the same tank. All gold (`q`) lives ONLY here. Reef adds paint only over
+    existing water pixels so they sit BEHIND the front glass like the base ecosystem."""
+    water = ("g", "G", "c")
+    # --- CORAL BLOOM: a bright branching coral fans up off the gravel, lit-centre, where
+    #     it sits among the existing reef (kept inside the water silhouette). ---
+    floor = BASE_Y - 5
+    coral = [(-1, 0, "e"), (-1, -1, "E"), (-2, -1, "e"), (0, -1, "e"),
+             (-2, -2, "E"), (0, -2, "e"), (-1, -2, "e"), (-3, -2, "e"),
+             (1, -2, "e"), (-2, -3, "E"), (0, -3, "E"), (-3, -3, "e"), (1, -3, "e"),
+             (-1, -4, "E"), (-3, -4, "e"), (1, -4, "e")]
+    for dx, dy, ch in coral:
+        x, y = CX + dx, floor + dy
+        if 0 <= x < 64 and 0 <= y < 64 and c.px[y][x] in water:
+            c.set(x, y, ch)
+    # a few bright `E` polyp tips crowning the coral (only over water)
+    for dx, dy in [(-2, -5), (0, -5), (-1, -5)]:
+        x, y = CX + dx, floor + dy
+        if 0 <= x < 64 and 0 <= y < 64 and c.px[y][x] in water:
+            c.set(x, y, "E")
+    # --- BIGGER FISH SCHOOL: two extra bright fish joining the diagonal (only over water) ---
+    for fx, fy, head, body in [(CX - 6, TOP_Y + 11, "E", "e"), (CX - 3, TOP_Y + 7, "O", "o")]:
+        if 0 <= fy < 64 and c.px[fy][fx] in water:
+            _fish(c, fx, fy, head, body)
+    # --- BIOLUMINESCENT JELLYFISH drifting high (an `e/E` glowing bell + `e` tendrils),
+    #     placed upper-RIGHT-of-centre in the window, clear of the original jelly. ---
+    jx, jy = CX - 2, TOP_Y + 5
+    for dx, dy, ch in [(-1, -1, "e"), (0, -1, "E"), (1, -1, "e"),
+                       (-1, 0, "e"), (0, 0, "E"), (1, 0, "E"), (2, 0, "e")]:
+        x, y = jx + dx, jy + dy
+        if 0 <= x < 64 and 0 <= y < 64 and c.px[y][x] in water + ("h",):
+            c.set(x, y, ch)
+    for k in range(1, 4):                            # glowing tendrils
+        x, y = jx + int(math.sin(k * 0.9)), jy + 1 + k
+        if 0 <= x < 64 and 0 <= y < 64 and c.px[y][x] in water:
+            c.set(x, y, "e")
+    # (the GOLD half of t5 is drawn LAST, in _stage5_gold, so it crowns the front glass.)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the aquatic habitat at upgrade `stage` (1..5). Stage 1 is IDENTICAL to
+    the shipped base; each higher stage keeps every prior addition and bolts on the next
+    (t2 skimmer → t3 sump-tank → t4 standpipe → t5 reef-bloom+gold). Painter's order keeps
+    the t5 reef adds painting only over water (so life sits behind the front glass), and
+    the rooftop skimmer/probe + rim gold sit after the cap they grow from."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     base_slab(c)            # contact shadow + low substrate plinth (under/back)
     water_tank(c)           # the tall transparent glass WATER COLUMN body
     # the living ECOSYSTEM, drawn back->front INSIDE the water:
@@ -362,17 +570,94 @@ def build():
     jellyfish(c)            # drifting h/c jelly bell
     fish_school(c)          # the O/o fish school + stray c fish
     light_shaft(c)          # soft c light beam from the lit-left
+    # t5 reef bloom is added HERE (inside the water, before the front glass) so it sits
+    # behind the glass exactly like the base ecosystem.
+    if stage >= 5:
+        stage5_bloom(c)
     # front glass detailing OVER the reef so life sits behind glass:
     glass_front(c)          # seams + waterline + LEFT viewing window
     bubbles(c)              # rising h/W bubble streams (over the glass)
     cap_and_filter(c)       # D cap ring + o filter box + c water-pipe
-    entry_annex(c)          # FRONT-LEFT annex => opening on the LEFT
+    annex = entry_annex(c)  # FRONT-LEFT annex => opening on the LEFT
+
+    # --- CUMULATIVE UPGRADE STAGES (exterior masses, after the base tank/cap/annex) --
+    # t3 sump + t4 standpipe are ground/side masses drawn after the tank so they sit in
+    # front of / beside it. (t5's reef portion was drawn inside the water above; t5's
+    # gold trim is drawn last so it crowns the finished form.)
+    if stage >= 2:
+        stage2_skimmer(c, annex)
+    if stage >= 3:
+        stage3_sump(c)
+    if stage >= 4:
+        stage4_standpipe(c)
+    if stage >= 5:
+        _stage5_gold(c)
+    return c
+
+
+def _stage5_gold(c):
+    """The GOLD-trim half of t5, factored out so it can be drawn LAST (after every other
+    stage) and crown the finished form. The reef-bloom half of t5 is drawn inside the
+    water in build() before the front glass. RESTRAINT: gold is a premium FLOURISH, not
+    a recolor — a single clean GOLD cap-RING tracing the visible FRONT arc of the tank
+    rim (with a few bright `O` finial bosses), plus small gold corner bosses on the
+    lit-LEFT viewing window. No long gold rails (they read as stray sticks); the trim
+    stays a sparse, legible accent so the tank still reads as glass-and-water."""
+    cap_cy = TOP_Y
+    # GOLD cap-RING: trace only the FRONT arc of the rim (a=0..180) as a single clean
+    # 1px gold band — a premium rim cap, not a heavy whole-rim recolor.
+    for a in range(0, 181, 5):
+        x = CX + (RX - 1) * math.cos(math.radians(a))
+        y = cap_cy + (RY - 0.5) * math.sin(math.radians(a))
+        c.set(int(round(x)), int(round(y)), "q")
+    for a in (35, 90, 145):                          # three bright finial bosses on the ring
+        x = CX + (RX - 1) * math.cos(math.radians(a))
+        y = cap_cy + (RY - 0.5) * math.sin(math.radians(a))
+        c.set(int(round(x)), int(round(y)), "O")
+    # gold CORNER BOSSES on the lit-LEFT viewing window (top + bottom corners only — a
+    # restrained premium tell, NO long head/sill rails that would read as stray bars).
+    fx0, fx1 = CX - 9, CX
+    fy0, fy1 = TOP_Y + 6, BASE_Y - 2
+    for cxw, cyw in [(fx0, fy0), (fx1, fy0), (fx0, fy1), (fx1, fy1)]:
+        c.set(cxw, cyw, "q")                         # gilded window corner
+    # short 2px gold ticks inward from the two TOP corners so the window head reads
+    # premium without a full rail across it
+    c.set(fx0 + 1, fy0, "q"); c.set(fx1 - 1, fy0, "q")
+    c.set(fx0, fy0, "O"); c.set(fx1, fy0, "O")       # bright top-corner bosses
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/biocore"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "aquatic-habitat"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG +
+    scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must keep
+    matching the shipped aquatic-habitat.png, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": BIO, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/biocore_aquatic-habitat.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"biocore_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"biocore_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

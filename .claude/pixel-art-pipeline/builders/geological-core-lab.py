@@ -43,18 +43,34 @@ Draw order: contact shadow -> LOW hillside-cut strata berm (back) -> the long lo
 shed + mono-pitch shed roof -> LIT-LEFT roll-up bay + placard -> shaded-right wall +
 vent -> the inclined glass drill-core + apron-seated rack + sliding teal scanner +
 mineral label (top).
+
+──────────────────────────────────────────────────────────────────────────────
+UPGRADE-EVOLUTION lab member. The build() body below composes the UNCHANGED base
+form (stage 1 == shipped geological-core-lab.png). On top of it four CUMULATIVE
+upgrade stages bolt on stratigraphy/core-logging structure (build up, never restart),
+copying the sampling-station.py / workshop.py pattern (build(stage) + stageN_*
+helpers + emit/build_all). See terrabase-evolution-plan.md "geological-core-lab".
 """
 import os
 import sys
 import json
+import math
 
 sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, RX, RY, LX, LY
 
+# Base TerraBase palette (shared keys) + the EVOLVED-accent keys reserved for the
+# upgrade stages only (chars NOT used by the base palette, so they appear in NO
+# stage-1 sprite and geological-core-lab.png stays byte-identical). These four exact
+# keys+hexes are the lab-wide evolved accents shared by all 10 terrabase buildings:
+#   b  deep basalt/bedrock  — matured warm structure tone for t3+ new masses
+#   e  energized mineral-seismic glow (mid)    E  energized glow (bright) — t4/t5 power
+#   q  premium survey gold  — t5 flourish ONLY (NOT a whole-building recolor)
 TERRA = {"K": "#20190f", "W": "#efe6cf", "L": "#d6c8a0", "M": "#b09a6e", "D": "#7e6c47", "d": "#54462c",
          "h": "#d6f2ea", "c": "#a4e2d4", "g": "#34b6a2", "G": "#1d8474",
-         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e"}
+         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e",
+         "b": "#3a3326", "e": "#5fe0c4", "E": "#c4fff0", "q": "#f3c63a"}
 
 
 # ── small pixel helper ────────────────────────────────────────────────────────
@@ -290,7 +306,11 @@ def core_scanner(c, shed):
     end-to-end so the layered rock reads clearly. A sliding mineral-teal SCANNER
     collar wraps ONE band, casting a c/h light-bar that makes that band glow brightest
     O/h, with a faint c slide-trail behind it and a small W/L per-layer MINERAL LABEL
-    card (K tick + O dot) popping above the read band. Drawn LAST."""
+    card (K tick + O dot) popping above the read band. Drawn LAST.
+
+    Returns the core geometry (x0, x1, cy, bandw, nseg) so cumulative upgrade stages
+    (t2 extra tray, t3 core-store, t4 scan gantry, t5 strat hologram) anchor to the
+    SAME rack — never a hardcoded second guess."""
     # Anchor the rack on the shed's front-left APRON: take the lit-left wall foot as
     # the reference, seat the rack in the CLEAR front-left foreground just below it so
     # its legs land on the building's ground footprint apron — clear of the door above,
@@ -388,24 +408,330 @@ def core_scanner(c, shed):
     c.line((lx + 4, ly + 3), (bs, cy - 4), "g")
     c.set(bs, cy - 4, "G")
 
+    return {"x0": x0, "x1": x1, "cy": cy, "bandw": bandw, "nseg": nseg, "fx": fx, "fy": fy}
 
-# ── build ─────────────────────────────────────────────────────────────────────
-def build():
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS core-logging /
+# stratigraphy structure onto the prior form — never restarts, never recolors the
+# whole building. Theme: the field core shed grows into a fully built-out core-
+# logging & scanning facility. Colours mature stage by stage; gold (q) is a t5
+# flourish only. Every add is anchored to a base part (the SAME core rack geometry
+# returned by core_scanner, the shed roof, the shed apron) and clamped on-canvas, and
+# NONE collide with the centre scanner-collar / mineral-label signature on the core.
+#
+#   t2  small functional add : extra LABELLED CORE TRAY at the rack's open end + a c hand-lens LOUPE glint
+#   t3  structural add        : a covered b CORE-STORE lean-to annex over stacked core boxes (extends the rack)
+#   t4  major add             : a rooftop split-core SCAN GANTRY — a b bridge beam lowering a glowing e scan-head
+#   t5  crowning feature      : a glowing E STRATIGRAPHIC-COLUMN hologram over the rack + gold rack rails + plaque
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_core_tray(c, geo):
+    """t2 — SMALL FUNCTIONAL ADD: one more LABELLED CORE TRAY for the rack — a short
+    open D tray box holding a fresh r/M core segment with two little o label-tag flags,
+    laid on a LOWER-FRONT shelf directly BELOW the existing core (the rack's open
+    cataloguing shelf) — plus a small c HAND-LENS LOUPE glint resting at the reader
+    (left) end (the geologist's loupe). Modest, on-theme (one more catalogued core),
+    base palette + the agreed c loupe accent. Seated on the apron in the CLEAR
+    foreground below the core, well clear of the centre scanner collar / mineral label
+    above it, and entirely on the front-left apron (never onto the shed wall)."""
+    x0, x1, cy = geo["x0"], geo["x1"], geo["cy"]
+    # one extra labelled CORE TRAY set in the CLEAR open foreground just below-LEFT of
+    # the rack (rows below the apron line, where the ground is empty) so it reads as a
+    # distinct freshly-laid tray rather than mushing into the busy core/rack/scanner
+    # band above it. A proper little 3-row tray box (lit L top board, D interior, d/K
+    # walls) so it pops off the dark foreground.
+    tx = x0 - 2                               # tray left, in the clear front-left ground
+    ty = cy + 7                               # below the apron shadow line, on open ground
+    tw = 9                                    # a clear, readable tray
+    c.line((tx, ty - 1), (tx + tw - 1, ty - 1), "L")   # bright lit top board (pops off shadow)
+    for xx in range(tx, tx + tw):
+        c.set(xx, ty, "D")                    # tray interior floor
+        c.set(xx, ty + 1, "d")                # tray front wall
+    c.line((tx, ty + 1), (tx + tw - 1, ty + 1), "K")   # front rim / shadow line
+    c.set(tx - 1, ty, "K"); c.set(tx + tw, ty, "K")    # tray end caps
+    c.set(tx - 1, ty - 1, "K"); c.set(tx + tw, ty - 1, "K")
+    # a fresh CORE SEGMENT laid in the tray: alternating rust/ochre rock chips
+    for i, xx in enumerate(range(tx + 1, tx + tw - 1)):
+        c.set(xx, ty, "r" if i % 2 == 0 else "M")
+    c.set(tx + 3, ty, "L")                    # a pale chip glint (fresh-cut rock)
+    # ONE little o LABEL-TAG flag standing off the tray back rim (the catalogued tray) —
+    # kept to a single tag so the front-left foreground stays clean, not speckled.
+    fxx = tx + 5
+    c.set(fxx, ty - 2, "K")                   # flag staff
+    c.set(fxx + 1, ty - 2, "o")               # flag cloth
+    c.set(fxx + 1, ty - 1, "O")
+    # --- HAND-LENS LOUPE resting beside the tray at the reader end (the geologist's
+    #     loupe) — a tiny ring lens with a bright c/h glint, in the clear ground left
+    #     of the new tray so it reads as its own object. ---
+    lpx, lpy = tx + tw + 1, ty - 1            # just right of the tray, on the ground
+    _stamp(c, lpx, lpy, [
+        ".K.",
+        "KcK",                                 # loupe ring around a c lens
+        ".K.",
+    ])
+    c.set(lpx + 1, lpy + 1, "h")              # bright loupe glint (catches the light)
+    c.set(lpx + 2, lpy + 2, "K")             # short loupe handle
+
+
+def stage3_core_store(c, shed):
+    """t3 — STRUCTURAL ADD: a covered CORE-STORE annex ABUTTING the shed's SHADED-RIGHT
+    end, growing into the open right-front foreground — a low basalt b mono-pitch
+    lean-to roof on two posts sheltering a stack of stored CORE BOXES (flat box-files
+    of laid-up core). A real new structural mass (an iso roof plane + posts + stacked
+    boxes + a K plank skirt), not a prop, introducing the deepened basalt tone b. It
+    butts the shed's shaded-right wall foot and extends RIGHT, so the depot visibly
+    grows its core archive sideways — a clear distinct mass in the empty right
+    foreground, well clear of the front-left core signature and of the roof gantry."""
+    # anchor on the shaded-right wall foot (w_front..w_right run) and grow RIGHT into
+    # the open foreground so the annex abuts the shed and reads as its own ground mass.
+    ax, ay = int(round(shed.w_front[0])), int(round(shed.w_front[1]))   # (42,45) front-low corner
+    bx0 = ax + 3                              # box stack starts just right of the shed front corner
+    by0 = ay - 2                              # box-stack lid row, on the ground beside the shed
+    # a flat box-file: lid + lit front + shaded base, K-rimmed (a stored core box)
+    def _corebox(c, bx, by, w):
+        for xx in range(bx, bx + w):
+            c.set(xx, by, "D")                # box lid
+            c.set(xx, by + 1, "M")            # lit box front
+            c.set(xx, by + 2, "d")            # shaded box base
+        c.line((bx, by - 1), (bx + w - 1, by - 1), "K")   # back rim
+        c.set(bx - 1, by, "K"); c.set(bx + w, by, "K")    # end caps
+        c.line((bx, by + 3), (bx + w - 1, by + 3), "K")   # base shadow
+        # a couple of stored core-chip glints in the open box lid
+        c.set(bx + 1, by, "r"); c.set(bx + 2, by, "L")
+    _corebox(c, bx0, by0, 5)                  # lower-left box on the ground
+    _corebox(c, bx0 + 6, by0, 5)              # lower-right box
+    _corebox(c, bx0 + 3, by0 - 3, 5)          # upper box stacked on the seam
+    # --- low CORE-STORE LEAN-TO roof (deep basalt b) on two posts, sheltering the
+    #     stack — a mono-pitch iso roof plane sloping down-right over the boxes. The
+    #     high (back) edge abuts the shed's shaded wall; the low edge oversails right.
+    rA = (bx0 - 2, by0 - 6)                   # roof high inner corner (against the shed wall)
+    rB = (bx0 + 12, by0 - 8)                  # roof high outer corner (up-right, sits higher)
+    rC = (bx0 + 13, by0 - 5)                  # roof low front-right corner (eave drops)
+    rD = (bx0 - 1, by0 - 3)                   # roof low front-left corner
+    c.fill_poly([rA, rB, rC, rD], "b")        # basalt roof plane (the new mass)
+    c.line(rA, rB, "M")                       # lit back ridge of the lean-to
+    c.line(rD, rC, "K")                       # front eave shadow
+    for a, b in [(rA, rB), (rB, rC), (rC, rD), (rD, rA)]:
+        c.line(a, b, "K")                     # K outline of the roof plane
+    # d plank seams across the lean-to roof
+    for t in (0.3, 0.55, 0.8):
+        a = (rA[0] + t * (rB[0] - rA[0]), rA[1] + t * (rB[1] - rA[1]))
+        b = (rD[0] + t * (rC[0] - rD[0]), rD[1] + t * (rC[1] - rD[1]))
+        c.line(a, b, "d")
+    # two slim basalt POSTS dropping from the roof front corners to the ground
+    for (px, py) in (rD, rC):
+        c.line((px, py + 1), (px, by0 + 3), "b")
+        c.set(px + 1, py + 2, "d")            # shaded post edge
+        c.set(px, by0 + 3, "K")               # post foot on the ground
+    # K plank SKIRT board tying the store's base to the ground line
+    c.line((bx0 - 1, by0 + 3), (bx0 + 12, by0 + 3), "K")
+
+
+def _gantry_geom(shed):
+    """Shared rooftop split-core SCAN-GANTRY geometry so t5's gold crown band (if it
+    referenced the gantry) and t4 recompute from the SAME source point — the gantry
+    rides on TWO rail posts standing on the shed roof. Returns the two rail-foot roof
+    points, the rail-top y, and the bridge-beam endpoints + scan-head x. Clamped so
+    every drawn point stays inside the 64px canvas (no off-canvas beam overshoot)."""
+    # rail feet seat on the shed roof along the run: back post near the high ridge,
+    # front post toward the low eave, so the bridge beam spans the roof lengthwise.
+    backf = shed.roof_pt(0.34, 0.62)          # back rail foot on the roof (toward ridge)
+    frontf = shed.roof_pt(0.74, 0.42)         # front rail foot on the roof (toward eave)
+    bxf = (int(round(backf[0])), int(round(backf[1])))
+    fxf = (int(round(frontf[0])), int(round(frontf[1])))
+    rail_top = min(bxf[1], fxf[1]) - 9        # bridge beam height above the roof
+    rail_top = max(rail_top, 2)               # keep the beam on-canvas
+    # scan-head trolley sits ~55% along the beam (between the two rail tops)
+    head_x = int(round(bxf[0] + 0.5 * (fxf[0] - bxf[0])))
+    return bxf, fxf, rail_top, head_x
+
+
+def stage4_scan_gantry(c, shed, geo):
+    """t4 — MAJOR ADD: a rooftop SPLIT-CORE SCAN GANTRY — the cores are now being
+    machine-logged. A deep-basalt b BRIDGE BEAM traverses the shed roof on TWO rail
+    posts (a travelling overhead gantry), and a trolley lowers a glowing e CT/XRF
+    SCAN-HEAD that lights the roof/core beneath it with an e analysis glow. The
+    prominent new overhead mass that says 'this shed now logs every core'. Palette
+    matures: basalt b frame + energized mineral e/E glow on the scan-head. Drawn AFTER
+    the roof so it sits ON the shed; rises in clear canvas above the roof, fully
+    on-canvas, and is well ABOVE + RIGHT of the front-left core signature (no collision
+    with the scanner collar / mineral label). A scan gantry — distinct from the
+    sampling-station core-drill derrick."""
+    bxf, fxf, rail_top, head_x = _gantry_geom(shed)
+    # --- two RAIL POSTS standing on the roof (basalt b, lit M left edge, K feet) ---
+    for foot in (bxf, fxf):
+        c.line((foot[0], foot[1]), (foot[0], rail_top), "b")
+        c.set(foot[0] - 1, foot[1] - 2, "M")          # a lit edge glint on the post
+        c.set(foot[0], foot[1], "K")                  # foot planted on the roof
+        # a little K rail-cap pad where the beam lands on each post
+        c.set(foot[0], rail_top, "K")
+    # --- the BRIDGE BEAM spanning the two rail tops (the travelling gantry rail) ---
+    beamL = (bxf[0], rail_top)
+    beamR = (fxf[0], rail_top)
+    c.line((beamL[0], beamL[1] - 1), (beamR[0], beamR[1] - 1), "M")   # lit top chord
+    c.line(beamL, beamR, "b")                                         # beam body
+    c.line((beamL[0], beamL[1] + 1), (beamR[0], beamR[1] + 1), "K")   # under-edge shadow
+    # a couple of D truss ticks along the beam (gantry web)
+    for t in (0.3, 0.5, 0.7):
+        mx = int(round(beamL[0] + t * (beamR[0] - beamL[0])))
+        c.set(mx, rail_top, "D")
+    # --- TROLLEY on the beam + a cable lowering the glowing SCAN-HEAD ---
+    c.fill_poly([(head_x - 1, rail_top + 1), (head_x + 1, rail_top + 1),
+                 (head_x + 1, rail_top + 2), (head_x - 1, rail_top + 2)], "D")
+    c.set(head_x - 1, rail_top + 1, "K"); c.set(head_x + 1, rail_top + 1, "K")
+    head_y = rail_top + 6                       # scan-head hovers below the beam
+    c.line((head_x, rail_top + 2), (head_x, head_y - 1), "K")         # hoist cable
+    # the glowing CT/XRF scan-head: a small e box with a bright E core lens
+    _stamp(c, head_x - 1, head_y, [
+        "eEe",
+        "GeG",                                   # shaded underside of the head
+    ])
+    c.set(head_x, head_y, "E")                  # bright scan lens
+    # an e ANALYSIS GLOW lighting the roof directly beneath the scan-head (the core
+    # being logged) — a short downward beam fading onto the roof plank below.
+    glow_floor = head_y + 4
+    # clamp the glow so it lands on the roof, never off-canvas
+    glow_floor = min(glow_floor, 63)
+    c.set(head_x, head_y + 2, "e")
+    c.set(head_x, head_y + 3, "G")
+    c.set(head_x - 1, glow_floor, "e"); c.set(head_x, glow_floor, "E"); c.set(head_x + 1, glow_floor, "e")
+
+
+def stage5_strat_hologram(c, shed, geo):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED core-logging facility. A glowing
+    STRATIGRAPHIC-COLUMN HOLOGRAM rises over the rack — a tall banded core-log column
+    projected up from the scanned core: bright E column walls, e MINERAL-ZONE bands
+    with K contacts + o depth ticks down one side, crowned by a bright E peak marker —
+    plus GOLD premium trim: gold q rack RAILS gleaming under the core and a small gold
+    'TYPE-SECTION' PLAQUE on the rack. Reads as an elite, fully-instrumented strat lab,
+    still clearly the same core shed. The hologram rises in the CLEAR canvas above the
+    front-left rack (anchored on the core's centre), kept fully on-canvas, and sits
+    just LEFT of the t4 scan gantry so the two read as separate maxed features."""
+    x0, x1, cy = geo["x0"], geo["x1"], geo["cy"]
+    bandw, nseg = geo["bandw"], geo["nseg"]
+    # --- holo column rises straight UP from the centre of the laid-out core, in the
+    #     clear front-left airspace (left of the roof gantry). Anchor on the core. ---
+    colx = x0 + (nseg * bandw) // 2 - 4         # column centre x ~ over the core mid
+    colx = max(colx, 4)
+    base_y = cy - 3                             # column foot just above the core glass
+    col_h = 18                                  # tall log column
+    top_y = max(base_y - col_h, 3)              # clamp the column top on-canvas
+    colw = 4                                    # column width (4px banded log)
+    # a faint projector PLINTH on the core where the column rises from
+    c.set(colx + 1, base_y + 1, "e"); c.set(colx + 2, base_y + 1, "e")
+    c.set(colx, base_y + 2, "G"); c.set(colx + 3, base_y + 2, "G")
+    # the holographic COLUMN: bright E side walls, e MINERAL-ZONE band fills, K
+    # stratigraphic contacts, banded deep->young up the column.
+    zones = ["e", "G", "e", "g", "e", "G"]      # alternating mineral-zone bands
+    band_h = max(2, (base_y - top_y) // len(zones))
+    yy = base_y
+    for zi, zc in enumerate(zones):
+        z_top = max(top_y, yy - band_h)
+        for y in range(z_top, yy + 1):
+            for x in range(colx, colx + colw):
+                c.set(x, y, zc)                 # zone fill
+        c.line((colx, z_top), (colx + colw - 1, z_top), "K")   # K stratigraphic contact
+        # o DEPTH TICK on the left edge at each contact (the depth scale)
+        c.set(colx - 1, z_top, "o")
+        yy = z_top - 1
+        if yy <= top_y:
+            break
+    # bright E side walls running the full column height (the holo edges glow)
+    c.line((colx, top_y), (colx, base_y), "E")
+    c.line((colx + colw - 1, top_y), (colx + colw - 1, base_y), "E")
+    # a bright E PEAK MARKER crowning the column top (youngest/surface layer)
+    c.set(colx + 1, top_y - 1, "E"); c.set(colx + 2, top_y - 1, "W")
+    c.set(colx, top_y, "E"); c.set(colx + 3, top_y, "E")
+    # a couple of faint e shimmer ticks rising off the column crown (it's projected)
+    c.set(colx + 1, top_y - 2, "e")
+    # a short e LEADER tying the column foot to the scanned band on the core below
+    c.line((colx + 1, base_y + 2), (geo["x0"] + bandw + 1, cy - 1), "e")
+
+    # --- GOLD premium trim (t5 flourish ONLY) ----------------------------------
+    # gold q RACK RAILS gleaming along the cradle rail under the core (elite rails)
+    c.line((x0 + 2, cy + 2), (x1 - 3, cy + 2), "q")          # the rack rail re-gilded
+    c.set(x0 + 2, cy + 3, "O"); c.set(x1 - 3, cy + 3, "O")   # gold rail saddle bosses
+    # a small gold 'TYPE-SECTION' PLAQUE on the rack front (the elite designation)
+    plx, ply = x0 + 4, cy + 3
+    _stamp(c, plx, ply, [
+        "qqqq",
+        "qKKq",                                  # K engraving ticks on the gold plaque
+    ])
+    c.set(plx + 1, ply, "O"); c.set(plx + 2, ply, "O")       # bright gold plaque sheen
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the geological core lab at upgrade `stage` (1..5). Stage 1 is IDENTICAL
+    to the shipped base PNG; each higher stage keeps every prior addition and bolts on
+    the next (t2 core tray + loupe -> t3 core-store lean-to -> t4 rooftop scan gantry ->
+    t5 strat-column hologram + gold). Painter's order keeps rooftop/overhead additions
+    above the masses they grow from; the front-left core signature is the hero and the
+    upgrade adds are placed clear of its scanner collar / mineral label."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     base_shadow(c)                 # contact shadow under the long footprint
     berm = hillside_cut(c)         # LOW banded rock-strata earth bank (back-left)
     shed = main_shed(c, berm)      # the long low shed — the dominant mass
     shed_roof(c, shed)             # mono-pitch corrugated shed roof + vent + cable
     left_bay(c, shed)              # LIT-LEFT roll-up core-bay door + placard (on wall)
     right_face(c, shed)            # plainer shaded-right long wall + vent
-    core_scanner(c, shed)          # SIGNATURE: inclined glass drill-core + teal scanner
 
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    # The SIGNATURE core_scanner is drawn here (it returns the core geometry the
+    # stages anchor to), then the apron-level adds (t2 tray, t3 core-store) layer on
+    # the apron, and the OVERHEAD adds (t4 gantry on the roof, t5 holo column above
+    # the rack) layer last so they sit on top of the masses they grow from.
+    geo = core_scanner(c, shed)    # SIGNATURE: inclined glass drill-core + teal scanner
+
+    if stage >= 2:
+        stage2_core_tray(c, geo)
+    if stage >= 3:
+        stage3_core_store(c, shed)
+    if stage >= 4:
+        stage4_scan_gantry(c, shed, geo)
+    if stage >= 5:
+        stage5_strat_hologram(c, shed, geo)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/terrabase"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "geological-core-lab"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped geological-core-lab.png, so it does NOT overwrite the
+    base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": TERRA, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/terrabase_geological-core-lab.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"terrabase_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"terrabase_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

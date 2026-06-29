@@ -39,9 +39,17 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
+# Base TerraBase palette (shared keys) + the EVOLVED-accent keys reserved for the
+# upgrade stages only (chars NOT used by the base palette, so they appear in NO
+# stage-1 sprite and hydrology-bay.png stays byte-identical). These four exact
+# keys+hexes are reused by ALL 10 terrabase buildings for lab-wide consistency:
+#   b  deep basalt/bedrock  — matured warm structure tone for t4+ new masses
+#   e  energized mineral-water glow (mid)   E  energized glow (bright) — t4/t5 power
+#   q  premium survey gold  — t5 flourish ONLY (NOT a whole-building recolor)
 TERRA = {"K": "#20190f", "W": "#efe6cf", "L": "#d6c8a0", "M": "#b09a6e", "D": "#7e6c47", "d": "#54462c",
          "h": "#d6f2ea", "c": "#a4e2d4", "g": "#34b6a2", "G": "#1d8474",
-         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e"}
+         "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e",
+         "b": "#3a3326", "e": "#5fe0c4", "E": "#c4fff0", "q": "#f3c63a"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
@@ -426,9 +434,278 @@ def flume(c, slab, tank):
     ])
     c.set(plx + 1, ply + 1, "O")
 
+    # return the flume geometry so the upgrade stages can anchor float gauges,
+    # the streamline model and the flow-turbine onto the SAME basins/centerline.
+    return {"heads": heads, "tw": tw, "td": td, "fronts": fronts,
+            "step_dx": step_dx, "step_dy": step_dy, "fault_i": fault_i}
 
-def build():
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS waterworks /
+# hydrology structure onto the prior form — never restarts, never recolors the whole
+# building. Theme: the field flume bay grows into a fully built-out, instrumented,
+# circulating hydrology station. Colours mature stage by stage; gold (q) is a t5
+# flourish only. Every add is anchored to a base part (flume basin / right apron /
+# hall roof) and clamped on-canvas, and NONE collide with the arched channel mouth
+# signature on the front-right face or the diagnosed-leak fault basin of the flume.
+#
+#   t2  small functional add : a STILLING-WELL FLOAT GAUGE + graduated staff in the
+#                              head flume basin + an extra h ripple glint
+#   t3  structural add        : a second b-walled SETTLING-TANK BATH on the right
+#                              apron with a glazed g surface + a weir lip spilling in
+#   t4  major add             : a rooftop WATER-TOWER CISTERN on b legs pouring a
+#                              bright e/E water jet down into the flume head
+#   t5  crowning feature      : the flume becomes a glowing E HYDRO-FLOW streamline
+#                              model with e eddy nodes + a spinning e flow-turbine,
+#                              gold weir caps + a gold gauge-mast finial
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_float_gauge(c, fl):
+    """t2 — SMALL FUNCTIONAL ADD: a STILLING-WELL FLOAT GAUGE planted in the HEAD
+    flume basin (basin 0, the calm un-faulted head) — a slim deep-basalt `b` well
+    tube standing in the water with a bright `c` water-level float riding inside it,
+    an `o`/`K` graduated measuring STAFF marked up its side, and one extra bright `h`
+    ripple glint dimpling the water beside it. On-theme (a real stream-gauging
+    instrument), modest, base palette + the new `b` tube + a brightened float. Sits
+    in the head basin so it never reaches the diagnosed-leak fault basin downstream."""
+    heads, tw = fl["heads"], fl["tw"]
+    hx0, hy0 = heads[0]                     # head basin BACK corner (37,37)
+    cx = hx0 + 1                            # just right of the basin centerline
+    base_y = hy0 + tw                       # water surface row at the basin centre
+    top_y = base_y - 7                      # short well tube, stays well below roof
+    # the stilling-well TUBE: a 2px deep-basalt cylinder standing in the water
+    c.line((cx, base_y), (cx, top_y), "b")
+    c.line((cx + 1, base_y), (cx + 1, top_y), "d")     # shaded right edge
+    c.set(cx, top_y, "K")                  # dark open well mouth
+    c.set(cx + 1, top_y, "K")
+    # the bright c water-level FLOAT riding inside the tube (a tell of water height)
+    c.set(cx, base_y - 3, "c")
+    c.set(cx, base_y - 4, "h")             # lit top of the float
+    # graduated measuring STAFF up the LEFT of the tube: alternating o/K tick marks
+    for j, yy in enumerate(range(base_y - 1, top_y, -1)):
+        c.set(cx - 1, yy, "o" if j % 2 == 0 else "K")
+    # one extra bright h ripple glint dimpling the water just left of the well foot
+    c.set(cx - 2, base_y + 1, "h")
+    c.set(cx - 3, base_y + 1, "c")
+
+
+def stage3_settling_tank(c, slab, fl):
+    """t3 — STRUCTURAL ADD: a second SETTLING-TANK BATH built on the bright front-
+    RIGHT apron, RIGHT of the flume — a real new structural mass: a low open basin
+    with deep-basalt `b` masonry walls, a glazed teal `g` still-water surface inside
+    (h/c lit lip), and a WEIR LIP on its left wall spilling a thin sheet of water
+    LEFT into the flume head channel (so it reads as plumbed into the circuit, not a
+    prop). First use of the matured `b` structure tone. Kept on the open right apron
+    so it never crowds the arch face or the flume's downstream fault basin."""
+    # basin as a shallow iso prism on the right apron (an open-topped bath). Author
+    # its top diamond directly so it abuts the flume head and stays on the bright pad.
+    bx, by = 44, 41                         # back-top corner of the bath on right apron
+    tw, wallh = 5, 3                        # half-width along each iso axis; wall depth
+    bk = (bx, by)
+    rt = (bx + 2 * tw, by + tw)             # right corner (+right axis) -> ~ (54,46)
+    lf = (bx - 2 * tw, by + tw)             # left  corner (+left axis)  -> ~ (34,46)
+    ft = (bx, by + 2 * tw)                  # front corner               -> ~ (44,51)
+    # --- masonry RIM: fill the whole top diamond deep-basalt b (the tank walls) ---
+    c.fill_poly([bk, rt, ft, lf], "b")
+    # --- glazed g STILL-WATER surface inset 1px from each rim so the wall reads ---
+    wbk = (bk[0], bk[1] + 1)
+    wrt = (rt[0] - 1, rt[1])
+    wft = (ft[0], ft[1] - 1)
+    wlf = (lf[0] + 1, lf[1])
+    c.fill_poly([wbk, wrt, wft, wlf], "g")
+    c.line(wbk, wrt, "h")                   # lit back-right water lip
+    c.line(wbk, wlf, "c")                   # lit back-left water lip
+    c.line(wlf, wft, "G")                   # deeper shadow on the front
+    # a couple of faint c settling ripples on the still surface
+    c.set(int(round((bk[0] + ft[0]) / 2)), int(round((bk[1] + ft[1]) / 2)), "c")
+    # --- the FRONT WALL face (gives the bath depth): drop the front edges down ---
+    c.fill_poly([lf, ft, (ft[0], ft[1] + wallh), (lf[0], lf[1] + wallh)], "d")
+    c.fill_poly([ft, rt, (rt[0], rt[1] + wallh), (ft[0], ft[1] + wallh)], "K")
+    # crisp K lip rim around the bath mouth + K skirt down the front wall
+    for a, b in [(bk, rt), (rt, ft), (ft, lf), (lf, bk)]:
+        c.line(a, b, "K")
+    c.line((lf[0], lf[1] + wallh), (ft[0], ft[1] + wallh), "K")
+    c.line((ft[0], ft[1] + wallh), (rt[0], rt[1] + wallh), "K")
+    c.line(lf, (lf[0], lf[1] + wallh), "K")
+    c.line(ft, (ft[0], ft[1] + wallh), "K")
+    # --- WEIR LIP on the LEFT wall spilling a thin water sheet LEFT into the flume.
+    #     A small notch in the left rim with c/h water tonguing down-left toward the
+    #     head basin so the bath reads as plumbed into the channel circuit. ---
+    wlx, wly = int(round(lf[0])), int(round(lf[1]))
+    c.set(wlx, wly - 1, "c")               # notched weir crest
+    c.set(wlx - 1, wly, "h")               # spill sheet leaving the lip
+    c.set(wlx - 2, wly + 1, "c")
+    c.set(wlx - 3, wly + 2, "h")           # water falling toward the flume head
+    c.set(wlx - 4, wly + 3, "c")
+
+
+def stage4_water_tower(c, hall, fl):
+    """t4 — MAJOR ADD: a rooftop WATER-TOWER CISTERN — a prominent ELEVATED `cylinder`
+    tank lifted HIGH on four tall deep-basalt `b` stilt LEGS off the hall's lit-LEFT
+    roof (clear of the back-right header tank + the back-left gauge mast). The legs are
+    K-outlined so the open trestle frame reads against the bright roof; the tank rides
+    well above the roofline (a true water tower, distinct from the squat header tank),
+    carries a bright `c` waterline band + a glowing energized `e/E` level-tube, and a
+    DOWNCOMER drops off the front to pour a bright `e/E` WATER JET into the flume head
+    basin (the bay now actively circulates water). The prominent new vertical mass.
+    Palette matures: deep basalt `b` trestle + energized `e/E` water glow. Fully on-
+    canvas; the jet lands in the head basin, never on the fault basin or the arch."""
+    # tower footprint on the lit-LEFT roof triangle, between the mast (back-left) and
+    # the header tank (back-right). roof_pt(0.40,0.46) ~ centre of the open lit roof.
+    foot = hall.roof_pt(0.40, 0.46)
+    cx = int(round(foot[0]))
+    roof_y = int(round(foot[1]))
+    rx, th = 5, 7                             # cistern radius + wall height
+    legh = 9                                  # TALL legs -> tank rides high over roof
+    tank_base_y = roof_y - legh
+    tank_top_y = tank_base_y - th
+    # --- an OPEN deep-basalt b STILT TRESTLE: two outer legs splaying from the tank
+    #     base down to foot pads on the roof, tied by a single X cross-brace, so the
+    #     frame reads as an airy stand (roof shows between the legs) — not a solid mass.
+    #     Each leg is a b core with a lit M left edge for contrast on the bright roof.
+    L_foot, R_foot = cx - rx + 1, cx + rx - 1       # splayed feet on the roof
+    L_top, R_top = cx - 2, cx + 2                    # narrower at the tank base
+    c.line((L_foot, roof_y), (L_top, tank_base_y), "b")
+    c.line((L_foot - 1, roof_y), (L_top - 1, tank_base_y), "M")   # lit left edge
+    c.line((R_foot, roof_y), (R_top, tank_base_y), "b")
+    c.set(L_foot, roof_y, "K")                       # foot pads on the roof
+    c.set(R_foot, roof_y, "K")
+    # a single X cross-brace tying the two legs (the trestle frame)
+    midy = (roof_y + tank_base_y) // 2
+    c.line((L_foot, roof_y - 1), (R_top, midy), "b")
+    c.line((R_foot, roof_y - 1), (L_top, midy), "b")
+    # --- the CISTERN tank, a clearly ROUND elevated cylinder (the major mass) ---
+    cylinder(c, cx, tank_top_y, rx, th, top="L", side_l="M", side_r="D", outline="K")
+    # a domed roof-cap highlight on the cistern top so it reads as a rounded tank
+    c.set(cx - 1, tank_top_y - 1, "W")
+    c.set(cx, tank_top_y - 1, "L")
+    c.set(cx + 1, tank_top_y, "L")
+    # a bright c WATERLINE band wrapping the tank (mirrors the header tank's tell so it
+    # reads instantly as a WATER cistern, not a silo) — h lit-left, c shaded-right.
+    for col in range(-rx + 1, rx):
+        t = 1 - (col / rx) ** 2
+        if t < 0:
+            continue
+        edge = (rx * 0.5) * (t ** 0.5)
+        y = int(tank_top_y + edge + th * 0.5)
+        c.set(cx + col, y, "h" if col < 0 else "c")
+    # --- glowing energized e LEVEL-TUBE riding the lit front of the cistern (the
+    #     powered upgrade tell: a thin sight-glass of charged water) ---
+    ltx = cx - 1
+    for j, yy in enumerate(range(tank_top_y + 1, tank_top_y + th)):
+        c.set(ltx, yy, "E" if j == 0 else "e")
+    c.set(ltx, tank_top_y + th - 1, "g")     # shaded foot of the tube
+    c.set(ltx - 1, tank_top_y + 2, "K")      # thin K frame edge of the sight-glass
+    # --- DOWNCOMER feeder pipe from the cistern base, dropping off the FRONT of the
+    #     roof to the flume head, then a bright e/E water JET falling into basin 0.
+    #     Routed down a column LEFT of the arch so it never crosses the arch mouth. ---
+    px0, py0 = cx + 1, tank_base_y           # tank base centre-right
+    hx0, hy0 = fl["heads"][0]
+    jet_x = hx0 - 1                            # land just left of the head basin centre
+    elbow_y = roof_y + 2
+    pipe = [(px0, py0), (px0, elbow_y), (jet_x, elbow_y), (jet_x, hy0 - 5)]
+    for a, b in zip(pipe, pipe[1:]):
+        c.line(a, b, "b")                     # deep-basalt pipe run
+    c.line((px0 - 1, py0 + 1), (px0 - 1, elbow_y), "M")    # lit pipe edge (drop)
+    c.set(px0, py0, "K")
+    # the bright e/E WATER JET spurting out of the pipe mouth down into the basin —
+    # widened to 2px with an E core so it unmistakably reads as falling water.
+    for j, yy in enumerate(range(hy0 - 5, hy0 + 1)):
+        c.set(jet_x, yy, "E" if j % 2 == 0 else "e")
+        c.set(jet_x + 1, yy, "e" if j % 2 == 0 else "E")
+    c.set(jet_x, hy0 - 5, "E")                # bright nozzle
+    c.set(jet_x + 1, hy0 - 5, "E")
+    # splash spray fanning where the jet lands in the head-basin water
+    c.set(jet_x - 1, hy0, "c")
+    c.set(jet_x + 2, hy0, "c")
+    c.set(jet_x, hy0 + 1, "h")
+
+
+def stage5_flow_model(c, fl, hall, slab):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED hydrology station. The flume comes alive
+    as a glowing E HYDRO-FLOW STREAMLINE MODEL: bright energized `E` streamlines pour
+    down the channel centerline linking every basin, `e` eddy nodes swirl at the
+    basins, and a small spinning `e` FLOW-TURBINE sits at the foot basin spun by the
+    current. The station is then dressed in GOLD: gold `q` weir caps on the t3
+    settling-tank weir + the flume head lip, and a gold `q` finial crowning the gauge
+    mast. Reads as an elite, fully-instrumented water lab, still clearly the same bay.
+    Recomputes from the SAME flume heads/settling-tank/gauge-mast sources as the
+    earlier stages (never a hardcoded second guess)."""
+    heads, tw, fault_i = fl["heads"], fl["tw"], fl["fault_i"]
+
+    # --- glowing E STREAMLINE model: a bright, CONTINUOUS energized current ribbon
+    #     pouring down the channel centerline and threading every basin, so the whole
+    #     flume reads as a live glowing flow model (the t5 transformation). At the
+    #     fault basin the ribbon is nudged UP a row so it skims OVER the diagnosed-leak
+    #     cue rather than burying it. A 1px e under-shadow gives the ribbon body. ---
+    centers = []
+    for i, (x, y) in enumerate(heads):
+        cy = y + tw - (2 if i == fault_i else 0)   # lift the ribbon clear of the leak
+        centers.append((x, cy))
+    for i in range(len(centers) - 1):
+        ax, ay = centers[i]
+        bx, by = centers[i + 1]
+        c.line((ax, ay), (bx, by), "E")            # bright streamline crest
+        c.line((ax, ay + 1), (bx, by + 1), "e")    # energized ribbon body (continuous)
+    # --- e EDDY NODES: a small swirl RING at each (non-fault) basin centre, set just
+    #     OFF the bright centerline so it reads as a curl, not lost in the ribbon. ---
+    for i, (cxp, cyp) in enumerate(centers):
+        if i == fault_i:
+            continue                               # leave the fault basin's diagnosis clear
+        for (dx, dy) in [(-2, 1), (-1, 2), (1, 2), (2, 1)]:   # a little curl below the crest
+            c.set(cxp + dx, cyp + dy, "e")
+        c.set(cxp, cyp + 2, "E")                   # bright eddy core under the crest
+
+    # --- spinning e FLOW-TURBINE at the FOOT basin, spun by the current: a clear
+    #     pinwheel of 4 blades inside a faint e ring, on a short d spindle. ---
+    fx, fy = heads[-1]                             # foot basin (22,49)
+    tcx, tcy = fx, fy + tw + 1                      # turbine hub low in the foot basin
+    for (dx, dy) in [(-2, 0), (2, 0), (0, -2), (0, 2)]:       # 4 radial blades
+        c.line((tcx, tcy), (tcx + dx, tcy + dy), "e")
+    for (dx, dy) in [(-2, -1), (2, 1), (-1, 2), (1, -2)]:     # canted blade tips (spin)
+        c.set(tcx + dx, tcy + dy, "E")
+    c.set(tcx, tcy, "E")                            # bright spinning hub
+    c.set(tcx, tcy + 3, "d")                        # short spindle foot in the basin
+
+    # --- GOLD premium trim (t5 flourish only) ---------------------------------
+    # gold weir CAP capping the flume HEAD basin's back lip (recompute from heads[0]).
+    # A short 3px gold rail along the head lip so the elite cap reads at 64px.
+    hx0, hy0 = heads[0]
+    for dx in (-1, 0, 1):
+        c.set(hx0 + dx, hy0 - 1, "q")
+    c.set(hx0, hy0 - 2, "O")                       # bright gold glint
+    # gold weir CAP on the t3 settling-tank weir lip — recompute the SAME left-corner
+    # of the bath from stage3's geometry (bx,by=44,41; tw=5 -> lf = (34,46)).
+    s3_bx, s3_by, s3_tw = 44, 41, 5
+    s3_lf = (s3_bx - 2 * s3_tw, s3_by + s3_tw)
+    slx, sly = int(s3_lf[0]), int(s3_lf[1])
+    for dx in (0, 1, 2):
+        c.set(slx + dx, sly - 1, "q")              # gold cap along the weir crest
+    c.set(slx + 1, sly - 2, "O")
+    # gold FINIAL crowning the gauge mast — recompute from the mast source
+    # (gauge_mast uses hall.roof_pt(0.28,0.62); top = my - 11).
+    mp = hall.roof_pt(0.28, 0.62)
+    mx, my = int(round(mp[0])), int(round(mp[1]))
+    top = my - 11
+    c.set(mx, top - 2, "q")                       # gold finial bead above the mast tip
+    c.set(mx, top - 3, "O")
+    c.set(mx - 1, top - 2, "q")
+    c.set(mx + 1, top - 2, "q")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the hydrology bay at upgrade `stage` (1..5). Stage 1 is IDENTICAL to
+    the shipped base PNG; each higher stage keeps every prior addition and bolts on
+    the next (t2 float-gauge -> t3 settling-tank -> t4 water-tower cistern -> t5
+    flow-model + gold). Painter's order keeps the upgrade additions on top of the
+    masses they grow from: rooftop/overhead additions (the cistern + jet) and the
+    flume flow-overlay are drawn AFTER the base flume, and NONE occlude the arched
+    channel mouth signature or the flume's diagnosed-leak fault basin."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     # painter's order: yard slab (floor) -> back hall + arched mouth + tank + mast
     # -> the terraced flume + flowing water + dye-trace fault + gauges (front, top).
     slab = yard_slab(c)
@@ -436,14 +713,58 @@ def build():
     arched_mouth(c, hall)
     tank = header_tank(c, hall)
     gauge_mast(c, hall)
-    flume(c, slab, tank)
+    fl = flume(c, slab, tank)
 
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    # Drawn AFTER the base flume so the float gauge sits in the head basin, the
+    # settling tank reads on the right apron, the rooftop cistern's jet pours down
+    # in front of the roof into the flume head, and the t5 flow-overlay glows on top
+    # of the channel water — while the arch mouth + fault diagnosis stay untouched.
+    if stage >= 2:
+        stage2_float_gauge(c, fl)
+    if stage >= 3:
+        stage3_settling_tank(c, slab, fl)
+    if stage >= 4:
+        stage4_water_tower(c, hall, fl)
+    if stage >= 5:
+        stage5_flow_model(c, fl, hall, slab)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/terrabase"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "hydrology-bay"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped hydrology-bay.png, so it does NOT overwrite the base
+    PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": TERRA, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/terrabase_hydrology-bay.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"terrabase_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"terrabase_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

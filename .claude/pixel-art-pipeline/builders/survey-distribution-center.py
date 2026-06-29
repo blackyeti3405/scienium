@@ -27,6 +27,28 @@ Draw order: contact shadow + depot block (back) + loading annex -> rooftop rotar
 hopper drum + flung dart fan + returning response cards + sorting bin + tally board
 -> the GLOWING RIGHT opening (dock bay + mailroom window + louver) on the annex's
 SHADED RIGHT face (front).
+
+═══════════════════════════════════════════════════════════════════════════════════
+UPGRADE-EVOLUTION pass (same code pattern as interview-room.py / workshop.py:
+build(stage) + cumulative stageN helpers + emit/build_all). The wide DISPATCH DEPOT
+grows into a full multi-channel SURVEY-RELAY hub. The evolution language is the lab's
+"distribute + collect signal" motif: more outbound chutes/forms, a return-intake
+path, a throughput silo, and finally a multi-beam relay array. The lab's magenta
+`o/O` stays the DISPATCH/light accent; the evolved DATA glow is cool SIGNAL-CYAN
+`e/E` (the climbing-forms conveyor + outbound relay fans), kept distinct from the
+intake `g`. Colours mature stage by stage; gold (`q`) is a t5 flourish only.
+
+  t2  small functional add : a roof-mounted MAILROOM DISPATCH OUTFLOW STACK (slim M/D
+                             riser + outflow cowl beside the hopper) puffing forms out +
+                             a brighter o/O dispatch light on the hopper rim
+  t3  structural add       : a stepped RESPONSE-INTAKE ANNEX on the right kiosk — a low
+                             `b` box of glowing `g` returned-form slots (a return path)
+  t4  major add            : a tall DISTRIBUTION-TOWER SILO beside the hopper with a
+                             glowing cyan `e` conveyor-window of forms climbing it +
+                             a wider broadcast array fan on top
+  t5  crowning feature     : the broadcast mast becomes a multi-beam SURVEY-RELAY ARRAY
+                             — three bright `E` outbound fans + a flock of forms in
+                             flight, gold `q` array ribs + a gold silo weathervane
 """
 import os
 import sys
@@ -37,9 +59,17 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
+# Base MindFrame palette (shared keys) + the EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so survey-distribution-center.png
+# is unchanged). These exact evolved keys are the lab-wide set shared by all 10
+# mindframe buildings for consistency:
+#   b  deep indigo steel — matured structure tone for the t3 intake annex / t4 silo
+#   e  energized signal-cyan glow (mid)   E  signal-cyan glow (bright) — t4 conveyor / t5 relay
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 MIND = {"K": "#181428", "W": "#e8e2f6", "L": "#cabfe6", "M": "#9f90c8", "D": "#6f5fa0", "d": "#4a3c70",
         "h": "#ecc8f4", "c": "#d0a8ee", "g": "#a45ce0", "G": "#6a2fb0",
-        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80"}
+        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80",
+        "b": "#2b2440", "e": "#7fd4ff", "E": "#d6f4ff", "q": "#f3c63a"}
 
 
 # ── small pixel helper ────────────────────────────────────────────────────────
@@ -427,7 +457,306 @@ def right_opening(c, b):
     c.line(pt(0.06, b.h - 0.5), pt(0.94, b.h - 0.5), "d")   # thin base skirt line
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS dispatch / intake
+# / throughput / relay structure onto the prior form — never restarts, never recolors
+# the whole building. Theme: the wide dispatch depot grows into a multi-channel
+# SURVEY-RELAY hub. Rooftop additions are drawn AFTER the base roof signature and
+# placed so they NEVER occlude the hero rotary hopper drum + spinner (centre roof) or
+# the outbound dart-fan (up-LEFT sky). The lab's magenta o/O stays the dispatch accent;
+# the evolved DATA glow is cool signal-cyan e/E (conveyor + relay), the intake glow is
+# g. Colours mature stage by stage; gold (q) is a t5 flourish only.
+#
+#   t2  small functional add : a roof-mounted MAILROOM DISPATCH OUTFLOW STACK beside the
+#                              hopper (slim M/D riser + cowl) puffing forms + brighter o/O rim
+#   t3  structural add       : a stepped RESPONSE-INTAKE ANNEX (b box, glowing g slots)
+#   t4  major add            : a tall DISTRIBUTION-TOWER SILO + cyan e conveyor + array fan
+#   t5  crowning feature     : a multi-beam SURVEY-RELAY ARRAY (3 E fans) + gold ribs/vane
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _drum_anchor(b):
+    """Recompute the rotary hopper's drum centre + top from the SAME source point the
+    base `rotary_hopper` uses (b.roof_pt(0.40,0.56)), so every stage that references the
+    drum/silo re-derives it from one place instead of a second hardcoded guess."""
+    pc = b.roof_pt(0.40, 0.56)
+    px, py = int(round(pc[0])), int(round(pc[1]))
+    return px, py - 7          # (drum centre x, drum top y) — matches rotary_hopper
+
+
+def stage2_dispatch_stack(c, b, left_mouth):
+    """t2 — SMALL FUNCTIONAL ADD: a real NEW MASS bolted ON the depot roof — a short
+    MAILROOM DISPATCH OUTFLOW STACK: a slim M/D riser seated on the roof in the clear
+    corridor just LEFT of the rotary hopper drum, capped by a wider outflow COWL with a
+    bright o/O dispatch glow at its mouth, puffing two outbound FORM-SHEETS up toward the
+    field. This is the depot's mail venting harder (a second dispatch outlet) — unique to
+    a survey/distribution depot, clearly NEW geometry on the building, and it stays drawn
+    cumulatively at t3–t5. Rounds 1's add was only floating-decoration in the dart trail
+    (no on-mass element); this replaces it with a mounted structural stub. Base palette
+    only (the o/O at the cowl mouth is the lab's own dispatch accent).
+
+    Sited in the surveyed clear gap x≈25–27, y up to ≈10 (open sky between the back-left
+    roof vent box, x≤24, and the hopper drum crown, x≥29) so it rises clear WITHOUT
+    touching or occluding the hero hopper drum + spinner."""
+    dcx, dtop = _drum_anchor(b)                  # drum centre x ≈30, top y ≈18
+
+    # (a) a brighter DISPATCH LIGHT on the existing hopper rim — a bright O front-rim
+    #     beacon so the hopper reads 'powered up' alongside the new outlet (the rim
+    #     already carries an o ring; this just hot-spots its front, no recolor).
+    c.set(dcx, dtop + 2, "O")
+    c.set(dcx - 1, dtop + 2, "o")
+    c.set(dcx + 1, dtop + 2, "o")
+
+    # (b) THE NEW DISPATCH OUTFLOW STACK — a 3px riser seated on the roof, LEFT of the
+    #     drum. Base on the roof at y≈19; body rises up the clear x25–27 corridor to a
+    #     cowl cap at y≈10. Lit-left M, shaded-right D, crisp K silhouette, with two
+    #     corrugation bands so it reads as a built metal stack (not a bar).
+    sx = dcx - 5                                 # ≈25 — left edge of the riser
+    base_y = dtop + 1                            # ≈19 — seats on the roof beside the drum
+    top_y = 10                                   # cowl-neck top in clear sky (well above roof)
+    for yy in range(top_y, base_y + 1):
+        if not (0 <= yy <= 63):
+            continue
+        c.set(sx, yy, "K")                       # left silhouette edge
+        c.set(sx + 1, yy, "M")                   # lit-left body
+        c.set(sx + 2, yy, "D")                   # shaded-right body
+    for yy in (top_y + 4, top_y + 7):            # two corrugation bands across the body
+        c.set(sx + 1, yy, "D")
+        c.set(sx + 2, yy, "d")
+    c.set(sx, base_y, "K"); c.set(sx + 2, base_y, "K")   # foot collar seating it on the roof
+    # outflow COWL cap — a wider lip flaring out over the stack mouth (lit L, K rim)
+    cowl_y = top_y - 1
+    for xx in range(sx - 1, sx + 4):
+        if 0 <= xx <= 63 and 0 <= cowl_y <= 63:
+            c.set(xx, cowl_y, "L")
+    c.set(sx - 1, cowl_y, "K"); c.set(sx + 3, cowl_y, "K")
+    c.line((sx - 1, top_y), (sx + 3, top_y), "K")        # cowl underside rim
+    # bright o/O dispatch glow pooled at the cowl mouth (the outlet firing)
+    c.set(sx + 1, top_y, "O")
+    c.set(sx, top_y, "o"); c.set(sx + 2, top_y, "o")
+
+    # (c) two outbound FORM-SHEETS puffing UP-LEFT out of the new cowl mouth toward the
+    #     field (flat c/h folded sheets, distinct from the W/L hopper darts), so the new
+    #     outlet visibly DISPATCHES. Anchored on the cowl, clamped on-canvas, and kept
+    #     LOW-LEFT of the existing dart fan so the two streams don't collide.
+    def sheet(cx, cy):
+        if not (2 <= cx < 60 and 2 <= cy < 60):
+            return
+        _stamp(c, cx - 2, cy - 1, [
+            ".KK..",
+            "KccK.",     # c sheet body (a freshly dispatched form in flight)
+            ".KhhK",     # h fold-line + K trailing edge
+            "..oK.",     # tiny o question-corner
+        ])
+    sheet(sx - 2, top_y - 1)     # one just leaving the cowl mouth, up-left
+    sheet(sx - 5, top_y - 3)     # one a little further along the outbound path
+
+
+def stage3_intake_annex(c, annex):
+    """t3 — STRUCTURAL ADD: a stepped RESPONSE-INTAKE ANNEX bolted onto the near (front-
+    LEFT) side of the loading kiosk — a low deep-indigo `b` box whose lit-LEFT face,
+    turned toward the viewer, is a panel of glowing `g` RETURNED-FORM SLOTS (a clear
+    return path: forms come BACK and drop into the slots). Stepped DOWN-FRONT off the
+    annex so it abuts the kiosk without crowding the depot or covering the kiosk's
+    SHADED-RIGHT dock/window hero (which faces away down-right). Introduces the matured
+    deep-indigo `b` structure tone; the slots glow `g`, the intake accent."""
+    # seat the intake box stepped down-front-LEFT of the loading annex so its back-right
+    # corner abuts the annex front-left foot; low + slim so it reads as a bolt-on kiosk.
+    apex = (annex.r_top[0] - 11, annex.r_top[1] + 17)     # front-left, stepped down
+    box = Box(top=apex, wx=4, wy=3, h=7)
+    # body: deep-indigo b housing (matured structure tone), with D shaded right face.
+    box.draw(c, roof="b", lwall="b", rwall="D", roof_hi="M", outline="K")
+    # a thin M lit-back roof edge so the b roof still reads (b is dark)
+    c.line(box.r_top, box.r_left, "M")
+    c.line(box.r_top, box.r_right, "L")
+    # --- GLOWING g RETURNED-FORM SLOTS on the lit-LEFT face (facing the viewer) ---
+    # three stacked horizontal slots, each a K shadow LIP over a BRIGHT glow bar so they
+    # pop off the dark `b` housing as illuminated return-slots (a returned form lit in the
+    # slot): a bright O hot-line + a g glow body. High contrast on the dark b face = the
+    # slots read clearly as a return-intake bank, not as more of the building's purple.
+    for v in (1.4, 3.0, 4.6):
+        c.line(box.left_pt(0.18, v), box.left_pt(0.82, v), "K")            # slot top shadow lip
+        c.line(box.left_pt(0.18, v + 0.6), box.left_pt(0.82, v + 0.6), "O")  # bright lit hot-line
+        c.line(box.left_pt(0.18, v + 1.1), box.left_pt(0.82, v + 1.1), "g")  # g glow body of the slot
+    # a brighter G base glow strip along the slot bank foot + a K frame around the bank
+    c.line(box.left_pt(0.14, 6.0), box.left_pt(0.86, 6.0), "G")
+    for a, b2 in [(box.left_pt(0.14, 0.9), box.left_pt(0.86, 0.9)),
+                  (box.left_pt(0.14, 0.9), box.left_pt(0.14, 6.0)),
+                  (box.left_pt(0.86, 0.9), box.left_pt(0.86, 6.0))]:
+        c.line(a, b2, "K")
+    # a couple of c RETURNING form-sheets dropping INTO the top slot (the return path)
+    rx, ry = int(round(box.roof_pt(0.5, 0.5)[0])), int(round(box.roof_pt(0.5, 0.5)[1]))
+    for dy in (-5, -8):
+        if 0 <= ry + dy <= 63:
+            _stamp(c, rx - 1, ry + dy, [
+                "KKK",
+                "KcK",      # a small c returning form, falling in
+                ".K.",
+            ])
+    return box
+
+
+def stage4_silo(c, b):
+    """t4 — MAJOR ADD: a tall DISTRIBUTION-TOWER SILO rising off the roof BESIDE the
+    rotary hopper (back-right of the drum, in the clear roof gap between the drum and the
+    tally board) — a deep-indigo `b` cylinder with a glowing cyan `e` CONVEYOR-WINDOW of
+    folded forms climbing its lit face, capped by a wider BROADCAST ARRAY FAN. The
+    prominent new vertical mass that says throughput just scaled up. Palette matures:
+    cool `b` silo massing + energized signal-cyan `e/E` conveyor. Kept narrow + fully
+    on-canvas, rising clear ABOVE the drum so it never occludes the spinner signature."""
+    dcx, dtop = _drum_anchor(b)
+    # silo centre in the clear gap to the RIGHT-back of the drum (drum body ends ≈x35;
+    # tally board screen starts ≈x45) — centre x≈40, narrow so it clears both.
+    scx = dcx + 9                      # ≈40, between drum (≤35) and tally (≥44)
+    sbase = dtop + 6                   # silo foot just behind/above the sort bin top
+    stop = 8                           # cap centre ≈y10 — TALL (≈6px above the drum) but
+    #                                    LEAVES ~9px of headroom so the t5 tiered relay
+    #                                    array can grow UP off the mast without clipping.
+    sh = sbase - stop                  # silo body height
+    # --- SILO BODY: a tall b cylinder (lit-left M-ish via b/D shading), K outline. Hand
+    #     -build the iso cylinder so the lit (left) half is a slightly lifted b and the
+    #     shaded (right) half is D, with a crisp K silhouette and a rounded L/W top cap.
+    rx = 3
+    for yy in range(stop + 2, sbase + 1):
+        for xx in range(-rx, rx + 1):
+            X, Y = scx + xx, yy
+            if not (0 <= X <= 63 and 0 <= Y <= 63):
+                continue
+            if xx <= -rx or xx >= rx:
+                c.set(X, Y, "K")                  # vertical silhouette edges
+            elif xx < 0:
+                c.set(X, Y, "b")                  # lit-left band (deep indigo, lifted)
+            else:
+                c.set(X, Y, "D")                  # shaded-right band
+    # rounded top cap (a 2:1 ellipse lid: L lit-back, M front, K rim)
+    for xx in range(-rx, rx + 1):
+        t = 1 - (xx / rx) ** 2
+        yo = int(round(2 * (t ** 0.5)))           # ellipse half-height ~2
+        for yy in range(-yo, yo + 1):
+            X, Y = scx + xx, (stop + 2) + yy
+            if 0 <= X <= 63 and 0 <= Y <= 63:
+                c.set(X, Y, "L" if yy < 0 else "M")
+    for a in range(0, 360, 20):                   # K rim of the cap
+        X = scx + rx * math.cos(math.radians(a))
+        Y = (stop + 2) + 2 * math.sin(math.radians(a))
+        if 0 <= X <= 63 and 0 <= Y <= 63:
+            c.set(int(round(X)), int(round(Y)), "K")
+    # a couple of M corrugation/band rings down the silo so it reads as a built silo
+    for yy in (stop + 7, stop + 12, stop + 17):
+        if stop + 2 < yy < sbase:
+            c.line((scx - rx + 1, yy), (scx + rx - 1, yy), "M")
+    # --- GLOWING CYAN CONVEYOR-WINDOW: a narrow vertical e/E strip up the lit-left face,
+    #     showing folded FORMS climbing the silo (alternating e form / E lit gap). A K
+    #     frame boxes the window so it reads as a glazed conveyor, not a paint stripe. ---
+    wx = scx - 1                                  # lit-left column of the silo
+    wtop = stop + 5
+    wbot = sbase - 2
+    for yy in range(wtop, wbot + 1):
+        if not (0 <= yy <= 63):
+            continue
+        # forms climbing: a short e bar every other row = a stacked form on the belt
+        c.set(wx, yy, "E" if (yy - wtop) % 2 == 0 else "e")
+        c.set(wx - 1, yy, "e" if (yy - wtop) % 2 == 0 else "G")
+    # K frame around the conveyor window
+    c.line((wx - 2, wtop - 1), (wx + 1, wtop - 1), "K")
+    c.line((wx - 2, wbot + 1), (wx + 1, wbot + 1), "K")
+    c.line((wx - 2, wtop - 1), (wx - 2, wbot + 1), "K")
+    c.line((wx + 1, wtop - 1), (wx + 1, wbot + 1), "K")
+    # --- BROADCAST ARRAY FAN crowning the silo: a short K mast + a wider spread of 3
+    #     L/M radial array spokes fanning UP-and-out (the dispatch broadcast). This is
+    #     the mast that becomes the multi-beam relay at t5. Anchored ON the cap centre. ---
+    mast_base = stop + 2                                  # on the cap (≈y8)
+    mast_top = stop - 1                                   # short mast tip ≈y5 (leaves
+    #                                                       headroom above for the t5 fans)
+    c.line((scx, mast_base), (scx, mast_top), "K")        # mast
+    c.set(scx, mast_top, "L")
+    spokes = [(-3, -1), (0, -2), (3, -1)]                 # 3 modest array spokes fanning out
+    for dx, dy in spokes:
+        ex = max(0, min(63, scx + dx))
+        ey = max(0, min(63, mast_top + dy))
+        c.line((scx, mast_top), (ex, ey), "M")
+        c.set(ex, ey, "L")                                # bright array tip
+    return scx, mast_top                                  # mast tip for t5 to build on
+
+
+def stage5_relay(c, b, annex, mast):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED survey-relay hub. The broadcast mast atop
+    the silo becomes a multi-beam SURVEY-RELAY ARRAY: three bright signal-cyan `E`
+    OUTBOUND FANS sweep up-and-out from the mast tip, a dense FLOCK of form-sheets rides
+    the beams out into the field, and the array + silo are dressed in GOLD premium trim
+    (gold `q` array RIBS bracing the fans + a gold silo WEATHERVANE finial). Reads as
+    elite, still recognizably the same dispatch depot, just maxed out. Re-anchors off the
+    SAME mast tip stage4 returned (no second hardcoded guess)."""
+    mx, mtop = mast                              # the t4 silo mast tip (≈y7)
+    # The t4 mast carried a modest broadcast fan; at t5 that mast GROWS UP into a tall,
+    # TIERED multi-beam SURVEY-RELAY ARRAY (a stacked cross-arm antenna head) — the
+    # cumulative crowning add. Everything is recomputed off the SAME mast tip.
+    # --- relay-head SHAFT: extend the mast UP from the t4 tip into a taller array spine. ---
+    shaft_top = max(mtop - 5, 1)                   # ≈y2 — the top of the array spine
+    c.line((mx, mtop), (mx, shaft_top), "b")       # lifted-indigo spine
+    c.line((mx + 1, mtop), (mx + 1, shaft_top), "K")
+    c.set(mx, mtop, "K")
+    # --- THREE TIERED CROSS-ARMS up the spine (a stacked antenna array): each is a bright
+    #     E cross-bar with W element-tips, NARROWING as it climbs, with bare-canvas GAPS
+    #     between tiers so it reads as a discrete multi-element array, not a solid mass.
+    #     A small gold q rib centres each arm (the premium array ribs). ---
+    arms = [(mtop - 1, 4), (mtop - 3, 3), (shaft_top, 2)]   # (row y, half-width)
+    for ay, hw in arms:
+        if not (0 <= ay <= 63):
+            continue
+        x0 = max(0, mx - hw)
+        x1 = min(63, mx + hw)
+        c.line((x0, ay), (x1, ay), "E")            # the bright cross-arm
+        c.set(x0, ay, "W"); c.set(x1, ay, "W")     # bright element tips
+        c.set(mx, ay, "q")                          # gold array rib at the arm centre
+    # --- TWO outbound BEAMS sweeping up-and-OUT from the spine top into the field (the
+    #     relay broadcasting wide). Diagonal so they clearly leave the array; clamped. ---
+    for dx, dy in ((-9, 2), (9, 2)):
+        ex = max(0, min(63, mx + dx))
+        ey = max(0, min(63, shaft_top + dy))
+        c.line((mx, shaft_top), (ex, ey), "E")
+        c.set(ex, ey, "W")                          # bright beam tip out in the field
+    # a bright relay-node core where the spine meets the top arm
+    c.set(mx, shaft_top, "E")
+
+    # --- a FLOCK of FORM-SHEETS riding the two outbound beams OUT into the field — discrete
+    #     2px c sheets spaced along each beam (clear gaps so they read as separate sheets in
+    #     flight). All inside the beam envelope (shaft_top .. shaft_top+2), on-canvas. ---
+    flock = [(mx - 7, shaft_top + 2), (mx - 4, shaft_top + 1),
+             (mx + 7, shaft_top + 2), (mx + 4, shaft_top + 1)]
+    for fx, fy in flock:
+        if 1 <= fx <= 62 and 1 <= fy <= 62:
+            c.set(fx, fy, "c")                     # a form-sheet riding the beam
+            if 0 <= fx + 1 <= 63:
+                c.set(fx + 1, fy, "h")             # a tiny fold-glint so it reads as paper
+
+    # --- GOLD silo WEATHERVANE finial: a small gold knob + direction-arrow crowning the very
+    #     top of the array spine (recomputed off the SAME spine top) = a gilded weathervane,
+    #     the t5 premium flourish. ---
+    vane_y = max(shaft_top - 1, 0)
+    if 0 <= vane_y <= 63:
+        c.set(mx, vane_y, "O")                               # bright gold finial knob
+        if 0 <= mx + 1 <= 63:
+            c.set(mx + 1, vane_y, "q")                       # tiny gold direction-arrow
+        if 0 <= mx - 1 <= 63:
+            c.set(mx - 1, vane_y, "q")
+
+    # --- GOLD intake-annex trim: a thin gold q ridge line on the t3 intake box roof so
+    #     the whole hub reads gilded at max (recompute the intake box anchor identically). ---
+    apex = (annex.r_top[0] - 11, annex.r_top[1] + 17)
+    ibox = Box(top=apex, wx=4, wy=3, h=7)
+    c.line(ibox.r_top, ibox.r_left, "q")                     # gold lit roof ridge
+    c.set(int(round(ibox.r_top[0])), int(round(ibox.r_top[1])), "O")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the survey distribution center at upgrade `stage` (1..5). Stage 1 is
+    IDENTICAL to the shipped base; each higher stage keeps every prior addition and
+    bolts on the next (t2 dispatch stack → t3 intake annex → t4 silo → t5 relay+gold).
+    Painter's order keeps rooftop/overhead additions on top of the masses they grow from,
+    and all rooftop additions clear the hero rotary hopper + dart-fan signature."""
     c = Canvas()
     ground_shadow(c)            # contact shadow under the whole broad footprint
     depot_block(c, DEPOT)       # wide low main depot (back) + lit-left glass panes + roof curb
@@ -440,12 +769,56 @@ def build():
     roof_vent_box(c, DEPOT)     # bold standalone ROOF VENT BOX: opaque louver on its LIT face
     right_opening(c, ANNEX)     # GLOWING dock bay + mailroom window (SHADED RIGHT, front)
 
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    # Front-apron intake annex (t3) is drawn before the rooftop silo/relay (t4/t5) so
+    # the rooftop masses paint over the roof last; the t2 dispatch stack seats on the
+    # roof beside the hopper. mast = the silo mast tip, threaded from t4 into t5.
+    if stage >= 2:
+        stage2_dispatch_stack(c, DEPOT, left_mouth)
+    if stage >= 3:
+        stage3_intake_annex(c, ANNEX)
+    mast = None
+    if stage >= 4:
+        mast = stage4_silo(c, DEPOT)
+    if stage >= 5:
+        stage5_relay(c, DEPOT, ANNEX, mast)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/mindframe"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "survey-distribution-center"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must keep
+    matching the shipped survey-distribution-center.png, so it does NOT overwrite the
+    base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": MIND, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/mindframe_survey-distribution-center.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"mindframe_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"mindframe_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()
