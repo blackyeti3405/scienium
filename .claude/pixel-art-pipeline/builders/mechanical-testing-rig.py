@@ -22,14 +22,23 @@ base_windows.
 import os
 import sys
 import json
+import math
+import subprocess
 
 sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
-from isobuild import Box
+from isobuild import Box, cylinder
 
+# Base Volt palette (shared keys) + a few EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so the base PNG is unchanged):
+#   b  deep cool steel  — matured structure tone for t3+ new masses (twin column,
+#      power-pack housing, chamber frame)
+#   e  energized cyan glow (mid)   E  energized cyan glow (bright) — the t4/t5 power
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 VOLT = {"K": "#15181d", "W": "#eef2f6", "L": "#cdd6dd", "M": "#9aa3ad", "D": "#6c7682", "d": "#49515b",
         "h": "#d6f9ff", "c": "#aef0fb", "g": "#38cfe2", "G": "#1f8ba0",
-        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14"}
+        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14",
+        "b": "#3b4350", "e": "#6fe6f4", "E": "#caf7ff", "q": "#f3c63a"}
 
 
 # ── low-level pixel helpers (mirroring the Volt set's conventions) ────────────
@@ -240,6 +249,7 @@ def load_frame(c, p):
 
     return {
         "bl_x": bl_x, "bf_x": bf_x, "bt_x": bt_x, "br_x": br_x,
+        "bl_top": bl_top, "bf_top": bf_top, "bt_top": bt_top, "br_top": br_top,
         "frame_top": bt_top, "plinth_roof_y": min(bl_y, bf_y),
         "front_x": bf_x, "left_x": bl_x,
         # crosshead underside y at the front (where the ram hangs from)
@@ -346,19 +356,261 @@ def press(c, p, fr):
     c.set(gx + 3, gy - 2, "O")
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS structural-test
+# instrumentation/hydraulics onto the prior load-frame — never restarts, never
+# recolors the whole building. Theme: the open load-frame grows into a fully
+# instrumented, hydraulically-driven, environmentally-chambered test cell. Colours
+# mature stage by stage; gold (q) only as a t5 flourish.
+#
+#   t2  small functional add : an extra DIAL-GAUGE CLUSTER + c readout on a front
+#                              upright, and a brightened o load light
+#   t3  structural add       : a SECOND LOAD COLUMN widening the frame into a twin-
+#                              post rig, tied by a new cross-head beam (b columns)
+#   t4  major add            : a HYDRAULIC POWER-PACK annex (accumulator cylinder +
+#                              pump housing) feeding a glowing e ram line
+#   t5  crowning feature     : a GLASS ENVIRONMENTAL CHAMBER wrapping the specimen
+#                              with an E stress-glow + a redlined master gauge, and
+#                              q gold frame caps on the portal columns
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_gauges(c, p, fr):
+    """t2 — SMALL FUNCTIONAL ADD: a compact secondary DIAL-GAUGE CLUSTER bracketed
+    onto the FRONT-LEFT upright (two small dials + a cyan c digital readout strip),
+    plus a brightened o load-status light. On-theme (more instrumentation), modest,
+    base palette. Mounted on the lit left column, mid-height, clear of the central
+    press hero and the existing big load gauge on the right."""
+    cx = fr["left_x"]                       # lit front-left column (x≈5)
+    base_y = fr["plinth_roof_y"]
+    mx = cx + 4                             # cluster brackets INWARD (right) of the
+    my = base_y - 16                        # post into the open frame, mid-height
+    # short M mounting bracket from the column out to the cluster backplate
+    c.line((cx + 2, my + 2), (mx - 1, my + 2), "M")
+    c.line((cx + 2, my + 3), (mx - 1, my + 3), "K")
+    # K backplate the two small dials + readout sit on
+    _rect(c, mx, my, mx + 3, my + 7, fill="d", outline="K")
+    # two small dial faces (W, K ring) stacked, each with a tiny o needle
+    for dy in (1, 4):
+        fx, fy = mx + 1, my + dy
+        _rect(c, fx, fy, fx + 2, fy + 1, fill="W", outline="K")
+        c.set(fx + 1, fy, "o")             # needle dot
+    # a cyan c digital readout strip along the bottom of the backplate
+    c.line((mx + 1, my + 6), (mx + 3, my + 6), "c")
+    c.set(mx + 2, my + 6, "h")             # bright digit glint
+    # brightened o load-status light up at the top of the cluster
+    c.set(mx + 2, my - 1, "o")
+    c.set(mx + 2, my - 2, "O")
+
+
+def stage3_twincol(c, p, fr):
+    """t3 — STRUCTURAL ADD: a SECOND LOAD COLUMN bolted onto the FRONT of the rig,
+    widening it from a single press line into a TWIN-POST load frame. A new heavy
+    `b` deep-steel column rises in FRONT-LEFT of the open court, tied back to the
+    existing front column by a short cross-head beam at the top. A real new
+    structural member, on-theme (a bigger frame tests bigger specimens)."""
+    # foot of the new column: ON the plinth roof's FRONT-LEFT edge, standing in the
+    # open interior IN FRONT of the existing left/front posts so it reads as an added
+    # outer column (not hidden behind the frame). Anchored at u≈0.40 of the front-left
+    # roof edge (r_left→r_front) so it sits clear of the central press.
+    ffx, ffy = p.roof_pt(0.40, 0.0)
+    fx = int(round(ffx))                    # ≈x16, in the open front court
+    foot_y = int(round(ffy))                # ≈y45, on the plinth roof
+    top_y = fr["frame_top"] + 6             # rise to just below the existing crosshead
+    # twin-upright b lattice column, 3px wide (matches the rig's exposed-steel look)
+    c.line((fx, foot_y), (fx, top_y), "b")          # lit near upright
+    c.line((fx + 1, foot_y), (fx + 1, top_y), "D")  # core
+    c.line((fx + 2, foot_y), (fx + 2, top_y), "b")  # far upright
+    for yy in range(top_y + 4, foot_y - 3, 6):      # X-bracing rungs (twin-post truss)
+        c.line((fx, yy), (fx + 2, yy + 3), "b")
+        c.line((fx + 2, yy), (fx, yy + 3), "b")
+    c.set(fx, top_y, "K")
+    c.set(fx + 2, top_y, "K")
+    c.line((fx - 1, foot_y), (fx + 3, foot_y), "K")   # K foot plate on the deck
+    # a small bolted gusset cap on the new column top
+    _rect(c, fx, top_y, fx + 2, top_y + 2, fill="M", outline="K")
+    c.set(fx + 1, top_y + 1, "L")
+    # short CROSS-HEAD beam tying the new column back to the existing front column
+    # (bf_x=29, a touch above plinth roof) — a horizontal iso tie along the right axis
+    tcx = fr["front_x"]                     # existing front column x (≈29)
+    tcy = top_y + 1
+    bcy = tcy + 3                           # the existing post is a bit forward/down
+    c.line((fx + 2, tcy), (tcx, bcy), "L")          # lit top chord
+    c.line((fx + 2, tcy + 1), (tcx, bcy + 1), "b")  # body
+    c.line((fx + 2, tcy + 2), (tcx, bcy + 2), "K")  # under-edge
+
+
+def stage4_powerpack(c, p, fr):
+    """t4 — MAJOR ADD: a HYDRAULIC POWER-PACK annex on the SHADED-RIGHT flank of the
+    plinth — a tall accumulator CYLINDER beside a boxy pump housing — with a glowing
+    `e` hydraulic line climbing from the pack up toward the ram. The prominent new
+    mass that says 'this rig now drives serious force'. Palette matures: deep `b`
+    housing + energized cyan `e/E` on the pressure line/gauge. Kept on-canvas."""
+    # pump housing box abutting the plinth's shaded RIGHT face, sitting on the ground
+    rx, ry = p.roof_pt(0.92, 0.5)
+    base_x = int(round(rx)) + 2
+    ground_y = int(round(p.w_right[1]))     # bottom of the plinth right wall
+    house_top = ground_y - 11
+    _rect(c, base_x, house_top, base_x + 7, ground_y, fill="b", outline="K")
+    _rect(c, base_x, house_top, base_x + 2, ground_y, fill="D")     # lit near edge
+    c.line((base_x, house_top), (base_x + 7, house_top), "M")       # lit cap edge
+    # a small e pressure-readout window glowing on the housing face
+    _rect(c, base_x + 3, house_top + 2, base_x + 6, house_top + 4, fill="e", outline="K")
+    c.set(base_x + 4, house_top + 3, "E")
+    # cooling louver slits low on the housing
+    for vy in (ground_y - 4, ground_y - 2):
+        c.line((base_x + 1, vy), (base_x + 6, vy), "K")
+    # tall accumulator CYLINDER standing just RIGHT of the pump housing
+    acc_cx = base_x + 10
+    acc_top = ground_y - 18
+    cylinder(c, acc_cx, acc_top, rx=3.0, h=15,
+             top="L", side_l="M", side_r="b", outline="K")
+    # cap bands + an e charge-light dot on the accumulator
+    c.line((acc_cx - 3, acc_top + 4), (acc_cx + 3, acc_top + 4), "D")
+    c.line((acc_cx - 3, acc_top + 9), (acc_cx + 3, acc_top + 9), "D")
+    c.set(acc_cx, acc_top - 1, "K")
+    c.set(acc_cx, acc_top - 2, "e")         # pressure-cap glow
+    c.set(acc_cx, acc_top - 3, "E")
+    # glowing e HYDRAULIC FEED LINE: from the accumulator top, arcing LEFT over the
+    # plinth roof toward the ram/crosshead region of the frame.
+    fr_top = fr["plinth_roof_y"]
+    feed_y = fr_top - 4
+    c.line((acc_cx, acc_top - 1), (acc_cx, feed_y), "e")            # riser
+    c.line((acc_cx, feed_y), (fr["front_x"] + 4, feed_y), "e")      # cross-feed
+    c.set(acc_cx, feed_y, "E")                                      # bright elbow
+    c.set(fr["front_x"] + 5, feed_y, "G")                           # entry shadow
+
+
+def stage5_chamber(c, p, fr):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED test cell. A GLASS ENVIRONMENTAL CHAMBER
+    encloses the central specimen (a translucent c/e box framed in b steel with an
+    E stress-glow lighting up inside), a redlined MASTER GAUGE crowns the front
+    crosshead, and GOLD premium caps trim the four portal column tops. Reads as an
+    elite, fully-instrumented rig — still recognizably the same load-frame, maxed."""
+    # work centre = same anchor the press hero uses, so the chamber wraps the specimen
+    rcx, rcy = p.roof_pt(0.5, 0.42)
+    wx = int(round(rcx))
+    floor_y = int(round(rcy))
+    # --- glass environmental CHAMBER framing the specimen/ram region ---
+    chx0, chx1 = wx - 6, wx + 6
+    chy0, chy1 = floor_y - 17, floor_y + 1     # tall enough to enclose ram + specimen
+    # translucent glass body (cyan), lit left pane brighter
+    _rect(c, chx0 + 1, chy0 + 1, chx1 - 1, chy1 - 1, fill="c")
+    _rect(c, chx0 + 1, chy0 + 1, wx - 2, chy1 - 1, fill="e")        # lit left glass
+    # E stress-glow blooming from the crushed specimen inside the chamber
+    spec_cy = (chy0 + chy1) // 2 + 2
+    for dx, dy, ch in [(0, 0, "E"), (-1, 0, "E"), (1, 0, "E"),
+                       (0, -1, "E"), (-2, 0, "e"), (2, 0, "e"),
+                       (0, -2, "e"), (-1, 1, "e"), (1, 1, "e")]:
+        c.set(wx + dx, spec_cy + dy, ch)
+    # b steel chamber FRAME (corner mullions + cap rail), clean K outline
+    _rect(c, chx0, chy0, chx1, chy1, outline="K")
+    c.line((chx0, chy0), (chx1, chy0), "b")            # top rail
+    c.line((chx0, chy0 - 1), (chx1, chy0 - 1), "M")    # lit cap crest
+    c.line((wx, chy0 + 1), (wx, chy1 - 1), "b")        # centre mullion
+    c.line((chx0 + 1, chy0 + 1), (chx1 - 1, chy0 + 1), "h")   # bright top sheen
+    # a diagonal glass shine streak (the glass tell)
+    c.line((chx0 + 2, chy1 - 4), (wx - 1, chy0 + 3), "h")
+    # access-port handle latch on the lit face
+    c.set(chx0 + 1, spec_cy, "M")
+    c.set(chx0 + 1, spec_cy + 1, "L")
+
+    # --- redlined MASTER GAUGE crowning the BACK-TOP of the portal, high and clear
+    #     of the chamber (which fills the open middle). Mounted just above the back
+    #     crosshead apex so it reads as the rig's headline pressure readout. ---
+    gx = fr["bt_x"] + 3
+    gy = fr["bt_top"] + 5
+    # short M bracket from the back-top column out to the gauge
+    c.line((fr["bt_x"] + 2, gy + 1), (gx - 2, gy + 1), "M")
+    c.line((fr["bt_x"] + 2, gy + 2), (gx - 2, gy + 2), "K")
+    _disk_ring(c, (gx, gy), 4, fill="W", ring="K")
+    for ang in range(0, 360, 30):                       # G tick marks
+        tx = gx + 3 * math.cos(math.radians(ang))
+        ty = gy + 3 * math.sin(math.radians(ang))
+        c.set(int(round(tx)), int(round(ty)), "G")
+    for ang in list(range(285, 361, 12)) + list(range(0, 30, 12)):   # r redline arc
+        rx = gx + 3 * math.cos(math.radians(ang))
+        ry = gy + 3 * math.sin(math.radians(ang))
+        c.set(int(round(rx)), int(round(ry)), "r")
+    c.line((gx, gy), (gx + 2, gy - 3), "o")            # needle to redline
+    c.set(gx + 1, gy - 2, "O")
+    c.set(gx, gy, "r")                                  # hub
+    c.set(gx + 3, gy - 2, "O")                          # peak-hold blip
+
+    # --- GOLD premium caps trimming the portal COLUMN TOPS (t5 flourish only) ---
+    # one small 2px gold cap stud seated exactly on each column's own top corner,
+    # so the trim reads as bolted ON the frame (not a floating bar). The back-right
+    # column carries a slightly brighter glint as the elite tell.
+    caps = [(fr["bl_x"], fr["bl_top"]), (fr["bf_x"], fr["bf_top"]),
+            (fr["bt_x"], fr["bt_top"]), (fr["br_x"], fr["br_top"])]
+    for col_x, col_top in caps:
+        c.set(col_x, col_top - 1, "q")
+        c.set(col_x + 1, col_top - 1, "q")
+        c.set(col_x, col_top - 2, "q")
+    # a brighter gold glint on the back-right cap + a tiny pennant nub
+    c.set(fr["br_x"], fr["br_top"] - 2, "O")
+    c.set(fr["br_x"] + 1, fr["br_top"] - 2, "q")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the load-frame at upgrade `stage` (1..5). Stage 1 is IDENTICAL to the
+    shipped base; each higher stage keeps every prior addition and bolts on the next
+    (t2 gauges → t3 twin column → t4 power-pack → t5 chamber+gold). Painter's order
+    keeps the central chamber/gauge crowning additions on top of the frame masses."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     p = plinth(c)                 # low solid foundation
     fr = load_frame(c, p)         # tall open four-post portal + crosshead
     press(c, p, fr)               # hero: ram crushing glowing specimen + gauge
     control_panel(c, p)           # operator station on the LEFT face — drawn last
                                   # so the open frame never paints over it
+
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    if stage >= 2:
+        stage2_gauges(c, p, fr)
+    if stage >= 3:
+        stage3_twincol(c, p, fr)
+    if stage >= 4:
+        stage4_powerpack(c, p, fr)
+    if stage >= 5:
+        stage5_chamber(c, p, fr)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/volt_lab"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "mechanical-testing-rig"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped base PNG, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": VOLT, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/volt_lab_mechanical-testing-rig.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"volt_lab_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"volt_lab_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

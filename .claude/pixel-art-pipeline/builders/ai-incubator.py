@@ -22,14 +22,24 @@ import os
 import sys
 import json
 import math
+import subprocess
 
 sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
+# Base Volt palette (shared keys) + a few EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so ai-incubator.png is
+# unchanged):
+#   b  deep cool steel  — matured structure tone for t3+ new masses
+#   e  energized cyan glow (mid)   E  energized cyan glow (bright) — the t4/t5 power
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 VOLT = {"K": "#15181d", "W": "#eef2f6", "L": "#cdd6dd", "M": "#9aa3ad", "D": "#6c7682", "d": "#49515b",
         "h": "#d6f9ff", "c": "#aef0fb", "g": "#38cfe2", "G": "#1f8ba0",
-        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14"}
+        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14",
+        "b": "#3b4350", "e": "#6fe6f4", "E": "#caf7ff", "q": "#f3c63a"}
+
+SLUG = "ai-incubator"
 
 
 # ── low-level helpers ────────────────────────────────────────────────────────
@@ -380,23 +390,257 @@ def neural_orb(c, cap_center):
     # --- two tight h glints selling the premium hover (hugging the orb) ---
     c.set(orb_cx - 8, orb_cy - 1, "h")     # lit-side glint
     c.set(orb_cx + 8, orb_cy - 1, "c")     # shaded-side faint glint
+    return (orb_cx, orb_cy)                 # orb centre — anchor for t5 twin orb
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS compute /
+# datacenter / neural structure onto the prior drum pavilion — never restarts,
+# never recolors the whole building. Theme: the sleek AI drum grows into a fully
+# built-out neural compute campus. Colours mature stage by stage; gold (q) only as
+# a t5 flourish.
+#
+#   t2  small functional add : an antenna WHIP + a cyan `c` data-light ring on the
+#                              drum rim (and one orb node brightened to O)
+#   t3  structural add       : a louvered SERVER-BLADE ANNEX abutting the drum,
+#                              `b` housing with faint `g`-lit vents
+#   t4  major add            : a SECOND SMALLER DRUM stepped beside the main one,
+#                              with a glowing `e` cooling halo (cool `b` tones)
+#   t5  crowning feature     : the orb DOUBLES into a twin-orb neural cluster with
+#                              bright `E` traveling pulses arcing between them, +
+#                              a `q` gold drum trim ring (elite final form)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_antenna_ring(c):
+    """t2 — SMALL FUNCTIONAL ADD: a slim comms ANTENNA WHIP rising off the back-left
+    of the disc cap with a blinking `o` tip, plus a ring of cyan `c` DATA-LIGHTS
+    studding the drum rim just under the cap (the drum 'comes online'). On-theme
+    (more comms/data), modest, base palette + one brightened accent. Seated at the
+    BACK so it never collides with the hovering orb at the cap centre."""
+    cap_cx, cap_cy = CX, TOP_Y - 3
+    # --- antenna whip: a thin K mast off the back-left of the cap, with a tip blip
+    ax = cap_cx - 7
+    base_y = cap_cy - 1
+    top_y = base_y - 11
+    for y in range(top_y, base_y + 1):
+        c.set(ax, y, "M" if y > top_y + 2 else "D")
+    c.set(ax, base_y, "K")
+    # two small cross-element ticks (a real whip antenna, not a flat line)
+    c.set(ax - 1, top_y + 3, "L"); c.set(ax + 1, top_y + 3, "M")
+    c.set(ax - 1, top_y + 6, "L"); c.set(ax + 1, top_y + 6, "M")
+    c.set(ax, top_y - 1, "o"); c.set(ax, top_y, "O")        # blinking tip
+    # --- data-light ring: cyan `c` dots stepping along the upper drum rim arc,
+    #     just below the cap, following the top-ellipse curve (front arc) ---
+    for a in range(20, 161, 28):
+        x = CX + (RX - 1) * math.cos(math.radians(a))
+        y = (TOP_Y + 1) + (RY - 0.5) * math.sin(math.radians(a))
+        c.set(x, y, "c")
+        c.set(x, y + 1, "G")                                 # tiny shaded socket
+
+
+def stage3_server_annex(c):
+    """t3 — STRUCTURAL ADD: a low rectilinear SERVER-BLADE ANNEX bolted to the
+    BACK-LEFT flank of the drum — a louvered `b` deep-steel box whose vents glow a
+    faint `g` (racks of blades humming). A real new structural mass abutting the
+    round body. Drawn so it tucks behind/left of the drum's left shoulder (the
+    drum, already painted, occludes its inner corner) and stays clear of the
+    front-right entry podium."""
+    # seat the annex on the back-left, lower than the drum so the drum reads taller
+    annex = Box((14, 26), wx=4, wy=5, h=11)
+    annex.draw(c, roof="M", lwall="b", rwall="d", roof_hi="L", outline="K")
+    # --- louvered server-blade banks on the LIT (left) face, faintly g-lit ---
+    annex.louver(c, "left", 0.14, 0.86, 1.6, 4.6, body="b", slat="K", edge="g")
+    annex.louver(c, "left", 0.14, 0.86, 5.6, 8.6, body="b", slat="K", edge="g")
+    # a couple of cyan status LEDs on the shaded (right) face
+    for vv in (2.5, 5.0, 7.5):
+        p = annex.right_pt(0.30, vv)
+        c.set(int(round(p[0])), int(round(p[1])), "g")
+    # a thin conduit hop from the annex roof toward the drum (ties it in)
+    rp = annex.roof_pt(0.7, 0.4)
+    c.line((int(rp[0]), int(rp[1])), (int(rp[0]) + 4, int(rp[1]) + 1), "o")
+    return annex
+
+
+def stage4_second_drum(c):
+    """t4 — MAJOR ADD: a SECOND, SMALLER cooling DRUM stepped beside the main one on
+    the FRONT-LEFT, fronted by a glowing `e` COOLING HALO ring (a liquid-cooling
+    loop). A prominent new round mass that twins the signature silhouette. Palette
+    matures: cool `b` shadow on its shaded face + energized cyan `e/E` halo. Drawn
+    AFTER the base drum so it sits in front-left and reads as a distinct sub-drum;
+    kept fully on-canvas and clear of the front-right podium."""
+    sub_cx = 13
+    sub_top = TOP_Y + 9        # stepped lower than the main drum's top
+    sub_rx = 7
+    sub_ry = 4
+    sub_h = 9
+    cylinder(c, sub_cx, sub_top, sub_rx, sub_h,
+             top="L", side_l="M", side_r="b", outline="K", ry=sub_ry)
+    base_y = sub_top + sub_h
+    # a small W sheen column on the lit half (reads as polished steel)
+    for col, ch in ((-3, "L"), (-2, "W")):
+        edge = sub_ry * (1 - (col / sub_rx) ** 2) ** 0.5
+        for y in range(int(sub_top + edge), base_y + 1):
+            c.set(sub_cx + col, y, ch)
+    # a small cyan window band on the sub-drum (matches the main drum motif)
+    for col in range(-sub_rx + 2, sub_rx - 1):
+        t = 1 - (col / sub_rx) ** 2
+        if t < 0:
+            continue
+        edge = sub_ry * (t ** 0.5)
+        y = int(sub_top + 3 + (sub_ry - edge) * 0.5)
+        glass = "c" if col <= -2 else ("g" if col <= 2 else "G")
+        c.set(sub_cx + col, y, glass)
+        c.set(sub_cx + col, y - 1, "K")
+        c.set(sub_cx + col, y + 1, "K")
+    # --- glowing `e` COOLING HALO: an energized ring hovering in front of the
+    #     sub-drum's upper body (the liquid-cooling loop), 2:1 ellipse ---
+    halo_cy = sub_top + 2
+    for a in range(0, 360, 20):
+        x = sub_cx + (sub_rx + 1) * math.cos(math.radians(a))
+        y = halo_cy + (sub_ry + 0.5) * math.sin(math.radians(a))
+        xi, yi = int(round(x)), int(round(y))
+        # brighter on the lit-back arc, mid on the rest
+        ch = "E" if 200 <= a <= 340 else "e"
+        c.set(xi, yi, ch)
+    # a bright `E` coolant-feed pip on the halo's lit shoulder
+    c.set(sub_cx - sub_rx - 1, halo_cy, "E")
+
+
+def stage5_twin_orb(c, cap_center, orb_center):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED neural campus. The signature
+    constellation orb DOUBLES: a SECOND glowing orb cradled up-LEFT of the original,
+    wired to it by bright `E` TRAVELING PULSES arcing across the gap (the twin
+    models thinking in sync). The drum is then dressed with a `q` GOLD TRIM RING
+    along the cap rim (elite flourish). Reads as maxed-out, still the same drum
+    pavilion. The twin is re-anchored from the SAME orb_center the base orb used."""
+    cap_cx, cap_cy = cap_center
+    ox, oy = orb_center                     # base orb centre (from neural_orb)
+    # second orb centre: down-LEFT of the original, clearly separated (a visible
+    # gap so the two read as TWO constellations, not one wide spray) but on-canvas
+    tx, ty = ox - 13, oy + 2
+
+    # --- gold trim ring along the disc-cap rim (t5 flourish only) ---
+    crx, cry = RX - 3, (RY - 1.5)
+    for a in range(0, 360, 18):
+        x = cap_cx + (crx + 0.5) * math.cos(math.radians(a))
+        y = cap_cy + (cry + 0.5) * math.sin(math.radians(a))
+        # gold on the front/lit arc; a darker `r` on the back so it reads as a rim
+        c.set(x, y, "q" if math.sin(math.radians(a)) >= -0.2 else "r")
+    # two small gold bosses on the cap shoulders
+    c.set(int(cap_cx - crx), int(cap_cy), "q")
+    c.set(int(cap_cx + crx), int(cap_cy), "q")
+
+    # --- a thin glass cradle + power feed for the twin orb (mirrors the base) ---
+    cradle_y = ty + 6
+    for y in range(int(cap_cy - 2), cradle_y + 1):
+        c.set(tx + 4, y, "o")              # angled feed rising from the cap shoulder
+    c.set(tx + 4, int(cap_cy - 2), "O")
+    for a in range(205, 336, 22):
+        x = tx + 3 * math.cos(math.radians(a))
+        y = cradle_y + 1.6 * math.sin(math.radians(a))
+        c.set(x, y, "c")
+        c.set(x, y + 1, "G")
+    c.set(tx - 3, cradle_y - 1, "K")
+    c.set(tx + 3, cradle_y - 1, "K")
+
+    # --- twin constellation: a compact hub + 4 satellites (smaller than the base
+    #     orb so the original stays the hero), wired in shaded `g`/lit `c` ---
+    thub = (tx, ty)
+    tsats = [(tx, ty - 3), (tx - 4, ty + 1), (tx + 4, ty + 1), (tx, ty + 3)]
+    for sx, sy in tsats:
+        col = "c" if sy < ty else "g"
+        c.line(thub, (sx, sy), col)
+    # nodes
+    c.set(tx, ty, "O"); c.set(tx, ty + 1, "r")
+    for sx, sy in tsats:
+        c.set(int(round(sx)), int(round(sy)), "o")
+        c.set(int(round(sx)), int(round(sy)) + 1, "r")
+    # small c halo glints on the twin
+    c.set(tx - 5, ty - 1, "h")
+    c.set(tx + 5, ty - 1, "c")
+
+    # --- ONE clean bright `E` TRAVELING-PULSE link arcing between the two orbs ---
+    # from the twin's upper-right toward the base orb's lower-left, bowed UP so it
+    # clears the gap as a single readable synapse (not a scatter of dots).
+    p0 = (tx + 4, ty - 1)
+    p1 = (ox - 6, oy + 2)
+    steps = 9
+    pts = []
+    for i in range(steps + 1):
+        t = i / steps
+        x = p0[0] + t * (p1[0] - p0[0])
+        y = p0[1] + t * (p1[1] - p0[1]) - math.sin(math.pi * t) * 4   # bow upward
+        pts.append((x, y))
+        c.set(x, y, "e")
+    # two bright `E` blips travelling the arc (the activations crossing the link)
+    for idx in (3, 6):
+        x, y = pts[idx]
+        c.set(x, y, "E")
+        c.set(x, y - 1, "h")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the AI Incubator at upgrade `stage` (1..5). Stage 1 is IDENTICAL to
+    the shipped base; each higher stage keeps every prior addition and bolts on the
+    next (t2 antenna+data-ring → t3 server annex → t4 second drum → t5 twin-orb +
+    gold). Painter's order keeps rooftop/overhead additions on top of the masses
+    they grow from, and the hero orb is painted LAST so nothing occludes it."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     base_slab(c)            # low plinth (back/under)
-    drum(c)                 # the round drum body
+    # back-left structural masses (t3/t4) go BEFORE the main drum so the drum, the
+    # dominant mass, occludes their inner corners and reads in front.
+    if stage >= 3:
+        stage3_server_annex(c)
+    if stage >= 4:
+        stage4_second_drum(c)
+    drum(c)                 # the round drum body (dominant mass)
     ribbon_band(c)          # ONE crisp K-framed cyan window ribbon on the drum
     power_ring(c)           # glowing o accent ring at the base (Volt motif)
     cap = disc_cap(c)       # sleek low disc cap
+    if stage >= 2:
+        stage2_antenna_ring(c)   # antenna whip + data-light ring (rim/back)
     entry_podium(c)         # FRONT-RIGHT vestibule => opening on the RIGHT
-    neural_orb(c, cap)      # signature constellation orb hovering above (on top)
+    orb = neural_orb(c, cap)     # signature constellation orb hovering above (on top)
+    if stage >= 5:
+        stage5_twin_orb(c, cap, orb)   # twin orb + pulses + gold trim (crowning)
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/volt_lab"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped ai-incubator.png, so it does NOT overwrite the base."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": VOLT, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/volt_lab_ai-incubator.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"volt_lab_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    os.makedirs(PREVIEW_DIR, exist_ok=True)
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"volt_lab_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

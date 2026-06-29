@@ -5,6 +5,28 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.13.0] — 2026-06-28
+
+Building upgrades now **visibly evolve**. The flat gold tier-2 reskin from 0.12.0 is
+replaced by a **4-stage evolution** per economy building: each stage *physically adds
+structure* to the previous one at the Lab-Credit tier-ups, so a building grows from its
+base form into a fully built-out, high-tech version by L15. All 10 **Volt Lab** buildings
+are done (40 new stage sprites). Colours mature across stages; gold is reserved as the
+L15 flourish, not a whole-building recolor. Green: typecheck, lint, `next build`, Vitest
+(114). No schema/migration changes.
+
+### Added
+
+- **Multi-stage upgrade sprites** — `lib/sprites/manifest.ts` gains `buildingStageSuffix(level)` and a level-aware `getBuildingSprite`, mapping level → stage at the four LC tier-ups: base `{slug}.png` (L1–3) → `_t2` (L4–6) → `_t3` (L7–9) → `_t4` (L10–14) → `_t5` (L15). The plot already threads each placed building's `level` into the renderer, so an upgrade swaps the sprite live (audited end-to-end: the rendered `<img src>` changes at L4/7/10/15 and every file resolves).
+- **40 Volt Lab upgrade-stage sprites** (`apps/web/public/sprites/buildings/volt_lab/{slug}_t2..t5.png`) — for all 10 buildings, each a cumulative on-theme build-up (e.g. Workshop: forge flue → work canopy → lattice gantry crane → glowing power-core + gold pennant; 3D Printing Shop: spool rack → second print bay → curing silo → gold multi-head dome). Char-grid sources in `art/src/buildings/`.
+- **Reproducible staged builders** — each `.claude/pixel-art-pipeline/builders/{slug}.py` refactored to `build(stage=1)` that composes the base form then layers cumulative geometry per stage (new evolved palette shades for energized/glow/gold accents). Design brief + per-building plan in `.claude/pixel-art-pipeline/UPGRADE_EVOLUTION.md` and `evolution-plan.md`.
+
+### Changed
+
+- **Upgrade visuals are now incremental, not a recolor** — supersedes 0.12.0's single gold `_t2`. Base sprites are byte-identical (each stage builds on the unchanged footprint/silhouette); the `_t2` PNGs are regenerated as the proper "small functional add" stage.
+
+---
+
 ## [0.12.0] — 2026-06-28
 
 The lab plot becomes interactive: economy buildings are **placed, moved, sold, and

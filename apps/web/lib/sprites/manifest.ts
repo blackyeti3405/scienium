@@ -187,16 +187,29 @@ export const BUILDING_SPRITES: Partial<Record<LabType, readonly string[]>> = {
   ],
 }
 
+/**
+ * Upgrade-stage sprite suffix for a building level. The building visibly evolves at
+ * the four LC tier-ups: base (L1–3) → _t2 (L4–6) → _t3 (L7–9) → _t4 (L10–14) →
+ * _t5 (L15, fully-evolved). Each stage's PNG physically builds on the previous one.
+ */
+export function buildingStageSuffix(level: number): string {
+  if (level >= 15) return '_t5'
+  if (level >= 10) return '_t4'
+  if (level >= 7) return '_t3'
+  if (level >= 4) return '_t2'
+  return ''
+}
+
 /** Resolve the sprite for an economy building, or null if none has been generated. */
 export function getBuildingSprite(labType: LabType, slug: string, level = 1): SpriteEntry | null {
   if (!BUILDING_SPRITES[labType]?.includes(slug)) return null
-  const tier2 = level >= 4
+  const suffix = buildingStageSuffix(level)
   return {
-    path: `/sprites/buildings/${labType}/${slug}${tier2 ? '_t2' : ''}.png`,
+    path: `/sprites/buildings/${labType}/${slug}${suffix}.png`,
     srcWidth: BUILDING_SRC,
     srcHeight: BUILDING_SRC,
     scale: BUILDING_SCALE,
-    description: `${slug.replace(/-/g, ' ')} building (${labType})${tier2 ? ' (tier 2)' : ''}`,
+    description: `${slug.replace(/-/g, ' ')} building (${labType})${suffix ? ` (stage ${suffix.slice(2)})` : ''}`,
     placeholderColor: SKIN_PLACEHOLDER[labType],
     anchor: BUILDING_ANCHORS[`${labType}/${slug}`],
   }

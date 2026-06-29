@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PCB Fab — Volt Lab economy building (BESPOKE-FORM REBUILD).
+PCB Fab — Volt Lab economy building (BESPOKE-FORM REBUILD + UPGRADE EVOLUTION).
 
 This is NOT the gateway cube. The previous PCB Fab leaned on iso.py's draw_cube /
 base_windows and read as the generic gateway. This rebuild composes from the iso
@@ -23,6 +23,18 @@ raised IC with pins, never a pit or a mound) out to r/o gold pads. ONE trace run
 a yellow O/o current pulse to a bright O pad. 2-3 D SMD chips + a c capacitor can.
 Volt motifs: thin D parapet frame + rivets, a cyan board-tester window, an o
 current-pulse power line, an M ribbon-cable bundle off a roof edge.
+
+UPGRADE EVOLUTION (cumulative, on-theme = boards / etch tanks / reflow):
+  t2  small functional add   : extra SMD bumps + one more o current-pulse LED on
+                               the roof board edge (the board gets busier).
+  t3  structural add         : a stepped ETCH-TANK ANNEX on the shaded side — a low
+                               covered bath with a g cyan etchant surface (Box).
+  t4  major add              : a REFLOW-OVEN TUNNEL raised across the back of the
+                               roof — a long b housing with glowing e viewports.
+  t5  crowning feature       : the roof board "powers on" — a dense E trace lattice
+                               + a glowing DIP-chip megacupola halo on the chip,
+                               q gold solder pads as the late flourish.
+Colours mature stage by stage; gold (q) is a t5 flourish only.
 """
 import os
 import sys
@@ -32,9 +44,15 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
+# Base Volt palette (shared keys) + a few EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so pcb-fab.png is unchanged):
+#   b  deep cool steel  — matured structure tone for t4+ new masses (reflow housing)
+#   e  energized cyan glow (mid)   E  energized cyan glow (bright) — the t4/t5 power
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 VOLT = {"K": "#15181d", "W": "#eef2f6", "L": "#cdd6dd", "M": "#9aa3ad", "D": "#6c7682", "d": "#49515b",
         "h": "#d6f9ff", "c": "#aef0fb", "g": "#38cfe2", "G": "#1f8ba0",
-        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14"}
+        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14",
+        "b": "#3b4350", "e": "#6fe6f4", "E": "#caf7ff", "q": "#f3c63a"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
@@ -277,6 +295,12 @@ def circuit_board_roof(c, room):
     c.set(tx0 + 2, ty0 + 3, "g"); c.set(tx0 + 3, ty0 + 3, "c")
     c.set(tx0 + 2, ty0 + 4, "g")
 
+    # expose the chip + anchor geometry so the t5 crowning stage can re-anchor
+    # ON the same DIP chip without hardcoding a second guess.
+    return {"cxp": cxp, "cyp": cyp, "tx0": tx0, "tx1": tx1, "ty0": ty0, "ty1": ty1,
+            "HW": HW, "HH": HH, "PADS": PADS,
+            "A_LEFT": A_LEFT, "A_RIGHT": A_RIGHT, "A_FRONT": A_FRONT, "A_BACK": A_BACK}
+
 
 # ── 5. Volt motifs on the walls + a ribbon cable off a roof edge ─────────────
 def wall_motifs_and_ribbon(c, room, vest):
@@ -310,22 +334,262 @@ def wall_motifs_and_ribbon(c, room, vest):
     c.set(int(round(drop[0])), int(round(drop[1])) - 1, "K")
 
 
-def main():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS board/etch/
+# reflow structure onto the prior form — never restarts, never recolors the whole
+# building. Theme: the clean-room fab grows into a fully built-out, high-tech PCB
+# line. Colours mature stage by stage; gold (q) only as a t5 flourish.
+#
+#   t2  small functional add   : extra SMD bumps + one more o current-pulse LED
+#   t3  structural add         : a stepped ETCH-TANK ANNEX on the shaded side
+#   t4  major add              : a REFLOW-OVEN TUNNEL raised across the back roof
+#   t5  crowning feature       : board powers ON — E trace lattice + glowing DIP
+#                                megacupola halo + q gold solder pads
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_smd_bank(c, room, chip):
+    """t2 — SMALL FUNCTIONAL ADD: the board gets busier. A short BANK of extra SMD
+    component bumps populates the OPEN back-left board pocket (between the left gold
+    pads and the chip's back, clear of the chip top and the existing traces), plus
+    ONE more o/O current-pulse LED with a short g feeder on that same pocket. Base
+    palette; an O highlight brightens the new pulse. Subtle but noticeable — 'this
+    line now runs more parts'."""
+    # a tidy row of three tiny SMD bumps in the open BACK-LEFT board pocket
+    # (roof_pt low-u, mid-v → x16..20, y25..27 — verified empty substrate).
+    for (u, v) in [(0.14, 0.46), (0.13, 0.56), (0.18, 0.50)]:
+        smd(c, *room.roof_pt(u, v))
+    # a fresh o/O current-pulse LED just forward of the new bank, on open substrate
+    led = room.roof_pt(0.22, 0.46)
+    lx, ly = int(round(led[0])), int(round(led[1]))
+    c.set(lx, ly, "o"); c.set(lx, ly - 1, "O"); c.set(lx - 1, ly, "o")
+    # tiny g feeder trace tying the new LED toward the chip's left pin anchor
+    feeder = [room.roof_pt(0.24, 0.48), (chip["A_LEFT"][0] - 1, chip["A_LEFT"][1] - 1)]
+    c.line(feeder[0], feeder[1], "g")
+
+
+def stage3_etch_tank(c, room):
+    """t3 — STRUCTURAL ADD: a stepped ETCH-TANK ANNEX bolted onto the SHADED (right)
+    side of the clean-room — a low covered chemical bath whose open top shows a glowing
+    g cyan ETCHANT surface (window-style glaze), with a D housing and a vent stub.
+    A real new structural mass abutting the right wall (grows OUT, footprint base of
+    the main room unchanged). Introduces the matured deep-steel `b` for the housing
+    shadow; the etchant pool is the on-theme cyan tell of a PCB etch line."""
+    # seat the tank's back-top corner low on the shaded right face, forward of the
+    # airlock and well clear of the front glazing band.
+    base = room.right_pt(0.86, 4.6)
+    tank = Box(top=(base[0] + 4, base[1] - 4), wx=4, wy=4, h=5)
+    tank.draw(c, roof="d", lwall="M", rwall="b", roof_hi="L", outline="K")
+    # bright clean-room parapet glint on the tank crest (matches the main cap)
+    c.line(tank.r_top, tank.r_left, "L")
+    c.line(tank.r_top, tank.r_right, "M")
+    # --- OPEN ETCHANT BATH: a recessed g pool inset into the flat tank roof ---
+    pool = [tank.roof_pt(0.18, 0.18), tank.roof_pt(0.82, 0.18),
+            tank.roof_pt(0.82, 0.82), tank.roof_pt(0.18, 0.82)]
+    c.fill_poly(pool, "g")
+    # cyan lit upper edge + darker G lower edge so the pool reads as a sunken liquid
+    c.line(tank.roof_pt(0.18, 0.18), tank.roof_pt(0.82, 0.18), "G")
+    c.line(tank.roof_pt(0.18, 0.18), tank.roof_pt(0.18, 0.82), "G")
+    c.line(tank.roof_pt(0.20, 0.78), tank.roof_pt(0.80, 0.78), "c")
+    # a couple of bright h ripple glints on the etchant surface
+    rg = tank.roof_pt(0.40, 0.42); c.set(int(round(rg[0])), int(round(rg[1])), "h")
+    rg2 = tank.roof_pt(0.62, 0.58); c.set(int(round(rg2[0])), int(round(rg2[1])), "c")
+    # K rim frame around the pool so it reads as a contained tank, not spilled paint
+    for a, b in [(pool[0], pool[1]), (pool[1], pool[2]), (pool[2], pool[3]), (pool[3], pool[0])]:
+        c.line(a, b, "K")
+    # short D vent/drain stub on the tank's shaded right face
+    c.line(tank.right_pt(0.3, 1.6), tank.right_pt(0.7, 1.6), "D")
+    c.line(tank.right_pt(0.3, 2.6), tank.right_pt(0.7, 2.6), "D")
+    return tank
+
+
+def stage4_reflow(c, room, chip):
+    """t4 — MAJOR ADD: a REFLOW-OVEN TUNNEL — a long covered conveyor oven raised on
+    the BACK of the roof, running back-left → back-right BEHIND the DIP chip so it
+    never buries the signature. Built as a real iso Box mass (deep-steel `b` walls,
+    L roof) so it reads as a solid prominent structure, not a flat plane. Its lit
+    (left) wall carries a row of glowing `e/E` heater-zone VIEWPORTS — the on-theme
+    tell of a reflow line — and a short conveyor stub pokes out the right mouth.
+
+    The oven box is LONG in wx (toward back-right) and SLIM in wy, modest height, its
+    back-top corner seated up on the back roof so the body sits clearly behind the
+    chip and stays fully on-canvas (both ends clamp inside the roof)."""
+    # seat the oven's back-top corner in the open BACK-RIGHT roof triangle (right of
+    # the centered chip, toward the r_right corner) so it never occludes the chip.
+    # Long toward the right (wx), slim in depth (wy), modest height.
+    base = room.roof_pt(0.46, 0.92)
+    bx, by = int(round(base[0])), int(round(base[1]))
+    oven = Box(top=(bx, by - 4), wx=5, wy=2, h=5)
+    oven.draw(c, roof="L", lwall="b", rwall="d", roof_hi="W", outline="K")
+    # bright clean-room cap glint on the oven crest
+    c.line(oven.r_top, oven.r_left, "W")
+    c.line(oven.r_top, oven.r_right, "L")
+    # a faint M lit band just under the roof on the lit wall
+    c.line(oven.left_pt(0.06, 1.0), oven.left_pt(0.94, 1.0), "M")
+    # --- a ROW of glowing e/E heater-zone viewports recessed into the lit wall ---
+    n = 5
+    for k in range(n):
+        u = (k + 0.5) / n
+        p = oven.left_pt(u, 2.4)
+        wx, wy = int(round(p[0])), int(round(p[1]))
+        c.set(wx, wy - 1, "K")                         # dark recess top
+        c.set(wx, wy, "e"); c.set(wx, wy + 1, "E")     # glowing port
+    # K seam dividing the heater panels on the lit wall
+    c.line(oven.left_pt(0.04, 3.4), oven.left_pt(0.96, 3.4), "K")
+    # --- a short conveyor stub poking out the right (shaded) mouth — board entry ---
+    cm = oven.right_pt(0.9, 3.0)
+    cmx, cmy = int(round(cm[0])), int(round(cm[1]))
+    c.line((cmx, cmy), (cmx + 4, cmy + 1), "D")
+    c.set(cmx + 4, cmy + 1, "K")
+    c.set(cmx + 1, cmy, "e")                            # faint glow at the mouth
+    return oven
+
+
+def stage5_powered_board(c, room, chip):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED PCB fab. The roof board "powers on":
+    a dense E trace LATTICE energizes the substrate, a glowing DIP-chip MEGACUPOLA
+    HALO crowns the signature chip (a bright cyan dome of light + radiating arcs on
+    the SAME chip, re-anchored from chip geometry), and the elite line gets a GOLD
+    flourish — q gold solder pads upgrading the existing pads + a gold trace ring
+    around the board rim. Reads as maxed-out, still clearly the same PCB fab."""
+    cxp, cyp = chip["cxp"], chip["cyp"]
+    tx0, tx1, ty0, ty1 = chip["tx0"], chip["tx1"], chip["ty0"], chip["ty1"]
+
+    # --- 1) DENSE E TRACE LATTICE: a few extra bright energized traces lacing the
+    #     open board between the chip and the rim, so the substrate reads 'live'. ---
+    lat = [
+        [room.roof_pt(0.16, 0.40), room.roof_pt(0.34, 0.40), (tx0 - 2, cyp - 2)],
+        [room.roof_pt(0.16, 0.66), room.roof_pt(0.30, 0.66), (tx0 - 2, cyp + 3)],
+        [room.roof_pt(0.84, 0.36), (tx1 + 2, cyp - 1)],
+        [room.roof_pt(0.84, 0.62), (tx1 + 2, cyp + 3)],
+    ]
+    for poly in lat:
+        for i in range(len(poly) - 1):
+            c.line(poly[i], poly[i + 1], "e")
+    # bright E nodes where the new lattice meets the rim
+    for (u, v) in [(0.16, 0.40), (0.16, 0.66), (0.84, 0.36), (0.84, 0.62)]:
+        p = room.roof_pt(u, v); c.set(int(round(p[0])), int(round(p[1])), "E")
+
+    # --- 2) GLOWING DIP-CHIP MEGACUPOLA HALO crowning the signature chip. A small
+    #     cyan power dome of light hovering just over the chip's lit top + radiating
+    #     energy arcs, re-anchored from the chip's own top centre. ---
+    import math
+    dome_cx = cxp
+    dome_cy = ty0 - 2                      # just above the chip's lit top edge
+    # ground plinth posts on the chip top so the dome reads seated, not floating
+    c.set(dome_cx - 3, ty0, "M"); c.set(dome_cx + 3, ty0, "M")
+    # the glowing dome: a bright cyan half-ellipse cap
+    for a_ang in range(0, 181, 12):
+        x = dome_cx + 4 * math.cos(math.radians(a_ang))
+        y = dome_cy - 3 * math.sin(math.radians(a_ang))
+        c.set(x, y, "E")
+    for a_ang in range(0, 181, 18):
+        x = dome_cx + 2.4 * math.cos(math.radians(a_ang))
+        y = dome_cy - 1.8 * math.sin(math.radians(a_ang))
+        c.set(x, y, "e")
+    # bright core + a W spark at the dome apex
+    c.set(dome_cx, dome_cy - 3, "W")
+    c.set(dome_cx, dome_cy - 2, "E")
+    c.set(dome_cx - 1, dome_cy - 2, "e")
+    c.set(dome_cx + 1, dome_cy - 2, "e")
+    # radiating energy arcs leaping off the dome to the nearest gold pads
+    arcs = [
+        [(dome_cx - 4, dome_cy - 1), (dome_cx - 7, dome_cy - 3), (dome_cx - 9, dome_cy)],
+        [(dome_cx + 4, dome_cy - 1), (dome_cx + 7, dome_cy - 3), (dome_cx + 9, dome_cy)],
+    ]
+    for poly in arcs:
+        for i in range(len(poly) - 1):
+            c.line(poly[i], poly[i + 1], "E")
+        for px, py in poly:
+            c.set(int(round(px)), int(round(py)) + 1, "e")
+
+    # --- 3) GOLD FLOURISH (t5 only): upgrade the existing gold pads to bright q
+    #     premium solder pads + a thin q gold trace ring just inside the board rim. ---
+    for key in ("left", "right", "fr", "back"):
+        px, py = chip["PADS"][key]
+        px, py = int(round(px)), int(round(py))
+        for dx in (-1, 0, 1):
+            c.set(px + dx, py, "q")
+        c.set(px, py - 1, "q")
+        c.set(px, py, "O")
+    # a sparse q gold trace ring tracking just inside the parapet (4 corner runs)
+    rim = [room.roof_pt(0.13, 0.13), room.roof_pt(0.87, 0.13),
+           room.roof_pt(0.87, 0.87), room.roof_pt(0.13, 0.87)]
+    # only draw the back-left + back-right legs so the gold stays a TRIM accent,
+    # not a full re-outline of the board (keeps gold as a flourish).
+    c.line(rim[0], rim[1], "q")
+    c.line(rim[0], rim[3], "q")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the PCB Fab at upgrade `stage` (1..5). Stage 1 is IDENTICAL to the
+    shipped base; each higher stage keeps every prior addition and bolts on the next
+    (t2 SMD bank → t3 etch tank → t4 reflow oven → t5 powered board + gold). Painter's
+    order keeps rooftop/overhead additions on top of the masses they grow from."""
     c = Canvas()
-    # painter's order: clean-room body, then the airlock on the right (in front),
-    # then wall glazing/motifs, then the flat roof board (drawn on top of the deck).
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
+    # painter's order: clean-room body, then the roof board, then the front glazing,
+    # then the airlock on the right (in front), then wall motifs.
     room = clean_room(c)
-    circuit_board_roof(c, room)
+    chip = circuit_board_roof(c, room)
     clean_room_glazing(c, room)
     vest = airlock(c, room)
     wall_motifs_and_ribbon(c, room, vest)
 
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    # t2 dresses the existing board (drawn on top of the deck content).
+    if stage >= 2:
+        stage2_smd_bank(c, room, chip)
+    # t3 etch tank abuts the shaded right side (drawn after the room so it sits in
+    # front of the right wall but behind nothing it should occlude).
+    if stage >= 3:
+        stage3_etch_tank(c, room)
+    # t4 reflow tunnel rises off the BACK of the roof; drawn after the board so its
+    # legs/body sit on the deck, but it lives at the back so it never buries the chip.
+    if stage >= 4:
+        stage4_reflow(c, room, chip)
+    # t5 re-energizes the board + crowns the chip; drawn last so the glow/halo and
+    # gold pads sit on top of everything they decorate.
+    if stage >= 5:
+        stage5_powered_board(c, room, chip)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/volt_lab"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "pcb-fab"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped pcb-fab.png, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": VOLT, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/volt_lab_pcb-fab.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"volt_lab_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"volt_lab_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    main()
+    build_all()

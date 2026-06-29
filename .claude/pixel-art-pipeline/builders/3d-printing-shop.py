@@ -28,9 +28,18 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
+SLUG = "3d-printing-shop"
+
+# Base Volt palette (shared keys) + a few EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so 3d-printing-shop.png is
+# unchanged):
+#   b  deep cool steel  — matured structure tone for the t4 curing silo / t3 annex
+#   e  energized cyan glow (mid)   E  energized cyan glow (bright) — t4/t5 power
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 VOLT = {"K": "#15181d", "W": "#eef2f6", "L": "#cdd6dd", "M": "#9aa3ad", "D": "#6c7682", "d": "#49515b",
         "h": "#d6f9ff", "c": "#aef0fb", "g": "#38cfe2", "G": "#1f8ba0",
-        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14"}
+        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14",
+        "b": "#3b4350", "e": "#6fe6f4", "E": "#caf7ff", "q": "#f3c63a"}
 
 
 # ── low-level helpers ────────────────────────────────────────────────────────
@@ -326,21 +335,317 @@ def print_dome(c, t):
     c.set(fill_to, bar_y + 1, "h")                       # advancing edge
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS additive-
+# manufacturing structure onto the prior tower — never restarts, never recolors
+# the whole building. Theme: the slender print tower grows into a fully built-out,
+# high-tech print FARM. Colours mature stage by stage; gold (q) only at t5.
+#
+#   t2  small functional add : a FILAMENT-SPOOL RACK + feed tube on the lit face
+#   t3  structural add       : a SECOND PRINT-BAY annex (shorter glass-domed sub-tower)
+#   t4  major add            : a tall DRYING/CURING SILO with a glowing e UV-cure window
+#   t5  crowning feature     : the dome becomes a MULTI-HEAD PRINT FARM (three E parts)
+#                              + gold dome ribs & finial
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_spool_rack(c, t):
+    """t2 — SMALL FUNCTIONAL ADD: a wall-mounted FILAMENT-SPOOL RACK with three
+    coloured spools + a feed tube routing up toward the print dome, bolted to the
+    tower's LEFT (lit) face. On-theme (more printing supply), modest, base palette;
+    brightens the o heater-block accent at the feed inlet. Sits low-front on the
+    lit face so it never collides with the dome signature up top."""
+    # A compact wall RACK low on the lit face holding TWO filament spools SIDE BY
+    # SIDE (horizontal, so they read as round spools, not a vertical smear), on a
+    # short K shelf, fed by a tiny tube to a brightened o heater inlet. Placed on the
+    # clear mid-left lit wall, clear of the dome above and of the t3 bay's dome.
+    # K shelf the spools sit on
+    sh0 = t.left_pt(0.18, 13.0)
+    sh1 = t.left_pt(0.66, 13.0)
+    sx0, sy = int(round(sh0[0])), int(round(sh0[1]))
+    sx1 = int(round(sh1[0]))
+    hline(c, sx0, sx1, sy, "K")
+    hline(c, sx0, sx1, sy + 1, "d")                   # shelf shadow
+    # two 3x3 round spools resting on the shelf, side by side
+    for cxs, body, rim in [(sx0 + 2, "c", "h"), (sx0 + 6, "o", "O")]:
+        cys = sy - 2
+        disc = [(0, -1), (-1, 0), (1, 0), (0, 1)]
+        for dx, dy in disc:
+            c.set(cxs + dx, cys + dy, body)
+        for dx, dy in [(-1, -1), (1, -1), (-1, 1), (1, 1), (0, -2), (-2, 0), (2, 0)]:
+            c.set(cxs + dx, cys + dy, "K")
+        c.set(cxs, cys, rim)                          # bright hub
+    # tiny feed tube from the cyan spool up to a brightened o heater inlet
+    c.line((sx0 + 2, sy - 4), (sx0 + 3, sy - 6), "c")
+    c.set(sx0 + 3, sy - 7, "O")
+
+
+def stage3_second_bay(c):
+    """t3 — STRUCTURAL ADD: a SECOND PRINT BAY — a shorter glass-domed sub-tower
+    stepped off the FRONT-LEFT of the main tower, abutting the materials annex so
+    the silhouette gains a stepped, two-bay massing. A real new structural mass
+    (its own Box + a small glass dome) echoing the hero tower at a smaller scale.
+    Introduces the matured deep-steel tone `b` for its shaded base trim."""
+    # a slim secondary tower stepped to the FRONT-LEFT of the main one, shorter
+    # (h=16) and NEARER the viewer so it pokes out clearly instead of hiding behind
+    # the main tower. Drawn AFTER the main tower in build(), so it occludes the
+    # tower's lower-left and reads as a distinct second bay.
+    s = Box((19, 37), wx=5, wy=4, h=16)
+    s.draw(c, roof="L", lwall="M", rwall="D", roof_hi="W", outline="K")
+    # deep-steel base band so the new mass reads as matured structure
+    c.line(s.w_left, s.w_front, "b")
+    c.line(s.w_front, s.w_right, "b")
+    # a couple of vertical D corrugation ribs on its lit face
+    for u in (0.34, 0.62, 0.88):
+        c.line(s.left_pt(u, 1), s.left_pt(u, s.h - 1), "D")
+    # a small cyan build-window on its lit (left) face — visible toward the viewer
+    s.window(c, "left", 0.22, 0.74, 3.0, 8.0, glass="g", hi="h", shade="G",
+             frame="K", mullions=1)
+    # --- a small glass dome capping the secondary bay (echoes the hero dome) ---
+    cx, cy = s.roof_pt(0.5, 0.5)
+    cx, cy = int(round(cx)), int(round(cy))
+    rx = 5
+    base_y = cy + 1
+    apex_y = base_y - 9
+
+    def hw(y):
+        if y >= base_y - 4:
+            return rx
+        tt = (base_y - 4 - y) / float(base_y - 4 - apex_y)
+        tt = max(0.0, min(1.0, tt))
+        return rx * math.sqrt(max(0.0, 1.0 - tt * tt))
+
+    for y in range(apex_y, base_y + 1):
+        w = hw(y)
+        for x in range(int(round(cx - w)), int(round(cx + w)) + 1):
+            c.set(x, y, "c" if x <= cx else "G")
+    for y in range(apex_y, base_y + 1):
+        w = hw(y)
+        c.set(int(round(cx - w)), y, "K")
+        c.set(int(round(cx + w)), y, "K")
+    c.set(cx, apex_y - 1, "K")
+    c.set(cx - 2, apex_y + 2, "h")              # glass glint
+    # metal base band
+    for ang in range(0, 360, 12):
+        x = int(round(cx + rx * math.cos(math.radians(ang))))
+        y = int(round(base_y + 2 * math.sin(math.radians(ang))))
+        c.set(x, y, "M" if y >= base_y else "D")
+    # a tiny half-built o part inside the secondary dome (printing too)
+    c.set(cx, base_y - 3, "o")
+    c.set(cx, base_y - 2, "r")
+    return s
+
+
+def stage4_curing_silo(c, t):
+    """t4 — MAJOR ADD: a tall cylindrical DRYING / CURING SILO standing on the
+    RIGHT (shaded) side of the main tower, where finished parts cure under UV. A
+    prominent new vertical mass: a deep-steel `b` cylinder ringed with bands, a tall
+    glowing `e` UV-cure viewport up its front, and a vent dome cap. Palette matures
+    here — deep `b` structure + energized cyan `e/E` cure glow. Kept on-canvas, to
+    the right of the tower, clear of the hero dome above."""
+    cx = 52                       # silo centre x (right of the tower, on-canvas)
+    base_y = 40                   # silo foot
+    top_y = 16                    # silo shoulder
+    rx = 5                        # silo half-width
+
+    # --- cylinder body: lit-left b / shaded-right darker, K silhouette ---
+    for y in range(top_y, base_y + 1):
+        for x in range(cx - rx, cx + rx + 1):
+            # round shading: left lit (M), centre b, right shaded (K-ish d)
+            off = (x - cx)
+            if off <= -rx + 1:
+                ch = "M"
+            elif off >= rx - 1:
+                ch = "d"
+            elif off < 0:
+                ch = "b"
+            else:
+                ch = "b"
+            c.set(x, y, ch)
+    # K silhouette sides + a lit L sheen stripe up the left
+    for y in range(top_y, base_y + 1):
+        c.set(cx - rx, y, "K")
+        c.set(cx + rx, y, "K")
+        c.set(cx - rx + 1, y, "L")
+    # horizontal banding rings (deep-steel structure)
+    for y in (top_y + 5, top_y + 12, top_y + 19):
+        for x in range(cx - rx + 1, cx + rx):
+            c.set(x, y, "D")
+        c.set(cx - rx + 1, y, "M")
+    # rounded shoulder cap (2:1 ellipse) + a small vent cowl on top
+    for ang in range(0, 181, 8):
+        x = int(round(cx + rx * math.cos(math.radians(ang))))
+        y = int(round(top_y - 3 * math.sin(math.radians(ang))))
+        c.set(x, y, "M" if x <= cx else "D")
+        c.set(x, top_y, "K")
+    c.set(cx, top_y - 3, "K")
+    c.fill_poly([(cx - 1, top_y - 3), (cx + 1, top_y - 3),
+                 (cx + 1, top_y - 6), (cx - 1, top_y - 6)], "D")   # vent stub
+    c.line((cx - 2, top_y - 6), (cx + 2, top_y - 6), "M")          # cowl lip
+    c.set(cx, top_y - 7, "K")
+    # foot plinth grounding the silo
+    c.line((cx - rx, base_y), (cx + rx, base_y), "K")
+    c.line((cx - rx - 1, base_y + 1), (cx + rx + 1, base_y + 1), "d")
+
+    # --- tall glowing e UV-CURE VIEWPORT up the front of the silo ---
+    vx0, vx1 = cx - 2, cx + 1
+    vy0, vy1 = top_y + 7, base_y - 4
+    c.fill_poly([(vx0, vy0), (vx1, vy0), (vx1, vy1), (vx0, vy1)], "e")
+    # bright E core column + cooler G edges = glowing UV interior
+    for y in range(vy0, vy1 + 1):
+        c.set(cx - 1, y, "E")
+        c.set(cx, y, "e")
+    c.set(cx - 1, vy0, "E")
+    # K frame around the viewport
+    for a, b in [((vx0, vy0), (vx1, vy0)), ((vx0, vy1), (vx1, vy1)),
+                 ((vx0, vy0), (vx0, vy1)), ((vx1, vy0), (vx1, vy1))]:
+        c.line(a, b, "K")
+    # a curing part silhouette floating in the UV column
+    c.set(cx - 1, (vy0 + vy1) // 2, "h")
+    c.set(cx, (vy0 + vy1) // 2 + 1, "W")
+    # a short feed conduit from the tower over to the silo top (linked plant)
+    fp = t.right_pt(0.95, 3)
+    c.line((int(round(fp[0])), int(round(fp[1]))), (cx - rx, top_y + 2), "D")
+    c.set(cx - rx, top_y + 2, "K")
+
+
+def stage5_print_farm(c, t):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED print plant. The hero dome becomes a
+    MULTI-HEAD PRINT FARM: a gantry crossbeam carrying THREE extruder heads, each
+    rising a glowing E/e part in unison, the whole chamber lit with energized cyan
+    mist. GOLD premium trim is the flourish — gold dome ribs over the glass + a gold
+    finial spire crowning the apex. Reads as elite, still the same print tower maxed
+    out."""
+    cx, cy = t.roof_pt(0.5, 0.5)
+    cx, cy = int(round(cx)), int(round(cy))
+    base_y = cy + 2
+    apex_y = base_y - 18
+    rx = 9
+
+    # --- multi-head gantry: a wide K/M crossbeam spanning the dome interior ---
+    beam_y = apex_y + 7
+    bx0, bx1 = cx - 6, cx + 6
+    c.line((bx0, beam_y), (bx1, beam_y), "M")
+    c.line((bx0, beam_y + 1), (bx1, beam_y + 1), "D")
+    c.set(bx0 - 1, beam_y, "K")
+    c.set(bx1 + 1, beam_y, "K")
+    # three extruder heads hanging off the beam, each over a rising glowing part
+    head_xs = [cx - 5, cx, cx + 5]
+    for hx in head_xs:
+        # head carriage
+        c.set(hx, beam_y + 1, "K")
+        c.set(hx - 1, beam_y + 2, "K")
+        c.set(hx, beam_y + 2, "D")
+        c.set(hx + 1, beam_y + 2, "K")
+        c.set(hx, beam_y + 3, "K")            # nozzle tip
+        # hot-end glow + a glowing E/e printed part rising under each nozzle
+        c.set(hx, beam_y + 4, "O")
+        for j, ch in enumerate(("E", "E", "e", "e")):
+            yy = beam_y + 5 + j
+            c.set(hx - 1, yy, ch)
+            c.set(hx, yy, ch)
+            c.set(hx + 1, yy, "G" if ch == "e" else "e")
+        # K side outline of each part
+        c.set(hx - 2, beam_y + 6, "K")
+        c.set(hx + 2, beam_y + 6, "K")
+    # a faint cyan mist band across the chamber floor (energized plant)
+    floor_y = base_y - 2
+    for x in range(cx - 6, cx + 7, 2):
+        c.set(x, floor_y, "e")
+
+    # --- GOLD dome RIBS arcing over the glass (premium trim flourish) ---
+    def dome_hw(y):
+        if y >= base_y - 9:
+            return rx
+        tt = (base_y - 9 - y) / float(base_y - 9 - apex_y)
+        tt = max(0.0, min(1.0, tt))
+        return rx * math.sqrt(max(0.0, 1.0 - tt * tt))
+
+    for rib_u in (-0.62, 0.0, 0.62):          # three meridian ribs over the dome
+        for y in range(apex_y + 1, base_y - 1, 1):
+            hw = dome_hw(y)
+            x = cx + int(round(rib_u * hw))
+            # only draw the rib where it is inside the glass silhouette
+            if abs(x - cx) <= hw:
+                c.set(x, y, "q")
+        # darker gold underside next to each rib for a little relief
+    # gold base ring trim band around the dome foot
+    for ang in range(180, 361, 10):
+        x = int(round(cx + rx * math.cos(math.radians(ang))))
+        y = int(round(base_y + 3 * math.sin(math.radians(ang))))
+        c.set(x, y, "q")
+
+    # --- GOLD FINIAL spire crowning the apex ---
+    fy = apex_y - 1
+    c.set(cx, fy, "q")
+    c.set(cx, fy - 1, "q")
+    c.set(cx, fy - 2, "O")                     # bright tip
+    c.set(cx - 1, fy, "r")                     # shaded side of the spire
+    c.set(cx + 1, fy, "O")                     # lit glint
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the 3D-printing tower at upgrade `stage` (1..5). Stage 1 is IDENTICAL
+    to the shipped base; each higher stage keeps every prior addition and bolts on
+    the next (t2 spool rack → t3 second bay → t4 curing silo → t5 multi-head farm +
+    gold). Painter's order keeps rooftop/overhead additions on top of the masses
+    they grow from."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     base_annex(c)              # low LEFT annex first (back), tower occludes it
     t = tower(c)
     corrugated_walls(c, t)
     left_vents(c, t)
     right_face(c, t)           # the RIGHT-side opening (door + glazing)
     power_conduit(c, t)
-    print_dome(c, t)           # signature crown last (on top)
+    if stage >= 3:
+        stage3_second_bay(c)   # second bay nearer the viewer, occludes tower base
+    if stage >= 4:
+        stage4_curing_silo(c, t)   # silo to the right, behind the dome crown
+    print_dome(c, t)           # signature crown (on top)
+
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    if stage >= 2:
+        stage2_spool_rack(c, t)
+    if stage >= 5:
+        stage5_print_farm(c, t)    # multi-head + gold, drawn last over the dome
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/volt_lab"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview. Stage 1 only re-emits the JSON; it must keep matching the
+    shipped 3d-printing-shop.png, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": VOLT, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/volt_lab_3d-printing-shop.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"volt_lab_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"volt_lab_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

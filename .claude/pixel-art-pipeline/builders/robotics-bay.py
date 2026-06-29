@@ -19,9 +19,16 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box
 
+# Base Volt palette (shared keys) + a few EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so robotics-bay.png is
+# unchanged):
+#   b  deep cool steel  — matured structure tone for t3+ new masses (rail, dock)
+#   e  energized cyan glow (mid)   E  energized cyan glow (bright) — t4/t5 power
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 VOLT = {"K": "#15181d", "W": "#eef2f6", "L": "#cdd6dd", "M": "#9aa3ad", "D": "#6c7682", "d": "#49515b",
         "h": "#d6f9ff", "c": "#aef0fb", "g": "#38cfe2", "G": "#1f8ba0",
-        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14"}
+        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14",
+        "b": "#3b4350", "e": "#6fe6f4", "E": "#caf7ff", "q": "#f3c63a"}
 
 
 # ── low-level helpers ────────────────────────────────────────────────────────
@@ -294,20 +301,273 @@ def robot_arm(c, bay):
     finger(hand_cx + 2)    # right jaw
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS automation /
+# robotics structure onto the prior form — never restarts, never recolors the whole
+# building. Theme: the open robot hangar grows into a fully built-out, automated
+# robotics cell. Colours mature stage by stage; gold (q) only as a t5 flourish.
+#
+#   t2  small functional add : a second small PICK-ARM on a post in the bay mouth
+#                              + an extra c status light on the control annex
+#   t3  structural add       : an OVERHEAD RAIL TRACK spanning the bay opening
+#                              (a b beam the arm can traverse) + bracket posts
+#   t4  major add            : a CHARGING-DOCK TOWER annex with stacked glowing e
+#                              battery cells + a docked drone; cooler b massing
+#   t5  crowning feature     : the hero arm gains a glowing E weld/gripper end-
+#                              effector mid-task, a drone HOVERS above the bay,
+#                              and gold q safety chevrons run along the rail
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_pickarm(c, bay, annex):
+    """t2 — SMALL FUNCTIONAL ADD: a compact secondary PICK-ARM standing on its own
+    short pedestal at the RIGHT lip of the open bay mouth (clear of the hero arm,
+    which rises from the bay centre and crowns up-left). It is a SMALL bold version
+    of the hero: a stubby pedestal, a heavy upper segment leaning slightly in toward
+    the cell, and a tiny 2-finger claw holding a cyan part. Plus an extra cyan `c`
+    status light on the control annex's roof. Base palette only — a modest, on-theme
+    automation add that says 'a second helper robot joined the cell'."""
+    px = bay["rx"] - 2                 # right side of the bay mouth
+    floor_y = bay["floor_y"] - 1
+    # --- short pedestal drum (3px) on the bay floor, lit M / shaded D, K outline ---
+    ped_top = floor_y - 3
+    _rect(c, px, ped_top, px + 2, floor_y, fill="D")
+    _rect(c, px, ped_top, px + 1, floor_y, fill="M")
+    c.line((px, ped_top), (px + 2, ped_top), "L")
+    _rect(c, px - 1, ped_top - 1, px + 3, floor_y + 1, outline="K")
+    # --- a heavy upper segment leaning slightly UP-LEFT toward the cell centre ---
+    seg_top = (px - 1, ped_top - 6)
+    seg_bot = (px + 1, ped_top - 1)
+    _fat_bar(c, seg_bot, seg_top, half=1, core="M", hi="L", shade="D")
+    # --- a small elbow/wrist knuckle + a 2-finger claw holding a cyan part ---
+    wx, wy = seg_top
+    _rect(c, wx - 1, wy - 1, wx + 1, wy, fill="M", outline="K")
+    c.set(wx, wy - 1, "L")
+    # two short jaws opening up-left
+    c.set(wx - 2, wy - 2, "L"); c.set(wx - 2, wy - 3, "K")     # left jaw
+    c.set(wx, wy - 2, "L"); c.set(wx, wy - 3, "K")            # right jaw
+    c.set(wx - 1, wy - 2, "c")                                 # cyan part held
+    c.set(wx - 1, wy - 3, "h")
+    # status joint dot at the shoulder
+    c.set(px, ped_top - 1, "c")
+    # --- extra cyan status light on the control annex roof ---
+    bx, by = annex.roof_pt(0.32, 0.6)
+    bx, by = int(round(bx)), int(round(by))
+    c.set(bx, by - 1, "c")
+    c.set(bx, by - 2, "h")
+
+
+def stage3_rail(c, h, bay):
+    """t3 — STRUCTURAL ADD: an OVERHEAD RAIL TRACK bolted across the top of the open
+    bay opening — a deep-steel `b` I-beam spanning left→right just under the bay
+    lintel, carried on two short bracket posts, with a small trolley hub parked on
+    it. A real new structural member (the gantry track the hero arm will traverse),
+    introduces the matured deep-steel tone `b`. Sits BELOW the hero arm's elbow so
+    it never collides with the arm crowning above the roofline."""
+    lx, rx = bay["lx"], bay["rx"]
+    rail_y = bay["top_y"] + 1                 # just under the bay lintel (high in mouth)
+    x0, x1 = lx + 1, rx + 1
+    # bracket posts FIRST (behind the rail) — two short uprights from the lintel down
+    # a few px, so the rail reads as carried on the bay frame
+    for bpx in (x0 + 1, x1 - 1):
+        c.line((bpx, bay["top_y"]), (bpx, rail_y + 2), "b")
+        c.set(bpx + 1, bay["top_y"], "D")
+    # I-beam track: a bold 3-row horizontal beam — lit top chord (L), b web, K
+    # bottom flange — reads unmistakably as a horizontal traverse rail at the top.
+    c.line((x0, rail_y - 1), (x1, rail_y - 1), "L")    # top flange (lit)
+    c.line((x0, rail_y), (x1, rail_y), "b")            # web
+    c.line((x0, rail_y + 1), (x1, rail_y + 1), "K")    # bottom flange / under-edge
+    c.set(x0 - 1, rail_y, "K")                          # end caps
+    c.set(x1 + 1, rail_y, "K")
+    # a trolley hub HANGING below the rail toward its centre (the carriage)
+    tx = x0 + (x1 - x0) // 2
+    _rect(c, tx - 1, rail_y + 2, tx + 1, rail_y + 4, fill="M", outline="K")
+    c.set(tx, rail_y + 2, "L")
+    c.set(tx, rail_y + 3, "c")                # carriage status dot
+    c.set(tx, rail_y + 1, "b")               # hanger linking trolley to rail
+
+
+def stage4_chargedock(c, h):
+    """t4 — MAJOR ADD: a tall CHARGING-DOCK TOWER annex rising off the hangar's
+    front-RIGHT corner (in front of the building, right of the bay) — a deep-steel
+    `b` column housing a stack of three glowing `e` battery cells behind glass, with
+    a docked DRONE silhouette parked on a shelf at its foot. The prominent new
+    vertical mass that says 'this cell now powers and services a drone fleet'.
+    Palette matures: deep `b` housing + energized cyan `e/E` cells. Kept fully
+    on-canvas, clear of the hero arm (which is on the LEFT) and of the annex."""
+    # tower foot just left of the control annex, on the open apron in front of the
+    # hangar's front-right wall. Author directly in screen space.
+    fx = 33                                    # column left edge (front, right of bay)
+    base_y = 50                                # foot on the apron
+    top_y = base_y - 22                        # TALL slim tower
+    w = 4                                       # column width
+    # --- tower body: lit M front (left half), D right half, b deep-steel core, K out
+    _rect(c, fx, top_y, fx + w, base_y, fill="b")
+    _rect(c, fx, top_y, fx + 1, base_y, fill="M")        # lit left edge
+    _rect(c, fx + w - 1, top_y, fx + w, base_y, fill="D")  # shaded right edge
+    c.line((fx, top_y), (fx + w, top_y), "L")            # lit cap edge
+    _rect(c, fx - 1, top_y - 1, fx + w + 1, base_y + 1, outline="K")
+    # --- stacked glowing battery cells behind a glass column (three e cells) ---
+    cell_x0, cell_x1 = fx + 1, fx + w - 1
+    cy = top_y + 3
+    for k in range(3):
+        _rect(c, cell_x0, cy, cell_x1, cy + 3, fill="e")          # glowing cell
+        c.line((cell_x0, cy), (cell_x1, cy), "E")                 # bright top
+        c.line((cell_x0, cy + 3), (cell_x1, cy + 3), "G")         # shaded base
+        _rect(c, cell_x0 - 0, cy, cell_x1, cy + 3, outline="K")   # cell frame
+        cy += 5
+    # a glass mullion down the cell stack
+    for yy in range(top_y + 3, cy):
+        c.set((cell_x0 + cell_x1) // 2, yy, "G")
+    # --- charge-status beacon + a coiled feed cable down to the docked drone ---
+    c.set(fx + 2, top_y - 2, "e")
+    c.set(fx + 2, top_y - 3, "E")
+    # --- docked DRONE silhouette on a shelf at the tower foot (front) ---
+    sh_y = base_y - 1
+    # shelf bracket off the tower
+    c.line((fx - 4, sh_y + 1), (fx, sh_y + 1), "b")
+    c.set(fx - 4, sh_y + 1, "K")
+    # quad-drone body: a flat D pod with two rotor arms + a cyan camera eye
+    dx = fx - 3
+    _rect(c, dx, sh_y - 2, dx + 3, sh_y, fill="D", outline="K")   # body pod
+    c.set(dx + 1, sh_y - 1, "M")                                  # lit top
+    c.set(dx + 1, sh_y, "g")                                      # cyan under-glow eye
+    # rotor arms + disks (parked)
+    c.line((dx - 2, sh_y - 3), (dx, sh_y - 2), "M")              # left arm
+    c.line((dx + 3, sh_y - 2), (dx + 5, sh_y - 3), "M")         # right arm
+    c.set(dx - 2, sh_y - 3, "L")                                  # left rotor
+    c.set(dx + 5, sh_y - 3, "L")                                  # right rotor
+    c.set(dx - 3, sh_y - 3, "D")
+    c.set(dx + 6, sh_y - 3, "D")
+
+
+def stage5_effector_drone(c, h, bay):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED robotics cell. Three flourishes that
+    read 'elite, automated, powered-up' while keeping it the same building:
+      • the HERO ARM's gripper lights up with a glowing `E` weld/gripper end-effector
+        mid-task (a bright energy bloom + spark spit at the jaws);
+      • a quad DRONE HOVERS in the open sky above the bay, cyan-lit, on station;
+      • GOLD `q` safety chevrons run along the t3 overhead rail + a small gold trim
+        boss on the control annex — the premium flourish (sparse, not a recolor).
+    Anchored from the SAME sources as the prior stages (bay bounds, rail_y) so it
+    lines up with the parts it crowns."""
+    # --- glowing end-effector on the hero arm's gripper -------------------------
+    # The hero gripper crowns above the bay; recompute its jaw zone from robot_arm's
+    # geometry (base_cx of cavity, straight-up arm). Mirror robot_arm's math:
+    base_cx = (bay["lx"] + bay["rx"]) // 2
+    floor_y = bay["floor_y"] - 1
+    ped_top = floor_y - 6
+    sh_y = ped_top - 3
+    elbow_y = sh_y - 14
+    wrist = (base_cx - 3, elbow_y - 9)
+    hand_cy = wrist[1] - 2
+    jaw_top = hand_cy - 6                       # top of the jaws (ky - 4 region)
+    gx = wrist[0]                               # gripper centre x
+    # energy bloom between the jaws (a bright cross of E around an h core) + a short
+    # up-spit of weld sparks — the effector is clearly ACTIVE.
+    c.set(gx, jaw_top, "h")                      # bright weld flash core
+    c.set(gx - 1, jaw_top, "E"); c.set(gx + 1, jaw_top, "E")
+    c.set(gx, jaw_top - 1, "E"); c.set(gx, jaw_top + 1, "e")
+    c.set(gx - 1, jaw_top - 1, "e"); c.set(gx + 1, jaw_top - 1, "e")
+    for sx, sy, ch in [(-1, -2, "e"), (1, -3, "E"), (0, -4, "e"), (1, -5, "h")]:
+        c.set(gx + sx, jaw_top + sy, ch)
+
+    # --- a quad DRONE hovering on station in the OPEN SKY above the roof, up-RIGHT
+    # of the hero gripper (clear transparent zone ~x24-32, y3-8 above the roof's high
+    # back edge), as one clean compact silhouette (bold K-outlined pod + a flat rotor
+    # boom) so it reads as a single object, not scattered pixels — and nothing lands
+    # on the corrugated roof below it. ---
+    drx, dry = 27, 4
+    # rotor boom: a continuous M bar with K end-caps + cyan spin-blur discs
+    c.line((drx - 3, dry - 1), (drx + 4, dry - 1), "M")          # rotor boom
+    c.set(drx - 4, dry - 1, "K"); c.set(drx + 5, dry - 1, "K")
+    c.set(drx - 3, dry - 2, "c"); c.set(drx + 4, dry - 2, "c")   # spinning blur
+    # body pod hanging under the boom (bold, outlined, with a cyan camera eye)
+    _rect(c, drx - 1, dry, drx + 2, dry + 2, fill="D", outline="K")
+    c.set(drx, dry, "M"); c.set(drx + 1, dry, "M")               # lit top
+    c.set(drx, dry + 1, "g")                                     # cyan eye
+    c.set(drx + 1, dry + 1, "G")
+
+    # --- GOLD safety chevrons along the t3 overhead rail (premium flourish) ------
+    lx, rx = bay["lx"], bay["rx"]
+    rail_y = bay["top_y"] + 3
+    x = lx + 2
+    while x < rx:
+        c.set(x, rail_y, "q")                  # gold tooth on the rail web
+        x += 3
+    # gold trim boss on the control annex roof corner (matches annex roof_pt)
+    annex = Box((46, 22), wx=4, wy=5, h=15)
+    bx, by = annex.roof_pt(0.5, 0.5)
+    c.set(int(round(bx)), int(round(by)) - 2, "q")
+    c.set(int(round(bx)), int(round(by)) - 3, "O")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the robotics bay at upgrade `stage` (1..5). Stage 1 is IDENTICAL to
+    the shipped base; each higher stage keeps every prior addition and bolts on the
+    next (t2 pick-arm → t3 overhead rail → t4 charge-dock+drone → t5 glowing
+    effector+hovering drone+gold). Painter's order keeps rooftop/overhead additions
+    on top of the masses they grow from."""
     c = Canvas()
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     h = hangar(c)
     corrugated_roof(c, h)
     bay = open_bay(c, h)
     power_conduit(c, h)
-    robot_arm(c, bay)          # hero arm in the bay (before the annex occludes nothing on the left)
-    control_annex(c)           # front-right annex, drawn last so it sits in front
+    robot_arm(c, bay)          # hero arm in the bay
+    annex = control_annex(c)   # front-right annex, drawn last so it sits in front
+
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    # t3 rail spans the bay mouth and must sit BEHIND the hero arm / pick-arm, so
+    # draw it before t2's & after the base? The rail is on the bay opening plane
+    # (behind the arm which is in front of the cavity). Draw rail first so the arm
+    # and pick-arm overlap it cleanly, then the t2 pick-arm, then forward masses.
+    if stage >= 3:
+        stage3_rail(c, h, bay)
+    if stage >= 2:
+        stage2_pickarm(c, bay, annex)
+    if stage >= 4:
+        stage4_chargedock(c, h)
+    if stage >= 5:
+        stage5_effector_drone(c, h, bay)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/volt_lab"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+SLUG = "robotics-bay"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped robotics-bay.png, so it does NOT overwrite the base."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": VOLT, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/volt_lab_robotics-bay.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"volt_lab_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"volt_lab_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

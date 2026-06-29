@@ -32,9 +32,15 @@ sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, RX, RY, LX, LY
 
+# Base Volt palette (shared keys) + a few EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so workshop.png is unchanged):
+#   b  deep cool steel  — matured structure tone for t4+ new masses
+#   e  energized cyan glow (mid)   E  energized cyan glow (bright) — the t4/t5 power
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 VOLT = {"K": "#15181d", "W": "#eef2f6", "L": "#cdd6dd", "M": "#9aa3ad", "D": "#6c7682", "d": "#49515b",
         "h": "#d6f9ff", "c": "#aef0fb", "g": "#38cfe2", "G": "#1f8ba0",
-        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14"}
+        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14",
+        "b": "#3b4350", "e": "#6fe6f4", "E": "#caf7ff", "q": "#f3c63a"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
@@ -311,10 +317,209 @@ def weathervane(c, mast_x, mast_base_y):
         c.set(gx0 + sx, gy0 + sy, ch)
 
 
-def build():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS forge/power/
+# automation structure onto the prior form — never restarts, never recolors the
+# whole building. Theme: the maker forge-yard grows into a fully built-out, high-
+# tech forge-yard. Colours mature stage by stage; gold (q) only as a t5 flourish.
+#
+#   t2  small functional add   : a stout forge FLUE STACK + smoke off the right wing
+#   t3  structural add         : a corrugated WORK CANOPY on posts over the court
+#   t4  major add              : a tall material GANTRY CRANE + glowing cyan hoist
+#   t5  crowning feature       : a glowing POWER-BUS / arc-coil core + gold banners
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_flue(c, rw):
+    """t2 — SMALL FUNCTIONAL ADD: a short corrugated FORGE FLUE STACK rising off the
+    back of the right (forge) wing's roof, capped with a vent cowl and trailing a
+    thin smoke wisp. On-theme (more forge), modest, base palette + a brightened o
+    spark at the firebox. Seated toward the BACK of the roof so it never collides
+    with the cupola/vane signature at the roof centre."""
+    bxf, byf = rw.roof_pt(0.5, 0.5)
+    bx = int(round(bxf))
+    base_y = int(round(byf)) - 1
+    sx = bx - 8                       # back-left of the cupola, clear of the vane
+    top = base_y - 9
+    # stack body (lit M / shaded D, K outline), 3px wide
+    c.fill_poly([(sx, base_y), (sx + 2, base_y), (sx + 2, top), (sx, top)], "M")
+    c.line((sx + 2, top), (sx + 2, base_y), "D")
+    c.line((sx, base_y), (sx, top), "K")
+    c.line((sx + 2, base_y), (sx + 2, top), "K")
+    # a couple of corrugation bands
+    for yy in (top + 3, top + 6):
+        c.line((sx, yy), (sx + 2, yy), "D")
+    # vent cowl cap (wider lip)
+    c.fill_poly([(sx - 1, top), (sx + 3, top), (sx + 3, top - 2), (sx - 1, top - 2)], "L")
+    c.line((sx - 1, top - 2), (sx + 3, top - 2), "W")
+    c.line((sx - 1, top - 2), (sx - 1, top), "K")
+    c.line((sx + 3, top - 2), (sx + 3, top), "K")
+    c.line((sx - 1, top), (sx + 3, top), "K")
+    # firebox glow at the stack foot + thin rising smoke wisp
+    c.set(sx + 1, base_y - 1, "o")
+    for j, dx in enumerate((1, 0, 1, 2)):
+        c.set(sx + dx, top - 3 - j * 2, "D")
+    c.set(sx + 2, top - 9, "M")
+
+
+def stage3_canopy(c, slab, lw):
+    """t3 — STRUCTURAL ADD: a corrugated lean-to WORK CANOPY bolted onto the LEFT
+    wing's front, sloping out over the open court on two slim posts so it shelters
+    the workbench. A real new structural mass (roof plane + posts), not a prop.
+    Introduces the matured deep-steel tone `b` for the posts/underside shadow."""
+    # roof plane: a parallelogram sloping down from high (at the left wing eave)
+    # to low (out over the court). Author it directly in screen space.
+    hx, hy = lw.right_pt(0.5, 1.5)          # high inner edge, on the wing front
+    hx, hy = int(round(hx)), int(round(hy))
+    # inner edge runs along the wing front (up-left .. down-right); outer edge is
+    # the same edge shifted DOWN-FRONT (toward viewer) and a touch lower (slope).
+    inA = (hx - 5, hy - 2)
+    inB = (hx + 5, hy + 3)
+    outA = (inA[0] - 4, inA[1] + 7)
+    outB = (inB[0] - 4, inB[1] + 7)
+    # underside shadow first (deep steel), then the lit corrugated top
+    c.fill_poly([inA, inB, outB, outA], "b")
+    topA = (inA[0], inA[1] - 1)
+    topB = (inB[0], inB[1] - 1)
+    c.fill_poly([topA, topB, (outB[0], outB[1] - 1), (outA[0], outA[1] - 1)], "L")
+    # corrugation ribs running down the slope
+    for t in (0.2, 0.4, 0.6, 0.8):
+        a = (topA[0] + t * (topB[0] - topA[0]), topA[1] + t * (topB[1] - topA[1]))
+        b = (outA[0] + t * (outB[0] - outA[0]), outA[1] - 1 + t * (outB[1] - outA[1]))
+        c.line(a, b, "M")
+    # bright front lip + K outline of the canopy
+    c.line((outA[0], outA[1] - 1), (outB[0], outB[1] - 1), "W")
+    for a, b in [(topA, topB), (topB, (outB[0], outB[1] - 1)),
+                 ((outB[0], outB[1] - 1), (outA[0], outA[1] - 1)),
+                 ((outA[0], outA[1] - 1), topA)]:
+        c.line(a, b, "K")
+    # two slim support posts dropping from the front corners to the slab
+    for px, py in (outA, outB):
+        c.line((px, py), (px, py + 9), "b")
+        c.line((px + 1, py), (px + 1, py + 9), "D")
+        c.set(px, py + 9, "K")
+    # a small hung worklight under the canopy (cyan, sheltered)
+    mid = ((outA[0] + outB[0]) // 2, (outA[1] + outB[1]) // 2 + 2)
+    c.set(mid[0], mid[1], "g")
+    c.set(mid[0], mid[1] + 1, "G")
+
+
+def stage4_gantry(c, slab):
+    """t4 — MAJOR ADD: a tall material GANTRY CRANE straddling the OPEN COURT — a
+    deep-steel lattice leg rising off the LEFT slab edge, a top beam crossing RIGHT
+    over the court, and a hoist trolley lowering a glowing CYAN hook + slung I-beam
+    stock down into the open middle. The prominent new vertical mass that says
+    'this yard now moves heavy stock'. Palette matures: deep `b` lattice + energized
+    cyan `e/E` glow on the hoist. Kept fully on-canvas and clear of the cupola/vane."""
+    # leg foot: on the LEFT side of the OPEN COURT, in FRONT of the wings, so the
+    # mast rises clear in front of the building and the crane reads as a silhouette.
+    lx, ly = slab.roof_pt(0.30, 0.12)       # left-front of the open court
+    lx, ly = int(round(lx)), int(round(ly))
+    top_y = ly - 30                          # TALL mast — rises above the wings/court
+    # leg: twin uprights + X-bracing (lattice mast), 3px wide
+    c.line((lx, ly), (lx, top_y), "b")
+    c.line((lx + 2, ly), (lx + 2, top_y), "D")
+    for yy in range(top_y + 3, ly - 1, 4):   # X-bracing rungs
+        c.line((lx, yy), (lx + 2, yy + 2), "b")
+        c.line((lx + 2, yy), (lx, yy + 2), "b")
+    c.set(lx, top_y, "K")
+    c.set(lx + 2, top_y, "K")
+    c.line((lx - 1, ly), (lx + 3, ly), "K")  # foot plate on the slab
+    # top beam (cantilever jib): from the mast top crossing RIGHT and slightly DOWN
+    # over the court, ending above the court's right side (stays on-canvas, x<=42)
+    beam_x1, beam_y1 = lx + 1, top_y
+    beam_x2, beam_y2 = lx + 22, top_y + 6
+    c.line((beam_x1, beam_y1 - 1), (beam_x2, beam_y2 - 1), "M")  # lit top chord
+    c.line((beam_x1, beam_y1), (beam_x2, beam_y2), "b")          # body
+    c.line((beam_x1, beam_y1 + 1), (beam_x2, beam_y2 + 1), "K")  # under-edge
+    for t in (0.2, 0.4, 0.6, 0.8):           # truss web ticks
+        mx = int(beam_x1 + t * (beam_x2 - beam_x1))
+        my = int(beam_y1 + t * (beam_y2 - beam_y1))
+        c.set(mx, my, "D")
+    # hoist trolley near mid-beam + cable dropping a glowing cyan hook into the court
+    tx = int(beam_x1 + 0.55 * (beam_x2 - beam_x1))
+    ty = int(beam_y1 + 0.55 * (beam_y2 - beam_y1))
+    c.fill_poly([(tx - 1, ty + 1), (tx + 2, ty + 1), (tx + 2, ty + 3), (tx - 1, ty + 3)], "D")
+    c.line((tx - 1, ty + 1), (tx + 2, ty + 1), "K")
+    hook_y = ty + 10
+    c.line((tx, ty + 3), (tx, hook_y), "K")          # cable
+    c.set(tx, hook_y, "E")                            # glowing hook
+    c.set(tx, hook_y + 1, "e")
+    # a slung I-beam stock glowing faintly on the hook, just above the court floor
+    c.line((tx - 3, hook_y + 2), (tx + 3, hook_y + 2), "e")
+    c.line((tx - 3, hook_y + 3), (tx + 3, hook_y + 3), "G")
+    c.set(tx - 3, hook_y + 2, "K")
+    c.set(tx + 3, hook_y + 2, "K")
+
+
+def stage5_powercore(c, rw, slab):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED forge-yard. A glowing POWER-BUS arc-coil
+    CORE is mounted high on the right (forge) wing — three coil rings around a bright
+    cyan core throwing a short energy ARC to the flue stack — and the yard is dressed
+    out with GOLD premium trim (a ridge banner + a hazard-chevron pennant on the
+    gantry). Reads as elite, still recognizably the same workshop, just maxed out."""
+    # --- power-core coil tower mounted ON the right (forge) wing roof, back-right,
+    #     so it sits clearly on the building (not floating off-canvas) ---
+    bxf, byf = rw.roof_pt(0.78, 0.30)
+    cx = int(round(bxf))
+    roof_y = int(round(byf))
+    cy = roof_y - 9                          # core hovers just above its plinth
+    # a short K/b plinth on the roof holding the coil tower up
+    c.fill_poly([(cx - 1, roof_y), (cx + 1, roof_y), (cx + 1, cy + 2), (cx - 1, cy + 2)], "b")
+    c.line((cx - 1, roof_y), (cx - 1, cy + 2), "K")
+    c.line((cx + 1, roof_y), (cx + 1, cy + 2), "K")
+    # three stacked coil rings around the core (energized cyan), compact 2:1 ellipses
+    import math
+    for r, ch in [(4, "G"), (3, "g"), (4, "e")]:
+        for a in range(0, 360, 24):
+            x = cx + r * math.cos(math.radians(a))
+            y = cy + r * 0.5 * math.sin(math.radians(a))
+            c.set(x, y, ch)
+        cy -= 2                              # stack the rings upward into a coil
+    # bright cyan core at the top of the coil
+    for xx, yy, ch in [(0, 0, "W"), (-1, 0, "E"), (1, 0, "E"), (0, -1, "E"), (0, 1, "e")]:
+        c.set(cx + xx, cy + yy, ch)
+    core_top = (cx, cy)
+    # energy ARC zig-zag leaping LEFT from the core toward the cupola/vane signature
+    arc = [(cx - 2, cy + 1), (cx - 5, cy - 1), (cx - 8, cy + 1), (cx - 11, cy - 1)]
+    for i in range(len(arc) - 1):
+        c.line(arc[i], arc[i + 1], "E")
+    for px, py in arc:
+        c.set(px, py - 1, "e")
+
+    # --- GOLD premium trim (t5 flourish only) ---
+    # a gold ridge banner hung along the right wing's lit eave
+    e0 = rw.left_pt(0.12, 0.4)
+    e1 = rw.left_pt(0.9, 0.4)
+    c.line(e0, e1, "q")
+    # gold corner bosses on the slab front kerb (elite trim, sparse)
+    for u in (0.0, 1.0):
+        p = slab.r_front
+        bossL = slab.r_left
+        bossR = slab.r_right
+    cf = slab.r_front
+    c.set(int(cf[0]), int(cf[1]) - 1, "O")
+    c.set(int(cf[0]) - 1, int(cf[1]), "q")
+    c.set(int(cf[0]) + 1, int(cf[1]), "q")
+    # a small gold hazard-chevron pennant flying from the gantry mast top (matches
+    # stage4_gantry's foot roof_pt(0.30,0.12) raised by its 30px mast height)
+    gx, gy = slab.roof_pt(0.30, 0.12)
+    gx, gy = int(round(gx)), int(round(gy)) - 31
+    c.line((gx + 1, gy), (gx + 1, gy + 3), "K")          # short pennant staff
+    c.fill_poly([(gx + 2, gy), (gx + 7, gy + 2), (gx + 2, gy + 3)], "q")
+    c.line((gx + 2, gy), (gx + 7, gy + 2), "O")
+    c.set(gx + 4, gy + 2, "K")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the workshop at upgrade `stage` (1..5). Stage 1 is IDENTICAL to the
+    shipped base; each higher stage keeps every prior addition and bolts on the next
+    (t2 flue → t3 canopy → t4 gantry → t5 power-core+gold). Painter's order keeps
+    rooftop/overhead additions on top of the masses they grow from."""
     c = Canvas()
-    # painter's order: slab (foundation) -> back wings -> open-yard icons ->
-    # power line + cupola + vane signature on the right wing.
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     slab = yard_slab(c)
     lw = left_wing(c, slab)
     rw = right_wing(c, slab)
@@ -323,12 +528,50 @@ def build():
     mx, my = cupola(c, rw)
     weathervane(c, mx, my)
 
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    if stage >= 2:
+        stage2_flue(c, rw)
+    if stage >= 3:
+        stage3_canopy(c, slab, lw)
+    if stage >= 4:
+        stage4_gantry(c, slab)
+    if stage >= 5:
+        stage5_powercore(c, rw, slab)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/volt_lab"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped workshop.png, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": VOLT, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/volt_lab_workshop.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"volt_lab_workshop{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    import subprocess
+    png = os.path.join(PNG_DIR, f"workshop{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"volt_lab_workshop{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    build()
+    build_all()

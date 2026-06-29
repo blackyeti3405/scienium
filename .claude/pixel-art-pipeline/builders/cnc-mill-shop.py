@@ -19,16 +19,40 @@ Signature: a K-framed glass enclosure on the FRONT-RIGHT roof (clear of the
 monitor) holding a 3-axis cutting gantry — a spindle carriage on twin D rails,
 a tool bit pointing straight DOWN into a clamped L workpiece with a K cut-notch
 removed, a white-hot O cut spark + c/h coolant mist + o swarf chips. Subtractive.
+
+UPGRADE EVOLUTION (cumulative — each stage keeps the prior additions and bolts on
+the next; stage 1 stays byte-identical to the shipped cnc-mill-shop.png):
+  t2  small functional add : an auxiliary DUST-CYCLONE collector can + short
+                             ducting beside the clerestory + a brightened o
+                             chip-chute light (more swarf-handling).
+  t3  structural add       : a TOOL-CAROUSEL annex bolted to the lit side wall —
+                             a low cylinder magazine of indexed tool holders
+                             (new `b` deep-steel shadow).
+  t4  major add            : a second CLERESTORY MONITOR bay raising the roofline
+                             + a glowing `e` COOLANT TANK on the shaded flank
+                             (cooler `b` structure tones arrive).
+  t5  crowning feature     : a GLASS-BOXED SECOND CUTTING GANTRY twinning the
+                             signature — twin spindles carving stock in `E`
+                             coolant mist, `q` GOLD rails on the gantry box.
 """
-import os, sys, json
+import os, sys, json, math, subprocess
 
 sys.path.insert(0, "/path/to/scienium/art")
 from iso import Canvas
 from isobuild import Box, cylinder
 
+SLUG = "cnc-mill-shop"
+
+# Base Volt palette (shared keys) + a few EVOLVED accent shades reserved for the
+# upgrade stages only (they never appear in stage 1, so cnc-mill-shop.png is
+# unchanged):
+#   b  deep cool steel  — matured structure tone for t4+ new masses
+#   e  energized cyan glow (mid)   E  energized cyan glow (bright) — the t4/t5 power
+#   q  premium gold trim — t5 flourish only (NOT a whole-building recolor)
 VOLT = {"K": "#15181d", "W": "#eef2f6", "L": "#cdd6dd", "M": "#9aa3ad", "D": "#6c7682", "d": "#49515b",
         "h": "#d6f9ff", "c": "#aef0fb", "g": "#38cfe2", "G": "#1f8ba0",
-        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14"}
+        "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14",
+        "b": "#3b4350", "e": "#6fe6f4", "E": "#caf7ff", "q": "#f3c63a"}
 
 
 # ── small pixel helpers ──────────────────────────────────────────────────────
@@ -217,11 +241,186 @@ def gantry_enclosure(c, hall):
     c.set(mx - 2, my + 2, "c")                               # coolant mist puff
     c.set(mx + 2, my + 2, "o"); c.set(mx + 3, my + 1, "O")  # swarf chips flick right
     c.set(mx + 4, my + 2, "o")
+    return cx, ty, w
 
 
-def main():
+# ═══════════════════════════════════════════════════════════════════════════════
+# UPGRADE-EVOLUTION STAGES (cumulative). Each stage PHYSICALLY ADDS swarf-handling
+# / tooling / cutting structure onto the prior form — never restarts, never recolors
+# the whole building. Theme: the machine shop grows into a fully built-out, high-tech
+# CNC cell. Colours mature stage by stage; gold (q) only as a t5 flourish.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def stage2_aux_cyclone(c, hall):
+    """t2 — SMALL FUNCTIONAL ADD: an auxiliary DUST-CYCLONE collector can with a
+    short duct run, mounted on the BACK ROOF RIDGE in the clear gap between the
+    clerestory monitor (back-left) and the corner cyclone (back-right), plus a
+    brightened O chip-chute light. More swarf-handling capacity — on-theme,
+    modest, base palette + brightened accent.
+
+    Seated on the back ridge (roof_pt ~0.30,0.95) so its can rises into the empty
+    sky between the monitor and the corner cyclone, clear of the gantry box."""
+    bx, by = hall.roof_pt(0.30, 0.95)        # back ridge, right of monitor 1
+    bx, by = int(round(bx)), int(round(by))
+    # a short squat collector can (smaller sibling of the corner cyclone)
+    cyl_cx, cyl_top, cyl_rx, cyl_h = bx, by - 9, 2, 7
+    cylinder(c, cyl_cx, cyl_top, cyl_rx, cyl_h, top="L", side_l="M", side_r="D")
+    # little conical hopper under the can, tapering to a point on the roof
+    for i, yy in enumerate(range(cyl_top + cyl_h + 1, cyl_top + cyl_h + 3)):
+        w = max(0, cyl_rx - 1 - i)
+        c.line((cyl_cx - w, yy), (cyl_cx + w, yy), "D")
+        c.set(cyl_cx - w, yy, "K"); c.set(cyl_cx + w, yy, "K")
+    c.set(cyl_cx, cyl_top + cyl_h + 3, "K")
+    # lit seam + one band ring on the drum
+    c.line((cyl_cx - cyl_rx + 1, cyl_top + 1), (cyl_cx - cyl_rx + 1, cyl_top + cyl_h - 1), "L")
+    c.line((cyl_cx - cyl_rx, cyl_top + 3), (cyl_cx + cyl_rx, cyl_top + 3), "d")
+    # short intake DUCT: a stubby pipe elbow dropping from the can down-right toward
+    # the gantry cell, clamped to the roof — reads as ducted swarf extraction.
+    c.line((cyl_cx + cyl_rx, cyl_top + cyl_h - 2), (cyl_cx + cyl_rx + 3, cyl_top + cyl_h), "M")
+    c.line((cyl_cx + cyl_rx, cyl_top + cyl_h - 1), (cyl_cx + cyl_rx + 3, cyl_top + cyl_h + 1), "D")
+    c.set(cyl_cx + cyl_rx, cyl_top + cyl_h - 2, "K")
+    c.set(cyl_cx + cyl_rx + 3, cyl_top + cyl_h, "K")
+    # brightened O chip-chute light at the duct foot (the t2 accent brighten)
+    c.set(cyl_cx + cyl_rx + 3, cyl_top + cyl_h + 1, "O")
+    c.set(cyl_cx - 1, cyl_top - 1, "h")      # cap glint
+
+
+def stage3_tool_carousel(c, hall):
+    """t3 — STRUCTURAL ADD: a TOOL-CAROUSEL annex standing on the open ground in
+    FRONT of the hall's lit (left) wall, toward the front-left corner — an upright
+    drum magazine of indexed tool holders on a deep-steel plinth. A real new
+    structural mass, drawn after the hall so it reads clearly. Introduces the
+    matured deep-steel `b` tone for its plinth/shadow.
+
+    Pulled FORWARD onto open floor (down-left of the wall, below the hazard kerb)
+    so it never collides with the roll-up door on the wall face above it."""
+    # base point: forward of the front-left wall corner, on open ground
+    ax, ay = hall.w_left[0] + 4, hall.w_left[1] + 5
+    ax, ay = int(round(ax)), int(round(ay))
+    # deep-steel plinth/shadow the carousel stands on (grounds it)
+    c.fill_poly([(ax - 2, ay + 5), (ax + 4, ay + 5), (ax + 5, ay + 7), (ax - 1, ay + 7)], "b")
+    c.set(ax - 2, ay + 5, "K"); c.set(ax + 5, ay + 7, "K")
+    # the drum magazine: an upright cylinder (the indexing carousel body)
+    dr_cx, dr_top, dr_rx, dr_h = ax + 1, ay - 2, 3, 6
+    cylinder(c, dr_cx, dr_top, dr_rx, dr_h, top="L", side_l="M", side_r="D")
+    # indexed TOOL HOLDERS: short K-shanked bits with bright L tips poking radially
+    # out of the top rim ellipse — the clear "tool carousel" read.
+    for a in range(0, 181, 30):
+        rim_x = dr_cx + dr_rx * math.cos(math.radians(a))
+        rim_y = dr_top + dr_rx * 0.5 * math.sin(math.radians(a))
+        tx = dr_cx + (dr_rx + 2) * math.cos(math.radians(a))
+        ty = dr_top + (dr_rx * 0.5 + 1) * math.sin(math.radians(a))
+        c.line((rim_x, rim_y), (tx, ty), "K")            # tool shank
+        c.set(int(round(tx)), int(round(ty)), "L")       # bright bit tip
+    # a darker hub dot + lit index seam + band ring on the drum face
+    c.set(dr_cx, dr_top, "d")
+    c.line((dr_cx - dr_rx + 1, dr_top + 1), (dr_cx - dr_rx + 1, dr_top + dr_h - 1), "L")
+    c.line((dr_cx - dr_rx, dr_top + 3), (dr_cx + dr_rx, dr_top + 3), "d")
+    # a small cyan index-readout dot on the carousel base (status)
+    c.set(dr_cx + 1, dr_top + dr_h - 1, "g")
+
+
+def stage4_second_monitor_and_tank(c, hall):
+    """t4 — MAJOR ADD: a SECOND CLERESTORY MONITOR bay raising the roofline in
+    FRONT of the first (so the factory north-light doubles and the roof steps up),
+    PLUS a glowing `e` COOLANT TANK on the shaded RIGHT flank feeding the cell.
+    The prominent new masses that say 'this shop scaled up'. Palette matures with
+    deep `b` structure and energized cyan `e`."""
+    # --- second clerestory monitor: a twin of the signature ridge box, set one
+    #     row toward the FRONT-RIGHT of the first monitor so the roofline reads as
+    #     a stepped pair. Kept clear of the front gantry box (x ~27..47, y ~28..38).
+    base = hall.roof_pt(0.42, 0.66)          # mid roof, in front of the first mon
+    mon = Box(top=(base[0], base[1] - 11), wx=8, wy=2, h=6)
+    mon.draw(c, roof="M", lwall="L", rwall="d", roof_hi="W", outline="K")
+    # cyan window band on its lit face (slightly brighter than the base monitor)
+    for i in range(4):
+        u0 = 0.12 + i * 0.21
+        mon.window(c, "left", u0, u0 + 0.10, 1.8, 4.6, glass="g", mullions=0)
+    c.line(mon.r_top, mon.r_right, "W")      # crest glint
+
+    # --- glowing coolant tank on the SHADED (right) flank of the hall ---
+    # a vertical tank standing on open ground FORWARD of the right-front corner so
+    # it stands clearly proud of the shaded flank (not tucked behind the wall).
+    tk_cx = int(round(hall.w_right[0])) - 2
+    tk_top = int(round(hall.r_right[1])) + 8
+    tk_rx, tk_h = 3, 12
+    cylinder(c, tk_cx, tk_top, tk_rx, tk_h, top="b", side_l="D", side_r="b")
+    c.line((tk_cx - tk_rx, tk_top + 4), (tk_cx + tk_rx, tk_top + 4), "K")   # band
+    c.line((tk_cx - tk_rx, tk_top + 8), (tk_cx + tk_rx, tk_top + 8), "K")
+    # a glowing cyan SIGHT-GLASS level gauge down the lit edge of the tank
+    c.line((tk_cx - tk_rx + 1, tk_top + 2), (tk_cx - tk_rx + 1, tk_top + tk_h - 1), "e")
+    c.set(tk_cx - tk_rx + 1, tk_top + 2, "E")        # bright top glint
+    c.set(tk_cx - tk_rx + 1, tk_top + tk_h // 2, "E")
+    # a coolant FEED LINE running from the tank up the wall toward the roof cell
+    c.line((tk_cx - 1, tk_top), (tk_cx - 1, tk_top - 5), "b")
+    c.set(tk_cx - 1, tk_top - 5, "e")
+    c.set(tk_cx - 1, tk_top - 6, "e")
+    return mon
+
+
+def stage5_second_gantry(c, hall):
+    """t5 — CROWNING FEATURE = FULLY EVOLVED CNC cell. A GLASS-BOXED SECOND CUTTING
+    GANTRY twinning the signature, mounted on the BACK-RIGHT roof so the shop reads
+    as a dual-spindle machining cell — twin spindles carving stock in a bright `E`
+    coolant mist, dressed with `q` GOLD rails on the gantry box as the flourish.
+    Reads as elite, still recognizably the same mill shop, just maxed out."""
+    # back-top vertex of the second glass lid, placed back-right of the signature
+    # gantry (whose lid back-vertex is (37,28)). Smaller box so it nests on-canvas.
+    cx, ty = 47, 24
+    w = 8
+    top = (cx, ty)
+    rgt = (cx + w, ty + w // 2)
+    bot = (cx, ty + w)
+    lft = (cx - w, ty + w // 2)
+    # K corner posts lifting the box above the roof deck
+    for p in (lft, bot, rgt):
+        c.set(int(p[0]), int(p[1]) + 1, "K")
+        c.set(int(p[0]), int(p[1]) + 2, "d")
+    # translucent cyan glass lid + glint + shade sliver
+    c.fill_poly([top, rgt, bot, lft], "c")
+    c.line((cx - 4, ty + 3), (cx - 1, ty + 1), "h")
+    c.line((cx + 2, ty + w - 1), (cx + w - 1, ty + w // 2 + 1), "g")
+    # GOLD rails framing the gantry box (the t5 flourish) — all four edges in q,
+    # with a bright O top glint on the back-left edge.
+    for a, b in [(top, rgt), (rgt, bot), (bot, lft), (lft, top)]:
+        c.line(a, b, "q")
+    c.line(top, rgt, "O")                     # bright gold crest
+
+    # the second machine on the box deck (compact twin-spindle cut)
+    mx, my = cx, ty + 3
+    # twin gantry rails
+    c.line((mx - 5, my - 1), (mx + 5, my - 1), "D")
+    c.line((mx - 5, my), (mx + 5, my), "d")
+    for px in (mx - 6, mx + 6):
+        c.set(px, my - 1, "D"); c.set(px, my, "K")
+    # TWIN spindle carriages riding the rails
+    for ddx in (-3, 3):
+        rect(c, mx + ddx - 1, my - 2, mx + ddx + 1, my, fill="M", outline="K")
+        c.set(mx + ddx, my - 2, "L")          # lit crown
+        c.set(mx + ddx, my + 1, "L")          # tool bit down
+    # workpiece bar spanning under both spindles
+    rect(c, mx - 5, my + 2, mx + 5, my + 2, fill="L")   # lit top
+    rect(c, mx - 5, my + 3, mx + 5, my + 3, fill="D")   # body
+    c.set(mx - 6, my + 2, "M"); c.set(mx + 6, my + 2, "M")   # clamp jaws
+    # bright E coolant mist + white-hot cut points under each twin spindle
+    for ddx in (-3, 3):
+        c.set(mx + ddx, my + 1, "O")          # white-hot cut spark
+        c.set(mx + ddx - 1, my + 1, "E")      # bright coolant mist
+        c.set(mx + ddx + 1, my, "e")          # mist puff
+    c.set(mx, my, "E")                         # central mist plume between spindles
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ASSEMBLE — build(stage) composes the base form, then layers cumulative stages.
+# ═══════════════════════════════════════════════════════════════════════════════
+def build(stage: int = 1):
+    """Compose the CNC mill shop at upgrade `stage` (1..5). Stage 1 is IDENTICAL to
+    the shipped base; each higher stage keeps every prior addition and bolts on the
+    next (t2 aux-cyclone → t3 tool-carousel → t4 second monitor+coolant tank →
+    t5 second glass gantry + gold). Painter's order keeps rooftop/overhead additions
+    on top of the masses they grow from."""
     c = Canvas()
-    # painter's order: back cyclone, then hall, then ridge monitor, then front
+    # --- BASE FORM (stage 1, unchanged) -------------------------------------------
     dust_cyclone(c)
     hall = main_hall(c)
     corrugation(c, hall)
@@ -230,12 +429,49 @@ def main():
     shutter_door(c, hall)
     gantry_enclosure(c, hall)
 
+    # --- CUMULATIVE UPGRADE STAGES ------------------------------------------------
+    if stage >= 2:
+        stage2_aux_cyclone(c, hall)
+    if stage >= 3:
+        stage3_tool_carousel(c, hall)
+    if stage >= 4:
+        stage4_second_monitor_and_tank(c, hall)
+    if stage >= 5:
+        stage5_second_gantry(c, hall)
+
+    return c
+
+
+SRC_DIR = "/path/to/scienium/art/src/buildings"
+PNG_DIR = "/path/to/scienium/apps/web/public/sprites/buildings/volt_lab"
+PREVIEW_DIR = "/path/to/scienium/art/preview"
+
+
+def emit(stage: int):
+    """Build a stage, write its char-grid JSON, and (for stages 2..5) render the PNG
+    + scaled preview to the manifest paths. Stage 1 only re-emits the JSON; it must
+    keep matching the shipped cnc-mill-shop.png, so it does NOT overwrite the base PNG."""
+    c = build(stage)
     spec = {"width": 64, "height": 64, "palette": VOLT, "rows": c.rows()}
-    out = "/path/to/scienium/art/src/buildings/volt_lab_cnc-mill-shop.json"
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(spec, open(out, "w"), indent=0)
-    print("built", out)
+    suffix = "" if stage == 1 else f"_t{stage}"
+    os.makedirs(SRC_DIR, exist_ok=True)
+    src = os.path.join(SRC_DIR, f"volt_lab_{SLUG}{suffix}.json")
+    json.dump(spec, open(src, "w"), indent=0)
+    if stage == 1:
+        print("emitted base JSON (PNG untouched):", src)
+        return
+    png = os.path.join(PNG_DIR, f"{SLUG}{suffix}.png")
+    prev = os.path.join(PREVIEW_DIR, f"volt_lab_{SLUG}{suffix}.png")
+    subprocess.run([sys.executable,
+                    "/path/to/scienium/art/render_pixel_art.py",
+                    src, "-o", png, "--preview", prev], check=True)
+    print("built stage", stage, "->", png)
+
+
+def build_all():
+    for s in (1, 2, 3, 4, 5):
+        emit(s)
 
 
 if __name__ == "__main__":
-    main()
+    build_all()
