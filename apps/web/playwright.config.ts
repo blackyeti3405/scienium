@@ -11,13 +11,17 @@ const baseURL = `http://localhost:${PORT}`
 
 export default defineConfig({
   testDir: 'e2e',
-  fullyParallel: true,
+  // NOT fully parallel: every spec authenticates as the same leader on the ONE
+  // shared E2E Test Lab, so they all mutate the same team state (currency, the
+  // per-day Lab-Credit claim, placed buildings). Running them concurrently makes
+  // those mutations race (e.g. a parallel log grants LC mid-assertion). Until each
+  // worker gets its own dedicated test account + team, the suite runs SERIALLY so
+  // it's deterministically green. Override locally for speed with E2E_WORKERS (you
+  // may then see contention flakes). See PARALLELISM.md.
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  // Parallel browser contexts. Bounded well under the local core count because
-  // the bottleneck is the single dev server + shared dev DB, not CPU. See
-  // PARALLELISM.md for what may run concurrently.
-  workers: process.env.CI ? 2 : Number(process.env.E2E_WORKERS ?? 4),
+  workers: Number(process.env.E2E_WORKERS ?? 1),
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL,
