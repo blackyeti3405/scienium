@@ -5,6 +5,27 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.14.0] — 2026-06-28
+
+Database moves from a local Postgres instance to **Supabase Postgres**, and the migration
+history is repaired so a fresh database can be built from zero. The app runs through
+Supabase's **transaction pooler** (port 6543, `pgbouncer=true`) at runtime and the
+**session pooler** (port 5432) for migrations — the standard serverless-safe setup that
+keeps Prisma from exhausting connections on Vercel. No table/column changes: the schema
+shape is identical. Validated end-to-end against Supabase — Playwright E2E green (70 passed,
+1 skipped).
+
+### Changed
+
+- **Datasource is now pooled** (`apps/web/prisma/schema.prisma`) — added `directUrl` so `url` (transaction pooler) serves app traffic while `directUrl` (session pooler) is used only by `prisma migrate` / `db push`. `.env.local` / Vercel now set `DATABASE_URL` + `DIRECT_URL`.
+- **Migrations squashed to a single baseline** (`prisma/migrations/00000000000000_init/`) — the 20 incremental migrations are collapsed into one `init` generated from the current schema. This fixes `prisma migrate deploy` against a **fresh** database (Vercel/CI): the previous history had no baseline before the first migration, which assumed a pre-existing schema and failed on an empty DB (`type "project_phase" does not exist`). Verified by deploying into a throwaway empty DB — all 57 tables created from zero. Existing databases were re-baselined to `init`.
+
+### Removed
+
+- **20 incremental migration files** (`prisma/migrations/2026*`) — superseded by the squashed `init` baseline; recoverable from git history if ever needed.
+
+---
+
 ## [0.13.0] — 2026-06-28
 
 Building upgrades now **visibly evolve**. The flat gold tier-2 reskin from 0.12.0 is
