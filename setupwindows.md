@@ -227,7 +227,7 @@ Set these in **Vercel → Project → Settings → Environment Variables**, scop
 | `DATABASE_URL` | Supabase/managed Postgres — **pooled** connection string | runtime queries |
 | `DIRECT_URL` | same DB — **direct** (non-pooled) connection | used only for `prisma migrate deploy` |
 | `ANTHROPIC_API_KEY` | Anthropic console | paper metadata, quizzes, chat, grading, classification |
-| `R2_ACCOUNT_ID` · `R2_ACCESS_KEY_ID` · `R2_SECRET_ACCESS_KEY` · `R2_BUCKET_NAME` · `R2_PUBLIC_URL` | Cloudflare R2 | PDF storage, project-log photos, showcase assets |
+| `R2_ACCOUNT_ID` · `R2_ACCESS_KEY_ID` · `R2_SECRET_ACCESS_KEY` · `R2_BUCKET_NAME` | Cloudflare R2 | PDF storage, project-log photos, showcase assets (private bucket; streamed via authed routes) |
 | `VIEW_FINGERPRINT_SALT` | generate: `openssl rand -hex 32` (≥16 chars) | **Required in production.** Dedicated salt for showcase per-visitor view fingerprints. The view-tracking path **fails closed** without it (the rest of the app is unaffected). Use a value distinct from any dev salt. |
 | `NEXT_PUBLIC_APP_URL` | your production URL, e.g. `https://scienium.app` | — |
 

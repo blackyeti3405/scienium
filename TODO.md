@@ -28,18 +28,29 @@ Tracked items intentionally deferred during development. Remove an entry once do
   2. Remove the `pdf_data` fallback branch in the file route, then drop the column.
 
 ## Production deployment — Vercel + Supabase (not set up yet)
-- The project currently runs **local-only**: Docker Postgres (`localhost:5432`) +
-  Cloudflare R2. No Vercel project is linked (no `.vercel/`), no Supabase project.
-  R2 is configured but is just object storage, not a deployment.
-- **To go live (see SETUP.md §8 for the full walkthrough):**
-  - **Supabase** (or other managed Postgres): create the project; set `DATABASE_URL`
+- **Dev** now runs on **Supabase Postgres** (pooled `DATABASE_URL` + `DIRECT_URL`),
+  Upstash Redis, and Cloudflare R2. No Vercel project is linked yet (no `.vercel/`),
+  and prod should use its **own** Supabase project — not the dev DB. The production
+  domain **`scienium.app`** is registered (Cloudflare DNS).
+- **To go live (see SETUP.md §8 + the SECURITY.md §5 "Domain, email & branding" block):**
+  - **Supabase** — create a **separate production project**; set `DATABASE_URL`
     (pooled) + `DIRECT_URL` (direct, for `prisma migrate deploy`).
-  - **Vercel**: import the GitHub repo (`blackyeti3405/scienium`), set root to
+  - **Vercel** — import the GitHub repo (`blackyeti3405/scienium`), set root to
     `apps/web`, add all env vars (Clerk, `ANTHROPIC_API_KEY`, R2_*, `DATABASE_URL`,
     `DIRECT_URL`, `VIEW_FINGERPRINT_SALT`, Upstash, **`CRON_SECRET`**, optional
-    `RESEND_API_KEY`). Vercel auto-runs the `apps/web/vercel.json` crons once deployed.
+    `RESEND_API_KEY`). Add `scienium.app` as the domain and set
+    `NEXT_PUBLIC_APP_URL=https://scienium.app`. Vercel auto-runs the `vercel.json` crons.
   - Run `prisma migrate deploy` against the prod DB (build step or one-off).
   - After deploy, run the `pdf_data` prod check above to unblock the storage cleanup.
+
+## Branding — nova-lab → scienium (leftover from the original project name)
+- The repo/source is already "scienium" (no `nova-lab` anywhere in code). The leftover
+  "nova-lab" lives **only in external accounts**, tracked as a checklist in SECURITY.md §5:
+  - **Clerk** application is named "Nova-lab" → shows "as Nova-lab" in auth emails. Rename
+    it in the Clerk dashboard (Configure → Settings; also check Customization → Branding).
+  - **R2 bucket** is named `nova-lab-assets` — internal/invisible to users, so renaming is
+    optional cosmetic (R2 can't rename in place: new `scienium-assets` bucket + migrate +
+    update `R2_BUCKET_NAME`).
 
 ## Science Fair dataset (Feature 3 follow-up)
 - `lib/fairs/dataset.ts` is a **provisional starter** modeled on the Society for

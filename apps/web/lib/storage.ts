@@ -29,10 +29,6 @@ export async function getDownloadSignedUrl(key: string): Promise<string> {
   return getSignedUrl(r2, command, { expiresIn: 3600 })
 }
 
-export function publicAssetUrl(key: string): string {
-  return `${process.env.R2_PUBLIC_URL}/${key}`
-}
-
 // ─── Server-side object access ────────────────────────────────────────────────
 // Used for private team uploads (e.g. paper PDFs): the app reads/writes objects
 // directly and streams them through its own authenticated routes — no public or
