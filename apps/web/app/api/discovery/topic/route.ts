@@ -6,6 +6,8 @@ import { db } from '@/lib/db'
 import { batchCheckRelevance } from '@/lib/literature/relevance'
 import { deleteObject } from '@/lib/storage'
 import { logActivity } from '@/lib/activity/log'
+import { TOPIC_LOCK_KP } from '@/lib/discovery/economy'
+import { matchInterests } from '@/lib/discovery/interest-match'
 
 // An empty/absent topic clears it; cap the length otherwise.
 // `confirmWipe: true` signals the client has seen the confirmation and
@@ -106,9 +108,50 @@ export async function POST(req: NextRequest) {
     newTopic: newTopic || null,
   }).catch(console.error)
 
+  // One-time "Topic Locked" bonus (#1): granted at most once per team ever, the
+  // first time a non-empty topic is set. Idempotent via DiscoveryTopicBonus's
+  // @@id(teamId) — clearing then re-setting the topic pays nothing the 2nd time.
+  let topicBonusKp = 0
+  if (newTopic) {
+    try {
+      await db.$transaction(async (tx) => {
+        await tx.discoveryTopicBonus.create({
+          data: { teamId: ctx.teamId, kpAwarded: TOPIC_LOCK_KP },
+        })
+        await tx.teamCurrency.upsert({
+          where: { teamId: ctx.teamId },
+          create: { teamId: ctx.teamId, kp: TOPIC_LOCK_KP },
+          update: { kp: { increment: TOPIC_LOCK_KP } },
+        })
+      })
+      topicBonusKp = TOPIC_LOCK_KP
+      logActivity(ctx.teamId, ctx.dbUserId, 'topic_locked', { kp: TOPIC_LOCK_KP }).catch(console.error)
+    } catch (err) {
+      // P2002 → bonus already granted for this team; award nothing (topicBonusKp 0).
+      if (!(typeof err === 'object' && err !== null && 'code' in err && (err as { code?: string }).code === 'P2002')) {
+        console.error('[discovery/topic] topic-lock bonus failed:', err)
+      }
+    }
+  }
+
+  // Topic ↔ interest reconnection (#2): deterministic LOCAL overlap (NO LLM). For
+  // a non-empty topic, mark which of the team's seeded interests connect. Additive
+  // field only — the wipe path + existing fields are untouched.
+  let connections: { text: string; createdByUserId: string; connected: boolean }[] = []
+  if (newTopic) {
+    const interests = await db.topicInterest.findMany({
+      where: { teamId: ctx.teamId },
+      orderBy: { createdAt: 'asc' },
+      select: { text: true, createdByUserId: true },
+    })
+    connections = matchInterests(newTopic, interests)
+  }
+
   return NextResponse.json({
     topic: newTopic || null,
     removedCount,
     removedTitles,
+    topicBonusKp,
+    connections,
   })
 }

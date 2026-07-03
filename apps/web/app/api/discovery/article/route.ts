@@ -3,46 +3,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import sanitizeHtml from 'sanitize-html'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { LruCache } from '@/lib/lru'
+// Shared XSS allowlist (also used by the Discovery v2 source path for abstracts).
+// See lib/discovery/sanitize.ts — do NOT fork a looser allowlist.
+import { ARTICLE_SANITIZE_OPTS, TITLE_SANITIZE_OPTS } from '@/lib/discovery/sanitize'
 
 const WIKI_API = 'https://en.wikipedia.org/w/api.php'
-
-// ── HTML sanitization (XSS defense) ───────────────────────────────────────────
-// Wikipedia article HTML is PUBLICLY EDITABLE and we render it client-side via
-// dangerouslySetInnerHTML (WikiReader). The regex passes in processWikiHtml are
-// cosmetic, NOT a security boundary, so every response is run through a real
-// allowlist sanitizer: it parses the HTML and re-serializes only known-safe tags
-// /attributes, dropping <script>, inline event handlers, style/iframe/object,
-// and javascript: URLs. The allowlist keeps the tags Wikipedia articles use plus
-// our rewritten links (class="wiki-link" + data-wiki-title) so navigation works.
-const ARTICLE_SANITIZE_OPTS: sanitizeHtml.IOptions = {
-  allowedTags: [
-    'p', 'br', 'hr', 'span', 'div',
-    'b', 'strong', 'i', 'em', 'u', 's', 'small', 'sub', 'sup', 'abbr',
-    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'ul', 'ol', 'li', 'dl', 'dt', 'dd',
-    'blockquote', 'pre', 'code',
-    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
-    'a',
-  ],
-  allowedAttributes: {
-    a: ['href', 'target', 'rel', 'class', 'data-wiki-title'],
-    th: ['colspan', 'rowspan', 'scope'],
-    td: ['colspan', 'rowspan'],
-    '*': ['class'],
-  },
-  // No data: or javascript: — only real navigable schemes. Our rewritten
-  // internal links use href="#" (a fragment), which is allowed as relative.
-  allowedSchemes: ['http', 'https', 'mailto'],
-  allowProtocolRelative: false,
-  disallowedTagsMode: 'discard',
-}
-
-// The page title (displaytitle) can carry markup (e.g. italic species names) and
-// is also rendered via dangerouslySetInnerHTML — allow only inline formatting.
-const TITLE_SANITIZE_OPTS: sanitizeHtml.IOptions = {
-  allowedTags: ['i', 'b', 'em', 'strong', 'sub', 'sup', 'span'],
-  allowedAttributes: {},
-}
 const WIKI_REST = 'https://en.wikipedia.org/api/rest_v1'
 
 // Wikimedia's User-Agent policy requires a descriptive UA with contact info for

@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { Pencil, Check, X } from 'lucide-react'
 import type { DiscoveryNode } from '@/stores/discoveryStore'
+import { InterestSeeds, type Interest } from '@/components/discovery/InterestSeeds'
 
 // ── Accordion content ───────────────────────────────────────────────────────
 
@@ -111,6 +112,12 @@ interface Props {
   onSetFinalTopic: (topic: string) => void
   onContinue: () => void
   onOpenStarred: (nodeId: string) => void
+  // ── Team interests (#2) ──
+  interests: Interest[]
+  currentUserId: string | null
+  onAddInterest: (text: string) => void
+  onRemoveInterest: (id: string) => void
+  onSeedInterest: (text: string) => void
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
@@ -122,6 +129,11 @@ export function DiscoveryHome({
   onSetFinalTopic,
   onContinue,
   onOpenStarred,
+  interests,
+  currentUserId,
+  onAddInterest,
+  onRemoveInterest,
+  onSeedInterest,
 }: Props) {
   const [open, setOpen] = useState<Set<number>>(new Set())
   const [editingTopic, setEditingTopic] = useState(false)
@@ -250,6 +262,17 @@ export function DiscoveryHome({
               </div>
             )
           })}
+        </div>
+
+        {/* ── Team interests (#2) — one-tap start chips ── */}
+        <div className="rounded-sm border border-white/10 bg-white/[0.02] px-5 py-4">
+          <InterestSeeds
+            interests={interests}
+            currentUserId={currentUserId}
+            onAdd={onAddInterest}
+            onRemove={onRemoveInterest}
+            onSeed={onSeedInterest}
+          />
         </div>
 
         {/* ── Starred topics ── */}

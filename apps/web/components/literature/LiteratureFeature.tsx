@@ -15,6 +15,7 @@ import {
   Trash2,
   FlaskConical,
   Lock,
+  Quote,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
@@ -22,6 +23,7 @@ import remarkGfm from 'remark-gfm'
 import { useLabCurrency } from '@/lib/labCurrency'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { CitationsPanel } from './CitationsPanel'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -668,6 +670,7 @@ export function LiteratureFeature() {
   const [ideaResult, setIdeaResult] = useState<{ labTypeLabel: string; rationale: string } | null>(null)
   const [researchIdea, setResearchIdea] = useState<string | null>(null)
   const [labType, setLabType] = useState<LabType | null>(null)
+  const [showCitations, setShowCitations] = useState(false)
 
   useEffect(() => {
     fetch('/api/discovery/topic')
@@ -825,6 +828,15 @@ export function LiteratureFeature() {
   const readyCount = papers.filter((p) => p.status === 'ready').length
   const locked = readyCount >= TOTAL_SLOTS
 
+  // Citations library — full-screen sub-view (#13)
+  if (showCitations) {
+    return (
+      <div className="h-full bg-[#0d1b2e] text-white">
+        <CitationsPanel onClose={() => setShowCitations(false)} />
+      </div>
+    )
+  }
+
   // If a paper is open in Q&A mode, show the split view
   if (activePaper) {
     return (
@@ -862,9 +874,18 @@ export function LiteratureFeature() {
             </p>
           )}
         </div>
-        <div className="text-right">
-          <span className="font-pixel text-[18px] text-[#F5C518]">{readyCount}</span>
-          <span className="font-pixel text-[10px] text-white/30"> / 25</span>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setShowCitations(true)}
+            title="View your citation library"
+            className="flex items-center gap-1.5 font-pixel text-[7px] border border-white/20 text-white/50 px-2.5 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+          >
+            <Quote size={10} /> Citations
+          </button>
+          <div className="text-right">
+            <span className="font-pixel text-[18px] text-[#F5C518]">{readyCount}</span>
+            <span className="font-pixel text-[10px] text-white/30"> / 25</span>
+          </div>
         </div>
       </div>
 

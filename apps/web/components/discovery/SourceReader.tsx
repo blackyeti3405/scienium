@@ -1,0 +1,341 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { TIER_META } from '@/lib/discovery/credibility'
+import type { CredibilityTier } from '@prisma/client'
+import type { SourceChip, SourceLanes, SourcePlatform } from '@/lib/discovery/sources'
+import { chipId } from '@/lib/discovery/sources'
+
+interface Props {
+  /** The open source node, or null while nothing is selected. */
+  node: {
+    id: string
+    title: string
+    platform?: SourcePlatform | 'pmc'
+    sourceUrl?: string
+    sourceHost?: string
+    credibilityTier?: CredibilityTier
+    abstract?: string
+    authors?: string[]
+    publishedAt?: string
+    reflection?: string
+    starred: boolean
+  } | null
+  /** The four surf lanes for the open node (fetched by the parent, shared with the
+   *  branch panel), or null while loading / when no source node is open. */
+  lanes: SourceLanes | null
+  lanesLoading: boolean
+  /** Currently-selected chip laneIds (max 2), driven by the store's pendingLinks. */
+  pendingLinks: string[]
+  onChipToggle: (laneId: string) => void
+  onStar: () => void
+  /** Persist the reflection; returns true on success. */
+  onSaveReflection: (nodeId: string, text: string) => Promise<boolean>
+  /** Return to the Papers search-results list (Papers tab only). */
+  onBack?: () => void
+}
+
+const PLATFORM_LABEL: Record<string, string> = { arxiv: 'arXiv', pubmed: 'PubMed', pmc: 'PMC' }
+
+const LANE_LABELS: { key: keyof SourceLanes; label: string; hint: string }[] = [
+  { key: 'cites', label: 'Cites', hint: 'papers this one cites' },
+  { key: 'citedBy', label: 'Cited by', hint: 'papers that cite this one' },
+  { key: 'byAuthor', label: 'More by author', hint: 'same first author' },
+  { key: 'byCategory', label: 'More in topic', hint: 'related subject' },
+]
+
+// Resizable citations panel bounds (px).
+const CIT_MIN = 72
+const CIT_MAX = 520
+const CIT_DEFAULT = 190
+
+export function SourceReader({
+  node,
+  lanes,
+  lanesLoading,
+  pendingLinks,
+  onChipToggle,
+  onStar,
+  onSaveReflection,
+  onBack,
+}: Props) {
+  const [reflectionDraft, setReflectionDraft] = useState('')
+  const [savingReflection, setSavingReflection] = useState(false)
+  const [reflectionSaved, setReflectionSaved] = useState(false)
+  const savedTimer = useRef<ReturnType<typeof setTimeout>>()
+
+  // ── Resizable / collapsible citations panel ──
+  const [citHeight, setCitHeight] = useState(CIT_DEFAULT)
+  const [citCollapsed, setCitCollapsed] = useState(false)
+  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
+
+  const onHandleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      dragRef.current = { startY: e.clientY, startHeight: citHeight }
+      document.body.style.cursor = 'row-resize'
+      document.body.style.userSelect = 'none'
+    },
+    [citHeight],
+  )
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current) return
+      // Drag UP (clientY decreases) → taller citations, shorter abstract.
+      const dy = dragRef.current.startY - e.clientY
+      setCitHeight(Math.min(CIT_MAX, Math.max(CIT_MIN, dragRef.current.startHeight + dy)))
+    }
+    const onUp = () => {
+      if (!dragRef.current) return
+      dragRef.current = null
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  const nodeId = node?.id ?? null
+
+  // Reset the reflection draft from the node when the selection changes.
+  useEffect(() => {
+    setReflectionDraft(node?.reflection ?? '')
+    setReflectionSaved(false)
+  }, [nodeId, node?.reflection])
+
+  useEffect(() => () => clearTimeout(savedTimer.current), [])
+
+  const tier = node?.credibilityTier
+  const meta = tier ? TIER_META[tier] : null
+  const platformLabel = node?.platform ? PLATFORM_LABEL[node.platform] ?? node.platform : ''
+
+  const selectedIds = useMemo(() => new Set(pendingLinks), [pendingLinks])
+
+  async function saveReflection() {
+    if (!nodeId) return
+    setSavingReflection(true)
+    const ok = await onSaveReflection(nodeId, reflectionDraft.trim())
+    setSavingReflection(false)
+    if (ok) {
+      setReflectionSaved(true)
+      clearTimeout(savedTimer.current)
+      savedTimer.current = setTimeout(() => setReflectionSaved(false), 1800)
+    }
+  }
+
+  if (!node) {
+    return (
+      <div className="flex items-center justify-center h-full text-white/40 font-pixel text-[8px] bg-[#0d1b2e]">
+        Search a paper to start reading.
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-[#0d1b2e]">
+      {/* ── Header (compact pixel chrome) ── */}
+      <div className="flex items-start gap-3 px-5 py-2.5 border-b border-white/10 shrink-0">
+        {onBack && (
+          <button
+            onClick={onBack}
+            title="Back to search results"
+            className="shrink-0 mt-0.5 font-pixel text-[7px] text-white/50 hover:text-[#F5C518] border border-white/15 rounded-sm px-2 py-1.5 transition-colors"
+          >
+            ← Results
+          </button>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-pixel text-[7px] uppercase tracking-widest text-[#F5C518]/80">
+              {platformLabel}
+            </span>
+            {meta && (
+              <span
+                title={meta.caveat}
+                className="font-pixel text-[7px] px-1.5 py-0.5 rounded-sm cursor-help"
+                style={{ color: meta.color, border: `1px solid ${meta.color}55`, background: `${meta.color}12` }}
+                data-tier={tier}
+              >
+                {meta.label}
+              </span>
+            )}
+            {node.publishedAt && <span className="text-[11px] text-white/35">{node.publishedAt}</span>}
+          </div>
+          {/* Full, un-truncated title — regular (non-pixel) font for reading. */}
+          <h2 className="text-base font-bold leading-snug text-white mt-0.5">{node.title}</h2>
+          {node.authors && node.authors.length > 0 && (
+            <p className="text-[13px] text-white/50 truncate">
+              {node.authors.slice(0, 5).join(', ')}
+              {node.authors.length > 5 ? ' et al.' : ''}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={onStar}
+            title={node.starred ? 'Unstar this source' : 'Star this source'}
+            className={`text-xl transition-colors ${
+              node.starred ? 'text-[#F5C518]' : 'text-white/30 hover:text-[#F5C518]/70'
+            }`}
+          >
+            {node.starred ? '★' : '☆'}
+          </button>
+          {node.sourceUrl && (
+            <a
+              href={node.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-pixel text-[7px] text-white/40 hover:text-[#F5C518] transition-colors whitespace-nowrap"
+            >
+              open ↗
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* ── Body: abstract (the reading unit) — gets all the flex space ── */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+        {meta && (
+          <p className="font-pixel text-[7px] mb-3 leading-relaxed" style={{ color: `${meta.color}bb` }}>
+            ⚑ {meta.caveat}
+          </p>
+        )}
+
+        {node.abstract ? (
+          <div
+            className="source-abstract text-[15px] leading-relaxed text-white/85"
+            dangerouslySetInnerHTML={{ __html: node.abstract }}
+          />
+        ) : (
+          <p className="text-sm text-white/40 italic">
+            No abstract available — open the original to read it.
+          </p>
+        )}
+
+        {/* ── Reflection box (one line — persisted) ── */}
+        <div className="mt-6 pt-4 border-t border-white/10">
+          <label className="font-pixel text-[7px] uppercase tracking-widest text-[#F5C518]/70 block mb-2">
+            🖉 In one sentence, what did they find?
+          </label>
+          <textarea
+            value={reflectionDraft}
+            onChange={(e) => setReflectionDraft(e.target.value)}
+            onBlur={saveReflection}
+            rows={2}
+            maxLength={500}
+            placeholder="Summarize the key finding in your own words…"
+            className="w-full bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/25 rounded-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 resize-none"
+          />
+          <div className="flex items-center justify-between mt-1.5">
+            <span className="font-pixel text-[7px] text-white/30">
+              {reflectionSaved ? <span className="text-green-400">✓ saved</span> : 'Saves when you click away'}
+            </span>
+            <button
+              onClick={saveReflection}
+              disabled={savingReflection}
+              className="font-pixel text-[7px] text-white/40 hover:text-[#F5C518] disabled:opacity-40 transition-colors"
+            >
+              {savingReflection ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Resizable / collapsible citations panel ── */}
+      <div
+        className="shrink-0 border-t border-white/10 bg-[#0a1628]/50 flex flex-col"
+        style={{ height: citCollapsed ? undefined : citHeight }}
+      >
+        {/* Drag handle (grip dots, like the tree bar) — hidden when collapsed */}
+        {!citCollapsed && (
+          <div
+            onMouseDown={onHandleMouseDown}
+            title="Drag to resize"
+            className="h-2.5 shrink-0 cursor-row-resize bg-white/5 hover:bg-[#F5C518]/30 active:bg-[#F5C518]/50 transition-colors flex items-center justify-center gap-1 group"
+          >
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="w-1 h-1 rounded-full bg-white/30 group-hover:bg-[#F5C518]/60 transition-colors" />
+            ))}
+          </div>
+        )}
+
+        {/* Title row + collapse toggle */}
+        <div className="flex items-center justify-between px-4 pt-2 pb-1 shrink-0">
+          <p className="font-pixel text-[7px] uppercase tracking-widest text-white/40">
+            Follow the citations {lanesLoading && <span className="animate-spin inline-block ml-1">⟳</span>}
+          </p>
+          <button
+            onClick={() => setCitCollapsed((c) => !c)}
+            title={citCollapsed ? 'Show citations' : 'Hide citations'}
+            className="font-pixel text-[7px] text-white/40 hover:text-[#F5C518] transition-colors"
+          >
+            {citCollapsed ? '▲ show' : '▼ hide'}
+          </button>
+        </div>
+
+        {/* Lanes — scroll within the (resizable) panel; hidden when collapsed */}
+        {!citCollapsed && (
+          <div className="flex-1 overflow-y-auto px-4 pb-3 min-h-0">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {LANE_LABELS.map(({ key, label, hint }) => {
+                const chips = lanes?.[key] ?? []
+                return (
+                  <div key={key} className="min-w-0">
+                    <p className="font-pixel text-[7px] text-[#F5C518]/70 mb-1.5" title={hint}>
+                      {label}
+                    </p>
+                    {chips.length === 0 ? (
+                      <p className="text-[11px] text-white/25 italic">
+                        {lanesLoading ? 'loading…' : 'none found — try another lane'}
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        {chips.map((chip: SourceChip) => {
+                          const selected = selectedIds.has(chip.laneId)
+                          const atLimit = pendingLinks.length >= 2 && !selected
+                          return (
+                            <button
+                              key={chip.laneId}
+                              onClick={() => onChipToggle(chip.laneId)}
+                              disabled={atLimit}
+                              title={chip.title}
+                              className={`text-left rounded-sm border px-2 py-1.5 text-[11px] transition-colors ${
+                                selected
+                                  ? 'border-[#F5C518]/60 bg-[#F5C518]/10 text-[#F5C518]'
+                                  : atLimit
+                                  ? 'border-white/5 bg-white/[0.01] text-white/25 cursor-not-allowed'
+                                  : 'border-white/10 bg-white/[0.02] text-white/70 hover:border-white/25 hover:text-white/90'
+                              }`}
+                            >
+                              <span className="flex items-start gap-1.5">
+                                <span className="shrink-0">{selected ? '✓' : '＋'}</span>
+                                <span className="min-w-0">
+                                  <span className="line-clamp-2">{chip.title}</span>
+                                  {chip.subtitle && (
+                                    <span className="block text-white/30 truncate">{chip.subtitle}</span>
+                                  )}
+                                </span>
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Re-export the chip-id helper so callers can map a chip → its store key. */
+export { chipId }

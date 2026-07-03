@@ -165,6 +165,7 @@ __pycache__/
 
 # Feature-pipeline run output (transient; tooling in .claude/agents + .claude/commands is tracked)
 .claude/pipeline/
+.claude/tmp/
 
 # Python virtualenvs
 .venv/

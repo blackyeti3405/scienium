@@ -7,6 +7,9 @@ export type ActivityAction =
   | 'quiz_passed'
   | 'topic_changed'
   | 'discovery_node_added'
+  | 'discovery_kp_awarded'
+  | 'topic_locked'
+  | 'source_promoted'
   | 'phase_advanced'
   | 'member_joined'
   | 'plan_synced'
@@ -60,6 +63,12 @@ export function describeActivity(action: string, payload: Record<string, unknown
         : 'cleared the research topic'
     case 'discovery_node_added':
       return `explored "${payload.title ?? 'an article'}"`
+    case 'discovery_kp_awarded':
+      return `earned ${payload.kp ?? '?'} KP exploring sources`
+    case 'topic_locked':
+      return `locked in their research topic (+${payload.kp ?? '?'} KP)`
+    case 'source_promoted':
+      return `promoted "${payload.title ?? 'a source'}" into the literature review`
     case 'phase_advanced':
       return `advanced the lab to ${payload.toPhase ?? 'the next phase'}${payload.labType ? ` · assigned ${payload.labType}` : ''}`
     case 'member_joined':

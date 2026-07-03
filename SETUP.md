@@ -66,6 +66,7 @@ Then edit `apps/web/.env.local`:
 | `ANTHROPIC_API_KEY` | Anthropic console | required for paper metadata, quizzes, chat, lab-type classification, and relevance checks |
 | `R2_*` | Cloudflare R2 | required for PDF storage **and project-log photo attachments** (uploads + viewer) |
 | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | optional — only the Science Fair "sync deadlines" feature scrapes fair sites with it (`fc-…`) |
+| `OPENALEX_API_KEY` / `NCBI_API_KEY` | [OpenAlex](https://openalex.org/rest-api) / [NCBI](https://www.ncbi.nlm.nih.gov/account/) | optional — the Discovery **Papers tab** (arXiv + PubMed search + citations). Works keyless, but the anonymous pools rate-limit (503s); a free key avoids that. No AI — keyword search + factual citation edges only |
 | `AI_SERVICE_URL` / `AI_SERVICE_API_KEY` | leave as-is | only for the optional external Python AI service; the web app doesn't read them |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | — |
 
@@ -151,6 +152,11 @@ production builds):
 ```bash
 pnpm --filter web typecheck     # tsc --noEmit
 ```
+
+### Troubleshooting
+- **`P1001: Can't reach database server`** — a Supabase **free-tier project auto-pauses when idle**. Resume it in the dashboard (Project → "Restore"); pausing doesn't delete data. A local Postgres (see Quick reference) avoids this entirely.
+- **`P2024: Timed out fetching a connection from the pool`** — raise `connection_limit` on the pooled `DATABASE_URL` (e.g. `=10`) for a long-running dev server; `=1` only suits serverless.
+- **Outbound calls (Supabase / OpenAlex / Upstash) hang ~2 min then fail, but `curl` is instant** — broken IPv6 on your network (Node defaults to IPv6-first). The `dev`/`start` scripts already force IPv4 via `NODE_OPTIONS=--dns-result-order=ipv4first`.
 
 ---
 

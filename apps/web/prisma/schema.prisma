@@ -119,7 +119,11 @@ model Team {
   expertiseExams  ExpertiseExam[]
   discoveryNodes  DiscoveryNode[]
   topicInterests  TopicInterest[]
+  discoverySourceVisits DiscoverySourceVisit[]
+  discoveryKpDays DiscoveryKpDay[]
+  discoveryTopicBonus DiscoveryTopicBonus?
   papers          Paper[]
+  citations       Citation[]
   projectLogs     ProjectLog[]
   invites         TeamInvite[]
   researchPlan    ResearchPlan?
@@ -218,16 +222,25 @@ model DiscoveryNode {
   wikipediaTitle  String?         @map("wikipedia_title")
   youtubeVideoId  String?         @map("youtube_video_id")
   youtubeTitle    String?         @map("youtube_title")
-  paperId         String?         @map("paper_id")
+  paperId         String?         @unique @map("paper_id")
+  // Dedup key for `source` nodes: "arxiv:2401.01234" | "pmid:31234567".
+  externalId      String?         @map("external_id")
   starred         Boolean         @default(false)
   visitedByUserId String          @map("visited_by_user_id")
   visitedAt       DateTime        @default(now()) @map("visited_at")
 
-  team      Team            @relation(fields: [teamId], references: [id])
-  visitedBy User            @relation(fields: [visitedByUserId], references: [id])
-  parent    DiscoveryNode?  @relation("tree", fields: [parentId], references: [id])
-  children  DiscoveryNode[] @relation("tree")
+  team           Team            @relation(fields: [teamId], references: [id])
+  visitedBy      User            @relation(fields: [visitedByUserId], references: [id])
+  parent         DiscoveryNode?  @relation("tree", fields: [parentId], references: [id])
+  children       DiscoveryNode[] @relation("tree")
+  // 1:1 side-row for `source` nodes (arXiv / PubMed metadata). Null for wiki/youtube.
+  externalSource ExternalSource?
+  // #13 wires the reserved `paperId` column: a promoted source node points at its
+  // real Paper. SetNull so deleting the Paper doesn't cascade-delete the node.
+  paper          Paper?          @relation("promotedFrom", fields: [paperId], references: [id], onDelete: SetNull)
 
+  // A team can't double-add the same external work (dedup on branch/resolve).
+  @@unique([teamId, externalId])
   @@map("discovery_nodes")
 }
 
@@ -235,8 +248,74 @@ enum DiscoverySource {
   wikipedia
   youtube
   paper
+  source
 
   @@map("discovery_source")
+}
+
+enum ExternalPlatform {
+  arxiv
+  pubmed
+  pmc
+
+  @@map("external_platform")
+}
+
+enum CredibilityTier {
+  peer_reviewed
+  preprint
+  open_access
+
+  @@map("credibility_tier")
+}
+
+// Metadata side-row for Discovery v2 `source` nodes (arXiv + PubMed). One per
+// source node; host + credibilityTier are recomputed server-side at resolve/persist
+// (client-sent values are advisory only — anti-forgery). Deleted with the node.
+model ExternalSource {
+  id                 String           @id @default(cuid())
+  discoveryNodeId    String           @unique @map("discovery_node_id")
+  platform           ExternalPlatform
+  externalId         String           @map("external_id") // same value as node.externalId
+  sourceUrl          String           @map("source_url")
+  sourceTitle        String           @map("source_title")
+  sourceAuthors      String[]         @default([]) @map("source_authors")
+  sourceHost         String           @map("source_host")
+  publishedAt        DateTime?        @map("published_at")
+  credibilityTier    CredibilityTier  @map("credibility_tier")
+  abstract           String? // sanitized at resolve time (shared ARTICLE_SANITIZE_OPTS)
+  reflection         String? // student's one-line "what did they find?" (v1)
+  reflectionByUserId String?          @map("reflection_by_user_id")
+  reflectionAt       DateTime?        @map("reflection_at")
+  resolvedAt         DateTime         @default(now()) @map("resolved_at")
+
+  discoveryNode DiscoveryNode @relation(fields: [discoveryNodeId], references: [id], onDelete: Cascade)
+
+  @@map("external_sources")
+}
+
+// Shared, team-agnostic cache of works fetched from OpenAlex (Phase B). Populated by
+// the Papers search box; read on open/resolve so opening a paper never re-hits an
+// external API. Public metadata only — deliberately NOT team-scoped. Keyed by the
+// arxiv:/pmid: externalId so it lines up with ExternalSource + the citation flow.
+model ExternalWork {
+  id          String           @id @default(cuid())
+  externalId  String           @unique @map("external_id")
+  platform    ExternalPlatform
+  title       String
+  authors     String[]         @default([])
+  abstract    String?
+  host        String
+  tier        CredibilityTier
+  publishedAt String?          @map("published_at")
+  arxivId     String?          @map("arxiv_id")
+  pmid        String?
+  doi         String?
+  openAlexId  String?          @map("openalex_id")
+  fetchedAt   DateTime         @default(now()) @map("fetched_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@map("external_works")
 }
 
 model TopicInterest {
@@ -247,7 +326,57 @@ model TopicInterest {
   createdAt       DateTime @default(now()) @map("created_at")
   team            Team     @relation(fields: [teamId], references: [id])
 
+  @@index([teamId])
+  @@index([createdByUserId])
   @@map("topic_interests")
+}
+
+// ─── Discovery → economy (#1) ─────────────────────────────────────────────────
+
+// First-visit ledger: one row the first time a team reaches a given node. The
+// @@unique makes the KP award idempotent — re-clicking / re-branching /
+// delete-and-recreate never inserts a second row, so never re-pays. Mirrors
+// LabCreditClaim's idempotency pattern.
+model DiscoverySourceVisit {
+  id        String   @id @default(cuid())
+  teamId    String   @map("team_id")
+  nodeId    String   @map("node_id")
+  userId    String   @map("user_id") // who first reached it (attribution only)
+  kpAwarded Int      @map("kp_awarded") // KP actually credited (post-cap; may be 0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([teamId, nodeId])
+  @@index([teamId, createdAt])
+  @@map("discovery_source_visits")
+}
+
+// Per-team per-day KP rollup so the daily cap is a single fast read + atomic
+// increment (no SUM over the visit ledger on the hot path). `day` is a UTC-
+// midnight Date, exactly like LabCreditClaim.day.
+model DiscoveryKpDay {
+  id        String   @id @default(cuid())
+  teamId    String   @map("team_id")
+  day       DateTime @db.Date
+  kpTotal   Int      @default(0) @map("kp_total")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([teamId, day])
+  @@map("discovery_kp_days")
+}
+
+// One-time-ever Topic-Locked grant marker (idempotent via @@id on teamId).
+model DiscoveryTopicBonus {
+  teamId    String   @id @map("team_id")
+  kpAwarded Int      @map("kp_awarded")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@map("discovery_topic_bonus")
 }
 
 // ─── Literature ──────────────────────────────────────────────────────────────
@@ -278,6 +407,9 @@ model Paper {
   relevanceNotes PaperRelevanceNote[]
   chatMessages   PaperChatMessage[]
   proficiencies  PaperProficiency[]
+  // #13: the source node this Paper was promoted from (if any) + its formatted citation.
+  promotedFromNode DiscoveryNode?     @relation("promotedFrom")
+  citation       Citation?
 
   @@map("papers")
 }
@@ -320,6 +452,7 @@ model PaperChatMessage {
 enum PaperSource {
   pdf
   text
+  external
 
   @@map("paper_source")
 }
@@ -377,6 +510,29 @@ model PaperRelevanceNote {
 
   @@id([paperId, userId])
   @@map("paper_relevance_notes")
+}
+
+// One formatted citation per Paper (#13 Citation Manager). The three style strings
+// are built LOCALLY + deterministically (lib/literature/citation.ts — NO LLM); the
+// model is a cache so the Works-Cited export + library list read one denormalized
+// row without re-deriving, and keep a stable snapshot. `teamId` is denormalized for
+// team-scoped list queries + the IDOR filter.
+model Citation {
+  id        String   @id @default(cuid())
+  paperId   String   @unique @map("paper_id")
+  teamId    String   @map("team_id")
+  year      Int? // parsed once at create; null when unknown
+  apa       String
+  mla       String
+  ieee      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  team  Team  @relation(fields: [teamId], references: [id])
+
+  @@index([teamId])
+  @@map("citations")
 }
 
 // ─── Research Plan (Feature 2) ───────────────────────────────────────────────

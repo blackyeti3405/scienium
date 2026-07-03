@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { DiscoveryNode } from '@/stores/discoveryStore'
+import { TIER_META } from '@/lib/discovery/credibility'
 
 // ── Layout constants ────────────────────────────────────────────────────────
 const NODE_W = 170
@@ -66,6 +67,8 @@ interface Props {
   onNavigate: (nodeId: string) => void
   onDelete: (nodeId: string) => void
   onToggleStar: (nodeId: string) => void
+  /** #13: promote a starred, unpromoted source node into the Literature Review. */
+  onPromote?: (nodeId: string) => void
 }
 
 interface ContextMenu {
@@ -76,7 +79,7 @@ interface ContextMenu {
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
-export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onToggleStar }: Props) {
+export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onToggleStar, onPromote }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
 
   const laid = useMemo(() => computeLayout(nodes), [nodes])
@@ -133,10 +136,21 @@ export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onTo
           {laid.map((n) => {
             const isCurrent = n.id === currentNodeId
 
-            // Truncate to fit the title zone (after left star, before right ✓)
-            const maxChars = n.source === 'youtube' ? 12 : 15
+            // Truncate to fit the title zone (after left star, before right ✓).
+            // Academic titles blow past the trunc — the full title lives in the
+            // reader; the tree gets a platform prefix + a tier-colored dot.
+            const isSource = n.source === 'source'
+            const platformPrefix =
+              n.platform === 'arxiv' ? 'arXiv: ' : n.platform === 'pubmed' ? 'PubMed: ' : '📄 '
+            const maxChars = n.source === 'youtube' ? 12 : isSource ? 10 : 15
             const truncated = n.title.length > maxChars ? n.title.slice(0, maxChars - 1) + '…' : n.title
-            const label = (n.source === 'youtube' ? '▶ ' : '') + truncated
+            const label =
+              (n.source === 'youtube' ? '▶ ' : isSource ? platformPrefix : '') + truncated
+            const tierColor = isSource && n.credibilityTier ? TIER_META[n.credibilityTier].color : null
+            // #13: a starred, not-yet-promoted source node can be promoted to the
+            // Literature Review. Wiki/YouTube + non-starred + already-promoted → no control.
+            const canPromote = isSource && n.starred && !n.paperId && !!onPromote
+            const isPromoted = isSource && !!n.paperId
 
             // Colour palette (dark game theme)
             const bodyFill = isCurrent
@@ -233,6 +247,21 @@ export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onTo
                   </g>
                 </g>
 
+                {/* Tier dot (source nodes only) — credibility at a glance */}
+                {tierColor && (
+                  <circle
+                    cx={n.x + NODE_W - 15}
+                    cy={n.y + 11}
+                    r={4}
+                    fill={tierColor}
+                    stroke="rgba(0,0,0,0.3)"
+                    strokeWidth={0.5}
+                    className="pointer-events-none"
+                  >
+                    <title>{n.credibilityTier ? TIER_META[n.credibilityTier].label : ''}</title>
+                  </circle>
+                )}
+
                 {/* Title text — offset after the left star + delete buttons */}
                 <text
                   x={n.x + 42} y={n.y + 25}
@@ -253,6 +282,48 @@ export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onTo
                     className="select-none pointer-events-none"
                   >
                     ✓
+                  </text>
+                )}
+
+                {/* ── Promote-to-Literature-Review control (#13) — starred source
+                    nodes not yet promoted. A small gold pill under the node. ── */}
+                {canPromote && (
+                  <g
+                    onClick={(e) => { e.stopPropagation(); onPromote!(n.id) }}
+                    style={{ cursor: 'pointer' }}
+                    role="button"
+                    aria-label={`Promote ${n.title} to Literature Review`}
+                  >
+                    <rect
+                      x={n.x + NODE_W - 78} y={n.y + NODE_H - 1}
+                      width={78} height={16} rx={4}
+                      fill="rgba(245,197,24,0.15)"
+                      stroke="#F5C518"
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={n.x + NODE_W - 39} y={n.y + NODE_H + 10}
+                      fontSize={8}
+                      textAnchor="middle"
+                      fill="#F5C518"
+                      className="select-none pointer-events-none"
+                    >
+                      + Lit Review
+                    </text>
+                  </g>
+                )}
+
+                {/* Promoted marker (#13) — replaces the control once promoted. */}
+                {isPromoted && (
+                  <text
+                    x={n.x + NODE_W - 39} y={n.y + NODE_H + 10}
+                    fontSize={8}
+                    textAnchor="middle"
+                    fill="rgba(74,222,128,0.85)"
+                    className="select-none pointer-events-none"
+                    aria-label="In Literature Review"
+                  >
+                    ✓ In Lit Review
                   </text>
                 )}
               </g>

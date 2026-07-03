@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command // empty'); if printf '%s' \"$cmd\" | grep -Eiq 'migrate[[:space:]]+(dev|reset)|db[[:space:]]+push'; then printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"BLOCKED: this Prisma command resets/wipes the shared dev database and has erased real dev data before. Use prisma migrate deploy for pending migrations, or generate an additive migration with prisma migrate diff --script and apply it via migrate deploy. prisma migrate status and migrate diff are allowed.\"}}'; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
