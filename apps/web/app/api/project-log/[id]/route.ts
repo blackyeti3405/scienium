@@ -101,6 +101,14 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   })
   if (!existing) return NextResponse.json({ error: 'Entry not found' }, { status: 404 })
 
+  // ProjectLogReference has no cascade on either FK — delete rows on BOTH
+  // sides first, or a dangling row pointing at this now-deleted log would
+  // 500 the GET /api/project-log read path (its select joins through `to`
+  // and `from`).
+  await db.projectLogReference.deleteMany({
+    where: { OR: [{ projectLogId: existing.id }, { referencesLogId: existing.id }] },
+  })
+
   await db.projectLog.delete({ where: { id: existing.id } })
 
   await Promise.allSettled(

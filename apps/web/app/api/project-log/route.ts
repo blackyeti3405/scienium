@@ -21,6 +21,17 @@ const Body = z.object({
     .max(20),
 }).strict()
 
+// Shared shape for the `select` on a linked/back-linked log — kept as a const
+// so the chip-projection reads the exact same fields on both sides.
+const referenceLogSelect = {
+  select: {
+    id: true,
+    stage: true,
+    createdAt: true,
+    createdBy: { select: { name: true } },
+  },
+} as const
+
 export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
@@ -40,6 +51,8 @@ export async function GET(req: NextRequest) {
         lastEditedAt: true,
         createdBy: { select: { id: true, name: true } },
         lastEditedBy: { select: { id: true, name: true } },
+        references: { select: { to: referenceLogSelect } },
+        referencedBy: { select: { from: referenceLogSelect } },
       },
     }),
     db.teamMember.findMany({
@@ -49,8 +62,32 @@ export async function GET(req: NextRequest) {
     }),
   ])
 
-  // Number entries 1-based (oldest first, which is the query order)
-  const entries = rows.map((r, i) => ({ ...r, entryNumber: i + 1 })).reverse()
+  // Number entries 1-based (oldest first, which is the query order) before
+  // reversing, so the id -> entryNumber map below matches every chip target.
+  const numbered = rows.map((r, i) => ({ ...r, entryNumber: i + 1 }))
+  const numberById = new Map(numbered.map((r) => [r.id, r.entryNumber]))
+
+  function toChip(log: { id: string; stage: string | null; createdAt: Date; createdBy: { name: string } }) {
+    const entryNumber = numberById.get(log.id)
+    if (entryNumber === undefined) return null // defensive: shouldn't happen post DELETE-cascade fix
+    return {
+      id: log.id,
+      entryNumber,
+      stage: log.stage,
+      createdAt: log.createdAt,
+      createdByName: log.createdBy.name,
+    }
+  }
+
+  // Project references/referencedBy into chip-ready arrays and drop the raw
+  // relation fields so the wire shape stays clean.
+  const entries = numbered
+    .map(({ references, referencedBy, ...rest }) => ({
+      ...rest,
+      links: references.map((r) => toChip(r.to)).filter((c): c is NonNullable<typeof c> => c !== null),
+      backlinks: referencedBy.map((r) => toChip(r.from)).filter((c): c is NonNullable<typeof c> => c !== null),
+    }))
+    .reverse()
 
   const memberList = members.map((m) => ({ userId: m.userId, name: m.user.name }))
 

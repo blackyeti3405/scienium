@@ -34,7 +34,10 @@ export async function POST(req: NextRequest) {
 
   const plan = await db.researchPlan.findUnique({ where: { teamId: ctx.teamId } })
   if (!plan?.lastSyncedText) {
-    return NextResponse.json({ error: 'Connect and sync a Google Doc first' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'Add your plan first — connect a Google Doc or paste your text' },
+      { status: 400 },
+    )
   }
 
   const planText = plan.lastSyncedText.slice(0, 12000)

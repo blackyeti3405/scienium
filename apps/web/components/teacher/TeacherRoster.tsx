@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   BookOpen,
   GraduationCap,
+  Bell,
 } from 'lucide-react'
 import { PHASE_INFO, PHASE_ORDER, type Phase } from '@/lib/phase'
 import { StatTile } from '@/components/ui/Card'
@@ -52,6 +53,9 @@ export function TeacherRoster() {
   const [attentionCount, setAttentionCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [attentionOnly, setAttentionOnly] = useState(false)
+  // Keyed by teamId (not studentId) — nudging one row marks every row that
+  // shares the team as "Nudged" for the rest of the session.
+  const [nudged, setNudged] = useState<Record<string, 'idle' | 'sending' | 'done'>>({})
 
   useEffect(() => {
     Promise.all([
@@ -71,6 +75,22 @@ export function TeacherRoster() {
   const hasAttention = (s: RosterStudent) =>
     !!s.flags.pendingValidation || s.flags.status === 'unlogged' || s.flags.status === 'stale'
   const visible = attentionOnly ? students.filter(hasAttention) : students
+
+  async function nudge(teamId: string) {
+    if (!teamId || nudged[teamId] === 'sending' || nudged[teamId] === 'done') return
+    setNudged((m) => ({ ...m, [teamId]: 'sending' })) // optimistic
+    try {
+      const res = await fetch('/api/teacher/nudge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teamId }),
+      })
+      if (!res.ok) throw new Error('nudge failed')
+      setNudged((m) => ({ ...m, [teamId]: 'done' }))
+    } catch {
+      setNudged((m) => ({ ...m, [teamId]: 'idle' })) // revert on failure so it can be retried
+    }
+  }
 
   if (loading) {
     return (
@@ -222,6 +242,37 @@ export function TeacherRoster() {
                           <Clock size={11} /> stale
                         </span>
                       )}
+                      {(s.flags.status === 'unlogged' || s.flags.status === 'stale') &&
+                        s.teamId &&
+                        (nudged[s.teamId] === 'done' ? (
+                          <span
+                            data-testid="nudge-done"
+                            title="This team was notified — check in again tomorrow."
+                            className="inline-flex items-center gap-1 text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-full px-2 py-0.5 whitespace-nowrap"
+                          >
+                            <Check size={11} /> Nudged
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            data-testid="nudge-button"
+                            disabled={nudged[s.teamId] === 'sending'}
+                            title="Send a friendly check-in notification to this team."
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              nudge(s.teamId!)
+                            }}
+                            className="inline-flex items-center gap-1 font-pixel text-[9px] text-[#F5C518] uppercase tracking-wider bg-[#F5C518]/10 border border-[#F5C518]/30 rounded-full px-2 py-0.5 whitespace-nowrap hover:brightness-110 disabled:opacity-50 transition-all cursor-pointer"
+                          >
+                            {nudged[s.teamId] === 'sending' ? (
+                              <Loader2 size={11} className="animate-spin" />
+                            ) : (
+                              <Bell size={11} />
+                            )}
+                            Nudge
+                          </button>
+                        ))}
                     </span>
                   </Link>
                 )

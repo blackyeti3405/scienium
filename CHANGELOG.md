@@ -5,6 +5,82 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.16.0] — 2026-07-05
+
+The largest feature release so far: **eight gameplay features** from a pipeline batch, a
+**Discovery overhaul** (per-topic interest color-coding, a full-window tree view, and
+multi-tree creation), and three new **Data Terminal reference guides** built to expose students
+to real analysis knowledge — a **65-measure Stats Guide**, a **250-chart field-specific Charts
+Guide** whose example charts are real matplotlib renders of realistic data (lazy-loaded per
+field across 29 scientific fields), and a **45-type Plot Guide**. Also fixes the
+`/api/fairs/match` hang that froze the Science Fair Hub, and adds a reproducible E2E fixture
+seed script. Four additive migrations.
+
+### Added
+
+- **Rubric self-assessment** — a "Self-check" tab in the Science Fair Hub (and the revived
+  `/fair-hub/rubric` route) lets a team score itself against each ISEF criterion with a live
+  judge-readiness total out of 100. New team-scoped `GET/PUT /api/rubric/self-assessment`,
+  backed by a new `TeamRubricScore` table; scores drive off the existing `ISEF_RUBRIC` literal.
+- **Data Terminal — Stats Guide** — a searchable, category-filtered guide of **65 statistics
+  measures** (`lib/data-terminal/stats-guide.ts`). Each teaches one concept with a plain-language
+  definition, the Unicode formula, a symbol-by-symbol breakdown, a sample CSV dataset, and
+  step-by-step Python whose printed output is **empirically verified by execution**.
+- **Data Terminal — Charts Guide** — **250 field-specific charts across 29 scientific fields**
+  (gait biomechanics, chemistry, astronomy, clinical medicine, oceanography, …), each with a
+  description, plot type, bulleted `data needed` (name + unit), interpretation, and a **real
+  matplotlib-rendered example** of realistic noisy data. Content is split into per-field lazy
+  modules (`lib/data-terminal/charts/<field>.ts`) behind a light eager index so only the
+  selected field's charts load.
+- **Data Terminal — Plot Guide** — **45 general plot types** (bar, line, box, violin, scatter,
+  heatmap, sankey, …) across six categories, each with when-to-use, bulleted data needs, and a
+  matplotlib example (`lib/data-terminal/plot-guide.ts`).
+- **Discovery interest color-coding + Discovery Tree view + New tree** — mark each topic
+  green / orange / red inline on the tree; a new full-window "Discovery Tree" tab shows the tree
+  beside all topics grouped color-major then tree-minor (`DiscoveryTopicList.tsx`); a "New tree"
+  button makes the next opened source a fresh root. New nullable `DiscoveryNode.interestLevel`.
+- **Research Plan paste-text fallback** — teams can paste/type their plan instead of being
+  forced to connect a Google Doc; `POST /api/research-plan` now accepts `googleDocUrl` **or**
+  `planText` (exactly one). New `ResearchPlan.lastSyncedSource` column. No new Anthropic call.
+- **Showcase one-pager print export** — a `?print=1` print view on the showcase page (gated by
+  the same `canViewShowcase`) plus a "Print one-pager" button; browser-native, no PDF library.
+- **Project-Log ⇄ entry linking** — activates the dormant `ProjectLogReference` self-relation;
+  `POST/DELETE /api/project-log/[id]/references` (both-endpoint team scoping, 10-ref cap,
+  idempotent) with a picker + reference/back-reference chips in the Operations Hub.
+- **Field Dispatch archive** — past dispatches now show per-entry KP earned and date.
+- **Teacher "Nudge"** — a one-click check-in on stale/unlogged roster rows fires a friendly
+  team notification, deduped one-per-team-per-day, with a `TeacherFeedback` audit row
+  (`POST /api/teacher/nudge`).
+- **Momentum recap card** — a dismissible lab card summarizing the team's last 7 days (KP,
+  sources, logs, experiments, days to next fair) from a read-only `GET /api/team/momentum`
+  aggregate; no new persisted state, no LLM.
+- **E2E fixture seed script** — `pnpm --filter web seed:e2e` (`prisma/seed-e2e.mjs`) idempotently
+  restores the School / Class / team / membership fixtures the Playwright suite depends on;
+  documented in a new SETUP.md "E2E tests" section (with a local-Postgres E2E recipe).
+- **Migrations** — `team_rubric_score`, `research_plan_paste_text`, `discovery_node_interest_level`,
+  `fair_event_unique_dedupe` (all additive).
+
+### Changed
+
+- **Notification bell** — all five notification kinds (`fair_deadline`, `urgency`,
+  `teacher_feedback`, `phase_reviewed`, `showcase_reviewed`) now render with a distinct
+  icon / accent / label instead of only two.
+- **Feature pipeline tooling** — `.claude/commands/pipeline.md` rewritten with process-weight
+  tiers (implement-only default for UI/content, full test+review for schema/auth/currency/LLM
+  work), a build-once rule, and the accumulated tester playbook; `.claude/PARALLELISM.md` gains
+  an integration protocol; CLAUDE.md and SETUP.md updated accordingly.
+
+### Fixed
+
+- **`/api/fairs/match` hang** — `ensureFairsSeeded()` re-ran a ~266-row sequential upsert on
+  every call (the seeded count had fallen behind the grown dataset), freezing the Science Fair
+  Hub's Overview tab for minutes. Rewritten with a count fast-path, batched `createMany`,
+  targeted drift updates, and a module-level single-flight guard; added
+  `FairEvent @@unique([fairId, year])` and a dedupe migration. The route now returns in well
+  under a second, and `matchFairs()` is safe to call from other code.
+
+---
+
 ## [0.15.0] — 2026-06-29
 
 The 4-stage upgrade evolution from 0.13.0 (Volt Lab) is **extended to the remaining five lab

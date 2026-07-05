@@ -11,8 +11,11 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts'
-import { Loader2, Plus, Trash2, BarChart3, ChevronLeft, Download, FileImage } from 'lucide-react'
+import { Loader2, Plus, Trash2, BarChart3, ChevronLeft, Download, FileImage, BookOpen, FlaskConical, LineChart as LineChartIcon, PieChart } from 'lucide-react'
 import { parsePastedPoints, toCsv } from '@/lib/data-terminal/csv'
+import { StatsGuidePanel } from './StatsGuidePanel'
+import { ChartsGuidePanel } from './ChartsGuidePanel'
+import { PlotGuidePanel } from './PlotGuidePanel'
 
 interface Measurement {
   id: string
@@ -55,12 +58,108 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+type DataTerminalView = 'experiments' | 'guide' | 'charts-guide' | 'plot-guide'
+
 /**
  * Data Terminal (spec §14.1) — experiment tracking + graphing for the `working`
  * phase, surfaced as an Operations Hub tab. Records x/y measurements per
  * experiment (optionally grouped into series) and charts them with recharts.
+ *
+ * Feature F12 adds a "Stats Guide" sub-tab (static reference content, no API
+ * dependency). Features F13/F14 add "Charts Guide" and "Plot Guide" sub-tabs,
+ * same pattern. The `view` switch below is deliberately the FIRST thing this
+ * component renders, ABOVE the `loading` / `locked` / `selected` early
+ * returns that gate the Experiments view — every guide must stay reachable
+ * regardless of phase-lock or load state, so none of them can live behind
+ * those branches. Do not move the switch below any early return.
  */
 export function DataTerminalTab() {
+  const [view, setView] = useState<DataTerminalView>('experiments')
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col">
+      <div className="flex gap-1 px-4 pt-3 shrink-0">
+        <button
+          type="button"
+          data-testid="experiments-subtab"
+          onClick={() => setView('experiments')}
+          className={`inline-flex items-center gap-1.5 font-pixel text-[7px] px-3 py-2 border-b-2 transition-colors ${
+            view === 'experiments'
+              ? 'text-[#F5C518] border-[#F5C518]'
+              : 'text-white/40 border-transparent hover:text-white/70'
+          }`}
+        >
+          <FlaskConical size={11} /> Experiments
+        </button>
+        <button
+          type="button"
+          data-testid="stats-guide-tab"
+          onClick={() => setView('guide')}
+          className={`inline-flex items-center gap-1.5 font-pixel text-[7px] px-3 py-2 border-b-2 transition-colors ${
+            view === 'guide'
+              ? 'text-[#F5C518] border-[#F5C518]'
+              : 'text-white/40 border-transparent hover:text-white/70'
+          }`}
+        >
+          <BookOpen size={11} /> Stats Guide
+        </button>
+        <button
+          type="button"
+          data-testid="charts-guide-tab"
+          onClick={() => setView('charts-guide')}
+          className={`inline-flex items-center gap-1.5 font-pixel text-[7px] px-3 py-2 border-b-2 transition-colors ${
+            view === 'charts-guide'
+              ? 'text-[#F5C518] border-[#F5C518]'
+              : 'text-white/40 border-transparent hover:text-white/70'
+          }`}
+        >
+          <PieChart size={11} /> Charts Guide
+        </button>
+        <button
+          type="button"
+          data-testid="plot-guide-tab"
+          onClick={() => setView('plot-guide')}
+          className={`inline-flex items-center gap-1.5 font-pixel text-[7px] px-3 py-2 border-b-2 transition-colors ${
+            view === 'plot-guide'
+              ? 'text-[#F5C518] border-[#F5C518]'
+              : 'text-white/40 border-transparent hover:text-white/70'
+          }`}
+        >
+          <LineChartIcon size={11} /> Plot Guide
+        </button>
+      </div>
+
+      {view === 'guide' ? (
+        <div className="ops-tab-body">
+          <div className="max-w-2xl mx-auto w-full py-2">
+            <StatsGuidePanel />
+          </div>
+        </div>
+      ) : view === 'charts-guide' ? (
+        <div className="ops-tab-body">
+          <div className="max-w-2xl mx-auto w-full py-2">
+            <ChartsGuidePanel />
+          </div>
+        </div>
+      ) : view === 'plot-guide' ? (
+        <div className="ops-tab-body">
+          <div className="max-w-2xl mx-auto w-full py-2">
+            <PlotGuidePanel />
+          </div>
+        </div>
+      ) : (
+        <ExperimentsView />
+      )}
+    </div>
+  )
+}
+
+/**
+ * The pre-F12 Data Terminal body (experiment list, phase-lock screen, detail
+ * view) — unchanged behavior, just extracted so `DataTerminalTab` can mount
+ * the Stats Guide switch above it.
+ */
+function ExperimentsView() {
   const [experiments, setExperiments] = useState<Experiment[]>([])
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(false)

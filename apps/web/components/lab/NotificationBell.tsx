@@ -17,6 +17,22 @@ interface NotificationItem {
 /** Poll cadence for the bell. In-app is the primary channel (email is opt-in). */
 const POLL_MS = 60_000
 
+type KindMeta = { icon: string; accent: string; label: string }
+
+const KIND_META: Record<string, KindMeta> = {
+  fair_deadline: { icon: '📅', accent: '#f5c518', label: 'Deadline' },
+  urgency: { icon: '⚠', accent: '#ff9f43', label: 'Nudge' },
+  teacher_feedback: { icon: '💬', accent: '#5ac8fa', label: 'Feedback' },
+  phase_reviewed: { icon: '✅', accent: '#4cd964', label: 'Review' },
+  showcase_reviewed: { icon: '🏆', accent: '#c58af9', label: 'Showcase' },
+}
+
+const FALLBACK_META: KindMeta = { icon: '🔔', accent: 'rgba(255,255,255,0.6)', label: 'Update' }
+
+function metaFor(kind: string): KindMeta {
+  return KIND_META[kind] ?? FALLBACK_META
+}
+
 /**
  * In-app notification bell (spec §13.7) — the always-visible reminder surface in
  * the status strip. Polls for fair-deadline + urgency notifications, shows an
@@ -121,20 +137,26 @@ export function NotificationBell() {
                 No notifications yet.
               </p>
             ) : (
-              items.map((n) => (
-                <button
-                  key={n.id}
-                  type="button"
-                  onClick={() => openItem(n)}
-                  className={`notif-bell__item${n.readAt ? '' : ' notif-bell__item--unread'}`}
-                >
-                  <span className="notif-bell__item-title">
-                    {n.kind === 'urgency' ? '⚠ ' : '📅 '}
-                    {n.title}
-                  </span>
-                  <span className="notif-bell__item-body">{n.body}</span>
-                </button>
-              ))
+              items.map((n) => {
+                const meta = metaFor(n.kind)
+                return (
+                  <button
+                    key={n.id}
+                    type="button"
+                    onClick={() => openItem(n)}
+                    className={`notif-bell__item${n.readAt ? '' : ' notif-bell__item--unread'}`}
+                  >
+                    <span className="notif-bell__item-kind font-pixel" style={{ color: meta.accent }}>
+                      {meta.label}
+                    </span>
+                    <span className="notif-bell__item-title">
+                      <span style={{ color: meta.accent }}>{meta.icon} </span>
+                      {n.title}
+                    </span>
+                    <span className="notif-bell__item-body">{n.body}</span>
+                  </button>
+                )
+              })
             )}
           </div>
         </div>

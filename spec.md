@@ -1,7 +1,7 @@
 # scienium — Product Specification
 
-> **Status:** Early Design / Pre-Development
-> **Last Updated:** 2026-06-17
+> **Status:** In Development (feature-complete on the student-facing core; teacher tooling minimal for pilot)
+> **Last Updated:** 2026-07-05
 > **Initial Scale Target:** ~120 students (single school pilot)
 
 ---
@@ -72,7 +72,7 @@ scienium uses an explicit **phase** model stored on each team. Phases are sequen
 ### 5.1 Purpose
 Mimics how real researchers stumble into ideas — exploring tangentially related material across many fields without commitment. Discovery occurs **before lab type selection**, so exploration is unconstrained by discipline.
 
-Discovery is a shared **forest** of source-tagged exploration trees (Wikipedia + YouTube), persisted per team in the database so it survives logout/login and is shared across the team.
+Discovery is a shared **forest** of source-tagged exploration trees (Wikipedia + YouTube + academic Papers), persisted per team in the database so it survives logout/login and is shared across the team. A left-pane toggle switches between the three source explorers and a fourth **Discovery Tree** full-window view (§5.7). Reaching a new node the first time also earns the team KP (capped daily), so exploration feeds the economy — see §5.8.
 
 ### 5.2 Wikipedia Exploration
 - The student **chooses their own starter article** by typing a topic into a search bar (autocomplete-assisted via Wikipedia's API)
@@ -89,30 +89,50 @@ Students can chase YouTube rabbit holes alongside Wikipedia. A **📄 Wiki / ▶
 - **Cross-source bridging:** a video can be added as a child of a Wikipedia node (and vice-versa); unrelated dives simply stay as separate roots
 - No personalized-recommendation capture — discovery happens on real YouTube; scienium captures and structures it
 
-*(Uploading research papers as Discovery nodes — the original `paper` source type — is reserved but not built; papers live in the Literature Review.)*
+### 5.4 Academic Papers Exploration (implemented)
+Alongside Wikipedia and YouTube, students can explore **real academic literature** during Discovery via the **📄 Papers** tab. This is the `source` node type (the earlier `paper` type stayed reserved).
+- A search box queries **arXiv and PubMed** (via OpenAlex + NCBI E-utilities); results are shown with title, authors, host, and a **credibility tier** badge so students learn to weigh source quality.
+- Opening a work adds it to the forest as a **source node** and shows an in-app reader with the abstract; the student can jot a one-line reflection ("what did they find?").
+- From an open source node the student can **explore its citation neighbourhood** — references it cites and papers that cite it — branching those into the tree, so the forest can grow along real citation links.
+- A starred, unpromoted source node can be **promoted straight into the Literature Review** as a paper, carrying its metadata over — connecting Discovery to the next phase.
+- Fetched metadata is cached team-agnostically (`external_works`) so reopening a work never re-hits an external API.
 
-### 5.4 Signaling Interest
-- Students **star** any node they find interesting (visible in the sidebar and on the Discovery home)
-- *(Planned: a manually-curated Topic Interest List and daily related-material prompts.)*
+*(This is distinct from the removed thematic **citation graph / clustering** of §6.6 — here the student manually walks real citation links; there is no automated clustering.)*
 
-### 5.5 Choosing the Final Topic & Exiting Discovery
+### 5.5 Signaling Interest (implemented)
+- Students **star** any node they find interesting (visible in the sidebar and on the Discovery home).
+- Each node also carries an optional **interest tier** — click to cycle **unset → high → mid → low → unset**. The tier is a separate visual channel from credibility and is color- and shape-coded on the tree: **green circle** (interested), **orange triangle** (kind of interested), **red square** (not interested). The shape cue keeps it legible without relying on color alone.
+- An **Interest Seeds** panel lets the team jot free-text topic interests (the `topic_interests` list); one tap can prefill the Papers search box from a seed, tying loose interests to concrete literature.
+
+### 5.6 Choosing the Final Topic & Exiting Discovery
 - The student commits to a **final research topic** at any time via the 🎯 topic bar (typed directly, or set in one click from any starred node)
 - The chosen topic is stored on `teams.topic`, shown on the Discovery home, and is read by later phases (Literature Review, Research Plan)
 - The Discovery tree remains accessible afterward
 
-### 5.6 Technical Implementation
+### 5.7 Full-Window Discovery Tree & Multiple Trees (implemented)
+- A dedicated **Discovery Tree** view renders the whole forest large, with a side **topic list** grouped **color-major then tree-minor** — all "interested" (green) topics first, sub-grouped by which tree they came from ("Tree 1", "Tree 2", …), then the mid and low tiers. This gives the team a single readable map of everything they've explored and how they feel about it.
+- Exploration is not confined to one root. A **"New tree"** action starts a fresh, disconnected root: the next source the student opens (article, video, or paper) becomes a new tree instead of a child of the current selection. Unrelated rabbit holes therefore stay as separate trees in the same forest.
+
+### 5.8 Discovery → Economy (implemented)
+Reaching a node for the **first time** earns the team a small amount of KP, logged in a first-visit ledger (`discovery_source_visits`) so re-clicking, re-branching, or delete-and-recreate never re-pays. A per-team **daily KP cap** (`discovery_kp_days`) keeps it from being farmed, and committing a final topic grants a one-time **Topic-Locked bonus** (`discovery_topic_bonus`). This makes genuine exploration the first way a team earns currency, before any building is bought.
+
+### 5.9 Technical Implementation
 **Wikipedia integration:**
 - Wikipedia REST API for article content; OpenSearch API for starter autocomplete
-- Article HTML rendered in a custom React reader; all internal links intercepted
+- Article HTML rendered in a custom React reader; all internal links intercepted; external HTML sanitized before display
 
 **YouTube integration:**
 - `POST /api/discovery/youtube/resolve` extracts the video id and fetches the title via public oEmbed (no key)
 - Official YouTube IFrame embed for playback
 
+**Academic Papers integration:**
+- `GET /api/discovery/sources/search` queries arXiv/PubMed via OpenAlex + NCBI; `POST /api/discovery/sources/resolve` records the picked work (server-authoritative host/tier) and caches it in `external_works`
+- `GET /api/discovery/sources/[id]/citations` returns the references / cited-by neighbourhood; `POST /api/discovery/source/[id]/promote` promotes a starred source into a Literature-Review paper; `POST /api/discovery/sources/[id]/reflection` saves the one-liner
+
 **Persistence:**
-- Tree stored as an adjacency list in `discovery_nodes` (team-scoped), with `source_type` (wikipedia | youtube), `wikipedia_title` / `youtube_video_id` + `youtube_title`
-- CRUD via `GET/POST/DELETE /api/discovery/tree` and `PATCH/DELETE /api/discovery/tree/[id]`; the client store hydrates from the DB
-- Final topic stored on `teams.topic` via `GET/POST /api/discovery/topic`
+- Tree stored as an adjacency list in `discovery_nodes` (team-scoped), with `source_type` (wikipedia | youtube | source), `wikipedia_title` / `youtube_video_id` + `youtube_title`, `starred`, and `interest_level`; academic metadata lives in the 1:1 `external_sources` side-row
+- CRUD via `GET/POST/DELETE /api/discovery/tree` and `PATCH/DELETE /api/discovery/tree/[id]` (PATCH toggles `starred` and cycles `interest_level`); the client store hydrates from the DB
+- Final topic stored on `teams.topic` via `GET/POST /api/discovery/topic`; free-text interests via `GET/POST /api/discovery/interests`
 
 ---
 
@@ -199,17 +219,17 @@ The citation graph (and its supporting embeddings + HDBSCAN clustering) has been
 
 ## 7. Daily Engagement Pillars
 
-The three daily pillars below — Field Dispatch, Proof of Expertise, and Project Log / Failure Log — are **consolidated into a single gateway building, the Operations Hub** (see Section 9.6). Once unlocked, the Operations Hub becomes the central structure of the lab and the student's everyday home base; the individual pillars are surfaced as panels within it rather than as separate destinations.
+The daily pillars below — Field Dispatch, Proof of Expertise, and Project Log / Failure Log — are **consolidated into a single gateway building, the Operations Hub** (see Section 9.6). Once unlocked, the Operations Hub becomes the central structure of the lab and the student's everyday home base; the individual pillars are surfaced as panels within it rather than as separate destinations. As built, the Operations Hub has **five tabs**: Field Dispatch, Project Log, Failure Log, Proof of Expertise, and the **Data Terminal** (§7.6).
 
-### 7.1 Field Dispatch (~2 min)
-- Daily narrative tip/case study tailored to lab type
-- Ends with single reflection question
-- **Reward:** Knowledge Points (KP)
+### 7.1 Field Dispatch (~2 min) — *implemented*
+- A daily narrative tip / case study tailored to the team's lab type, generated by Claude (Haiku) and cached per lab type per day — a weekly/daily cron pre-warms it, but a GET lazily generates on demand so a missed cron self-heals.
+- Ends with a single reflection question the student answers.
+- **Reward:** Knowledge Points (KP), awarded once per dispatch. A **Past Dispatches** archive lists prior dispatches with their date, the KP earned (a gold KP badge), the question, and the student's answer.
 
-### 7.2 Proof of Expertise (~3–5 min)
-- Conversational knowledge certification
-- Difficulty escalates with progression
-- **Reward:** Clearance Level
+### 7.2 Proof of Expertise (~3–5 min) — *implemented*
+- A short **clearance exam** about the team's own project: a small fixed set of free-response questions generated and graded by Vega (Claude Sonnet) against a tunable rubric, using the team's real project context.
+- Exams are tiered; each targets a clearance level, and difficulty escalates as the team advances.
+- **Reward:** raises the team's **Clearance Level** (a high-water mark — a teammate's earlier pass already counts) plus a KP bonus on a genuine raise. Clearance gates which buildings can be purchased (§8).
 
 ### 7.3 Project Log (~2–5 min) — *implemented*
 A structured lab-notebook entry, surfaced as the **Project Log** tab inside the Operations Hub. Each entry captures:
@@ -219,6 +239,7 @@ A structured lab-notebook entry, surfaced as the **Project Log** tab inside the 
 - **Rich-text session notes** (required) — a TipTap editor with bold, italic, strikethrough, and bullet/numbered lists (Enter continues a list, Tab/Shift-Tab nest). Stored as Markdown, rendered safely (no raw HTML).
 - **Next steps** (required) — an explicit "what we'll do next session" field, highlighted in the timeline so momentum carries between sessions.
 - **Photos** (≥ 1 required) — image attachments validated by decoding the bytes (sharp), stored privately in R2, and streamed back through an authenticated route.
+- **Entry links** — an entry can reference earlier progress entries (a picker + chips UI), capped at 10 outgoing links each. Links are bidirectional in the reader: each entry shows both its **links** (entries it points at) and **backlinks** (entries pointing at it), so a session that builds on an earlier one is visibly connected. Backed by the `project_log_references` table (both endpoints IDOR-guarded and idempotent; deleting an entry cascades its reference rows).
 - **Reward:** Lab Credits (LC). *(Artifact follow-up scanning is planned; see 7.5.)*
 
 **Shared & attributed.** Logs belong to the **whole team**: any member may add, **edit, or delete** any entry. Every entry records its original author ("logged by"), and edits stamp a **"last edited by"** attribution shown inline. Create / edit / delete are additionally written to the **team activity feed** (Section 10), so deletions — which leave no row behind — remain auditable ("Devon deleted a project log entry").
@@ -236,7 +257,7 @@ A specialized Project Log entry type for documenting failed experiments, dead en
 - Two structured prompts: **"What failed or didn't go as expected?"** and **"What did you learn from it?"**
 - Shares the same team-wide editing model and attribution as the Project Log (any member may add/edit/delete; author + last-editor tracked; all three actions recorded in the activity feed).
 - Same LC reward as standard Project Log entries.
-- *(Planned: a **Resilience Bonus** — small additional LC when a later entry references a documented failure and applies what was learned — using the `project_log_references` table.)*
+- *(Planned: a **Resilience Bonus** — small additional LC when a later entry references a documented failure and applies what was learned. Entry linking already exists (§7.3, `project_log_references`); the bonus that pays out on such a link is not yet wired.)*
 
 **Display:**
 - *(Planned)* Lab profile **Failure Wall** displaying documented failures as badges of honor.
@@ -246,12 +267,24 @@ A specialized Project Log entry type for documenting failed experiments, dead en
 ### 7.5 Technical Implementation
 
 **Content generation:**
-- Field Dispatch content pre-generated weekly via cron (Claude API), stored per lab type *(planned)*
-- Proof of Expertise questions generated dynamically based on student's Clearance Level and prior question history *(planned)*
+- Field Dispatch content is generated by Claude (Haiku) and cached per lab type per day (`field_dispatch_content`); a cron pre-warms it and a GET can lazily generate on demand (`lib/field-dispatch/dispatch.ts`). *(implemented)*
+- Proof of Expertise clearance exams are generated and graded by Claude (Sonnet) against a tunable rubric using the team's real project context, tiered by target clearance level (`lib/clearance/*`, `POST /api/expertise` + `/api/expertise/grade`). *(implemented)*
 - *(Planned)* Project Log + Failure Log artifact analysis: server-side OCR + Claude API for content evaluation and targeted follow-up prompts. Today, photo uploads are **validated** (real-image decode via sharp, image types only — SVG rejected) but not yet content-analyzed.
 
 **Data model note:**
 - Both Project and Failure entries live in the same `project_logs` table, distinguished by the `entry_type` enum (`progress | failure`) — keeps queries simple and the Failure Wall is just a filtered view. Progress entries use the structured columns (`next_steps`, `attendee_ids`, `attachment_urls`); failure entries store their two prompts as JSON in `body`. Shared editing is supported by `last_edited_by_user_id` + `last_edited_at`; image attachments are private R2 objects served via an authenticated streaming route (`/api/project-log/attachment/view`).
+
+### 7.6 Data Terminal — *implemented*
+The **Data Terminal** tab is where students record, graph, and learn how to present their results. It has two clearly separated layers, with different unlock rules:
+
+**Experiment tracking (phase-gated to `working`).** An experiment is a titled x/y dataset; measurements are its points, optionally grouped into series. Students log data as they collect it and see it plotted. This layer unlocks at the **Working** phase (once real data collection begins) and is locked before then with an explanatory screen (`experiments` / `measurements` tables).
+
+**Reference guides (always available, no phase gate).** Three built-in, offline reference libraries teach data literacy and are deliberately reachable in **every** phase — a student planning a study can consult them before they own a single data point:
+- **Stats Guide** — a catalog of **65** statistics measures (mean/median through t-tests, ANOVA, regression, classification metrics, and FDR, plus nonparametric tests, regression diagnostics, epidemiology, Bayesian, and agreement/reliability measures), organized by category. Each entry gives a plain-language definition, when to use it, the formula (with a term-by-term breakdown), a small sample dataset, and a self-contained, verified Python snippet with its exact printed output.
+- **Charts Guide** — **250** field-specific chart recipes across **29** scientific fields (astronomy, chemistry, ecology, neuroscience, gait biomechanics, materials science, …). Each entry names the plot type, explains how to read it, lists the raw data to collect (as structured name/unit pairs), says what it tells you, and shows a real example rendering. Fields are lazy-loaded so only the chosen field's module ships to the client.
+- **Plot Guide** — **45** general-purpose plot types organized into 6 families (Comparison, Composition, Distribution, Relationship, Trend, Specialized), each with when-to-use guidance, the data it needs, and an example.
+
+*(These guides are pure static content — no LLM at read time — so they cost nothing to serve and stay reachable regardless of phase-lock.)*
 
 ---
 
@@ -397,6 +430,8 @@ Each lab type has 10 buildings: 1 starter, 8 standard (KP), 1 premium (LC).
 
 ### 9.4 Building Mini-Games
 
+> **Status:** Design only — **not yet built**. The building economy (buy / place / move / upgrade / sell) is live, and each building carries its mini-game *category* in seed data, but no mini-game is playable yet (`MiniGamePlay` table exists; no play route or UI). This subsection is the target design.
+
 Each building hosts a STEM-based mini-game that rewards KP (with diminishing returns), teaches a concept relevant to the building, scales in difficulty with the building's upgrade level, and has a daily play cap.
 
 **Six Mini-Game Categories** *(reusable framework)*:
@@ -441,7 +476,11 @@ The seven gateway buildings are the app's primary navigation. Each is a structur
 ### 9.7 Research Plan Building (implemented)
 The Research Plan gateway (unlocked at `research_planning`) turns a team's plan into a coached, reviewable artifact. Three parts:
 
-**Connect a Google Doc (paste-a-link).** The team pastes an "Anyone with the link" Google Doc URL; the app fetches the published plain text on demand (no account connection — full Google OAuth is deferred, see `TODO.md`). "Refresh" re-syncs the latest text. The fetch lives behind one abstraction (`lib/research-plan/google-doc.ts`) so swapping in the Docs API later is localized.
+**Provide the plan text — two ways.** A "Plan source" toggle lets the team either:
+- **Connect a Google Doc (paste-a-link):** paste an "Anyone with the link" Google Doc URL; the app fetches the published plain text on demand (no account connection — full Google OAuth is deferred, see `TODO.md`). "Refresh" re-syncs the latest text. The fetch lives behind one abstraction (`lib/research-plan/google-doc.ts`) so swapping in the Docs API later is localized.
+- **Paste the text directly:** for teams not using Google Docs, paste or type the plan straight in. No external fetch and no extra Anthropic call; the text is sanity-capped on input and truncated to a stored maximum.
+
+Whichever was **last saved** is the active source (recorded in `last_synced_source`); the review and idea-check below run against it identically regardless of source.
 
 **Project-type review.** The student picks an ISEF track — **Engineering** or **Science** — and a subtype (robotics, software, electrical, mechanical, materials / biology, chemistry, physics, environmental, behavioral). Each choice selects a rubric composed from a track base (`_engineering.md` / `_science.md`, the ISEF five-section criteria) plus subtype emphasis (e.g. robotics → motor type, current draw, battery runtime, multi-trial testing). "Review my plan" streams a structured critique that **fills in live** — the five rubric rows grade in one at a time with filling bars, then Strengths / Gaps / Next-steps columns populate. The result is persisted (`research_plans.last_review_json`) and replaced on each re-review.
 
@@ -467,13 +506,16 @@ Students can work solo or in shared-laboratory teams (up to `max_members`, defau
 - Discovery trees stay team-shared; literature proficiency stays individually earned
 
 ### 10.3 Attribution
-Every action records the acting user. A team activity feed (`activity_feed`, surfaced in the Activity panel) shows recent actions: *"Maya uploaded *Quantum Entanglement and Bell Inequalities*"* / *"Devon upgraded the Optics Laboratory to level 4."* / *"Aisha added a failure log entry."* / *"Devon deleted a project log entry."* Logged action types include paper upload/delete, quiz pass, topic change, phase advance, plan sync, member join, building purchase/upgrade, and project/failure log create/edit/delete (`log_created | log_edited | log_deleted`). Because deletes remove the underlying row, the feed is the durable audit trail for who removed an entry; in-place entries additionally show a **"last edited by"** attribution.
+Every action records the acting user. A team activity feed (`activity_feed`, surfaced in the Activity panel) shows recent actions: *"Maya uploaded *Quantum Entanglement and Bell Inequalities*"* / *"Devon upgraded the Optics Laboratory to level 4."* / *"Aisha added a failure log entry."* / *"Devon deleted a project log entry."* Logged action types include paper upload/delete, quiz pass, topic change/lock, discovery KP awarded, source promoted to Literature Review, clearance raised, phase advance, plan sync, member join, building purchase/upgrade/sell, showcase published, and project/failure log create/edit/delete (`log_created | log_edited | log_deleted`). Because deletes remove the underlying row, the feed is the durable audit trail for who removed an entry; in-place entries additionally show a **"last edited by"** attribution.
 
 ### 10.4 Conflict Handling
 - Last-write-wins on shared text fields
 - Major actions (changing topic, lab type, kicking a member) require Team Lead authorization
 
-### 10.5 Technical Implementation
+### 10.5 Momentum Recap Card (implemented)
+A dismissible **Momentum** card on the lab home gives the team a one-glance recap of their **last 7 days**: KP earned (summed across discovery visits, Field Dispatch, and mini-games), sources reviewed, project logs written, experiments added, data points recorded, and **days until the next fair**. It is pure aggregation — **no LLM call** — and computes the next-fair countdown directly from the static fair dataset (`nextFairFromDataset()`) rather than the seeded tables, so it never touches the fair-seeding path. Dismissal is remembered **per ISO week** (localStorage), so the card returns fresh each week to re-surface momentum. Backed by `GET /api/team/momentum`.
+
+### 10.6 Technical Implementation
 - `teams` (with `max_members`) + `team_members`; join codes in `team_invites`
 - Per-student proficiency in `paper_proficiency` (`@@id([paper_id, user_id])`); shared resources carry `team_id`
 - `GET /api/team` backs the Team panel (roster, capacity, the lead's active code, phase-advance gate); `POST /api/team/invite` + `/api/team/join` handle codes
@@ -483,6 +525,8 @@ Every action records the acting user. A team activity feed (`activity_feed`, sur
 ---
 
 ## 11. PvP Combat System
+
+> **Status:** Design only — **not yet built**. The schema and phase-gate are in place and the API route is stubbed (`app/api/pvp/*` returns `501`), but there is no battle engine, no character/move seed data, and no UI. The 60 combat characters, their movesets, and the sprite evolutions are still to be designed and produced. This section is the target design.
 
 ### 11.1 Overview
 
@@ -718,7 +762,7 @@ A Showcase entry can include any of the following:
 - Each Showcase gets a unique URL: `scienium.app/showcase/{slug}`
 - Open Graph meta tags so social previews render beautifully
 - "Share to family" button generates email/messaging-friendly summary
-- "Download for printing" option produces a one-page PDF summary
+- **One-pager print export (implemented):** a print button opens the showcase's `?print=1` view — a clean, single-page layout with `@media print` styling (chrome hidden, high-contrast) that the browser prints or saves to PDF. The print view is behind the **same** visibility check as the normal page (a private/unpublished showcase can never leak through it) and skips the view-count increment.
 
 ### 12.7 Moderation
 
@@ -767,7 +811,7 @@ A reference center inside scienium providing everything a student needs to navig
 
 The Fair Hub is **always accessible** from day one — even before topic selection — so students understand the competitive landscape they're working toward from the start.
 
-> **Status (as built):** the gateway is live (`components/fair/ScienceFairFeature.tsx`) — US location via ZIP (geocoded to lat/lng at onboarding), matched regional/state/ISEF cards with a countdown, the ISEF category browser, the ISEF forms checklist (with per-form status tracking), the full ISEF rubric, and an AI "sync from site" deadline step. The fair dataset is **268 entries** (all geocoded to city level). Deadlines are **estimated** pending per-fair verification. Self-assessment, teacher review, and the notification engine remain planned.
+> **Status (as built):** the gateway is live (`components/fair/ScienceFairFeature.tsx`) — US location via ZIP (geocoded to lat/lng at onboarding), matched regional/state/ISEF cards with a countdown, the ISEF category browser, the ISEF forms checklist (with per-form status tracking), the full ISEF rubric, an AI "sync from site" deadline step, and the **rubric self-check** (§13.3). The fair dataset is **268 entries** (all geocoded to city level). Deadlines are **estimated** pending per-fair verification. Teacher rubric review and the automated notification engine remain planned (though a teacher **nudge** and a notification bell already exist — see §15 and §13.7).
 
 ### 13.2 Personalized Fair Calendar
 Based on the student's school location (collected during onboarding), the app surfaces the fairs they're eligible for:
@@ -794,10 +838,10 @@ When a date for the current year has not yet been officially announced, the app 
 The full official ISEF judging rubric is built into the Fair Hub and rendered in the ISEF card. **Content is in `docs/isef-2026.md`** and structured for display in `lib/fairs/isef-rubric.ts` — Science and Engineering tracks, each with the five sections, every section's checklist subpoints (what judges score), the Poster (10) / Interview (25) split of Section V, the judging-emphasis notes, and the project-board guidance.
 
 - Each criterion (e.g. Research Question, Design and Methodology, Execution, Creativity, Presentation) explained in plain language
-- **Self-assessment tool:** students rate themselves on each criterion against a clear checklist of what would earn a higher rating
-- **Optional teacher review:** teachers can submit their own rating to compare against student self-assessment
-- **Project Log linkage:** rubric criteria are referenced when evaluating Project Log entries — if a student hasn't logged anything relevant to a given criterion, the app gently prompts them
-- **Rubric overlay on Showcase:** when publishing a Showcase, students can attach their self-assessed rubric ratings as part of the public portfolio
+- **Self-assessment tool (implemented):** a **Self-check** tab (also reachable at `/fair-hub/rubric`) where the team rates itself on each ISEF criterion for their chosen track (Science or Engineering). Scores are validated server-side against the `ISEF_RUBRIC` literal and roll up into a live **judge-readiness score out of 100**. Team-scoped and shared (one score per criterion per team, in `team_rubric_scores`); no AI and no seed data involved. Reads/writes via `GET/PUT /api/rubric/self-assessment`.
+- *(Planned)* **Optional teacher review:** teachers submit their own rating to compare against the student self-assessment.
+- *(Planned)* **Project Log linkage:** rubric criteria referenced when evaluating Project Log entries — prompting the team when nothing has been logged toward a given criterion.
+- *(Planned)* **Rubric overlay on Showcase:** attaching the self-assessed ratings to a published Showcase.
 
 ### 13.4 ISEF Categories
 The 22 ISEF categories are listed with descriptions to help students identify which their project fits. Each category page includes:
@@ -824,9 +868,10 @@ Comprehensive checklist of required ISEF forms (1, 1A, 1B, 2, 3, 4, 5, 6, 7) and
 - Cross-linked from the Showcase Wing so students can prepare both physical and digital presentations side by side
 
 ### 13.7 Reminders & Notifications
-- Configurable advance notice for upcoming deadlines (default: 30 / 14 / 7 / 1 day prior)
-- **Smart urgency triggers:** if a student's Project Log state doesn't match the remaining time before a fair (e.g. regional in 30 days but no data collected yet), the app surfaces a gentle warning
-- In-app banner notifications by default; optional email and push notifications
+- An in-app **notification bell** (implemented) surfaces the team's notifications, each rendered with a kind-specific icon, accent, and chip label. Five notification **kinds** exist (stored as a string on `notifications`, deduped by `dedupe_key`): **`fair_deadline`** (deadline reminder), **`urgency`** (nudge — e.g. a teacher nudge, §15), **`teacher_feedback`**, **`phase_reviewed`** (a phase-advance request was reviewed), and **`showcase_reviewed`**.
+- Per-user notification preferences (`notification_prefs`) hold email opt-in and the days-before-deadline reminder schedule (default: 30 / 14 / 7 / 1 day prior).
+- *(Planned)* the automated engine that actually **fires** deadline reminders on a schedule and detects **smart urgency** (Project Log state vs. time remaining before a fair) — the bell and preference plumbing exist; the cron/urgency producer does not yet.
+- *(Planned)* optional email and push delivery.
 
 ### 13.8 Technical Implementation
 
@@ -891,7 +936,7 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 |---|---|---|
 | **Topic Discovery** | `discovery` | Always available |
 | **Science Fair Hub** | `discovery` | Always available |
-| **Lab Type Selection UI** | `lab_selection` | One-time action; triggers lab growth + reskin |
+| **Lab Type Assignment** | end of `literature_review` | Auto-classified from the one-sentence research idea (Haiku), not a manual screen; triggers lab growth + reskin (§3–§4) |
 | **Literature Review** | `literature_review` | Upload, quiz, relevance probe |
 | **Literature Library** | `literature_review` | Searchable archive of processed papers |
 | **Daily Activities** | `literature_review` | Field Dispatch, Expertise, Project Log, Failure Log |
@@ -900,7 +945,9 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 | **Building Upgrades** | `working` | Levels 1–15; KP every level + LC at tier-ups (→4/7/10/15); no clearance cap (§9.2) |
 | **Building Mini-games** | `working` | Daily cap, KP reward |
 | **PvP Combat** | `working` | 2 battles/day cap; phase-locked matchmaking |
-| **Data Terminal** | `working` | Graphing and experiment tracking |
+| **Data Terminal — Experiments** | `working` | Experiment/measurement tracking + graphing |
+| **Data Terminal — Reference Guides** | `discovery` | Stats / Charts / Plot guides; always available, no phase gate (§7.6) |
+| **Rubric Self-Check** | `discovery` | Judge-readiness /100 against the ISEF rubric (§13.3); Fair Hub is always available |
 | **Showcase Wing** | `showcase` | Public-facing portfolio system |
 | **Prestige Cosmetics** | `showcase` | Unique aesthetic, title, legendary module — for teams that place at a higher-level competition |
 | **Building Skin Tiers** | `working` | Base sprite at L1–3, tier-2 reskin at L≥4 |
@@ -911,7 +958,7 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 
 ## 15. Teacher Dashboard
 
-> **⚠️ DEFERRED FOR PILOT.** The full teacher dashboard described below is **not part of the pilot release**. During the 120-student pilot, teachers validate progress in person — students show the teacher their app progress and demonstrate project work physically, and the teacher approves the team's phase advancement. Only the minimal phase-advance approval is needed for the pilot; the broader dashboard below is preserved for **post-pilot v1.1+** when classroom scaling makes in-person validation unsustainable.
+> **Status (as built):** the teacher dashboard is **live for the pilot core**. Implemented today (route group `app/(teacher)/`, API under `app/api/teacher/`): the **Class Roster** (one row per student, with phase, last-activity, and attention flags — `unlogged` / `stale` for working-phase teams, pending phase-advance requests), the **Validations** queue (approve/reject a phase-advance request; approval atomically bumps the team's phase, notifies the team, and writes an audit row), **Showcase moderation**, a **phase-adaptive student detail view** (including read-only literature access), teacher **feedback**, and a daily **nudge** (§15.11). Reports, bulk actions, and richer per-phase analytics remain deferred to post-pilot. The design below describes the full intended dashboard; the "Pilot Phase Minimum" (§15.11) is what actually ships now.
 
 ### 15.1 Purpose
 The teacher dashboard is the central tool for educators running scienium. Its design philosophy reflects the reality of how teachers actually use software: they have 10 minutes between classes, not 2 hours after school, so the dashboard must surface what needs attention rather than requiring browsing through all students.
@@ -1033,12 +1080,13 @@ Teacher can approve, request changes, or reject with a reason. Approved items go
 
 ### 15.11 Pilot Phase Minimum
 
-For the 120-student pilot, the dashboard ships with only the essentials:
-- Class Roster with phase indicators and attention triggers
-- Student Detail View (all four phase variants)
-- Validations queue
-- Showcase Review queue
-- Basic Class Settings (add/remove, team grouping)
+For the 120-student pilot, the dashboard ships with the essentials, and these are **built**:
+- Class Roster with phase indicators and attention triggers (`unlogged` / `stale`)
+- Student Detail View (phase-adaptive, incl. read-only literature access)
+- Validations queue (phase-advance approve/reject with atomic phase bump + team notification + audit row)
+- Showcase moderation queue
+- Teacher feedback on entries
+- **Nudge (implemented):** on a roster row flagged `unlogged` or `stale`, the teacher can send a one-tap nudge. It creates an `urgency` notification for that team (surfaced on the student notification bell, §13.7) and writes a `teacher_feedback` audit row. It is IDOR-guarded (the teacher must own the team's class) and deduped to **one per team per day** (a repeat tap simply reports "already nudged"); an optional short note can be attached. The row shows a "Nudged" badge after sending.
 
 Reports, advanced analytics, and bulk actions are deferred until pilot feedback reveals what teachers actually struggle with.
 

@@ -1,7 +1,7 @@
 # scienium — Technical Architecture
 
 > **Companion to:** `spec.md`
-> **Last Updated:** 2026-06-19
+> **Last Updated:** 2026-07-05
 > **Target initial scale:** ~120 students, single school pilot
 
 ---
@@ -150,9 +150,11 @@ scienium/
 │   │   │   │   ├── buildings/
 │   │   │   │   ├── teams/
 │   │   │   │   ├── pvp/                  # Battle resolution, matchmaking, trophies
-│   │   │   │   ├── discovery/            # article, search, tree[, /[id]], topic, youtube/resolve
-│   │   │   │   ├── project-log/          # GET/POST + [id] (PATCH/DELETE) + attachment{,/view}
+│   │   │   │   ├── discovery/            # article, search, tree[, /[id]] (+interestLevel PATCH), topic, youtube/resolve
+│   │   │   │   ├── project-log/          # GET/POST + [id] (PATCH/DELETE) + [id]/references + attachment{,/view}
 │   │   │   │   ├── failure-log/           # GET/POST + [id] (PATCH/DELETE)
+│   │   │   │   ├── rubric/               # self-assessment (GET/PUT team rubric self-check)
+│   │   │   │   ├── team/                 # …/momentum (7-day recap), join, invite, location, advance-phase
 │   │   │   │   ├── showcase/
 │   │   │   │   ├── fair-hub/             # Fair calendar, rubric, categories endpoints
 │   │   │   │   ├── teacher/              # Teacher-only endpoints
@@ -160,6 +162,7 @@ scienium/
 │   │   │   │   │   ├── students/[id]/
 │   │   │   │   │   ├── validations/
 │   │   │   │   │   ├── feedback/
+│   │   │   │   │   ├── nudge/            # One-click roster "check in" → notification + audit row
 │   │   │   │   │   └── showcase-review/
 │   │   │   │   ├── consent/              # Parental consent flow
 │   │   │   │   └── webhooks/             # Clerk, payment, etc.
@@ -168,11 +171,15 @@ scienium/
 │   │   ├── components/
 │   │   │   ├── ui/                       # shadcn primitives
 │   │   │   ├── lab/                      # Lab canvas, building cards, upgrade modal
-│   │   │   ├── discovery/                # DiscoveryFeature/Home/Tree, TopicSearch, WikiReader, YouTubeViewer
+│   │   │   ├── discovery/                # DiscoveryFeature/Home/Tree, DiscoveryTopicList, TopicSearch, WikiReader, YouTubeViewer
 │   │   │   ├── literature/
 │   │   │   │   └── LiteratureFeature.tsx # 25 slots, upload, PDF viewer, graded quiz, Q&A chat
 │   │   │   ├── ops/                       # Operations Hub (daily pillars)
-│   │   │   │   ├── OperationsHubFeature.tsx # Project Log + Failure Log tabs, shared edit/delete
+│   │   │   │   ├── OperationsHubFeature.tsx # Project Log + Failure Log tabs, shared edit/delete, reference picker
+│   │   │   │   ├── DataTerminalTab.tsx    # Experiments + Stats/Charts/Plot Guide sub-tabs (guides above phase-gate)
+│   │   │   │   ├── StatsGuidePanel.tsx    # Renders lib/data-terminal/stats-guide (65 measures)
+│   │   │   │   ├── ChartsGuidePanel.tsx   # Lazy per-field charts (loadChartField), 250 charts / 29 fields
+│   │   │   │   ├── PlotGuidePanel.tsx     # Renders lib/data-terminal/plot-guide (45 plot types)
 │   │   │   │   └── RichEditor.tsx         # TipTap notes editor (Markdown round-trip)
 │   │   │   ├── minigames/                # 6 mini-game category components
 │   │   │   ├── pvp/
@@ -213,6 +220,12 @@ scienium/
 │   │   │   ├── db.ts                     # Prisma client singleton
 │   │   │   ├── auth.ts                   # Clerk helpers
 │   │   │   ├── db.ts                     # Prisma client singleton
+│   │   │   ├── data-terminal/            # Static authored reference guides (see §5)
+│   │   │   │   ├── stats-guide.ts        # 65 stat measures (verified-Python code+output)
+│   │   │   │   ├── charts-guide.ts       # Light index: CHART_FIELDS + lazy loadChartField()
+│   │   │   │   ├── charts/<slug>.ts      # 29 per-field modules, 250 charts (code-split)
+│   │   │   │   ├── plot-guide.ts         # 45 general plot types (one eager module)
+│   │   │   │   └── csv.ts
 │   │   │   ├── phase.ts                  # Phase order, feature gates, getTeamContext()
 │   │   │   ├── rate-limit.ts             # Per-user + per-IP rate limiter (tiers, 429)
 │   │   │   ├── validation.ts             # parseJson() + strict zod schemas
@@ -245,6 +258,7 @@ scienium/
 │   │   ├── stores/                       # Zustand stores
 │   │   └── prisma/
 │           ├── schema.prisma
+│           ├── seed-e2e.mjs               # Idempotent E2E fixture graph (`pnpm --filter web seed:e2e`)
 │           └── migrations/
 │
 ├── packages/
@@ -298,7 +312,11 @@ team_invites          id, code (unique), team_id, created_by_user_id, expires_at
 # Discovery   (the final research topic lives on teams.topic)
 discovery_nodes       id, team_id, parent_id, source_type (wikipedia | youtube | paper),
                       wikipedia_title | youtube_video_id | youtube_title | paper_id,
-                      starred, visited_by_user_id, visited_at
+                      starred, interest_level (high | mid | low | null), visited_by_user_id, visited_at
+                      # interest_level: student-set interest tier, a separate visual channel
+                      # from credibility. Plain String (validated by zod in the PATCH route,
+                      # not the DB) to keep it a single ADD COLUMN. Roots (parent_id = null)
+                      # are independent trees in the team's forest.
 topic_interests       id, team_id, text, created_by_user_id, created_at
 
 # Literature
@@ -320,11 +338,14 @@ paper_relevance_notes paper_id, user_id, response, created_at
 
 # Research Plan (Engineering/Science plan review + originality check)
 research_plans        team_id (PK), google_doc_url, project_type, project_subtype,
-                      last_synced_text, last_synced_at,
+                      last_synced_text, last_synced_source (google_doc | paste), last_synced_at,
                       last_review_json, last_reviewed_at,
                       last_idea_check_json, last_idea_check_at
                       # One per team; the review + idea-check results are the current
-                      # values, replaced on each re-run so they persist across reloads
+                      # values, replaced on each re-run so they persist across reloads.
+                      # last_synced_source records which input last populated the text —
+                      # a Google Doc URL or pasted plan text (F3 paste fallback); nullable
+                      # rows predate the column and read as 'google_doc'
 idea_checks           id, team_id, user_id, verdict, findings_json, created_at
                       # Per-day rate-limit ledger (3/day per team)
 
@@ -355,7 +376,11 @@ project_logs              id, team_id, entry_type (progress | failure), stage, b
                           # progress: structured cols; failure: {happened,learned} JSON in body.
                           # Shared across team — any member may edit/delete; last-editor tracked.
 project_log_followups     id, project_log_id, question, response, created_at
-project_log_references    id, project_log_id, references_log_id  # Resilience Bonus link (planned)
+project_log_references    project_log_id, references_log_id  # @@id([project_log_id, references_log_id])
+                          # Directed entry→entry link ("this builds on log #N"). Now ACTIVE
+                          # (F6): POST/DELETE /api/project-log/[id]/references, both endpoints
+                          # team-scoped (IDOR-guarded), 10-outgoing-ref cap, idempotent create.
+                          # Cascades on entry delete; GET exposes links + backlinks.
 
 # Mini-games
 mini_game_plays       id, user_id, team_id, building_id, score, kp_awarded, played_at
@@ -384,12 +409,22 @@ fairs                 id, name, level (school | regional | state | international
 fair_events           id, fair_id, year, event_date, registration_deadline,
                       abstract_deadline, venue, status (confirmed | estimated),
                       previous_year_event_id
+                      # @@unique([fair_id, year]) — one event per fair per year; makes the
+                      # seeder's createMany(skipDuplicates) idempotent + race-safe (see §5)
 fair_user_associations  user_id, fair_id, is_primary, registered_at
+team_rubric_scores    id, team_id, track (science | engineering), criterion_key,
+                      score, notes, updated_by_user_id, updated_at
+                      # @@unique([team_id, criterion_key]). Powers the ISEF rubric self-check
+                      # (F1). criterion_key is "${track}:${numeral}" (e.g. "science:III");
+                      # the per-criterion max is looked up from the ISEF_RUBRIC literal
+                      # (lib/fairs/isef-rubric.ts), NOT the rubric_* tables below — this
+                      # feature deliberately avoids the RubricCriterion seed / hard FK.
 rubric_versions       id, fair_id, year, rubric_json
 rubric_criteria       id, rubric_version_id, name, description, max_score,
                       checklist_items_json
 rubric_self_assessments  id, team_id, rubric_criterion_id, score, notes,
                       assessed_by_user_id, assessed_at
+                      # DORMANT — see team_rubric_scores above for the shipped self-check
 isef_categories       id, name, description, example_subtopics_json,
                       recommended_lab_type
 forms_catalog         id, name, form_code, required_for_levels_json,
@@ -471,23 +506,52 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 2. **Project Log:** `GET/POST /api/project-log` lists/creates numbered entries (attendance validated against the roster, discipline-aware stage dropdown, TipTap rich-text notes stored as Markdown, required next-steps, ≥1 photo). Photos upload via `POST /api/project-log/attachment` (bytes validated by **sharp**, stored privately in R2) and stream back through the authenticated `GET /api/project-log/attachment/view?key=…`
 3. **Failure Log:** `GET/POST /api/failure-log` stores `{happened, learned}` JSON with `entry_type = failure`
 4. **Shared editing:** `PATCH/DELETE /api/project-log/[id]` and `/api/failure-log/[id]` let **any team member** edit or delete **any** entry. Edits stamp `last_edited_by_user_id`/`last_edited_at` (shown inline); create/edit/delete all write to `activity_feed` (`log_created | log_edited | log_deleted`) so deletions stay auditable
+5. **Entry linking (Resilience Bonus):** the Project Log picker lets a member link an entry to a prior one via `POST /api/project-log/[id]/references` (chips shown on the entry). Both endpoints are validated to belong to `ctx.teamId` (the IDOR guard), an entry may hold ≤10 outgoing references, and the create is idempotent (the composite PK swallows the duplicate). `DELETE …/references?targetId=…` removes one link; deleting an entry cascades its reference rows. The GET payload exposes both `links` and `backlinks`.
 
 ### Research Plan flow (Engineering/Science)
-1. Student picks a project type + subtype and pastes an "anyone with the link" Google Doc URL; `POST /api/research-plan` fetches the published text (`lib/research-plan/google-doc.ts`) and stores it on `research_plans` ("Refresh" re-syncs)
+1. Student picks a project type + subtype, then supplies the plan **either** as an "anyone with the link" Google Doc URL **or** by pasting the plan text directly (F3 fallback). `POST /api/research-plan` accepts exactly one of `googleDocUrl` / `planText` (enforced via zod `.superRefine`); the doc branch fetches the published text (`lib/research-plan/google-doc.ts`), the paste branch truncates to `MAX_STORED_TEXT` (100k) on save rather than rejecting. Both write `last_synced_text` + `last_synced_source` (`google_doc | paste`) together. A "Plan source" toggle in the UI picks the input; "Refresh" re-syncs a doc. No new Anthropic call.
 2. **Review:** `POST /api/research-plan/review` streams a structured critique (NDJSON) graded against the composed rubric (`_<type>.md` + `<subtype>.md`, prompt-cached on the doc); the assembled review is saved to `last_review_json` and replaces the prior one
 3. **Idea check:** `POST /api/research-plan/idea-check` runs Claude with the native web-search tool (`web_search_20260209`), streaming each search + sources live; verdict/findings save to `last_idea_check_json` (and an `idea_checks` ledger row for the 3/day-per-team limit), replacing the prior result
+
+### Data Terminal reference guides (Stats / Charts / Plot)
+
+The Data Terminal (an Operations Hub tab, `components/ops/DataTerminalTab.tsx`) mounts three **static, authored reference libraries** as sub-tabs alongside the live Experiments view. They are pure client-rendered content — no API, no DB, no Anthropic call, nothing persisted — assembled offline via a generator+reviewer pipeline and checked in as typed constants under `lib/data-terminal/`. Each entry's `exampleSvg` is a real matplotlib render inlined as a static, script-free SVG string (a test-guarded invariant, since it renders via `dangerouslySetInnerHTML`).
+
+- **Stats Guide** (`stats-guide.ts`, `StatsGuidePanel.tsx`) — 65 statistics measures across 10 categories. Each carries a definition, a Unicode formula + breakdown, a `datasetCsv`, and a step-by-step Python `code` snippet whose `output` was produced by **actually running it** — `code` + `output` are the empirically verified layer and must be regenerated together, never hand-edited.
+- **Charts Guide** (`charts-guide.ts` + `charts/<slug>.ts`, `ChartsGuidePanel.tsx`) — 250 field-specific charts across 29 scientific fields, with structured `dataNeeded: {name, unit}[]`.
+- **Plot Guide** (`plot-guide.ts`, `PlotGuidePanel.tsx`) — 45 general plot types spanning fields; small enough to stay one eager module.
+
+**Notable pattern — lazy code-split content.** The Charts Guide is ~5 MB of inline SVG (250 charts × ~20 KB), far too large to ship in one bundle. So the content is split into one module *per field* (`charts/<slug>.ts`), and `charts-guide.ts` is a **light index only**: it eagerly exports `CHART_FIELDS` (the dropdown list + per-field counts) and `loadChartField(slug)`, a thin wrapper over a **static** `import()` map so Next/webpack code-splits every field into its own chunk, fetched only when a student selects that field. (Stats and Plot guides are single eager modules — small enough not to need this.) All three panels are mounted **above** the Data Terminal's phase-gate early returns in `DataTerminalTab`, so the reference material is reachable in every phase, not only once the Data Terminal itself unlocks at the Working phase.
+
+### Momentum recap flow (Lab scene)
+1. `MomentumCard.tsx` (mounted in `LabScene.tsx`) calls `GET /api/team/momentum` — a rolling last-7-days team aggregate: KP earned, sources reviewed, logs written, experiments added, and days to the next fair
+2. It is a pure read (read tier, no LLM, no new tables), scoped entirely by `ctx.teamId`. KP is summed only from the timestamped per-award ledgers so the window is accurate; the next fair is computed via `nextFairFromDataset()` over the static `FAIRS` dataset (replicating the Fair Hub's nearest-regional selection) rather than touching the DB seeder
+3. The card is dismissible; dismissal is stored in `localStorage` keyed to the ISO week, so it reappears each new week
 
 ### Science Fair matching flow
 1. At onboarding or `POST /api/team/location`, `geocodeZip()` (`lib/fairs/zip.ts`) calls Nominatim for the ZIP → stores `teams.location_lat` / `teams.location_lng`
 2. `GET /api/fairs/match` reads the team's stored coords + state and calls `matchFairs(state, coords)` in `lib/fairs/match.ts`
-3. `ensureFairsSeeded()` lazily upserts the 268-entry dataset (`lib/fairs/dataset.ts`) into `fairs`/`fair_events` (idempotent by `seed_key`); ordering is ISEF → state → regional so parent FK always exists before child
+3. `matchFairs()` first `await`s `ensureFairsSeeded()`, which lazily loads the 268-entry dataset (`lib/fairs/dataset.ts`) into `fairs`/`fair_events`
 4. `matchFairs` sorts all regional fairs in the state by Haversine distance from the stored team coordinates (falls back to state centroid if no coords stored); returns nearest regional + state fair + ISEF
 5. `POST /api/fairs/[id]/sync-deadlines` calls Firecrawl with the fair's `website_url` to extract dates into a `fair_events` row marked `estimated`
+
+### Fair-dataset seeding (`ensureFairsSeeded`)
+
+`ensureFairsSeeded()` is the idempotent, batched loader that makes `matchFairs()` safe to call on any request. It replaced an earlier row-by-row upsert loop that could take ~2 minutes and hang the Science Fair Hub Overview tab; it is now sub-second on a warm DB.
+
+1. **Count fast-path** — if the `fairs` row count already matches the dataset size, it returns immediately (the common case).
+2. **Batched inserts** — otherwise it inserts with two `createMany({ skipDuplicates: true })` calls (fairs, then fair_events), ordered ISEF → state → regional so a parent's `id` always exists before a child references it. `skipDuplicates` makes re-runs race-safe: the `fairs.seed_key` unique and the `fair_events @@unique([fair_id, year])` index (migration `fair_event_unique_dedupe`, which first dedupes any historical duplicate events, then adds the index) turn concurrent inserts into no-ops rather than errors.
+3. **Targeted drift updates** — only rows whose seeded fields changed are updated.
+4. **Single-flight** — a module-level `seedInFlight` promise ensures concurrent in-process callers share one seeding run instead of each launching their own.
+
+The Momentum recap card (see its flow above) deliberately does **not** call this — it computes the next fair from the static dataset directly (`nextFairFromDataset()` over `FAIRS`) to stay a pure read with no seeding side effect.
 
 ### YouTube deep-dive flow (Discovery)
 1. In YouTube mode, a pasted link (or ⌘V) calls `POST /api/discovery/youtube/resolve`, which extracts the video id and fetches the title via public **oEmbed** (no API key, no quota)
 2. The video is added to the team's `discovery_nodes` tree as a child of the current node (`source_type = youtube`) and persisted via `POST /api/discovery/tree`; it plays in an embedded IFrame
 3. Wikipedia and YouTube nodes share one team-scoped forest; the final research topic is saved to `teams.topic` via `POST /api/discovery/topic`
+
+**Multi-tree, interest tiers, full-window view.** The team's discovery forest is genuinely a **forest of trees**: any root node (`parent_id = null`) is its own tree. A "New tree" button sets `newTreePending` in `discoveryStore.ts`; the next source the student opens is created as a fresh root rather than a child of the current node. Each node also carries a student-set **interest tier** — high / mid / low, `PATCH /api/discovery/tree/[id]` (widened to accept `interestLevel`, validated by zod), surfaced in the DB by the tree GET serializer. The tier is rendered as a green / orange / red color band **plus** a shape cue on the tree (so it doesn't rely on color alone). A dedicated full-window **"Discovery Tree"** tab in `DiscoveryFeature.tsx` shows the large tree on the left and, on the right, `DiscoveryTopicList.tsx` — all topics grouped color-major (by interest tier) then tree-minor.
 
 **Planned migration** (once Python AI service is active):
 - R2 for file storage; `papers.file_url` points at signed R2 URLs instead of the in-DB stream
@@ -518,6 +582,12 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 3. Renders with Open Graph meta tags, structured data, video player
 4. Assets served from R2 + Cloudflare CDN — fast even globally
 5. View counter increments via lightweight beacon to `/api/showcase/[slug]/view`
+6. **One-pager print export:** `/showcase/[slug]?print=1` renders a print-optimized one-pager (gated by the same `canViewShowcase` privacy check, with `@media print` CSS). A `PrintButton.tsx` opens it; the print path skips the view-count insert so printing doesn't inflate analytics.
+
+### Rubric self-check flow (Science Fair Hub)
+1. The "Self-check" tab in `ScienceFairFeature.tsx` (and the revived `/fair-hub/rubric` route) mounts `RubricSelfCheck.tsx`, driven off the static `ISEF_RUBRIC` literal (`lib/fairs/isef-rubric.ts`) — no rubric seed rows
+2. `GET /api/rubric/self-assessment?track=science|engineering` returns each criterion (from the literal) merged with the team's saved score/notes; `PUT` upserts one criterion's score + notes into `team_rubric_scores` keyed `(team_id, criterion_key)` where `criterion_key = "${track}:${numeral}"`
+3. Both scoped to `ctx.teamId` (the IDOR guard); scores are validated server-side against the per-criterion max from the literal. The UI shows a live judge-readiness score out of 100
 
 ### Fair Hub deadline notification flow
 1. Vercel Cron runs daily
@@ -538,6 +608,11 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
    - Active attention flags
 4. Result returned as one denormalized list — no per-student requests
 5. Detail views fetched lazily when teacher clicks a row
+
+### Teacher nudge flow (roster "check in")
+1. On an attention row in `TeacherRoster.tsx`, a **Nudge** button `POST`s to `/api/teacher/nudge`
+2. The route asserts the team is in the teacher's classes (`teacherOwnsTeam` — the IDOR guard), then in one transaction writes a `Notification` to the team (drives the bell) plus a `TeacherFeedback` audit row
+3. Idempotency is a **DB constraint, not app logic**: a daily-unique `Notification.dedupeKey = nudge:${teamId}:${date}`. A second nudge the same day trips P2002 and returns `{ ok: true, alreadyNudged: true }` rather than double-notifying
 
 ### Teacher-gated phase-advance flow
 The two real-world milestones — starting data collection (`research_planning → working`) and advancing to competition (`working → showcase`) — require a teacher's sign-off rather than an automatic gate (`TEACHER_GATED_TRANSITIONS` in `lib/team/advance.ts`).
@@ -607,16 +682,17 @@ Quick reference for debugging each feature without scanning the whole repo. For 
 ### Discovery
 | Layer | File |
 |---|---|
-| UI | `components/discovery/DiscoveryFeature.tsx`, `DiscoveryHome.tsx`, `DiscoveryTree.tsx` |
+| UI | `components/discovery/DiscoveryFeature.tsx`, `DiscoveryHome.tsx`, `DiscoveryTree.tsx`, `DiscoveryTopicList.tsx` (full-window tree topics) |
 | UI (Wikipedia) | `components/discovery/WikiReader.tsx`, `TopicSearch.tsx` |
 | UI (YouTube) | `components/discovery/YouTubeViewer.tsx` |
+| Store | `stores/discoveryStore.ts` — forest state, `newTreePending`, interest PATCH |
 | API (article) | `app/api/discovery/article/route.ts` — fetches + sanitizes Wikipedia HTML |
 | API (search) | `app/api/discovery/search/route.ts` |
-| API (tree) | `app/api/discovery/tree/route.ts`, `app/api/discovery/tree/[id]/route.ts` |
+| API (tree) | `app/api/discovery/tree/route.ts`, `app/api/discovery/tree/[id]/route.ts` (PATCH accepts `interestLevel`) |
 | API (topic) | `app/api/discovery/topic/route.ts` |
 | API (YouTube) | `app/api/discovery/youtube/resolve/route.ts` |
 | Lib | `lib/wikipedia.ts` |
-| DB | `discovery_nodes`, `teams.topic` |
+| DB | `discovery_nodes` (incl. `interest_level`, roots-as-trees), `teams.topic` |
 
 ### Literature Review
 | Layer | File |
@@ -642,17 +718,39 @@ Quick reference for debugging each feature without scanning the whole repo. For 
 ### Research Plan
 | Layer | File |
 |---|---|
-| UI | `components/research-plan/ResearchPlanFeature.tsx` |
-| API (sync/save) | `app/api/research-plan/route.ts` |
+| UI | `components/research-plan/ResearchPlanFeature.tsx` (doc-URL ⇄ paste-text toggle) |
+| API (sync/save) | `app/api/research-plan/route.ts` — accepts exactly one of `googleDocUrl`/`planText` |
 | API (review) | `app/api/research-plan/review/route.ts` — streams NDJSON critique |
 | API (idea-check) | `app/api/research-plan/idea-check/route.ts` — streams web-search results |
 | Lib | `lib/research-plan/google-doc.ts`, `lib/research-plan/rubric.ts`, `lib/research-plan/idea-check.ts`, `lib/research-plan/rubrics/` |
-| DB | `research_plans`, `idea_checks` |
+| DB | `research_plans` (incl. `last_synced_source`), `idea_checks` |
+
+### Operations Hub — Data Terminal reference guides
+| Layer | File |
+|---|---|
+| UI (host tab) | `components/ops/DataTerminalTab.tsx` — guides mounted above the phase-gate |
+| UI (panels) | `components/ops/StatsGuidePanel.tsx`, `ChartsGuidePanel.tsx`, `PlotGuidePanel.tsx` |
+| Content (stats) | `lib/data-terminal/stats-guide.ts` — 65 measures (verified-Python) |
+| Content (charts) | `lib/data-terminal/charts-guide.ts` (index: `CHART_FIELDS`, `loadChartField`) + `lib/data-terminal/charts/<slug>.ts` (29 lazy field modules, 250 charts) |
+| Content (plot) | `lib/data-terminal/plot-guide.ts` — 45 plot types |
+| DB | none — static authored content, no API/DB/LLM |
+
+### Project-log references / Momentum / Rubric self-check
+| Layer | File |
+|---|---|
+| UI (references) | `components/ops/OperationsHubFeature.tsx` — picker + chips |
+| API (references) | `app/api/project-log/[id]/references/route.ts` — POST/DELETE, 10-cap, IDOR-guarded |
+| UI (momentum) | `components/lab/MomentumCard.tsx` (mounted in `LabScene.tsx`) |
+| API (momentum) | `app/api/team/momentum/route.ts` — 7-day read aggregate, `nextFairFromDataset()` |
+| UI (rubric self-check) | `components/fair/RubricSelfCheck.tsx`, `app/(dashboard)/fair-hub/rubric/page.tsx` |
+| API (rubric self-check) | `app/api/rubric/self-assessment/route.ts` — GET/PUT, team-scoped |
+| Lib (rubric scoring) | `lib/fairs/rubric-scoring.ts`, `lib/fairs/isef-rubric.ts` (`ISEF_RUBRIC` literal) |
+| DB | `project_log_references`, `team_rubric_scores` |
 
 ### Science Fair Hub
 | Layer | File |
 |---|---|
-| UI (main) | `components/fair/ScienceFairFeature.tsx` |
+| UI (main) | `components/fair/ScienceFairFeature.tsx` (Overview + Self-check tabs) |
 | UI (categories) | `components/fair/CategoryBrowser.tsx` |
 | UI (forms) | `components/fair/FormsChecklist.tsx` |
 | API (match) | `app/api/fairs/match/route.ts` — returns regional + state + ISEF |
@@ -660,12 +758,12 @@ Quick reference for debugging each feature without scanning the whole repo. For 
 | API (forms list) | `app/api/fairs/forms/route.ts` |
 | API (form update) | `app/api/fairs/forms/[formId]/route.ts` |
 | Lib (dataset) | `lib/fairs/dataset.ts` — 268-entry seed array |
-| Lib (matching) | `lib/fairs/match.ts` — `ensureFairsSeeded()`, `matchFairs()` |
+| Lib (matching) | `lib/fairs/match.ts` — `ensureFairsSeeded()` (batched, single-flight), `matchFairs()` |
 | Lib (geo) | `lib/fairs/zip.ts` — `geocodeZip()`, `zipToState()`, `haversineMiles()` |
 | Lib (forms) | `lib/fairs/forms.ts` — 12-form catalog |
 | Lib (categories) | `lib/fairs/categories.ts` — 22 ISEF categories |
 | Lib (rubric) | `lib/fairs/isef-rubric.ts` |
-| DB | `fairs`, `fair_events`, `team_form_status`, `isef_categories` |
+| DB | `fairs`, `fair_events` (`@@unique([fair_id, year])`), `team_form_status`, `isef_categories` |
 | DB (team coords) | `teams.location_lat`, `teams.location_lng`, `teams.location_zip`, `teams.location_state` |
 
 ### Security middleware (applied to all routes)
@@ -812,6 +910,8 @@ The lab home (`/lab`) replaces the old dashboard as the spatial navigation hub. 
 | Production | Pilot | Vercel + Supabase + R2 |
 
 CI/CD via GitHub Actions: lint → typecheck → test → preview deploy.
+
+**E2E fixtures.** The Playwright suite (gate 5) runs against a real logged-in browser and depends on a fixed team/roster graph. `prisma/seed-e2e.mjs` (`pnpm --filter web seed:e2e`) is the idempotent fixture seeder — it upserts the School / Class / team / memberships and their `classId` links so teacher-flow specs meet their roster precondition. Re-run it to restore the fixture graph if a spec mutates it (see SETUP.md "E2E tests").
 
 ---
 

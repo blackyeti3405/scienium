@@ -11,13 +11,15 @@ const H_GAP = 14
 const V_GAP = 54
 const PAD = 16
 
-interface LayoutNode extends DiscoveryNode {
+export interface LayoutNode extends DiscoveryNode {
   x: number
   y: number
 }
 
 // ── Tree layout ─────────────────────────────────────────────────────────────
-function computeLayout(nodes: DiscoveryNode[]): LayoutNode[] {
+// Exported so other views (the #11 full-window Discovery Tree tab, the topic
+// list) can reuse the SAME multi-root layout instead of re-deriving it.
+export function computeLayout(nodes: DiscoveryNode[]): LayoutNode[] {
   if (nodes.length === 0) return []
 
   const byId: Record<string, DiscoveryNode> = {}
@@ -60,6 +62,50 @@ function computeLayout(nodes: DiscoveryNode[]): LayoutNode[] {
   return result
 }
 
+// ── #11: which "tree" (root-derived forest) each node belongs to ────────────
+// Walks `parentId` up to the root for every node, then assigns a stable 0-based
+// index by root order (first-seen order in `nodes`, matching the layout's
+// left-to-right root order). Used by `DiscoveryTopicList`'s color-major/
+// tree-minor grouping — kept here so root-walking logic lives in one place.
+export function nodeTreeIndices(nodes: DiscoveryNode[]): Map<string, number> {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const rootIndexById = new Map<string, number>()
+  let nextRootIndex = 0
+
+  function rootOf(id: string): string {
+    let cur = byId.get(id)
+    const seen = new Set<string>()
+    while (cur?.parentId && byId.has(cur.parentId) && !seen.has(cur.id)) {
+      seen.add(cur.id)
+      cur = byId.get(cur.parentId)
+    }
+    return cur?.id ?? id
+  }
+
+  const result = new Map<string, number>()
+  for (const n of nodes) {
+    const rid = rootOf(n.id)
+    if (!rootIndexById.has(rid)) rootIndexById.set(rid, nextRootIndex++)
+    result.set(n.id, rootIndexById.get(rid)!)
+  }
+  return result
+}
+
+// ── #11: interest-tier cycle + visual metadata ──────────────────────────────
+// Color + a distinct non-color shape cue per tier (accessibility req — color is
+// never the only signal). A separate visual channel from `credibilityTier`.
+type InterestLevel = 'high' | 'mid' | 'low'
+const INTEREST_CYCLE: (InterestLevel | null)[] = [null, 'high', 'mid', 'low']
+function nextInterest(current: InterestLevel | null | undefined): InterestLevel | null {
+  const idx = INTEREST_CYCLE.indexOf(current ?? null)
+  return INTEREST_CYCLE[(idx + 1) % INTEREST_CYCLE.length]
+}
+const INTEREST_META: Record<InterestLevel, { color: string; shape: string; label: string }> = {
+  high: { color: '#4ADE80', shape: 'circle', label: 'Interested' },
+  mid: { color: '#F97316', shape: 'triangle', label: 'Kind of interested' },
+  low: { color: '#EF4444', shape: 'square', label: 'Not interested' },
+}
+
 // ── Props ───────────────────────────────────────────────────────────────────
 interface Props {
   nodes: DiscoveryNode[]
@@ -69,6 +115,8 @@ interface Props {
   onToggleStar: (nodeId: string) => void
   /** #13: promote a starred, unpromoted source node into the Literature Review. */
   onPromote?: (nodeId: string) => void
+  /** #11: cycle a node's interest tier (unset → high → mid → low → unset). */
+  onSetInterest?: (nodeId: string, level: InterestLevel | null) => void
 }
 
 interface ContextMenu {
@@ -79,7 +127,15 @@ interface ContextMenu {
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
-export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onToggleStar, onPromote }: Props) {
+export function DiscoveryTree({
+  nodes,
+  currentNodeId,
+  onNavigate,
+  onDelete,
+  onToggleStar,
+  onPromote,
+  onSetInterest,
+}: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
 
   const laid = useMemo(() => computeLayout(nodes), [nodes])
@@ -104,7 +160,10 @@ export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onTo
   }
 
   const svgW = Math.max(...laid.map((n) => n.x + NODE_W)) + PAD
-  const svgH = Math.max(...laid.map((n) => n.y + NODE_H)) + PAD
+  // #11: the interest swatch + the pre-existing "+ Lit Review" pill both draw
+  // slightly below the node body — pad enough that the bottom-most row's
+  // controls aren't clipped by the svg's own bounding box.
+  const svgH = Math.max(...laid.map((n) => n.y + NODE_H)) + PAD + 8
 
   return (
     <>
@@ -246,6 +305,77 @@ export function DiscoveryTree({ nodes, currentNodeId, onNavigate, onDelete, onTo
                     <path d="M -1.3 -1 V 4 M 1.3 -1 V 4" strokeWidth={0.9} />
                   </g>
                 </g>
+
+                {/* ── #11: interest swatch — click-to-cycle, bottom-left corner so it
+                    never overlaps the right-side tier dot / "+ Lit Review" pill / ✓.
+                    Color + a distinct shape (accessibility: color is never the only
+                    signal). unset = hollow outline ring; high/mid/low = filled
+                    shape + color, both with a thin dark stroke for contrast on the
+                    gold "current" node body. ── */}
+                {(() => {
+                  const level = n.interestLevel ?? null
+                  const meta = level ? INTEREST_META[level] : null
+                  const cx = n.x + 6
+                  const cy = n.y + NODE_H + 8
+                  const upcoming = nextInterest(level)
+                  const upcomingLabel = upcoming
+                    ? INTEREST_META[upcoming].label
+                    : 'unmarked'
+                  const currentLabel = meta ? meta.label : 'unmarked'
+                  return (
+                    <g
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSetInterest?.(n.id, upcoming)
+                      }}
+                      style={{ cursor: onSetInterest ? 'pointer' : 'default' }}
+                      role="button"
+                      aria-label={`Set interest for "${n.title}" (currently ${currentLabel.toLowerCase()})`}
+                      data-node-id={n.id}
+                      data-interest={level ?? 'none'}
+                    >
+                      <title>
+                        {meta ? meta.label : 'Mark interest'} — click to set {upcomingLabel.toLowerCase()}
+                      </title>
+                      {/* Invisible hit area — larger than the glyph for easy tapping */}
+                      <circle cx={cx} cy={cy} r={9} fill="transparent" />
+                      {!meta ? (
+                        // unset: hollow outline ring
+                        <circle
+                          cx={cx} cy={cy} r={5}
+                          fill="none"
+                          stroke="rgba(255,255,255,0.4)"
+                          strokeWidth={1.3}
+                        />
+                      ) : meta.shape === 'circle' ? (
+                        // high: filled circle ●
+                        <circle
+                          cx={cx} cy={cy} r={5}
+                          fill={meta.color}
+                          stroke="rgba(0,0,0,0.35)"
+                          strokeWidth={0.75}
+                        />
+                      ) : meta.shape === 'triangle' ? (
+                        // mid: filled triangle ▲
+                        <path
+                          d={`M ${cx} ${cy - 5.5} L ${cx + 5.2} ${cy + 4} L ${cx - 5.2} ${cy + 4} Z`}
+                          fill={meta.color}
+                          stroke="rgba(0,0,0,0.35)"
+                          strokeWidth={0.75}
+                        />
+                      ) : (
+                        // low: filled square ■
+                        <rect
+                          x={cx - 4.3} y={cy - 4.3}
+                          width={8.6} height={8.6}
+                          fill={meta.color}
+                          stroke="rgba(0,0,0,0.35)"
+                          strokeWidth={0.75}
+                        />
+                      )}
+                    </g>
+                  )
+                })()}
 
                 {/* Tier dot (source nodes only) — credibility at a glance */}
                 {tierColor && (

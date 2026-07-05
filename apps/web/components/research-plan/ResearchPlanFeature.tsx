@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Loader2,
   ClipboardCheck,
+  ClipboardPaste,
   Globe,
   CheckCircle2,
   AlertTriangle,
@@ -41,6 +42,10 @@ const EMPTY_REVIEW: Review = {
   recommendations: [],
 }
 
+// Mirrors MAX_STORED_TEXT in app/api/research-plan/route.ts — the server truncates
+// at the same cap, so the client-side counter matches what actually gets saved.
+const MAX_PLAN_TEXT = 100_000
+
 interface IdeaFindings {
   summary: string
   priorWork: { title?: string; url?: string; note?: string }[]
@@ -59,6 +64,10 @@ interface PlanData {
   lastSyncedAt: string | null
   hasText: boolean
   textPreview: string | null
+  // F3 paste-text fallback — which input last populated the synced text, and
+  // (only for paste rows) the full text so the textarea can edit-in-place.
+  activeSource: 'google_doc' | 'paste' | null
+  planTextFull: string | null
   lastReview: Review | null
   lastReviewedAt: string | null
   lastIdeaCheck: IdeaResult | null
@@ -108,6 +117,13 @@ export function ResearchPlanFeature() {
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
 
+  // F3 paste-text fallback — a toggle beside the doc-link input; 'paste' seeds
+  // from the DB on load when that's the team's currently-active source.
+  const [mode, setMode] = useState<'doc' | 'paste'>('doc')
+  const [planText, setPlanText] = useState('')
+  const [savingText, setSavingText] = useState(false)
+  const [textError, setTextError] = useState<string | null>(null)
+
   // Review (structured, fills in progressively as events stream)
   const [review, setReview] = useState<Review | null>(null)
   const [reviewStreaming, setReviewStreaming] = useState(false)
@@ -132,6 +148,10 @@ export function ResearchPlanFeature() {
           setType(d.plan.projectType)
           setSubtype(d.plan.projectSubtype)
           setDocUrl(d.plan.googleDocUrl ?? '')
+          if (d.plan.activeSource === 'paste') {
+            setMode('paste')
+            setPlanText(d.plan.planTextFull ?? '')
+          }
           setReview(d.plan.lastReview ?? null)
           setIdea(d.plan.lastIdeaCheck ?? null)
         }
@@ -156,6 +176,26 @@ export function ResearchPlanFeature() {
       setSyncError(err instanceof Error ? err.message : 'Could not connect the doc')
     } finally {
       setSyncing(false)
+    }
+  }
+
+  // F3 paste-text fallback — same POST endpoint as sync(), just the other input.
+  async function saveText() {
+    setSavingText(true)
+    setTextError(null)
+    try {
+      const res = await fetch('/api/research-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planText, projectType: type, projectSubtype: subtype }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error ?? 'Could not save the text')
+      setPlan(d.plan)
+    } catch (err) {
+      setTextError(err instanceof Error ? err.message : 'Could not save the text')
+    } finally {
+      setSavingText(false)
     }
   }
 
@@ -236,7 +276,13 @@ export function ResearchPlanFeature() {
 
   const activeType = PROJECT_TYPES.find((t) => t.key === type)
   const canSync = docUrl.trim().length > 8 && !!type && !!subtype
+  // Per plan: Save is disabled only on empty text — unlike the doc sync button,
+  // it does not additionally require a project type/subtype selection.
+  const canSaveText = planText.trim().length > 0
   const synced = plan?.hasText
+  const isPasteSource = plan?.activeSource === 'paste'
+  const textLen = planText.length
+  const overCap = textLen >= MAX_PLAN_TEXT
 
   if (loading) {
     return (
@@ -306,38 +352,111 @@ export function ResearchPlanFeature() {
           )}
         </section>
 
-        {/* ── Google Doc ── */}
+        {/* ── Plan source (Google Doc or pasted text) ── */}
         <section>
-          <h3 className="font-pixel text-[8px] text-white/50 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-            <Link2 size={11} className="text-[#F5C518]" /> Google Doc
-          </h3>
-          <p className="font-pixel text-[7px] text-white/30 leading-loose mb-2">
-            Paste an &ldquo;Anyone with the link&rdquo; Google Doc URL. We read its latest text on
-            sync (no account connection needed yet).
-          </p>
-          <div className="flex items-center gap-2">
-            <input
-              value={docUrl}
-              onChange={(e) => setDocUrl(e.target.value)}
-              placeholder="https://docs.google.com/document/d/…"
-              className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30"
-            />
-            <button
-              onClick={sync}
-              disabled={!canSync || syncing}
-              className="shrink-0 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center gap-1.5"
-            >
-              {syncing ? (
-                <Loader2 size={11} className="animate-spin" />
-              ) : synced ? (
-                <RefreshCw size={11} />
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <h3 className="font-pixel text-[8px] text-white/50 uppercase tracking-widest flex items-center gap-1.5">
+              {mode === 'doc' ? (
+                <Link2 size={11} className="text-[#F5C518]" />
               ) : (
-                <Link2 size={11} />
+                <ClipboardPaste size={11} className="text-[#F5C518]" />
               )}
-              {synced ? 'Refresh' : 'Connect & sync'}
+              Plan source
+            </h3>
+            {synced && plan?.activeSource && (
+              <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest px-2 py-1 border border-white/15 rounded-sm">
+                source: {plan.activeSource === 'paste' ? 'pasted text' : 'google doc'}
+              </span>
+            )}
+          </div>
+
+          {/* Segmented toggle */}
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={() => setMode('doc')}
+              className={`font-pixel text-[8px] px-4 py-2 border rounded-sm transition-colors flex items-center gap-1.5 ${
+                mode === 'doc'
+                  ? 'border-[#F5C518] text-[#F5C518] bg-[#F5C518]/10'
+                  : 'border-white/20 text-white/45 hover:border-white/40 hover:text-white/70'
+              }`}
+            >
+              <Link2 size={10} /> Connect a doc
+            </button>
+            <button
+              onClick={() => setMode('paste')}
+              className={`font-pixel text-[8px] px-4 py-2 border rounded-sm transition-colors flex items-center gap-1.5 ${
+                mode === 'paste'
+                  ? 'border-[#F5C518] text-[#F5C518] bg-[#F5C518]/10'
+                  : 'border-white/20 text-white/45 hover:border-white/40 hover:text-white/70'
+              }`}
+            >
+              <ClipboardPaste size={10} /> Paste text
             </button>
           </div>
-          {syncError && <p className="font-pixel text-[7px] text-red-400 mt-2">{syncError}</p>}
+
+          {mode === 'doc' ? (
+            <>
+              <p className="font-pixel text-[7px] text-white/30 leading-loose mb-2">
+                Paste an &ldquo;Anyone with the link&rdquo; Google Doc URL. We read its latest text
+                on sync (no account connection needed yet).
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  value={docUrl}
+                  onChange={(e) => setDocUrl(e.target.value)}
+                  placeholder="https://docs.google.com/document/d/…"
+                  className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30"
+                />
+                <button
+                  onClick={sync}
+                  disabled={!canSync || syncing}
+                  className="shrink-0 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center gap-1.5"
+                >
+                  {syncing ? (
+                    <Loader2 size={11} className="animate-spin" />
+                  ) : synced && !isPasteSource ? (
+                    <RefreshCw size={11} />
+                  ) : (
+                    <Link2 size={11} />
+                  )}
+                  {synced && !isPasteSource ? 'Refresh' : 'Connect & sync'}
+                </button>
+              </div>
+              {syncError && <p className="font-pixel text-[7px] text-red-400 mt-2">{syncError}</p>}
+            </>
+          ) : (
+            <>
+              <p className="font-pixel text-[7px] text-white/30 leading-loose mb-2">
+                Paste or type your plan text — the review and idea check read it directly.
+              </p>
+              <textarea
+                value={planText}
+                onChange={(e) => setPlanText(e.target.value)}
+                placeholder="Paste your research plan here…"
+                rows={10}
+                className="w-full bg-[#0a1628] border border-white/20 text-white/90 text-[13px] leading-relaxed px-3 py-2.5 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 resize-y"
+              />
+              <div className="flex items-center justify-between mt-2 gap-2">
+                <span className={`font-pixel text-[7px] ${overCap ? 'text-red-400' : 'text-white/30'}`}>
+                  {textLen.toLocaleString()} / {MAX_PLAN_TEXT.toLocaleString()}
+                </span>
+                <button
+                  onClick={saveText}
+                  disabled={!canSaveText || savingText}
+                  className="shrink-0 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center gap-1.5"
+                >
+                  {savingText ? (
+                    <Loader2 size={11} className="animate-spin" />
+                  ) : (
+                    <ClipboardPaste size={11} />
+                  )}
+                  {isPasteSource ? 'Update text' : 'Save text'}
+                </button>
+              </div>
+              {textError && <p className="font-pixel text-[7px] text-red-400 mt-2">{textError}</p>}
+            </>
+          )}
+
           {synced && plan?.textPreview && (
             <div className="mt-3 px-3 py-2 bg-white/3 border border-white/10 rounded-sm">
               <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest flex items-center gap-1 mb-1">

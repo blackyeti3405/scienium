@@ -12,7 +12,9 @@ import { FeedbackPanel } from '@/components/lab/FeedbackPanel'
 import { PhaseAdvance } from '@/components/lab/PhaseAdvance'
 import { RequestAdvance } from '@/components/lab/RequestAdvance'
 import { StatusStrip, type Currency } from '@/components/lab/StatusStrip'
+import { MomentumCard } from '@/components/lab/MomentumCard'
 import { Activity, MessageSquare, Move, X } from 'lucide-react'
+import { getISOWeek, getISOWeekYear } from 'date-fns'
 import { LabCurrencyProvider, useLabCurrency } from '@/lib/labCurrency'
 import { FEATURE_COMPONENTS } from '@/lib/featureRegistry'
 import { GATEWAYS, type Gateway } from '@/lib/gateways'
@@ -83,6 +85,15 @@ const PARTICLE_ROWS: ReadonlyArray<readonly [x: number, w: number, fill: string]
   [2, 1, '#147a37'],
 ]
 
+/** localStorage key for the Momentum card's per-ISO-week dismissal (Feature F10). */
+const MOMENTUM_DISMISS_KEY = 'scienium.momentum.dismissed'
+
+/** Current ISO-week tag, e.g. "2026-W27" — same scheme as lib/notifications/compute.ts. */
+function currentIsoWeekTag(): string {
+  const now = new Date()
+  return `${getISOWeekYear(now)}-W${getISOWeek(now)}`
+}
+
 export function LabScene(props: LabSceneProps) {
   return (
     <LabCurrencyProvider initial={props.currency}>
@@ -113,6 +124,9 @@ function LabSceneContent({
   const [activityOpen, setActivityOpen] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [unresolvedCount, setUnresolvedCount] = useState(0)
+  // Momentum card (Feature F10) — default hidden until the mount effect below
+  // decides, based on whether THIS ISO week's tag is already recorded as dismissed.
+  const [momentumDismissed, setMomentumDismissed] = useState(true)
 
   // Plot state — authoritative client mirror of the DB, seeded from SSR props.
   const [economy, setEconomy] = useState<PlacedEconomy[]>(placedBuildings)
@@ -140,6 +154,30 @@ function LabSceneContent({
       })
       .catch(() => {})
   }, [])
+
+  // Momentum card dismissal is remembered client-side, keyed to the ISO week
+  // (sanctioned ephemeral UI state — not game data, no server persistence).
+  // SSR/private-mode safe: try/catch + typeof window guard.
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return
+      const stored = window.localStorage.getItem(MOMENTUM_DISMISS_KEY)
+      setMomentumDismissed(stored === currentIsoWeekTag())
+    } catch {
+      setMomentumDismissed(false)
+    }
+  }, [])
+
+  function handleDismissMomentum() {
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(MOMENTUM_DISMISS_KEY, currentIsoWeekTag())
+      }
+    } catch {
+      // best-effort; still hide the card for this session even if storage fails
+    }
+    setMomentumDismissed(true)
+  }
 
   // Auto-dismiss the toast.
   useEffect(() => {
@@ -326,6 +364,8 @@ function LabSceneContent({
 
       <div className="lab-scene__viewport">
         <TileBackground seed={seed} />
+
+        {!momentumDismissed && <MomentumCard onDismiss={handleDismissMomentum} />}
 
         <LabPlot
           labType={labType}

@@ -10,6 +10,7 @@ import { YouTubeViewer } from '@/components/discovery/YouTubeViewer'
 import { SourceReader } from '@/components/discovery/SourceReader'
 import { PapersSearch } from '@/components/discovery/PapersSearch'
 import { DiscoveryTree } from '@/components/discovery/DiscoveryTree'
+import { DiscoveryTopicList } from '@/components/discovery/DiscoveryTopicList'
 import { DiscoveryHome } from '@/components/discovery/DiscoveryHome'
 import type { Interest } from '@/components/discovery/InterestSeeds'
 import type { DiscoverySource } from '@/stores/discoveryStore'
@@ -42,6 +43,9 @@ export function DiscoveryFeature() {
     togglePendingLink,
     branchAndContinue,
     toggleStar,
+    setInterest,
+    newTreePending,
+    startNewTree,
     setNodeReflection,
     promoteSource,
     deleteSubtree,
@@ -80,6 +84,10 @@ export function DiscoveryFeature() {
 
   // Which source the left pane shows: the Wikipedia reader or the YouTube viewer.
   const [discoverySource, setDiscoverySource] = useState<DiscoverySource>('wikipedia')
+  // #11: 'explore' = the normal reader + right-panel-tree layout (unchanged).
+  // 'tree' = the full-window Discovery Tree view (large tree left, grouped
+  // topic list right) — a fourth top-level view mode, not a `discoverySource`.
+  const [view, setView] = useState<'explore' | 'tree'>('explore')
   // Papers tab: 'search' shows the results list, 'reader' shows the open paper.
   // Kept separate from currentNodeId so "← Results" returns to the list without
   // losing the tree selection (PapersSearch stays mounted → its results persist).
@@ -176,6 +184,10 @@ export function DiscoveryFeature() {
   const [interestConnectMsg, setInterestConnectMsg] = useState<string | null>(null)
   // Promote-to-Literature-Review result toast (#13).
   const [promoteMsg, setPromoteMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  // #11: transient hint pill shown right after clicking "New tree" (the
+  // `newTreePending` badge on the button itself stays until consumed; this
+  // pill just calls out what to do next, then auto-dismisses).
+  const [newTreeHint, setNewTreeHint] = useState(false)
 
   async function handlePromote(nodeId: string) {
     const node = nodes.find((n) => n.id === nodeId)
@@ -210,6 +222,15 @@ export function DiscoveryFeature() {
     const t = setTimeout(() => setPromoteMsg(null), 4000)
     return () => clearTimeout(t)
   }, [promoteMsg])
+
+  // Auto-dismiss the "New tree" hint pill (#11). The persistent "NEW TREE
+  // PENDING" badge on the button itself is the source of truth for the
+  // pending state — this pill is just a one-time nudge.
+  useEffect(() => {
+    if (!newTreeHint) return
+    const t = setTimeout(() => setNewTreeHint(false), 4000)
+    return () => clearTimeout(t)
+  }, [newTreeHint])
 
   async function addInterest(text: string) {
     try {
@@ -487,6 +508,15 @@ export function DiscoveryFeature() {
         </div>
       )}
 
+      {/* #11: "New tree" transient hint pill — bottom-center like the topic-connection
+          toast below, clear of the source-toggle header bar (it used to sit top-4 and
+          covered the Wiki/YouTube/Papers/Discovery Tree buttons). */}
+      {newTreeHint && (
+        <div className="pointer-events-none absolute bottom-16 left-1/2 z-[60] -translate-x-1/2 rounded-sm border border-[#F5C518]/50 bg-[#F5C518]/15 px-4 py-2 font-pixel text-[8px] text-[#F5C518] shadow-lg">
+          Next source you open starts a new tree
+        </div>
+      )}
+
       {/* Topic ↔ interest connection (#2) — local overlap, no LLM */}
       {interestConnectMsg && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 bg-[#0d1b2e] border border-[#F5C518]/40 rounded-sm px-4 py-3 max-w-sm w-full mx-4 flex items-start gap-3">
@@ -555,31 +585,41 @@ export function DiscoveryFeature() {
           className="flex-1 max-w-xs"
         />
 
-        {/* Source toggle: Wikipedia reader ⇄ YouTube viewer */}
+        {/* Source toggle: Wikipedia reader ⇄ YouTube viewer ⇄ Papers ⇄ #11 full-window tree */}
         <div className="flex items-center rounded-sm border border-white/15 overflow-hidden shrink-0">
           <button
-            onClick={() => setDiscoverySource('wikipedia')}
+            onClick={() => { setDiscoverySource('wikipedia'); setView('explore') }}
             className={`font-pixel text-[7px] px-2.5 py-1.5 transition-colors ${
-              discoverySource === 'wikipedia' ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
+              view === 'explore' && discoverySource === 'wikipedia' ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
             }`}
           >
             📄 Wiki
           </button>
           <button
-            onClick={() => setDiscoverySource('youtube')}
+            onClick={() => { setDiscoverySource('youtube'); setView('explore') }}
             className={`font-pixel text-[7px] px-2.5 py-1.5 transition-colors ${
-              discoverySource === 'youtube' ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
+              view === 'explore' && discoverySource === 'youtube' ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
             }`}
           >
             ▶ YouTube
           </button>
           <button
-            onClick={() => setDiscoverySource('source')}
+            onClick={() => { setDiscoverySource('source'); setView('explore') }}
             className={`font-pixel text-[7px] px-2.5 py-1.5 transition-colors ${
-              discoverySource === 'source' ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
+              view === 'explore' && discoverySource === 'source' ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
             }`}
           >
             📄 Papers
+          </button>
+          <button
+            onClick={() => setView('tree')}
+            data-testid="tree-tab"
+            aria-label="Discovery Tree tab"
+            className={`font-pixel text-[7px] px-2.5 py-1.5 transition-colors ${
+              view === 'tree' ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
+            }`}
+          >
+            🌳 Discovery Tree
           </button>
         </div>
 
@@ -588,6 +628,24 @@ export function DiscoveryFeature() {
             <span className="text-[#F5C518]">★</span> {starredNodes.length} starred
           </span>
         )}
+
+        {/* ── #11: "New tree" — the next opened/added source starts a fresh root ── */}
+        <button
+          onClick={() => {
+            startNewTree()
+            setView('explore')
+            setNewTreeHint(true)
+          }}
+          data-testid="new-tree-btn"
+          aria-label="Start a new tree"
+          className={`font-pixel text-[7px] px-2.5 py-1.5 rounded-sm border transition-colors shrink-0 ${
+            newTreePending
+              ? 'border-[#F5C518] text-[#F5C518] bg-[#F5C518]/10'
+              : 'border-[#F5C518]/40 text-[#F5C518]/70 hover:border-[#F5C518] hover:text-[#F5C518]'
+          }`}
+        >
+          {newTreePending ? '● NEW TREE PENDING' : '➕ New tree'}
+        </button>
 
         <button
           onClick={async () => {
@@ -650,6 +708,41 @@ export function DiscoveryFeature() {
       </div>
 
       {/* ── Body ── */}
+      {view === 'tree' ? (
+        // #11: full-window Discovery Tree view — large tree left, ALL topics
+        // grouped color-major/tree-minor on the right. Reads only from the
+        // store (no reader state), so a plain conditional swap is fine.
+        <div data-testid="tree-view" className="flex flex-1 overflow-hidden bg-[#0d1b2e]">
+          <div className="flex-1 overflow-hidden p-3 flex flex-col min-h-0 border-r border-white/10">
+            <p className="font-pixel text-[8px] uppercase tracking-widest text-[#F5C518] px-1 mb-2 shrink-0">
+              🌳 Discovery Tree
+            </p>
+            <div className="flex-1 min-h-0">
+              <DiscoveryTree
+                nodes={nodes}
+                currentNodeId={currentNodeId}
+                onNavigate={navigateToNode}
+                onDelete={async (nodeId) => {
+                  const target = nodes.find((n) => n.id === nodeId)
+                  const ok = await confirm({
+                    title: 'Delete node',
+                    message: `Delete “${target?.title ?? 'this node'}” and all of its children? This can’t be undone.`,
+                    confirmLabel: 'Delete',
+                    tone: 'danger',
+                  })
+                  if (ok) deleteSubtree(nodeId)
+                }}
+                onToggleStar={toggleStar}
+                onPromote={handlePromote}
+                onSetInterest={setInterest}
+              />
+            </div>
+          </div>
+          <div className="w-[320px] shrink-0 overflow-hidden">
+            <DiscoveryTopicList nodes={nodes} currentNodeId={currentNodeId} onNavigate={navigateToNode} />
+          </div>
+        </div>
+      ) : (
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── Left: Wikipedia reader, YouTube viewer, or Papers (search/reader) ── */}
@@ -732,6 +825,7 @@ export function DiscoveryFeature() {
                 }}
                 onToggleStar={toggleStar}
                 onPromote={handlePromote}
+                onSetInterest={setInterest}
               />
             </div>
           </div>
@@ -890,6 +984,7 @@ export function DiscoveryFeature() {
           )}
         </aside>
       </div>
+      )}
     </div>
   )
 }

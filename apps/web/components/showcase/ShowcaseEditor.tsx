@@ -23,6 +23,7 @@ import {
   PenLine,
   Film,
   Paperclip,
+  Printer,
 } from 'lucide-react'
 import {
   PRIVACY_OPTIONS,
@@ -259,6 +260,16 @@ export function ShowcaseEditor() {
         </div>
         <div className="sc-topbar__right">
           {notice && <span className="sc-notice font-pixel">✓ {notice}</span>}
+          {!!sc && !!publicUrl && (
+            <a
+              className="sc-ghost font-pixel"
+              href={`${publicUrl}?print=1`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Printer size={11} /> Print one-pager
+            </a>
+          )}
           {sc?.published && publicUrl && sc.moderationStatus === 'approved' && (
             <>
               <button

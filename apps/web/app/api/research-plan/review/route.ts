@@ -33,7 +33,10 @@ export async function POST(req: NextRequest) {
 
   const plan = await db.researchPlan.findUnique({ where: { teamId: ctx.teamId } })
   if (!plan?.lastSyncedText) {
-    return NextResponse.json({ error: 'Connect and sync a Google Doc first' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'Add your plan first — connect a Google Doc or paste your text' },
+      { status: 400 },
+    )
   }
   if (!plan.projectType || !plan.projectSubtype) {
     return NextResponse.json({ error: 'Pick a project type and subtype first' }, { status: 400 })
@@ -123,7 +126,7 @@ export async function POST(req: NextRequest) {
             { type: 'text', text: REVIEW_INSTRUCTIONS(rubric, typeLabel, subtypeLabel) },
             {
               type: 'text',
-              text: `RESEARCH PLAN (from the team's Google Doc):\n---\n${planText}`,
+              text: `RESEARCH PLAN:\n---\n${planText}`,
               cache_control: { type: 'ephemeral' },
             },
           ],

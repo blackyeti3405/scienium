@@ -16,6 +16,7 @@ import {
   Trash2,
   Check,
   Sparkles,
+  Link2,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -62,6 +63,14 @@ function getStages(labType: string | null): string[] {
 
 interface Member { userId: string; name: string }
 
+interface LogReferenceChip {
+  id: string
+  entryNumber: number
+  stage: string | null
+  createdAt: string
+  createdByName: string
+}
+
 interface LogEntry {
   id: string
   entryNumber: number
@@ -74,6 +83,8 @@ interface LogEntry {
   createdBy: { id: string; name: string }
   lastEditedBy: { id: string; name: string } | null
   lastEditedAt: string | null
+  links: LogReferenceChip[]
+  backlinks: LogReferenceChip[]
 }
 
 interface FailureFollowupData {
@@ -364,6 +375,160 @@ function ProjectLogForm({
   )
 }
 
+// ─── Reference chips + "Link an entry" picker (F6) ─────────────────────────────
+
+/** Formats a reference chip label: "#3 · Data Collection", falling back to the date if no stage. */
+function chipLabel(ref: LogReferenceChip): string {
+  return `#${ref.entryNumber} · ${ref.stage ?? formatDate(ref.createdAt)}`
+}
+
+function ReferenceChips({
+  title,
+  refs,
+  onRemove,
+  testId,
+}: {
+  title: string
+  refs: LogReferenceChip[]
+  onRemove?: (targetId: string) => void
+  testId: string
+}) {
+  if (refs.length === 0) return null
+  const muted = !onRemove
+  return (
+    <div className="mt-3" data-testid={testId}>
+      <span className={`font-pixel text-[6px] uppercase tracking-widest ${muted ? 'text-white/35' : 'text-white/40'}`}>
+        {title}
+      </span>
+      <div className="flex flex-wrap gap-1.5 mt-1.5">
+        {refs.map((ref) => (
+          <span
+            key={ref.id}
+            data-testid={`${testId}-chip`}
+            data-entry-number={ref.entryNumber}
+            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-pixel text-[6px] ${
+              muted
+                ? 'border-white/10 text-white/35 bg-white/[0.02]'
+                : 'border-[#F5C518]/30 text-[#F5C518]/85 bg-[#F5C518]/[0.06]'
+            }`}
+          >
+            {chipLabel(ref)}
+            {onRemove && (
+              <button
+                type="button"
+                onClick={() => onRemove(ref.id)}
+                className="ml-0.5 -mr-0.5 opacity-60 hover:opacity-100"
+                title="Remove link"
+                data-testid={`${testId}-remove`}
+              >
+                <X size={9} />
+              </button>
+            )}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function LinkEntryPicker({
+  entry,
+  allEntries,
+  onAdd,
+}: {
+  entry: LogEntry
+  allEntries: LogEntry[]
+  onAdd: (fromId: string, reference: LogReferenceChip) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [selected, setSelected] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const linkedIds = new Set(entry.links.map((l) => l.id))
+  const options = allEntries.filter((e) => e.id !== entry.id && !linkedIds.has(e.id))
+
+  async function submit() {
+    if (!selected) return
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/project-log/${entry.id}/references`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetId: selected }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed to link entry')
+      onAdd(entry.id, data.reference)
+      setSelected('')
+      setOpen(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to link entry')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-3 inline-flex items-center gap-1.5 font-pixel text-[6px] text-white/40 hover:text-[#F5C518] transition-colors"
+        data-testid="link-entry-open"
+      >
+        <Link2 size={10} /> Link entry
+      </button>
+    )
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-white/10" data-testid="link-entry-picker">
+      <div className="flex items-center gap-2">
+        <div className="ops-select-wrap flex-1">
+          <select
+            value={selected}
+            onChange={(e) => setSelected(e.target.value)}
+            className="ops-select"
+            data-testid="link-entry-select"
+          >
+            <option value="">— Select an entry to link —</option>
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                #{o.entryNumber} — {o.stage ?? formatDate(o.createdAt)}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={13} className="ops-select-icon" />
+        </div>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={busy || !selected}
+          className="ops-submit-btn"
+          data-testid="link-entry-submit"
+        >
+          {busy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setOpen(false); setError(null); setSelected('') }}
+          className="ops-ghost-btn font-pixel"
+        >
+          Cancel
+        </button>
+      </div>
+      {error && (
+        <div className="ops-error mt-2">
+          <AlertTriangle size={11} className="shrink-0" />
+          <span className="font-pixel text-[7px]">{error}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Project Log Tab ───────────────────────────────────────────────────────────
 
 function ProjectLogTab() {
@@ -379,7 +544,11 @@ function ProjectLogTab() {
     fetch('/api/project-log')
       .then((r) => r.json())
       .then((d) => {
-        if (Array.isArray(d.entries)) setEntries(d.entries)
+        if (Array.isArray(d.entries)) {
+          // Default links/backlinks to [] — defensive against older/partial
+          // responses (safety per plan step 1).
+          setEntries(d.entries.map((e: LogEntry) => ({ ...e, links: e.links ?? [], backlinks: e.backlinks ?? [] })))
+        }
         if (Array.isArray(d.members)) setMembers(d.members)
         if (d.labType !== undefined) setLabType(d.labType)
       })
@@ -388,11 +557,38 @@ function ProjectLogTab() {
   }, [])
 
   function handleSaved(entry: LogEntry, mode: 'create' | 'edit') {
+    // POST/PATCH don't return links/backlinks (a freshly created entry has
+    // none; an edited entry's existing links are preserved below).
     if (mode === 'create') {
-      setEntries((prev) => [entry, ...prev])
+      setEntries((prev) => [{ ...entry, links: [], backlinks: [] }, ...prev])
     } else {
-      setEntries((prev) => prev.map((e) => (e.id === entry.id ? { ...entry, entryNumber: e.entryNumber } : e)))
+      setEntries((prev) =>
+        prev.map((e) => (e.id === entry.id ? { ...entry, entryNumber: e.entryNumber, links: e.links, backlinks: e.backlinks } : e)),
+      )
       setEditingId(null)
+    }
+  }
+
+  // Add/remove a reference locally (immutable update of the owning entry's
+  // `links`). `backlinks` on the OTHER entry are derived server-side and only
+  // refresh on next full load — acceptable for v1 per plan step 5.
+  function handleAddReference(fromId: string, reference: LogReferenceChip) {
+    setEntries((prev) =>
+      prev.map((e) => (e.id === fromId ? { ...e, links: [...e.links, reference] } : e)),
+    )
+  }
+
+  async function handleRemoveReference(fromId: string, targetId: string) {
+    try {
+      const res = await fetch(`/api/project-log/${fromId}/references?targetId=${encodeURIComponent(targetId)}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error()
+      setEntries((prev) =>
+        prev.map((e) => (e.id === fromId ? { ...e, links: e.links.filter((l) => l.id !== targetId) } : e)),
+      )
+    } catch {
+      await alert({ title: 'Remove link failed', message: 'Could not remove the link. Please try again.' })
     }
   }
 
@@ -529,6 +725,18 @@ function ProjectLogTab() {
                       </span>
                       <p className="text-sm text-[#F5C518]/80 leading-relaxed mt-1">{e.nextSteps}</p>
                     </div>
+
+                    <ReferenceChips
+                      title="Linked entries"
+                      refs={e.links}
+                      onRemove={(targetId) => handleRemoveReference(e.id, targetId)}
+                      testId="log-links"
+                    />
+                    <ReferenceChips title="Referenced by" refs={e.backlinks} testId="log-backlinks" />
+
+                    {entries.length > 1 && (
+                      <LinkEntryPicker entry={e} allEntries={entries} onAdd={handleAddReference} />
+                    )}
                   </div>
                 </div>
               )

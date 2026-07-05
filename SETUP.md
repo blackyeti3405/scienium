@@ -350,6 +350,48 @@ else goes through the gate.
 
 ---
 
+## E2E tests (Playwright)
+
+The E2E suite (`apps/web/e2e/`) drives a real logged-in browser against the dev
+DB using three Clerk test accounts — set `E2E_LEADER_*`, `E2E_STUDENT_*`, and
+`E2E_TEACHER_*` in `apps/web/.env.local` (see `.env.example`).
+
+Beyond the accounts, the suite needs a **fixture graph** in the dev DB that the
+app never creates on its own: an "E2E School" + "E2E Class" owned by the
+teacher account, the "E2E Test Lab" team containing the leader/student, and the
+students' class/school links (teacher-flow specs resolve scope through these
+rows). Seed or repair all of it with:
+
+```bash
+pnpm --filter web seed:e2e
+```
+
+Idempotent — it prints each node as CREATED/FOUND/UPDATED and a second run
+performs zero writes. The three user rows themselves are created by the app on
+first sign-in; if the script reports them missing, run
+`pnpm --filter web exec playwright test --project=setup` once and re-run.
+
+### Faster, less flaky E2E: run against local Postgres
+
+The remote Supabase dev DB adds seconds of latency to every mutation under
+`next dev`, which both slows the suite and causes timing flakes. For E2E runs,
+a local database is ~10× faster:
+
+```bash
+docker compose -f infra/docker-compose.yml up -d postgres
+# point the app at it for this shell only (Clerk stays hosted — auth is unchanged):
+export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/scienium
+export DIRECT_URL=$DATABASE_URL
+pnpm --filter web exec prisma migrate deploy   # apply all migrations
+pnpm --filter web seed:e2e                     # fixture graph (users appear on first sign-in)
+pnpm --filter web test:e2e
+```
+
+(Adjust the connection string to match `infra/docker-compose.yml`. The shared
+Supabase dev DB remains the default for day-to-day `pnpm dev`.)
+
+---
+
 ## Quick reference
 
 ```bash

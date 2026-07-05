@@ -16,24 +16,67 @@ const LEVEL_MAP: Record<SeedFairLevel, FairLevel> = {
 }
 
 /**
- * Idempotently upsert the seed dataset. Upserts each Fair by its stable
- * `seedKey` and seeds one confirmed FairEvent per fair if none exists yet.
+ * Idempotently mirror the seed dataset into Fair/FairEvent — batched, so a full
+ * top-up is a handful of round trips instead of the old per-fair upsert loop
+ * (~800 sequential queries against the remote DB; it hung /api/fairs/match for
+ * 2+ minutes whenever `seeded < FAIRS.length`).
  *
- * When the dataset grows (FAIRS.length > seeded count), new fairs are inserted.
- * The migration 20260619010000_reseed_isef_fairs clears the old 56-entry dataset
- * before this runs, so there are no duplicate state fairs from the old keys.
+ * Shape:
+ *  - Fast path: one count query; fully seeded → return. Self-heals after a
+ *    dataset regen (count drops below the new length → one fast top-up).
+ *  - Missing fairs are inserted per level (international → state → regional) so
+ *    a parent's id exists before its children reference it. `createMany` with
+ *    `skipDuplicates` is race-safe across processes via the `seedKey` unique.
+ *  - Existing fairs get targeted updates only when their dataset fields
+ *    actually drifted (normally zero; nonzero only after a fall regen).
+ *  - Events are created only where the (fairId, year) pair is missing — never
+ *    updated, because /api/fairs/[id]/sync-deadlines writes scraped corrections
+ *    into these rows and the static dataset must not clobber them. The
+ *    (fairId, year) unique index (20260704051500) makes the createMany
+ *    stampede-safe; the same migration deduped historical duplicate rows.
+ *  - In-process callers share one seeding run via a module-level single-flight
+ *    promise, so a request stampede can't run the loop twice in parallel.
  */
-export async function ensureFairsSeeded(): Promise<void> {
+let seedInFlight: Promise<void> | null = null
+
+export function ensureFairsSeeded(): Promise<void> {
+  if (!seedInFlight) {
+    seedInFlight = seedFairsBatched().finally(() => {
+      seedInFlight = null
+    })
+  }
+  return seedInFlight
+}
+
+const SEED_LEVELS = ['international', 'state', 'regional'] as const
+
+async function seedFairsBatched(): Promise<void> {
   const seeded = await db.fair.count({ where: { seedKey: { not: null } } })
   if (seeded >= FAIRS.length) return
 
-  // Ordered isef → state → regional, so a parent always exists before its child.
-  const idByKey = new Map<string, string>()
-  for (const f of FAIRS) {
-    const parentFairId = f.parentKey ? idByKey.get(f.parentKey) ?? null : null
-    const fair = await db.fair.upsert({
-      where: { seedKey: f.key },
-      create: {
+  const existing = await db.fair.findMany({
+    where: { seedKey: { not: null } },
+    select: {
+      id: true,
+      seedKey: true,
+      name: true,
+      level: true,
+      state: true,
+      websiteUrl: true,
+      latitude: true,
+      longitude: true,
+      parentFairId: true,
+    },
+  })
+  const rowByKey = new Map(existing.map((f) => [f.seedKey as string, f]))
+  const idByKey = new Map(existing.map((f) => [f.seedKey as string, f.id]))
+
+  // Insert missing fairs level by level so parent ids resolve before children.
+  for (const level of SEED_LEVELS) {
+    const missing = FAIRS.filter((f) => f.level === level && !idByKey.has(f.key))
+    if (missing.length === 0) continue
+    await db.fair.createMany({
+      data: missing.map((f) => ({
         seedKey: f.key,
         name: f.name,
         level: LEVEL_MAP[f.level],
@@ -41,37 +84,74 @@ export async function ensureFairsSeeded(): Promise<void> {
         websiteUrl: f.websiteUrl,
         latitude: f.latitude,
         longitude: f.longitude,
-        parentFairId,
-      },
-      update: {
-        name: f.name,
-        level: LEVEL_MAP[f.level],
-        state: f.state,
-        websiteUrl: f.websiteUrl,
-        latitude: f.latitude,
-        longitude: f.longitude,
-        parentFairId,
-      },
-      select: { id: true },
+        parentFairId: f.parentKey ? idByKey.get(f.parentKey) ?? null : null,
+      })),
+      skipDuplicates: true,
     })
-    idByKey.set(f.key, fair.id)
+    const created = await db.fair.findMany({
+      where: { seedKey: { in: missing.map((f) => f.key) } },
+      select: { id: true, seedKey: true },
+    })
+    for (const f of created) idByKey.set(f.seedKey as string, f.id)
+  }
 
-    const existing = await db.fairEvent.findFirst({
-      where: { fairId: fair.id, year: f.year },
-      select: { id: true },
-    })
-    if (!existing) {
-      await db.fairEvent.create({
-        data: {
-          fairId: fair.id,
-          year: f.year,
-          eventDate: f.eventDate ? new Date(f.eventDate) : null,
-          registrationDeadline: f.registrationDeadline ? new Date(f.registrationDeadline) : null,
-          abstractDeadline: f.abstractDeadline ? new Date(f.abstractDeadline) : null,
-          status: f.status === 'confirmed' ? 'confirmed' : 'estimated',
-        },
-      })
+  // Targeted updates for rows whose dataset fields drifted (rare: fall regen).
+  const updates: Prisma.PrismaPromise<unknown>[] = []
+  for (const f of FAIRS) {
+    const row = rowByKey.get(f.key)
+    if (!row) continue
+    const parentFairId = f.parentKey ? idByKey.get(f.parentKey) ?? null : null
+    const drifted =
+      row.name !== f.name ||
+      row.level !== LEVEL_MAP[f.level] ||
+      row.state !== f.state ||
+      row.websiteUrl !== f.websiteUrl ||
+      row.latitude !== f.latitude ||
+      row.longitude !== f.longitude ||
+      row.parentFairId !== parentFairId
+    if (drifted) {
+      updates.push(
+        db.fair.update({
+          where: { id: row.id },
+          data: {
+            name: f.name,
+            level: LEVEL_MAP[f.level],
+            state: f.state,
+            websiteUrl: f.websiteUrl,
+            latitude: f.latitude,
+            longitude: f.longitude,
+            parentFairId,
+          },
+        }),
+      )
     }
+  }
+  if (updates.length > 0) await db.$transaction(updates)
+
+  // Create only the missing (fairId, year) events; never update existing rows
+  // (sync-deadlines corrections live there).
+  const allIds = [...idByKey.values()]
+  const events = await db.fairEvent.findMany({
+    where: { fairId: { in: allIds } },
+    select: { fairId: true, year: true },
+  })
+  const haveEvent = new Set(events.map((e) => `${e.fairId}:${e.year}`))
+  const newEvents = FAIRS.flatMap((f) => {
+    const fairId = idByKey.get(f.key)
+    if (!fairId || haveEvent.has(`${fairId}:${f.year}`)) return []
+    return [
+      {
+        fairId,
+        year: f.year,
+        eventDate: f.eventDate ? new Date(f.eventDate) : null,
+        registrationDeadline: f.registrationDeadline ? new Date(f.registrationDeadline) : null,
+        abstractDeadline: f.abstractDeadline ? new Date(f.abstractDeadline) : null,
+        status: f.status === 'confirmed' ? ('confirmed' as const) : ('estimated' as const),
+      },
+    ]
+  })
+  if (newEvents.length > 0) {
+    await db.fairEvent.createMany({ data: newEvents, skipDuplicates: true })
   }
 }
 

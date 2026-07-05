@@ -9,7 +9,9 @@ interface HistoryItem {
   body: string
   reflectionQuestion: string
   response: string
+  kpAwarded: number
   publishedDate: string
+  createdAt: string
 }
 
 interface DispatchData {
@@ -175,9 +177,14 @@ export function FieldDispatchTab() {
                   })
                   return (
                     <div key={item.id} className="border border-white/10 bg-white/[0.02] p-4 space-y-3">
-                      <span className="font-pixel text-[8px] text-[#F5C518]/70 uppercase tracking-widest">
-                        {dateLabel}
-                      </span>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-pixel text-[8px] text-[#F5C518]/70 uppercase tracking-widest">
+                          {dateLabel}
+                        </span>
+                        <span className="font-pixel text-[8px] bg-[#F5C518]/15 text-[#F5C518] border border-[#F5C518]/40 px-2 py-0.5 leading-none">
+                          +{item.kpAwarded} KP
+                        </span>
+                      </div>
                       <p className="text-sm leading-relaxed text-white/75">{item.body}</p>
                       <div className="space-y-1">
                         <span className="font-pixel text-[8px] text-white/35 uppercase tracking-widest">

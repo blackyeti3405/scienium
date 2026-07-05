@@ -17,6 +17,12 @@ const HISTORY_LIMIT = 30
  * lab type is assigned (end of literature_review). Before that we report
  * `available: false` and the tab shows a friendly locked state.
  *
+ * `history` items have the shape
+ * `{ id, body, reflectionQuestion, response, kpAwarded, publishedDate, createdAt }`,
+ * most-recent-first, capped at `HISTORY_LIMIT`, excluding today's dispatch (the
+ * primary card). `kpAwarded` is read straight off the persisted
+ * `FieldDispatchResponse` row — no recompute, no extra LLM/DB cost.
+ *
  * Security: history is scoped to `userId: ctx.dbUserId` AND
  * `content.labType: ctx.labType` — no other student's or other lab type's
  * responses can appear in the payload.
@@ -45,6 +51,7 @@ export async function GET(req: NextRequest) {
     select: {
       response: true,
       createdAt: true,
+      kpAwarded: true,
       content: {
         select: {
           id: true,
@@ -69,7 +76,9 @@ export async function GET(req: NextRequest) {
       body: r.content.body,
       reflectionQuestion: r.content.reflectionQuestion,
       response: r.response,
+      kpAwarded: r.kpAwarded,
       publishedDate: r.content.publishedDate.toISOString(),
+      createdAt: r.createdAt.toISOString(),
     }))
 
   return NextResponse.json({

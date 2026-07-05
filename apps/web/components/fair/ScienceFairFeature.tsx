@@ -10,6 +10,7 @@ import {
   Award,
   AlertTriangle,
   ClipboardList,
+  ClipboardCheck,
   LayoutGrid,
   Bell,
 } from 'lucide-react'
@@ -18,8 +19,9 @@ import { ISEF_RUBRIC, ISEF_BOARD_GUIDANCE, ISEF_EMPHASIS } from '@/lib/fairs/ise
 import type { FairMatch, FairView } from '@/lib/fairs/match'
 import { FormsChecklist } from './FormsChecklist'
 import { CategoryBrowser } from './CategoryBrowser'
+import { RubricSelfCheck } from './RubricSelfCheck'
 
-type Tab = 'overview' | 'forms' | 'categories'
+type Tab = 'overview' | 'forms' | 'categories' | 'selfcheck'
 
 interface MatchResponse {
   location: { zip: string | null; state: string | null }
@@ -110,6 +112,7 @@ export function ScienceFairFeature() {
             { key: 'overview', label: 'Overview', icon: <CalendarClock size={10} /> },
             { key: 'forms', label: 'Forms', icon: <ClipboardList size={10} /> },
             { key: 'categories', label: 'Categories', icon: <LayoutGrid size={10} /> },
+            { key: 'selfcheck', label: 'Self-check', icon: <ClipboardCheck size={10} /> },
           ] as const
         ).map(({ key, label, icon }) => (
           <button
@@ -165,7 +168,30 @@ export function ScienceFairFeature() {
       )}
 
       {/* Tab content */}
-      {loading ? (
+      {/*
+        Self-check is checked FIRST, ahead of `loading`/`error`. RubricSelfCheck
+        owns its own independent fetch/loading/error state (GET
+        /api/rubric/self-assessment) and has no dependency whatsoever on this
+        component's `data`/`loading`/`error`, which only describe the Overview
+        tab's `/api/fairs/match` load. Gating it behind that unrelated fetch
+        (as `forms`/`categories` still do below, pre-existing/out of scope)
+        meant Self-check could never mount — or fetch, or render — while the
+        Overview fetch was pending, PRODUCTION-OBSERVED to actually hang for
+        minutes (a separate, pre-existing performance issue in
+        lib/fairs/match.ts's fair-reseeding loop — 266 fairs vs. only 70
+        currently seeded means ensureFairsSeeded() re-runs its full ~800
+        sequential-round-trip upsert loop on every call instead of
+        short-circuiting; see the changes report). This fix does not touch
+        that route or FormsChecklist/CategoryBrowser (both out of scope) — it
+        only decouples the mount ordering for the tab this feature owns, so
+        Self-check mounts and fetches the instant its tab is selected, exactly
+        like the standalone /fair-hub/rubric route.
+      */}
+      {tab === 'selfcheck' ? (
+        <div className="flex-1 overflow-y-auto">
+          <RubricSelfCheck />
+        </div>
+      ) : loading ? (
         <div className="flex-1 flex items-center justify-center text-white/40">
           <Loader2 size={20} className="animate-spin" />
         </div>

@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
 import { auth } from '@clerk/nextjs/server'
-import { Github, Paperclip, ExternalLink, Eye } from 'lucide-react'
+import { Github, Paperclip, ExternalLink, Eye, Printer } from 'lucide-react'
 import { db } from '@/lib/db'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
 import {
@@ -12,9 +12,11 @@ import {
   type PrivacyLevel,
 } from '@/lib/showcase'
 import { viewFingerprint } from '@/lib/showcase-server'
+import { PrintButton } from '@/components/showcase/PrintButton'
 
 interface Props {
   params: { slug: string }
+  searchParams: { print?: string }
 }
 
 async function resolveViewer(): Promise<ShowcaseViewer | null> {
@@ -84,16 +86,22 @@ function toForView(sc: {
   }
 }
 
-export default async function PublicShowcasePage({ params }: Props) {
+export default async function PublicShowcasePage({ params, searchParams }: Props) {
   const sc = await loadShowcase(params.slug)
   const viewer = await resolveViewer()
 
   if (!sc || !canViewShowcase(toForView(sc), viewer)) notFound()
 
+  // `?print=1` only ever selects a layout — the authorization check above runs
+  // first and identically either way, so the flag can never leak a private or
+  // unpublished showcase.
+  const printMode = searchParams?.print === '1'
+
   // Record a view (deduped per visitor per day; never stores a raw IP). Skip the
-  // owning team's own visits so the count reflects real audience.
+  // owning team's own visits so the count reflects real audience, and skip print
+  // renders entirely (printing is not audience traffic).
   const isOwner = !!viewer && viewer.teamIds.includes(sc.teamId)
-  if (!isOwner) {
+  if (!printMode && !isOwner) {
     try {
       const h = headers()
       const ip = (h.get('x-forwarded-for')?.split(',')[0] ?? h.get('x-real-ip') ?? 'unknown').trim()
@@ -125,6 +133,34 @@ export default async function PublicShowcasePage({ params }: Props) {
   const videoEmbed = embedOf(video)
   const headline = sc.shortTitle || sc.title
 
+  // The Works-Cited bibliography (app/api/citations/export/route.ts) is stored as
+  // a `supplement` asset whose metadata carries `kind: 'works_cited'` + the full
+  // text — inline that text on the one-pager rather than only linking to it.
+  const worksCited = supplements
+    .map((s) =>
+      typeof s.metadataJson === 'object' && s.metadataJson
+        ? (s.metadataJson as { kind?: string; text?: string })
+        : null,
+    )
+    .find((m) => m?.kind === 'works_cited')?.text ?? null
+
+  if (printMode) {
+    return (
+      <ShowcaseOnePager
+        sc={sc}
+        headline={headline}
+        labType={labType}
+        quad={quad}
+        video={video}
+        repo={repo}
+        supplements={supplements}
+        worksCited={worksCited}
+        assetUrl={assetUrl}
+        isPdf={isPdf}
+      />
+    )
+  }
+
   return (
     <article className="sc-show">
       <header className="sc-show__hero">
@@ -139,6 +175,10 @@ export default async function PublicShowcasePage({ params }: Props) {
           <span className="inline-flex items-center gap-1">
             <Eye size={13} /> {sc._count.views.toLocaleString()} views
           </span>
+          <span className="sc-show__dot">·</span>
+          <a href="?print=1" className="sc-show__printlink">
+            <Printer size={12} /> Print one-pager
+          </a>
         </div>
       </header>
 
@@ -228,6 +268,132 @@ export default async function PublicShowcasePage({ params }: Props) {
               <ResourceLink key={s.id} asset={s} icon={<Paperclip size={16} />} fallback="Supplemental information" />
             ))}
           </div>
+        </section>
+      )}
+    </article>
+  )
+}
+
+type OnePagerAsset = { id: string; fileUrl: string | null; metadataJson: unknown }
+
+/**
+ * Compact single-page summary rendered under `?print=1`, laid out for the
+ * browser's native print/Save-as-PDF (no PDF library, no server render). The
+ * privacy gate above (`canViewShowcase`) already ran identically for this
+ * branch — this component is a pure read/render of already-authorized data.
+ */
+function ShowcaseOnePager({
+  sc,
+  headline,
+  labType,
+  quad,
+  video,
+  repo,
+  supplements,
+  worksCited,
+  assetUrl,
+  isPdf,
+}: {
+  sc: { slug: string; shortTitle: string; title: string; abstract: string; team: { name: string } }
+  headline: string
+  labType: LabType | null
+  quad?: OnePagerAsset
+  video?: OnePagerAsset
+  repo?: OnePagerAsset
+  supplements: OnePagerAsset[]
+  worksCited: string | null
+  assetUrl: (id: string) => string
+  isPdf: (fileUrl: string | null) => boolean
+}) {
+  const linkUrl = (a?: OnePagerAsset) =>
+    a && typeof a.metadataJson === 'object' && a.metadataJson
+      ? (a.metadataJson as { url?: string }).url
+      : undefined
+  const linkLabel = (a?: OnePagerAsset, fallback?: string) =>
+    (a && typeof a.metadataJson === 'object' && a.metadataJson
+      ? (a.metadataJson as { label?: string }).label
+      : undefined) || fallback
+
+  const citedSupplements = supplements.filter((s) => {
+    const meta = typeof s.metadataJson === 'object' && s.metadataJson ? (s.metadataJson as { kind?: string }) : null
+    return meta?.kind !== 'works_cited'
+  })
+
+  const links: { label: string; url: string }[] = []
+  const videoUrl = linkUrl(video)
+  if (videoUrl) links.push({ label: 'Project video', url: videoUrl })
+  const repoUrl = linkUrl(repo)
+  if (repoUrl) links.push({ label: 'Code repo', url: repoUrl })
+  for (const s of citedSupplements) {
+    const url = linkUrl(s)
+    if (url) links.push({ label: linkLabel(s, 'Supplemental information') as string, url })
+  }
+
+  return (
+    <article className="sc-onepager" data-print-onepager>
+      <div className="sc-onepager__actions" data-print-hide>
+        <PrintButton />
+        <a href={`/showcase/${sc.slug}`} className="sc-ghost font-pixel">
+          Back to showcase
+        </a>
+      </div>
+
+      <header className="sc-onepager__header">
+        <h1 className="sc-onepager__title">{headline}</h1>
+        {sc.shortTitle && sc.title && sc.title !== sc.shortTitle && (
+          <p className="sc-onepager__fulltitle">{sc.title}</p>
+        )}
+        <p className="sc-onepager__meta">
+          by {sc.team.name}
+          {labType && <span className="font-pixel"> · {LAB_TYPE_LABELS[labType]}</span>}
+        </p>
+      </header>
+
+      {quad && (
+        <div className="sc-onepager__quad">
+          {isPdf(quad.fileUrl) ? (
+            <a
+              href={assetUrl(quad.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-onepager-quad="link"
+              className="sc-onepager__quadlink"
+            >
+              View quad chart (PDF)
+            </a>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={assetUrl(quad.id)}
+              alt={`${headline} quad chart`}
+              data-onepager-quad="img"
+            />
+          )}
+        </div>
+      )}
+
+      <section className="sc-onepager__section">
+        <h2 className="sc-onepager__h2 font-pixel">Abstract</h2>
+        <p className="sc-onepager__abstract">{sc.abstract}</p>
+      </section>
+
+      {links.length > 0 && (
+        <section className="sc-onepager__section">
+          <h2 className="sc-onepager__h2 font-pixel">Links</h2>
+          <ul className="sc-onepager__links">
+            {links.map((l, i) => (
+              <li key={i}>
+                <span className="sc-onepager__linklabel">{l.label}:</span> {l.url}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {worksCited && (
+        <section className="sc-onepager__cited">
+          <h2 className="sc-onepager__h2 font-pixel">Works Cited</h2>
+          <p className="sc-onepager__citedtext">{worksCited}</p>
         </section>
       )}
     </article>

@@ -200,6 +200,11 @@
 .notif-bell__item:hover { background: rgba(255, 255, 255, 0.04); }
 .notif-bell__item--unread { background: rgba(245, 197, 24, 0.06); }
 .notif-bell__item-title { font-size: 12px; color: #fff; font-weight: 500; }
+.notif-bell__item-kind {
+  font-size: 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
 .notif-bell__item-body { font-size: 11px; color: rgba(255, 255, 255, 0.55); line-height: 1.4; }
 
 /* ── Phase-advance affordance (literature gate) ─────────────────────────────── */
@@ -459,6 +464,19 @@
   border-radius: 3px;
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* Momentum recap card (Feature F10) — pinned top-left of the viewport, below
+   the status strip (which sits outside this container) and clear of the
+   centred .plot-banner, the bottom-right SHOP/ARRANGE cluster, and the
+   bottom-left LOG/FEEDBACK FABs. All colour/border/font styling lives in the
+   component's Tailwind classes (matches FeedbackPanel); this rule is anchoring
+   only, mirroring how .activity-fab/.shop-button are positioned. */
+.momentum-card {
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  z-index: 3;
 }
 
 /* Delete affordance — shown in ARRANGE mode while an economy building is picked up.
@@ -1806,6 +1824,140 @@
 .ops-md p:first-child { margin-top: 0; }
 .ops-md p:last-child { margin-bottom: 0; }
 
+/* ── Stats Guide (F12) — code/output blocks in the FAQ boxes ─────────────── */
+/* Tailwind utilities handle everything else (search input, pills, badges);
+   only the horizontally-scrollable monospace block needs a dedicated rule. */
+.stats-guide-code {
+  background: #071120;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 12px;
+  overflow-x: auto;
+  white-space: pre;
+  font-family: 'SF Mono', 'Menlo', 'Courier New', monospace;
+}
+.stats-guide-code--output { background: rgba(154, 230, 180, 0.05); }
+
+/* ── Stats Guide (F12/rework-3) — "THE FORMULA" block ─────────────────────── */
+/* Slightly larger, serif-leaning monospace so Unicode math glyphs (Σ √ x̄ β χ²)
+   read like a textbook equation rather than a code snippet. Regular (non-pixel)
+   font per the "content in a readable font" rule — only the section label above
+   it uses font-pixel. */
+.stats-guide-formula {
+  background: #071120;
+  border: 1px solid rgba(245, 197, 24, 0.18);
+  padding: 12px 14px;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: 'Cambria', 'Georgia', 'SF Mono', serif;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: #ffe9a8;
+}
+
+/* ── Stats Guide (F12/rework-3) — "WHAT EACH PART MEANS" breakdown ────────── */
+/* A compact term -> meaning definition list, one row per formula symbol. */
+.stats-guide-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+.stats-guide-breakdown__row {
+  display: grid;
+  grid-template-columns: minmax(70px, max-content) 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+.stats-guide-breakdown__term {
+  font-family: 'Cambria', 'Georgia', 'SF Mono', serif;
+  font-size: 13px;
+  color: #ffe9a8;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.stats-guide-breakdown__meaning {
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
+}
+
+/* ── Stats Guide (F12) — "THE DATA" CSV table ─────────────────────────────── */
+/* Deliberately a real <table>, not another <pre>, so the sample dataset reads
+   as a genuine data grid distinct from the code/output monospace blocks. */
+.stats-guide-csv {
+  border: 1px solid rgba(245, 197, 24, 0.18);
+  background: rgba(245, 197, 24, 0.03);
+}
+.stats-guide-csv__label {
+  font-size: 6px;
+  color: rgba(245, 197, 24, 0.55);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  padding: 6px 10px 0;
+}
+.stats-guide-csv__scroll { overflow-x: auto; padding: 6px 10px 10px; }
+.stats-guide-csv__table {
+  border-collapse: collapse;
+  font-family: 'SF Mono', 'Menlo', 'Courier New', monospace;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.stats-guide-csv__table th,
+.stats-guide-csv__table td {
+  padding: 3px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.stats-guide-csv__table th {
+  color: rgba(245, 197, 24, 0.75);
+  font-weight: 600;
+  border-bottom: 1px solid rgba(245, 197, 24, 0.25);
+}
+.stats-guide-csv__table td { color: rgba(255, 255, 255, 0.75); }
+.stats-guide-csv__table tr:last-child td { border-bottom: none; }
+
+/* ── Charts Guide (F13) / Plot Guide (F14) — inline example SVG container ── */
+/* Every exampleSvg is a matplotlib-rendered, viewBox-sized SVG (some carry
+   their own width/height pt attrs) — the `svg { width; height }` rule below
+   overrides those attrs via CSS so every chart/plot fills the wrapper at a
+   readable, capped size regardless of its original render dimensions. */
+.charts-guide-svg,
+.plot-guide-svg {
+  background: #071120;
+  border: 1px solid rgba(245, 197, 24, 0.18);
+  padding: 10px;
+  max-width: 420px;
+}
+.charts-guide-svg svg,
+.plot-guide-svg svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* ── Charts Guide / Plot Guide — "Data needed" bullet list ─────────────── */
+/* dataNeeded is a structured { name, unit }[] — rendered as a plain bullet
+   list, one line per item, name bolded and unit trailing after an em dash. */
+.charts-guide-data-needed,
+.plot-guide-data-needed {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.7);
+}
+.charts-guide-data-needed li,
+.plot-guide-data-needed li {
+  margin-bottom: 2px;
+}
+.charts-guide-data-needed b,
+.plot-guide-data-needed b {
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 600;
+}
+
 /* ══ Buildings shop: clearance gating + purchase states ════════════════════ */
 .shop-panel__clearance {
   margin-left: 12px;
@@ -2514,3 +2666,99 @@
 }
 .sc-show__openpdf:hover { color: #a9f7ec; }
 .sc-show__demos { display: flex; flex-direction: column; gap: 16px; }
+
+/* Small "Print one-pager" link in the standard view's hero meta line. */
+.sc-show__printlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: rgba(255, 255, 255, 0.5);
+  text-decoration: none;
+  transition: color 0.12s;
+}
+.sc-show__printlink:hover { color: #7ff2e3; }
+
+/* ── Showcase one-pager (?print=1) — screen rendering ─────────────────────── */
+/* Compact single-page summary meant for the browser's native print/Save-as-PDF.
+   Chrome bits (action bar, lab label) use font-pixel; body/article text (title,
+   abstract, works cited) uses regular fonts for on-paper legibility. */
+.sc-onepager { max-width: 800px; margin: 0 auto; padding: 28px 24px 48px; color: #e8ecfb; }
+.sc-onepager__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.sc-onepager__header { margin-bottom: 20px; }
+.sc-onepager__title { font-size: 28px; font-weight: 800; line-height: 1.15; color: #fff; letter-spacing: -0.01em; }
+.sc-onepager__fulltitle { font-size: 15px; line-height: 1.4; color: rgba(255, 255, 255, 0.6); margin-top: 8px; font-weight: 500; }
+.sc-onepager__meta { font-size: 13px; color: rgba(255, 255, 255, 0.5); margin-top: 10px; }
+.sc-onepager__quad {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 24px;
+  background: #0d1426;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sc-onepager__quad img { display: block; width: 100%; max-height: 420px; object-fit: contain; }
+.sc-onepager__quadlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 24px;
+  color: #7ff2e3;
+  text-decoration: none;
+  font-size: 13px;
+}
+.sc-onepager__quadlink:hover { color: #a9f7ec; }
+.sc-onepager__section { margin-bottom: 20px; }
+.sc-onepager__cited { margin-bottom: 20px; }
+.sc-onepager__h2 {
+  font-size: 10px;
+  color: #F5C518;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 10px;
+}
+.sc-onepager__abstract { font-size: 14px; line-height: 1.6; color: rgba(255, 255, 255, 0.82); white-space: pre-wrap; }
+.sc-onepager__links { list-style: none; display: flex; flex-direction: column; gap: 6px; padding: 0; margin: 0; }
+.sc-onepager__links li { font-size: 12px; line-height: 1.5; color: rgba(255, 255, 255, 0.75); word-break: break-all; }
+.sc-onepager__linklabel { color: rgba(255, 255, 255, 0.5); }
+.sc-onepager__citedtext { font-size: 12px; line-height: 1.6; color: rgba(255, 255, 255, 0.75); white-space: pre-wrap; }
+
+/* ── Showcase one-pager — print rendering ─────────────────────────────────── */
+@media print {
+  [data-print-hide] { display: none !important; }
+  .sc-public__nav,
+  .sc-public__footer { display: none !important; }
+
+  .sc-onepager,
+  .sc-onepager * {
+    color: #000 !important;
+    background: #fff !important;
+  }
+  .sc-onepager {
+    max-width: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0.5in;
+  }
+  .sc-onepager__title { font-size: 22pt; }
+  .sc-onepager__fulltitle { font-size: 12pt; }
+  .sc-onepager__meta { font-size: 10pt; }
+  .sc-onepager__h2 { font-size: 9pt; color: #000 !important; }
+  .sc-onepager__abstract,
+  .sc-onepager__citedtext,
+  .sc-onepager__links li { font-size: 10pt; }
+  .sc-onepager__quad,
+  .sc-onepager__header { page-break-inside: avoid; border: none; }
+  .sc-onepager__quad img { max-width: 100%; max-height: 4.5in; object-fit: contain; }
+  .sc-onepager__quadlink { padding: 0; text-decoration: underline; }
+
+  @page { margin: 0.5in; }
+}

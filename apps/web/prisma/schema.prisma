@@ -35,6 +35,7 @@ model User {
   labCreditClaims      LabCreditClaim[]
   miniGamePlays        MiniGamePlay[]
   rubricAssessments    RubricSelfAssessment[]
+  teamRubricScores     TeamRubricScore[]
   activityFeedEntries  ActivityFeed[]
   paperProficiencies   PaperProficiency[]
   advanceRequestsMade  PhaseAdvanceRequest[]   @relation("advanceRequester")
@@ -138,6 +139,7 @@ model Team {
   teacherFeedback TeacherFeedback[]
   notifications   Notification[]
   experiments     Experiment[]
+  teamRubricScores TeamRubricScore[]
 
   @@map("teams")
 }
@@ -226,6 +228,10 @@ model DiscoveryNode {
   // Dedup key for `source` nodes: "arxiv:2401.01234" | "pmid:31234567".
   externalId      String?         @map("external_id")
   starred         Boolean         @default(false)
+  // #11: student-set interest tier ('high' | 'mid' | 'low' | null = unset). A
+  // separate visual channel from `credibilityTier` — validated by zod in the
+  // PATCH route, not the DB (kept a plain String to stay a single ADD COLUMN).
+  interestLevel   String?         @map("interest_level")
   visitedByUserId String          @map("visited_by_user_id")
   visitedAt       DateTime        @default(now()) @map("visited_at")
 
@@ -537,10 +543,12 @@ model Citation {
 
 // ─── Research Plan (Feature 2) ───────────────────────────────────────────────
 
-// One research-plan workspace per team. The plan lives in a Google Doc the team
-// connects by pasting an "anyone with the link" URL; we fetch the published text
-// on demand (lib/research-plan/google-doc.ts — OAuth deferred, see TODO.md). The
-// project type/subtype selects the rubric the AI review grades against.
+// One research-plan workspace per team. The plan text comes from either a Google
+// Doc the team connects by pasting an "anyone with the link" URL (we fetch the
+// published text on demand — lib/research-plan/google-doc.ts — OAuth deferred, see
+// TODO.md) or pasted/typed text saved directly; whichever was last saved is the
+// active source (`lastSyncedSource`). The project type/subtype selects the rubric
+// the AI review grades against.
 model ResearchPlan {
   teamId            String    @id @map("team_id")
   googleDocUrl      String?   @map("google_doc_url")
@@ -548,6 +556,11 @@ model ResearchPlan {
   projectSubtype    String?   @map("project_subtype") // e.g. 'robotics', 'biology'
   lastSyncedText    String?   @map("last_synced_text")
   lastSyncedAt      DateTime? @map("last_synced_at")
+  // Which input last populated `lastSyncedText` — 'google_doc' | 'paste'. Nullable:
+  // existing rows predate this column and are treated as 'google_doc' at read time
+  // (every prior row's text came from a doc). "Last-saved wins" — a single POST
+  // sets exactly this + lastSyncedText together (see app/api/research-plan/route.ts).
+  lastSyncedSource  String?   @map("last_synced_source")
   // Latest AI review of the synced plan; replaced on each re-review so it
   // persists across reloads and never piles up.
   lastReviewJson    Json?     @map("last_review_json")
@@ -1106,6 +1119,9 @@ model FairEvent {
 
   fair Fair @relation(fields: [fairId], references: [id])
 
+  // One event row per fair-year. Backstops the seeder's createMany(skipDuplicates)
+  // against cross-process races that previously mass-duplicated events.
+  @@unique([fairId, year])
   @@map("fair_events")
 }
 
@@ -1163,6 +1179,28 @@ model RubricSelfAssessment {
   assessedBy        User            @relation(fields: [assessedByUserId], references: [id])
 
   @@map("rubric_self_assessments")
+}
+
+// Self-check scoring driven off the `ISEF_RUBRIC` literal (lib/fairs/isef-rubric.ts),
+// NOT the RubricVersion/RubricCriterion/RubricSelfAssessment tables above — those
+// require a RubricCriterion seed (hard FK) that this feature deliberately avoids.
+// `criterionKey` is derived at read/write time as `"${track}:${numeral}"` (e.g.
+// "science:III"); the per-criterion max is looked up from the literal, not stored
+// here. One row per team per criterion (upsert target for PUT).
+model TeamRubricScore {
+  id              String   @id @default(cuid())
+  teamId          String   @map("team_id")
+  track           String // 'science' | 'engineering'
+  criterionKey    String   @map("criterion_key") // e.g. "science:III"
+  score           Int // 0..maxScore for that criterion (validated server-side against ISEF_RUBRIC)
+  notes           String?
+  updatedByUserId String   @map("updated_by_user_id")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  team            Team     @relation(fields: [teamId], references: [id])
+  updatedBy       User     @relation(fields: [updatedByUserId], references: [id])
+
+  @@unique([teamId, criterionKey])
+  @@map("team_rubric_scores")
 }
 
 model IsefCategory {

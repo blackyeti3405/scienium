@@ -69,6 +69,7 @@ export async function GET(req: NextRequest) {
       externalId: true,
       paperId: true,
       starred: true,
+      interestLevel: true,
       visitedAt: true,
       // Left-join the source side-row so the tree + reader hydrate without a
       // second fetch (host/tier/url/title/abstract all present up front).
@@ -114,6 +115,10 @@ export async function GET(req: NextRequest) {
       parentId: r.parentId,
       depth: depthOf(r.id),
       starred: r.starred,
+      // #11: student-set interest tier ('high'|'mid'|'low'|null) — a separate
+      // visual channel from `credibilityTier`, surfaced on every GET so it
+      // persists across reload (never localStorage).
+      interestLevel: r.interestLevel ?? null,
       explored: hasChildren.has(r.id),
       addedAt: r.visitedAt.getTime(),
       // Source-node metadata (undefined for wiki/youtube rows).

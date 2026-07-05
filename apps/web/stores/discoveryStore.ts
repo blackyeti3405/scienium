@@ -30,6 +30,8 @@ export interface DiscoveryNode {
   reflection?: string
   /** #13: set once a source node is promoted into a real Paper (hides Promote). */
   paperId?: string | null
+  /** #11: student-set interest tier. null/undefined = unmarked. */
+  interestLevel?: 'high' | 'mid' | 'low' | null
 }
 
 interface DiscoveryStore {
@@ -46,6 +48,13 @@ interface DiscoveryStore {
    * DB-authoritative: only ever set from the tree POST's `kpAwarded`.
    */
   kpAward: { amount: number; nonce: number }
+  /**
+   * #11: set by `startNewTree()`; consumed (cleared) by the FIRST of
+   * `startExploration` / `addYouTubeVideo` / `addSourceNode` that fires next —
+   * that create forces `parentId: null` (a new root/tree) regardless of the
+   * current selection. `navigateToNode` does NOT consume it.
+   */
+  newTreePending: boolean
 
   hydrate: () => Promise<void>
   startExploration: (title: string) => void
@@ -61,6 +70,11 @@ interface DiscoveryStore {
   togglePendingLink: (title: string) => void
   branchAndContinue: () => void
   toggleStar: (nodeId: string) => void
+  /** #11: set/clear a node's interest tier (persists via PATCH). */
+  setInterest: (nodeId: string, level: 'high' | 'mid' | 'low' | null) => void
+  /** #11: mark that the NEXT opened/added source should start a brand-new tree
+   *  (a new root), regardless of the current selection. */
+  startNewTree: () => void
   /** Update the local reflection cache for a source node (after a persisted PATCH). */
   setNodeReflection: (nodeId: string, reflection: string) => void
   /** Promote a starred source node into a real Paper (#13). Returns an error
@@ -121,6 +135,20 @@ async function persistStar(id: string, starred: boolean) {
   }
 }
 
+// #11: persist a node's interest tier. Log-and-swallow on failure — the next
+// hydrate() reconciles with the DB-authoritative value, same as `persistStar`.
+async function persistInterest(id: string, level: 'high' | 'mid' | 'low' | null) {
+  try {
+    await fetch(`/api/discovery/tree/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interestLevel: level }),
+    })
+  } catch (err) {
+    console.error('[discovery] interest failed:', err)
+  }
+}
+
 async function persistDelete(id: string) {
   try {
     await fetch(`/api/discovery/tree/${id}`, { method: 'DELETE' })
@@ -152,6 +180,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
   pendingLinks: [],
   hydrated: false,
   kpAward: { amount: 0, nonce: 0 },
+  newTreePending: false,
 
   hydrate: async () => {
     try {
@@ -180,10 +209,16 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
   },
 
   startExploration: (title) => {
-    const existing = get().nodes.find((n) => !n.parentId && n.title === title)
-    if (existing) {
-      set({ currentNodeId: existing.id, pendingLinks: [] })
-      return
+    // #11: a pending "new tree" request forces a fresh root even if a same-
+    // title root already exists — skip the dedupe so re-opening a topic makes
+    // a genuinely new tree, then consume the flag.
+    const { newTreePending } = get()
+    if (!newTreePending) {
+      const existing = get().nodes.find((n) => !n.parentId && n.title === title)
+      if (existing) {
+        set({ currentNodeId: existing.id, pendingLinks: [] })
+        return
+      }
     }
     const id = crypto.randomUUID()
     set((state) => ({
@@ -193,6 +228,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
       ],
       currentNodeId: id,
       pendingLinks: [],
+      newTreePending: false,
     }))
     persistCreate([{ id, title, parentId: null, source: 'wikipedia' }]).then((kp) => reportKp(set, kp))
   },
@@ -201,24 +237,28 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
   // cross-source bridge if the current node is a Wikipedia article), or as a new
   // root if nothing is selected.
   addYouTubeVideo: (videoId, title) => {
-    const { currentNodeId, nodes } = get()
-    // De-dupe: if this video already exists under the current parent, just go to it.
-    const existing = nodes.find((n) => n.videoId === videoId && n.parentId === (currentNodeId ?? null))
+    const { currentNodeId, nodes, newTreePending } = get()
+    // #11: a pending "new tree" request ignores the current selection — the
+    // video becomes a fresh root (parentId: null, depth: 0).
+    const targetParentId = newTreePending ? null : currentNodeId ?? null
+    // De-dupe: if this video already exists under the target parent, just go
+    // to it. Scoped to root when starting a new tree, matching the plan.
+    const existing = nodes.find((n) => n.videoId === videoId && n.parentId === targetParentId)
     if (existing) {
-      set({ currentNodeId: existing.id })
+      set({ currentNodeId: existing.id, newTreePending: false })
       return
     }
-    const parent = currentNodeId ? nodes.find((n) => n.id === currentNodeId) : null
+    const parent = targetParentId ? nodes.find((n) => n.id === targetParentId) : null
     const id = crypto.randomUUID()
     set((state) => ({
       nodes: [
-        ...state.nodes.map((n) => (n.id === currentNodeId ? { ...n, explored: true } : n)),
+        ...state.nodes.map((n) => (n.id === targetParentId ? { ...n, explored: true } : n)),
         {
           id,
           title,
           source: 'youtube',
           videoId,
-          parentId: currentNodeId ?? null,
+          parentId: targetParentId,
           depth: parent ? parent.depth + 1 : 0,
           starred: false,
           explored: false,
@@ -227,8 +267,9 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
       ],
       currentNodeId: id,
       pendingLinks: [],
+      newTreePending: false,
     }))
-    persistCreate([{ id, title, parentId: currentNodeId ?? null, source: 'youtube', videoId }]).then((kp) =>
+    persistCreate([{ id, title, parentId: targetParentId, source: 'youtube', videoId }]).then((kp) =>
       reportKp(set, kp),
     )
   },
@@ -237,20 +278,25 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
   // — and a cross-source bridge if the current node is wiki/youtube), or as a new
   // root when nothing is selected. Server re-derives host+tier before persisting.
   addSourceNode: (resolved) => {
-    const { currentNodeId, nodes } = get()
+    const { currentNodeId, nodes, newTreePending } = get()
     // De-dupe by externalId (the DB @@unique is team-wide; mirror it locally).
+    // Correct even when starting a new tree — a work already in the forest is
+    // navigated to (existing behavior), which also consumes the pending flag.
     const existing = nodes.find((n) => n.externalId === resolved.externalId)
     if (existing) {
-      set({ currentNodeId: existing.id, pendingLinks: [] })
+      set({ currentNodeId: existing.id, pendingLinks: [], newTreePending: false })
       return existing.id
     }
-    const parent = currentNodeId ? nodes.find((n) => n.id === currentNodeId) : null
+    // #11: a pending "new tree" request ignores the current selection — the
+    // source becomes a fresh root (parentId: null, depth: 0).
+    const targetParentId = newTreePending ? null : currentNodeId ?? null
+    const parent = targetParentId ? nodes.find((n) => n.id === targetParentId) : null
     const id = crypto.randomUUID()
     const node: DiscoveryNode = {
       id,
       title: resolved.title,
       source: 'source',
-      parentId: currentNodeId ?? null,
+      parentId: targetParentId,
       depth: parent ? parent.depth + 1 : 0,
       starred: false,
       explored: false,
@@ -266,17 +312,18 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
     }
     set((state) => ({
       nodes: [
-        ...state.nodes.map((n) => (n.id === currentNodeId ? { ...n, explored: true } : n)),
+        ...state.nodes.map((n) => (n.id === targetParentId ? { ...n, explored: true } : n)),
         node,
       ],
       currentNodeId: id,
       pendingLinks: [],
+      newTreePending: false,
     }))
     persistCreate([
       {
         id,
         title: resolved.title,
-        parentId: currentNodeId ?? null,
+        parentId: targetParentId,
         source: 'source',
         platform: resolved.platform,
         externalId: resolved.externalId,
@@ -293,6 +340,9 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
   // The native citation surf: resolve each selected chip (≤2) via the resolve
   // route, then attach the resolved sources as child nodes of the current node —
   // the source analogue of `branchAndContinue`. Marks the parent explored.
+  // #11: intentionally does NOT consume `newTreePending` — "new tree" means
+  // "the next SOURCE you OPEN/ADD starts a new tree," not a citation-branch
+  // off the current node. Branching always attaches to `currentNodeId`.
   branchSources: async (chips) => {
     const selected = chips.slice(0, 2)
     if (selected.length === 0) return
@@ -383,6 +433,9 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
     }
   },
 
+  // #11: intentionally does NOT consume `newTreePending` (same reasoning as
+  // `branchSources` above) — this is a branch-from-current action, not a
+  // source-open/add, so it always attaches under `currentNodeId`.
   branchAndContinue: () => {
     const { currentNodeId, pendingLinks, nodes } = get()
     if (!currentNodeId || pendingLinks.length === 0) return
@@ -461,6 +514,18 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
     persistStar(nodeId, nextStarred)
   },
 
+  // #11: optimistically set the local interest tier, then persist (mirrors
+  // `toggleStar`). The caller (DiscoveryTree's swatch cycle) computes `level`.
+  setInterest: (nodeId, level) => {
+    set((state) => ({
+      nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, interestLevel: level } : n)),
+    }))
+    persistInterest(nodeId, level)
+  },
+
+  // #11: mark that the next opened/added source starts a brand-new tree.
+  startNewTree: () => set({ newTreePending: true }),
+
   deleteSubtree: (nodeId) => {
     set((state) => {
       // Collect the target node and all descendants via BFS
@@ -495,7 +560,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
   },
 
   reset: () => {
-    set({ nodes: [], currentNodeId: null, pendingLinks: [] })
+    set({ nodes: [], currentNodeId: null, pendingLinks: [], newTreePending: false })
     persistReset()
   },
 }))
