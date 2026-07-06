@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { X, MessageSquare, Loader2, CheckCircle } from 'lucide-react'
+import { X, MessageSquare, CheckCircle } from 'lucide-react'
+import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
+import { BusyButton } from '@/components/ui/BusyButton'
 
 interface FeedbackItem {
   id: string
@@ -145,11 +147,7 @@ export function FeedbackPanel({ onClose, onUnresolvedCount }: FeedbackPanelProps
 
         {/* Body */}
         <div className="flex-1 min-h-0 overflow-y-auto">
-          {loading && (
-            <div className="flex items-center justify-center py-10 text-white/40">
-              <Loader2 size={18} className="animate-spin" />
-            </div>
-          )}
+          {loading && <PanelListSkeleton rows={4} className="p-5" />}
 
           {error && (
             <p className="font-pixel text-[8px] text-red-400 text-center py-6">{error}</p>
@@ -196,25 +194,23 @@ export function FeedbackPanel({ onClose, onUnresolvedCount }: FeedbackPanelProps
                         <CheckCircle size={10} />
                         Addressed
                       </span>
-                      <button
-                        type="button"
+                      <BusyButton
+                        busy={patching === item.id}
+                        showSpinner={false}
                         onClick={() => toggleResolved(item, false)}
-                        disabled={patching === item.id}
                         className="font-pixel text-[7px] text-white/30 hover:text-white/60 transition-colors disabled:opacity-40"
                       >
                         undo
-                      </button>
+                      </BusyButton>
                     </div>
                   ) : (
-                    <button
-                      type="button"
+                    <BusyButton
+                      busy={patching === item.id}
                       onClick={() => toggleResolved(item, true)}
-                      disabled={patching === item.id}
                       className="self-start font-pixel text-[7px] bg-[#F5C518]/10 border border-[#F5C518]/30 text-[#F5C518] px-3 py-1.5 rounded-sm hover:bg-[#F5C518]/20 transition-colors disabled:opacity-40 flex items-center gap-1.5"
                     >
-                      {patching === item.id ? <Loader2 size={9} className="animate-spin" /> : null}
                       Mark addressed
-                    </button>
+                    </BusyButton>
                   )}
                 </li>
               ))}

@@ -447,6 +447,17 @@
 }
 .plot-ghost--valid { filter: drop-shadow(0 0 6px #5ef08a); }
 .plot-ghost--invalid { filter: drop-shadow(0 0 6px #ff8a8a) grayscale(0.3); }
+/* Placement/move POST in flight — pulse the ghost so a drop reads as "working"
+   through the round trip instead of sitting static. Quantized steps, matching
+   the house pixel-sprite motion language (px-spin/px-shimmer). */
+@keyframes plot-ghost-busy {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 0.35; }
+}
+.plot-ghost--busy { animation: plot-ghost-busy 0.6s steps(4) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .plot-ghost--busy { animation: none; opacity: 0.5; }
+}
 
 /* Top-of-screen banner: the hovered building's name, or the current edit-mode
    instruction. Pinned to the very top of the green viewport, centred. */
@@ -973,6 +984,46 @@
   100% { transform: translateX(360%); }
 }
 
+/* ── Shared loading primitives (components/ui/*) ─────────────────────────── */
+/* PixelSpinner: the ⟳ glyph ticks like a pixel sprite (8 discrete frames)
+   rather than rotating smoothly. */
+@keyframes px-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* PixelSkeleton shimmer: a hard-edged repeating-linear-gradient band sweeping
+   in quantized (steps(6)) increments — a chunky scan, not a smooth gloss. */
+@keyframes px-shimmer {
+  from { background-position: 0 0; }
+  to { background-position: -240px 0; }
+}
+.px-skel { position: relative; overflow: hidden; }
+.px-skel.px-shimmer {
+  background-image: repeating-linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0.04) 0px,
+    rgba(255, 255, 255, 0.04) 8px,
+    rgba(245, 197, 24, 0.06) 8px,
+    rgba(245, 197, 24, 0.06) 11px,
+    rgba(255, 255, 255, 0.04) 11px,
+    rgba(255, 255, 255, 0.04) 19px
+  );
+  background-size: 240px 100%;
+  animation: px-shimmer 1.2s steps(6) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .px-spin {
+    animation: none !important;
+  }
+  .px-skel.px-shimmer {
+    animation: none !important;
+    background-image: none;
+    @apply animate-pulse;
+  }
+}
+
 /* ── Chat markdown (Vega replies) ──────────────────────────────────────────── */
 .chat-md > :first-child { margin-top: 0; }
 .chat-md > :last-child { margin-bottom: 0; }
@@ -1461,7 +1512,6 @@
   border-color: rgba(245, 197, 24, 0.55);
   box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.08);
 }
-.ops-editor__loading { height: 120px; }
 
 .ops-editor__toolbar {
   display: flex;
@@ -2602,6 +2652,28 @@
 .sc-gcard__thumb { position: relative; aspect-ratio: 4 / 3; background: #0d1426; }
 .sc-gcard__thumb img { width: 100%; height: 100%; object-fit: cover; }
 .sc-gcard__noimg { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #fff; }
+/* Thumbnail shimmer — the box already reserves its aspect-ratio space, so the
+   shimmer just signals "loading" instead of "dead" while the image decodes.
+   Reuses the house px-shimmer band; the real <img> fades in over it on load
+   and the shimmer is hidden once the loaded class lands. */
+.sc-gcard__thumb--shimmer {
+  background-image: repeating-linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0.04) 0px,
+    rgba(255, 255, 255, 0.04) 8px,
+    rgba(245, 197, 24, 0.06) 8px,
+    rgba(245, 197, 24, 0.06) 11px,
+    rgba(255, 255, 255, 0.04) 11px,
+    rgba(255, 255, 255, 0.04) 19px
+  );
+  background-size: 240px 100%;
+  animation: px-shimmer 1.2s steps(6) infinite;
+}
+.sc-gcard__thumb-img { opacity: 0; transition: opacity 0.2s ease; }
+.sc-gcard__thumb-img--loaded { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .sc-gcard__thumb--shimmer { animation: none; background-image: none; }
+}
 .sc-gcard__lab {
   position: absolute;
   top: 8px;
@@ -2651,10 +2723,32 @@
   background: #0d1426;
 }
 .sc-show__quad img { display: block; width: 100%; object-fit: contain; }
-.sc-show__pdf { border-radius: 8px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.1); background: #20242e; }
-.sc-show__pdf iframe { display: block; width: 100%; height: 560px; border: 0; }
+/* The box reserves its fixed iframe height up front (no layout shift); the
+   shimmer background reads as "loading" rather than "dead" while the PDF
+   viewer's own chrome renders inside the iframe. */
+.sc-show__pdf {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: #20242e;
+  background-image: repeating-linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0.03) 0px,
+    rgba(255, 255, 255, 0.03) 8px,
+    rgba(245, 197, 24, 0.05) 8px,
+    rgba(245, 197, 24, 0.05) 11px,
+    rgba(255, 255, 255, 0.03) 11px,
+    rgba(255, 255, 255, 0.03) 19px
+  );
+  background-size: 240px 100%;
+  animation: px-shimmer 1.2s steps(6) infinite;
+}
+.sc-show__pdf iframe { display: block; width: 100%; height: 560px; border: 0; position: relative; z-index: 1; background: #20242e; }
 .sc-show__pdf--tall iframe { height: 760px; }
 .sc-show__quad .sc-show__pdf { border: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .sc-show__pdf { animation: none; background-image: none; }
+}
 .sc-show__openpdf {
   display: inline-flex;
   align-items: center;

@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, Trophy, Check } from 'lucide-react'
+import { Trophy, Check } from 'lucide-react'
 import { ISEF_RUBRIC } from '@/lib/fairs/isef-rubric'
 import type { RubricTrackKey } from '@/lib/fairs/rubric-scoring'
+import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
+import { BusyButton } from '@/components/ui/BusyButton'
 
 interface CriterionRow {
   key: string
@@ -111,9 +113,7 @@ export function RubricSelfCheck() {
       {error && <p className="font-pixel text-[8px] text-red-400 leading-loose">{error}</p>}
 
       {loading ? (
-        <div className="flex-1 flex items-center justify-center py-10 text-white/40">
-          <Loader2 size={18} className="animate-spin" />
-        </div>
+        <PanelListSkeleton rows={5} />
       ) : data ? (
         <div className="flex flex-col gap-3">
           {data.criteria.map((row) => {
@@ -249,14 +249,14 @@ function CriterionCard({
           />
           <span className="font-pixel text-[7px] text-white/30">/ {row.maxScore}</span>
 
-          <button
+          <BusyButton
+            busy={saving}
+            busyLabel="Saving…"
             onClick={save}
-            disabled={saving}
             className="ml-auto font-pixel text-[7px] bg-[#F5C518] text-[#0d1b2e] px-3 py-1.5 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center gap-1.5"
           >
-            {saving ? <Loader2 size={10} className="animate-spin" /> : null}
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+            Save
+          </BusyButton>
           {saved && (
             <span
               data-testid="criterion-saved"

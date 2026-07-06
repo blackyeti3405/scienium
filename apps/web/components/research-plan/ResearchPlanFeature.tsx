@@ -5,7 +5,6 @@ import {
   FileText,
   Link2,
   RefreshCw,
-  Loader2,
   ClipboardCheck,
   ClipboardPaste,
   Globe,
@@ -18,6 +17,10 @@ import {
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { PROJECT_TYPES } from '@/lib/research-plan/types'
+import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
+import { PixelSpinner } from '@/components/ui/PixelSpinner'
+import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
+import { BusyButton } from '@/components/ui/BusyButton'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -286,8 +289,24 @@ export function ResearchPlanFeature() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center bg-[#0d1b2e] text-white/40">
-        <Loader2 size={20} className="animate-spin" />
+      <div className="flex flex-col h-full bg-[#0d1b2e] text-white" data-testid="research-plan-skeleton">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
+          <div className="flex flex-col gap-2">
+            <PixelSkeleton variant="line" h="h-4" w="w-36" />
+            <PixelSkeleton variant="line" h="h-3" w="w-64" />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+          <div className="flex gap-2">
+            <PixelSkeleton variant="pill" h="h-8" w="w-28" />
+            <PixelSkeleton variant="pill" h="h-8" w="w-28" />
+          </div>
+          <PixelSkeleton variant="box" h="h-24" w="w-full" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <PixelSkeleton variant="box" h="h-12" w="w-full" />
+            <PixelSkeleton variant="box" h="h-12" w="w-full" />
+          </div>
+        </div>
       </div>
     )
   }
@@ -407,20 +426,16 @@ export function ResearchPlanFeature() {
                   placeholder="https://docs.google.com/document/d/…"
                   className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30"
                 />
-                <button
+                <BusyButton
+                  busy={syncing}
+                  busyLabel="Syncing…"
+                  icon={synced && !isPasteSource ? <RefreshCw size={11} /> : <Link2 size={11} />}
                   onClick={sync}
-                  disabled={!canSync || syncing}
+                  disabled={!canSync}
                   className="shrink-0 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center gap-1.5"
                 >
-                  {syncing ? (
-                    <Loader2 size={11} className="animate-spin" />
-                  ) : synced && !isPasteSource ? (
-                    <RefreshCw size={11} />
-                  ) : (
-                    <Link2 size={11} />
-                  )}
                   {synced && !isPasteSource ? 'Refresh' : 'Connect & sync'}
-                </button>
+                </BusyButton>
               </div>
               {syncError && <p className="font-pixel text-[7px] text-red-400 mt-2">{syncError}</p>}
             </>
@@ -440,18 +455,16 @@ export function ResearchPlanFeature() {
                 <span className={`font-pixel text-[7px] ${overCap ? 'text-red-400' : 'text-white/30'}`}>
                   {textLen.toLocaleString()} / {MAX_PLAN_TEXT.toLocaleString()}
                 </span>
-                <button
+                <BusyButton
+                  busy={savingText}
+                  busyLabel="Saving…"
+                  icon={<ClipboardPaste size={11} />}
                   onClick={saveText}
-                  disabled={!canSaveText || savingText}
+                  disabled={!canSaveText}
                   className="shrink-0 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center gap-1.5"
                 >
-                  {savingText ? (
-                    <Loader2 size={11} className="animate-spin" />
-                  ) : (
-                    <ClipboardPaste size={11} />
-                  )}
                   {isPasteSource ? 'Update text' : 'Save text'}
-                </button>
+                </BusyButton>
               </div>
               {textError && <p className="font-pixel text-[7px] text-red-400 mt-2">{textError}</p>}
             </>
@@ -472,23 +485,29 @@ export function ResearchPlanFeature() {
         {/* ── Actions ── */}
         {synced && (
           <section className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <button
+            <BusyButton
+              busy={reviewStreaming}
+              busyLabel="Reviewing…"
+              icon={<ClipboardCheck size={12} />}
+              spinnerTone="vega"
               onClick={runReview}
-              disabled={reviewStreaming || !type || !subtype}
+              disabled={!type || !subtype}
               className="flex items-center justify-center gap-2 font-pixel text-[8px] border border-[#F5C518]/40 text-[#F5C518] py-3 rounded-sm hover:bg-[#F5C518]/10 disabled:opacity-40 transition-colors"
             >
-              {reviewStreaming ? <Loader2 size={12} className="animate-spin" /> : <ClipboardCheck size={12} />}
               Review my plan
-            </button>
-            <button
+            </BusyButton>
+            <BusyButton
+              busy={checking}
+              busyLabel="Checking…"
+              icon={<Globe size={12} />}
+              spinnerTone="vega"
               onClick={runIdeaCheck}
-              disabled={checking || quota.remaining <= 0}
+              disabled={quota.remaining <= 0}
               title={quota.remaining <= 0 ? 'Daily limit reached' : undefined}
               className="flex items-center justify-center gap-2 font-pixel text-[8px] border border-white/25 text-white/70 py-3 rounded-sm hover:border-white/45 hover:text-white/90 disabled:opacity-40 transition-colors"
             >
-              {checking ? <Loader2 size={12} className="animate-spin" /> : <Globe size={12} />}
               Has this been done? · {quota.remaining}/{quota.limit} left
-            </button>
+            </BusyButton>
           </section>
         )}
 
@@ -524,16 +543,17 @@ function ReviewPanel({ review, streaming }: { review: Review; streaming: boolean
         <ClipboardCheck size={12} className="text-[#F5C518]" />
         <h3 className="font-pixel text-[9px] text-white">Plan review</h3>
         {streaming && (
-          <span className="font-pixel text-[7px] text-white/35 flex items-center gap-1 ml-auto">
-            <Loader2 size={9} className="animate-spin" /> grading…
+          <span className="font-pixel text-[7px] text-[#7ff2e3] flex items-center gap-1 ml-auto">
+            <PixelSpinner size="xs" tone="vega" /> Vega is grading…
           </span>
         )}
       </div>
 
+      {/* The plan has exactly 5 knowable sections — a segmented determinate bar
+          (one cell fills per graded section) replaces the old indeterminate
+          sweep, since we always know how many cells are coming. */}
       {streaming && (
-        <div className="h-0.5 bg-white/8 -mt-2 overflow-hidden rounded-full">
-          <div className="h-full w-1/3 bg-[#F5C518]/70 animate-[indeterminate_1.2s_ease-in-out_infinite]" />
-        </div>
+        <PixelProgressBar segments={5} value={(review.sections.length / 5) * 100} className="-mt-2" />
       )}
 
       {/* Overall */}
@@ -547,7 +567,7 @@ function ReviewPanel({ review, streaming }: { review: Review; streaming: boolean
           <span className="font-pixel text-[16px] shrink-0">{review.overall.score}</span>
         </div>
       ) : (
-        streaming && <SkeletonBar height="h-14" />
+        streaming && <PixelSkeleton variant="box" h="h-14" w="w-full" />
       )}
 
       {/* Section-by-section — rows append as each is graded */}
@@ -555,7 +575,7 @@ function ReviewPanel({ review, streaming }: { review: Review; streaming: boolean
         {review.sections.map((s, i) => (
           <SectionRow key={i} section={s} />
         ))}
-        {streaming && review.sections.length < 5 && <SkeletonBar height="h-12" />}
+        {streaming && review.sections.length < 5 && <PixelSkeleton variant="box" h="h-12" w="w-full" />}
       </div>
 
       {/* Three columns — fill in as bullets arrive */}
@@ -635,10 +655,6 @@ function BulletColumn({
   )
 }
 
-function SkeletonBar({ height }: { height: string }) {
-  return <div className={`${height} bg-white/5 border border-white/10 rounded-sm animate-pulse`} />
-}
-
 // ─── Idea-check live activity ─────────────────────────────────────────────────
 
 function IdeaActivity({
@@ -649,7 +665,7 @@ function IdeaActivity({
   return (
     <section className="border-t border-white/10 pt-5">
       <div className="flex items-center gap-2 mb-3">
-        <Loader2 size={12} className="animate-spin text-[#F5C518]" />
+        <PixelSpinner size="sm" tone="gold" />
         <h3 className="font-pixel text-[9px] text-white">Checking the web…</h3>
         <span className="font-pixel text-[7px] text-white/35">{activity.status}</span>
       </div>

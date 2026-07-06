@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Copy, Download, Loader2, Check, Quote } from 'lucide-react'
+import { X, Copy, Download, Check, Quote } from 'lucide-react'
+import { LabeledLoader } from '@/components/ui/LabeledLoader'
+import { BusyButton } from '@/components/ui/BusyButton'
 
 // ─── #13 Citation Manager — the team's formatted citation library ──────────────
 // Reads GET /api/citations (auto-backfills + returns APA/MLA/IEEE per paper, built
@@ -121,9 +123,8 @@ export function CitationsPanel({ onClose }: { onClose: () => void }) {
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-6 py-5">
         {sorted === null ? (
-          <div className="flex items-center justify-center h-full gap-2 text-white/40">
-            <Loader2 size={16} className="animate-spin text-blue-400" />
-            <span className="font-pixel text-[8px]">Building your citations…</span>
+          <div className="h-full">
+            <LabeledLoader label="Building your citations…" fill="inline" />
           </div>
         ) : sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-8">
@@ -201,14 +202,15 @@ export function CitationsPanel({ onClose }: { onClose: () => void }) {
                 </>
               )}
             </button>
-            <button
+            <BusyButton
+              busy={exporting}
+              busyLabel="Exporting…"
+              icon={<Download size={11} />}
               onClick={exportWorksCited}
-              disabled={exporting}
               className="flex items-center gap-1.5 font-pixel text-[7px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
-              {exporting ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
               Export Works Cited to Showcase
-            </button>
+            </BusyButton>
           </div>
         </div>
       )}

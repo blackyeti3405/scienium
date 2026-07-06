@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import {
-  Loader2,
   Plus,
   Copy,
   Check,
@@ -18,6 +17,9 @@ import {
 } from 'lucide-react'
 import { PHASE_INFO, PHASE_ORDER, type Phase } from '@/lib/phase'
 import { StatTile } from '@/components/ui/Card'
+import { BusyButton } from '@/components/ui/BusyButton'
+import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
+import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
 
 interface RosterStudent {
   studentId: string
@@ -52,15 +54,23 @@ export function TeacherRoster() {
   const [phaseCounts, setPhaseCounts] = useState<Record<string, number>>({})
   const [attentionCount, setAttentionCount] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [attentionOnly, setAttentionOnly] = useState(false)
   // Keyed by teamId (not studentId) — nudging one row marks every row that
   // shares the team as "Nudged" for the rest of the session.
   const [nudged, setNudged] = useState<Record<string, 'idle' | 'sending' | 'done'>>({})
+  const [nudgeError, setNudgeError] = useState<Record<string, string | undefined>>({})
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/teacher/roster').then((r) => r.json() as Promise<RosterResponse>),
-      fetch('/api/teacher/class').then((r) => r.json()),
+      fetch('/api/teacher/roster').then((r) => {
+        if (!r.ok) throw new Error('roster fetch failed')
+        return r.json() as Promise<RosterResponse>
+      }),
+      fetch('/api/teacher/class').then((r) => {
+        if (!r.ok) throw new Error('class fetch failed')
+        return r.json()
+      }),
     ])
       .then(([roster, cls]) => {
         setStudents(roster.students ?? [])
@@ -68,7 +78,7 @@ export function TeacherRoster() {
         setAttentionCount(roster.attentionCount ?? 0)
         setClasses(cls.classes ?? [])
       })
-      .catch(() => {})
+      .catch(() => setLoadError('Could not load your roster. Try refreshing the page.'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -79,6 +89,7 @@ export function TeacherRoster() {
   async function nudge(teamId: string) {
     if (!teamId || nudged[teamId] === 'sending' || nudged[teamId] === 'done') return
     setNudged((m) => ({ ...m, [teamId]: 'sending' })) // optimistic
+    setNudgeError((m) => ({ ...m, [teamId]: undefined }))
     try {
       const res = await fetch('/api/teacher/nudge', {
         method: 'POST',
@@ -89,13 +100,31 @@ export function TeacherRoster() {
       setNudged((m) => ({ ...m, [teamId]: 'done' }))
     } catch {
       setNudged((m) => ({ ...m, [teamId]: 'idle' })) // revert on failure so it can be retried
+      setNudgeError((m) => ({ ...m, [teamId]: 'Could not send — try again.' }))
     }
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="animate-spin text-white/30" size={24} />
+      <div className="max-w-6xl mx-auto space-y-8">
+        <div className="space-y-3">
+          <PixelSkeleton variant="line" h="h-3" w="w-24" />
+          <PixelSkeleton variant="box" h="h-20" w="w-full" />
+        </div>
+        <div className="space-y-3">
+          <PixelSkeleton variant="line" h="h-3" w="w-20" />
+          <PanelListSkeleton rows={5} />
+        </div>
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="max-w-6xl mx-auto">
+        <div className="border border-dashed border-red-400/25 rounded-lg py-12 text-center space-y-1">
+          <p className="text-sm text-red-400">{loadError}</p>
+        </div>
       </div>
     )
   }
@@ -253,25 +282,29 @@ export function TeacherRoster() {
                             <Check size={11} /> Nudged
                           </span>
                         ) : (
-                          <button
-                            type="button"
-                            data-testid="nudge-button"
-                            disabled={nudged[s.teamId] === 'sending'}
-                            title="Send a friendly check-in notification to this team."
-                            onClick={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              nudge(s.teamId!)
-                            }}
-                            className="inline-flex items-center gap-1 font-pixel text-[9px] text-[#F5C518] uppercase tracking-wider bg-[#F5C518]/10 border border-[#F5C518]/30 rounded-full px-2 py-0.5 whitespace-nowrap hover:brightness-110 disabled:opacity-50 transition-all cursor-pointer"
-                          >
-                            {nudged[s.teamId] === 'sending' ? (
-                              <Loader2 size={11} className="animate-spin" />
-                            ) : (
-                              <Bell size={11} />
+                          <span className="flex flex-col items-end gap-0.5">
+                            <BusyButton
+                              data-testid="nudge-button"
+                              busy={nudged[s.teamId] === 'sending'}
+                              busyLabel="Nudging…"
+                              icon={<Bell size={11} />}
+                              spinnerTone="gold"
+                              title="Send a friendly check-in notification to this team."
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                nudge(s.teamId!)
+                              }}
+                              className="inline-flex items-center gap-1 font-pixel text-[9px] text-[#F5C518] uppercase tracking-wider bg-[#F5C518]/10 border border-[#F5C518]/30 rounded-full px-2 py-0.5 whitespace-nowrap hover:brightness-110 disabled:opacity-50 transition-all cursor-pointer"
+                            >
+                              Nudge
+                            </BusyButton>
+                            {nudgeError[s.teamId] && (
+                              <span className="text-[10px] text-red-400 whitespace-nowrap">
+                                {nudgeError[s.teamId]}
+                              </span>
                             )}
-                            Nudge
-                          </button>
+                          </span>
                         ))}
                     </span>
                   </Link>
@@ -383,14 +416,16 @@ function ClassManager({
             maxLength={120}
             className="min-w-[140px] bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25 transition-colors"
           />
-          <button
-            type="button"
+          <BusyButton
+            busy={busy}
+            busyLabel="Creating…"
+            disabled={!name.trim()}
+            icon={<Plus size={14} />}
             onClick={create}
-            disabled={busy || !name.trim()}
             className="inline-flex items-center gap-1.5 bg-[#F5C518] text-[#0d1b2e] text-sm font-medium px-4 py-2 rounded-md hover:brightness-110 disabled:opacity-40 transition-all cursor-pointer"
           >
-            <Plus size={14} /> Create class
-          </button>
+            Create class
+          </BusyButton>
         </div>
         {error && <p className="text-sm text-red-400 mt-2">{error}</p>}
       </div>

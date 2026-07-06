@@ -12,6 +12,9 @@ import { PapersSearch } from '@/components/discovery/PapersSearch'
 import { DiscoveryTree } from '@/components/discovery/DiscoveryTree'
 import { DiscoveryTopicList } from '@/components/discovery/DiscoveryTopicList'
 import { DiscoveryHome } from '@/components/discovery/DiscoveryHome'
+import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
+import { LabeledLoader } from '@/components/ui/LabeledLoader'
+import { BusyButton } from '@/components/ui/BusyButton'
 import type { Interest } from '@/components/discovery/InterestSeeds'
 import type { DiscoverySource } from '@/stores/discoveryStore'
 import type { SourcePlatform, ResolvedSource, SourceChip, SourceLanes } from '@/lib/discovery/sources'
@@ -34,6 +37,7 @@ export function DiscoveryFeature() {
     currentNodeId,
     pendingLinks,
     kpAward,
+    hydrated,
     hydrate,
     startExploration,
     addYouTubeVideo,
@@ -153,6 +157,10 @@ export function DiscoveryFeature() {
 
   // ── Final research topic (stored on the team) ──────────────────────────────
   const [finalTopic, setFinalTopic] = useState<string | null>(null)
+  // False-prompt fix: without this, the topic bar's "Choose your final research
+  // topic" CTA renders for the ~1s the /api/discovery/topic fetch is in flight,
+  // even for a team that already has a topic set.
+  const [topicLoaded, setTopicLoaded] = useState(false)
   const [editingTopic, setEditingTopic] = useState(false)
   const [topicDraft, setTopicDraft] = useState('')
   const [savingTopic, setSavingTopic] = useState(false)
@@ -171,6 +179,7 @@ export function DiscoveryFeature() {
       .then((r) => r.json())
       .then((d) => setFinalTopic(d.topic ?? null))
       .catch(() => {})
+      .finally(() => setTopicLoaded(true))
   }, [])
 
   // ── Team interests (#2 Activate TopicInterest) ─────────────────────────────
@@ -188,14 +197,35 @@ export function DiscoveryFeature() {
   // `newTreePending` badge on the button itself stays until consumed; this
   // pill just calls out what to do next, then auto-dismisses).
   const [newTreeHint, setNewTreeHint] = useState(false)
+  // Busy state for the "Branch into N sources" action — seconds-class (resolve +
+  // persist per chip) with previously zero feedback and a double-click window.
+  const [branching, setBranching] = useState(false)
+  // Busy state for the Promote pill (per-node id) — seconds with zero feedback.
+  const [promotingId, setPromotingId] = useState<string | null>(null)
 
   async function handlePromote(nodeId: string) {
+    if (promotingId) return
+    setPromotingId(nodeId)
     const node = nodes.find((n) => n.id === nodeId)
-    const err = await promoteSource(nodeId)
-    if (err) {
-      setPromoteMsg({ text: err, ok: false })
-    } else {
-      setPromoteMsg({ text: `Added “${node?.title ?? 'source'}” to your Literature Review`, ok: true })
+    try {
+      const err = await promoteSource(nodeId)
+      if (err) {
+        setPromoteMsg({ text: err, ok: false })
+      } else {
+        setPromoteMsg({ text: `Added “${node?.title ?? 'source'}” to your Literature Review`, ok: true })
+      }
+    } finally {
+      setPromotingId(null)
+    }
+  }
+
+  async function handleBranchSources(chips: SourceChip[]) {
+    if (branching) return
+    setBranching(true)
+    try {
+      await branchSources(chips)
+    } finally {
+      setBranching(false)
     }
   }
 
@@ -429,37 +459,49 @@ export function DiscoveryFeature() {
           +{kpPill.amount} KP
         </div>
       )}
-      {/* Topic-change confirmation */}
+      {/* Topic-change confirmation — the confirmed path is a batch LLM sweep
+          re-checking every source's relevance against the new topic, so once
+          submitted it shows a Vega labeled loader instead of a button-sized spinner. */}
       {topicConfirm && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60">
           <div className="bg-[#0d1b2e] border border-white/20 rounded-sm p-6 max-w-sm w-full mx-4 flex flex-col gap-4">
-            <h3 className="font-pixel text-[9px] text-white">Change research topic?</h3>
-            <div className="text-[13px] text-white/70 leading-relaxed flex flex-col gap-2">
-              <p>
-                You&apos;re changing your topic to{' '}
-                <span className="text-[#F5C518] font-medium">&ldquo;{topicConfirm.newTopic}&rdquo;</span>.
-              </p>
-              <p>
-                You have{' '}
-                <span className="text-white font-medium">{topicConfirm.paperCount} source{topicConfirm.paperCount !== 1 ? 's' : ''}</span>{' '}
-                in your literature review. Sources that aren&apos;t relevant to your new topic will be removed. Sources that apply to both topics will be kept.
-              </p>
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => setTopicConfirm(null)}
-                className="flex-1 font-pixel text-[8px] border border-white/20 text-white/60 py-2.5 hover:border-white/40 hover:text-white/80 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={savingTopic}
-                onClick={() => saveTopic(topicConfirm.newTopic, true)}
-                className="flex-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 hover:brightness-110 disabled:opacity-50 transition-all"
-              >
-                {savingTopic ? 'Updating…' : 'Change topic'}
-              </button>
-            </div>
+            {savingTopic ? (
+              <LabeledLoader
+                label="Vega is re-checking your papers…"
+                sublabel="This can take up to 30 seconds."
+                tone="vega"
+                fill="inline"
+              />
+            ) : (
+              <>
+                <h3 className="font-pixel text-[9px] text-white">Change research topic?</h3>
+                <div className="text-[13px] text-white/70 leading-relaxed flex flex-col gap-2">
+                  <p>
+                    You&apos;re changing your topic to{' '}
+                    <span className="text-[#F5C518] font-medium">&ldquo;{topicConfirm.newTopic}&rdquo;</span>.
+                  </p>
+                  <p>
+                    You have{' '}
+                    <span className="text-white font-medium">{topicConfirm.paperCount} source{topicConfirm.paperCount !== 1 ? 's' : ''}</span>{' '}
+                    in your literature review. Sources that aren&apos;t relevant to your new topic will be removed. Sources that apply to both topics will be kept.
+                  </p>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => setTopicConfirm(null)}
+                    className="flex-1 font-pixel text-[8px] border border-white/20 text-white/60 py-2.5 hover:border-white/40 hover:text-white/80 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => saveTopic(topicConfirm.newTopic, true)}
+                    className="flex-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 hover:brightness-110 disabled:opacity-50 transition-all"
+                  >
+                    Change topic
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -543,22 +585,42 @@ export function DiscoveryFeature() {
           <span className="font-pixel text-[10px] text-white">🔭 Discovery</span>
         </header>
 
-        <DiscoveryHome
-          starredNodes={starredNodes}
-          hasExisting={nodes.length > 0}
-          finalTopic={finalTopic}
-          onSetFinalTopic={saveTopic}
-          onContinue={() => setShowHome(false)}
-          onOpenStarred={(nodeId) => {
-            navigateToNode(nodeId)
-            setShowHome(false)
-          }}
-          interests={interests}
-          currentUserId={currentUserId}
-          onAddInterest={addInterest}
-          onRemoveInterest={removeInterest}
-          onSeedInterest={seedFromInterest}
-        />
+        {!hydrated ? (
+          // Hydration gate: without this, "🚀 Start Exploring" (hasExisting=false)
+          // flashes for a returning user with a real tree, and starred/interests
+          // sections render empty — the audit's "masquerades as the new-user empty
+          // state" bug. Skeleton chips/cards instead of the real (still-loading) data.
+          <div className="max-w-2xl mx-auto w-full px-6 py-10 flex flex-col gap-6" data-testid="discovery-home-skeleton">
+            <div className="text-center flex flex-col items-center gap-3">
+              <PixelSkeleton variant="pill" h="h-10" w="w-10" />
+              <PixelSkeleton variant="line" h="h-4" w="w-40" />
+            </div>
+            <PixelSkeleton variant="box" h="h-24" w="w-full" />
+            <div className="flex flex-wrap gap-2">
+              <PixelSkeleton variant="pill" h="h-7" w="w-24" />
+              <PixelSkeleton variant="pill" h="h-7" w="w-28" />
+              <PixelSkeleton variant="pill" h="h-7" w="w-20" />
+            </div>
+            <PixelSkeleton variant="box" h="h-12" w="w-full" />
+          </div>
+        ) : (
+          <DiscoveryHome
+            starredNodes={starredNodes}
+            hasExisting={nodes.length > 0}
+            finalTopic={finalTopic}
+            onSetFinalTopic={saveTopic}
+            onContinue={() => setShowHome(false)}
+            onOpenStarred={(nodeId) => {
+              navigateToNode(nodeId)
+              setShowHome(false)
+            }}
+            interests={interests}
+            currentUserId={currentUserId}
+            onAddInterest={addInterest}
+            onRemoveInterest={removeInterest}
+            onSeedInterest={seedFromInterest}
+          />
+        )}
       </div>
     )
   }
@@ -673,13 +735,16 @@ export function DiscoveryFeature() {
               placeholder="State your final research topic…"
               className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 rounded-sm px-2.5 py-1.5 outline-none focus:border-[#F5C518]/60"
             />
-            <button
+            <BusyButton
+              busy={savingTopic}
+              busyLabel="Saving…"
+              showSpinner={false}
               onClick={() => topicDraft.trim() && saveTopic(topicDraft.trim())}
-              disabled={!topicDraft.trim() || savingTopic}
+              disabled={!topicDraft.trim()}
               className="font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] rounded-sm px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
             >
-              {savingTopic ? 'Saving…' : 'Save'}
-            </button>
+              Save
+            </BusyButton>
             <button onClick={() => setEditingTopic(false)} className="font-pixel text-[7px] text-white/40 hover:text-white/70">
               Cancel
             </button>
@@ -696,6 +761,10 @@ export function DiscoveryFeature() {
               Change
             </button>
           </div>
+        ) : !topicLoaded ? (
+          // False-prompt fix: don't show "Choose your final research topic"
+          // until the /api/discovery/topic fetch actually resolves null.
+          <PixelSkeleton variant="line" h="h-4" w="w-56" />
         ) : (
           <button
             onClick={() => { setTopicDraft(currentNode?.title ?? ''); setEditingTopic(true) }}
@@ -735,6 +804,7 @@ export function DiscoveryFeature() {
                 onToggleStar={toggleStar}
                 onPromote={handlePromote}
                 onSetInterest={setInterest}
+                promotingId={promotingId}
               />
             </div>
           </div>
@@ -826,6 +896,7 @@ export function DiscoveryFeature() {
                 onToggleStar={toggleStar}
                 onPromote={handlePromote}
                 onSetInterest={setInterest}
+                promotingId={promotingId}
               />
             </div>
           </div>
@@ -905,23 +976,25 @@ export function DiscoveryFeature() {
                   📄 Open a paper, then pick up to 2 of its citations to branch.
                 </p>
               ) : (
-                <button
+                <BusyButton
+                  busy={branching}
+                  busyLabel="Branching…"
                   onClick={() => {
                     const chips = pendingLinks
                       .map((id) => chipsById.get(id))
                       .filter((c): c is SourceChip => !!c)
-                    branchSources(chips)
+                    handleBranchSources(chips)
                   }}
                   disabled={pendingLinks.length === 0}
                   className="w-full rounded-sm py-2.5 font-pixel text-[8px] transition-all
                     bg-[#F5C518] text-[#0d1b2e]
                     disabled:opacity-40 disabled:cursor-not-allowed
-                    hover:brightness-110 active:scale-[0.98]"
+                    hover:brightness-110 active:scale-[0.98] flex items-center justify-center gap-1.5"
                 >
                   {pendingLinks.length === 0
                     ? 'Select citations to branch'
                     : `Branch into ${pendingLinks.length === 1 ? '1 source' : '2 sources'} →`}
-                </button>
+                </BusyButton>
               )}
             </div>
           ) : discoverySource === 'youtube' ? (

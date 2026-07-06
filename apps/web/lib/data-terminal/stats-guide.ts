@@ -39,6 +39,8 @@
  * free to be refined without touching them.
  */
 
+import { filterGuideEntries } from '@/lib/guides/filter'
+
 export type StatCategory =
   | 'descriptive'
   | 'comparing-groups'
@@ -3058,17 +3060,15 @@ export interface StatFilter {
  * Filters `STATS_GUIDE` (or any subset) by a case-insensitive substring match
  * on title/definition/aliases, AND-ed with an optional category. A blank or
  * whitespace-only query behaves like "no query." Pure and side-effect free —
- * unit-testable and reusable by the panel component via `useMemo`.
+ * unit-testable and reusable by the panel component via `useMemo`. Thin
+ * wrapper over `filterGuideEntries`, kept so this module's signature and
+ * search fields stay pinned.
  */
 export function filterConcepts(concepts: StatConcept[], filter: StatFilter): StatConcept[] {
-  const query = filter.query?.trim().toLowerCase() ?? ''
-  const category = filter.category ?? null
-
-  return concepts.filter((c) => {
-    if (category && c.category !== category) return false
-    if (!query) return true
-
-    const haystack = [c.title, c.definition, ...(c.aliases ?? [])].join(' ').toLowerCase()
-    return haystack.includes(query)
-  })
+  return filterGuideEntries(
+    concepts,
+    filter,
+    (c) => [c.title, c.definition, ...(c.aliases ?? [])],
+    (c) => c.category,
+  )
 }

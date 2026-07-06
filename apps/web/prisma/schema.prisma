@@ -1186,7 +1186,11 @@ model RubricSelfAssessment {
 // require a RubricCriterion seed (hard FK) that this feature deliberately avoids.
 // `criterionKey` is derived at read/write time as `"${track}:${numeral}"` (e.g.
 // "science:III"); the per-criterion max is looked up from the literal, not stored
-// here. One row per team per criterion (upsert target for PUT).
+// here. One row per team per criterion PER SCORER ROLE (upsert target for PUT) —
+// `scorerRole` (Feature F10 — teacher rubric scoring) discriminates the student
+// self-check row from the teacher-scored row for the same (team, criterion), so
+// the two coexist instead of colliding into one overwritten row. Existing rows
+// default/backfill to 'student' (they were all authored by students pre-F10).
 model TeamRubricScore {
   id              String   @id @default(cuid())
   teamId          String   @map("team_id")
@@ -1194,12 +1198,13 @@ model TeamRubricScore {
   criterionKey    String   @map("criterion_key") // e.g. "science:III"
   score           Int // 0..maxScore for that criterion (validated server-side against ISEF_RUBRIC)
   notes           String?
+  scorerRole      String   @default("student") @map("scorer_role") // 'student' | 'teacher'
   updatedByUserId String   @map("updated_by_user_id")
   updatedAt       DateTime @updatedAt @map("updated_at")
   team            Team     @relation(fields: [teamId], references: [id])
   updatedBy       User     @relation(fields: [updatedByUserId], references: [id])
 
-  @@unique([teamId, criterionKey])
+  @@unique([teamId, criterionKey, scorerRole])
   @@map("team_rubric_scores")
 }
 

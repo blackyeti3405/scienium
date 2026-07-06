@@ -5,6 +5,9 @@ import { TIER_META } from '@/lib/discovery/credibility'
 import type { CredibilityTier } from '@prisma/client'
 import type { SourceChip, SourceLanes, SourcePlatform } from '@/lib/discovery/sources'
 import { chipId } from '@/lib/discovery/sources'
+import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
+import { PixelSpinner } from '@/components/ui/PixelSpinner'
+import { BusyButton } from '@/components/ui/BusyButton'
 
 interface Props {
   /** The open source node, or null while nothing is selected. */
@@ -235,13 +238,15 @@ export function SourceReader({
             <span className="font-pixel text-[7px] text-white/30">
               {reflectionSaved ? <span className="text-green-400">✓ saved</span> : 'Saves when you click away'}
             </span>
-            <button
+            <BusyButton
+              busy={savingReflection}
+              busyLabel="Saving…"
+              showSpinner={false}
               onClick={saveReflection}
-              disabled={savingReflection}
               className="font-pixel text-[7px] text-white/40 hover:text-[#F5C518] disabled:opacity-40 transition-colors"
             >
-              {savingReflection ? 'Saving…' : 'Save'}
-            </button>
+              Save
+            </BusyButton>
           </div>
         </div>
       </div>
@@ -266,8 +271,8 @@ export function SourceReader({
 
         {/* Title row + collapse toggle */}
         <div className="flex items-center justify-between px-4 pt-2 pb-1 shrink-0">
-          <p className="font-pixel text-[7px] uppercase tracking-widest text-white/40">
-            Follow the citations {lanesLoading && <span className="animate-spin inline-block ml-1">⟳</span>}
+          <p className="font-pixel text-[7px] uppercase tracking-widest text-white/40 flex items-center gap-1.5">
+            Follow the citations {lanesLoading && <PixelSpinner size="xs" tone="chrome" />}
           </p>
           <button
             onClick={() => setCitCollapsed((c) => !c)}
@@ -289,9 +294,14 @@ export function SourceReader({
                     <p className="font-pixel text-[7px] text-[#F5C518]/70 mb-1.5" title={hint}>
                       {label}
                     </p>
-                    {chips.length === 0 ? (
+                    {lanesLoading ? (
+                      <div className="flex flex-col gap-1">
+                        <PixelSkeleton variant="pill" h="h-6" w="w-full" />
+                        <PixelSkeleton variant="pill" h="h-6" w="w-4/5" />
+                      </div>
+                    ) : chips.length === 0 ? (
                       <p className="text-[11px] text-white/25 italic">
-                        {lanesLoading ? 'loading…' : 'none found — try another lane'}
+                        none found — try another lane
                       </p>
                     ) : (
                       <div className="flex flex-col gap-1">

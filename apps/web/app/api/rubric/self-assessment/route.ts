@@ -6,6 +6,7 @@ import {
   criterionMaxScore,
   isRubricTrack,
   rubricCriteriaFor,
+  SCORER_ROLES,
   sumReadiness,
   totalMaxFor,
   type RubricTrackKey,
@@ -41,8 +42,11 @@ export async function GET(req: NextRequest) {
 
   // Scoped to the caller's team — the IDOR guard. A criterionKey from another
   // team's rows is never reachable because the WHERE clause filters on teamId.
+  // scorerRole: 'student' excludes any teacher-scored row for this team (see
+  // app/api/teacher/rubric/route.ts) so this self-check never displays or is
+  // conflated with a teacher's rating of the same criterion.
   const rows = await db.teamRubricScore.findMany({
-    where: { teamId: ctx.teamId, track },
+    where: { teamId: ctx.teamId, track, scorerRole: SCORER_ROLES.student },
     select: {
       criterionKey: true,
       score: true,
@@ -105,18 +109,28 @@ export async function PUT(req: NextRequest) {
     )
   }
 
-  // Upsert scoped to the team — @@unique([teamId, criterionKey]) guarantees one
-  // row per team per criterion, so a second save overwrites, never duplicates.
-  // A criterionKey from another team's context is unreachable: the composite
-  // unique is (teamId, criterionKey), not criterionKey alone.
+  // Upsert scoped to the team — @@unique([teamId, criterionKey, scorerRole])
+  // guarantees one row per team per criterion per scorer role, so a second
+  // save overwrites, never duplicates. scorerRole is pinned to 'student' here
+  // (Feature F10 added the discriminator so a teacher's rubric score — see
+  // app/api/teacher/rubric/route.ts — coexists in the same table without ever
+  // colliding with this self-check row). A criterionKey from another team's
+  // context is unreachable: the composite unique includes teamId.
   const row = await db.teamRubricScore.upsert({
-    where: { teamId_criterionKey: { teamId: ctx.teamId, criterionKey: data.criterionKey } },
+    where: {
+      teamId_criterionKey_scorerRole: {
+        teamId: ctx.teamId,
+        criterionKey: data.criterionKey,
+        scorerRole: SCORER_ROLES.student,
+      },
+    },
     create: {
       teamId: ctx.teamId,
       track: data.track,
       criterionKey: data.criterionKey,
       score: data.score,
       notes: data.notes ?? null,
+      scorerRole: SCORER_ROLES.student,
       updatedByUserId: ctx.dbUserId,
     },
     update: {
@@ -133,9 +147,10 @@ export async function PUT(req: NextRequest) {
     },
   })
 
-  const scores = await db.teamRubricScore.findMany({
-    where: { teamId: ctx.teamId, track: data.track },
-    select: { score: true },
+  // Sum in Postgres — this runs on every save, no need to pull rows back.
+  const agg = await db.teamRubricScore.aggregate({
+    where: { teamId: ctx.teamId, track: data.track, scorerRole: SCORER_ROLES.student },
+    _sum: { score: true },
   })
 
   return NextResponse.json({
@@ -146,7 +161,7 @@ export async function PUT(req: NextRequest) {
       updatedByName: row.updatedBy.name,
       updatedAt: row.updatedAt.toISOString(),
     },
-    totalScore: sumReadiness(scores),
+    totalScore: agg._sum.score ?? 0,
     totalMax: totalMaxFor(data.track),
   })
 }

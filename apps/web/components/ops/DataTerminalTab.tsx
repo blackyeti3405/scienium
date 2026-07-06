@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, type ComponentType } from 'react'
 import {
   LineChart,
   Line,
@@ -11,11 +11,14 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts'
-import { Loader2, Plus, Trash2, BarChart3, ChevronLeft, Download, FileImage, BookOpen, FlaskConical, LineChart as LineChartIcon, PieChart } from 'lucide-react'
+import { Plus, Trash2, BarChart3, ChevronLeft, Download, FileImage, BookOpen, FlaskConical, LineChart as LineChartIcon, PieChart, ClipboardList, Droplets } from 'lucide-react'
+import dynamic from 'next/dynamic'
+import type { LucideIcon } from 'lucide-react'
 import { parsePastedPoints, toCsv } from '@/lib/data-terminal/csv'
-import { StatsGuidePanel } from './StatsGuidePanel'
-import { ChartsGuidePanel } from './ChartsGuidePanel'
-import { PlotGuidePanel } from './PlotGuidePanel'
+import { OpsTabSkeleton } from '@/components/ui/skeletons/OpsTabSkeleton'
+import { BusyButton } from '@/components/ui/BusyButton'
+import { LabeledLoader } from '@/components/ui/LabeledLoader'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 interface Measurement {
   id: string
@@ -58,7 +61,40 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-type DataTerminalView = 'experiments' | 'guide' | 'charts-guide' | 'plot-guide'
+type DataTerminalView = 'experiments' | 'guide' | 'charts-guide' | 'plot-guide' | 'methods-guide' | 'data-quality-guide'
+
+// The guide panels each pull a large static-content module (plot-guide alone
+// is ~765KB of source), but render only when their sub-tab is selected — so
+// they are code-split out of the hub chunk and fetched on first open, with the
+// guide loader as the fallback (same pattern as lib/featureRegistry.tsx).
+const guideLoading = () => <LabeledLoader label="Loading guide…" fill="tab" />
+const StatsGuidePanel = dynamic(() => import('./StatsGuidePanel').then((m) => m.StatsGuidePanel), { loading: guideLoading })
+const ChartsGuidePanel = dynamic(() => import('./ChartsGuidePanel').then((m) => m.ChartsGuidePanel), { loading: guideLoading })
+const PlotGuidePanel = dynamic(() => import('./PlotGuidePanel').then((m) => m.PlotGuidePanel), { loading: guideLoading })
+const MethodsGuidePanel = dynamic(() => import('./MethodsGuidePanel').then((m) => m.MethodsGuidePanel), { loading: guideLoading })
+const DataQualityGuidePanel = dynamic(() => import('./DataQualityGuidePanel').then((m) => m.DataQualityGuidePanel), { loading: guideLoading })
+
+/**
+ * One entry per sub-tab: the strip buttons and the view switch below both
+ * render from this table, so adding a guide is a one-line entry (key, label,
+ * icon, testId, Panel) instead of two hand-copied JSX blocks. `Panel` is
+ * omitted for the experiments tab, which renders `ExperimentsView` with no
+ * guide wrapper.
+ */
+const SUB_TABS: {
+  key: DataTerminalView
+  label: string
+  icon: LucideIcon
+  testId: string
+  Panel?: ComponentType
+}[] = [
+  { key: 'experiments', label: 'Experiments', icon: FlaskConical, testId: 'experiments-subtab' },
+  { key: 'guide', label: 'Stats Guide', icon: BookOpen, testId: 'stats-guide-tab', Panel: StatsGuidePanel },
+  { key: 'charts-guide', label: 'Charts Guide', icon: PieChart, testId: 'charts-guide-tab', Panel: ChartsGuidePanel },
+  { key: 'plot-guide', label: 'Plot Guide', icon: LineChartIcon, testId: 'plot-guide-tab', Panel: PlotGuidePanel },
+  { key: 'methods-guide', label: 'Methods', icon: ClipboardList, testId: 'methods-guide-tab', Panel: MethodsGuidePanel },
+  { key: 'data-quality-guide', label: 'Data Quality', icon: Droplets, testId: 'data-quality-guide-tab', Panel: DataQualityGuidePanel },
+]
 
 /**
  * Data Terminal (spec §14.1) — experiment tracking + graphing for the `working`
@@ -67,84 +103,44 @@ type DataTerminalView = 'experiments' | 'guide' | 'charts-guide' | 'plot-guide'
  *
  * Feature F12 adds a "Stats Guide" sub-tab (static reference content, no API
  * dependency). Features F13/F14 add "Charts Guide" and "Plot Guide" sub-tabs,
- * same pattern. The `view` switch below is deliberately the FIRST thing this
- * component renders, ABOVE the `loading` / `locked` / `selected` early
- * returns that gate the Experiments view — every guide must stay reachable
- * regardless of phase-lock or load state, so none of them can live behind
- * those branches. Do not move the switch below any early return.
+ * same pattern. Feature F3 adds a "Methods Guide" sub-tab (experimental-design
+ * concepts — everything before data exists), same pattern again. Feature F4
+ * adds a "Data Quality" sub-tab (everything AFTER data is collected —
+ * measurement uncertainty, sig figs/units, data cleaning, methodology
+ * pitfalls), same pattern again. The `view` switch below is deliberately the
+ * FIRST thing this component renders, ABOVE the `loading` / `locked` /
+ * `selected` early returns that gate the Experiments view — every guide must
+ * stay reachable regardless of phase-lock or load state, so none of them can
+ * live behind those branches. Do not move the switch below any early return.
  */
 export function DataTerminalTab() {
   const [view, setView] = useState<DataTerminalView>('experiments')
+  const ActiveGuidePanel = SUB_TABS.find((t) => t.key === view)?.Panel
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <div className="flex gap-1 px-4 pt-3 shrink-0">
-        <button
-          type="button"
-          data-testid="experiments-subtab"
-          onClick={() => setView('experiments')}
-          className={`inline-flex items-center gap-1.5 font-pixel text-[7px] px-3 py-2 border-b-2 transition-colors ${
-            view === 'experiments'
-              ? 'text-[#F5C518] border-[#F5C518]'
-              : 'text-white/40 border-transparent hover:text-white/70'
-          }`}
-        >
-          <FlaskConical size={11} /> Experiments
-        </button>
-        <button
-          type="button"
-          data-testid="stats-guide-tab"
-          onClick={() => setView('guide')}
-          className={`inline-flex items-center gap-1.5 font-pixel text-[7px] px-3 py-2 border-b-2 transition-colors ${
-            view === 'guide'
-              ? 'text-[#F5C518] border-[#F5C518]'
-              : 'text-white/40 border-transparent hover:text-white/70'
-          }`}
-        >
-          <BookOpen size={11} /> Stats Guide
-        </button>
-        <button
-          type="button"
-          data-testid="charts-guide-tab"
-          onClick={() => setView('charts-guide')}
-          className={`inline-flex items-center gap-1.5 font-pixel text-[7px] px-3 py-2 border-b-2 transition-colors ${
-            view === 'charts-guide'
-              ? 'text-[#F5C518] border-[#F5C518]'
-              : 'text-white/40 border-transparent hover:text-white/70'
-          }`}
-        >
-          <PieChart size={11} /> Charts Guide
-        </button>
-        <button
-          type="button"
-          data-testid="plot-guide-tab"
-          onClick={() => setView('plot-guide')}
-          className={`inline-flex items-center gap-1.5 font-pixel text-[7px] px-3 py-2 border-b-2 transition-colors ${
-            view === 'plot-guide'
-              ? 'text-[#F5C518] border-[#F5C518]'
-              : 'text-white/40 border-transparent hover:text-white/70'
-          }`}
-        >
-          <LineChartIcon size={11} /> Plot Guide
-        </button>
+      <div className="flex flex-wrap gap-1 px-4 pt-3 shrink-0">
+        {SUB_TABS.map(({ key, label, icon: Icon, testId }) => (
+          <button
+            key={key}
+            type="button"
+            data-testid={testId}
+            onClick={() => setView(key)}
+            className={`inline-flex items-center gap-1.5 font-pixel text-[7px] px-3 py-2 border-b-2 transition-colors ${
+              view === key
+                ? 'text-[#F5C518] border-[#F5C518]'
+                : 'text-white/40 border-transparent hover:text-white/70'
+            }`}
+          >
+            <Icon size={11} /> {label}
+          </button>
+        ))}
       </div>
 
-      {view === 'guide' ? (
+      {ActiveGuidePanel ? (
         <div className="ops-tab-body">
           <div className="max-w-2xl mx-auto w-full py-2">
-            <StatsGuidePanel />
-          </div>
-        </div>
-      ) : view === 'charts-guide' ? (
-        <div className="ops-tab-body">
-          <div className="max-w-2xl mx-auto w-full py-2">
-            <ChartsGuidePanel />
-          </div>
-        </div>
-      ) : view === 'plot-guide' ? (
-        <div className="ops-tab-body">
-          <div className="max-w-2xl mx-auto w-full py-2">
-            <PlotGuidePanel />
+            <ActiveGuidePanel />
           </div>
         </div>
       ) : (
@@ -160,11 +156,13 @@ export function DataTerminalTab() {
  * the Stats Guide switch above it.
  */
 function ExperimentsView() {
+  const { confirm, alert, dialog } = useConfirm()
   const [experiments, setExperiments] = useState<Experiment[]>([])
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/data-terminal')
@@ -194,17 +192,36 @@ function ExperimentsView() {
     })
   }
 
-  async function removeExperiment(id: string) {
-    await fetch(`/api/data-terminal/${id}`, { method: 'DELETE' })
-    setExperiments((list) => list.filter((e) => e.id !== id))
-    if (selectedId === id) setSelectedId(null)
+  async function removeExperiment(exp: Experiment) {
+    if (deletingId) return // guard the double-click window
+    if (
+      !(await confirm({
+        title: 'Delete experiment',
+        message: `Delete "${exp.title}" and all ${exp.measurements.length} of its data points? This can't be undone.`,
+        confirmLabel: 'Delete',
+        tone: 'danger',
+      }))
+    )
+      return
+    setDeletingId(exp.id)
+    try {
+      const res = await fetch(`/api/data-terminal/${exp.id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error()
+      setExperiments((list) => list.filter((e) => e.id !== exp.id))
+      if (selectedId === exp.id) setSelectedId(null)
+    } catch {
+      await alert({ title: 'Delete failed', message: 'Could not delete the experiment. Please try again.' })
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   if (loading) {
     return (
-      <div className="ops-tab-body items-center justify-center">
-        <Loader2 className="animate-spin text-white/30" size={20} />
-      </div>
+      <>
+        {dialog}
+        <OpsTabSkeleton variant="terminal" />
+      </>
     )
   }
 
@@ -223,17 +240,21 @@ function ExperimentsView() {
 
   if (selected) {
     return (
-      <ExperimentDetail
-        key={selected.id}
-        experiment={selected}
-        onBack={() => setSelectedId(null)}
-        onChange={upsertExperiment}
-      />
+      <>
+        {dialog}
+        <ExperimentDetail
+          key={selected.id}
+          experiment={selected}
+          onBack={() => setSelectedId(null)}
+          onChange={upsertExperiment}
+        />
+      </>
     )
   }
 
   return (
     <div className="ops-tab-body">
+      {dialog}
       <div className="max-w-2xl mx-auto w-full space-y-3 py-2">
         <div className="flex items-center justify-between">
           <span className="font-pixel text-[9px] text-[#F5C518] uppercase tracking-widest">
@@ -282,14 +303,13 @@ function ExperimentsView() {
                     {exp.measurements.length} points
                   </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => removeExperiment(exp.id)}
-                  className="text-white/30 hover:text-red-400 transition-colors p-1"
+                <BusyButton
+                  busy={deletingId === exp.id}
+                  icon={<Trash2 size={14} />}
+                  onClick={() => removeExperiment(exp)}
+                  className="text-white/30 hover:text-red-400 transition-colors p-1 disabled:opacity-100"
                   aria-label="Delete experiment"
-                >
-                  <Trash2 size={14} />
-                </button>
+                />
               </li>
             ))}
           </ul>
@@ -363,14 +383,16 @@ function NewExperimentForm({
       </div>
       {error && <p className="font-pixel text-[8px] text-red-400">{error}</p>}
       <div className="flex gap-2">
-        <button
-          type="button"
+        <BusyButton
+          busy={busy}
+          busyLabel="Creating…"
+          showSpinner={false}
           onClick={submit}
-          disabled={busy || !title.trim()}
+          disabled={!title.trim()}
           className="font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
         >
-          {busy ? 'Creating…' : 'Create'}
-        </button>
+          Create
+        </BusyButton>
         <button
           type="button"
           onClick={onCancel}
@@ -403,6 +425,10 @@ function ExperimentDetail({
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [pasteSkipped, setPasteSkipped] = useState<number | null>(null)
+  const [pasteRowCount, setPasteRowCount] = useState(0)
+
+  // Delete-measurement busy state (also guards the double-click window).
+  const [deletingPointId, setDeletingPointId] = useState<string | null>(null)
 
   const chartRef = useRef<HTMLDivElement>(null)
 
@@ -468,6 +494,7 @@ function ExperimentDetail({
       return
     }
     setBusy(true)
+    setPasteRowCount(points.length)
     setError(null)
     setPasteSkipped(null)
     try {
@@ -551,15 +578,22 @@ function ExperimentDetail({
   }
 
   async function removePoint(id: string) {
-    const res = await fetch(
-      `/api/data-terminal/${experiment.id}/measurements?measurementId=${id}`,
-      { method: 'DELETE' },
-    )
-    if (res.ok) {
+    if (deletingPointId) return // guard the double-click window
+    setDeletingPointId(id)
+    try {
+      const res = await fetch(
+        `/api/data-terminal/${experiment.id}/measurements?measurementId=${id}`,
+        { method: 'DELETE' },
+      )
+      if (!res.ok) throw new Error()
       onChange({
         ...experiment,
         measurements: experiment.measurements.filter((m) => m.id !== id),
       })
+    } catch {
+      setError('Could not delete the point. Please try again.')
+    } finally {
+      setDeletingPointId(null)
     }
   }
 
@@ -670,14 +704,15 @@ function ExperimentDetail({
               maxLength={200}
               className="flex-1 min-w-[140px] bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
             />
-            <button
-              type="button"
+            <BusyButton
+              busy={busy}
+              showSpinner={false}
+              icon={<Plus size={11} />}
               onClick={addPoint}
-              disabled={busy}
               className="inline-flex items-center gap-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
             >
-              <Plus size={11} /> Add
-            </button>
+              Add
+            </BusyButton>
           </div>
         </div>
 
@@ -715,14 +750,22 @@ function ExperimentDetail({
                 placeholder="Paste spreadsheet data here…"
                 className="w-full bg-[#0d1b2e] border border-white/15 text-white text-xs px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/20 resize-y"
               />
-              <button
-                type="button"
-                onClick={submitPaste}
-                disabled={busy || !pasteText.trim()}
-                className="font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
-              >
-                {busy ? 'Importing…' : 'Import'}
-              </button>
+              {busy ? (
+                <LabeledLoader
+                  fill="inline"
+                  label={`Importing ${pasteRowCount} row${pasteRowCount !== 1 ? 's' : ''}…`}
+                  className="items-start py-1"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={submitPaste}
+                  disabled={!pasteText.trim()}
+                  className="font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
+                >
+                  Import
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -747,14 +790,13 @@ function ExperimentDetail({
                   <td className="py-1 text-white/45">{m.series || '—'}</td>
                   <td className="py-1 text-white/45">{m.note || '—'}</td>
                   <td className="py-1 text-right">
-                    <button
-                      type="button"
+                    <BusyButton
+                      busy={deletingPointId === m.id}
+                      icon={<Trash2 size={12} />}
                       onClick={() => removePoint(m.id)}
-                      className="text-white/25 hover:text-red-400 transition-colors"
+                      className="text-white/25 hover:text-red-400 transition-colors disabled:text-white/25"
                       aria-label="Delete point"
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                    />
                   </td>
                 </tr>
               ))}

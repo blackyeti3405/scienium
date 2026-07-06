@@ -117,6 +117,8 @@ interface Props {
   onPromote?: (nodeId: string) => void
   /** #11: cycle a node's interest tier (unset → high → mid → low → unset). */
   onSetInterest?: (nodeId: string, level: InterestLevel | null) => void
+  /** Node id currently mid-promote — the pill shows "Promoting…" and ignores clicks. */
+  promotingId?: string | null
 }
 
 interface ContextMenu {
@@ -135,6 +137,7 @@ export function DiscoveryTree({
   onToggleStar,
   onPromote,
   onSetInterest,
+  promotingId,
 }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
 
@@ -210,6 +213,7 @@ export function DiscoveryTree({
             // Literature Review. Wiki/YouTube + non-starred + already-promoted → no control.
             const canPromote = isSource && n.starred && !n.paperId && !!onPromote
             const isPromoted = isSource && !!n.paperId
+            const isPromotingThis = promotingId === n.id
 
             // Colour palette (dark game theme)
             const bodyFill = isCurrent
@@ -419,9 +423,13 @@ export function DiscoveryTree({
                     nodes not yet promoted. A small gold pill under the node. ── */}
                 {canPromote && (
                   <g
-                    onClick={(e) => { e.stopPropagation(); onPromote!(n.id) }}
-                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (!isPromotingThis) onPromote!(n.id)
+                    }}
+                    style={{ cursor: isPromotingThis ? 'default' : 'pointer' }}
                     role="button"
+                    aria-busy={isPromotingThis}
                     aria-label={`Promote ${n.title} to Literature Review`}
                   >
                     <rect
@@ -430,6 +438,7 @@ export function DiscoveryTree({
                       fill="rgba(245,197,24,0.15)"
                       stroke="#F5C518"
                       strokeWidth={1}
+                      opacity={isPromotingThis ? 0.6 : 1}
                     />
                     <text
                       x={n.x + NODE_W - 39} y={n.y + NODE_H + 10}
@@ -438,7 +447,7 @@ export function DiscoveryTree({
                       fill="#F5C518"
                       className="select-none pointer-events-none"
                     >
-                      + Lit Review
+                      {isPromotingThis ? 'Promoting…' : '+ Lit Review'}
                     </text>
                   </g>
                 )}

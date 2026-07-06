@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { X, Activity, Loader2 } from 'lucide-react'
+import { X, Activity } from 'lucide-react'
+import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
 
 interface FeedEntry {
   id: string
@@ -64,11 +65,7 @@ export function ActivityPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="activity-panel__body">
-        {loading && (
-          <div className="activity-panel__empty">
-            <Loader2 size={16} className="animate-spin" />
-          </div>
-        )}
+        {loading && <PanelListSkeleton rows={5} className="p-3" />}
 
         {error && (
           <p className="activity-panel__empty font-pixel" style={{ color: '#ff6b6b' }}>

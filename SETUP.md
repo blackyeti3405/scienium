@@ -367,7 +367,10 @@ pnpm --filter web seed:e2e
 ```
 
 Idempotent — it prints each node as CREATED/FOUND/UPDATED and a second run
-performs zero writes. The three user rows themselves are created by the app on
+performs zero writes. It also restores the E2E team's currency baseline
+(KP ≥ 20,000, clearance ≥ 3 — never lowered): suite runs spend the fixture
+team's KP, and economy rebalances (e.g. Robotics Bay now requires clearance 3)
+otherwise strand it below what placement/upgrade specs need. The three user rows themselves are created by the app on
 first sign-in; if the script reports them missing, run
 `pnpm --filter web exec playwright test --project=setup` once and re-run.
 

@@ -173,13 +173,17 @@ scienium/
 │   │   │   ├── lab/                      # Lab canvas, building cards, upgrade modal
 │   │   │   ├── discovery/                # DiscoveryFeature/Home/Tree, DiscoveryTopicList, TopicSearch, WikiReader, YouTubeViewer
 │   │   │   ├── literature/
-│   │   │   │   └── LiteratureFeature.tsx # 25 slots, upload, PDF viewer, graded quiz, Q&A chat
+│   │   │   │   ├── LiteratureFeature.tsx # 25 slots, upload, PDF viewer, graded quiz, Q&A chat
+│   │   │   │   └── ResearchGuidePanel.tsx # 70-term glossary + anatomy-of-a-paper (lib/literature/research-guide)
 │   │   │   ├── ops/                       # Operations Hub (daily pillars)
 │   │   │   │   ├── OperationsHubFeature.tsx # Project Log + Failure Log tabs, shared edit/delete, reference picker
-│   │   │   │   ├── DataTerminalTab.tsx    # Experiments + Stats/Charts/Plot Guide sub-tabs (guides above phase-gate)
+│   │   │   │   ├── DataTerminalTab.tsx    # Experiments + 5 guide sub-tabs (data-driven strip, guides above phase-gate, panels code-split)
 │   │   │   │   ├── StatsGuidePanel.tsx    # Renders lib/data-terminal/stats-guide (65 measures)
 │   │   │   │   ├── ChartsGuidePanel.tsx   # Lazy per-field charts (loadChartField), 250 charts / 29 fields
 │   │   │   │   ├── PlotGuidePanel.tsx     # Renders lib/data-terminal/plot-guide (45 plot types)
+│   │   │   │   ├── MethodsGuidePanel.tsx  # Renders lib/data-terminal/methods-guide (45 design concepts)
+│   │   │   │   ├── DataQualityGuidePanel.tsx # Renders lib/data-terminal/data-quality-guide (36 concepts)
+│   │   │   │   ├── guide-chrome.tsx       # Shared guide-panel chrome: SectionLabel, CsvTable, filter bar, GuideBox
 │   │   │   │   └── RichEditor.tsx         # TipTap notes editor (Markdown round-trip)
 │   │   │   ├── minigames/                # 6 mini-game category components
 │   │   │   ├── pvp/
@@ -232,7 +236,7 @@ scienium/
 │   │   │   ├── storage.ts                # R2: putObject, getObjectStream, paperPdfKey
 │   │   │   ├── gateways.ts               # 7 gateway building configs + unlock phases
 │   │   │   ├── featureRegistry.tsx        # Maps gateway key → feature component
-│   │   │   ├── shop.ts                   # Economy building catalog (60 buildings)
+│   │   │   ├── shop.ts                   # Economy building catalog (60 buildings, 10 per lab, derived from TIER_LADDER)
 │   │   │   ├── labCurrency.tsx            # Client context for live KP/CLR/LC display
 │   │   │   ├── wikipedia.ts              # Wikipedia REST + OpenSearch helpers
 │   │   │   ├── literature/
@@ -513,15 +517,21 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 2. **Review:** `POST /api/research-plan/review` streams a structured critique (NDJSON) graded against the composed rubric (`_<type>.md` + `<subtype>.md`, prompt-cached on the doc); the assembled review is saved to `last_review_json` and replaces the prior one
 3. **Idea check:** `POST /api/research-plan/idea-check` runs Claude with the native web-search tool (`web_search_20260209`), streaming each search + sources live; verdict/findings save to `last_idea_check_json` (and an `idea_checks` ledger row for the 3/day-per-team limit), replacing the prior result
 
-### Data Terminal reference guides (Stats / Charts / Plot)
+### Data Terminal reference guides (Stats / Charts / Plot / Methods / Data Quality)
 
-The Data Terminal (an Operations Hub tab, `components/ops/DataTerminalTab.tsx`) mounts three **static, authored reference libraries** as sub-tabs alongside the live Experiments view. They are pure client-rendered content — no API, no DB, no Anthropic call, nothing persisted — assembled offline via a generator+reviewer pipeline and checked in as typed constants under `lib/data-terminal/`. Each entry's `exampleSvg` is a real matplotlib render inlined as a static, script-free SVG string (a test-guarded invariant, since it renders via `dangerouslySetInnerHTML`).
+The Data Terminal (an Operations Hub tab, `components/ops/DataTerminalTab.tsx`) mounts five **static, authored reference libraries** as sub-tabs alongside the live Experiments view. They are pure client-rendered content — no API, no DB, no Anthropic call, nothing persisted — assembled offline via a generator+reviewer pipeline and checked in as typed constants under `lib/data-terminal/`. Each entry's `exampleSvg` is a real matplotlib render inlined as a static, script-free SVG string (a test-guarded invariant, since it renders via `dangerouslySetInnerHTML`).
 
 - **Stats Guide** (`stats-guide.ts`, `StatsGuidePanel.tsx`) — 65 statistics measures across 10 categories. Each carries a definition, a Unicode formula + breakdown, a `datasetCsv`, and a step-by-step Python `code` snippet whose `output` was produced by **actually running it** — `code` + `output` are the empirically verified layer and must be regenerated together, never hand-edited.
 - **Charts Guide** (`charts-guide.ts` + `charts/<slug>.ts`, `ChartsGuidePanel.tsx`) — 250 field-specific charts across 29 scientific fields, with structured `dataNeeded: {name, unit}[]`.
 - **Plot Guide** (`plot-guide.ts`, `PlotGuidePanel.tsx`) — 45 general plot types spanning fields; small enough to stay one eager module.
+- **Methods Guide** (`methods-guide.ts`, `MethodsGuidePanel.tsx`) — 45 experimental-design concepts (variables, controls, randomization, blinding, sample size…) — everything before data exists.
+- **Data Quality Guide** (`data-quality-guide.ts`, `DataQualityGuidePanel.tsx`) — 36 concepts on everything after data is collected: measurement uncertainty, sig figs & units, cleaning, methodology pitfalls.
 
-**Notable pattern — lazy code-split content.** The Charts Guide is ~5 MB of inline SVG (250 charts × ~20 KB), far too large to ship in one bundle. So the content is split into one module *per field* (`charts/<slug>.ts`), and `charts-guide.ts` is a **light index only**: it eagerly exports `CHART_FIELDS` (the dropdown list + per-field counts) and `loadChartField(slug)`, a thin wrapper over a **static** `import()` map so Next/webpack code-splits every field into its own chunk, fetched only when a student selects that field. (Stats and Plot guides are single eager modules — small enough not to need this.) All three panels are mounted **above** the Data Terminal's phase-gate early returns in `DataTerminalTab`, so the reference material is reachable in every phase, not only once the Data Terminal itself unlocks at the Working phase.
+A sixth guide of the same species lives in Literature Review: the **Research Guide** (`lib/literature/research-guide.ts`, `components/literature/ResearchGuidePanel.tsx`) — a 70-term glossary plus an 8-section anatomy-of-a-paper walkthrough, behind a header toggle.
+
+All guide panels share one chrome (`components/ops/guide-chrome.tsx`: `SectionLabel`, `CsvTable`, filter bar, collapsible `GuideBox`) and one generic `filterGuideEntries()` (`lib/guides/filter.ts`) that each guide module wraps with its own typed filter export. Expand/collapse state uses the shared `useToggleSet` hook (`lib/hooks/useToggleSet.ts`).
+
+**Notable pattern — lazy code-split content.** The Charts Guide is ~5 MB of inline SVG (250 charts × ~20 KB), far too large to ship in one bundle. So the content is split into one module *per field* (`charts/<slug>.ts`), and `charts-guide.ts` is a **light index only**: it eagerly exports `CHART_FIELDS` (the dropdown list + per-field counts) and `loadChartField(slug)`, a thin wrapper over a **static** `import()` map so Next/webpack code-splits every field into its own chunk, fetched only when a student selects that field. (Stats and Plot guides are single eager modules — small enough not to need this.) On top of the per-field split, **every guide panel is itself code-split** out of its host chunk via `next/dynamic` (in `DataTerminalTab` and `LiteratureFeature`) and fetched on first open, so the hub and literature panels don't pay for guide text most sessions never read. All guide sub-tabs are mounted **above** the Data Terminal's phase-gate early returns in `DataTerminalTab` (rendered from one data-driven `SUB_TABS` table), so the reference material is reachable in every phase, not only once the Data Terminal itself unlocks at the Working phase.
 
 ### Momentum recap flow (Lab scene)
 1. `MomentumCard.tsx` (mounted in `LabScene.tsx`) calls `GET /api/team/momentum` — a rolling last-7-days team aggregate: KP earned, sources reviewed, logs written, experiments added, and days to the next fair
@@ -729,10 +739,14 @@ Quick reference for debugging each feature without scanning the whole repo. For 
 | Layer | File |
 |---|---|
 | UI (host tab) | `components/ops/DataTerminalTab.tsx` — guides mounted above the phase-gate |
-| UI (panels) | `components/ops/StatsGuidePanel.tsx`, `ChartsGuidePanel.tsx`, `PlotGuidePanel.tsx` |
+| UI (panels) | `components/ops/StatsGuidePanel.tsx`, `ChartsGuidePanel.tsx`, `PlotGuidePanel.tsx`, `MethodsGuidePanel.tsx`, `DataQualityGuidePanel.tsx` (all code-split via `next/dynamic`) |
+| UI (shared chrome) | `components/ops/guide-chrome.tsx`, `lib/guides/filter.ts`, `lib/hooks/useToggleSet.ts` |
 | Content (stats) | `lib/data-terminal/stats-guide.ts` — 65 measures (verified-Python) |
 | Content (charts) | `lib/data-terminal/charts-guide.ts` (index: `CHART_FIELDS`, `loadChartField`) + `lib/data-terminal/charts/<slug>.ts` (29 lazy field modules, 250 charts) |
 | Content (plot) | `lib/data-terminal/plot-guide.ts` — 45 plot types |
+| Content (methods) | `lib/data-terminal/methods-guide.ts` — 45 design concepts |
+| Content (data quality) | `lib/data-terminal/data-quality-guide.ts` — 36 concepts |
+| Content (research, in Literature) | `lib/literature/research-guide.ts` + `components/literature/ResearchGuidePanel.tsx` — 70 glossary terms + paper anatomy |
 | DB | none — static authored content, no API/DB/LLM |
 
 ### Project-log references / Momentum / Rubric self-check

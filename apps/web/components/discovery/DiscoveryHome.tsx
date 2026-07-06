@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { Pencil, Check, X } from 'lucide-react'
 import type { DiscoveryNode } from '@/stores/discoveryStore'
 import { InterestSeeds, type Interest } from '@/components/discovery/InterestSeeds'
+import { useToggleSet } from '@/lib/hooks/useToggleSet'
 
 // ── Accordion content ───────────────────────────────────────────────────────
 
@@ -135,17 +136,10 @@ export function DiscoveryHome({
   onRemoveInterest,
   onSeedInterest,
 }: Props) {
-  const [open, setOpen] = useState<Set<number>>(new Set())
+  const [open, toggle] = useToggleSet<number>()
   const [editingTopic, setEditingTopic] = useState(false)
   const [topicDraft, setTopicDraft] = useState('')
   const topicInputRef = useRef<HTMLInputElement>(null)
-
-  const toggle = (i: number) =>
-    setOpen((prev) => {
-      const next = new Set(prev)
-      next.has(i) ? next.delete(i) : next.add(i)
-      return next
-    })
 
   function startEditTopic() {
     setTopicDraft(finalTopic ?? '')

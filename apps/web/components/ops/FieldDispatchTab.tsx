@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Loader2, Radio, Send, Check } from 'lucide-react'
+import { Radio, Send, Check } from 'lucide-react'
 import { useLabCurrency } from '@/lib/labCurrency'
+import { OpsTabSkeleton } from '@/components/ui/skeletons/OpsTabSkeleton'
+import { BusyButton } from '@/components/ui/BusyButton'
 
 interface HistoryItem {
   id: string
@@ -76,11 +78,7 @@ export function FieldDispatchTab() {
   }
 
   if (loading) {
-    return (
-      <div className="ops-tab-body items-center justify-center">
-        <Loader2 className="animate-spin text-white/30" size={20} />
-      </div>
-    )
+    return <OpsTabSkeleton variant="dispatch" />
   }
 
   if (!data?.available) {
@@ -144,15 +142,16 @@ export function FieldDispatchTab() {
               : `Answered today · +${data.kpReward} KP`}
           </div>
         ) : (
-          <button
-            type="button"
+          <BusyButton
+            busy={busy}
+            busyLabel="Submitting…"
+            icon={<Send size={12} />}
             onClick={submit}
-            disabled={busy || !answer.trim()}
+            disabled={!answer.trim()}
             className="inline-flex items-center gap-2 font-pixel text-[9px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2.5 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
-            {busy ? <Loader2 className="animate-spin" size={12} /> : <Send size={12} />}
-            {busy ? 'Submitting…' : `Submit · +${data.kpReward} KP`}
-          </button>
+            {`Submit · +${data.kpReward} KP`}
+          </BusyButton>
         )}
 
         {history.length > 0 && (

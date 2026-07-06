@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { BusyButton } from '@/components/ui/BusyButton'
 
 // ── Team interest seeds (#2) — seed 1–3 curiosities → one-tap START CHIPS ─────
 // Pixel aesthetic (dark bg, font-pixel chrome, gold accents); the phrase text
@@ -17,7 +18,7 @@ export interface Interest {
 interface Props {
   interests: Interest[]
   currentUserId: string | null
-  onAdd: (text: string) => void
+  onAdd: (text: string) => Promise<void> | void
   onRemove: (id: string) => void
   onSeed: (text: string) => void
 }
@@ -26,17 +27,23 @@ const MAX_PER_USER = 3
 
 export function InterestSeeds({ interests, currentUserId, onAdd, onRemove, onSeed }: Props) {
   const [draft, setDraft] = useState('')
+  const [adding, setAdding] = useState(false)
 
   const mineCount = interests.filter((i) =>
     currentUserId ? i.createdByUserId === currentUserId : i.isMine,
   ).length
   const atCap = mineCount >= MAX_PER_USER
 
-  function submit() {
+  async function submit() {
     const text = draft.trim()
-    if (!text || atCap) return
-    onAdd(text)
-    setDraft('')
+    if (!text || atCap || adding) return
+    setAdding(true)
+    try {
+      await onAdd(text)
+      setDraft('')
+    } finally {
+      setAdding(false)
+    }
   }
 
   return (
@@ -63,18 +70,20 @@ export function InterestSeeds({ interests, currentUserId, onAdd, onRemove, onSee
             if (e.key === 'Enter') submit()
           }}
           maxLength={40}
-          disabled={atCap}
+          disabled={atCap || adding}
           placeholder={atCap ? 'You’ve added 3 interests' : 'e.g. volcanoes, black holes…'}
           aria-label="Add a team interest"
           className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 rounded-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 disabled:opacity-40"
         />
-        <button
+        <BusyButton
+          busy={adding}
+          busyLabel="Adding…"
           onClick={submit}
           disabled={!draft.trim() || atCap}
-          className="shrink-0 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] rounded-sm px-4 py-2 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          className="shrink-0 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] rounded-sm px-4 py-2 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-1.5"
         >
           Add
-        </button>
+        </BusyButton>
       </div>
 
       {/* Chips */}

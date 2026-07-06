@@ -147,6 +147,39 @@ try {
     note('links: teacher schoolId', 'updated')
   }
 
+  // ── 7. Currency baseline ──────────────────────────────────────────────────
+  // placement.spec.ts buys the 3D Printing Shop (CLR 1, 3,600 KP) and
+  // upgrades.spec.ts buys the Robotics Bay (CLR 3, 9,000 KP), so the suite
+  // needs clearanceLevel ≥ 3 and a KP cushion; both drift downward as runs
+  // spend KP (observed 2026-07-05: clearance 0 / 150 KP made both specs fail
+  // deterministically on a missing .shop-card__buy). Restore UP to the
+  // baseline only — never lower an above-baseline value, and never touch LC
+  // (upgrades.spec.ts seeds and resets LC itself).
+  const KP_BASELINE = 20000
+  const CLEARANCE_BASELINE = 3
+  const currency = await db.teamCurrency.findUnique({ where: { teamId: team.id } })
+  if (currency && currency.kp >= KP_BASELINE && currency.clearanceLevel >= CLEARANCE_BASELINE) {
+    note('currency: KP/clearance baseline', 'found', `kp=${currency.kp} clr=${currency.clearanceLevel}`)
+  } else if (currency) {
+    await db.teamCurrency.update({
+      where: { teamId: team.id },
+      data: {
+        kp: Math.max(currency.kp, KP_BASELINE),
+        clearanceLevel: Math.max(currency.clearanceLevel, CLEARANCE_BASELINE),
+      },
+    })
+    note(
+      'currency: KP/clearance baseline',
+      'updated',
+      `kp ${currency.kp}→${Math.max(currency.kp, KP_BASELINE)}, clr ${currency.clearanceLevel}→${Math.max(currency.clearanceLevel, CLEARANCE_BASELINE)}`,
+    )
+  } else {
+    await db.teamCurrency.create({
+      data: { teamId: team.id, kp: KP_BASELINE, clearanceLevel: CLEARANCE_BASELINE },
+    })
+    note('currency: KP/clearance baseline', 'created', `kp=${KP_BASELINE} clr=${CLEARANCE_BASELINE}`)
+  }
+
   // ── Report ────────────────────────────────────────────────────────────────
   const width = Math.max(...report.map((r) => r.node.length))
   for (const r of report) {

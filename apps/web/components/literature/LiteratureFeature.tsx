@@ -8,7 +8,6 @@ import {
   ExternalLink,
   Send,
   X,
-  Loader2,
   CheckCircle2,
   RotateCcw,
   Award,
@@ -16,6 +15,7 @@ import {
   FlaskConical,
   Lock,
   Quote,
+  BookOpen,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
@@ -23,7 +23,21 @@ import remarkGfm from 'remark-gfm'
 import { useLabCurrency } from '@/lib/labCurrency'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
+import { PixelSpinner } from '@/components/ui/PixelSpinner'
+import { LabeledLoader } from '@/components/ui/LabeledLoader'
+import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
+import { BusyButton } from '@/components/ui/BusyButton'
+import { uploadWithProgress } from '@/lib/uploadWithProgress'
 import { CitationsPanel } from './CitationsPanel'
+import dynamic from 'next/dynamic'
+
+// Code-split: the guide bundles a ~68KB static glossary but only renders when
+// the student toggles it open, so it loads on first open (featureRegistry pattern).
+const ResearchGuidePanel = dynamic(
+  () => import('./ResearchGuidePanel').then((m) => m.ResearchGuidePanel),
+  { loading: () => <LabeledLoader label="Loading guide…" fill="panel" /> },
+)
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +49,8 @@ export interface Paper {
   proficiencyDemonstrated: boolean
   fileUrl?: string
   createdAt: string
+  /** 0–100 while `status === 'uploading'` — real bytes from `uploadWithProgress`. */
+  uploadProgress?: number
 }
 
 interface ChatMessage {
@@ -96,11 +112,18 @@ function PaperSlot({
           <FileText size={14} className="text-white/30 shrink-0" />
 
           <div className="flex-1 min-w-0">
-            {paper.status === 'uploading' || paper.status === 'processing' ? (
+            {paper.status === 'uploading' ? (
+              // Phase 1 — determinate byte progress from the real XHR upload.
+              <div className="flex flex-col gap-1.5 max-w-[220px]">
+                <span className="font-pixel text-[8px] text-blue-300">Uploading…</span>
+                <PixelProgressBar value={paper.uploadProgress ?? 0} />
+              </div>
+            ) : paper.status === 'processing' ? (
+              // Phase 2 — genuinely indeterminate (Vega relevance check + parse).
               <div className="flex items-center gap-2">
-                <Loader2 size={12} className="text-blue-400 animate-spin" />
-                <span className="font-pixel text-[8px] text-blue-300">
-                  {paper.status === 'uploading' ? 'Uploading…' : 'Processing…'}
+                <PixelSpinner size="xs" tone="vega" />
+                <span className="font-pixel text-[8px] text-[#7ff2e3]">
+                  Vega is checking relevance…
                 </span>
               </div>
             ) : paper.status === 'error' ? (
@@ -430,18 +453,15 @@ function QAPanel({
           </button>
         </div>
 
-        {/* Loading / grading */}
-        {(phase === 'loading' || phase === 'grading') && (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-white/40">
-            <Loader2 size={20} className="animate-spin text-blue-400" />
-            <span className="font-pixel text-[8px]">
-              {phase === 'loading' ? 'Vega is writing your quiz…' : 'Grading your answers…'}
-            </span>
-          </div>
+        {/* Loading — quiz generation (long LLM wait, no form to preserve yet) */}
+        {phase === 'loading' && (
+          <LabeledLoader label="Vega is writing your quiz…" tone="vega" fill="flex-1" />
         )}
 
-        {/* Quiz */}
-        {phase === 'quiz' && (
+        {/* Quiz + Grading — grading keeps the answered form visible (dimmed)
+            instead of unmounting it, so the student's answers stay on screen
+            while Vega grades them. */}
+        {(phase === 'quiz' || phase === 'grading') && (
           <div className="flex-1 flex flex-col overflow-hidden">
             {quizError && (
               <div className="m-3 px-3 py-2 bg-red-500/15 border border-red-500/30 rounded-sm flex items-center justify-between gap-2">
@@ -454,7 +474,9 @@ function QAPanel({
                 </button>
               </div>
             )}
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5">
+            <div
+              className={`flex-1 overflow-y-auto p-4 flex flex-col gap-5 transition-opacity ${phase === 'grading' ? 'opacity-50 pointer-events-none' : ''}`}
+            >
               <p className="font-pixel text-[7px] text-white/35 leading-loose">
                 Answer in your own words to demonstrate you understood this paper. Pass mark:{' '}
                 {results?.threshold ?? 70}%.
@@ -470,19 +492,27 @@ function QAPanel({
                     onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
                     rows={3}
                     placeholder="Your answer…"
+                    readOnly={phase === 'grading'}
                     className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
                   />
                 </div>
               ))}
             </div>
             <div className="border-t border-white/10 p-3 shrink-0">
-              <button
+              <BusyButton
+                busy={phase === 'grading'}
+                busyLabel={
+                  <span className="flex items-center gap-2">
+                    <PixelSpinner size="xs" tone="vega" /> Grading your answers…
+                  </span>
+                }
+                showSpinner={false}
                 onClick={submitQuiz}
                 disabled={!allAnswered}
-                className="w-full font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 rounded-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                className="w-full font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 rounded-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center"
               >
                 {allAnswered ? 'Submit for grading' : 'Answer all questions to submit'}
-              </button>
+              </BusyButton>
             </div>
           </div>
         )}
@@ -623,8 +653,8 @@ function QAPanel({
               ))}
               {sending && (
                 <div className="flex items-start gap-2">
-                  <div className="bg-white/6 px-3 py-2 rounded-sm">
-                    <Loader2 size={12} className="text-white/40 animate-spin" />
+                  <div className="bg-white/6 rounded-sm clr-msg__typing">
+                    <span /> <span /> <span />
                   </div>
                 </div>
               )}
@@ -661,6 +691,7 @@ export function LiteratureFeature() {
   const router = useRouter()
   const { confirm, dialog } = useConfirm()
   const [papers, setPapers] = useState<Paper[]>([])
+  const [papersLoaded, setPapersLoaded] = useState(false)
   const [activePaper, setActivePaper] = useState<Paper | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [topic, setTopic] = useState<string | null | undefined>(undefined) // undefined = loading
@@ -671,6 +702,7 @@ export function LiteratureFeature() {
   const [researchIdea, setResearchIdea] = useState<string | null>(null)
   const [labType, setLabType] = useState<LabType | null>(null)
   const [showCitations, setShowCitations] = useState(false)
+  const [showGuide, setShowGuide] = useState(false)
 
   useEffect(() => {
     fetch('/api/discovery/topic')
@@ -710,6 +742,7 @@ export function LiteratureFeature() {
         }
       })
       .catch((err) => console.error('[papers] failed to load:', err))
+      .finally(() => setPapersLoaded(true))
   }, [])
 
   async function advancePhase() {
@@ -742,6 +775,7 @@ export function LiteratureFeature() {
       status: 'uploading',
       proficiencyDemonstrated: false,
       createdAt: new Date().toISOString(),
+      uploadProgress: 0,
     }
     setPapers((prev) => [...prev, placeholder])
 
@@ -749,30 +783,32 @@ export function LiteratureFeature() {
       const form = new FormData()
       form.append('file', file)
 
-      console.log('[upload] POSTing', file.name, file.size, 'bytes')
-      const res = await fetch('/api/papers', { method: 'POST', body: form })
-      const data = await res.json()
-      console.log('[upload] response', res.status, data)
+      const res = await uploadWithProgress('/api/papers', form, (fraction) =>
+        setPapers((prev) =>
+          prev.map((p) => (p.id === tempId ? { ...p, uploadProgress: Math.round(fraction * 100) } : p)),
+        ),
+      )
+      const data = (await res.json()) as Record<string, unknown>
 
-      if (!res.ok) throw new Error(data.error ?? `Upload failed (${res.status})`)
+      if (!res.ok) throw new Error((data.error as string) ?? `Upload failed (${res.status})`)
 
       setPapers((prev) =>
         prev.map((p) =>
           p.id === tempId
             ? {
-                id: data.id,
-                title: data.title ?? file.name.replace(/\.pdf$/i, ''),
-                authors: data.authors ?? [],
+                id: data.id as string,
+                title: (data.title as string) ?? file.name.replace(/\.pdf$/i, ''),
+                authors: (data.authors as string[]) ?? [],
                 status: 'processing',
                 proficiencyDemonstrated: false,
-                fileUrl: data.fileUrl,
-                createdAt: data.createdAt,
+                fileUrl: data.fileUrl as string | undefined,
+                createdAt: data.createdAt as string,
               }
             : p,
         ),
       )
 
-      pollStatus(data.id)
+      pollStatus(data.id as string)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed'
       console.error('[upload] error:', msg)
@@ -837,6 +873,15 @@ export function LiteratureFeature() {
     )
   }
 
+  // Research Guide — glossary + anatomy-of-a-paper reference, full-screen sub-view (F1)
+  if (showGuide) {
+    return (
+      <div className="h-full bg-[#0d1b2e] text-white">
+        <ResearchGuidePanel onClose={() => setShowGuide(false)} />
+      </div>
+    )
+  }
+
   // If a paper is open in Q&A mode, show the split view
   if (activePaper) {
     return (
@@ -876,6 +921,14 @@ export function LiteratureFeature() {
         </div>
         <div className="flex items-center gap-4">
           <button
+            data-testid="research-guide-open"
+            onClick={() => setShowGuide(true)}
+            title="Research vocabulary glossary and paper anatomy reference"
+            className="flex items-center gap-1.5 font-pixel text-[7px] border border-white/20 text-white/50 px-2.5 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+          >
+            <BookOpen size={10} /> Research Guide
+          </button>
+          <button
             onClick={() => setShowCitations(true)}
             title="View your citation library"
             className="flex items-center gap-1.5 font-pixel text-[7px] border border-white/20 text-white/50 px-2.5 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
@@ -883,7 +936,9 @@ export function LiteratureFeature() {
             <Quote size={10} /> Citations
           </button>
           <div className="text-right">
-            <span className="font-pixel text-[18px] text-[#F5C518]">{readyCount}</span>
+            <span className="font-pixel text-[18px] text-[#F5C518]">
+              {papersLoaded ? readyCount : '—'}
+            </span>
             <span className="font-pixel text-[10px] text-white/30"> / 25</span>
           </div>
         </div>
@@ -932,14 +987,17 @@ export function LiteratureFeature() {
                   placeholder="e.g. I'm investigating how soil pH affects plant growth rate…"
                   className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm font-pixel text-[8px]"
                 />
-                <button
+                <BusyButton
+                  busy={ideaBusy}
+                  busyLabel="Classifying…"
+                  icon={<FlaskConical size={11} />}
+                  spinnerTone="vega"
                   onClick={advancePhase}
-                  disabled={ideaBusy || !idea.trim()}
+                  disabled={!idea.trim()}
                   className="shrink-0 flex items-center gap-1.5 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
-                  {ideaBusy ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
-                  {ideaBusy ? 'Classifying…' : 'Submit'}
-                </button>
+                  Submit
+                </BusyButton>
               </div>
             )}
 
@@ -974,7 +1032,9 @@ export function LiteratureFeature() {
       )}
 
       {/* Lock notice + progress bar */}
-      {locked ? (
+      {!papersLoaded ? (
+        <div className="h-1 bg-white/8 shrink-0" />
+      ) : locked ? (
         <div className="flex items-center gap-2 px-6 py-3 bg-white/[0.02] border-t border-white/8 shrink-0">
           <Lock size={10} className="text-white/25 shrink-0" />
           <span className="font-pixel text-[7px] text-green-300/70">Sources locked — 25/25</span>
@@ -991,24 +1051,34 @@ export function LiteratureFeature() {
 
       {/* Slots list */}
       <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-2">
-        {papers.map((paper) => (
-          <PaperSlot
-            key={paper.id}
-            paper={paper}
-            isFirst={false}
-            onOpenQA={setActivePaper}
-            onDelete={locked ? undefined : handleDelete}
-          />
-        ))}
+        {!papersLoaded ? (
+          // Misleading "0 / 25" flash fix: shimmer the 25 slots instead of
+          // rendering the real empty-upload dropzones before the fetch resolves.
+          Array.from({ length: TOTAL_SLOTS }).map((_, i) => (
+            <PixelSkeleton key={`slot-skel-${i}`} variant="box" h="h-[52px]" w="w-full" />
+          ))
+        ) : (
+          <>
+            {papers.map((paper) => (
+              <PaperSlot
+                key={paper.id}
+                paper={paper}
+                isFirst={false}
+                onOpenQA={setActivePaper}
+                onDelete={locked ? undefined : handleDelete}
+              />
+            ))}
 
-        {/* Empty upload slots only shown while not yet locked */}
-        {!locked && Array.from({ length: TOTAL_SLOTS - papers.length }).map((_, i) => (
-          <PaperSlot
-            key={`empty-${i}`}
-            isFirst={i === 0}
-            onUpload={i === 0 ? handleUpload : undefined}
-          />
-        ))}
+            {/* Empty upload slots only shown while not yet locked */}
+            {!locked && Array.from({ length: TOTAL_SLOTS - papers.length }).map((_, i) => (
+              <PaperSlot
+                key={`empty-${i}`}
+                isFirst={i === 0}
+                onUpload={i === 0 ? handleUpload : undefined}
+              />
+            ))}
+          </>
+        )}
       </div>
     </div>
   )

@@ -419,6 +419,10 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC8: topic-list tier sections render top-to-bottom in order high -> mid -> low -> none', async ({
     page,
   }) => {
+    // Heaviest test in the suite: 4 API-seeded roots + 3 interest marks + a
+    // full reload — measured at ~29s of the default 30s budget on a clean
+    // tree, so any dev-mode compile cost tips it over. Give it real headroom.
+    test.slow()
     await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
     const highId = await seedRoot(page, seedTitle('tier-high'))
     const midId = await seedRoot(page, seedTitle('tier-mid'))

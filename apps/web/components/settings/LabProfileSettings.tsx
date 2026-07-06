@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, RefreshCw, Link2 } from 'lucide-react'
+import { RefreshCw, Link2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { PROJECT_TYPES } from '@/lib/research-plan/types'
+import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
+import { BusyButton } from '@/components/ui/BusyButton'
 
 interface SettingsData {
   name: string | null
@@ -50,6 +52,7 @@ export function LabProfileSettings() {
     removedTitles: string[]
   } | null>(null)
   const [topicError, setTopicError] = useState<string | null>(null)
+  const [topicLoaded, setTopicLoaded] = useState(false)
 
   // ── Research plan state ─────────────────────────────────────────────────────
   const [planDocUrl, setPlanDocUrl] = useState('')
@@ -90,6 +93,7 @@ export function LabProfileSettings() {
         setTopicDraft(d.topic ?? '')
       })
       .catch(() => {})
+      .finally(() => setTopicLoaded(true))
   }, [])
 
   // ── Load research plan (independent of settings fetch) ──────────────────────
@@ -225,20 +229,6 @@ export function LabProfileSettings() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-10 text-white/40">
-        <Loader2 size={18} className="animate-spin" />
-      </div>
-    )
-  }
-
-  if (loadError) {
-    return (
-      <p className="font-pixel text-[8px] text-red-400 py-6 text-center">{loadError}</p>
-    )
-  }
-
   const activePlanType = PROJECT_TYPES.find((t) => t.key === planType)
   const canSavePlan = planDocUrl.trim().length > 8 && !!planType && !!planSubtype && !savingPlan
 
@@ -271,52 +261,72 @@ export function LabProfileSettings() {
               >
                 Cancel
               </button>
-              <button
-                disabled={savingTopic}
+              <BusyButton
+                busy={savingTopic}
+                busyLabel="Updating…"
+                showSpinner={false}
                 onClick={() => saveTopic(topicConfirm.newTopic, true)}
                 className="flex-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 hover:brightness-110 disabled:opacity-50 transition-all"
               >
-                {savingTopic ? 'Updating…' : 'Change topic'}
-              </button>
+                Change topic
+              </BusyButton>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Your profile section ──────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-4">
-        <h3 className="font-pixel text-[9px] text-white/90 uppercase tracking-widest border-b border-white/10 pb-2">
-          Your profile
-        </h3>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="font-pixel text-[7px] text-white/50 uppercase tracking-widest">
-            Display name
-          </label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={80}
-            placeholder="Your name"
-            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
-          />
+      {/* ── Your profile section — skeletons independently while /api/settings
+          is in flight, instead of gating the whole form on one fetch. ────────── */}
+      {loading ? (
+        <div className="flex flex-col gap-4" data-testid="settings-profile-skeleton">
+          <PixelSkeleton variant="line" h="h-4" w="w-28" />
+          <PixelSkeleton variant="box" h="h-9" w="w-full" />
+          <PixelSkeleton variant="box" h="h-9" w="w-full" />
         </div>
+      ) : loadError ? (
+        <p className="font-pixel text-[8px] text-red-400 py-2">{loadError}</p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <h3 className="font-pixel text-[9px] text-white/90 uppercase tracking-widest border-b border-white/10 pb-2">
+            Your profile
+          </h3>
 
-        <div className="flex flex-col gap-1.5">
-          <label className="font-pixel text-[7px] text-white/50 uppercase tracking-widest">
-            School
-          </label>
-          <input
-            value={school}
-            onChange={(e) => setSchool(e.target.value)}
-            maxLength={120}
-            placeholder="High school name"
-            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
-          />
+          <div className="flex flex-col gap-1.5">
+            <label className="font-pixel text-[7px] text-white/50 uppercase tracking-widest">
+              Display name
+            </label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={80}
+              placeholder="Your name"
+              className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="font-pixel text-[7px] text-white/50 uppercase tracking-widest">
+              School
+            </label>
+            <input
+              value={school}
+              onChange={(e) => setSchool(e.target.value)}
+              maxLength={120}
+              placeholder="High school name"
+              className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Your lab section ─────────────────────────────────────────────────── */}
+      {loading ? (
+        <div className="flex flex-col gap-4" data-testid="settings-lab-skeleton">
+          <PixelSkeleton variant="line" h="h-4" w="w-20" />
+          <PixelSkeleton variant="box" h="h-9" w="w-full" />
+          <PixelSkeleton variant="box" h="h-9" w="w-full" />
+        </div>
+      ) : loadError ? null : (
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between border-b border-white/10 pb-2">
           <h3 className="font-pixel text-[9px] text-white/90 uppercase tracking-widest">
@@ -384,27 +394,36 @@ export function LabProfileSettings() {
           </span>
         </div>
       </div>
+      )}
 
       {/* ── Profile/lab save actions ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 pt-1">
-        <button
-          onClick={save}
-          disabled={saving}
-          className="font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center gap-2"
-        >
-          {saving ? <Loader2 size={11} className="animate-spin" /> : null}
-          {saving ? 'Saving…' : 'Save changes'}
-        </button>
-        {saveSuccess && (
-          <span className="font-pixel text-[7px] text-green-400">Saved!</span>
-        )}
-      </div>
+      {!loading && !loadError && (
+        <div className="flex items-center gap-3 pt-1">
+          <BusyButton
+            busy={saving}
+            busyLabel="Saving…"
+            onClick={save}
+            className="font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center gap-2"
+          >
+            Save changes
+          </BusyButton>
+          {saveSuccess && (
+            <span className="font-pixel text-[7px] text-green-400">Saved!</span>
+          )}
+        </div>
+      )}
 
       {saveError && (
         <p className="font-pixel text-[7px] text-red-400 leading-loose">{saveError}</p>
       )}
 
-      {/* ── Research topic section ────────────────────────────────────────────── */}
+      {/* ── Research topic section — independent fetch, own skeleton ─────────── */}
+      {!topicLoaded ? (
+        <div className="flex flex-col gap-4" data-testid="settings-topic-skeleton">
+          <PixelSkeleton variant="line" h="h-4" w="w-32" />
+          <PixelSkeleton variant="box" h="h-9" w="w-full" />
+        </div>
+      ) : (
       <div className="flex flex-col gap-4">
         <h3 className="font-pixel text-[9px] text-white/90 uppercase tracking-widest border-b border-white/10 pb-2">
           Research topic
@@ -454,14 +473,15 @@ export function LabProfileSettings() {
               />
             </div>
             <div className="flex items-center gap-2">
-              <button
+              <BusyButton
+                busy={savingTopic}
+                busyLabel="Saving…"
                 onClick={() => topicDraft.trim() && saveTopic(topicDraft.trim())}
-                disabled={!topicDraft.trim() || savingTopic}
+                disabled={!topicDraft.trim()}
                 className="font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center gap-2"
               >
-                {savingTopic ? <Loader2 size={11} className="animate-spin" /> : null}
-                {savingTopic ? 'Saving…' : 'Save topic'}
-              </button>
+                Save topic
+              </BusyButton>
               <button
                 onClick={() => setTopicEditing(false)}
                 className="font-pixel text-[7px] text-white/40 hover:text-white/70 transition-colors"
@@ -508,14 +528,22 @@ export function LabProfileSettings() {
           </p>
         )}
       </div>
+      )}
 
-      {/* ── Research plan section ─────────────────────────────────────────────── */}
+      {/* ── Research plan section — independent fetch, own skeleton ──────────── */}
+      {!planLoaded ? (
+        <div className="flex flex-col gap-4" data-testid="settings-plan-skeleton">
+          <PixelSkeleton variant="line" h="h-4" w="w-32" />
+          <PixelSkeleton variant="box" h="h-9" w="w-full" />
+          <PixelSkeleton variant="box" h="h-9" w="w-full" />
+        </div>
+      ) : (
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between border-b border-white/10 pb-2">
           <h3 className="font-pixel text-[9px] text-white/90 uppercase tracking-widest">
             Research plan
           </h3>
-          {planLoaded && planHasText && planLastSyncedAt && (
+          {planHasText && planLastSyncedAt && (
             <span className="font-pixel text-[7px] text-white/30">
               synced {formatDistanceToNow(new Date(planLastSyncedAt), { addSuffix: true })}
             </span>
@@ -582,26 +610,23 @@ export function LabProfileSettings() {
               placeholder="https://docs.google.com/document/d/…"
               className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
             />
-            <button
+            <BusyButton
+              busy={savingPlan}
+              busyLabel="Syncing…"
+              icon={planHasText ? <RefreshCw size={11} /> : <Link2 size={11} />}
               onClick={savePlan}
               disabled={!canSavePlan}
               className="shrink-0 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-4 py-2 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center gap-1.5"
             >
-              {savingPlan ? (
-                <Loader2 size={11} className="animate-spin" />
-              ) : planHasText ? (
-                <RefreshCw size={11} />
-              ) : (
-                <Link2 size={11} />
-              )}
               {planHasText ? 'Refresh' : 'Connect & sync'}
-            </button>
+            </BusyButton>
           </div>
           {planError && (
             <p className="font-pixel text-[7px] text-red-400 mt-1 leading-loose">{planError}</p>
           )}
         </div>
       </div>
+      )}
     </div>
   )
 }

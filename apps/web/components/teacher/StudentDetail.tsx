@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import {
-  Loader2,
   ChevronLeft,
   Send,
   ExternalLink,
@@ -18,6 +17,7 @@ import {
   Zap,
   Building2,
   Trophy,
+  ClipboardCheck,
   Flag,
   Activity,
   Radio,
@@ -28,6 +28,10 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Card } from '@/components/ui/Card'
 import { SectionTabs } from '@/components/ui/SectionTabs'
+import { BusyButton } from '@/components/ui/BusyButton'
+import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
+import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
+import { TeacherRubricScoring } from '@/components/teacher/TeacherRubricScoring'
 import {
   PHASE_ORDER,
   PHASE_INFO,
@@ -691,8 +695,18 @@ function QAPanel({
 
         <div className="p-4 space-y-6">
           {loading && (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="animate-spin text-white/30" size={20} />
+            <div className="space-y-6">
+              {/* Score header */}
+              <div className="flex items-center gap-3">
+                <PixelSkeleton variant="line" h="h-7" w="w-16" />
+                <PixelSkeleton variant="pill" h="h-5" w="w-20" />
+              </div>
+              {/* Transcript rows */}
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <PixelSkeleton key={i} variant="box" h="h-16" w="w-full" />
+                ))}
+              </div>
             </div>
           )}
 
@@ -852,12 +866,7 @@ function LiteratureSection({ overview }: { overview: Overview }) {
             </span>
             <span className="text-white/40 text-sm">/ {litProgress.sourceTarget} sources ready</span>
           </div>
-          <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-[#F5C518] rounded-full transition-all duration-300"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
+          <PixelProgressBar value={pct} />
           <p className="text-sm text-white/50">
             <span className="text-white font-medium" data-testid="proficiency-count">
               {demonstratedCount}
@@ -1531,10 +1540,12 @@ function FeedbackSection({
   const [items, setItems] = useState(initial)
   const [body, setBody] = useState('')
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function send() {
     if (!body.trim() || busy) return
     setBusy(true)
+    setError(null)
     try {
       const res = await fetch('/api/teacher/feedback', {
         method: 'POST',
@@ -1545,7 +1556,11 @@ function FeedbackSection({
       if (res.ok) {
         setItems((list) => [out.feedback, ...list])
         setBody('')
+      } else {
+        setError(out.error ?? 'Could not send feedback.')
       }
+    } catch {
+      setError('Could not send feedback. Try again.')
     } finally {
       setBusy(false)
     }
@@ -1561,15 +1576,18 @@ function FeedbackSection({
           maxLength={2000}
           className="flex-1 bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25 transition-colors"
         />
-        <button
-          type="button"
+        <BusyButton
+          busy={busy}
+          busyLabel="Sending…"
+          icon={<Send size={14} />}
+          disabled={!body.trim()}
           onClick={send}
-          disabled={busy || !body.trim()}
           className="inline-flex items-center gap-1.5 bg-[#F5C518] text-[#0d1b2e] text-sm font-medium px-3 py-2 rounded-md hover:brightness-110 disabled:opacity-40 transition-all cursor-pointer"
         >
-          <Send size={14} /> Send
-        </button>
+          Send
+        </BusyButton>
       </div>
+      {error && <p className="text-sm text-red-400 pt-2">{error}</p>}
       {items.length > 0 && (
         <ul className="space-y-2 pt-2">
           {items.map((f) => (
@@ -1591,40 +1609,85 @@ export function StudentDetail({ studentId }: { studentId: string }) {
   const [overview, setOverview] = useState<Overview | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
+    // Stale-response guard: without it, a slow response for a previous
+    // studentId would overwrite the student currently on screen.
+    let cancelled = false
+    setLoading(true)
+    setNotFound(false)
+    setLoadError(null)
     fetch(`/api/teacher/student/${studentId}/overview`)
       .then(async (r) => {
         if (r.status === 404) {
-          setNotFound(true)
+          if (!cancelled) setNotFound(true)
           return null
         }
         if (!r.ok) {
-          setNotFound(true)
-          return null
+          throw new Error(`overview fetch failed: ${r.status}`)
         }
         return r.json() as Promise<Overview>
       })
-      .then((d) => d && setOverview(d))
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false))
+      .then((d) => {
+        if (d && !cancelled) setOverview(d)
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError('Could not load this student. Try refreshing the page.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [studentId])
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="animate-spin text-white/30" size={24} />
+      <div className="space-y-6">
+        <PixelSkeleton variant="line" h="h-3" w="w-16" />
+        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-5 space-y-5">
+          <div className="flex items-start gap-4">
+            <PixelSkeleton variant="pill" h="h-12" w="w-12" className="shrink-0" />
+            <div className="flex-1 min-w-0 space-y-2">
+              <PixelSkeleton variant="line" h="h-5" w="w-48" />
+              <PixelSkeleton variant="line" h="h-3" w="w-64" />
+              <PixelSkeleton variant="pill" h="h-6" w="w-32" />
+            </div>
+          </div>
+          <PixelSkeleton variant="box" h="h-10" w="w-full" />
+        </div>
+        <div className="flex gap-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <PixelSkeleton key={i} variant="pill" h="h-7" w="w-20" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <PixelSkeleton key={i} variant="box" h="h-24" w="w-full" />
+          ))}
+        </div>
       </div>
     )
   }
 
-  if (notFound || !overview) {
+  if (notFound) {
     return (
       <div className="space-y-4">
         <BackLink />
         <p className="text-sm text-white/40">
           This student isn&apos;t in your classes.
         </p>
+      </div>
+    )
+  }
+
+  if (loadError || !overview) {
+    return (
+      <div className="space-y-4">
+        <BackLink />
+        <p className="text-sm text-red-400">{loadError ?? 'Something went wrong loading this student.'}</p>
       </div>
     )
   }
@@ -1742,6 +1805,13 @@ export function StudentDetail({ studentId }: { studentId: string }) {
                 group: 'Showcase',
                 icon: <Flag size={14} />,
                 content: <ScienceFairSection overview={overview} />,
+              },
+              {
+                key: 'rubric',
+                label: 'Rubric',
+                group: 'Showcase',
+                icon: <ClipboardCheck size={14} />,
+                content: <TeacherRubricScoring teamId={team.id} />,
               },
               {
                 key: 'activity',

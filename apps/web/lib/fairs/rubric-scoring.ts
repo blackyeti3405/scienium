@@ -18,6 +18,15 @@ import { ISEF_RUBRIC } from '@/lib/fairs/isef-rubric'
 
 export type RubricTrackKey = 'science' | 'engineering'
 
+/**
+ * The `TeamRubricScore.scorerRole` contract (the column is a plain String in
+ * Prisma). Always write/filter through these — a bare literal like 'Teacher'
+ * would silently create a third scorer namespace under the
+ * `(teamId, criterionKey, scorerRole)` unique that no view reads.
+ */
+export const SCORER_ROLES = { student: 'student', teacher: 'teacher' } as const
+export type ScorerRole = (typeof SCORER_ROLES)[keyof typeof SCORER_ROLES]
+
 export function isRubricTrack(value: string): value is RubricTrackKey {
   return value === 'science' || value === 'engineering'
 }

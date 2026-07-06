@@ -1,7 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Users, Crown, Copy, Check, Loader2, X, UserPlus, GraduationCap } from 'lucide-react'
+import { Users, Crown, Copy, Check, X, UserPlus, GraduationCap } from 'lucide-react'
+import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
+import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
+import { BusyButton } from '@/components/ui/BusyButton'
 
 /**
  * Team panel (Feature 1b) — opened from the team name in the status strip. Shows
@@ -136,8 +139,12 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
 
         <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5">
           {loading ? (
-            <div className="flex items-center justify-center py-10 text-white/40">
-              <Loader2 size={18} className="animate-spin" />
+            <div className="flex flex-col gap-3" data-testid="team-panel-skeleton">
+              <div className="flex items-baseline justify-between">
+                <PixelSkeleton variant="line" h="h-4" w="w-32" />
+                <PixelSkeleton variant="line" h="h-3" w="w-20" />
+              </div>
+              <PanelListSkeleton rows={3} />
             </div>
           ) : error && !data ? (
             <p className="font-pixel text-[8px] text-red-400 text-center py-6">{error}</p>
@@ -204,14 +211,14 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                     maxLength={32}
                     className="flex-1 min-w-0 bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.2em] px-3 py-2.5 rounded-sm outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30 placeholder:tracking-normal"
                   />
-                  <button
+                  <BusyButton
+                    busy={joining}
                     type="submit"
-                    disabled={joining || !classCode.trim()}
+                    disabled={!classCode.trim()}
                     className="shrink-0 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2.5 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center justify-center gap-1.5"
                   >
-                    {joining ? <Loader2 size={11} className="animate-spin" /> : null}
                     {data.myClass ? 'Switch' : 'Join'}
-                  </button>
+                  </BusyButton>
                 </form>
                 {classError && (
                   <p className="font-pixel text-[7px] text-red-400 mt-2">{classError}</p>
@@ -252,18 +259,14 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                           </button>
                         </div>
                       ) : null}
-                      <button
+                      <BusyButton
+                        busy={minting}
+                        icon={<UserPlus size={11} />}
                         onClick={mintCode}
-                        disabled={minting}
                         className="mt-3 w-full font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center justify-center gap-1.5"
                       >
-                        {minting ? (
-                          <Loader2 size={11} className="animate-spin" />
-                        ) : (
-                          <UserPlus size={11} />
-                        )}
                         {data.invite ? 'Generate a new code' : 'Generate join code'}
-                      </button>
+                      </BusyButton>
                     </>
                   )}
                   {error && (

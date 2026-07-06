@@ -2,9 +2,10 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Lock, Loader2, FlaskConical } from 'lucide-react'
+import { Lock, FlaskConical } from 'lucide-react'
 import { LAB_TYPE_LABELS } from '@/lib/phase'
 import type { AdvanceProgress } from '@/lib/team/advance'
+import { BusyButton } from '@/components/ui/BusyButton'
 
 /**
  * Phase-gate affordance shown below the status strip during literature_review.
@@ -67,15 +68,17 @@ export function PhaseAdvance({ progress }: { progress: AdvanceProgress }) {
               maxLength={500}
               disabled={busy}
             />
-            <button
-              type="button"
-              className="phase-advance__btn font-pixel"
+            <BusyButton
+              busy={busy}
+              busyLabel="Classifying…"
+              icon={<FlaskConical size={11} />}
+              spinnerTone="vega"
               onClick={advance}
-              disabled={busy || !idea.trim()}
+              disabled={!idea.trim()}
+              className="phase-advance__btn font-pixel"
             >
-              {busy ? <Loader2 size={11} className="animate-spin" /> : <FlaskConical size={11} />}
-              {busy ? 'Classifying…' : 'Submit'}
-            </button>
+              Submit
+            </BusyButton>
           </div>
         </div>
       )}

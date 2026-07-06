@@ -68,6 +68,10 @@ interface LabPlotProps {
   arrangeMode: boolean
   /** Building attached to the cursor; the grid + footprint preview show while set. */
   ghost: PlotGhost | null
+  /** True while a placement/move POST for the current ghost is in flight — the
+   *  ghost sprite pulses instead of sitting static, so a drop reads as "working"
+   *  during the 1–3s round trip instead of looking unresponsive. */
+  ghostBusy?: boolean
   onOpenGateway: (key: string) => void
   onPick: (kind: 'economy' | 'gateway', key: string, from: IsoPos) => void
   /** Drop the ghost on a (validated) cell. No-op caller-side if invalid. */
@@ -90,6 +94,7 @@ export function LabPlot({
   economy,
   arrangeMode,
   ghost,
+  ghostBusy = false,
   onOpenGateway,
   onPick,
   onDrop,
@@ -288,7 +293,7 @@ export function LabPlot({
         const pos = placeSprite(ghostSprite, dx, dy)
         return (
           <span
-            className={`plot-ghost ${hoverValid ? 'plot-ghost--valid' : 'plot-ghost--invalid'}`}
+            className={`plot-ghost ${hoverValid ? 'plot-ghost--valid' : 'plot-ghost--invalid'}${ghostBusy ? ' plot-ghost--busy' : ''}`}
             style={{
               left: pos.left,
               top: pos.top,

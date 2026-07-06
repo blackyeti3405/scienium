@@ -157,7 +157,7 @@ The Literature Review gateway building opens a single unified panel — no sub-t
 - Right side: a graded **comprehension quiz** first (see §6.5); once graded, header tabs switch between **Quiz results** and **Discuss with Vega** (active tab in gold)
 - **Discuss with Vega** is an open-ended chat about the paper; messages persist per user and reload on reopen. The chat no longer grants proficiency — the quiz owns it.
 
-**Header**: progress bar + `N / 25` counter tracking toward the gate.
+**Header**: progress bar + `N / 25` counter tracking toward the gate, plus a **Research Guide** toggle — a built-in reference with a **70-term research glossary** (searchable, categorized) and an 8-section **anatomy-of-a-paper** walkthrough with a recommended reading order. Static authored content, no LLM.
 
 ### 6.3 The 25-Resource Gate
 - Proficiency is tracked **per student** (`paper_proficiency`): each member demonstrates understanding of each source independently by passing its quiz, and the literature panel shows the current member's own proficiency
@@ -279,10 +279,12 @@ The **Data Terminal** tab is where students record, graph, and learn how to pres
 
 **Experiment tracking (phase-gated to `working`).** An experiment is a titled x/y dataset; measurements are its points, optionally grouped into series. Students log data as they collect it and see it plotted. This layer unlocks at the **Working** phase (once real data collection begins) and is locked before then with an explanatory screen (`experiments` / `measurements` tables).
 
-**Reference guides (always available, no phase gate).** Three built-in, offline reference libraries teach data literacy and are deliberately reachable in **every** phase — a student planning a study can consult them before they own a single data point:
+**Reference guides (always available, no phase gate).** Five built-in, offline reference libraries teach data literacy and are deliberately reachable in **every** phase — a student planning a study can consult them before they own a single data point:
 - **Stats Guide** — a catalog of **65** statistics measures (mean/median through t-tests, ANOVA, regression, classification metrics, and FDR, plus nonparametric tests, regression diagnostics, epidemiology, Bayesian, and agreement/reliability measures), organized by category. Each entry gives a plain-language definition, when to use it, the formula (with a term-by-term breakdown), a small sample dataset, and a self-contained, verified Python snippet with its exact printed output.
 - **Charts Guide** — **250** field-specific chart recipes across **29** scientific fields (astronomy, chemistry, ecology, neuroscience, gait biomechanics, materials science, …). Each entry names the plot type, explains how to read it, lists the raw data to collect (as structured name/unit pairs), says what it tells you, and shows a real example rendering. Fields are lazy-loaded so only the chosen field's module ships to the client.
 - **Plot Guide** — **45** general-purpose plot types organized into 6 families (Comparison, Composition, Distribution, Relationship, Trend, Specialized), each with when-to-use guidance, the data it needs, and an example.
+- **Methods Guide** — **45** experimental-design concepts (variables, controls, randomization, blinding, sample size, validity threats, …) — everything a team must get right **before any data exists**, organized by design stage.
+- **Data Quality Guide** — **36** concepts covering everything **after** data is collected: measurement uncertainty, significant figures & units, data cleaning, and methodology pitfalls, with worked examples.
 
 *(These guides are pure static content — no LLM at read time — so they cost nothing to serve and stay reachable regardless of phase-lock.)*
 
@@ -839,7 +841,7 @@ The full official ISEF judging rubric is built into the Fair Hub and rendered in
 
 - Each criterion (e.g. Research Question, Design and Methodology, Execution, Creativity, Presentation) explained in plain language
 - **Self-assessment tool (implemented):** a **Self-check** tab (also reachable at `/fair-hub/rubric`) where the team rates itself on each ISEF criterion for their chosen track (Science or Engineering). Scores are validated server-side against the `ISEF_RUBRIC` literal and roll up into a live **judge-readiness score out of 100**. Team-scoped and shared (one score per criterion per team, in `team_rubric_scores`); no AI and no seed data involved. Reads/writes via `GET/PUT /api/rubric/self-assessment`.
-- *(Planned)* **Optional teacher review:** teachers submit their own rating to compare against the student self-assessment.
+- **Teacher review (implemented):** a **Rubric** tab in the teacher's per-student drill-down where the teacher scores the same criteria side-by-side with the team's self-check, guided by curated **low/mid/high anchor descriptions and talking points** per criterion (`lib/fairs/rubric-anchors.ts`). Teacher scores live in the same `team_rubric_scores` table discriminated by a `scorer_role` column ('student' | 'teacher'), so neither side can overwrite the other. Reads/writes via teacher-scoped `GET/PUT /api/teacher/rubric`.
 - *(Planned)* **Project Log linkage:** rubric criteria referenced when evaluating Project Log entries — prompting the team when nothing has been logged toward a given criterion.
 - *(Planned)* **Rubric overlay on Showcase:** attaching the self-assessed ratings to a published Showcase.
 
@@ -860,6 +862,7 @@ Comprehensive checklist of required ISEF forms (1, 1A, 1B, 2, 3, 4, 5, 6, 7) and
 - Form templates downloadable directly from the app
 - Completion status tracked per team
 - Deadline reminders tied to each form
+- **(Implemented)** the Forms checklist tracks **12 ISEF forms**, each expandable into a full in-app guide (what it is, who needs it, section-by-section walkthrough — `ISEF_FORM_GUIDES` in `lib/fairs/forms.ts`), plus a **hazard-class primer** (4 classes, `lib/fairs/safety.ts`) so teams can tell which conditional forms apply to their project
 
 ### 13.6 Project Board Specifications
 - Standard tri-fold board dimensions and display rules

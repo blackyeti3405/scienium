@@ -1,0 +1,918 @@
+/**
+ * Literature Review "Research Guide" — a static, authored reference library
+ * that teaches the vocabulary and structure of academic papers to a
+ * science-fair student who is new to reading primary literature.
+ *
+ * Content philosophy: this is a GLOSSARY, not a stats cheat-sheet. Every term
+ * carries three plain-language layers: (1) `definition` — what the term
+ * means, in 2+ sentences of textbook-sidebar depth, not a tooltip; (2)
+ * `example` — one sentence showing the term used the way it would actually
+ * appear in or near a paper; (3) `whyItMatters` — why a student should care
+ * about this term when reading or evaluating a source. There is no
+ * formula/code/dataset layer here (that's the Data Terminal Stats Guide's
+ * job) — this module is prose-only.
+ *
+ * `PAPER_ANATOMY` is a second, independent reference: the 8-section anatomy
+ * of a typical (IMRaD-style) paper, plus a non-linear `READING_ORDER`
+ * strategy for how to actually read one (abstract first, then skip around,
+ * rather than start-to-finish).
+ *
+ * Source of truth: authored by hand, mirrors the `STATS_GUIDE` pattern
+ * (`lib/data-terminal/stats-guide.ts`) — a typed constant module rendered
+ * client-side. There is no LLM call, no Python execution, and nothing
+ * persisted; the guide is stateless static content.
+ */
+
+import { filterGuideEntries } from '@/lib/guides/filter'
+
+export type GlossaryCategory =
+  | 'methodology'
+  | 'statistics-in-reading'
+  | 'source-types'
+  | 'publishing-peer-review'
+  | 'citation'
+  | 'study-design'
+
+export const GLOSSARY_CATEGORIES: { key: GlossaryCategory; label: string }[] = [
+  { key: 'methodology', label: 'Methodology' },
+  { key: 'statistics-in-reading', label: 'Statistics in reading' },
+  { key: 'source-types', label: 'Source types' },
+  { key: 'publishing-peer-review', label: 'Publishing & peer review' },
+  { key: 'citation', label: 'Citation' },
+  { key: 'study-design', label: 'Study design' },
+]
+
+export interface GlossaryTerm {
+  /** Stable, slug-safe, unique id — drives the data-testid (e.g. "p-value"). */
+  id: string
+  /** Human display title (e.g. "P-value"). */
+  term: string
+  category: GlossaryCategory
+  /** Extra search terms, optional. */
+  aliases?: string[]
+  /** Plain-language explanation, 2+ sentences — what the term means and why it's defined that way. */
+  definition: string
+  /** One example-in-context sentence, showing the term used as it'd appear near a paper. */
+  example: string
+  /** Why this matters when reading/evaluating a paper. */
+  whyItMatters: string
+}
+
+export const RESEARCH_GLOSSARY: GlossaryTerm[] = [
+  // ─── Methodology ─────────────────────────────────────────────────────────
+  {
+    id: 'control-group',
+    term: 'Control group',
+    category: 'methodology',
+    aliases: ['control condition'],
+    definition:
+      'A control group is the set of subjects or samples that does NOT receive the treatment being tested, so researchers have a baseline to compare against. Without it, you can\'t tell whether a change happened because of your treatment or would have happened anyway.',
+    example: '"Plants in the control group received plain water, while the treatment group received the fertilizer solution."',
+    whyItMatters: 'If a paper has no control group, its results can\'t be attributed to the thing it claims caused them — that\'s one of the fastest credibility checks you can run.',
+  },
+  {
+    id: 'confound',
+    term: 'Confound (confounding variable)',
+    category: 'methodology',
+    aliases: ['confounding variable', 'confounder'],
+    definition:
+      'A confound is an outside factor that changes alongside your independent variable and could explain the result instead of (or in addition to) the thing you\'re actually testing. Good experimental design tries to hold confounds constant or randomize them away so they don\'t masquerade as the real cause.',
+    example: '"Because the treatment group was also grown under a sunnier window, sunlight is a possible confound in this study."',
+    whyItMatters: 'Spotting an unaddressed confound is one of the single most useful critical-reading skills — it tells you the paper\'s causal claim may be weaker than it sounds.',
+  },
+  {
+    id: 'blinding',
+    term: 'Blinding',
+    category: 'methodology',
+    aliases: ['blind study', 'double-blind', 'single-blind'],
+    definition:
+      'Blinding means keeping participants and/or researchers unaware of who is receiving which treatment, so their expectations can\'t bias the results. In a "double-blind" study neither the subject nor the person measuring the outcome knows the group assignment; in a "single-blind" study only the subject doesn\'t know.',
+    example: '"The study was double-blind: neither the patients nor the doctors scoring symptoms knew who had received the drug versus the placebo."',
+    whyItMatters: 'Without blinding, both subjects and researchers can unconsciously nudge results toward what they expect to see — blinding is one of the strongest guards against that bias.',
+  },
+  {
+    id: 'randomization',
+    term: 'Randomization',
+    category: 'methodology',
+    aliases: ['random assignment'],
+    definition:
+      'Randomization is assigning subjects to groups (e.g. treatment vs. control) using a random process rather than by choice, so that on average the groups start out similar in every way except the treatment. This spreads unknown confounds evenly across groups instead of letting them cluster in one.',
+    example: '"Seeds were randomly assigned to the fertilizer or control group using a coin flip for each pot."',
+    whyItMatters: 'A study that lets subjects choose or be sorted into groups (rather than randomizing) opens the door to selection bias, which can produce a result that has nothing to do with the treatment.',
+  },
+  {
+    id: 'placebo',
+    term: 'Placebo',
+    category: 'methodology',
+    definition:
+      'A placebo is an inactive treatment (like a sugar pill) given to the control group so that both groups experience the same ritual of "receiving treatment," isolating the effect of the active ingredient from the effect of merely believing you were treated. It is a specific kind of control used mainly in medical and psychological research.',
+    example: '"The control group received an identical-looking capsule containing only starch — a placebo — instead of the active compound."',
+    whyItMatters: 'If a paper compares a treatment only to "no treatment" rather than a placebo, part of its effect could just be the placebo effect, not the treatment itself.',
+  },
+  {
+    id: 'independent-variable',
+    term: 'Independent variable',
+    category: 'methodology',
+    aliases: ['iv'],
+    definition:
+      'The independent variable is the factor a researcher deliberately changes or manipulates to see what effect it has. It is the presumed "cause" side of the experiment — everything else in the design exists to isolate its effect.',
+    example: '"The independent variable was fertilizer concentration (0%, 5%, or 10%)."',
+    whyItMatters: 'Identifying the independent variable tells you exactly what the researchers claim is driving the result, so you can check whether their method actually isolates it.',
+  },
+  {
+    id: 'dependent-variable',
+    term: 'Dependent variable',
+    category: 'methodology',
+    aliases: ['dv'],
+    definition:
+      'The dependent variable is the outcome being measured — the thing that is expected to change "depending on" the independent variable. It is the number or observation the researchers actually record.',
+    example: '"The dependent variable was plant height in centimeters, measured weekly."',
+    whyItMatters: 'A mismatch between what a paper measures (dependent variable) and what it claims to show is a common way conclusions overreach the data.',
+  },
+  {
+    id: 'operational-definition',
+    term: 'Operational definition',
+    category: 'methodology',
+    definition:
+      'An operational definition spells out exactly how an abstract concept is measured in a specific study — turning something fuzzy like "stress" or "growth" into a precise, repeatable procedure. Two papers can study the "same" concept but reach different conclusions simply because they operationalized it differently.',
+    example: '"\'Stress\' was operationally defined as cortisol concentration in a saliva sample taken at 9am."',
+    whyItMatters: 'Checking a paper\'s operational definitions tells you whether it actually measured what it claims to be studying, or something only loosely related.',
+  },
+  {
+    id: 'variable-control',
+    term: 'Controlled variable',
+    category: 'methodology',
+    aliases: ['constant variable'],
+    definition:
+      'A controlled variable is a factor the researcher deliberately keeps the same across all groups so it can\'t influence the outcome differently in one group versus another. Holding these constant is what lets a change in the dependent variable be attributed to the independent variable instead.',
+    example: '"Watering amount, pot size, and sunlight exposure were controlled variables held identical across every group."',
+    whyItMatters: 'A paper that doesn\'t mention its controlled variables leaves you unable to judge whether other factors, not the one being tested, could explain the result.',
+  },
+  {
+    id: 'reproducibility',
+    term: 'Reproducibility',
+    category: 'methodology',
+    definition:
+      'Reproducibility is the ability of a different researcher, using the original data and the same analysis steps, to arrive at the same result. It is closely related to but distinct from replication, which involves collecting new data from scratch.',
+    example: '"The authors published their raw data and analysis code so other labs could check the reproducibility of their statistics."',
+    whyItMatters: 'A paper that shares its data and code is easier to trust, because its numbers can be independently checked rather than taken on faith.',
+  },
+  {
+    id: 'replication',
+    term: 'Replication',
+    category: 'methodology',
+    aliases: ['replicate study', 'replication crisis'],
+    definition:
+      'Replication means repeating a study — ideally with new data collected independently — to see whether the same result shows up again. A single study, no matter how well designed, is only one data point about whether an effect is real; replication is how science builds confidence over time.',
+    example: '"A follow-up lab attempted to replicate the original finding with a larger sample and found a much smaller effect."',
+    whyItMatters: 'One unreplicated study is weak evidence on its own — look for whether other labs have reproduced the finding before treating it as settled.',
+  },
+  {
+    id: 'sample-size',
+    term: 'Sample size',
+    category: 'methodology',
+    aliases: ['n'],
+    definition:
+      'Sample size (often written as "n") is the number of subjects, measurements, or trials included in a study. Larger sample sizes generally give more stable, trustworthy estimates and make it easier to detect real effects, while small samples are more easily swayed by chance or by one unusual data point.',
+    example: '"The study measured germination rates across n = 200 seeds, split evenly between the treatment and control groups."',
+    whyItMatters: 'A dramatic-sounding result from a tiny sample size deserves much more skepticism than the same result from a large one.',
+  },
+  {
+    id: 'qualitative-vs-quantitative',
+    term: 'Qualitative vs. quantitative data',
+    category: 'methodology',
+    aliases: ['qualitative data', 'quantitative data'],
+    definition:
+      'Quantitative data is numerical and can be measured, counted, and analyzed statistically (heights, scores, counts). Qualitative data is descriptive and non-numerical, capturing categories, themes, or experiences (interview responses, behavioral observations) that are usually analyzed by coding or pattern-finding rather than arithmetic.',
+    example: '"The team collected quantitative data (reaction times in milliseconds) alongside qualitative data (open-ended interview notes about participant strategy)."',
+    whyItMatters: 'Knowing which kind of data a paper uses tells you what kind of analysis (and what kind of claims) are actually appropriate for it.',
+  },
+  {
+    id: 'validity',
+    term: 'Validity',
+    category: 'methodology',
+    aliases: ['internal validity', 'external validity'],
+    definition:
+      'Validity asks whether a study actually measures what it claims to measure and whether its conclusions hold up. "Internal validity" is about whether the study design itself supports its causal claim (few confounds, good controls); "external validity" is about whether the result generalizes beyond the specific sample and setting studied.',
+    example: '"The lab-based memory test had strong internal validity but questionable external validity, since real-world distractions weren\'t present."',
+    whyItMatters: 'A study can be done carefully (internally valid) yet still not apply to the situation you care about (externally invalid) — both matter when deciding how much to trust a finding.',
+  },
+  {
+    id: 'reliability',
+    term: 'Reliability',
+    category: 'methodology',
+    definition:
+      'Reliability is whether a measurement gives consistent results when repeated under the same conditions. A reliable instrument (like a scale or a survey) produces the same reading each time you use it on the same thing, even if that reading isn\'t necessarily accurate.',
+    example: '"The researchers reported high inter-rater reliability: two independent scorers agreed on 94% of behavioral codes."',
+    whyItMatters: 'A measurement can be reliable but still wrong (consistently off-target) — reliability and validity are different questions, and a rigorous paper should address both.',
+  },
+  {
+    id: 'protocol',
+    term: 'Protocol (methods write-up)',
+    category: 'methodology',
+    aliases: ['experimental protocol'],
+    definition:
+      'A protocol is the exact, step-by-step procedure a study follows — precise enough that another researcher could carry it out identically. Papers typically describe their protocol in the Methods section in enough detail to support replication.',
+    example: '"The protocol specified watering exactly 50 mL every 48 hours at the same time of day for all pots."',
+    whyItMatters: 'A vague or incomplete protocol is a red flag — if you can\'t tell exactly what the researchers did, you can\'t judge whether they did it well or repeat it yourself.',
+  },
+  {
+    id: 'bias',
+    term: 'Bias',
+    category: 'methodology',
+    aliases: ['researcher bias', 'selection bias', 'measurement bias'],
+    definition:
+      'Bias is any systematic (non-random) error that pushes results in a consistent direction rather than scattering them randomly. It can enter at many stages — who gets selected into a study (selection bias), how data is measured (measurement bias), or what a researcher expects to find (confirmation bias) — and unlike random noise, it doesn\'t average out with a bigger sample.',
+    example: '"Because volunteers self-selected into the exercise study, selection bias may mean the sample was already more health-conscious than average."',
+    whyItMatters: 'Bias is often more dangerous than random error because more data doesn\'t fix it — you have to identify the source and correct the design itself.',
+  },
+  {
+    id: 'iteration',
+    term: 'Iteration (engineering design cycle)',
+    category: 'methodology',
+    definition:
+      'Iteration is the repeated cycle of build, test, and refine used in engineering-style projects, where each version is informed by what failed or underperformed in the last one. Unlike a single hypothesis-driven science experiment, an iterative project may go through many prototypes before reaching a final design.',
+    example: '"After the first prototype failed the load test, the team iterated on the bracket geometry three more times before it met spec."',
+    whyItMatters: 'Recognizing when a paper is describing iteration rather than a single controlled test helps you judge it by the right standard — engineering progress, not a single p-value.',
+  },
+  {
+    id: 'reproducible-materials',
+    term: 'Materials list',
+    category: 'methodology',
+    definition:
+      'A materials list is the itemized inventory of equipment, reagents, organisms, or components a study used, usually with enough specificity (brand, model, concentration, supplier) that someone else could source the exact same items. It is typically paired with the Methods section under a combined "Materials and Methods" heading.',
+    example: '"Materials included 200 Brassica rapa seeds (Wisconsin Fast Plants, standard variety) and a 0.5% w/v fertilizer solution."',
+    whyItMatters: 'A precise materials list is part of what makes a study replicable — vague materials ("some seeds," "a fertilizer") make a study much harder to repeat or trust.',
+  },
+
+  // ─── Statistics in reading ───────────────────────────────────────────────
+  {
+    id: 'p-value',
+    term: 'P-value',
+    category: 'statistics-in-reading',
+    definition:
+      'A p-value is the probability of seeing a result at least as extreme as what was observed, if there were actually no real effect (the "null hypothesis" were true). A small p-value means the observed data would be unusual if nothing were really going on, which is evidence — but not proof — against the null hypothesis.',
+    example: '"The difference in growth rate was statistically significant (p = 0.02), meaning it would be unlikely to see by chance alone if fertilizer had no real effect."',
+    whyItMatters: 'A low p-value does not mean an effect is large or important, and it does not mean the hypothesis is "proven" — it only speaks to how surprising the data would be under pure chance.',
+  },
+  {
+    id: 'statistical-significance',
+    term: 'Statistical significance',
+    category: 'statistics-in-reading',
+    aliases: ['significant result', 'alpha level'],
+    definition:
+      'A result is called "statistically significant" when its p-value falls below a pre-chosen threshold (commonly 0.05), meaning the data would be unlikely under the assumption of no real effect. Significance is a binary yes/no label built from the p-value — it says nothing directly about how big or practically meaningful the effect is.',
+    example: '"At the pre-registered alpha of 0.05, the treatment effect was statistically significant."',
+    whyItMatters: 'A "significant" result can still be tiny and practically unimportant, and a "non-significant" result can still reflect a real effect that a small sample simply couldn\'t detect — always look for the effect size alongside significance.',
+  },
+  {
+    id: 'effect-size',
+    term: 'Effect size',
+    category: 'statistics-in-reading',
+    definition:
+      'Effect size measures how large or meaningful a difference or relationship actually is, independent of sample size — unlike a p-value, which is heavily influenced by how much data was collected. A tiny, practically meaningless difference can still be "statistically significant" with a large enough sample, which is exactly why effect size matters alongside significance.',
+    example: '"Although the result was statistically significant, the effect size was small (Cohen\'s d = 0.15), suggesting the practical impact was modest."',
+    whyItMatters: 'Effect size tells you whether a finding is worth caring about in practice, not just whether it cleared a statistical bar.',
+  },
+  {
+    id: 'confidence-interval',
+    term: 'Confidence interval',
+    category: 'statistics-in-reading',
+    aliases: ['ci'],
+    definition:
+      'A confidence interval is a range of plausible values for a true (unknown) quantity, built from the sample data, typically reported alongside a stated confidence level like 95%. A wider interval signals more uncertainty about the true value; a narrower one signals a more precise estimate.',
+    example: '"The mean height difference was 3.2 cm (95% CI: 1.1 to 5.3 cm)."',
+    whyItMatters: 'A confidence interval shows you the precision behind a single reported number — two studies can report the same average with very different amounts of underlying uncertainty.',
+  },
+  {
+    id: 'correlation-vs-causation',
+    term: 'Correlation vs. causation',
+    category: 'statistics-in-reading',
+    aliases: ['correlation does not imply causation', 'causal claim'],
+    definition:
+      'Correlation means two variables tend to move together (as one goes up, the other tends to go up or down); causation means one variable actually produces a change in the other. Correlation alone never proves causation, because a third factor, reverse causality, or pure coincidence could explain the pattern instead.',
+    example: '"Ice cream sales and drowning rates are correlated, but that\'s because both rise in summer heat — not because ice cream causes drowning."',
+    whyItMatters: 'Watching for papers that overstate a correlational finding as if it were causal is one of the single highest-value critical-reading skills you can develop.',
+  },
+  {
+    id: 'standard-deviation',
+    term: 'Standard deviation',
+    category: 'statistics-in-reading',
+    aliases: ['sd', 'std dev'],
+    definition:
+      'Standard deviation measures how spread out a set of values is around its mean — a small standard deviation means most values sit close to the average, while a large one means they\'re scattered widely. It is usually reported alongside a mean to show not just the "typical" value but how consistent the underlying measurements were.',
+    example: '"Average plant height was 15.2 cm (SD = 1.4 cm), showing the measurements were fairly tightly clustered."',
+    whyItMatters: 'Two studies can report the same average with wildly different spread — a small standard deviation signals a more consistent, trustworthy measurement than a large one.',
+  },
+  {
+    id: 'error-bars',
+    term: 'Error bars',
+    category: 'statistics-in-reading',
+    definition:
+      'Error bars are the small vertical lines on a bar or line chart showing the range of variability or uncertainty around each plotted point — commonly standard deviation, standard error, or a confidence interval. Which one is used changes what the bars actually mean, so a careful reader checks the figure caption or methods for which measure was plotted.',
+    example: '"Each bar shows the group mean with error bars representing ±1 standard error."',
+    whyItMatters: 'Overlapping error bars between two groups is often (though not always) a visual hint that a difference isn\'t statistically reliable — but you have to know which error measure is plotted to interpret them correctly.',
+  },
+  {
+    id: 'outlier',
+    term: 'Outlier',
+    category: 'statistics-in-reading',
+    definition:
+      'An outlier is a data point that falls far outside the pattern of the rest of the dataset — unusually high, unusually low, or otherwise inconsistent with the trend. Outliers can reflect genuine rare events, measurement error, or data-entry mistakes, and how a paper handles them (keep, remove, investigate) can meaningfully change its conclusions.',
+    example: '"One plant grew to 40 cm, far above the rest of the group (mean 15 cm); the authors flagged it as a likely outlier and reported results with and without it."',
+    whyItMatters: 'Check whether and how a paper explains removing outliers — silently dropping inconvenient data points without justification is a red flag for cherry-picking.',
+  },
+  {
+    id: 'normal-distribution',
+    term: 'Normal distribution',
+    category: 'statistics-in-reading',
+    aliases: ['bell curve', 'gaussian distribution'],
+    definition:
+      'A normal distribution is a specific symmetric, bell-shaped pattern that many natural measurements (like height or measurement error) approximately follow, where most values cluster near the mean and extreme values become rarer the further out you go. Many common statistical tests assume the data being analyzed is roughly normally distributed.',
+    example: '"A histogram of the measurements looked approximately normal, so the authors used a t-test, which assumes normality."',
+    whyItMatters: 'If a paper uses a statistical test that assumes normal data but its data clearly isn\'t (e.g. heavily skewed), that\'s a methodological weak point worth noting.',
+  },
+  {
+    id: 'margin-of-error',
+    term: 'Margin of error',
+    category: 'statistics-in-reading',
+    definition:
+      'Margin of error expresses how much a survey or poll result could plausibly differ from the true population value, usually reported as a "plus or minus" figure alongside a confidence level. It grows smaller as sample size increases, which is why larger surveys can report tighter margins.',
+    example: '"The survey found 62% support, with a margin of error of ±4 percentage points at the 95% confidence level."',
+    whyItMatters: 'Two poll results that differ by less than their combined margin of error might not represent a real difference at all — always check the margin before comparing numbers.',
+  },
+  {
+    id: 'skewed-data',
+    term: 'Skewed data',
+    category: 'statistics-in-reading',
+    aliases: ['skewness', 'skew'],
+    definition:
+      'Skewed data is lopsided rather than symmetric — most values cluster on one side with a "tail" of extreme values stretching out the other way. A right-skewed (positively skewed) distribution has a long tail of high values, while left-skewed data has a long tail of low values, and either can make the mean a misleading summary compared to the median.',
+    example: '"Household income data is famously right-skewed: most incomes cluster at the lower end, with a long tail of very high earners pulling the mean upward."',
+    whyItMatters: 'When data is heavily skewed, a reported mean can look much higher (or lower) than what a "typical" case actually looks like — check whether the paper also reports the median.',
+  },
+  {
+    id: 'statistical-power',
+    term: 'Statistical power',
+    category: 'statistics-in-reading',
+    aliases: ['power analysis'],
+    definition:
+      'Statistical power is the probability that a study will correctly detect a real effect, if one truly exists, given its sample size and expected effect size. Low-powered studies (often ones with small samples) can easily miss real effects, producing a "non-significant" result that reflects insufficient data rather than a true absence of an effect.',
+    example: '"A power analysis showed the study needed at least 64 participants per group to reliably detect the expected effect size."',
+    whyItMatters: 'A "no significant difference found" result from a low-powered (small-sample) study is weak evidence that there\'s truly no effect — it may simply not have had enough data to detect one.',
+  },
+
+  // ─── Source types ────────────────────────────────────────────────────────
+  {
+    id: 'primary-source',
+    term: 'Primary source',
+    category: 'source-types',
+    definition:
+      'A primary source is an original report of research written by the people who actually did the study — it presents new data, methods, and findings for the first time. In science, this usually means the original journal article describing an experiment, not someone else\'s summary of it.',
+    example: '"The original 2019 journal article reporting the experiment\'s data and methods is a primary source."',
+    whyItMatters: 'Primary sources let you evaluate the actual methods and data behind a claim, rather than trusting someone else\'s interpretation of them — always prefer citing the primary source when you can find it.',
+  },
+  {
+    id: 'secondary-source',
+    term: 'Secondary source',
+    category: 'source-types',
+    definition:
+      'A secondary source discusses, summarizes, analyzes, or synthesizes research that was originally reported elsewhere, rather than presenting new data itself. Review articles, textbooks, and news coverage of a study are all secondary sources.',
+    example: '"A review article summarizing 30 studies on fertilizer efficiency is a secondary source, even though each of the 30 studies it cites is primary."',
+    whyItMatters: 'Secondary sources are useful for getting the big picture quickly, but they can introduce errors or spin in translation — trace claims back to the primary source before relying on them heavily.',
+  },
+  {
+    id: 'tertiary-source',
+    term: 'Tertiary source',
+    category: 'source-types',
+    definition:
+      'A tertiary source compiles and indexes information from primary and secondary sources without adding original analysis — encyclopedias, textbooks used as general references, and databases are typical examples. They\'re useful for orientation and background but are rarely appropriate to cite as evidence for a specific research claim.',
+    example: '"A general science encyclopedia entry on photosynthesis is a tertiary source, useful for background but not for citing specific experimental results."',
+    whyItMatters: 'Tertiary sources are a good starting point for understanding a topic, but a science-fair paper should generally cite primary (or well-vetted secondary) sources for its actual claims.',
+  },
+  {
+    id: 'preprint',
+    term: 'Preprint',
+    category: 'source-types',
+    aliases: ['preprint server', 'preprint vs published'],
+    definition:
+      'A preprint is a research manuscript posted publicly (e.g. on arXiv or bioRxiv) before it has been peer-reviewed or formally published in a journal. Preprints let findings circulate quickly, but because they haven\'t yet passed independent expert review, they carry a higher chance of errors or overstated claims than the peer-reviewed version.',
+    example: '"The findings first appeared as a preprint in March, then went through peer review and were published in a journal seven months later."',
+    whyItMatters: 'Treat a preprint\'s claims as provisional — worth reading, but not yet vetted the way a peer-reviewed publication has been, and check whether a peer-reviewed version has since appeared.',
+  },
+  {
+    id: 'gray-literature',
+    term: 'Gray literature',
+    category: 'source-types',
+    aliases: ['grey literature'],
+    definition:
+      'Gray literature refers to research output that isn\'t published through traditional academic peer-reviewed channels — government reports, theses, conference proceedings, and white papers are common examples. It can contain valuable, otherwise-unpublished data, but usually hasn\'t gone through the same quality-control process as a peer-reviewed journal article.',
+    example: '"The team also drew on a government agency\'s technical report — a piece of gray literature not published in a peer-reviewed journal."',
+    whyItMatters: 'Gray literature can be a legitimate and useful source, but its lack of peer review means you should evaluate its methods and credibility even more carefully than a journal article\'s.',
+  },
+  {
+    id: 'database-source',
+    term: 'Academic database',
+    category: 'source-types',
+    aliases: ['pubmed', 'google scholar', 'jstor'],
+    definition:
+      'An academic database (like PubMed, Google Scholar, or JSTOR) is a searchable index of scholarly publications that lets researchers find primary and secondary sources by keyword, author, or topic, often filtering by whether a source was peer-reviewed. Using a database rather than a general web search tends to surface higher-quality, citable sources.',
+    example: '"A PubMed search for \'plant growth fertilizer concentration\' returned 214 peer-reviewed results."',
+    whyItMatters: 'Searching an academic database instead of the open web is one of the easiest ways to raise the average credibility of the sources you find.',
+  },
+  {
+    id: 'website-source-quality',
+    term: 'Website credibility (domain/authorship check)',
+    category: 'source-types',
+    aliases: ['source credibility', 'domain check'],
+    definition:
+      'Website credibility is a quick screen for whether a non-journal web source is trustworthy: who wrote it, what their expertise is, when it was last updated, and whether the domain (.gov, .edu, .org, .com) and any citations it provides suggest a rigorous or a casual origin. No single signal is definitive, but the combination gives a fast first-pass filter.',
+    example: '"The .gov page listed a named agency scientist as author and cited three peer-reviewed studies, which raised our confidence in using it."',
+    whyItMatters: 'Fast credibility checks help filter out low-quality web sources before you invest time reading them closely.',
+  },
+  {
+    id: 'review-article',
+    term: 'Review article',
+    category: 'source-types',
+    aliases: ['literature review article'],
+    definition:
+      'A review article surveys and synthesizes the existing published research on a topic, drawing conclusions about the overall state of evidence rather than reporting a single new experiment. It is a secondary source, valuable for seeing patterns across many studies at once, but it is only as good as the primary studies it draws from.',
+    example: '"A 2021 review article summarized findings from 40 separate studies on soil pH and crop yield."',
+    whyItMatters: 'A good review article can save you enormous time getting oriented in a field, but always check which primary studies it\'s built on before treating its conclusions as final.',
+  },
+  {
+    id: 'case-study',
+    term: 'Case study',
+    category: 'source-types',
+    definition:
+      'A case study is an in-depth investigation of a single subject, event, or small group, rather than a large sample analyzed statistically. Case studies can generate rich detail and new hypotheses, but their findings can\'t be generalized to a broader population the way a large, controlled study\'s can.',
+    example: '"The paper was a case study of a single patient with an unusual genetic mutation, not a large-scale trial."',
+    whyItMatters: 'A striking case study is a source of ideas, not proof — don\'t treat a single-case finding as evidence that generalizes to everyone.',
+  },
+  {
+    id: 'dataset-repository',
+    term: 'Dataset repository',
+    category: 'source-types',
+    aliases: ['open dataset', 'data repository'],
+    definition:
+      'A dataset repository is a public archive (like Dryad, Zenodo, or a government open-data portal) where researchers deposit raw data underlying a published study, separate from the paper\'s own text. Using an openly deposited dataset as a source lets you check or even re-analyze the original numbers yourself, rather than relying only on the authors\' summary of them.',
+    example: '"The raw measurements behind the paper\'s figures were deposited in a public dataset repository, linked from the Methods section."',
+    whyItMatters: 'A study that deposits its raw data in a public repository is easier to trust and to build on, since its numbers are open to independent inspection rather than only reported secondhand.',
+  },
+
+  // ─── Publishing & peer review ────────────────────────────────────────────
+  {
+    id: 'peer-review',
+    term: 'Peer review',
+    category: 'publishing-peer-review',
+    definition:
+      'Peer review is the process by which independent experts in the same field evaluate a manuscript\'s methods, analysis, and conclusions before a journal agrees to publish it — checking for errors, unsupported claims, and missing controls. It doesn\'t guarantee a study is correct, but it is a substantial quality filter that most preprints and gray literature haven\'t passed through.',
+    example: '"The manuscript went through peer review, where two anonymous reviewers requested additional statistical analysis before it was accepted."',
+    whyItMatters: 'Whether a source has been peer-reviewed is one of the fastest, most useful credibility signals available — always check for it before citing a claim as established.',
+  },
+  {
+    id: 'impact-factor',
+    term: 'Impact factor',
+    category: 'publishing-peer-review',
+    definition:
+      'A journal\'s impact factor is a rough measure of how often, on average, articles it published in the past two years get cited by other papers. A higher impact factor generally signals a more prestigious, competitive journal, but it describes the journal\'s average, not the quality of any single article in it.',
+    example: '"The study was published in a journal with an impact factor of 12, considered high for its field."',
+    whyItMatters: 'Impact factor is a decent proxy for journal prestige but a poor substitute for actually reading a specific paper\'s methods — a high-impact journal can still publish a flawed study.',
+  },
+  {
+    id: 'retraction',
+    term: 'Retraction',
+    category: 'publishing-peer-review',
+    definition:
+      'A retraction is a formal withdrawal of a published paper by the journal or authors, usually because of a serious error, data fabrication, or misconduct discovered after publication. A retracted paper should no longer be cited as valid evidence, even though it may remain visible online with a retraction notice attached.',
+    example: '"The original 1998 study was retracted in 2010 after an investigation found the data had been manipulated."',
+    whyItMatters: 'Always check whether a paper you plan to cite has been retracted — citing a retracted study as evidence undermines your own credibility.',
+  },
+  {
+    id: 'conflict-of-interest',
+    term: 'Conflict of interest',
+    category: 'publishing-peer-review',
+    aliases: ['coi', 'funding disclosure'],
+    definition:
+      'A conflict of interest exists when a researcher (or their funder) has a financial or personal stake in a particular result, which could — even unintentionally — bias the study\'s design, analysis, or reporting. Reputable journals require authors to disclose funding sources and financial ties so readers can weigh this possibility themselves.',
+    example: '"The paper disclosed that the study was funded by the manufacturer of the supplement being tested — a potential conflict of interest."',
+    whyItMatters: 'A disclosed conflict of interest doesn\'t automatically invalidate a study, but it\'s a reason to scrutinize the methods and conclusions more carefully.',
+  },
+  {
+    id: 'open-access',
+    term: 'Open access',
+    category: 'publishing-peer-review',
+    aliases: ['oa'],
+    definition:
+      'Open access refers to research published so that anyone can read it for free, without a subscription or institutional login, as opposed to being locked behind a paywall. Open-access status is about availability, not quality — it says nothing by itself about whether a paper was peer-reviewed or rigorous.',
+    example: '"The journal is fully open access, so the PDF was freely downloadable without a university library login."',
+    whyItMatters: 'Open access makes primary sources actually reachable for a student project — but don\'t confuse "freely available" with "peer-reviewed" or "credible," since predatory journals can be open access too.',
+  },
+  {
+    id: 'predatory-journal',
+    term: 'Predatory journal',
+    category: 'publishing-peer-review',
+    definition:
+      'A predatory journal charges authors a publication fee while providing little or no genuine peer review, prioritizing profit over quality control. Papers in predatory journals can look superficially legitimate but haven\'t been meaningfully vetted, so their claims deserve extra scrutiny or should be avoided as sources.',
+    example: '"The journal accepted the manuscript within 48 hours with no revisions requested — a warning sign of a predatory journal."',
+    whyItMatters: 'Recognizing predatory-journal warning signs (near-instant acceptance, no clear editorial board, aggressive publication-fee emails) protects you from citing unvetted claims as if they were rigorously reviewed.',
+  },
+  {
+    id: 'abstract-vs-full-text',
+    term: 'Abstract-only access',
+    category: 'publishing-peer-review',
+    definition:
+      'Abstract-only access means a search result or database entry shows just the paper\'s short summary, with the full text hidden behind a paywall or institutional login. Relying on the abstract alone risks missing important caveats, limitations, or methodological details that only appear in the full paper.',
+    example: '"The database only showed the abstract; the team had to request the full text through their school\'s library to check the methods."',
+    whyItMatters: 'An abstract is written to sell the paper\'s headline finding — the full text (especially Methods and Limitations) is where the caveats that temper that headline actually live.',
+  },
+  {
+    id: 'journal-vs-conference',
+    term: 'Journal article vs. conference paper',
+    category: 'publishing-peer-review',
+    definition:
+      'A journal article typically goes through a slower, more thorough peer-review process than a conference paper, which is often reviewed quickly to meet a conference deadline and may present more preliminary work. Both can be legitimate primary sources, but the review rigor and finality of the results can differ.',
+    example: '"The early results were first presented as a conference paper, then expanded and peer-reviewed more thoroughly for the journal version two years later."',
+    whyItMatters: 'A conference paper is often earlier-stage and less rigorously reviewed than a journal article on the same topic — worth knowing which you\'re citing.',
+  },
+
+  // ─── Citation ─────────────────────────────────────────────────────────────
+  {
+    id: 'doi',
+    term: 'DOI (Digital Object Identifier)',
+    category: 'citation',
+    aliases: ['digital object identifier'],
+    definition:
+      'A DOI is a permanent, unique string assigned to a specific published work (like "10.1038/s41586-020-1234-5") that reliably links to it even if the journal\'s website changes over time. Unlike a regular URL, a DOI is designed never to break, which makes it the most durable way to point someone to an exact source.',
+    example: '"The citation included the DOI https://doi.org/10.1038/s41586-020-1234-5 so readers could find the exact article even years later."',
+    whyItMatters: 'Citing a paper\'s DOI instead of just its URL means your citation stays valid even if the hosting website is redesigned or moved.',
+  },
+  {
+    id: 'citation-vs-reference',
+    term: 'Citation vs. reference',
+    category: 'citation',
+    aliases: ['in-text citation', 'reference list', 'works cited'],
+    definition:
+      'A citation is the short in-text marker (like "(Smith, 2020)" or a superscript number) placed right where you use someone else\'s idea or data, pointing to a fuller entry. A reference (or "works cited" entry) is that fuller entry, listed at the end of the paper, giving the complete publication details needed to find the original source.',
+    example: '"The claim was followed by an in-text citation (Nguyen et al., 2019), which corresponded to a full reference entry in the Works Cited list at the end."',
+    whyItMatters: 'Confusing the two is a common student mistake — every in-text citation needs a matching reference entry, and every reference entry should be cited somewhere in the body text.',
+  },
+  {
+    id: 'citation-style',
+    term: 'Citation style (APA/MLA/IEEE)',
+    category: 'citation',
+    aliases: ['apa', 'mla', 'ieee citation'],
+    definition:
+      'A citation style is a standardized format for how in-text citations and reference-list entries are punctuated and ordered — APA and MLA are common in the social sciences and humanities, while IEEE is common in engineering and computer science. Different fields (and different teachers) require different styles, so a paper\'s citation format itself can hint at its intended audience.',
+    example: '"The lab report used APA style, so the in-text citation read (Chen & Alvarez, 2022) rather than IEEE\'s bracketed [3]."',
+    whyItMatters: 'Using the citation style your teacher or target journal requires — consistently, throughout the whole paper — is a basic but easy-to-lose credibility signal.',
+  },
+  {
+    id: 'plagiarism',
+    term: 'Plagiarism',
+    category: 'citation',
+    definition:
+      'Plagiarism is presenting someone else\'s words, data, or ideas as your own, without proper citation — whether that\'s copying a sentence verbatim or restating someone\'s exact argument without credit. It applies even to unintentional cases, which is why careful note-taking and citing as you go matters.',
+    example: '"Copying a paragraph from a source and changing only a few words, without a citation, is still considered plagiarism."',
+    whyItMatters: 'Avoiding plagiarism isn\'t just an ethics rule — it\'s also what lets a reader trace every claim in your paper back to its actual evidence.',
+  },
+  {
+    id: 'paraphrase',
+    term: 'Paraphrase',
+    category: 'citation',
+    definition:
+      'A paraphrase restates someone else\'s idea in your own words and sentence structure, rather than quoting it directly — but it still requires a citation, because the idea itself came from that source. A good paraphrase demonstrates you understood the original point well enough to express it differently.',
+    example: '"Instead of quoting the sentence directly, the student paraphrased the finding in her own words and cited the original study."',
+    whyItMatters: 'Paraphrasing without citing is still plagiarism — changing the wording doesn\'t remove the obligation to credit where the idea came from.',
+  },
+  {
+    id: 'direct-quotation',
+    term: 'Direct quotation',
+    category: 'citation',
+    aliases: ['block quote'],
+    definition:
+      'A direct quotation reproduces a source\'s exact wording, set off with quotation marks (or, for longer passages, as an indented block quote), always paired with a citation. Direct quotations are best used sparingly, for wording that is especially precise, memorable, or contested — most academic writing favors paraphrase for everyday claims.',
+    example: '"The authors wrote, in a direct quotation, that the effect was \'unexpectedly persistent even after the treatment ended\' (Lee, 2021, p. 4)."',
+    whyItMatters: 'Overusing direct quotations can make a paper read like a patchwork of other people\'s sentences rather than your own synthesis and argument.',
+  },
+  {
+    id: 'annotated-bibliography',
+    term: 'Annotated bibliography',
+    category: 'citation',
+    definition:
+      'An annotated bibliography is a reference list where each entry is followed by a short paragraph summarizing the source and evaluating its relevance, methods, or credibility. It\'s a common tool for organizing sources during the research phase, before those sources are woven into a full paper.',
+    example: '"Before drafting, the team built an annotated bibliography of their 25 sources, noting each one\'s key finding and any methodological concerns."',
+    whyItMatters: 'Building an annotated bibliography as you go makes it far easier to keep track of which source supports which claim once you start writing.',
+  },
+  {
+    id: 'self-citation',
+    term: 'Self-citation',
+    category: 'citation',
+    definition:
+      'Self-citation is when authors cite their own earlier published work. It\'s a normal and often necessary part of building on prior results, but an unusually high rate of self-citation (especially to inflate a paper\'s apparent citation count) can be a credibility yellow flag.',
+    example: '"Six of the paper\'s 40 references were self-citations to the same research group\'s earlier studies."',
+    whyItMatters: 'A moderate amount of self-citation is normal, but a heavy reliance on one group\'s own prior work — with little outside corroboration — is worth noting when judging how independently a claim has been verified.',
+  },
+
+  // ─── Study design ────────────────────────────────────────────────────────
+  {
+    id: 'hypothesis-vs-theory',
+    term: 'Hypothesis vs. theory',
+    category: 'study-design',
+    aliases: ['scientific theory', 'testable hypothesis'],
+    definition:
+      'A hypothesis is a specific, testable prediction about what will happen in a particular study, usually framed as an "if X, then Y" statement. A scientific theory is a much broader, well-substantiated explanation for a wide range of observations, built up from many tested hypotheses and repeated evidence over time — in everyday speech "theory" means a guess, but in science it means the opposite: an extensively supported framework.',
+    example: '"The hypothesis was that higher fertilizer concentration would increase growth rate, a small test that sits within the much broader theory of plant nutrient uptake."',
+    whyItMatters: 'Confusing "hypothesis" (one study\'s testable guess) with "theory" (a well-established explanatory framework) leads to common misreadings like dismissing a scientific theory as "just a guess."',
+  },
+  {
+    id: 'null-hypothesis',
+    term: 'Null hypothesis',
+    category: 'study-design',
+    aliases: ['h0'],
+    definition:
+      'The null hypothesis is the default assumption that there is no real effect or difference — that any pattern in the data is just due to chance. Statistical tests (like the p-value) are built around asking how likely the observed data would be if the null hypothesis were actually true.',
+    example: '"The null hypothesis was that fertilizer concentration has no effect on plant height."',
+    whyItMatters: 'Understanding the null hypothesis is the key to correctly interpreting a p-value — it tells you what "no effect" scenario the researchers were testing against.',
+  },
+  {
+    id: 'meta-analysis',
+    term: 'Meta-analysis',
+    category: 'study-design',
+    definition:
+      'A meta-analysis statistically combines the results of many separate studies on the same question into one pooled estimate, giving more statistical power than any single study alone. It differs from a narrative review article by using formal statistical methods to combine numeric results, not just summarizing conclusions in prose.',
+    example: '"A meta-analysis pooling 18 separate trials found a small but consistent positive effect across studies."',
+    whyItMatters: 'A well-conducted meta-analysis is often stronger evidence than any single included study, because it aggregates evidence across many different samples and research teams.',
+  },
+  {
+    id: 'longitudinal-study',
+    term: 'Longitudinal study',
+    category: 'study-design',
+    definition:
+      'A longitudinal study follows the same subjects over an extended period of time, taking repeated measurements to track how something changes. This design can reveal trends and causal ordering (what happened first) that a single snapshot in time cannot.',
+    example: '"The longitudinal study tracked the same 50 students\' test scores every year for six years."',
+    whyItMatters: 'A longitudinal design can show a trend developing over time, which is much harder to fake or misinterpret than a single-timepoint comparison.',
+  },
+  {
+    id: 'cross-sectional-study',
+    term: 'Cross-sectional study',
+    category: 'study-design',
+    definition:
+      'A cross-sectional study measures many different subjects at a single point in time, rather than following the same subjects across time. It\'s often faster and cheaper than a longitudinal design, but it can\'t distinguish a true trend over time from pre-existing differences between the groups measured.',
+    example: '"The cross-sectional study compared reading scores across students of different ages, all measured in the same month."',
+    whyItMatters: 'A cross-sectional study can show a correlation across age or time, but it can\'t on its own prove that individuals actually change that way as they age — that requires a longitudinal design.',
+  },
+  {
+    id: 'observational-study',
+    term: 'Observational study',
+    category: 'study-design',
+    definition:
+      'An observational study measures what naturally happens without the researcher assigning who gets which "treatment" or condition — subjects are simply observed in their existing groups or circumstances. Because there\'s no randomization, observational studies are more vulnerable to confounds and generally support weaker causal claims than a true experiment.',
+    example: '"Because it would be unethical to randomly assign people to smoke, researchers instead ran a large observational study comparing smokers to non-smokers."',
+    whyItMatters: 'Observational studies are often the only ethical or practical option, but their causal claims are inherently weaker than a randomized experiment\'s — watch for how carefully the authors control for confounds.',
+  },
+  {
+    id: 'controlled-experiment',
+    term: 'Controlled experiment',
+    category: 'study-design',
+    definition:
+      'A controlled experiment is a study in which the researcher actively manipulates the independent variable and compares outcomes against a control group, ideally with random assignment, to isolate cause and effect. It is generally considered the strongest design for supporting a causal claim, because it directly rules out many alternative explanations.',
+    example: '"Unlike the earlier observational data, this was a true controlled experiment: seeds were randomly assigned to fertilizer or control conditions."',
+    whyItMatters: 'A controlled experiment supports much stronger causal claims than an observational study — recognizing which type a paper used tells you how confidently to trust its "X causes Y" language.',
+  },
+  {
+    id: 'iv-vs-quasi-experiment',
+    term: 'Quasi-experiment',
+    category: 'study-design',
+    definition:
+      'A quasi-experiment resembles a true controlled experiment — it compares groups that receive different conditions — but lacks full random assignment, often because the groups already existed (e.g. two different schools) or ethical/practical constraints prevented randomizing. It sits between a fully controlled experiment and a purely observational study in how strongly it supports causal claims.',
+    example: '"Since students couldn\'t ethically be randomly assigned to different teaching methods, the researchers ran a quasi-experiment comparing two pre-existing classrooms."',
+    whyItMatters: 'Recognizing a quasi-experiment tells you to look extra carefully for whether the pre-existing groups being compared were actually similar to begin with.',
+  },
+  {
+    id: 'literature-review-section',
+    term: 'Literature review (as a paper section)',
+    category: 'study-design',
+    definition:
+      'A literature review (often part of the Introduction) surveys prior published work on a topic to show what is already known, identify gaps, and justify why the current study is needed. It is different from a standalone review article — here it\'s a section within a primary research paper, setting up context for that paper\'s own new experiment.',
+    example: '"The Introduction\'s literature review cited 12 prior studies before explaining what open question this new experiment was designed to address."',
+    whyItMatters: 'A paper\'s literature review shows you how the authors see their study fitting into the wider field — and it\'s a fast way to find other relevant sources for your own project.',
+  },
+  {
+    id: 'ethics-approval',
+    term: 'Ethics approval (IRB)',
+    category: 'study-design',
+    aliases: ['irb', 'institutional review board'],
+    definition:
+      'Ethics approval is formal sign-off from an oversight body (an Institutional Review Board, or IRB, for human-subjects research) confirming that a study\'s design adequately protects the safety, privacy, and informed consent of its participants before data collection begins. Reputable journals require this approval to be stated for studies involving people or animals.',
+    example: '"The study noted that all procedures were approved by the university\'s Institutional Review Board prior to data collection."',
+    whyItMatters: 'A stated ethics approval is a basic credibility and integrity signal for any study involving human or animal subjects — its absence is worth questioning.',
+  },
+  {
+    id: 'pilot-study',
+    term: 'Pilot study',
+    category: 'study-design',
+    definition:
+      'A pilot study is a small-scale trial run of a study\'s procedure, done before the full study, to catch practical problems and refine the method — not to draw final conclusions from. Its sample is usually too small to support strong claims on its own.',
+    example: '"A pilot study with 10 plants revealed the watering schedule needed adjusting before the full 200-plant experiment began."',
+    whyItMatters: 'Findings from a pilot study should be read as preliminary and procedure-testing, not as the paper\'s main evidence — check whether the authors are treating it that way.',
+  },
+  {
+    id: 'engineering-design-process',
+    term: 'Engineering design process (vs. hypothesis-driven science)',
+    category: 'study-design',
+    definition:
+      'The engineering design process (define the problem, brainstorm, prototype, test, refine) is a different structure from the classic hypothesis-driven scientific method, because the goal is usually building something that works well, not testing a single yes/no prediction about the natural world. Engineering-style papers often lack a formal hypothesis and instead report design requirements, prototype iterations, and performance test results.',
+    example: '"Rather than a single hypothesis, the paper stated design requirements (must lift 2 kg, cost under $20) and reported how each prototype iteration performed against them."',
+    whyItMatters: 'Don\'t mark an engineering paper down for lacking a formal hypothesis — check whether it clearly states its design requirements and test criteria instead, which is the equivalent rigor for that kind of project.',
+  },
+  {
+    id: 'baseline-measurement',
+    term: 'Baseline measurement',
+    category: 'study-design',
+    definition:
+      'A baseline measurement is the starting value recorded before any treatment or intervention begins, used as the point of comparison for measuring change. Without a baseline, a "before vs. after" claim has nothing solid to be measured against.',
+    example: '"Baseline plant height was recorded on day 0, before any fertilizer treatment began."',
+    whyItMatters: 'A paper that reports change without ever stating its baseline measurement makes it impossible to judge how large or meaningful that change really was.',
+  },
+]
+
+/**
+ * Filters `RESEARCH_GLOSSARY` (or any subset) by a case-insensitive substring
+ * match on term/definition/aliases, AND-ed with an optional category. A blank
+ * or whitespace-only query behaves like "no query." Pure and side-effect
+ * free — unit-testable and reusable by the panel component via `useMemo`.
+ * Thin wrapper over `filterGuideEntries`, kept so this module's signature
+ * and search fields (term, not title) stay pinned.
+ */
+export function filterTerms(
+  terms: GlossaryTerm[],
+  filter: { query?: string; category?: GlossaryCategory | null },
+): GlossaryTerm[] {
+  return filterGuideEntries(
+    terms,
+    filter,
+    (t) => [t.term, t.definition, ...(t.aliases ?? [])],
+    (t) => t.category,
+  )
+}
+
+// ─── Anatomy of a paper ───────────────────────────────────────────────────
+
+export interface PaperSection {
+  /** Stable, slug-safe, unique id — drives the data-testid (e.g. "abstract"). */
+  id: string
+  name: string
+  purpose: string
+  whatToLookFor: string
+  readingStrategyNote: string
+  /** Covers the engineering-vs-science variant (e.g. engineering papers often lack a formal hypothesis). */
+  variantNote: string
+}
+
+export const PAPER_ANATOMY: PaperSection[] = [
+  {
+    id: 'abstract',
+    name: 'Abstract',
+    purpose:
+      'A short (usually 150-300 word) standalone summary of the entire paper — the question, the method, the headline result, and why it matters — placed at the very top so a reader can decide whether to read further.',
+    whatToLookFor:
+      'The one-sentence takeaway result, the general method used, and the sample size or scale of the study, all compressed into a few sentences.',
+    readingStrategyNote:
+      'Read this first, always — it is the fastest way to decide whether a paper is relevant enough to your topic to invest more time in.',
+    variantNote:
+      'Engineering papers\' abstracts often lead with the design problem and final performance numbers rather than a hypothesis and p-value.',
+  },
+  {
+    id: 'introduction',
+    name: 'Introduction',
+    purpose:
+      'Sets up the background and prior research (often via a literature review) that motivates the study, states the specific question or hypothesis, and explains the gap in existing knowledge the paper addresses.',
+    whatToLookFor:
+      'The explicit hypothesis or research question, the gap in prior work being filled, and the handful of prior studies most directly relevant to yours.',
+    readingStrategyNote:
+      'Skim for the final paragraph, which usually states the hypothesis and study goal most directly — you don\'t need every background sentence on a first pass.',
+    variantNote:
+      'Engineering introductions often state design requirements or performance targets instead of a formal testable hypothesis.',
+  },
+  {
+    id: 'methods',
+    name: 'Methods / Materials',
+    purpose:
+      'Describes exactly what was done — materials, procedure, sample size, controls, and measurements — in enough detail that another researcher could replicate the study.',
+    whatToLookFor:
+      'Sample size, whether there was a control group and randomization, how key variables were operationally defined and measured, and any red flags like missing controls.',
+    readingStrategyNote:
+      'Read this closely once a paper looks relevant — this is where you judge whether the study\'s design actually supports its later claims.',
+    variantNote:
+      'Engineering methods sections describe prototype construction, test rigs, and performance-test procedures rather than subject recruitment and randomization.',
+  },
+  {
+    id: 'results',
+    name: 'Results',
+    purpose:
+      'Reports what was actually found — the raw and summarized data, statistical tests, figures, and tables — without yet interpreting what it means for the bigger picture.',
+    whatToLookFor:
+      'The key figures/tables, the actual numbers (not just significance stars), effect sizes and confidence intervals alongside p-values, and whether the data matches what the Abstract claimed.',
+    readingStrategyNote:
+      'Go straight to the figures and tables — a well-made chart usually tells you the finding faster than the surrounding paragraph text.',
+    variantNote:
+      'Engineering results report measured performance against the stated design requirements (load capacity, efficiency, cost) rather than a statistical test of a hypothesis.',
+  },
+  {
+    id: 'discussion',
+    name: 'Discussion',
+    purpose:
+      'Interprets what the results mean, connects them back to the hypothesis and to prior literature, and explains their broader significance.',
+    whatToLookFor:
+      'Whether the interpretation stays within what the data actually supports, or overreaches into causal claims the design can\'t justify.',
+    readingStrategyNote:
+      'Read this right after the Abstract, before Methods — it tells you the authors\' own take on "so what?", which helps you judge the Methods with the right question in mind.',
+    variantNote:
+      'Engineering discussions focus on whether the design met its requirements and what tradeoffs the next iteration should address.',
+  },
+  {
+    id: 'limitations',
+    name: 'Limitations',
+    purpose:
+      'Honestly states the weaknesses of the study\'s own design, sample, or method — small sample size, lack of blinding, possible confounds, or narrow generalizability.',
+    whatToLookFor:
+      'Whether the authors acknowledge the most obvious weaknesses you already spotted yourself while reading Methods — a paper that\'s silent on clear flaws is less trustworthy than one that names them.',
+    readingStrategyNote:
+      'Read this alongside Methods — the two sections together tell you how much to trust the Results.',
+    variantNote:
+      'Engineering limitations often describe conditions the prototype wasn\'t tested under, rather than statistical or sampling weaknesses.',
+  },
+  {
+    id: 'conclusion',
+    name: 'Conclusion',
+    purpose:
+      'A brief closing summary of the main finding and its significance, often suggesting directions for future research.',
+    whatToLookFor:
+      'Whether the conclusion\'s claims match the strength of evidence actually shown in Results, or quietly expand beyond it.',
+    readingStrategyNote:
+      'Read this together with the Abstract to fact-check that the paper\'s framing stayed consistent from start to finish.',
+    variantNote:
+      'Engineering conclusions typically state whether the design requirements were met and what the next design iteration should target.',
+  },
+  {
+    id: 'references',
+    name: 'References',
+    purpose:
+      'The full list of every source cited in the paper, giving complete publication details so each one can be located and checked.',
+    whatToLookFor:
+      'Whether the reference list leans heavily on the authors\' own prior work (self-citation), how recent the cited sources are, and whether key claims trace back to primary sources.',
+    readingStrategyNote:
+      'Skim this last, as a source of leads for your own literature search — it\'s a ready-made list of related papers in the same area.',
+    variantNote:
+      'Engineering references often include industry standards and technical datasheets alongside academic papers, which science-focused reference lists rarely cite.',
+  },
+]
+
+/**
+ * A non-linear reading-order strategy: expert readers do NOT read a paper
+ * top-to-bottom start-to-finish. Each `sectionId` must reference a real
+ * `PAPER_ANATOMY` id.
+ */
+export const READING_ORDER: { step: number; sectionId: string; why: string }[] = [
+  {
+    step: 1,
+    sectionId: 'abstract',
+    why: 'Get the headline result and decide in under a minute whether this paper is relevant enough to keep reading.',
+  },
+  {
+    step: 2,
+    sectionId: 'conclusion',
+    why: 'Check what the authors themselves think the takeaway is, before Methods details can bias your first impression.',
+  },
+  {
+    step: 3,
+    sectionId: 'discussion',
+    why: 'See how the authors connect the result back to the hypothesis and prior work, and watch for claims that reach beyond the data.',
+  },
+  {
+    step: 4,
+    sectionId: 'results',
+    why: 'Look at the actual figures, tables, and numbers yourself — don\'t just take the Discussion\'s interpretation on faith.',
+  },
+  {
+    step: 5,
+    sectionId: 'methods',
+    why: 'Now that you know the claimed result, check whether the design (controls, sample size, randomization) actually supports it.',
+  },
+  {
+    step: 6,
+    sectionId: 'limitations',
+    why: 'Confirm the authors\' own list of weaknesses matches what you noticed in Methods, and note anything they left out.',
+  },
+  {
+    step: 7,
+    sectionId: 'introduction',
+    why: 'Go back for the fuller background and literature review, now that you already understand the punchline and the evidence behind it.',
+  },
+  {
+    step: 8,
+    sectionId: 'references',
+    why: 'Mine the reference list for related sources for your own project, now that you know which ones the authors leaned on most.',
+  },
+]

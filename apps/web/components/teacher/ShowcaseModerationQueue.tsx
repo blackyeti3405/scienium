@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Loader2, Check, X, ExternalLink } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
+import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
+import { DecisionControls, QueueNotice, useDecisionQueue } from './DecisionControls'
 
 interface PendingShowcase {
   id: string
@@ -16,45 +18,32 @@ interface PendingShowcase {
 export function ShowcaseModerationQueue() {
   const [showcases, setShowcases] = useState<PendingShowcase[]>([])
   const [loading, setLoading] = useState(true)
-  const [busyId, setBusyId] = useState<string | null>(null)
-  const [notes, setNotes] = useState<Record<string, string>>({})
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const queue = useDecisionQueue('/api/teacher/showcase-moderation', 'showcaseId', (id) =>
+    setShowcases((list) => list.filter((s) => s.id !== id)),
+  )
 
   useEffect(() => {
     fetch('/api/teacher/showcase-moderation')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error('fetch failed')
+        return r.json()
+      })
       .then((d) => setShowcases(d.showcases ?? []))
-      .catch(() => {})
+      .catch(() => setLoadError('Could not load pending submissions. Try refreshing the page.'))
       .finally(() => setLoading(false))
   }, [])
 
-  async function decide(id: string, decision: 'approve' | 'reject') {
-    setBusyId(id)
-    try {
-      const res = await fetch('/api/teacher/showcase-moderation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ showcaseId: id, decision, note: notes[id]?.trim() || undefined }),
-      })
-      if (res.ok) setShowcases((list) => list.filter((s) => s.id !== id))
-    } finally {
-      setBusyId(null)
-    }
+  if (loading) {
+    return <PanelListSkeleton rows={3} />
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="animate-spin text-white/30" size={24} />
-      </div>
-    )
+  if (loadError) {
+    return <QueueNotice tone="error">{loadError}</QueueNotice>
   }
 
   if (showcases.length === 0) {
-    return (
-      <p className="font-pixel text-[9px] text-white/30 py-10 text-center border border-dashed border-white/10">
-        No pending showcase submissions. You&apos;re all caught up.
-      </p>
-    )
+    return <QueueNotice>No pending showcase submissions. You&apos;re all caught up.</QueueNotice>
   }
 
   return (
@@ -91,32 +80,7 @@ export function ShowcaseModerationQueue() {
             Last edited {new Date(s.lastEditedAt).toLocaleDateString()}
           </div>
 
-          <input
-            value={notes[s.id] ?? ''}
-            onChange={(e) => setNotes((n) => ({ ...n, [s.id]: e.target.value }))}
-            placeholder="Optional note to the team…"
-            maxLength={500}
-            className="w-full bg-[#0d1b2e] border border-white/15 text-white text-xs px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
-          />
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => decide(s.id, 'approve')}
-              disabled={busyId === s.id}
-              className="inline-flex items-center gap-1.5 font-pixel text-[8px] bg-emerald-500 text-[#0d1b2e] px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
-            >
-              <Check size={12} /> Approve
-            </button>
-            <button
-              type="button"
-              onClick={() => decide(s.id, 'reject')}
-              disabled={busyId === s.id}
-              className="inline-flex items-center gap-1.5 font-pixel text-[8px] border border-white/20 text-white/70 px-3 py-2 hover:border-red-400 hover:text-red-400 disabled:opacity-40 transition-all"
-            >
-              <X size={12} /> Request changes
-            </button>
-          </div>
+          <DecisionControls id={s.id} queue={queue} />
         </div>
       ))}
     </div>

@@ -87,8 +87,11 @@ async function openResearchPlan(page: Page) {
   await clickBuilding(page, 'Open Research Plan')
   const dialog = page.getByRole('dialog', { name: 'Research Plan' })
   await expect(dialog).toBeVisible({ timeout: 5000 })
-  // Wait past the dynamic-import spinner AND the panel's own initial GET fetch.
-  await expect(dialog.locator('.animate-spin')).toHaveCount(0, { timeout: 15_000 })
+  // Wait past the dynamic-import fallback AND the panel's own initial GET
+  // fetch — both render pixel skeletons now (the old .animate-spin spinners
+  // were replaced), so gate on the skeleton testids instead.
+  await expect(dialog.getByTestId('hub-panel-skeleton')).toHaveCount(0, { timeout: 15_000 })
+  await expect(dialog.getByTestId('research-plan-skeleton')).toHaveCount(0, { timeout: 15_000 })
   return dialog
 }
 
@@ -220,7 +223,10 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
   }) => {
     const dialog = await openResearchPlan(page)
 
-    // Starts in doc mode: URL input visible, no textarea.
+    // The panel opens in whichever mode the team's plan last persisted
+    // (activeSource === 'paste' after a prior AC4 run), so enter doc mode
+    // explicitly — the AC under test is the toggle, not the initial state.
+    await dialog.locator('button', { hasText: 'Connect a doc' }).click()
     await expect(dialog.getByPlaceholder('https://docs.google.com/document/d/…')).toBeVisible()
     await expect(dialog.getByPlaceholder('Paste your research plan here…')).toHaveCount(0)
 
@@ -238,8 +244,13 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
     const dialog = await openResearchPlan(page)
     await dialog.locator('button', { hasText: 'Paste text' }).click()
     const textarea = dialog.getByPlaceholder('Paste your research plan here…')
+    // A prior run's saved paste text prefills the draft from the DB — clear it
+    // (without saving) so the AC tests what it names: empty ⇒ Save disabled.
+    await textarea.fill('')
     await expect(textarea).toHaveValue('')
-    await expect(dialog.locator('button', { hasText: 'Save text' })).toBeDisabled()
+    // Reads "Update text" when the plan is already paste-backed from a prior
+    // run, "Save text" on a virgin plan — the disabled state is what's under test.
+    await expect(dialog.locator('button', { hasText: /Save text|Update text/ })).toBeDisabled()
   })
 
   // ── AC4 ──────────────────────────────────────────────────────────────────
@@ -255,9 +266,17 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
 
     const textarea = dialog.getByPlaceholder('Paste your research plan here…')
     await textarea.fill(PASTE_TEXT_V1)
-    const saveBtn = dialog.locator('button', { hasText: 'Save text' })
+    const saveBtn = dialog.locator('button', { hasText: /Save text|Update text/ })
     await expect(saveBtn).toBeEnabled()
+    // Wait for the POST itself: on a non-virgin row the "synced … ago"
+    // indicator is ALREADY visible from the previous save, so asserting it
+    // alone lets the test end (and kill the page) while the save is still in
+    // flight — AC8 then reloads into the stale text.
+    const postResponse = page.waitForResponse(
+      (res) => res.url().includes('/api/research-plan') && res.request().method() === 'POST',
+    )
     await saveBtn.click()
+    expect((await postResponse).status()).toBe(200)
 
     // "synced ... ago" indicator appears near the header.
     await expect(dialog.getByText(/synced .* ago/i)).toBeVisible({ timeout: 8000 })

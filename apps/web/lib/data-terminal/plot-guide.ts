@@ -14,6 +14,8 @@
  * rendered via dangerouslySetInnerHTML.
  */
 
+import { filterGuideEntries } from '@/lib/guides/filter'
+
 export interface PlotDataNeeded {
   name: string
   unit: string
@@ -933,14 +935,15 @@ export const PLOT_CATEGORIES: string[] = [
  * Filters `PLOTS` (or any subset) by a case-insensitive substring match on
  * title/description, AND-ed with an optional category. A blank or
  * whitespace-only query behaves like "no query." Pure and side-effect free —
- * unit-testable and reusable by the panel component via `useMemo`.
+ * unit-testable and reusable by the panel component via `useMemo`. Thin
+ * wrapper over `filterGuideEntries`, kept so this module's positional
+ * signature and search fields stay pinned.
  */
 export function filterPlots(query: string, category: string | null): PlotConcept[] {
-  const q = query.trim().toLowerCase()
-  return PLOTS.filter((p) => {
-    if (category && p.category !== category) return false
-    if (!q) return true
-    const haystack = [p.title, p.description].join(' ').toLowerCase()
-    return haystack.includes(q)
-  })
+  return filterGuideEntries(
+    PLOTS,
+    { query, category },
+    (p) => [p.title, p.description],
+    (p) => p.category,
+  )
 }

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react'
 import {
-  Loader2,
   Send,
   AlertTriangle,
   BookOpen,
@@ -25,6 +24,11 @@ import { ExpertisePanel } from './ExpertisePanel'
 import { FieldDispatchTab } from './FieldDispatchTab'
 import { DataTerminalTab } from './DataTerminalTab'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { BusyButton } from '@/components/ui/BusyButton'
+import { LabeledLoader } from '@/components/ui/LabeledLoader'
+import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
+import { OpsTabSkeleton } from '@/components/ui/skeletons/OpsTabSkeleton'
+import { uploadWithProgress } from '@/lib/uploadWithProgress'
 
 // ─── Stage options ─────────────────────────────────────────────────────────────
 
@@ -143,19 +147,23 @@ function SectionLabel({ children, required }: { children: React.ReactNode; requi
 
 function AttachmentUploader({ urls, onChange }: { urls: string[]; onChange: (urls: string[]) => void }) {
   const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function upload(file: File) {
     setUploading(true)
+    setProgress(0)
     setUploadError(null)
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await fetch('/api/project-log/attachment', { method: 'POST', body: form })
-      const data = await res.json()
+      const res = await uploadWithProgress('/api/project-log/attachment', form, (fraction) =>
+        setProgress(Math.round(fraction * 100)),
+      )
+      const data = (await res.json()) as { url?: string; error?: string }
       if (!res.ok) throw new Error(data.error ?? 'Upload failed')
-      onChange([...urls, data.url])
+      onChange([...urls, data.url!])
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
@@ -180,16 +188,17 @@ function AttachmentUploader({ urls, onChange }: { urls: string[]; onChange: (url
             </button>
           </div>
         ))}
-        <button
-          type="button"
+        <BusyButton
+          busy={uploading}
+          busyLabel="Uploading…"
+          icon={<ImagePlus size={15} />}
           onClick={() => inputRef.current?.click()}
-          disabled={uploading}
           className="ops-upload-btn"
+          spinnerTone="chrome"
           title="Add photo"
         >
-          {uploading ? <Loader2 size={15} className="animate-spin" /> : <ImagePlus size={15} />}
-          <span className="font-pixel text-[7px]">{uploading ? 'Uploading…' : 'Add photo'}</span>
-        </button>
+          <span className="font-pixel text-[7px]">Add photo</span>
+        </BusyButton>
         <input
           ref={inputRef}
           type="file"
@@ -202,6 +211,7 @@ function AttachmentUploader({ urls, onChange }: { urls: string[]; onChange: (url
           }}
         />
       </div>
+      {uploading && <PixelProgressBar value={progress} className="max-w-[200px]" />}
       {uploadError && <p className="font-pixel text-[7px] text-red-400">{uploadError}</p>}
     </div>
   )
@@ -366,10 +376,15 @@ function ProjectLogForm({
         {isEdit && onCancel && (
           <button onClick={onCancel} className="ops-ghost-btn font-pixel">Cancel</button>
         )}
-        <button onClick={submit} disabled={busy} className="ops-submit-btn">
-          {busy ? <Loader2 size={11} className="animate-spin" /> : isEdit ? <Check size={11} /> : <Send size={11} />}
-          {busy ? 'Saving…' : isEdit ? 'Save changes' : 'Save entry'}
-        </button>
+        <BusyButton
+          busy={busy}
+          busyLabel="Saving…"
+          icon={isEdit ? <Check size={11} /> : <Send size={11} />}
+          onClick={submit}
+          className="ops-submit-btn"
+        >
+          {isEdit ? 'Save changes' : 'Save entry'}
+        </BusyButton>
       </div>
     </div>
   )
@@ -386,11 +401,14 @@ function ReferenceChips({
   title,
   refs,
   onRemove,
+  removingId,
   testId,
 }: {
   title: string
   refs: LogReferenceChip[]
   onRemove?: (targetId: string) => void
+  /** id of the ref currently being removed — disables + spinners just that chip's button. */
+  removingId?: string | null
   testId: string
 }) {
   if (refs.length === 0) return null
@@ -414,15 +432,14 @@ function ReferenceChips({
           >
             {chipLabel(ref)}
             {onRemove && (
-              <button
-                type="button"
+              <BusyButton
+                busy={removingId === ref.id}
+                icon={<X size={9} />}
                 onClick={() => onRemove(ref.id)}
-                className="ml-0.5 -mr-0.5 opacity-60 hover:opacity-100"
+                className="ml-0.5 -mr-0.5 opacity-60 hover:opacity-100 disabled:opacity-100"
                 title="Remove link"
                 data-testid={`${testId}-remove`}
-              >
-                <X size={9} />
-              </button>
+              />
             )}
           </span>
         ))}
@@ -502,15 +519,14 @@ function LinkEntryPicker({
           </select>
           <ChevronDown size={13} className="ops-select-icon" />
         </div>
-        <button
-          type="button"
+        <BusyButton
+          busy={busy}
+          icon={<Check size={11} />}
           onClick={submit}
-          disabled={busy || !selected}
+          disabled={!selected}
           className="ops-submit-btn"
           data-testid="link-entry-submit"
-        >
-          {busy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-        </button>
+        />
         <button
           type="button"
           onClick={() => { setOpen(false); setError(null); setSelected('') }}
@@ -537,8 +553,10 @@ function ProjectLogTab() {
   const [members, setMembers] = useState<Member[]>([])
   const [labType, setLabType] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [removingRefId, setRemovingRefId] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/project-log')
@@ -552,7 +570,7 @@ function ProjectLogTab() {
         if (Array.isArray(d.members)) setMembers(d.members)
         if (d.labType !== undefined) setLabType(d.labType)
       })
-      .catch(() => {})
+      .catch(() => setLoadError('Could not load the project log. Please refresh.'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -579,6 +597,8 @@ function ProjectLogTab() {
   }
 
   async function handleRemoveReference(fromId: string, targetId: string) {
+    if (removingRefId) return // guard the double-click window — one remove in flight at a time
+    setRemovingRefId(targetId)
     try {
       const res = await fetch(`/api/project-log/${fromId}/references?targetId=${encodeURIComponent(targetId)}`, {
         method: 'DELETE',
@@ -589,6 +609,8 @@ function ProjectLogTab() {
       )
     } catch {
       await alert({ title: 'Remove link failed', message: 'Could not remove the link. Please try again.' })
+    } finally {
+      setRemovingRefId(null)
     }
   }
 
@@ -612,9 +634,19 @@ function ProjectLogTab() {
 
   if (loading) {
     return (
-      <div className="ops-tab-body items-center justify-center">
+      <>
         {dialog}
-        <Loader2 size={18} className="animate-spin text-white/25" />
+        <OpsTabSkeleton variant="log" />
+      </>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="ops-tab-body items-center justify-center text-center">
+        {dialog}
+        <AlertTriangle size={20} className="text-white/25 mb-2" />
+        <span className="font-pixel text-[8px] text-white/40">{loadError}</span>
       </div>
     )
   }
@@ -693,14 +725,13 @@ function ProjectLogTab() {
                         <button onClick={() => setEditingId(e.id)} className="ops-icon-btn" title="Edit entry">
                           <Pencil size={12} />
                         </button>
-                        <button
+                        <BusyButton
+                          busy={deletingId === e.id}
+                          icon={<Trash2 size={12} />}
                           onClick={() => handleDelete(e)}
-                          disabled={deletingId === e.id}
                           className="ops-icon-btn ops-icon-btn--danger"
                           title="Delete entry"
-                        >
-                          {deletingId === e.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                        </button>
+                        />
                       </div>
                     </div>
 
@@ -730,6 +761,7 @@ function ProjectLogTab() {
                       title="Linked entries"
                       refs={e.links}
                       onRemove={(targetId) => handleRemoveReference(e.id, targetId)}
+                      removingId={removingRefId}
                       testId="log-links"
                     />
                     <ReferenceChips title="Referenced by" refs={e.backlinks} testId="log-backlinks" />
@@ -837,10 +869,15 @@ function FailureForm({
         {isEdit && onCancel && (
           <button onClick={onCancel} className="ops-ghost-btn font-pixel">Cancel</button>
         )}
-        <button onClick={submit} disabled={busy} className="ops-submit-btn">
-          {busy ? <Loader2 size={11} className="animate-spin" /> : isEdit ? <Check size={11} /> : <AlertTriangle size={11} />}
-          {busy ? 'Saving…' : isEdit ? 'Save changes' : 'Log failure'}
-        </button>
+        <BusyButton
+          busy={busy}
+          busyLabel="Saving…"
+          icon={isEdit ? <Check size={11} /> : <AlertTriangle size={11} />}
+          onClick={submit}
+          className="ops-submit-btn"
+        >
+          {isEdit ? 'Save changes' : 'Log failure'}
+        </BusyButton>
       </div>
     </div>
   )
@@ -905,8 +942,23 @@ function FailureFollowup({
 
   const { followup } = entry
 
-  // State A: no follow-up yet — show "Dig deeper" button.
+  // State A: no follow-up yet — show "Dig deeper" button, or a Vega labeled
+  // loader in its place once clicked (this is a 5-30s LLM wait, undersold by
+  // a tiny button spinner).
   if (!followup) {
+    if (generating) {
+      return (
+        <div className="mt-3 pt-3 border-t border-white/10">
+          <LabeledLoader
+            tone="vega"
+            fill="inline"
+            label="Vega is thinking about this failure…"
+            icon={<Sparkles size={16} className="text-[#7ff2e3] animate-pulse" />}
+            className="py-2"
+          />
+        </div>
+      )
+    }
     return (
       <div className="mt-3 pt-3 border-t border-white/10">
         {genError && (
@@ -917,15 +969,10 @@ function FailureFollowup({
         )}
         <button
           onClick={handleDigDeeper}
-          disabled={generating}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#F5C518]/40 bg-[#F5C518]/5 text-[#F5C518] font-pixel text-[7px] hover:bg-[#F5C518]/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#F5C518]/40 bg-[#F5C518]/5 text-[#F5C518] font-pixel text-[7px] hover:bg-[#F5C518]/15 transition-colors"
         >
-          {generating ? (
-            <Loader2 size={11} className="animate-spin shrink-0" />
-          ) : (
-            <Sparkles size={11} className="shrink-0" />
-          )}
-          {generating ? 'Generating…' : 'Dig deeper'}
+          <Sparkles size={11} className="shrink-0" />
+          Dig deeper
         </button>
       </div>
     )
@@ -950,14 +997,16 @@ function FailureFollowup({
             <span className="font-pixel text-[7px]">{saveError}</span>
           </div>
         )}
-        <button
+        <BusyButton
+          busy={saving}
+          busyLabel="Saving…"
+          icon={<Check size={11} />}
           onClick={handleSaveAnswer}
-          disabled={saving || !answerText.trim()}
+          disabled={!answerText.trim()}
           className="ops-submit-btn"
         >
-          {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+          Save
+        </BusyButton>
       </div>
     )
   }
@@ -978,6 +1027,8 @@ function FailureFollowup({
 function FailureLogTab() {
   const { confirm, alert, dialog } = useConfirm()
   const [entries, setEntries] = useState<FailureEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -987,7 +1038,8 @@ function FailureLogTab() {
       .then((d) => {
         if (Array.isArray(d.entries)) setEntries(d.entries)
       })
-      .catch(() => {})
+      .catch(() => setLoadError('Could not load the failure log. Please refresh.'))
+      .finally(() => setLoading(false))
   }, [])
 
   function handleSaved(entry: FailureEntry, mode: 'create' | 'edit') {
@@ -1020,12 +1072,26 @@ function FailureLogTab() {
     }
   }
 
+  if (loading) {
+    return (
+      <>
+        {dialog}
+        <OpsTabSkeleton variant="log" />
+      </>
+    )
+  }
+
   return (
     <div className="ops-tab-body">
       {dialog}
       <FailureForm onSaved={handleSaved} />
 
-      {entries.length === 0 ? (
+      {loadError ? (
+        <div className="ops-empty">
+          <AlertTriangle size={22} className="text-white/25 mb-2" />
+          <span className="font-pixel text-[8px] text-white/40">{loadError}</span>
+        </div>
+      ) : entries.length === 0 ? (
         <div className="ops-empty">
           <AlertTriangle size={22} className="text-white/15 mb-2" />
           <span className="font-pixel text-[8px] text-white/30">No failures logged yet — every setback is data.</span>
@@ -1065,14 +1131,13 @@ function FailureLogTab() {
                       <button onClick={() => setEditingId(e.id)} className="ops-icon-btn" title="Edit entry">
                         <Pencil size={12} />
                       </button>
-                      <button
+                      <BusyButton
+                        busy={deletingId === e.id}
+                        icon={<Trash2 size={12} />}
                         onClick={() => handleDelete(e)}
-                        disabled={deletingId === e.id}
                         className="ops-icon-btn ops-icon-btn--danger"
                         title="Delete entry"
-                      >
-                        {deletingId === e.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                      </button>
+                      />
                     </div>
                   </div>
                   <p className="font-pixel text-[6px] text-white/30 uppercase tracking-widest mb-1">What failed</p>

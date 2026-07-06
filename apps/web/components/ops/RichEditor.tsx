@@ -6,6 +6,7 @@ import { Placeholder } from '@tiptap/extensions'
 import { Markdown } from 'tiptap-markdown'
 import { useEffect } from 'react'
 import { Bold, Italic, List, ListOrdered, Strikethrough } from 'lucide-react'
+import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 
 /** tiptap-markdown augments editor.storage but doesn't ship the types for it. */
 function getMarkdown(editor: Editor): string {
@@ -61,7 +62,11 @@ export function RichEditor({
   }, [value, editor])
 
   if (!editor) {
-    return <div className="ops-editor"><div className="ops-editor__loading" /></div>
+    return (
+      <div className="ops-editor">
+        <PixelSkeleton variant="box" h="h-[120px]" w="w-full" className="border-0 rounded-md" />
+      </div>
+    )
   }
 
   const Btn = ({

@@ -5,6 +5,105 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.17.0] — 2026-07-06
+
+**Teacher rubric scoring**, three more reference guides (**Methods**, **Data Quality**, and a
+Literature **Research Guide**), full **ISEF form guides + hazard classes** in the Forms
+checklist, **30 new economy buildings** completing all six lab-type catalogs, an app-wide
+**loading-state overhaul** on shared pixel primitives, and a deep multi-agent **code-review
+pass** (23 verified findings — 9 bug fixes + 14 refactors). One additive migration.
+
+### Added
+
+- **Teacher rubric scoring** — a "Rubric" tab in the teacher's per-student drill-down scores the
+  team against the same ISEF criteria the students self-check, side-by-side with the team's own
+  scores, guided by curated low/mid/high **anchor descriptions and talking points** per criterion
+  (`lib/fairs/rubric-anchors.ts`, all 10 criteria across both tracks). New teacher-scoped
+  `GET/PUT /api/teacher/rubric` (rate-limited, `teacherOwnsTeam` IDOR guard). `TeamRubricScore`
+  gains a `scorerRole` discriminator (`'student' | 'teacher'`) so a teacher save can never
+  overwrite the team's self-check (migration `team_rubric_scorer_role`); the seed script and a new
+  F10 E2E spec cover the flow end-to-end.
+- **Data Terminal — Methods Guide** — **45 experimental-design concepts** (variables, controls,
+  randomization, blinding, sample size, validity threats, …) — everything a team must get right
+  before any data exists (`lib/data-terminal/methods-guide.ts`).
+- **Data Terminal — Data Quality Guide** — **36 concepts** on everything after data is collected:
+  measurement uncertainty, significant figures & units, data cleaning, methodology pitfalls
+  (`lib/data-terminal/data-quality-guide.ts`).
+- **Literature — Research Guide** — a header-toggled reference inside Literature Review: a
+  **70-term research glossary** plus an 8-section **anatomy-of-a-paper** walkthrough with a
+  recommended reading order (`lib/literature/research-guide.ts`).
+- **ISEF form guides + hazard classes** — each of the 12 tracked ISEF forms in the Forms
+  checklist now expands into a full in-app guide (what it is, who needs it, section-by-section
+  walkthrough — `ISEF_FORM_GUIDES`), plus a 4-class **hazard primer** (`lib/fairs/safety.ts`) so
+  teams can tell which conditional forms apply. Unit tests pin guide↔form completeness.
+- **Economy catalogs for TerraBase, MindFrame, Axiom** — **30 new purchasable buildings**
+  (10 per lab type, matching the spec §9.3 rosters) on the shared 10-step cost/clearance ladder,
+  with sprites. New `lib/shop.test.ts` pins per-lab completeness, sprite↔manifest membership,
+  key uniqueness, and economy-curve parity.
+- **Loading-state overhaul** — shared pixel primitives (`PixelSpinner`, `PixelSkeleton`,
+  `BusyButton`, `LabeledLoader`, `PixelProgressBar`, plus panel/route skeletons under
+  `components/ui/skeletons/`) replace the ad-hoc spinners and busy ternaries across the app;
+  new route-level `loading.tsx` for the dashboard, teacher, game, gallery, and showcase routes;
+  `lib/uploadWithProgress.ts` (XHR) drives real byte-level upload progress bars.
+- **Showcase gallery browser** — the gallery's filter tabs + grid moved into a client component
+  with `useTransition`: the clicked tab highlights instantly while the grid dims for the server
+  round trip.
+
+### Changed
+
+- **Robotics Bay requires clearance 3** (was 2), aligning volt_lab with the shared tier ladder.
+  Stale dev DBs need `pnpm --filter web seed:e2e` (which now also restores the E2E team's
+  KP/clearance baseline) before the upgrades E2E passes; teams sitting at clearance 2 see it
+  locked until they earn clearance 3.
+- **Shop catalog is now derived, not hand-repeated** — an exported `TIER_LADDER` plus a per-lab
+  builder derive `cost`/`minClearance` from ladder position and the sprite slug from the key
+  (~565 lines of literals → ~160); a price rebalance is now a one-line edit, and `shop.test.ts`
+  imports the same ladder instead of a copy.
+- **Guide panels share one chrome** — `SectionLabel`, `CsvTable`, the search/category/count/empty
+  scaffold, and the collapsible box extracted to `components/ops/guide-chrome.tsx`, with one
+  generic `filterGuideEntries()` (`lib/guides/filter.ts`) behind each guide's typed filter export,
+  and a shared `useToggleSet` hook replacing nine hand-rolled Set toggles. All six guide panels
+  (Stats / Charts / Plot / Methods / Data Quality / Research) consume it — no visual change.
+- **Guide panels are code-split** — every guide panel now loads via `next/dynamic` on first open
+  instead of shipping its static text with the Operations Hub / Literature chunks.
+- **Teacher review queues share one decide flow** — `useDecisionQueue` + `DecisionControls`
+  (`components/teacher/DecisionControls.tsx`) replace the twin copy-pasted approve/reject
+  implementations in ValidationQueue and ShowcaseModerationQueue.
+- **Rubric wire format slimmed** — the static anchors/talking points now render from the client
+  bundle; `GET /api/teacher/rubric` returns only score rows + totals, and both rubric PUTs total
+  scores in Postgres (`aggregate _sum`) instead of re-reading all rows. The
+  `'student' | 'teacher'` contract is centralized as `SCORER_ROLES` in
+  `lib/fairs/rubric-scoring.ts`.
+
+### Fixed
+
+- **Teacher rubric: focus+blur no longer persists an unintended 0** — blur saves only when the
+  draft actually changed (an unscored criterion previously gained a real 0-score row, a changed
+  total, and a "Last scored by" line from a mere click-through), saves serialize behind an
+  in-flight guard, and a save resolving after a track switch can no longer stamp the other
+  track's total onto the header.
+- **Showcase gallery thumbnails could stay permanently invisible** when a cached image finished
+  loading before React hydration (the reveal relied solely on React's `onLoad`); a callback ref
+  now checks `img.complete` on mount. Cmd/ctrl-clicking a filter tab opens a new tab again
+  (the transition handler no longer calls `preventDefault` on modified clicks).
+- **Upload responses that aren't JSON fail loudly again** — `uploadWithProgress`'s `json()`
+  matches fetch semantics (rejects on an unparsable body) instead of returning `{}` that call
+  sites dereferenced into undefined asset/url/id values.
+- **Teacher student drill-down: stale-response guard** — a slow overview response for a
+  previously viewed student can no longer overwrite the currently displayed student's page.
+- **Teacher queues: only the clicked decision shows busy** — approving no longer relabels the
+  adjacent Request-changes button to "Requesting…" (and vice versa).
+- **Onboarding can no longer strand a disabled form** — if the post-signup navigation bounces
+  back to /onboarding, an 8s recovery re-enables the form with a retry message.
+- **E2E hardening** — the F3 research-plan spec's load gate tracked the new skeletons (its old
+  `.animate-spin` gate went vacuous with the spinner overhaul); its ACs no longer assume a
+  virgin DB row (the "synced" assertion could pass on a *previous* save, ending the test while
+  the new save was still in flight — the root cause of a deterministic stale-reload failure);
+  F10's re-save ACs use the explicit Save button now that no-op blurs are deliberately skipped;
+  the heaviest F11 test is marked slow (measured at ~29s of its 30s budget on a clean tree).
+
+---
+
 ## [0.16.0] — 2026-07-05
 
 The largest feature release so far: **eight gameplay features** from a pipeline batch, a

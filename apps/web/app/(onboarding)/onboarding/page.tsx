@@ -32,7 +32,26 @@ export default function OnboardingPage() {
   )
   const [classCode, setClassCode] = useState('')
   const [loading, setLoading] = useState(false)
+  // True once the mutation has succeeded and we're mid-navigation — distinct from
+  // `loading` so the button can swap to "Entering your lab…" for that leg instead
+  // of staying on "Setting up…"/"Joining…" through the route transition.
+  const [entering, setEntering] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Recovery latch: `entering` deliberately stays true through the navigation,
+  // but if the push bounces back to /onboarding (e.g. the router replays a
+  // cached /dashboard→/onboarding redirect) this page stays mounted with the
+  // form permanently disabled. A successful navigation unmounts us (cleanup
+  // clears the timer); a bounce leaves us mounted, so re-enable the form.
+  useEffect(() => {
+    if (!entering) return
+    const timer = setTimeout(() => {
+      setEntering(false)
+      setLoading(false)
+      setError('Could not enter your lab. Please try again.')
+    }, 8000)
+    return () => clearTimeout(timer)
+  }, [entering])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -56,10 +75,12 @@ export default function OnboardingPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Setup failed')
+      // Stay busy through the navigation itself — only `router.push` failing
+      // (synchronously, essentially never) would fall through to `finally`.
+      setEntering(true)
       router.push('/dashboard')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
       setLoading(false)
     }
   }
@@ -78,8 +99,12 @@ export default function OnboardingPage() {
       const data = await res.json()
       if (!res.ok) {
         setError(data.error ?? 'Setup failed')
+        setLoading(false)
         return
       }
+      // Stay busy through the hard navigation below (not `finally`) — the button
+      // should read "Entering your lab…" until the document unload happens.
+      setEntering(true)
       // Hard navigation (not router.push) so the browser performs a full document
       // load. This forces Clerk to re-mint the session token server-side, ensuring
       // sessionClaims.metadata.role reflects the just-written publicMetadata.role
@@ -87,7 +112,6 @@ export default function OnboardingPage() {
       window.location.assign('/teacher')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
       setLoading(false)
     }
   }
@@ -247,13 +271,15 @@ export default function OnboardingPage() {
               disabled={loading || !canSubmit}
               className="w-full font-pixel text-[9px] bg-[#F5C518] text-[#0d1b2e] py-3 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
-              {loading
-                ? mode === 'create'
-                  ? 'Setting up…'
-                  : 'Joining…'
-                : mode === 'create'
-                  ? '↑ Enter Your Lab'
-                  : '↑ Join the Lab'}
+              {entering
+                ? 'Entering your lab…'
+                : loading
+                  ? mode === 'create'
+                    ? 'Setting up…'
+                    : 'Joining…'
+                  : mode === 'create'
+                    ? '↑ Enter Your Lab'
+                    : '↑ Join the Lab'}
             </button>
           </form>
         </>
@@ -294,7 +320,7 @@ export default function OnboardingPage() {
             disabled={loading || !canTeacherSubmit}
             className="w-full font-pixel text-[9px] bg-[#F5C518] text-[#0d1b2e] py-3 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
-            {loading ? 'Setting up…' : '↑ Enter Teacher Dashboard'}
+            {entering ? 'Entering your lab…' : loading ? 'Setting up…' : '↑ Enter Teacher Dashboard'}
           </button>
         </form>
       )}

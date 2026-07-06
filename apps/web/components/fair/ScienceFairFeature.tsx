@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   CalendarClock,
   ExternalLink,
-  Loader2,
   RefreshCw,
   Trophy,
   Award,
@@ -17,6 +16,9 @@ import {
 import { format, differenceInCalendarDays } from 'date-fns'
 import { ISEF_RUBRIC, ISEF_BOARD_GUIDANCE, ISEF_EMPHASIS } from '@/lib/fairs/isef-rubric'
 import type { FairMatch, FairView } from '@/lib/fairs/match'
+import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
+import { LabeledLoader } from '@/components/ui/LabeledLoader'
+import { BusyButton } from '@/components/ui/BusyButton'
 import { FormsChecklist } from './FormsChecklist'
 import { CategoryBrowser } from './CategoryBrowser'
 import { RubricSelfCheck } from './RubricSelfCheck'
@@ -191,21 +193,38 @@ export function ScienceFairFeature() {
         <div className="flex-1 overflow-y-auto">
           <RubricSelfCheck />
         </div>
-      ) : loading ? (
-        <div className="flex-1 flex items-center justify-center text-white/40">
-          <Loader2 size={20} className="animate-spin" />
-        </div>
-      ) : error && !data ? (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="font-pixel text-[8px] text-red-400">{error}</p>
-        </div>
       ) : tab === 'forms' ? (
+        // Decoupled from the Overview tab's /api/fairs/match load (same reasoning
+        // as Self-check above) — FormsChecklist owns its own fetch/loading/error
+        // state, so gating it behind an unrelated fetch meant it could never
+        // mount while Overview was (historically, sometimes for minutes) pending.
         <div className="flex-1 overflow-y-auto">
           <FormsChecklist />
         </div>
       ) : tab === 'categories' ? (
+        // CategoryBrowser is fully static (no fetch at all) — never gate it on
+        // anything.
         <div className="flex-1 overflow-y-auto">
           <CategoryBrowser />
+        </div>
+      ) : loading ? (
+        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6" data-testid="fair-overview-skeleton">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="border border-white/12 bg-white/3 rounded-sm p-4 flex flex-col gap-3">
+                <PixelSkeleton variant="pill" h="h-4" w="w-24" />
+                <PixelSkeleton variant="line" h="h-4" w="w-full" />
+                <PixelSkeleton variant="line" h="h-3" w="w-4/5" />
+                <PixelSkeleton variant="line" h="h-3" w="w-3/5" />
+                <PixelSkeleton variant="pill" h="h-6" w="w-full" />
+              </div>
+            ))}
+          </div>
+          <PixelSkeleton variant="box" h="h-16" w="w-full" />
+        </div>
+      ) : error && !data ? (
+        <div className="flex-1 flex items-center justify-center">
+          <p className="font-pixel text-[8px] text-red-400">{error}</p>
         </div>
       ) : data ? (
         <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
@@ -350,22 +369,26 @@ function FairCard({
             </a>
           )}
           {!isIsef && (
-            <button
+            <BusyButton
+              busy={syncing}
+              busyLabel="Syncing…"
+              icon={<RefreshCw size={9} />}
               onClick={sync}
-              disabled={syncing}
               title="Read the fair's site and update its dates"
               className="font-pixel text-[7px] border border-white/20 text-white/50 px-2 py-1 rounded-sm hover:border-white/40 hover:text-white/80 transition-colors flex items-center gap-1 disabled:opacity-40"
             >
-              {syncing ? (
-                <Loader2 size={9} className="animate-spin" />
-              ) : (
-                <RefreshCw size={9} />
-              )}
               Sync from site
-            </button>
+            </BusyButton>
           )}
         </div>
       </div>
+      {/* Firecrawl is routinely 10s+ — a bare button spinner undersells the wait,
+          so the card shows an inline labeled loader while syncing. */}
+      {syncing && (
+        <div className="pt-1 border-t border-white/10">
+          <LabeledLoader label="Reading the fair's website…" fill="inline" className="py-1" />
+        </div>
+      )}
       {syncError && <p className="font-pixel text-[6px] text-red-400">{syncError}</p>}
     </div>
   )

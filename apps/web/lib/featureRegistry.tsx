@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic'
 import type { ComponentType } from 'react'
 import type { GatewayKey } from '@/lib/sprites/manifest'
 import { StubFeature } from '@/components/lab/StubFeature'
+import { HubPanelSkeleton } from '@/components/ui/skeletons/HubPanelSkeleton'
 
 /**
  * Maps each gateway building to the feature component rendered inside its
@@ -15,11 +16,7 @@ import { StubFeature } from '@/components/lab/StubFeature'
  * Keep this as the ONLY place gateway keys map to UI, so the shell stays generic.
  */
 
-const loading = () => (
-  <div className="flex h-full items-center justify-center">
-    <span className="font-pixel text-[10px] text-muted-foreground">loading…</span>
-  </div>
-)
+const loading = () => <HubPanelSkeleton />
 
 const DiscoveryFeature = dynamic(
   () => import('@/components/discovery/DiscoveryFeature').then((m) => m.DiscoveryFeature),

@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  Loader2,
   FileUp,
   X,
   Save,
@@ -35,6 +34,10 @@ import {
   wordCount,
   type PrivacyLevel,
 } from '@/lib/showcase'
+import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
+import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
+import { BusyButton } from '@/components/ui/BusyButton'
+import { uploadWithProgress } from '@/lib/uploadWithProgress'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -192,8 +195,27 @@ export function ShowcaseEditor() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center bg-[#0d1b2e]">
-        <Loader2 size={20} className="animate-spin text-white/25" />
+      <div className="sc-editor" data-testid="showcase-editor-skeleton">
+        <div className="sc-topbar">
+          <PixelSkeleton variant="pill" h="h-5" w="w-24" />
+          <PixelSkeleton variant="pill" h="h-6" w="w-16" />
+        </div>
+        <div className="sc-scroll flex flex-col gap-4 p-4">
+          <PixelSkeleton variant="box" h="h-2" w="w-full" />
+          <div className="ops-entry-card flex flex-col gap-3 p-4">
+            <PixelSkeleton variant="line" h="h-4" w="w-40" />
+            <PixelSkeleton variant="box" h="h-9" w="w-full" />
+            <PixelSkeleton variant="box" h="h-16" w="w-full" />
+            <PixelSkeleton variant="box" h="h-28" w="w-full" />
+          </div>
+          <div className="ops-entry-card flex flex-col gap-3 p-4">
+            <PixelSkeleton variant="line" h="h-4" w="w-48" />
+            <div className="grid grid-cols-2 gap-3">
+              <PixelSkeleton variant="box" h="h-24" w="w-full" />
+              <PixelSkeleton variant="box" h="h-24" w="w-full" />
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
@@ -379,10 +401,16 @@ export function ShowcaseEditor() {
             </div>
           </Field>
 
-          <button onClick={onSave} disabled={saving || !dirtyOrNew} className="ops-submit-btn self-start">
-            {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+          <BusyButton
+            busy={saving}
+            busyLabel="Saving…"
+            icon={<Save size={12} />}
+            onClick={onSave}
+            disabled={!dirtyOrNew}
+            className="ops-submit-btn self-start"
+          >
             {sc ? (dirty ? 'Save changes' : 'Saved') : 'Save & start'}
-          </button>
+          </BusyButton>
         </Card>
 
         {/* ── 2 · Required materials ───────────────────────────────────── */}
@@ -517,14 +545,13 @@ export function ShowcaseEditor() {
               : 'Shareable by link'}
           </span>
         </div>
-        <button
+        <BusyButton
+          busy={publishing}
+          busyLabel={sc?.published ? 'Unpublishing…' : 'Publishing…'}
           onClick={onPublishToggle}
-          disabled={publishing}
           className={`sc-btn font-pixel ${sc?.published ? 'sc-btn--unpublish' : 'sc-btn--publish'}`}
         >
-          {publishing ? (
-            <Loader2 size={13} className="animate-spin" />
-          ) : sc?.published ? (
+          {sc?.published ? (
             'Unpublish'
           ) : privacy === 'public' ? (
             <>
@@ -535,7 +562,7 @@ export function ShowcaseEditor() {
               <Rocket size={13} /> Publish showcase
             </>
           )}
-        </button>
+        </BusyButton>
       </div>
     </div>
   )
@@ -607,6 +634,7 @@ function FileDrop({
   onError: (msg: string) => void
 }) {
   const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function upload(file: File) {
@@ -614,14 +642,17 @@ function FileDrop({
     const saved = await ensureSaved()
     if (!saved) return
     setUploading(true)
+    setProgress(0)
     try {
       const form = new FormData()
       form.append('file', file)
       form.append('kind', kind)
-      const res = await fetch('/api/showcase/asset', { method: 'POST', body: form })
-      const data = await res.json()
+      const res = await uploadWithProgress('/api/showcase/asset', form, (fraction) =>
+        setProgress(Math.round(fraction * 100)),
+      )
+      const data = (await res.json()) as { asset?: Asset; error?: string }
       if (!res.ok) throw new Error(data.error ?? 'Upload failed')
-      onAdded(data.asset)
+      onAdded(data.asset!)
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
@@ -663,9 +694,18 @@ function FileDrop({
   return (
     <>
       <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading} className="sc-drop">
-        {uploading ? <Loader2 size={20} className="animate-spin" /> : <FileUp size={22} />}
-        <span className="font-pixel text-[8px]">{uploading ? 'Uploading…' : label}</span>
-        {!uploading && <span className="sc-drop__sub">{sub}</span>}
+        {uploading ? (
+          <div className="flex flex-col items-center gap-2 w-full px-4">
+            <span className="font-pixel text-[8px]">Uploading… {progress}%</span>
+            <PixelProgressBar value={progress} className="max-w-[160px]" />
+          </div>
+        ) : (
+          <>
+            <FileUp size={22} />
+            <span className="font-pixel text-[8px]">{label}</span>
+            <span className="sc-drop__sub">{sub}</span>
+          </>
+        )}
       </button>
       <input
         ref={inputRef}
@@ -766,9 +806,14 @@ function LinkAdder({
         placeholder={placeholder}
         className="sc-input sc-linkadd__input"
       />
-      <button onClick={add} disabled={busy || !url.trim()} className="sc-linkadd__btn font-pixel" title="Add">
-        {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={13} />}
-      </button>
+      <BusyButton
+        busy={busy}
+        icon={<Check size={13} />}
+        onClick={add}
+        disabled={!url.trim()}
+        className="sc-linkadd__btn font-pixel"
+        title="Add"
+      />
     </div>
   )
 }

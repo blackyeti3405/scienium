@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { TIER_META } from '@/lib/discovery/credibility'
 import type { SourcePlatform, SourceSearchResult } from '@/lib/discovery/sources'
+import { PixelSpinner } from '@/components/ui/PixelSpinner'
 
 interface Props {
   /** Default query seeded from the team topic / current node title. */
@@ -91,7 +92,7 @@ export function PapersSearch({ defaultQuery = '', onPick }: Props) {
               autoComplete="off"
             />
             {loading && (
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 animate-spin text-xs">⟳</span>
+              <PixelSpinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />
             )}
           </div>
         </div>

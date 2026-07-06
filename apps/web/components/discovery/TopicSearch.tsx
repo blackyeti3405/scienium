@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { PixelSpinner } from '@/components/ui/PixelSpinner'
 
 interface Props {
   onSelect: (title: string) => void
@@ -76,9 +77,7 @@ export function TopicSearch({ onSelect, placeholder = 'Search a Wikipedia topic‚
           className="w-full rounded-sm border border-white/20 bg-[#0a1628] px-4 py-2 pl-9 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#F5C518]/60"
           autoComplete="off"
         />
-        {loading && (
-          <span className="absolute right-3 text-white/40 animate-spin text-xs">‚ü≥</span>
-        )}
+        {loading && <PixelSpinner size="sm" className="absolute right-3" />}
       </div>
 
       {open && results.length > 0 && (

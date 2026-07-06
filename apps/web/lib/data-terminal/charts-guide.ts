@@ -23,6 +23,8 @@
  * rendered via dangerouslySetInnerHTML.
  */
 
+import { filterGuideEntries } from '@/lib/guides/filter'
+
 export interface ChartDataNeeded {
   name: string
   unit: string
@@ -140,14 +142,13 @@ export async function loadChartField(slug: string): Promise<ChartConcept[]> {
 /**
  * Filters an already-loaded field's charts by a case-insensitive substring
  * match on title/description/plotType. A blank or whitespace-only query
- * behaves like "no query." Pure and side-effect free — unit-testable and
- * reusable by the panel component via `useMemo`.
+ * behaves like "no query" and returns the input array as-is. Pure and
+ * side-effect free — unit-testable and reusable by the panel component via
+ * `useMemo`. Thin wrapper over `filterGuideEntries`, kept so this module's
+ * signature (no category — the field dropdown is a lazy load, not a filter)
+ * and search fields stay pinned.
  */
 export function filterCharts(charts: ChartConcept[], query: string): ChartConcept[] {
-  const q = query.trim().toLowerCase()
-  if (!q) return charts
-  return charts.filter((c) => {
-    const haystack = [c.title, c.description, c.plotType].join(' ').toLowerCase()
-    return haystack.includes(q)
-  })
+  if (!query.trim()) return charts
+  return filterGuideEntries(charts, { query }, (c) => [c.title, c.description, c.plotType])
 }

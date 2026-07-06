@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  Loader2,
   Send,
   ShieldCheck,
   Award,
@@ -15,6 +14,9 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import { useLabCurrency } from '@/lib/labCurrency'
+import { LabeledLoader } from '@/components/ui/LabeledLoader'
+import { BusyButton } from '@/components/ui/BusyButton'
+import { OpsTabSkeleton } from '@/components/ui/skeletons/OpsTabSkeleton'
 
 // ─── Types (mirror the /api/expertise responses) ─────────────────────────────
 
@@ -242,28 +244,30 @@ export function ExpertisePanel() {
   function finishResult() {
     setExam(null)
     setResult(null)
-    setMode('loading')
+    // Stay on 'idle' with the stale (already-cleared/raised via addCurrency)
+    // status while this refetches in the background — avoids re-showing the
+    // mount skeleton for data we already have (the audit's "same spinner
+    // recurs 3x" complaint).
+    setMode('idle')
     loadStatus()
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (mode === 'loading') {
-    return (
-      <div className="ops-tab-body items-center justify-center">
-        <Loader2 size={18} className="animate-spin text-white/25" />
-      </div>
-    )
+    return <OpsTabSkeleton variant="dispatch" />
   }
 
   if (mode === 'grading' && !exam) {
-    // Generating a fresh exam.
+    // Generating a fresh exam — long LLM wait, standardized on the Vega
+    // labeled loader (absorbs the old `.clr-thinking` treatment).
     return (
       <div className="ops-tab-body items-center justify-center">
-        <div className="clr-thinking">
-          <Sparkles size={20} className="text-[#7ff2e3] animate-pulse" />
-          <span className="font-pixel text-[9px] text-white/55">Vega is preparing your exam…</span>
-        </div>
+        <LabeledLoader
+          tone="vega"
+          label="Vega is preparing your exam…"
+          icon={<Sparkles size={20} className="text-[#7ff2e3] animate-pulse" />}
+        />
       </div>
     )
   }
@@ -271,10 +275,11 @@ export function ExpertisePanel() {
   if (mode === 'grading' && exam) {
     return (
       <div className="ops-tab-body items-center justify-center">
-        <div className="clr-thinking">
-          <ShieldCheck size={20} className="text-[#7ff2e3] animate-pulse" />
-          <span className="font-pixel text-[9px] text-white/55">Vega is reviewing your answers…</span>
-        </div>
+        <LabeledLoader
+          tone="vega"
+          label="Vega is reviewing your answers…"
+          icon={<ShieldCheck size={20} className="text-[#7ff2e3] animate-pulse" />}
+        />
       </div>
     )
   }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { PixelSpinner } from '@/components/ui/PixelSpinner'
 
 interface ArticleData {
   title: string
@@ -71,7 +72,7 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full gap-3 text-white/40 font-pixel text-[8px]">
-        <span className="animate-spin">⟳</span> Loading article…
+        <PixelSpinner size="sm" /> Loading article…
       </div>
     )
   }

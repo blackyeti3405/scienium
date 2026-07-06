@@ -15,6 +15,7 @@ import { StatusStrip, type Currency } from '@/components/lab/StatusStrip'
 import { MomentumCard } from '@/components/lab/MomentumCard'
 import { Activity, MessageSquare, Move, X } from 'lucide-react'
 import { getISOWeek, getISOWeekYear } from 'date-fns'
+import { BusyButton } from '@/components/ui/BusyButton'
 import { LabCurrencyProvider, useLabCurrency } from '@/lib/labCurrency'
 import { FEATURE_COMPONENTS } from '@/lib/featureRegistry'
 import { GATEWAYS, type Gateway } from '@/lib/gateways'
@@ -137,6 +138,12 @@ function LabSceneContent({
   const [hoveredName, setHoveredName] = useState<string | null>(null)
   /** A placed economy building clicked in REGULAR mode → opens its Sell/Upgrade menu. */
   const [selected, setSelected] = useState<string | null>(null)
+  /** True while the current ghost's place/move POST is in flight — pulses the
+   *  ghost sprite so a 1–3s round trip doesn't look unresponsive. */
+  const [placing, setPlacing] = useState(false)
+  /** Building key currently mid-sell or mid-upgrade (drives the menu's BusyButtons). */
+  const [sellingKey, setSellingKey] = useState<string | null>(null)
+  const [upgradingKey, setUpgradingKey] = useState<string | null>(null)
   /** Transient green particle burst over a just-upgraded building. */
   const [burst, setBurst] = useState<{ gx: number; gy: number; id: number } | null>(null)
   const burstSeq = useRef(0)
@@ -257,7 +264,8 @@ function LabSceneContent({
 
   async function onDrop(gx: number, gy: number) {
     const g = ghost
-    if (!g) return
+    if (!g || placing) return
+    setPlacing(true)
     try {
       if (g.mode === 'new' || g.mode === 'place-owned') {
         const key = g.building.key
@@ -281,12 +289,16 @@ function LabSceneContent({
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Something went wrong')
       setGhost(null)
+    } finally {
+      setPlacing(false)
     }
   }
 
   /** Remove a placed economy building (90% KP refund). Used by arrange-mode Delete
    *  and the regular-mode menu's Sell. */
   async function sellBuilding(key: string) {
+    if (sellingKey) return
+    setSellingKey(key)
     try {
       const data = await post('/api/buildings/sell', { key })
       setEconomy((prev) => prev.filter((e) => e.key !== key))
@@ -296,6 +308,8 @@ function LabSceneContent({
       setToast(`Sold ${shopBuilding(key)?.name ?? 'building'} for ${data.refund} KP`)
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Could not sell')
+    } finally {
+      setSellingKey(null)
     }
   }
 
@@ -303,10 +317,11 @@ function LabSceneContent({
    *  menu shows the next level/cost. */
   async function upgradeBuilding(key: string) {
     const b = economy.find((e) => e.key === key)
-    if (!b || b.level >= MAX_BUILDING_LEVEL) return
+    if (!b || b.level >= MAX_BUILDING_LEVEL || upgradingKey) return
     const base = shopBuilding(key)?.cost ?? 0
     const kpCost = upgradeKpCost(base, b.level + 1)
     const lcCost = upgradeLcCost(b.level + 1)
+    setUpgradingKey(key)
     try {
       const data = await post('/api/buildings/upgrade', { key })
       setEconomy((prev) =>
@@ -321,6 +336,8 @@ function LabSceneContent({
       setToast(`Upgraded ${shopBuilding(key)?.name ?? 'building'} to L${data.level}`)
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Could not upgrade')
+    } finally {
+      setUpgradingKey(null)
     }
   }
 
@@ -374,6 +391,7 @@ function LabSceneContent({
           economy={plotEconomy}
           arrangeMode={arrangeMode}
           ghost={plotGhost}
+          ghostBusy={placing}
           onOpenGateway={(key) => setOpenKey(key as Gateway['key'])}
           onPick={onPick}
           onDrop={onDrop}
@@ -400,9 +418,14 @@ function LabSceneContent({
         {/* Arrange mode: while an economy building is picked up, the only action is
             Delete (remove for a 90% KP refund). Gateways aren't deletable. */}
         {ghost?.mode === 'move-economy' && (
-          <button type="button" className="plot-delete font-pixel" onClick={() => sellBuilding(ghost.key)}>
+          <BusyButton
+            busy={sellingKey === ghost.key}
+            busyLabel="Deleting…"
+            onClick={() => sellBuilding(ghost.key)}
+            className="plot-delete font-pixel"
+          >
             Delete · +{sellRefund(ghost.costPaid).toLocaleString()} KP
-          </button>
+          </BusyButton>
         )}
 
         {/* Regular mode: clicking a placed economy building opens its Sell + Upgrade
@@ -421,15 +444,29 @@ function LabSceneContent({
                 {name} · L{b.level}
               </span>
               <div className="plot-menu__actions">
-                <button type="button" className="plot-menu__sell" onClick={() => sellBuilding(b.key)}>
+                <BusyButton
+                  busy={sellingKey === b.key}
+                  busyLabel="Selling…"
+                  showSpinner={false}
+                  onClick={() => sellBuilding(b.key)}
+                  disabled={upgradingKey === b.key}
+                  className="plot-menu__sell"
+                >
                   Sell · +{sellRefund(b.costPaid).toLocaleString()} KP
-                </button>
+                </BusyButton>
                 {maxed ? (
                   <span className="plot-menu__upgrade plot-menu__upgrade--max">Max level</span>
                 ) : (
-                  <button type="button" className="plot-menu__upgrade" onClick={() => upgradeBuilding(b.key)}>
+                  <BusyButton
+                    busy={upgradingKey === b.key}
+                    busyLabel="Upgrading…"
+                    showSpinner={false}
+                    onClick={() => upgradeBuilding(b.key)}
+                    disabled={sellingKey === b.key}
+                    className="plot-menu__upgrade"
+                  >
                     Upgrade to L{b.level + 1} · {upCostLabel}
-                  </button>
+                  </BusyButton>
                 )}
               </div>
               <button

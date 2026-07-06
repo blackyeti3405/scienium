@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Loader2, Check, X } from 'lucide-react'
+import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
+import { DecisionControls, QueueNotice, useDecisionQueue } from './DecisionControls'
 
 interface ValidationRequest {
   id: string
@@ -28,45 +29,32 @@ const PHASE_LABEL: Record<string, string> = {
 export function ValidationQueue() {
   const [requests, setRequests] = useState<ValidationRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [busyId, setBusyId] = useState<string | null>(null)
-  const [notes, setNotes] = useState<Record<string, string>>({})
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const queue = useDecisionQueue('/api/teacher/validations', 'requestId', (id) =>
+    setRequests((list) => list.filter((r) => r.id !== id)),
+  )
 
   useEffect(() => {
     fetch('/api/teacher/validations')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error('fetch failed')
+        return r.json()
+      })
       .then((d) => setRequests(d.requests ?? []))
-      .catch(() => {})
+      .catch(() => setLoadError('Could not load pending validations. Try refreshing the page.'))
       .finally(() => setLoading(false))
   }, [])
 
-  async function decide(id: string, decision: 'approve' | 'reject') {
-    setBusyId(id)
-    try {
-      const res = await fetch('/api/teacher/validations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId: id, decision, note: notes[id]?.trim() || undefined }),
-      })
-      if (res.ok) setRequests((list) => list.filter((r) => r.id !== id))
-    } finally {
-      setBusyId(null)
-    }
+  if (loading) {
+    return <PanelListSkeleton rows={3} />
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="animate-spin text-white/30" size={24} />
-      </div>
-    )
+  if (loadError) {
+    return <QueueNotice tone="error">{loadError}</QueueNotice>
   }
 
   if (requests.length === 0) {
-    return (
-      <p className="font-pixel text-[9px] text-white/30 py-10 text-center border border-dashed border-white/10">
-        No pending validations. You’re all caught up.
-      </p>
-    )
+    return <QueueNotice>No pending validations. You’re all caught up.</QueueNotice>
   }
 
   return (
@@ -91,32 +79,7 @@ export function ValidationQueue() {
             </p>
           )}
 
-          <input
-            value={notes[r.id] ?? ''}
-            onChange={(e) => setNotes((n) => ({ ...n, [r.id]: e.target.value }))}
-            placeholder="Optional note to the team…"
-            maxLength={500}
-            className="w-full bg-[#0d1b2e] border border-white/15 text-white text-xs px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
-          />
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => decide(r.id, 'approve')}
-              disabled={busyId === r.id}
-              className="inline-flex items-center gap-1.5 font-pixel text-[8px] bg-emerald-500 text-[#0d1b2e] px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
-            >
-              <Check size={12} /> Approve
-            </button>
-            <button
-              type="button"
-              onClick={() => decide(r.id, 'reject')}
-              disabled={busyId === r.id}
-              className="inline-flex items-center gap-1.5 font-pixel text-[8px] border border-white/20 text-white/70 px-3 py-2 hover:border-red-400 hover:text-red-400 disabled:opacity-40 transition-all"
-            >
-              <X size={12} /> Request changes
-            </button>
-          </div>
+          <DecisionControls id={r.id} queue={queue} />
         </div>
       ))}
     </div>

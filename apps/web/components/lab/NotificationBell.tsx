@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Bell } from 'lucide-react'
+import { LabeledLoader } from '@/components/ui/LabeledLoader'
 
 interface NotificationItem {
   id: string
@@ -45,6 +46,9 @@ export function NotificationBell() {
   const [unread, setUnread] = useState(0)
   const [open, setOpen] = useState(false)
   const [available, setAvailable] = useState(true)
+  // Loading ≠ empty: without this, "No notifications yet." renders for the
+  // ~1s the first /api/notifications fetch is in flight, on every mount.
+  const [loaded, setLoaded] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
@@ -59,6 +63,8 @@ export function NotificationBell() {
       setUnread(data.unreadCount ?? 0)
     } catch {
       // transient — keep last good state
+    } finally {
+      setLoaded(true)
     }
   }, [])
 
@@ -132,7 +138,9 @@ export function NotificationBell() {
             )}
           </div>
           <div className="notif-bell__list">
-            {items.length === 0 ? (
+            {!loaded ? (
+              <LabeledLoader label="Loading…" fill="inline" className="py-6" />
+            ) : items.length === 0 ? (
               <p className="font-pixel text-[8px] text-white/30 text-center py-6">
                 No notifications yet.
               </p>
