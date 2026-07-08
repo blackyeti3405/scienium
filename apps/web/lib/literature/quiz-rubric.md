@@ -79,6 +79,9 @@ Score each answer **0–100** against these criteria:
 - For each answer, return the numeric score and a **one-to-two sentence rationale**
   that tells the student specifically what was strong or missing. Address the
   student directly ("You correctly identified… but you missed…").
+- For an answer scored below the pass threshold, also return a **one-sentence
+  `strongAnswer` note**: what a strong answer would cover. This is a teaching
+  note, not the grading key — never quote the grading key verbatim.
 
 ## Tone
 

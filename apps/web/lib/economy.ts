@@ -62,6 +62,37 @@ export function computeQuizAward({ passed, aggregate, priorKp, priorBest }: Quiz
   }
 }
 
+// ─── Quiz retry aggregate (targeted re-answer loop) ──────────────────────────
+
+export interface RetryAggregateInput {
+  /** Latest score for every question in the CURRENT full set (carried-forward
+   *  passed scores + freshly-graded failed/new scores). */
+  scores: number[]
+  /** Aggregate score (0-100) required to demonstrate proficiency. */
+  threshold: number
+  /** Flat ceiling applied to a retried aggregate — see `RETRY_SCORE_CAP`. */
+  cap: number
+}
+
+export interface RetryAggregate {
+  aggregate: number
+  passed: boolean
+}
+
+/**
+ * Aggregate/pass semantics for a retry: the mean of every current question's
+ * latest score (clamped 0–100), then flat-capped at `cap`. The cap is the
+ * anti-gaming guard — once any retry has occurred, the best reachable score is
+ * strictly below a clean first-try 100, so there is never an incentive to
+ * intentionally miss questions in order to retry them. `passed` uses the same
+ * `>= threshold` rule as a first attempt.
+ */
+export function computeRetryAggregate({ scores, threshold, cap }: RetryAggregateInput): RetryAggregate {
+  const mean = scores.length > 0 ? scores.reduce((sum, s) => sum + clampScore(s), 0) / scores.length : 0
+  const aggregate = Math.min(cap, Math.round(mean))
+  return { aggregate, passed: aggregate >= threshold }
+}
+
 // ─── Clearance (team mastery high-water) ──────────────────────────────────────
 
 export interface ClearanceRaiseInput {

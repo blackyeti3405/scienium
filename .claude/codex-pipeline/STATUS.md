@@ -1,0 +1,305 @@
+# Field Codex — build status
+
+> Progress tracker for `/codex-pipeline`. Fields are alphabetical. **Calling
+> `/codex-pipeline` with NO field name auto-picks the next unbuilt SEGMENT**,
+> walking this list top-to-bottom: the first field with an unticked segment, its
+> **Core** first (a field's Core must exist before its branches unlock in-game),
+> then its subfields in listed order. When a segment ships + registers + passes the
+> gates, tick its `[x]` and refresh the field's status symbol.
+>
+> Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
+> Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
+
+**Progress: 2 / 29 fields · 13 / 174 segments.**
+
+---
+
+## acoustics-sound ✅
+*Acoustics / Sound*
+
+- [x] Core
+- [x] architectural-room-acoustics
+- [x] musical-acoustics-instruments
+- [x] noise-control-soundproofing
+- [x] psychoacoustics-hearing
+- [x] ultrasound-vibration
+
+## astronomy-astrophysics 🔨
+*Astronomy / Astrophysics*
+
+- [x] Core
+- [ ] cosmology
+- [ ] exoplanets
+- [ ] galactic-extragalactic
+- [ ] observational-methods-timedomain
+- [ ] stellar-astrophysics
+
+## chemistry ⬜
+*Chemistry*
+
+- [ ] Core
+- [ ] analytical-chemistry
+- [ ] electrochemistry
+- [ ] green-environmental-chemistry
+- [ ] organic-synthesis
+- [ ] physical-chemistry
+
+## classical-mechanics-physics ⬜
+*Classical Mechanics / Physics*
+
+- [ ] Core
+- [ ] collisions-momentum
+- [ ] gravitation-orbits
+- [ ] oscillations-shm
+- [ ] projectile-ballistics
+- [ ] rotational-mechanics
+
+## clinical-medicine-pharmacology ⬜
+*Clinical Medicine / Pharmacology*
+
+- [ ] Core
+- [ ] cardiovascular-pharmacology
+- [ ] clinical-pharmacokinetics-dosing
+- [ ] endocrine-metabolic-pharmacology
+- [ ] neuropsychopharmacology
+- [ ] toxicology-adverse-effects
+
+## computer-science-algorithms ⬜
+*Computer Science / Algorithms*
+
+- [ ] Core
+- [ ] complexity-computability
+- [ ] data-structures-design
+- [ ] graph-algorithms
+- [ ] randomized-heuristic-algorithms
+- [ ] sorting-searching-selection
+
+## data-science-ml-metrics ⬜
+*Data Science / ML Metrics*
+
+- [ ] Core
+- [ ] classification-eval
+- [ ] fairness-robustness
+- [ ] model-interpretability
+- [ ] regression-forecasting-eval
+- [ ] unsupervised-clustering-eval
+
+## ecology ⬜
+*Ecology*
+
+- [ ] Core
+- [ ] behavioral-ecology
+- [ ] community-ecology
+- [ ] conservation-restoration-ecology
+- [ ] population-ecology
+- [ ] urban-human-impact-ecology
+
+## electronics-electrical-engineering ⬜
+*Electronics / Electrical Engineering*
+
+- [ ] Core
+- [ ] analog-circuit-design
+- [ ] digital-logic-embedded
+- [ ] power-electronics
+- [ ] rf-antennas
+- [ ] sensors-instrumentation
+
+## environmental-earth-science ⬜
+*Environmental / Earth Science*
+
+- [ ] Core
+- [ ] air-quality-atmosphere
+- [ ] climate-change-carbon
+- [ ] pollution-remediation-waste
+- [ ] soil-land-degradation
+- [ ] water-quality-hydrology
+
+## epidemiology-medicine ⬜
+*Epidemiology / Medicine*
+
+- [ ] Core
+- [ ] biostatistics-clinical-trials
+- [ ] chronic-disease-epidemiology
+- [ ] infectious-disease-modeling
+- [ ] outbreak-investigation
+- [ ] public-health-surveillance
+
+## fluid-dynamics-aerodynamics ⬜
+*Fluid Dynamics / Aerodynamics*
+
+- [ ] Core
+- [ ] boundary-layers-transition-separation
+- [ ] external-aero-lift-drag
+- [ ] hydrodynamics-open-channel-free-surface
+- [ ] internal-pipe-duct-flow
+- [ ] unsteady-vortex-wake-flows
+
+## gait-biomechanics ✅
+*Gait Biomechanics*
+
+- [x] Core
+- [x] balance-stability-fall-risk
+- [x] clinical-pathological-gait
+- [x] footwear-surface-biomechanics
+- [x] prosthetics-orthotics-gait
+- [x] wearable-gait-sensing
+
+## genetics-genomics ⬜
+*Genetics / Genomics*
+
+- [ ] Core
+- [ ] bioinformatics-sequence-analysis
+- [ ] genome-editing-genetic-engineering
+- [ ] human-medical-genetics
+- [ ] population-evolutionary-genomics
+- [ ] transcriptomics-gene-expression
+
+## geology-seismology ⬜
+*Geology / Seismology*
+
+- [ ] Core
+- [ ] geotechnical-engineering-geology
+- [ ] mineralogy-petrology
+- [ ] sedimentology-stratigraphy
+- [ ] seismology-earthquake-science
+- [ ] structural-geology-geophysics
+
+## immunology-microbiology ⬜
+*Immunology / Microbiology*
+
+- [ ] Core
+- [ ] adaptive-immunity
+- [ ] antimicrobial-resistance
+- [ ] applied-antimicrobial-testing
+- [ ] host-pathogen-infection
+- [ ] microbial-ecology
+
+## materials-science ⬜
+*Materials Science*
+
+- [ ] Core
+- [ ] ceramics-glasses
+- [ ] composites-biomaterials
+- [ ] metals-alloys
+- [ ] nanomaterials-thin-films
+- [ ] polymers-soft-matter
+
+## meteorology-climate ⬜
+*Meteorology / Climate*
+
+- [ ] Core
+- [ ] applied-wind-solar-resource
+- [ ] atmospheric-chemistry-aerosols
+- [ ] boundary-layer-microclimate
+- [ ] climatology-climate-dynamics
+- [ ] synoptic-severe-weather
+
+## molecular-cell-biology ⬜
+*Molecular & Cell Biology*
+
+- [ ] Core
+- [ ] cell-culture-microscopy
+- [ ] cell-signaling-metabolism
+- [ ] molecular-cloning-techniques
+- [ ] molecular-toxicology-stress
+- [ ] transcriptional-epigenetic-regulation
+
+## neuroscience ⬜
+*Neuroscience*
+
+- [ ] Core
+- [ ] cellular-electrophysiology
+- [ ] cognitive-eeg
+- [ ] developmental-plasticity
+- [ ] neuroimaging-connectomics
+- [ ] neuromodulation-synaptic-pharmacology
+
+## nutrition-food-science ⬜
+*Nutrition / Food Science*
+
+- [ ] Core
+- [ ] fermentation-preservation
+- [ ] food-chemistry-processing
+- [ ] food-microbiology-safety
+- [ ] macronutrients-metabolism
+- [ ] sensory-consumer-science
+
+## oceanography-limnology ⬜
+*Oceanography / Limnology*
+
+- [ ] Core
+- [ ] biological-oceanography
+- [ ] chemical-oceanography
+- [ ] estuarine-coastal
+- [ ] limnology-freshwater
+- [ ] physical-oceanography
+
+## optics-photonics ⬜
+*Optics / Photonics*
+
+- [ ] Core
+- [ ] imaging-microscopy
+- [ ] lasers-photonics-devices
+- [ ] optical-sensing-photometry
+- [ ] polarization-nonlinear-optics
+- [ ] spectroscopy-color
+
+## plant-science-agriculture ⬜
+*Plant Science / Agriculture*
+
+- [ ] Core
+- [ ] abiotic-stress-physiology
+- [ ] crop-agronomy-yield
+- [ ] crop-breeding-improvement
+- [ ] plant-pathology-pest-management
+- [ ] soil-fertility-plant-nutrition
+
+## psychology-behavioral-science ⬜
+*Psychology / Behavioral Science*
+
+- [ ] Core
+- [ ] cognitive-psychology
+- [ ] developmental-psychology
+- [ ] health-behavior-motivation
+- [ ] psychophysics-perception
+- [ ] social-psychology
+
+## renewable-energy ⬜
+*Renewable Energy*
+
+- [ ] Core
+- [ ] energy-storage-batteries
+- [ ] grid-integration-microgrids
+- [ ] hydro-and-marine-power
+- [ ] solar-photovoltaics
+- [ ] wind-energy
+
+## robotics-control-systems ⬜
+*Robotics / Control Systems*
+
+- [ ] Core
+- [ ] autonomous-systems-decision
+- [ ] balancing-legged-dynamics
+- [ ] control-theory-tuning
+- [ ] manipulation-kinematics
+- [ ] mobile-robotics-navigation
+
+## signal-processing ⬜
+*Signal Processing*
+
+- [ ] Core
+- [ ] adaptive-realtime-dsp
+- [ ] audio-speech-dsp
+- [ ] biosignal-processing
+- [ ] digital-communications
+- [ ] image-2d-signal-processing
+
+## sports-exercise-physiology ⬜
+*Sports / Exercise Physiology*
+
+- [ ] Core
+- [ ] cardiorespiratory-endurance
+- [ ] environmental-altitude-thermal
+- [ ] metabolism-nutrition-fueling
+- [ ] strength-power-neuromuscular
+- [ ] training-adaptation-periodization

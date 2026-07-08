@@ -5,6 +5,71 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.19.0] — 2026-07-07
+
+**Field Codex replaces Field Dispatch** as the daily engagement pillar, plus the rest of the
+batch: the **Study with Vega** companion, the teacher **Class Reports** tab, the quiz
+**targeted-retry** loop, Literature **credibility badges**, the Showcase **Abstract guide**,
+and the **PvP raid redesign** (spec-level; replaces the turn-based battle design). One drop
+migration. Starts the 0.19.x line — subsequent Codex lesson batches ship as 0.19.1, 0.19.2, …
+
+### Added
+
+- **Field Codex (F13)** — the new daily learning pillar: authored, typed lesson tracks
+  (Track → Core/Branch Segment → sequentially-gated Units → Lessons, each ending in a
+  3–5-question checkpoint graded locally at an 80% bar — zero LLM at read/grade time). Ships
+  with 3 field tracks / **609 lessons** (gait-biomechanics 274, acoustics-sound 287,
+  astronomy-astrophysics Core 48; 13 of 174 planned segments across the 29-field taxonomy).
+  KP per first-ever lesson pass with an atomic per-student daily cap (`codex_lesson_progress`
+  + `codex_kp_days`); an LLM **Study Plan** (the feature's only Anthropic call, 2/team/day)
+  routes teams to relevant tracks (`team_study_plans`). Authored via the vendored
+  `.claude/codex-pipeline/` harness (`/codex-pipeline`), gated by a content-shape unit test.
+  E2E spec F13.
+- **Study with Vega (F18)** — persistent, team-shared study chat grounded in the team's own
+  project (research idea + study plan + Codex tracks in context, `lib/ops/vega-study-context.ts`);
+  messages persist per team (`vega_study_messages`). E2E spec F18.
+- **Teacher Class Reports (F8)** — `/teacher/reports`: read-only class-wide analytics
+  (phase distribution, engagement/progress summaries). Zero LLM, no new tables. E2E spec F8.
+- **Quiz targeted retry (F11)** — a failed paper quiz now shows per-miss rationale plus a
+  "what a strong answer covers" note, and "Fix my misses" re-asks only the failed questions
+  (+1 fresh) via `POST /api/papers/[id]/quiz/retry`, with a capped retry aggregate
+  (`lib/economy.ts`). E2E spec F11-quiz-retry.
+- **Literature credibility badges (F12)** — the papers list resolves a per-paper
+  `credibilityTier` at read time (promoted Discovery source tier → DOI extraction from the
+  PDF text → "self-uploaded — verify yourself" fallback; `lib/discovery/credibility.ts`).
+- **Showcase Abstract guide** — static authored reference for the 250-word ISEF abstract
+  (structure, conventions, worked examples — `lib/fairs/abstract-guide.ts`,
+  `AbstractGuidePanel`), test-pinned.
+- **`/update-github` command** — one-shot release flow: docs pass → gates → branch → commit →
+  PR → CI → merge, encoding the 0.19.x lesson-batch versioning convention.
+
+### Changed
+
+- **Field Codex leads the Operations Hub** — first and default tab; the Ops Hub gateway
+  building routes to the new `/daily/codex` deep link. The Momentum card's 7-day KP window
+  and the teacher student drill-down now report **Codex** KP/progress (lessons completed,
+  KP from lessons, recent lessons with track/lesson labels) in place of dispatch streaks.
+- **PvP redesigned as a raid system (spec §11)** — an attacker raids a snapshot of another
+  team's base with building-granted spells; fully replaces the earlier 6v6 turn-based
+  battle design. Design-only this release: the API is stubbed (501), the old combat engine /
+  moves seed / battle-action route are deleted, and `infra/seed/buildings.ts` now assigns
+  each building a raid `spellType`.
+- **SETUP.md absorbed setupwindows.md** — one setup doc with macOS and Windows sections.
+
+### Removed
+
+- **Field Dispatch — the entire feature.** The Ops Hub tab, `/daily/dispatch` deep link,
+  `GET/POST /api/field-dispatch`, the daily pre-generation cron (route + `vercel.json`
+  entry), `lib/field-dispatch/`, the teacher drill-down section, both dispatch E2E specs,
+  and the three DB tables (`field_dispatch_content`, `field_dispatch_responses`,
+  `field_dispatch_streak_claims`) via migration `drop_field_dispatch`. The unshipped
+  dispatch streak/fluency/archive work (F15) was retired with it — Codex's daily-cap
+  economy replaces the dispatch streak mechanic.
+- The turn-based PvP battle implementation remnants (`lib/pvp/combat-engine.ts`,
+  `infra/seed/moves.ts`, `POST /api/pvp/[battleId]/action`).
+
+---
+
 ## [0.17.0] — 2026-07-06
 
 **Teacher rubric scoring**, three more reference guides (**Methods**, **Data Quality**, and a

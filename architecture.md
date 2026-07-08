@@ -1,7 +1,7 @@
 # scienium — Technical Architecture
 
 > **Companion to:** `spec.md`
-> **Last Updated:** 2026-07-05
+> **Last Updated:** 2026-07-06
 > **Target initial scale:** ~120 students, single school pilot
 
 ---
@@ -109,17 +109,16 @@ scienium/
 │   │   │   │   ├── literature/
 │   │   │   │   │   ├── library/          # All papers
 │   │   │   │   │   └── review/           # Active review session
-│   │   │   │   ├── daily/                # Field Dispatch, Expertise, Project Log
-│   │   │   │   │   ├── dispatch/
+│   │   │   │   ├── daily/                # Field Codex, Expertise, Project Log
+│   │   │   │   │   ├── codex/            # Field Codex deep-link (gateway target)
 │   │   │   │   │   ├── expertise/
 │   │   │   │   │   ├── log/
 │   │   │   │   │   └── failure/          # Failure Log entry
 │   │   │   │   ├── teams/
-│   │   │   │   ├── pvp/                  # PvP combat system
-│   │   │   │   │   ├── lobby/            # Initiate battle, view trophies
-│   │   │   │   │   ├── team-builder/     # Select 6 characters
-│   │   │   │   │   ├── battle/[id]/      # Active battle screen
-│   │   │   │   │   └── leaderboard/      # Class/school/global rankings
+│   │   │   │   ├── pvp/                  # PvP raid system (spec §11)
+│   │   │   │   │   ├── lobby/            # Raid button, refinds, trophies
+│   │   │   │   │   ├── raid/[id]/        # Active raid screen (base + spell bar)
+│   │   │   │   │   └── leaderboard/      # Class trophy leaderboard
 │   │   │   │   ├── showcase/             # Showcase editor (private)
 │   │   │   │   │   ├── edit/
 │   │   │   │   │   └── settings/
@@ -149,7 +148,7 @@ scienium/
 │   │   │   │   ├── papers/               # upload/list/get/delete, + [id]/{file,chat,quiz,quiz/grade}
 │   │   │   │   ├── buildings/
 │   │   │   │   ├── teams/
-│   │   │   │   ├── pvp/                  # Battle resolution, matchmaking, trophies
+│   │   │   │   ├── pvp/                  # Raid resolution, matchmaking, trophies
 │   │   │   │   ├── discovery/            # article, search, tree[, /[id]] (+interestLevel PATCH), topic, youtube/resolve
 │   │   │   │   ├── project-log/          # GET/POST + [id] (PATCH/DELETE) + [id]/references + attachment{,/view}
 │   │   │   │   ├── failure-log/           # GET/POST + [id] (PATCH/DELETE)
@@ -176,7 +175,9 @@ scienium/
 │   │   │   │   ├── LiteratureFeature.tsx # 25 slots, upload, PDF viewer, graded quiz, Q&A chat
 │   │   │   │   └── ResearchGuidePanel.tsx # 70-term glossary + anatomy-of-a-paper (lib/literature/research-guide)
 │   │   │   ├── ops/                       # Operations Hub (daily pillars)
-│   │   │   │   ├── OperationsHubFeature.tsx # Project Log + Failure Log tabs, shared edit/delete, reference picker
+│   │   │   │   ├── OperationsHubFeature.tsx # Tab shell (Codex default) + Project/Failure Log tabs, shared edit/delete, reference picker
+│   │   │   │   ├── CodexTab.tsx           # Field Codex: track browser, lesson reader, checkpoints, study plan
+│   │   │   │   ├── VegaStudyTab.tsx       # Study with Vega — project-scoped study companion
 │   │   │   │   ├── DataTerminalTab.tsx    # Experiments + 5 guide sub-tabs (data-driven strip, guides above phase-gate, panels code-split)
 │   │   │   │   ├── StatsGuidePanel.tsx    # Renders lib/data-terminal/stats-guide (65 measures)
 │   │   │   │   ├── ChartsGuidePanel.tsx   # Lazy per-field charts (loadChartField), 250 charts / 29 fields
@@ -185,15 +186,12 @@ scienium/
 │   │   │   │   ├── DataQualityGuidePanel.tsx # Renders lib/data-terminal/data-quality-guide (36 concepts)
 │   │   │   │   ├── guide-chrome.tsx       # Shared guide-panel chrome: SectionLabel, CsvTable, filter bar, GuideBox
 │   │   │   │   └── RichEditor.tsx         # TipTap notes editor (Markdown round-trip)
-│   │   │   ├── minigames/                # 6 mini-game category components
 │   │   │   ├── pvp/
-│   │   │   │   ├── BattleScreen.tsx      # Main battle UI
-│   │   │   │   ├── CharacterCard.tsx     # Character display with sprite + stats
-│   │   │   │   ├── MoveSelector.tsx      # Pick move during battle
-│   │   │   │   ├── TeamBuilder.tsx       # Select 6 from owned buildings
-│   │   │   │   ├── TrophyDisplay.tsx     # Current trophies + tier badge
-│   │   │   │   ├── Leaderboard.tsx       # Class/school/global rankings
-│   │   │   │   └── BattleAnimator.tsx    # Turn animations
+│   │   │   │   ├── RaidScreen.tsx        # Opponent base (top) + spell bar (bottom), 15s timer
+│   │   │   │   ├── SpellBar.tsx          # Chosen spell(s), cooldown state, click-to-cast
+│   │   │   │   ├── RaidResults.tsx       # % destroyed + trophy delta
+│   │   │   │   ├── TrophyDisplay.tsx     # Current trophy count
+│   │   │   │   └── Leaderboard.tsx       # Class trophy leaderboard
 │   │   │   ├── showcase/
 │   │   │   │   ├── ShowcaseEditor.tsx    # Internal editing UI
 │   │   │   │   ├── ShowcaseRenderer.tsx  # Public rendering (used both internally + publicly)
@@ -271,14 +269,11 @@ scienium/
 │
 ├── infra/
 │   ├── docker-compose.yml                # Local dev environment
-│   └── seed/
+│   └── seed/                             # Not yet wired to a runner
 │       ├── lab_types.ts
-│       ├── buildings.ts                  # All 60 buildings as seed data
-│       ├── characters.ts                 # 60 PvP characters (mapped 1:1 to buildings)
-│       ├── moves.ts                      # ~50 PvP moves across 3 types
-│       ├── fairs.ts                      # Initial fair database (regional, state, ISEF)
-│       ├── isef_categories.ts            # 22 ISEF categories
-│       └── starter_content.ts            # Curated starter Field Dispatch entries
+│       ├── buildings.ts                  # All 60 buildings, each with its spellType (PvP raids, spec §11)
+│       └── isef_categories.ts            # 22 ISEF categories
+│       # (fair seed data lives in apps/web/lib/fairs/dataset.ts, not here)
 │
 ├── docs/
 │   ├── spec.md
@@ -362,7 +357,9 @@ gateway_buildings     id, key (discovery | literature_review | research_plan |
                       # Per-team visibility derives from teams.phase >= unlock_phase;
                       # per-team skin derives from teams.lab_type. No per-team rows needed.
 buildings             id, lab_type, name, role (starter | standard | premium),
-                      description, mini_game_category
+                      description, spell_type (empirical | theoretical | applied)
+                      # spell_type = the PvP-raid spell this building grants (spec §9.3/§11);
+                      # per-building values seeded from infra/seed/buildings.ts
 team_buildings        id, team_id, building_id, current_level,
                       last_upgraded_by_user_id, last_upgraded_at
 
@@ -370,8 +367,10 @@ team_buildings        id, team_id, building_id, current_level,
 team_currency         team_id, kp, clearance_level, lc, updated_at
 
 # Daily
-field_dispatch_content    id, lab_type, body, reflection_question, published_date
-field_dispatch_responses  id, user_id, content_id, response, kp_awarded, created_at
+codex_lesson_progress     user_id, lesson_id (PK pair), team_id, track_slug, completed,
+                          best_score, kp_awarded, completed_at  # once-ever KP high-water
+codex_kp_days             id, user_id, team_id, day, lessons_completed  # atomic daily cap
+team_study_plans          team_id, ... (Codex study-plan routing; the feature's only LLM call)
 expertise_attempts        id, user_id, clearance_level_at_attempt, question,
                           response, passed, created_at
 project_logs              id, team_id, entry_type (progress | failure), stage, body,
@@ -385,9 +384,6 @@ project_log_references    project_log_id, references_log_id  # @@id([project_log
                           # (F6): POST/DELETE /api/project-log/[id]/references, both endpoints
                           # team-scoped (IDOR-guarded), 10-outgoing-ref cap, idempotent create.
                           # Cascades on entry delete; GET exposes links + backlinks.
-
-# Mini-games
-mini_game_plays       id, user_id, team_id, building_id, score, kp_awarded, played_at
 
 # Phase advancement (teacher-gated)
 phase_advance_requests  id, team_id, from_phase, to_phase, status (pending|approved|
@@ -436,21 +432,18 @@ forms_catalog         id, name, form_code, required_for_levels_json,
 team_form_status      id, team_id, form_id, status (not_started | in_progress | complete),
                       completed_at
 
-# PvP Combat System
-characters            id, building_id, name, type (empirical | theoretical | applied),
-                      base_hp, base_atk, base_def, base_spd,
-                      sprite_1_url, sprite_2_url
-moves                 id, name, type, base_damage, accuracy, pp,
-                      secondary_effect_json, flavor_text
-character_moves       character_id, move_id, level_learned
-pvp_teams             id, team_id, character_slots_json (6 building_ids),
-                      updated_at
-pvp_battles           id, attacker_team_id, defender_team_id, phase, started_at,
-                      ended_at, winner_team_id, trophies_delta_attacker,
-                      trophies_delta_defender, battle_log_json
-pvp_trophies          team_id, current_trophies, tier (bronze | silver | gold |
-                      platinum | diamond | master), season, updated_at
-pvp_battle_quota      team_id, date, battles_used  # enforces 2-per-day cap
+# PvP Raid System (spec §11.8; schema in place, engine not built — api/pvp stubbed 501)
+spells                id, building_key (unique; 1:1 with the lib/shop.ts catalog),
+                      type (empirical | theoretical | applied),
+                      base_damage, radius, cooldown_ms   # per-level scaling in code
+pvp_raids             id, attacker_team_id, defender_team_id, started_at, ended_at,
+                      percent_destroyed, trophies_delta, raid_log_json
+pvp_trophies          team_id, current_trophies, updated_at
+pvp_raid_quota        team_id, date, raids_used, refinds_used  # enforces daily caps
+# The retired turn-based battle tables (characters, moves, character_moves,
+# pvp_teams, pvp_battles, pvp_battle_quota, pvp_trophies tier/season) and
+# mini_game_plays were dropped by migration `20260706165927_pvp_raid_overhaul`,
+# which also swapped buildings.mini_game_category → spell_type.
 
 # Teacher Dashboard (DEFERRED — post-pilot)
 teacher_class_assignments  id, teacher_user_id, class_id, role (primary | co_teacher),
@@ -505,8 +498,15 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 2. When satisfied, the Literature Review panel (and the lab-scene `PhaseAdvance` banner) prompt for a **one-sentence research idea** instead of a bare advance button
 3. `POST /api/team/advance-phase` re-runs the gate server-side, calls `lib/lab-type/classify.ts` (Claude **Haiku**) to map the idea → one of 6 lab types, then sets `teams.lab_type` + `teams.research_idea` and bumps `teams.phase` **straight to `research_planning`** (the `lab_selection` phase is skipped). The assigned type + rationale are returned and shown before the scene refreshes (Research Plan gateway appears, lab reskins)
 
+### Field Codex flow (daily pillar)
+1. The Operations Hub gateway (route `/daily/codex`) opens `components/ops/OperationsHubFeature.tsx` defaulting to the **Field Codex** tab (`CodexTab.tsx`) — the daily pillar that replaced Field Dispatch
+2. Content is authored, typed TS under `lib/ops/codex/tracks/<slug>.ts` (one `CodexTrack` per field, 1:1 with the Charts-Guide taxonomy; code-split via `loadTrack`); `lib/ops/codex/engine.ts` is the pure rules engine — sequential unit/lesson gating, checkpoint grading at the 0.8 pass bar, per-first-pass KP with a per-student daily cap — mirrored client-side for UX but authoritative on the server
+3. `GET /api/ops/codex/progress` returns the student's per-lesson progress; `POST /api/ops/codex/complete` grades a checkpoint and mints KP atomically (raw `INSERT … ON CONFLICT … RETURNING` for both the once-ever award high-water and the daily-cap counter — the 25P02 payment-invariant pattern); `POST /api/ops/codex/study-plan` is the feature's ONLY LLM call (2/team/day), persisting to `team_study_plans`
+4. Teacher visibility: the student drill-down's **Field Codex** section (`/api/teacher/student/[id]/overview` codex block — lessons completed, KP, recent lessons with track/lesson labels resolved server-side); Codex KP also feeds the Momentum card's rolling 7-day window (`/api/team/momentum`)
+5. Content is authored segment-by-segment via the `.claude/codex-pipeline/` harness (`/codex-pipeline`), gated by `lib/ops/codex/__tests__/content-shape.test.ts`
+
 ### Operations Hub flow (Project Log / Failure Log) — shared, attributed
-1. The Operations Hub gateway opens `components/ops/OperationsHubFeature.tsx` with two tabs backed by `project_logs`
+1. The Operations Hub gateway opens `components/ops/OperationsHubFeature.tsx`; the Project Log / Failure Log tabs are backed by `project_logs`
 2. **Project Log:** `GET/POST /api/project-log` lists/creates numbered entries (attendance validated against the roster, discipline-aware stage dropdown, TipTap rich-text notes stored as Markdown, required next-steps, ≥1 photo). Photos upload via `POST /api/project-log/attachment` (bytes validated by **sharp**, stored privately in R2) and stream back through the authenticated `GET /api/project-log/attachment/view?key=…`
 3. **Failure Log:** `GET/POST /api/failure-log` stores `{happened, learned}` JSON with `entry_type = failure`
 4. **Shared editing:** `PATCH/DELETE /api/project-log/[id]` and `/api/failure-log/[id]` let **any team member** edit or delete **any** entry. Edits stamp `last_edited_by_user_id`/`last_edited_at` (shown inline); create/edit/delete all write to `activity_feed` (`log_created | log_edited | log_deleted`) so deletions stay auditable
@@ -634,21 +634,20 @@ The two real-world milestones — starting data collection (`research_planning �
 
 > The earlier `literature_review → research_planning` gate is **not** part of this flow — it's mechanically checkable (25 sources + every member proficient), so it stays auto/self-serve.
 
-### PvP battle flow (async, pilot)
-1. Player initiates battle from `/pvp/lobby`
-2. Server checks `pvp_battle_quota` — if already used 2 today, blocks request
-3. Server runs matchmaking: pulls candidates from `pvp_teams` in same phase + sub-bucket with closest trophy count
-4. Selected opponent's team composition snapshotted; AI heuristic chosen for opponent's actions
-5. Battle resolves turn-by-turn:
-   - Client submits action (move or switch)
-   - Server validates legality, runs combat math, returns result + animation cues
-   - State persisted to `pvp_battles.battle_log_json`
-6. On battle end:
-   - Winner/loser determined
-   - Trophy delta calculated based on opponent's trophy count
-   - `pvp_trophies` updated for both teams
-   - `pvp_battle_quota` incremented for initiator
-7. Result screen shown to player with trophy change, replay option
+### PvP raid flow (target design — spec §11; not built)
+1. Player presses **Raid** in `/pvp/lobby`
+2. Server checks `pvp_raid_quota` — daily raid cap reached blocks the request
+3. Server matchmakes: a random eligible base (same class, `working`+ phase, not the attacker's own team). A **refind** rerolls to another random base, decrementing `refinds_used`; out of refinds → raid the shown base or exit (exit doesn't consume a raid)
+4. On raid start the server snapshots the defender's base (`team_shop_buildings` + gateway placements) — the defender's real rows are **never mutated**
+5. Raid resolves server-authoritatively over the 15-second window:
+   - Client streams cast events (`spell_id, x, y, client_ts`)
+   - Server validates the timer window + cooldown spacing, applies AOE damage (× the spell-vs-building type multiplier) to its own snapshot, returns per-cast results for animation
+   - Cast sequence persisted to `pvp_raids.raid_log_json`
+6. On timer expiry:
+   - `percent_destroyed` computed over total base health (partial building damage counts)
+   - Trophy delta derived from the destruction percentage (gain up to 10, rounded up; loss below the tunable ~30% threshold)
+   - `pvp_trophies` updated for the attacker; `pvp_raid_quota` incremented
+7. Results screen shows % destroyed + trophy change
 
 ---
 
@@ -887,7 +886,7 @@ The lab home (`/lab`) replaces the old dashboard as the spatial navigation hub. 
 
 **Two building classes (see spec §9.1):**
 - **Gateway buildings** — 7 fixed structures that *are* the navigation. Seeded via `gateway_buildings`; rendered by `LabCanvas`. Visibility derives from `teams.phase >= unlock_phase`; skin derives from `teams.lab_type`. The Operations Hub (`is_central = true`) renders at plot center once unlocked.
-- **Economy buildings** — the 60 purchasable/upgradeable buildings (`buildings` / `team_buildings`), rendered as additional sprites on the grown plot after specialization. **All 60 are drawn** (10 per lab type × 6 lab types), each a bespoke iso form with a one-of-one signature feature; resolved via `getBuildingSprite(lab_type, slug)`. Catalog of record: `art/building.md` (67/67 made).
+- **Economy buildings** — the 60 purchasable/upgradeable buildings (`buildings` / `team_buildings`), rendered as additional sprites on the grown plot after specialization. **Per-building sprites are retired** (spec §19): economy buildings render with a shared generic sprite treatment, not bespoke individual art. The previously generated per-building sprites and their catalog (`art/building.md`) remain in the repo for reference only; the sprite-resolution path should fall back to the shared treatment rather than per-slug art.
 
 **Lab visual variables:**
 - `size`: `small` (discovery + lab_selection phases) | `grown` (all later phases)

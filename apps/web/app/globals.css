@@ -2856,3 +2856,23 @@
 
   @page { margin: 0.5in; }
 }
+
+/* ── Teacher class reports (F8) — print rendering ─────────────────────────── */
+/* Separate, distinct root class from the showcase one-pager above (`.sc-onepager`
+   is class-scoped so the two never bleed into each other) — kept as its own
+   block so this print pass can evolve independently of the showcase one-pager. */
+@media print {
+  .tr-report,
+  .tr-report * {
+    color: #000 !important;
+    background: #fff !important;
+  }
+  .tr-report {
+    max-width: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0.5in;
+  }
+
+  @page { margin: 0.5in; }
+}

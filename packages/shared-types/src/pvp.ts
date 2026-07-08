@@ -1,69 +1,37 @@
-import type { CombatType } from './enums'
+import type { SpellType } from './enums'
 
-export interface MoveEffect {
-  type: 'confusion' | 'stat_change' | 'crit_boost' | 'scaling_power'
-  target: 'self' | 'opponent'
-  stat?: 'atk' | 'def' | 'spd'
-  delta?: number
-  condition?: string
-}
-
-export interface Move {
+// PvP raid system (spec §11). Each economy building grants one spell; the spell's
+// level equals the building's level and all per-level scaling lives in code.
+export interface Spell {
   id: string
-  name: string
-  type: CombatType
+  buildingKey: string
+  type: SpellType
   baseDamage: number
-  accuracy: number
-  pp: number
-  secondaryEffect: MoveEffect | null
-  flavorText: string
+  radius: number
+  cooldownMs: number
 }
 
-export interface CharacterStats {
-  hp: number
-  atk: number
-  def: number
-  spd: number
+// One cast event streamed from the client during a raid; the server validates
+// the timer window + cooldown spacing and resolves damage server-side.
+export interface RaidCastEvent {
+  spellId: string
+  x: number
+  y: number
+  clientTs: number
 }
 
-export interface BattleCharacter {
-  id: string
-  name: string
-  type: CombatType
-  level: number
-  stats: CharacterStats
+// A building in the server's snapshot of the defender's base during a raid.
+export interface RaidBuildingState {
+  buildingKey: string
+  type: SpellType
+  posX: number
+  posY: number
+  maxHp: number
   currentHp: number
-  moves: Move[]
-  spriteUrl: string
-  statusEffect: string | null
 }
 
-export interface BattleAction {
-  type: 'move' | 'switch'
-  moveId?: string
-  switchToCharacterId?: string
-}
-
-export interface BattleTurnResult {
-  attackerAction: BattleAction
-  defenderAction: BattleAction
-  events: BattleEvent[]
-  battleOver: boolean
-  winnerId?: string
-}
-
-export interface BattleEvent {
-  type:
-    | 'damage'
-    | 'miss'
-    | 'faint'
-    | 'switch'
-    | 'status_apply'
-    | 'stat_change'
-    | 'crit'
-    | 'effectiveness'
-  characterId: string
-  value?: number
-  effectiveness?: 'super_effective' | 'not_very_effective' | 'normal'
-  message: string
+export interface RaidResult {
+  raidId: string
+  percentDestroyed: number
+  trophiesDelta: number
 }

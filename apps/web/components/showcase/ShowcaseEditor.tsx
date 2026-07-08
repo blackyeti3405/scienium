@@ -23,6 +23,7 @@ import {
   Film,
   Paperclip,
   Printer,
+  ChevronDown,
 } from 'lucide-react'
 import {
   PRIVACY_OPTIONS,
@@ -38,6 +39,7 @@ import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { uploadWithProgress } from '@/lib/uploadWithProgress'
+import { AbstractGuide } from '@/components/showcase/AbstractGuidePanel'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -94,6 +96,7 @@ export function ShowcaseEditor() {
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [abstractGuideOpen, setAbstractGuideOpen] = useState(false)
 
   useEffect(() => {
     fetch('/api/showcase')
@@ -380,6 +383,21 @@ export function ShowcaseEditor() {
               className={`sc-input sc-input--multiline ${overWords ? 'sc-textarea--error' : ''}`}
             />
           </Field>
+
+          <button
+            type="button"
+            data-testid="abstract-guide-toggle"
+            aria-expanded={abstractGuideOpen}
+            onClick={() => setAbstractGuideOpen((v) => !v)}
+            className="font-pixel text-[7px] text-white/45 hover:text-white/80 uppercase tracking-widest flex items-center gap-1.5 self-start transition-colors"
+          >
+            <ChevronDown
+              size={12}
+              className={`transition-transform ${abstractGuideOpen ? 'rotate-180' : ''}`}
+            />
+            Abstract Structure
+          </button>
+          {abstractGuideOpen && <AbstractGuide />}
 
           <Field label="Visibility">
             <div className="sc-priv">

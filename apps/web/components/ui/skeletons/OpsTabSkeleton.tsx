@@ -1,20 +1,20 @@
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 
-export type OpsTabSkeletonVariant = 'dispatch' | 'log' | 'terminal'
+export type OpsTabSkeletonVariant = 'card' | 'log' | 'terminal'
 
 /**
  * Layout-mirroring skeleton for Operations Hub tab mounts — variantized per
  * the known shape of each tab so the mount-fetch wait never renders a bare
  * spinner on a fixed layout.
  *
- *  - `dispatch`: dispatch card + streak chip + history disclosure row
+ *  - `card`: prompt card + chip row + disclosure row (Proof of Expertise)
  *  - `log`: entry composer form + a few timeline entry rows
  *  - `terminal`: experiment list rows
  */
 export function OpsTabSkeleton({ variant }: { variant: OpsTabSkeletonVariant }) {
-  if (variant === 'dispatch') {
+  if (variant === 'card') {
     return (
-      <div className="ops-tab-body" data-testid="ops-tab-skeleton-dispatch">
+      <div className="ops-tab-body" data-testid="ops-tab-skeleton-card">
         <div className="max-w-2xl mx-auto w-full space-y-5 py-2">
           <div className="flex items-center gap-2">
             <PixelSkeleton variant="pill" h="h-4" w="w-32" />

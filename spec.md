@@ -1,7 +1,7 @@
 # scienium — Product Specification
 
 > **Status:** In Development (feature-complete on the student-facing core; teacher tooling minimal for pilot)
-> **Last Updated:** 2026-07-05
+> **Last Updated:** 2026-07-06
 > **Initial Scale Target:** ~120 students (single school pilot)
 
 ---
@@ -44,9 +44,9 @@ scienium uses an explicit **phase** model stored on each team. Phases are sequen
 
 **Visual milestone:** When the lab type is assigned, the virtual lab **grows in size** and **reskins** to that lab type (palette switching is planned). This is a one-time, visible moment — the lab goes from small + generic to grown + type-specific.
 
-**Phase-locked features:** PvP combat, building purchases/upgrades, and mini-games are inaccessible during `discovery`, `literature_review`, and `research_planning`. The Showcase Wing additionally requires reaching the `showcase` phase. See Section 14 for the complete feature-unlock matrix.
+**Phase-locked features:** PvP raids and building purchases/upgrades are inaccessible during `discovery`, `literature_review`, and `research_planning`. The Showcase Wing additionally requires reaching the `showcase` phase. See Section 14 for the complete feature-unlock matrix.
 
-**Daily activities** (Field Dispatch, Proof of Expertise, Project Log, Failure Log) become available from `literature_review` onward, when a lab type — and therefore discipline-specific content — has been established. The Fair Hub is always accessible from day one.
+**Daily activities** (Field Codex, Proof of Expertise, Project Log, Failure Log) become available from `literature_review` onward, when a lab type — and therefore discipline-specific content — has been established. The Fair Hub is always accessible from day one.
 
 > **Note on prior spec:** The original lifecycle omitted Research Planning as a distinct phase. It has been added between Literature Review and Working to enforce that students define their study design before beginning experiments. Phase-locking of PvP to `working` supersedes the earlier §14.3 statement that PvP unlocks with "at least 1 built building" (which could have occurred as early as Literature Review).
 
@@ -180,6 +180,7 @@ Proficiency on each paper is earned by passing a graded, AI-generated quiz — n
 - **Coverage** is weighted toward findings, relevance, and methodology, plus broader field/topic knowledge; questions are calibrated to advanced/AP high-school level.
 - **Grading:** the student answers in natural language; Claude grades all answers in one call against the keys + rubric (technical accuracy, depth, own-words, specificity), returns a per-question score + feedback, and computes an **aggregate score** (pass ≥ 70%).
 - **Pedagogy is tunable** without code changes via `lib/literature/quiz-rubric.md`; question count and pass threshold are constants in `lib/literature/quiz.ts`.
+- **Targeted retry ("Fix my misses") (implemented):** a failed quiz shows, per missed question, Vega's rationale plus a "what a strong answer covers" note — and the retry re-asks **only the failed questions** (prior answer shown read-only) plus one fresh question, via `POST /api/papers/[id]/quiz/retry`, instead of regenerating the whole quiz.
 - On pass, the current student's `paper_proficiency` row is upserted (demonstrated + KP high-water mark, max 100 per source **per student**) and the slot banner turns green for them. KP accrues into the shared `team_currency` total shown the same to all members. On fail, the student can retake with fresh questions. Past results (answers + feedback) persist and reload.
 
 ### 6.6 Citation Graph *(removed)*
@@ -219,12 +220,15 @@ The citation graph (and its supporting embeddings + HDBSCAN clustering) has been
 
 ## 7. Daily Engagement Pillars
 
-The daily pillars below — Field Dispatch, Proof of Expertise, and Project Log / Failure Log — are **consolidated into a single gateway building, the Operations Hub** (see Section 9.6). Once unlocked, the Operations Hub becomes the central structure of the lab and the student's everyday home base; the individual pillars are surfaced as panels within it rather than as separate destinations. As built, the Operations Hub has **five tabs**: Field Dispatch, Project Log, Failure Log, Proof of Expertise, and the **Data Terminal** (§7.6).
+The daily pillars below — Field Codex, Proof of Expertise, and Project Log / Failure Log — are **consolidated into a single gateway building, the Operations Hub** (see Section 9.4). Once unlocked, the Operations Hub becomes the central structure of the lab and the student's everyday home base; the individual pillars are surfaced as panels within it rather than as separate destinations. As built, the Operations Hub has **six tabs**: Field Codex (first and default), Project Log, Failure Log, Proof of Expertise, the **Data Terminal** (§7.6), and **Study with Vega**.
 
-### 7.1 Field Dispatch (~2 min) — *implemented*
-- A daily narrative tip / case study tailored to the team's lab type, generated by Claude (Haiku) and cached per lab type per day — a weekly/daily cron pre-warms it, but a GET lazily generates on demand so a missed cron self-heals.
-- Ends with a single reflection question the student answers.
-- **Reward:** Knowledge Points (KP), awarded once per dispatch. A **Past Dispatches** archive lists prior dispatches with their date, the KP earned (a gold KP badge), the question, and the student's answer.
+### 7.1 Field Codex (~5–10 min/day) — *implemented*
+The daily learning pillar (it replaced the retired Field Dispatch — a daily LLM-generated reflection prompt — with a real curriculum):
+- A library of **authored, typed lesson tracks** — one track per scientific field, 1:1 with the Data Terminal Charts-Guide taxonomy (29 fields planned; authored incrementally via the `.claude/codex-pipeline/` content pipeline). Each track is a **Core segment plus subfield branches**; segments contain sequentially-gated units of ~6 lessons, and every lesson ends with a **3–5-question checkpoint** (multiple-choice / ordering / matching) graded locally at an 80% pass bar — **zero LLM at read or grade time**.
+- Lessons carry a worked example and a "why judges ask this" framing tying each concept to fair judging.
+- **Reward:** KP per first-ever lesson pass, capped per student per day (`lib/ops/codex/engine.ts` owns the constants), minted atomically with the same once-ever payment-ledger discipline as the rest of the economy.
+- A **Study Plan** (the feature's only LLM call, 2 regenerations/team/day) routes the team to the most relevant tracks for their project; teams without one default to their lab type's field list.
+- Content lives in code (`apps/web/lib/ops/codex/tracks/<slug>.ts`), code-split per track; a content-shape unit test gates every authored track.
 
 ### 7.2 Proof of Expertise (~3–5 min) — *implemented*
 - A short **clearance exam** about the team's own project: a small fixed set of free-response questions generated and graded by Vega (Claude Sonnet) against a tunable rubric, using the team's real project context.
@@ -267,7 +271,7 @@ A specialized Project Log entry type for documenting failed experiments, dead en
 ### 7.5 Technical Implementation
 
 **Content generation:**
-- Field Dispatch content is generated by Claude (Haiku) and cached per lab type per day (`field_dispatch_content`); a cron pre-warms it and a GET can lazily generate on demand (`lib/field-dispatch/dispatch.ts`). *(implemented)*
+- Field Codex progress persists per student per lesson (`codex_lesson_progress`, high-water best-score + once-ever KP mint) with an atomic per-day completion cap (`codex_kp_days`); the study plan persists per team (`team_study_plans`). *(implemented)*
 - Proof of Expertise clearance exams are generated and graded by Claude (Sonnet) against a tunable rubric using the team's real project context, tiered by target clearance level (`lib/clearance/*`, `POST /api/expertise` + `/api/expertise/grade`). *(implemented)*
 - *(Planned)* Project Log + Failure Log artifact analysis: server-side OCR + Claude API for content evaluation and targeted follow-up prompts. Today, photo uploads are **validated** (real-image decode via sharp, image types only — SVG rejected) but not yet content-analyzed.
 
@@ -288,13 +292,16 @@ The **Data Terminal** tab is where students record, graph, and learn how to pres
 
 *(These guides are pure static content — no LLM at read time — so they cost nothing to serve and stay reachable regardless of phase-lock.)*
 
+### 7.7 Study with Vega — *implemented*
+A persistent, **team-shared study chat** grounded in the team's own project (Ops Hub tab). Vega answers with the team's research idea, study plan, and Codex track context in scope (`lib/ops/vega-study-context.ts`), so guidance stays project-specific rather than generic. Messages persist per team (`vega_study_messages`) and reload on reopen. Rate-limited like every LLM route.
+
 ---
 
 ## 8. Currency & Progression System
 
 | Currency | Earned By | Used For |
 |---|---|---|
-| **Knowledge Points (KP)** | Field Dispatch, mini-games, general engagement | Buying buildings; **every** building upgrade (KP scales with the building's base cost × level) |
+| **Knowledge Points (KP)** | Field Codex lessons, Discovery exploration, literature quizzes, general engagement | Buying buildings; **every** building upgrade (KP scales with the building's base cost × level) |
 | **Clearance Level** | Proof of Expertise | Gating **which** buildings can be purchased (each building has a minimum clearance tier) — it does **not** cap upgrade level |
 | **Lab Credits (LC)** | +1 per team member per real calendar day they file a Project or Failure log (capped 1/member/day, never backfilled) | The four **tier-up** upgrade transitions only (→4, →7, →10, →15) |
 
@@ -306,13 +313,13 @@ The **Data Terminal** tab is where students record, graph, and learn how to pres
 
 scienium has **two distinct classes of building**, which look and behave differently and should never be conflated in design or data:
 
-| Class | Count | Purpose | Economy | PvP | Reskin |
+| Class | Count | Purpose | Economy | PvP | Sprite |
 |---|---|---|---|---|---|
-| **Gateway buildings** | 7 (fixed) | Navigation spine — each opens one core feature panel | None (not bought, no levels) | None | Reskin to lab type on specialization |
-| **Economy buildings** | 60 (10 per lab type) | Game layer — bought, upgraded, host mini-games | KP / LC | Map 1:1 to PvP characters | Already lab-type-specific by design |
+| **Gateway buildings** | 7 (fixed) | Navigation spine — each opens one core feature panel | None (not bought, no levels) | None | Bespoke sprite; reskins to lab type on specialization |
+| **Economy buildings** | 60 (10 per lab type) | Game layer — bought, upgraded | KP / LC | Each grants a **spell** that levels with the building (§11) | **Shared generic sprite — no per-building art** |
 
-- **Gateway buildings** are the doors into features (Discovery, Literature Review, etc.). They are a small fixed set, present according to phase, with no purchase cost, no upgrade levels, no mini-game, and no PvP character. They are the subject of Section 9.6. *Gateway buildings are never labelled "laboratory"* — naming is provisional (see Section 18).
-- **Economy buildings** are the 60 described in 9.2–9.5. They only become relevant after specialization, and only the chosen lab type's 10 are ever in play for a given team.
+- **Gateway buildings** are the doors into features (Discovery, Literature Review, etc.). They are a small fixed set, present according to phase, with no purchase cost, no upgrade levels, and no spell. They are the subject of Section 9.4. *Gateway buildings are never labelled "laboratory"* — naming is provisional (see Section 18).
+- **Economy buildings** are the 60 described in 9.2–9.3. They only become relevant after specialization, and only the chosen lab type's 10 are ever in play for a given team.
 
 A brand-new lab begins with a single gateway building (the Discovery building) on a small plot. Economy buildings and upgrades are earned over time, and only after a lab type is selected.
 
@@ -334,8 +341,6 @@ never sold. (Implementation: `lib/plot.ts` grid math, `LabPlot`/`LabScene`,
   = `round(baseCost × 0.25 × (level − 1))`. The four **tier-up** transitions —
   **3→4, 6→7, 9→10, 14→15** — *also* cost Lab Credits: **2 / 4 / 6 / 10**. There is
   **no clearance cap** on level. (`lib/economy.ts` `upgradeKpCost` / `upgradeLcCost`.)
-- **Skin tiers**: a building shows its base sprite at levels 1–3 and a **tier-2
-  reskin** (`{slug}_t2.png`) at level ≥ 4.
 - **Selling** an economy building refunds **90% of the *total* KP invested** in it
   (purchase + every upgrade — tracked in `cost_paid`). Gateways are not sellable.
 - **Earning LC**: a member earns **+1 Lab Credit per real calendar day** they create
@@ -344,117 +349,93 @@ never sold. (Implementation: `lib/plot.ts` grid math, `LabPlot`/`LabScene`,
 
 ### 9.3 Building Rosters (60 Total)
 
-Each lab type has 10 buildings: 1 starter, 8 standard (KP), 1 premium (LC).
+Each lab type has 10 buildings: 1 starter, 8 standard (KP), 1 premium (LC). Each building also carries a **spell type** — Empirical, Theoretical, or Applied — which is the type of the spell it grants for PvP raids (§11).
 
 #### BioCore — Life Sciences
-| Building | Type | Description | Mini-Game Category |
+| Building | Type | Description | Spell Type |
 |---|---|---|---|
-| **Greenhouse** | Starter | Cultivate and observe plant specimens | Identification |
-| **Specimen Vault** | Standard | Curate and classify biological samples | Identification |
-| **Microscopy Suite** | Standard | Visualize cells and microorganisms | Identification |
-| **Incubation Chamber** | Standard | Grow cultures under controlled conditions | Prediction |
-| **Wet Lab** | Standard | Conduct biological assays | Configuration |
-| **Field Station** | Standard | Collect ecological data from the field | Prediction |
-| **Aquatic Habitat** | Standard | Study aquatic ecosystems | Diagnosis |
-| **Genetics Sequencing Lab** | Standard | Sequence and align DNA samples | Decoding |
-| **Behavioral Observation Room** | Standard | Track and analyze animal behavior | Prediction |
-| **Bioinformatics Suite** | Premium (LC) | Analyze genomic data at scale | Optimization |
+| **Greenhouse** | Starter | Cultivate and observe plant specimens | Empirical |
+| **Specimen Vault** | Standard | Curate and classify biological samples | Empirical |
+| **Microscopy Suite** | Standard | Visualize cells and microorganisms | Empirical |
+| **Incubation Chamber** | Standard | Grow cultures under controlled conditions | Theoretical |
+| **Wet Lab** | Standard | Conduct biological assays | Applied |
+| **Field Station** | Standard | Collect ecological data from the field | Theoretical |
+| **Aquatic Habitat** | Standard | Study aquatic ecosystems | Empirical |
+| **Genetics Sequencing Lab** | Standard | Sequence and align DNA samples | Theoretical |
+| **Behavioral Observation Room** | Standard | Track and analyze animal behavior | Theoretical |
+| **Bioinformatics Suite** | Premium (LC) | Analyze genomic data at scale | Applied |
 
 #### ChemWorks — Chemistry
-| Building | Type | Description | Mini-Game Category |
+| Building | Type | Description | Spell Type |
 |---|---|---|---|
-| **Fume Hood Bench** | Starter | Safe baseline workspace for reactions | Configuration |
-| **Reaction Synthesis Lab** | Standard | Run controlled chemical syntheses | Prediction |
-| **Spectroscopy Suite** | Standard | Identify compounds by spectral signatures | Identification |
-| **Materials Testing Bay** | Standard | Measure mechanical and chemical properties | Diagnosis |
-| **Crystallography Room** | Standard | Determine molecular structures | Decoding |
-| **Distillation Tower** | Standard | Separate and purify mixtures | Optimization |
-| **Catalysis Lab** | Standard | Study reaction acceleration | Optimization |
-| **Polymer Workshop** | Standard | Synthesize and test polymers | Configuration |
-| **Computational Chemistry Hub** | Standard | Simulate molecules in silico | Prediction |
-| **Cleanroom Synthesizer** | Premium (LC) | Precision synthesis under contamination control | Optimization |
+| **Fume Hood Bench** | Starter | Safe baseline workspace for reactions | Applied |
+| **Reaction Synthesis Lab** | Standard | Run controlled chemical syntheses | Theoretical |
+| **Spectroscopy Suite** | Standard | Identify compounds by spectral signatures | Empirical |
+| **Materials Testing Bay** | Standard | Measure mechanical and chemical properties | Empirical |
+| **Crystallography Room** | Standard | Determine molecular structures | Theoretical |
+| **Distillation Tower** | Standard | Separate and purify mixtures | Applied |
+| **Catalysis Lab** | Standard | Study reaction acceleration | Applied |
+| **Polymer Workshop** | Standard | Synthesize and test polymers | Applied |
+| **Computational Chemistry Hub** | Standard | Simulate molecules in silico | Theoretical |
+| **Cleanroom Synthesizer** | Premium (LC) | Precision synthesis under contamination control | Applied |
 
 #### Volt Lab — Engineering, Electronics, Physical Systems
-| Building | Type | Description | Mini-Game Category |
+| Building | Type | Description | Spell Type |
 |---|---|---|---|
-| **Workshop** | Starter | Default workbench for general builds | Configuration |
-| **CNC Mill Shop** | Standard | Precision subtractive fabrication | Configuration |
-| **3D Printing Shop** | Standard | Additive prototyping | Optimization |
-| **PCB Fab** | Standard | Design and produce circuit boards | Configuration |
-| **Robotics Bay** | Standard | Integrate sensors, actuators, control | Configuration |
-| **Electronics Bench** | Standard | Build and debug analog/digital circuits | Diagnosis |
-| **Mechanical Testing Rig** | Standard | Stress, fatigue, and load testing | Prediction |
-| **Welding & Fabrication** | Standard | Metalwork and structural assembly | Configuration |
-| **Embedded Systems Lab** | Standard | Microcontroller-based projects | Configuration |
-| **AI Incubator** | Premium (LC) | Develop ML-driven engineering systems | Optimization |
+| **Workshop** | Starter | Default workbench for general builds | Applied |
+| **CNC Mill Shop** | Standard | Precision subtractive fabrication | Applied |
+| **3D Printing Shop** | Standard | Additive prototyping | Applied |
+| **PCB Fab** | Standard | Design and produce circuit boards | Applied |
+| **Robotics Bay** | Standard | Integrate sensors, actuators, control | Applied |
+| **Electronics Bench** | Standard | Build and debug analog/digital circuits | Empirical |
+| **Mechanical Testing Rig** | Standard | Stress, fatigue, and load testing | Theoretical |
+| **Welding & Fabrication** | Standard | Metalwork and structural assembly | Applied |
+| **Embedded Systems Lab** | Standard | Microcontroller-based projects | Applied |
+| **AI Incubator** | Premium (LC) | Develop ML-driven engineering systems | Applied |
 
 #### TerraBase — Earth Science
-| Building | Type | Description | Mini-Game Category |
+| Building | Type | Description | Spell Type |
 |---|---|---|---|
-| **Sampling Station** | Starter | Collect and catalog field samples | Identification |
-| **Seismograph Array** | Standard | Monitor seismic activity | Prediction |
-| **Weather Monitoring Post** | Standard | Record and analyze atmospheric data | Prediction |
-| **Geological Core Lab** | Standard | Analyze sediment and rock cores | Identification |
-| **Hydrology Bay** | Standard | Study water systems and flow | Diagnosis |
-| **Atmospheric Sensor Array** | Standard | Track atmospheric chemistry | Prediction |
-| **Soil Analysis Lab** | Standard | Characterize soil composition | Identification |
-| **Remote Sensing Hub** | Standard | Interpret satellite and aerial data | Decoding |
-| **Climate Modeling Station** | Standard | Run simulations of Earth systems | Optimization |
-| **Deep Earth Observatory** | Premium (LC) | Probe planetary-scale processes | Prediction |
+| **Sampling Station** | Starter | Collect and catalog field samples | Empirical |
+| **Seismograph Array** | Standard | Monitor seismic activity | Theoretical |
+| **Weather Monitoring Post** | Standard | Record and analyze atmospheric data | Theoretical |
+| **Geological Core Lab** | Standard | Analyze sediment and rock cores | Empirical |
+| **Hydrology Bay** | Standard | Study water systems and flow | Empirical |
+| **Atmospheric Sensor Array** | Standard | Track atmospheric chemistry | Theoretical |
+| **Soil Analysis Lab** | Standard | Characterize soil composition | Empirical |
+| **Remote Sensing Hub** | Standard | Interpret satellite and aerial data | Theoretical |
+| **Climate Modeling Station** | Standard | Run simulations of Earth systems | Applied |
+| **Deep Earth Observatory** | Premium (LC) | Probe planetary-scale processes | Theoretical |
 
 #### MindFrame — Social / Cognitive Science
-| Building | Type | Description | Mini-Game Category |
+| Building | Type | Description | Spell Type |
 |---|---|---|---|
-| **Interview Room** | Starter | Conduct structured interviews | Identification |
-| **Survey Distribution Center** | Standard | Design and field surveys | Diagnosis |
-| **Behavioral Lab** | Standard | Run controlled behavioral experiments | Prediction |
-| **Eye Tracking Suite** | Standard | Measure attention and gaze | Decoding |
-| **Statistical Analysis Hub** | Standard | Choose and run the right test | Diagnosis |
-| **Focus Group Chamber** | Standard | Run group-based qualitative studies | Identification |
-| **Longitudinal Study Wing** | Standard | Track participants over time | Optimization |
-| **EEG/Biofeedback Room** | Standard | Measure physiological response | Decoding |
-| **Data Visualization Studio** | Standard | Communicate findings visually | Configuration |
-| **Computational Social Science Lab** | Premium (LC) | Model social systems at scale | Optimization |
+| **Interview Room** | Starter | Conduct structured interviews | Empirical |
+| **Survey Distribution Center** | Standard | Design and field surveys | Empirical |
+| **Behavioral Lab** | Standard | Run controlled behavioral experiments | Theoretical |
+| **Eye Tracking Suite** | Standard | Measure attention and gaze | Theoretical |
+| **Statistical Analysis Hub** | Standard | Choose and run the right test | Empirical |
+| **Focus Group Chamber** | Standard | Run group-based qualitative studies | Empirical |
+| **Longitudinal Study Wing** | Standard | Track participants over time | Applied |
+| **EEG/Biofeedback Room** | Standard | Measure physiological response | Theoretical |
+| **Data Visualization Studio** | Standard | Communicate findings visually | Applied |
+| **Computational Social Science Lab** | Premium (LC) | Model social systems at scale | Applied |
 
 #### Axiom — Math / Physics / Astronomy
-| Building | Type | Description | Mini-Game Category |
+| Building | Type | Description | Spell Type |
 |---|---|---|---|
-| **Chalkboard Room** | Starter | Foundational derivations and proofs | Decoding |
-| **Computation Cluster** | Standard | Numerical simulations | Optimization |
-| **Particle Physics Bench** | Standard | Tabletop physics experiments | Identification |
-| **Optics Laboratory** | Standard | Light, lenses, interference | Configuration |
-| **Quantum Simulation Lab** | Standard | Model quantum systems | Prediction |
-| **Mathematical Modeling Suite** | Standard | Build models of real phenomena | Optimization |
-| **Observatory Dome** | Standard | Observe and classify celestial objects | Identification |
-| **Theoretical Physics Annex** | Standard | Symbolic reasoning and derivations | Decoding |
-| **Numerical Methods Hub** | Standard | Algorithms for scientific computing | Optimization |
-| **Cosmology Visualization Theater** | Premium (LC) | Render large-scale structures of the universe | Prediction |
+| **Chalkboard Room** | Starter | Foundational derivations and proofs | Theoretical |
+| **Computation Cluster** | Standard | Numerical simulations | Applied |
+| **Particle Physics Bench** | Standard | Tabletop physics experiments | Empirical |
+| **Optics Laboratory** | Standard | Light, lenses, interference | Applied |
+| **Quantum Simulation Lab** | Standard | Model quantum systems | Theoretical |
+| **Mathematical Modeling Suite** | Standard | Build models of real phenomena | Applied |
+| **Observatory Dome** | Standard | Observe and classify celestial objects | Empirical |
+| **Theoretical Physics Annex** | Standard | Symbolic reasoning and derivations | Theoretical |
+| **Numerical Methods Hub** | Standard | Algorithms for scientific computing | Applied |
+| **Cosmology Visualization Theater** | Premium (LC) | Render large-scale structures of the universe | Theoretical |
 
-### 9.4 Building Mini-Games
-
-> **Status:** Design only — **not yet built**. The building economy (buy / place / move / upgrade / sell) is live, and each building carries its mini-game *category* in seed data, but no mini-game is playable yet (`MiniGamePlay` table exists; no play route or UI). This subsection is the target design.
-
-Each building hosts a STEM-based mini-game that rewards KP (with diminishing returns), teaches a concept relevant to the building, scales in difficulty with the building's upgrade level, and has a daily play cap.
-
-**Six Mini-Game Categories** *(reusable framework)*:
-
-| Category | What the Player Does | Example |
-|---|---|---|
-| **Identification** | Recognize/classify items from cues | Identify cell types under microscope; classify rock samples |
-| **Configuration** | Arrange components to make a system work | Place components to complete a working circuit |
-| **Prediction** | Forecast outcomes from data | Predict 24h weather pattern from current data |
-| **Diagnosis** | Spot the error in a flawed setup | Find the broken component in a circuit |
-| **Optimization** | Improve a system within constraints | Maximize yield with limited reagents |
-| **Decoding** | Interpret data, notation, symbolic representations | Read a sequence chromatogram |
-
-The same category implementation is reused across buildings with discipline-specific content, reducing development cost vs. 60 unique games.
-
-### 9.5 Technical Implementation
-- Each mini-game category is a parameterized React component
-- Game content generated either pre-baked per discipline or dynamically via Claude API
-- Results submitted on completion; server validates and awards KP
-
-### 9.6 Gateway Buildings (Navigation Spine)
+### 9.4 Gateway Buildings (Navigation Spine)
 
 The seven gateway buildings are the app's primary navigation. Each is a structure on the plot that, when clicked, opens the corresponding feature panel over the lab scene. They appear one at a time as the team advances, and every previously unlocked gateway stays present and usable. Gateways are configuration/seed data, not earned economy buildings.
 
@@ -463,19 +444,19 @@ The seven gateway buildings are the app's primary navigation. Each is a structur
 | 1 | **Discovery building** | Topic Discovery (Wikipedia deep dives + idea generation) | `discovery` | The starter building; the only structure on the plot during Discovery |
 | 2 | **Literature Review building** | Literature Review + Library | `literature_review` | — |
 | 3 | **Research Plan building** | Research Planning (hypothesis, methodology, study design) | `research_planning` | — |
-| 4 | **Operations Hub** | Daily pillars: Field Dispatch, Proof of Expertise, Project Log / Failure Log | `literature_review` *(see §18)* | Becomes the **central** building once unlocked — the everyday home base |
+| 4 | **Operations Hub** | Daily pillars: Field Codex, Proof of Expertise, Project Log / Failure Log | `literature_review` *(see §18)* | Becomes the **central** building once unlocked — the everyday home base |
 | 5 | **Science Fair Research building** | Science Fair Information Hub | `discovery` *(see §18)* | Reference center; available early |
 | 6 | **Showcase building** | Showcase Wing (public portfolio) | `showcase` | Appears once the team is teacher-advanced to `showcase` |
-| 7 | **PvP building** | PvP combat arena | `working` | Battle lobby, team builder, leaderboards |
+| 7 | **PvP building** | PvP raid arena | `working` | Raid entry, spell loadout, class trophy leaderboard |
 
 **Visual behavior:**
 - All gateway buildings start in the shared **generic grey/teal sci-fi palette** (see Section 19).
 - On specialization (entering `lab_selection` and committing to a lab type), **the gateway buildings reskin** to the chosen lab type's palette. This is the visible specialization milestone, in concert with the lab growing in size. Only the gateway buildings reskin — the background/environment is unchanged for the pilot.
 - Gateways have no upgrade levels; their appearance is a function of `(lab_type)` for skin and `(phase)` for which are present.
 
-**Relationship to economy buildings:** gateways are fixed and unbuyable; the 60 economy buildings (9.2–9.5) are bought with KP/LC and populate the grown lab after specialization. A student can have all relevant gateways present while still owning zero economy buildings.
+**Relationship to economy buildings:** gateways are fixed and unbuyable; the 60 economy buildings (9.2–9.3) are bought with KP/LC and populate the grown lab after specialization. A student can have all relevant gateways present while still owning zero economy buildings.
 
-### 9.7 Research Plan Building (implemented)
+### 9.5 Research Plan Building (implemented)
 The Research Plan gateway (unlocked at `research_planning`) turns a team's plan into a coached, reviewable artifact. Three parts:
 
 **Provide the plan text — two ways.** A "Plan source" toggle lets the team either:
@@ -515,7 +496,7 @@ Every action records the acting user. A team activity feed (`activity_feed`, sur
 - Major actions (changing topic, lab type, kicking a member) require Team Lead authorization
 
 ### 10.5 Momentum Recap Card (implemented)
-A dismissible **Momentum** card on the lab home gives the team a one-glance recap of their **last 7 days**: KP earned (summed across discovery visits, Field Dispatch, and mini-games), sources reviewed, project logs written, experiments added, data points recorded, and **days until the next fair**. It is pure aggregation — **no LLM call** — and computes the next-fair countdown directly from the static fair dataset (`nextFairFromDataset()`) rather than the seeded tables, so it never touches the fair-seeding path. Dismissal is remembered **per ISO week** (localStorage), so the card returns fresh each week to re-surface momentum. Backed by `GET /api/team/momentum`.
+A dismissible **Momentum** card on the lab home gives the team a one-glance recap of their **last 7 days**: KP earned (summed across discovery visits and Field Codex lessons), sources reviewed, project logs written, experiments added, data points recorded, and **days until the next fair**. It is pure aggregation — **no LLM call** — and computes the next-fair countdown directly from the static fair dataset (`nextFairFromDataset()`) rather than the seeded tables, so it never touches the fair-seeding path. Dismissal is remembered **per ISO week** (localStorage), so the card returns fresh each week to re-surface momentum. Backed by `GET /api/team/momentum`.
 
 ### 10.6 Technical Implementation
 - `teams` (with `max_members`) + `team_members`; join codes in `team_invites`
@@ -526,185 +507,122 @@ A dismissible **Momentum** card on the lab home gives the team a one-glance reca
 
 ---
 
-## 11. PvP Combat System
+## 11. PvP Raid System
 
-> **Status:** Design only — **not yet built**. The schema and phase-gate are in place and the API route is stubbed (`app/api/pvp/*` returns `501`), but there is no battle engine, no character/move seed data, and no UI. The 60 combat characters, their movesets, and the sprite evolutions are still to be designed and produced. This section is the target design.
+> **Status:** Design only — **not yet built**. The phase-gate and the raid schema (§11.8) are in place and the API route is stubbed (`app/api/pvp/*` returns `501`), but there is no raid engine, no spell seed data, and no UI. This section is the target design.
+>
+> **This design fully replaces the earlier 6v6 turn-based, Pokémon-style battle system** (60 combat characters, shared move pools, sprite evolutions, live/async battles). None of that is planned any more; the old `characters` / `moves` / `character_moves` schema sketch is superseded by §11.8.
 
 ### 11.1 Overview
 
-scienium includes a 6v6 turn-based battle system where students compete using characters derived from their lab buildings. Combat style is classic Pokémon-style: each character has a moveset, type advantages, and stats. Players pick moves manually — no STEM mini-challenges interrupt combat (those stay in the building mini-games).
+PvP is a **raid system**: an attacker is matched against a snapshot of another team's base and has a short time window to destroy as much of it as possible by casting **spells** — area-of-effect attacks earned from the attacker's own economy buildings. There are no characters, no movesets, and no turns; the buildings a team has bought and upgraded are both its offense (each grants a spell) and the base other players raid.
 
-The system is intentionally designed as a daily reward and engagement loop **separate from project work**. Hard daily caps prevent it from displacing real research time, and rewards are leaderboard-only, so PvP cannot serve as a shortcut to project-related progression.
+The system remains a daily engagement loop **separate from project work**: rewards are trophies only (leaderboard status, never convertible to KP/LC or unlocks), and caps keep raiding from displacing real research time.
 
 ### 11.2 Design Principles
-- **Separate from STEM education** — combat is a game, not a quiz. STEM learning happens in mini-games, Lit Review, and Discovery
-- **Daily cap of 2 battles** — prevents grinding/addiction while keeping the loop fresh
-- **Phase-locked matchmaking** — only students at the same project phase battle each other
-- **Trophies, not currency** — rewards are pure ranking, never convertible to KP, LC, or unlocks
-- **Tied to building investment** — your team comes from your buildings, so PvP rewards lab development indirectly
+- **Separate from STEM education** — raiding is a game, not a quiz. STEM learning happens in Lit Review, Discovery, and the daily pillars. (The one deliberate touch of science: the type-effectiveness cycle and its in-game explanation, §11.4.)
+- **Raids are non-destructive to the defender** — a raid runs against a snapshot; the defender's real buildings, levels, KP, and layout are never altered. Damage exists only inside the raid instance.
+- **Daily raid cap** — a hard cap on raids per team per day (tunable; resets at midnight local time; no rollover, no way to earn more) prevents grinding.
+- **Trophies, not currency** — pure ranking, never spendable.
+- **Tied to building investment** — more and higher-level buildings mean more, stronger spells on offense and more total base health on defense, so PvP rewards lab development indirectly.
 
-### 11.3 Characters
+### 11.3 Spells
 
-Each of the 60 buildings has a corresponding combat character. The character's combat level matches the building's upgrade level (1–15).
+**How spells are obtained:**
+- A player receives a **new spell for each economy building** their team obtains — the spell is granted by the building, 1:1.
+- A spell **levels up when its building levels up** (1–15, matching the building); spell strength scales with level (tunable curve).
+- Each spell carries the **type** of its building — Empirical, Theoretical, or Applied (the Spell Type column in §9.3).
 
-**Visual progression:**
+**Spell effects (v1):**
+- **All spells are currently the same general damage spell**: a circular AOE that deals instant damage to every building within its radius at the targeted location — identical behavior regardless of which building granted it or its type.
+- Differentiated per-type / per-building effects are deliberately deferred; effect design is significant creative work and is being brainstormed separately (§18). Type still matters through the effectiveness multiplier (§11.4).
 
-| Level | Visual |
-|---|---|
-| 1 | Sprite 1, baseline appearance |
-| 2–4 | Sprite 1, progressively brighter aura/glow per level |
-| 5 | **Sprite 2 unlocks** (visual evolution moment) |
-| 6–15 | Sprite 2, progressively more elaborate aura/glow per level |
-
-Each character has:
-- A name and identity tied to its building (e.g., the Greenhouse character is the "Greenhouse Guardian")
-- A combat type (see Section 11.4)
-- A moveset of 4 moves
-- Base stats: HP, Attack, Defense, Speed (scaling linearly with level)
+**How spells are used in a raid:**
+- The bottom of the raid screen shows the spell(s) the player brought into battle (baseline: one chosen spell; loadout size is tunable).
+- The player **clicks the spell, then clicks a location** on the opponent's base; the spell detonates there, damaging every building within its radius.
+- Spells can be cast **repeatedly** during the raid, with a short enforced **cooldown** between casts.
 
 ### 11.4 Type System
 
-Three combat types map cleanly to the six building mini-game categories:
+Every building — and therefore every spell — has one of three research types:
 
-| Type | Building Categories | Theme |
-|---|---|---|
-| **Empirical** | Identification + Diagnosis | Observation-based |
-| **Theoretical** | Decoding + Prediction | Reasoning-based |
-| **Applied** | Configuration + Optimization | Building-based |
+| Type | Theme |
+|---|---|
+| **Empirical** | Observation-based science — measuring, sampling, testing the real world |
+| **Theoretical** | Reasoning-based science — models, predictions, derivations |
+| **Applied** | Building-based science — engineering, instruments, systems |
 
 **Type effectiveness (rock-paper-scissors):**
-- Empirical → strong vs Theoretical
-- Theoretical → strong vs Applied
-- Applied → strong vs Empirical
+- **Empirical → strong vs Theoretical** — real-world data and observation can disprove or override a purely theoretical model. *"The experiment proved the theory wrong."*
+- **Theoretical → strong vs Applied** — a strong theoretical framework guides and constrains applied work; without the underlying theory, applied engineering is just guessing. *"You can't build it right if you don't understand why it works."*
+- **Applied → strong vs Empirical** — applied/engineering work produces the instruments and tools that make empirical observation possible in the first place. *"You can't run the experiment without the equipment."*
 
-Effectiveness multipliers: 2x (super effective), 0.5x (resisted), 1x (normal). Same-Type Attack Bonus (STAB) of 1.5x when a character uses a move matching its own type.
+These one-line explanations **must be surfaced in-game** (e.g., a type-chart tooltip in the raid HUD and PvP lobby) so the cycle reads as science logic, not an arbitrary game rule.
 
-### 11.5 Movesets
+Effectiveness applies as a damage multiplier of the **spell's type against each defending building's type**: 2× (super effective), 0.5× (resisted), 1× (neutral). With all spells otherwise identical (§11.3), the type matchup is currently the only strategic differentiator between spells.
 
-To keep design manageable, moves come from **shared pools** by type rather than 60 × 4 unique moves. Each type has approximately 15–20 moves in its pool, and characters draw from their type's pool with thematic flavor.
+### 11.5 Raid Flow
 
-**Move structure:**
-- Name (with STEM flavor when possible)
-- Type
-- Base damage
-- Accuracy %
-- PP (use limit per battle, prevents move spam)
-- Optional secondary effect (status, stat change)
+1. The player presses **Raid** and is matched into a random opponent base (§11.7).
+2. The view switches to the **raid tab**: the opponent's base at the top of the screen, the player's spell bar at the bottom.
+3. The raid is time-boxed: **15 seconds** to take down as much of the base as possible.
+4. The player casts (click spell → click target) as many times as the cooldown allows.
+5. Every building in the defender's base has **health** (scaling with its level — tunable); each cast reduces the health of the buildings in the blast radius. Partial damage counts.
+6. The raid **ends when the time limit expires**. A results screen shows the percentage of the base destroyed and the trophy change (§11.6).
 
-**Example moves:**
+### 11.6 Trophy System
 
-| Type | Move | Damage | Notable Effect |
-|---|---|---|---|
-| Empirical | Sharp Observation | 40 | 100% accuracy, reliable baseline hit |
-| Empirical | Confounding Variable | 60 | May confuse opponent |
-| Theoretical | Pattern Recognition | 50 | Doubles damage if opponent has used same move twice |
-| Theoretical | Edge Case | 30 | Always crits if opponent at >75% HP |
-| Applied | Iterative Design | 35 | Power increases each turn it's used |
-| Applied | Stress Test | 70 | High damage but lowers user's defense |
+- A **leaderboard shows the trophy counts of all players in the class**.
+- Trophy change is driven by the **percentage of the defender's total base health destroyed** during the raid — computed over total base health, including partial building damage. Example: in a 10-building base, one building knocked down to 50% health = 5% of the base destroyed.
+- **Trophy gain (good raid):**
+  - 100% destruction = **10 trophies** (the maximum); gain scales proportionally with the destruction percentage.
+  - The percentage is **rounded up** when converting to trophies (e.g., 51% destroyed → 6 trophies).
+- **Trophy loss (poor raid):**
+  - A raid that deals only low damage (around **≤ 30%** destroyed — exact threshold tunable) results in a trophy **loss** for the attacker instead of a gain.
+  - The loss scales like the gain, inverted: the lower the destruction percentage, the larger the penalty.
+- The exact gain/loss threshold and the loss-scaling formula are **left as tunable balancing values**.
+- **Why losses exist:** raiding poorly carries a real cost, discouraging students from raiding carelessly or spamming raids without a real attempt at destroying the base.
+- Whether the **defender's** trophies also move when their base is raided is an open question (§18).
 
-Flavor text references real STEM concepts — passive exposure rather than active teaching.
+### 11.7 Matchmaking
 
-### 11.6 Team Building
+- Matchmaking is **randomized**: pressing the single **Raid** button teleports the player directly into a raid against a randomly selected base — no manual opponent selection. The pool is scoped to the class and to teams that have reached the `working` phase (i.e., that actually have bases).
+- If the player doesn't want to raid the base they were matched into, a **"refind"** rerolls them into a different randomly selected base.
+- Refinds are **limited** — a capped number per raid session or per day (tunable). Once out of refinds, the player must either raid the currently shown base or exit without raiding (exiting does not consume a raid from the daily cap).
 
-- Each team/solo player selects 6 characters from their built buildings for battle
-- Characters not in your lab cannot be used — you must have built the corresponding building
-- Team selection is changeable between battles, not during
+### 11.8 Technical Implementation
 
-### 11.7 Battle Flow
-
-Standard turn-based combat:
-1. Both players select their lead character
-2. Each turn, both players choose an action (move or switch character)
-3. Higher Speed acts first; ties broken randomly
-4. Damage applied, status effects resolved
-5. When a character faints, the player switches to another
-6. Battle ends when one side has all 6 characters fainted
-
-### 11.8 Matchmaking
-
-**Phase-locked buckets:**
-
-| Phase | PvP Status |
-|---|---|
-| Discovery | No PvP (no buildings yet) |
-| Literature Review | Limited (lab is brand new) — pool may be sparse |
-| Working | Main PvP arena |
-| Showcase | Endgame players |
-
-**Within Working phase, sub-buckets** based on total combined building levels prevent mismatches between new and veteran players in the same phase.
-
-**Synchronous vs. asynchronous:**
-- Live (synchronous) battles require both players online simultaneously — better feel, harder to populate with 120 students
-- Async battles use a simple AI controller for one side, replaying the opponent's team based on a heuristic
-- **Pilot starts with async only**, with optional live battles added later if there's demand
-
-### 11.9 Trophy System
-
-- **Win:** gain trophies (amount scales with opponent's trophy count — beating a higher-ranked opponent yields more)
-- **Loss:** lose trophies (proportionally smaller loss when losing to a higher-ranked opponent)
-- **Tie:** no change
-- **Leaderboards:** visible per class, per school, and globally
-- **Tiers:** Bronze, Silver, Gold, Platinum, Diamond, Master (color-coded badges)
-- **Trophies cannot be spent** — pure status indicator, no in-game purchasing power
-
-**Seasonal resets (optional):**
-- Every semester, trophies reset partially to a tier-based baseline (e.g., Diamond players stay at lower Diamond)
-- Prevents long-term lockout for students who join later and keeps engagement fresh
-
-### 11.10 Daily Cap
-
-- **2 battles per day per team**
-- Cap resets at midnight local time
-- Unused battles do not roll over
-- No in-game way to earn additional battles — this is a hard rule, intentional to prevent PvP from displacing project work
-
-### 11.11 Technical Implementation
-
-**Schema additions:**
+**Schema (replaces the earlier characters/moves battle schema):**
 ```
-characters             id, building_id, name, type (empirical | theoretical | applied),
-                       base_hp, base_atk, base_def, base_spd,
-                       sprite_1_url, sprite_2_url
-moves                  id, name, type, base_damage, accuracy, pp,
-                       secondary_effect_json, flavor_text
-character_moves        character_id, move_id, level_learned
-pvp_teams              id, team_id, character_slots_json (6 building_ids),
-                       updated_at
-pvp_battles            id, attacker_team_id, defender_team_id, phase, started_at,
-                       ended_at, winner_team_id, trophies_delta_attacker,
-                       trophies_delta_defender, battle_log_json
-pvp_trophies           team_id, current_trophies, tier, season, updated_at
-pvp_battle_quota       team_id, date, battles_used  # enforces daily cap
+spells             id, building_id (1:1 with the economy-building catalog),
+                   type (empirical | theoretical | applied),
+                   base_damage, radius, cooldown_ms      # per-level scaling in code
+pvp_raids          id, attacker_team_id, defender_team_id, started_at, ended_at,
+                   percent_destroyed, trophies_delta, raid_log_json
+pvp_trophies       team_id, current_trophies, updated_at
+pvp_raid_quota     team_id, date, raids_used, refinds_used   # enforces daily caps
 ```
 
-**Battle engine:**
-- Server-side battle resolution prevents cheating
-- Each turn: client submits action, server resolves, returns result + animation cues
-- Async battles: opposing team's actions chosen by simple heuristic AI based on type advantages and current battle state
-- Battle log JSON stored for replay/dispute purposes
+**Raid engine:**
+- **Server-authoritative.** The client streams cast events (`spell_id, x, y, client_ts`); the server validates the 15-second window and cooldown spacing, resolves AOE damage against its own snapshot of the defender's base, and returns per-cast results for animation. The client never reports damage.
+- The defender's base is a **read-only snapshot** of `team_shop_buildings` (plus gateway placements for layout) taken at raid start; nothing on the defender's rows is ever mutated.
+- `raid_log_json` stores the cast sequence for replay/dispute purposes.
 
-**Matchmaking algorithm:**
-- Pre-computed buckets per phase + sub-bucket
-- When a player initiates a battle, server picks a random opponent from the same bucket with trophy count closest to the requester
-- For low-population buckets (early pilot weeks), expand search radius automatically
+**Matchmaking:**
+- Random pick from the eligible pool (same class, `working`+ phase, never the attacker's own team); a refind is another random pick excluding bases already shown this session.
+- Quota checks (`pvp_raid_quota`) run at match time, before a raid row is created.
 
-**Libraries:**
-- No new libraries needed — Next.js API routes + Prisma sufficient
-- For real-time live battles later: Supabase Realtime or Pusher Channels
+**Libraries & scale:**
+- No new libraries — Next.js API routes + Prisma suffice; AOE damage resolution is trivial arithmetic.
+- 120 students at a small daily cap is a trivial write load; archive raids older than 30 days if `raid_log_json` grows.
 
-**Scalability:**
-- Battle resolution is computationally cheap (sub-millisecond per turn)
-- 120 students × 2 battles/day = 240 battles/day, trivial load
-- Battle log records can grow; archive battles older than 30 days to keep main table lean
+### 11.9 Educational Justification
 
-### 11.12 Educational Justification
+PvP is intentionally **not directly educational during a raid** — no STEM challenges interrupt play. Education still happens around it:
 
-PvP is intentionally **not directly educational during combat** — the user explicitly opted out of gating moves behind STEM challenges. Education still happens through PvP via:
-
-- **Building investment** requires KP earned through Field Dispatch + mini-games + project work
-- **Higher-tier buildings** (Premium, requiring LC from real project work) produce stronger characters — so winning long-term requires real engagement with research
-- **Move flavor text** references real STEM concepts ("Confounding Variable", "Edge Case", "Iterative Design") — exposure-based learning
-- **2 battles/day cap** ensures PvP supports, not replaces, project engagement
+- **Building investment** requires KP/LC earned through Field Codex, Discovery, literature quizzes, and real project logging — so a strong spell arsenal and a tough base both come from real engagement with research.
+- **The type cycle is real science epistemology** — Empirical / Theoretical / Applied, and why each beats the next, is explained in-game (§11.4), giving passive exposure to how observation, theory, and engineering actually relate.
+- **The daily raid cap** ensures PvP supports, not replaces, project engagement.
 
 ---
 
@@ -734,6 +652,8 @@ A Showcase entry can include any of the following:
 | **Project Report** | PDF | Optional full writeup |
 | **Code / Data Repository** | URL | Optional link to GitHub, Kaggle, etc. |
 | **Tags** | Lab type, methodology, keywords | For discoverability |
+
+The editor's abstract field carries an **Abstract Structure guide** *(implemented)* — a static, authored reference (`lib/fairs/abstract-guide.ts`, `AbstractGuidePanel`) teaching the 250-word ISEF abstract: section-by-section structure, conventions (single paragraph, no citations/acknowledgments, past tense), and worked examples.
 
 ### 12.3 Privacy Levels
 
@@ -942,18 +862,16 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 | **Lab Type Assignment** | end of `literature_review` | Auto-classified from the one-sentence research idea (Haiku), not a manual screen; triggers lab growth + reskin (§3–§4) |
 | **Literature Review** | `literature_review` | Upload, quiz, relevance probe |
 | **Literature Library** | `literature_review` | Searchable archive of processed papers |
-| **Daily Activities** | `literature_review` | Field Dispatch, Expertise, Project Log, Failure Log |
-| **Research Plan** | `research_planning` | Google Doc connect + type-specific AI review + web-search idea check (§9.7) |
+| **Daily Activities** | `literature_review` | Field Codex, Expertise, Project Log, Failure Log |
+| **Research Plan** | `research_planning` | Google Doc connect + type-specific AI review + web-search idea check (§9.5) |
 | **Building Purchases** | `working` | KP-based; building catalog available |
 | **Building Upgrades** | `working` | Levels 1–15; KP every level + LC at tier-ups (→4/7/10/15); no clearance cap (§9.2) |
-| **Building Mini-games** | `working` | Daily cap, KP reward |
-| **PvP Combat** | `working` | 2 battles/day cap; phase-locked matchmaking |
+| **PvP Raids** | `working` | Daily raid cap; random matchmaking with limited refinds (§11) |
 | **Data Terminal — Experiments** | `working` | Experiment/measurement tracking + graphing |
 | **Data Terminal — Reference Guides** | `discovery` | Stats / Charts / Plot guides; always available, no phase gate (§7.6) |
 | **Rubric Self-Check** | `discovery` | Judge-readiness /100 against the ISEF rubric (§13.3); Fair Hub is always available |
 | **Showcase Wing** | `showcase` | Public-facing portfolio system |
 | **Prestige Cosmetics** | `showcase` | Unique aesthetic, title, legendary module — for teams that place at a higher-level competition |
-| **Building Skin Tiers** | `working` | Base sprite at L1–3, tier-2 reskin at L≥4 |
 
 > **Enforcement:** Feature access is gated in **two places**: (a) the nav/UI shows locked items with a pixel padlock and disables navigation, and (b) every relevant API route calls `assertFeatureUnlocked()` from `lib/phase.ts` and returns HTTP 403 for requests outside the team's current phase. Client-only gating is not acceptable.
 
@@ -1075,11 +993,9 @@ Teacher can approve, request changes, or reject with a reason. Approved items go
 - Set class-wide fair targets (which regional/state fair the class is competing in)
 - Configure notification preferences (email digest frequency, urgency thresholds)
 
-### 15.10 Reports
-- Class-wide progress summary as a 1-page PDF for administration
-- Individual student progress reports for parent communication
-- Generated on demand, exported as PDF
-- Each report includes: phase reached, papers reviewed, project logs, failure logs, Showcase link (if published)
+### 15.10 Reports — *implemented (in-app)*
+- **Class Reports tab (`/teacher/reports`, implemented):** class-wide analytics aggregated read-only from existing data — phase distribution, engagement/progress summaries per team and student. Zero LLM; no new tables.
+- *(Planned)* PDF export of the same summaries for administration / parent communication.
 
 ### 15.11 Pilot Phase Minimum
 
@@ -1176,12 +1092,14 @@ scienium serves minors and calls paid AI APIs, so abuse prevention is a first-cl
 - [ ] Fair Hub: how do we handle students who don't intend to compete at any fair?
 - [ ] Fair Hub: official partnership with Society for Science for a data feed?
 - [ ] Fair Hub: rubric self-assessment — required or fully optional?
-- [ ] PvP: balance — should Premium-building characters (LC-unlocked) have a hard stat cap to prevent pay-to-win dynamics?
-- [ ] PvP: should losing trophies be capped (e.g., never drop below your tier's floor) to avoid demoralizing students?
-- [ ] PvP: visual / character art direction — illustration style, sprite dimensions, animation budget
-- [ ] PvP: how are the 60 characters' identities and movesets actually designed — this is significant creative work
-- [ ] PvP: at what trophy level does each tier (Bronze/Silver/Gold/etc.) begin?
-- [ ] PvP: should opponent's full battle log be visible post-battle, or just outcome?
+- [ ] PvP: per-type / per-building spell effect differentiation — all spells are the identical AOE damage spell for now; distinct effects are significant creative work being brainstormed separately
+- [ ] PvP: exact trophy gain/loss threshold (~30% destruction?) and the loss-scaling formula
+- [ ] PvP: daily raid cap value, and refind cap — per raid session or per day?
+- [ ] PvP: should the defender's trophies also change when their base is raided?
+- [ ] PvP: building health scaling per level, spell damage/radius/cooldown per level — economy of a 15-second raid
+- [ ] PvP: should a trophy floor cap losses (never drop below zero / a baseline) to avoid demoralizing students?
+- [ ] PvP: bring back ranked tiers (Bronze→Master) and seasonal resets from the old battle design, or keep a plain class trophy count?
+- [ ] PvP: spell visual FX direction — cast animation, blast radius telegraph, building damage states
 - [ ] Gateway buildings: final names (must not be "laboratory") and sculpt identities for all 7
 - [ ] Operations Hub: does it unlock at `literature_review` (current assumption) — and if daily pillars are meant to be "day one," how are they reached before the Hub exists?
 - [ ] Science Fair Research building: appears at `discovery` (reference material early) or later, given buildings otherwise appear chronologically?
@@ -1191,7 +1109,7 @@ scienium serves minors and calls paid AI APIs, so abuse prevention is a first-cl
 
 ## 19. Visual & Art Direction
 
-> **Status:** Direction set and **realized** — all **67 building sprites are drawn**: the 60 economy buildings across all 6 lab-type sets (Volt Lab, BioCore, ChemWorks, TerraBase, MindFrame, Axiom) plus the 7 gateways. Each is code-generated at 64×64 on its set's 16-colour palette and wired through the sprite manifest. Catalog of record: `art/building.md`. This section remains the source of truth for the pixel-art look; technical asset specs (dimensions, file paths, manifest) live in `architecture.md` §9.4.
+> **Status:** Direction set. The **7 gateway sprites are drawn** — code-generated at 64×64 on a 16-colour palette and wired through the sprite manifest. **Per-building economy sprites are retired**: economy buildings no longer receive bespoke individual sprites (nor per-building upgrade-tier reskins); they render with a **shared generic sprite treatment** instead. The previously generated per-building art and its catalog (`art/building.md`) remain in the repo for reference only and are no longer maintained. This section remains the source of truth for the pixel-art look; technical asset specs (dimensions, file paths, manifest) live in `architecture.md` §9.4.
 
 ### 19.1 Overall Aesthetic
 scienium is a **pixel-art** game. The target is a **chunkier, lower-resolution** look than the two reference images supplied during design — those references read as high-resolution/HD pixel art, and the intended style is more visibly pixelated (fewer, larger pixels; a tighter palette). Think classic 2D top-down/isometric game art rather than detailed illustration.
@@ -1227,7 +1145,7 @@ On specialization, gateway buildings recolor to the chosen lab type. Palettes be
 
 ### 19.5 Reskin Scope
 - **Only the gateway buildings reskin.** The background/environment stays constant for the pilot (no per-type biome).
-- The 60 economy buildings are already drawn per lab type, so they simply appear in their native look once purchased.
+- The 60 economy buildings use a **shared generic sprite** (no per-building art — see the Status note above), so no reskin applies to them.
 
 ### 19.6 UI / Panels
 - Feature panels open **over** the lab scene (modal/overlay), styled in the same pixel-art frame language (chunky borders, pixel font).

@@ -90,8 +90,8 @@ export const GATEWAYS: Gateway[] = [
     label: 'Operations Hub',
     feature: 'daily',
     unlockPhase: 'literature_review',
-    route: '/daily/dispatch',
-    hint: 'Field Dispatch, Proof of Expertise, Project & Failure Logs',
+    route: '/daily/codex',
+    hint: 'Field Codex, Proof of Expertise, Project & Failure Logs',
     isCentral: true,
     cell: { gx: 1, gy: 1 }, // front-centre (closest)
   },

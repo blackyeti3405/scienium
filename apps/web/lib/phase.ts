@@ -51,10 +51,9 @@ export type Feature =
   | 'lab_selection'  // UI to pick one of 6 lab types (one-time action)
   | 'literature'     // Literature review, library, citation graph
   | 'research_plan'  // Research planning tools
-  | 'daily'          // Field Dispatch, Proof of Expertise, Project Log, Failure Log
+  | 'daily'          // Field Codex, Proof of Expertise, Project Log, Failure Log
   | 'buildings'      // Lab building purchases and upgrades
-  | 'minigames'      // Building mini-games
-  | 'pvp'            // PvP combat system
+  | 'pvp'            // PvP raid system (spec §11)
   | 'data_terminal'  // Experiment tracking + graphing (Operations Hub tab)
   | 'showcase'       // Showcase Wing (public portfolio)
 
@@ -64,7 +63,7 @@ const PHASE_UNLOCKS: Record<Phase, Feature[]> = {
   lab_selection:      ['lab_selection'],
   literature_review:  ['literature', 'daily'],
   research_planning:  ['research_plan'],
-  working:            ['buildings', 'minigames', 'pvp', 'data_terminal'],
+  working:            ['buildings', 'pvp', 'data_terminal'],
   showcase:           ['showcase'],
 }
 
@@ -107,7 +106,6 @@ export const FEATURE_MIN_PHASE: Record<Feature, Phase> = {
   research_plan:  'research_planning',
   daily:          'literature_review',
   buildings:      'working',
-  minigames:      'working',
   pvp:            'working',
   data_terminal:  'working',
   showcase:       'showcase',

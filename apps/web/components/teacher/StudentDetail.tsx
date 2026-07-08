@@ -20,7 +20,6 @@ import {
   ClipboardCheck,
   Flag,
   Activity,
-  Radio,
   MessageCircle,
   Coins,
 } from 'lucide-react'
@@ -171,10 +170,12 @@ interface ShowcaseRow {
   _count: { assets: number; views: number }
 }
 
-interface DispatchResponse {
-  response: string
-  createdAt: string
-  content: { publishedDate: string; reflectionQuestion: string }
+interface CodexRecentLesson {
+  trackLabel: string
+  lessonLabel: string
+  bestScore: number
+  kpAwarded: number
+  completedAt: string | null
 }
 
 interface FairAssoc {
@@ -215,7 +216,7 @@ interface Overview {
   logs: LogRow[]
   experiments: ExperimentRow[]
   showcase: ShowcaseRow | null
-  fieldDispatch: { streak: number; responses: DispatchResponse[] }
+  codex: { lessonsCompleted: number; kp: number; recent: CodexRecentLesson[] }
   fairAssociations: FairAssoc[]
   formStatuses: FormStatus[]
   activity: ActivityRow[]
@@ -1419,34 +1420,47 @@ function ShowcaseSection({ overview }: { overview: Overview }) {
   )
 }
 
-function FieldDispatchSection({ overview }: { overview: Overview }) {
-  const { fieldDispatch } = overview
+function CodexSection({ overview }: { overview: Overview }) {
+  const { codex } = overview
 
   return (
     <div className="space-y-4">
-      <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
-        <span className="text-white/40"><Radio size={16} /></span>
-        <span className="text-2xl font-semibold tabular-nums text-[#F5C518]">
-          {fieldDispatch.streak}
-        </span>
-        <span className="text-xs text-white/50">Day streak</span>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
+          <span className="text-white/40"><BookOpen size={16} /></span>
+          <span className="text-2xl font-semibold tabular-nums text-[#F5C518]">
+            {codex.lessonsCompleted}
+          </span>
+          <span className="text-xs text-white/50">Lessons completed</span>
+        </div>
+        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
+          <span className="text-white/40"><BookOpen size={16} /></span>
+          <span className="text-2xl font-semibold tabular-nums text-white">
+            {codex.kp.toLocaleString()}
+          </span>
+          <span className="text-xs text-white/50">KP from lessons</span>
+        </div>
       </div>
 
-      {fieldDispatch.responses.length > 0 ? (
-        <Card label="Recent responses">
+      {codex.recent.length > 0 ? (
+        <Card label="Recent lessons">
           <ul className="space-y-4">
-            {fieldDispatch.responses.map((r, i) => (
+            {codex.recent.map((r, i) => (
               <li key={i} className="space-y-1 border-l-2 border-white/10 pl-3">
-                <p className="text-xs text-white/40">{fmtDate(r.createdAt)}</p>
-                <p className="text-xs text-white/50 italic">{r.content.reflectionQuestion}</p>
-                <p className="text-sm text-white/75">{r.response}</p>
+                <p className="text-xs text-white/40">
+                  {r.completedAt ? fmtDate(r.completedAt) : '—'} · {r.trackLabel}
+                </p>
+                <p className="text-sm text-white/75">{r.lessonLabel}</p>
+                <p className="text-xs text-white/50">
+                  Checkpoint {r.bestScore}% · +{r.kpAwarded} KP
+                </p>
               </li>
             ))}
           </ul>
         </Card>
       ) : (
         <Card>
-          <Empty>No field dispatch responses yet.</Empty>
+          <Empty>No Codex lessons completed yet.</Empty>
         </Card>
       )}
     </div>
@@ -1821,11 +1835,11 @@ export function StudentDetail({ studentId }: { studentId: string }) {
                 content: <ActivitySection overview={overview} />,
               },
               {
-                key: 'dispatch',
-                label: 'Field Dispatch',
+                key: 'codex',
+                label: 'Field Codex',
                 group: 'Activity',
-                icon: <Radio size={14} />,
-                content: <FieldDispatchSection overview={overview} />,
+                icon: <BookOpen size={14} />,
+                content: <CodexSection overview={overview} />,
               },
               {
                 key: 'feedback',

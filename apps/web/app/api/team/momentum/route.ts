@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
 
-  // Some KP ledgers (FieldDispatchResponse) are keyed by user, not team, so we
+  // Some KP ledgers (CodexLessonProgress) are keyed by user, not team, so we
   // need the team's member ids to scope that read.
   const members = await db.teamMember.findMany({
     where: { teamId: ctx.teamId },
@@ -35,8 +35,7 @@ export async function GET(req: NextRequest) {
     experimentsAdded,
     pointsAdded,
     discoveryKp,
-    dispatchKp,
-    miniGameKp,
+    codexKp,
     team,
   ] = await Promise.all([
     db.discoverySourceVisit.count({
@@ -56,13 +55,11 @@ export async function GET(req: NextRequest) {
       _sum: { kpAwarded: true },
       where: { teamId: ctx.teamId, createdAt: { gte: since } },
     }),
-    db.fieldDispatchResponse.aggregate({
+    // completedAt is stamped exactly when kpAwarded is minted (once per lesson),
+    // so it works as the per-award timestamp for the rolling window.
+    db.codexLessonProgress.aggregate({
       _sum: { kpAwarded: true },
-      where: { userId: { in: memberIds }, createdAt: { gte: since } },
-    }),
-    db.miniGamePlay.aggregate({
-      _sum: { kpAwarded: true },
-      where: { teamId: ctx.teamId, playedAt: { gte: since } },
+      where: { userId: { in: memberIds }, kpAwarded: { gt: 0 }, completedAt: { gte: since } },
     }),
     db.team.findUnique({
       where: { id: ctx.teamId },
@@ -72,18 +69,18 @@ export async function GET(req: NextRequest) {
 
   // KP-window note (load-bearing — do not "fix" this by adding more sources):
   // there is no single team-wide, per-award KP ledger. The timestamped, indexed
-  // KP sources are DiscoverySourceVisit.kpAwarded (@@index([teamId, createdAt])),
-  // FieldDispatchResponse.kpAwarded (user-keyed, has createdAt), and
-  // MiniGamePlay.kpAwarded (playedAt). PaperProficiency.kpAwarded is a
-  // high-water mark with only updatedAt (no per-award row), so quiz KP over a
-  // rolling window is not cleanly attributable and is deliberately EXCLUDED
-  // rather than double-counted or guessed. DiscoveryKpDay is a per-day rollup
-  // of the SAME discovery KP already summed via DiscoverySourceVisit, so it is
-  // NOT added either (would double count) — use one, not both.
+  // KP sources are DiscoverySourceVisit.kpAwarded (@@index([teamId, createdAt]))
+  // and CodexLessonProgress.kpAwarded (user-keyed; completedAt is set exactly
+  // when the award is minted, once per lesson).
+  // PaperProficiency.kpAwarded is a high-water mark with only updatedAt (no
+  // per-award row), so quiz KP over a rolling window is not cleanly attributable
+  // and is deliberately EXCLUDED rather than double-counted or guessed.
+  // DiscoveryKpDay is a per-day rollup of the SAME discovery KP already summed
+  // via DiscoverySourceVisit, so it is NOT added either (would double count) —
+  // same for CodexKpDay, which counts completions, not KP.
   const kpEarned =
     (discoveryKp._sum.kpAwarded ?? 0) +
-    (dispatchKp._sum.kpAwarded ?? 0) +
-    (miniGameKp._sum.kpAwarded ?? 0)
+    (codexKp._sum.kpAwarded ?? 0)
 
   const teamCoords: readonly [number, number] | null =
     team?.locationLat != null && team?.locationLng != null

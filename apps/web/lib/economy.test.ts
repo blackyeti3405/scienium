@@ -3,6 +3,7 @@ import {
   clampScore,
   clampScoreGain,
   computeQuizAward,
+  computeRetryAggregate,
   computeClearanceRaise,
   evaluatePurchase,
   upgradeKpCost,
@@ -77,6 +78,48 @@ describe('computeQuizAward — KP high-water invariants', () => {
       kp = r.newKpAwarded
     }
     expect(totalCredited).toBeLessThanOrEqual(100)
+  })
+})
+
+describe('computeRetryAggregate — mean of current scores, flat-capped', () => {
+  it('is the plain rounded mean when under the cap', () => {
+    expect(computeRetryAggregate({ scores: [80, 90], threshold: 70, cap: 95 })).toEqual({
+      aggregate: 85,
+      passed: true,
+    })
+  })
+
+  it('flat-caps a mean that would otherwise exceed the cap', () => {
+    expect(computeRetryAggregate({ scores: [100, 100, 100], threshold: 70, cap: 95 })).toEqual({
+      aggregate: 95,
+      passed: true,
+    })
+  })
+
+  it('a capped aggregate can still fail if it lands below threshold', () => {
+    const r = computeRetryAggregate({ scores: [40, 50], threshold: 70, cap: 95 })
+    expect(r.aggregate).toBe(45)
+    expect(r.passed).toBe(false)
+  })
+
+  it('clamps out-of-range per-question scores before averaging', () => {
+    expect(computeRetryAggregate({ scores: [150, -20, 100], threshold: 70, cap: 95 })).toEqual({
+      // clamp(150)=100, clamp(-20)=0, clamp(100)=100 → mean 66.67 → round 67
+      aggregate: 67,
+      passed: false,
+    })
+  })
+
+  it('a first-try 100 (no cap applied) is strictly better than any retried pass', () => {
+    const retried = computeRetryAggregate({ scores: [100, 100, 100, 100, 100, 100], threshold: 70, cap: 95 })
+    expect(retried.aggregate).toBeLessThan(100)
+  })
+
+  it('empty scores yields a 0 aggregate and does not pass', () => {
+    expect(computeRetryAggregate({ scores: [], threshold: 70, cap: 95 })).toEqual({
+      aggregate: 0,
+      passed: false,
+    })
   })
 })
 

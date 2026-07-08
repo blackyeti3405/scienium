@@ -3,7 +3,7 @@ import { requireTeacher, teacherOwnsTeam } from '@/lib/teacher/auth'
 import { db } from '@/lib/db'
 import { getLiteratureAdvanceProgress } from '@/lib/team/advance'
 import { describeActivity } from '@/lib/activity/log'
-import { computeStreak } from '@/lib/field-dispatch/dispatch'
+import { CODEX_TRACKS, loadTrack } from '@/lib/ops/codex'
 import { shopBuilding } from '@/lib/shop'
 
 /**
@@ -79,8 +79,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     team,
     pendingAdvance,
     kpPapers,
-    kpDispatch,
-    kpMiniGame,
+    kpCodex,
     teamBuildings,
     shopBuildings,
     litProgress,
@@ -90,7 +89,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     logs,
     experiments,
     showcase,
-    dispatchResponses,
+    codexRecent,
+    codexLessonsCompleted,
     fairAssociations,
     formStatuses,
     activityFeed,
@@ -134,15 +134,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       _sum: { kpAwarded: true },
     }),
 
-    // This student's KP from field dispatch
-    db.fieldDispatchResponse.aggregate({
-      where: { userId: params.id },
-      _sum: { kpAwarded: true },
-    }),
-
-    // This student's KP from mini games
-    db.miniGamePlay.aggregate({
-      where: { userId: params.id, teamId },
+    // This student's KP from Codex lessons
+    db.codexLessonProgress.aggregate({
+      where: { userId: params.id, kpAwarded: { gt: 0 } },
       _sum: { kpAwarded: true },
     }),
 
@@ -239,16 +233,22 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       },
     }),
 
-    // Field dispatch — this student's recent responses
-    db.fieldDispatchResponse.findMany({
-      where: { userId: params.id },
-      orderBy: { createdAt: 'desc' },
+    // Codex — this student's most recent lesson completions
+    db.codexLessonProgress.findMany({
+      where: { userId: params.id, completed: true },
+      orderBy: { completedAt: 'desc' },
       take: 10,
       select: {
-        response: true,
-        createdAt: true,
-        content: { select: { publishedDate: true, reflectionQuestion: true } },
+        trackSlug: true,
+        lessonId: true,
+        bestScore: true,
+        kpAwarded: true,
+        completedAt: true,
       },
+    }),
+
+    db.codexLessonProgress.count({
+      where: { userId: params.id, completed: true },
     }),
 
     // Science fair associations for this student
@@ -305,8 +305,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // Compute student KP contribution
   const studentKp =
     (kpPapers._sum.kpAwarded ?? 0) +
-    (kpDispatch._sum.kpAwarded ?? 0) +
-    (kpMiniGame._sum.kpAwarded ?? 0)
+    (kpCodex._sum.kpAwarded ?? 0)
 
   // Enrich shop buildings with display name/description and purchaser name
   const shopBuildingsEnriched = shopBuildings.map((sb) => {
@@ -330,8 +329,33 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       : null,
   }))
 
-  // Compute field dispatch streak
-  const streak = computeStreak(dispatchResponses.map((r) => r.content.publishedDate))
+  // Resolve lesson/track labels for the recent Codex completions. Track
+  // modules are code-split; loading here only touches the (≤3) tracks in the
+  // student's recent rows, and Node's module cache makes repeats free.
+  const trackLabelBySlug = new Map(CODEX_TRACKS.map((t) => [t.slug, t.label]))
+  const recentTrackSlugs = [...new Set(codexRecent.map((r) => r.trackSlug))]
+  const lessonLabelById = new Map<string, string>()
+  await Promise.all(
+    recentTrackSlugs.map(async (slug) => {
+      try {
+        const track = await loadTrack(slug)
+        for (const segment of [track.core, ...track.branches]) {
+          for (const unit of segment.units) {
+            for (const lesson of unit.lessons) lessonLabelById.set(lesson.id, lesson.label)
+          }
+        }
+      } catch {
+        // Unknown/retired slug — fall back to the raw lesson id below.
+      }
+    }),
+  )
+  const codexRecentEnriched = codexRecent.map((r) => ({
+    trackLabel: trackLabelBySlug.get(r.trackSlug) ?? r.trackSlug,
+    lessonLabel: lessonLabelById.get(r.lessonId) ?? r.lessonId,
+    bestScore: r.bestScore,
+    kpAwarded: r.kpAwarded,
+    completedAt: r.completedAt,
+  }))
 
   // Compute server-side activity descriptions
   const activityWithDescriptions = activityFeed.map((a) => ({
@@ -362,9 +386,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     logs,
     experiments,
     showcase,
-    fieldDispatch: {
-      streak,
-      responses: dispatchResponses,
+    codex: {
+      lessonsCompleted: codexLessonsCompleted,
+      kp: kpCodex._sum.kpAwarded ?? 0,
+      recent: codexRecentEnriched,
     },
     fairAssociations,
     formStatuses,

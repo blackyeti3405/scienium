@@ -7,6 +7,8 @@ import { extractText, getDocumentProxy } from 'unpdf'
 import { putObject, paperPdfKey } from '@/lib/storage'
 import { checkPaperRelevance } from '@/lib/literature/relevance'
 import { logActivity } from '@/lib/activity/log'
+import { extractDoi, tierFromDoi } from '@/lib/discovery/credibility'
+import type { CredibilityTier } from '@prisma/client'
 
 // Server-side only; the Anthropic key is never bundled for the browser.
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -159,14 +161,40 @@ export async function GET(req: NextRequest) {
       fileUrl: true,
       // Proficiency is per-student now: surface only THIS user's demonstration.
       proficiencies: { where: { userId: ctx.dbUserId }, select: { demonstrated: true } },
+      // F12 credibility badge — resolved below, at read time, from whichever
+      // signal the paper actually has. `fullText` is only read to derive the
+      // tier server-side and is stripped before the response is built (never
+      // sent to the client).
+      sourceType: true,
+      fullText: true,
+      promotedFromNode: { select: { externalSource: { select: { credibilityTier: true } } } },
     },
   })
 
   return NextResponse.json({
-    papers: papers.map(({ proficiencies, ...p }) => ({
-      ...p,
-      proficiencyDemonstrated: proficiencies[0]?.demonstrated ?? false,
-    })),
+    papers: papers.map(({ proficiencies, sourceType, fullText, promotedFromNode, ...p }) => {
+      let credibilityTier: CredibilityTier | null = null
+      let doi: string | null = null
+
+      const promotedTier = promotedFromNode?.externalSource?.credibilityTier
+      if (promotedTier) {
+        // Authoritative — a promoted Discovery source already carries a
+        // server-derived tier from its resolved host. Reuse it, never re-derive.
+        credibilityTier = promotedTier
+      } else if (sourceType === 'pdf' && fullText) {
+        doi = extractDoi(fullText)
+        credibilityTier = doi ? tierFromDoi(doi) : null
+      }
+      // `text` sources (and PDFs with no DOI) fall through to `null` —
+      // resolved client-side to the "self-uploaded — verify yourself" meta.
+
+      return {
+        ...p,
+        proficiencyDemonstrated: proficiencies[0]?.demonstrated ?? false,
+        credibilityTier,
+        ...(doi ? { doi } : {}),
+      }
+    }),
   })
 }
 

@@ -15,7 +15,7 @@ const FEATURES = [
   { title: 'Run experiments', body: 'Design and run experiments in a living lab that grows as your research advances.' },
   { title: 'Present at the fair', body: 'Build toward a science-fair showcase and present your findings to the judges.' },
   { title: 'Teacher tools', body: 'Validate work, moderate showcases, and follow every student team from one dashboard.' },
-  { title: 'Head-to-head PvP', body: 'A quick competitive minigame to test what your lab has learned against other teams.' },
+  { title: 'Head-to-head PvP', body: 'Raid rival labs with spells earned from your own buildings in quick, competitive battles.' },
 ]
 
 const GOLD = '#F5C518'
@@ -58,8 +58,8 @@ export default async function HomePage() {
         </p>
         <p className="font-sans text-[#aab7c6] max-w-xl mt-8 text-base md:text-lg leading-relaxed">
           A browser game where student teams run a science-fair research lab — read papers,
-          discover sources, run experiments, and present at the fair. Plus teacher tools and a
-          head-to-head minigame.
+          discover sources, run experiments, and present at the fair. Plus teacher tools and
+          head-to-head raids.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-4 mt-10">
           {userId ? (

@@ -255,7 +255,7 @@ export function ExpertisePanel() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (mode === 'loading') {
-    return <OpsTabSkeleton variant="dispatch" />
+    return <OpsTabSkeleton variant="card" />
   }
 
   if (mode === 'grading' && !exam) {

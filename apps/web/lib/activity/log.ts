@@ -23,6 +23,7 @@ export type ActivityAction =
   | 'log_created'
   | 'log_edited'
   | 'log_deleted'
+  | 'codex_lesson_completed'
 
 /**
  * Appends a team activity entry. Fire-and-forget safe: awaiting is optional;
@@ -95,6 +96,8 @@ export function describeActivity(action: string, payload: Record<string, unknown
       return `edited a ${payload.kind === 'failure' ? 'failure' : 'project'} log entry`
     case 'log_deleted':
       return `deleted a ${payload.kind === 'failure' ? 'failure' : 'project'} log entry`
+    case 'codex_lesson_completed':
+      return `completed a Field Codex lesson${payload.trackSlug ? ` (${payload.trackSlug})` : ''}`
     default:
       return action.replace(/_/g, ' ')
   }

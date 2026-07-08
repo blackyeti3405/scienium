@@ -16,10 +16,13 @@ import {
   Lock,
   Quote,
   BookOpen,
+  ChevronDown,
+  ShieldCheck,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import type { CredibilityTier } from '@prisma/client'
 import { useLabCurrency } from '@/lib/labCurrency'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
@@ -29,6 +32,7 @@ import { LabeledLoader } from '@/components/ui/LabeledLoader'
 import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { uploadWithProgress } from '@/lib/uploadWithProgress'
+import { tierMeta, VETTING_CHECKLIST } from '@/lib/discovery/credibility'
 import { CitationsPanel } from './CitationsPanel'
 import dynamic from 'next/dynamic'
 
@@ -51,6 +55,11 @@ export interface Paper {
   createdAt: string
   /** 0–100 while `status === 'uploading'` — real bytes from `uploadWithProgress`. */
   uploadProgress?: number
+  /** F12: resolved at read time (promoted source's tier, or DOI-derived, or
+   * `null` for "self-uploaded — verify yourself"). */
+  credibilityTier?: CredibilityTier | null
+  /** DOI the tier was derived from, when found (badge tooltip context). */
+  doi?: string
 }
 
 interface ChatMessage {
@@ -63,6 +72,80 @@ interface ChatMessage {
 const TOTAL_SLOTS = 25
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+/**
+ * Credibility badge — color + text label (never color alone), copying the
+ * Discovery `SourceReader.tsx` badge's inline-style pattern so the same tier
+ * always looks the same across the app. `tier` is `undefined`/`null` for a
+ * self-uploaded source with no derivable signal.
+ */
+function CredibilityBadge({ tier }: { tier?: CredibilityTier | null }) {
+  const meta = tierMeta(tier ?? null)
+  return (
+    <span
+      title={meta.caveat}
+      data-tier={tier ?? 'self_uploaded'}
+      className="font-pixel text-[7px] px-1.5 py-0.5 rounded-sm cursor-help shrink-0"
+      style={{ color: meta.color, border: `1px solid ${meta.color}55`, background: `${meta.color}12` }}
+    >
+      {meta.label}
+    </span>
+  )
+}
+
+/**
+ * Collapsible "How to vet a source" checklist — static content
+ * (`VETTING_CHECKLIST`), no LLM. Reuses the Research Guide's collapsible
+ * pixel-chrome idiom (chevron header + expand-only body). Leads with the
+ * paper's own tier caveat so the student sees why the badge said what it said
+ * before working through the checklist.
+ */
+function VettingChecklist({ tier }: { tier?: CredibilityTier | null }) {
+  const [expanded, setExpanded] = useState(false)
+  const meta = tierMeta(tier ?? null)
+
+  return (
+    <div className="border-b border-white/10 shrink-0 bg-white/[0.015]">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-white/[0.02] transition-colors"
+      >
+        <ChevronDown
+          size={11}
+          className={`shrink-0 text-white/30 transition-transform ${expanded ? 'rotate-180' : ''}`}
+        />
+        <ShieldCheck size={11} className="text-[#F5C518]/60 shrink-0" />
+        <span className="font-pixel text-[7px] text-white/50 uppercase tracking-widest">
+          How to vet a source
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-3 flex flex-col gap-2.5">
+          <p
+            className="font-pixel text-[7px] leading-relaxed px-2.5 py-2 rounded-sm border"
+            style={{ color: meta.color, borderColor: `${meta.color}40`, background: `${meta.color}0d` }}
+          >
+            {meta.caveat}
+          </p>
+          <ul className="flex flex-col gap-2">
+            {VETTING_CHECKLIST.map((item, i) => (
+              <li key={item.key} className="flex flex-col gap-0.5">
+                <span className="text-sm text-white/75 leading-snug">
+                  <span className="font-pixel text-[7px] text-[#F5C518]/60 mr-1.5">{i + 1}.</span>
+                  {item.label}
+                </span>
+                <p className="text-[13px] text-white/45 leading-relaxed pl-5">{item.hint}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function PaperSlot({
   paper,
@@ -133,7 +216,10 @@ function PaperSlot({
                 </span>
               </div>
             ) : (
-              <p className="text-sm text-white/80 truncate">{paper.title}</p>
+              <div className="flex items-center gap-2 min-w-0">
+                <p className="text-sm text-white/80 truncate">{paper.title}</p>
+                <CredibilityBadge tier={paper.credibilityTier} />
+              </div>
             )}
             {paper.authors.length > 0 && (
               <p className="font-pixel text-[7px] text-white/30 truncate mt-0.5">
@@ -232,10 +318,16 @@ interface GradeResult {
   threshold: number
   /** KP granted by this grading (0 unless this attempt beat the source's prior best). */
   kpEarned?: number
-  results: { questionId: string; score: number; rationale: string }[]
+  results: {
+    questionId: string
+    score: number
+    rationale: string
+    /** Present only for questions scored below the pass threshold. */
+    strongAnswer?: string
+  }[]
 }
 
-type Phase = 'loading' | 'quiz' | 'grading' | 'results' | 'chat'
+type Phase = 'loading' | 'quiz' | 'grading' | 'results' | 'chat' | 'retry' | 'retrying'
 
 function QAPanel({
   paper,
@@ -255,6 +347,11 @@ function QAPanel({
   const [results, setResults] = useState<GradeResult | null>(null)
   const [hasPastResults, setHasPastResults] = useState(false)
   const [quizError, setQuizError] = useState<string | null>(null)
+  // Retry (targeted re-answer) state — separate from the first-attempt `answers`
+  // so the student's original (wrong) answers stay visible for reference.
+  const [retryAnswers, setRetryAnswers] = useState<Record<string, string>>({})
+  const [newQuestion, setNewQuestion] = useState<QuizQuestionView | null>(null)
+  const [retryLoading, setRetryLoading] = useState(false)
 
   // ── Chat state (unlocked after the quiz, or if already proficient) ──
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -367,6 +464,78 @@ function QAPanel({
     }
   }
 
+  /** Ids of questions scored below the pass threshold on the latest grading. */
+  const failedQuestionIds = new Set(
+    (results?.results ?? []).filter((r) => r.score < (results?.threshold ?? 70)).map((r) => r.questionId),
+  )
+
+  // Enter targeted-retry mode: fetch (idempotently — generates once, server-
+  // side) the one fresh extra question so the retry form can show it with its
+  // own empty textarea before anything is submitted.
+  async function startRetry() {
+    if (!quiz) return
+    setRetryAnswers({})
+    setQuizError(null)
+    setRetryLoading(true)
+    setPhase('retry')
+    try {
+      const res = await fetch(
+        `/api/papers/${paper.id}/quiz/retry?sessionId=${encodeURIComponent(quiz.sessionId)}`,
+      )
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed to prepare retry')
+      const extra = (data.questions as QuizQuestionView[]).find((q) => q.id === data.newQuestionId)
+      setNewQuestion(extra ?? null)
+    } catch (err) {
+      setQuizError(err instanceof Error ? err.message : 'Failed to prepare retry')
+      setPhase('results')
+    } finally {
+      setRetryLoading(false)
+    }
+  }
+
+  async function submitRetry() {
+    if (!quiz || !results || !newQuestion) return
+    setPhase('retrying')
+    setQuizError(null)
+    try {
+      const res = await fetch(`/api/papers/${paper.id}/quiz/retry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: quiz.sessionId,
+          answers: [
+            ...Array.from(failedQuestionIds).map((questionId) => ({
+              questionId,
+              response: retryAnswers[questionId] ?? '',
+            })),
+            { questionId: newQuestion.id, response: retryAnswers[newQuestion.id] ?? '' },
+          ],
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Retry failed')
+      // The retry response carries the FULL current question set (original +
+      // new question), so replace both `quiz.questions` and `results` with it.
+      setQuiz({ sessionId: quiz.sessionId, questions: data.questions })
+      setResults({
+        score: data.score,
+        passed: data.passed,
+        threshold: data.threshold,
+        kpEarned: data.kpEarned,
+        results: data.results,
+      })
+      setHasPastResults(true)
+      setNewQuestion(null)
+      setPhase('results')
+      if (data.kpEarned > 0) addCurrency({ kp: data.kpEarned })
+      if (data.passed) onProficiencyEarned?.()
+    } catch (err) {
+      setQuizError(err instanceof Error ? err.message : 'Retry failed')
+      setPhase('retry')
+    }
+  }
+
   async function sendMessage() {
     const text = input.trim()
     if (!text || sending) return
@@ -393,13 +562,21 @@ function QAPanel({
   }
 
   const allAnswered = !!quiz && quiz.questions.every((q) => (answers[q.id] ?? '').trim().length > 0)
+  const failedQuestions = quiz?.questions.filter((q) => failedQuestionIds.has(q.id)) ?? []
+  const allRetryAnswered =
+    !!newQuestion &&
+    failedQuestions.every((q) => (retryAnswers[q.id] ?? '').trim().length > 0) &&
+    (retryAnswers[newQuestion.id] ?? '').trim().length > 0
 
   return (
     <div className="flex h-full overflow-hidden">
       {/* PDF viewer */}
       <div className="flex-1 min-w-0 border-r border-white/10 bg-black/20 flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
-          <p className="font-pixel text-[8px] text-white/40 truncate pr-4 min-w-0">{paper.title}</p>
+          <div className="flex items-center gap-2 min-w-0 pr-4">
+            <p className="font-pixel text-[8px] text-white/40 truncate min-w-0">{paper.title}</p>
+            <CredibilityBadge tier={paper.credibilityTier} />
+          </div>
           {paper.fileUrl && (
             <a
               href={paper.fileUrl}
@@ -412,6 +589,7 @@ function QAPanel({
             </a>
           )}
         </div>
+        <VettingChecklist tier={paper.credibilityTier} />
         {paper.fileUrl ? (
           <iframe src={paper.fileUrl} className="flex-1 w-full" title="Paper PDF" />
         ) : (
@@ -591,6 +769,14 @@ function QAPanel({
                         {r.rationale}
                       </p>
                     )}
+                    {r?.strongAnswer && (
+                      <p className="text-[13px] text-white/60 leading-relaxed pl-5">
+                        <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest block mb-0.5">
+                          What a strong answer covers
+                        </span>
+                        {r.strongAnswer}
+                      </p>
+                    )}
                   </div>
                 )
               })}
@@ -598,10 +784,10 @@ function QAPanel({
             <div className="border-t border-white/10 p-3 shrink-0 flex gap-2">
               {!results.passed && (
                 <button
-                  onClick={generateQuiz}
+                  onClick={startRetry}
                   className="flex-1 font-pixel text-[8px] border border-white/20 text-white/60 py-2.5 rounded-sm hover:border-white/40 hover:text-white/80 transition-colors flex items-center justify-center gap-1.5"
                 >
-                  <RotateCcw size={11} /> Try again
+                  <RotateCcw size={11} /> Fix my misses
                 </button>
               )}
               <button
@@ -611,6 +797,116 @@ function QAPanel({
                 <MessageSquare size={11} /> Discuss this paper
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Retry — targeted re-answer of only the missed questions + one fresh
+            extra question. `retrying` keeps the form visible (dimmed) instead of
+            unmounting it, matching the quiz/grading pattern. */}
+        {(phase === 'retry' || phase === 'retrying') && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {quizError && (
+              <div className="m-3 px-3 py-2 bg-red-500/15 border border-red-500/30 rounded-sm flex items-center justify-between gap-2">
+                <span className="font-pixel text-[7px] text-red-300">{quizError}</span>
+              </div>
+            )}
+            {retryLoading ? (
+              <LabeledLoader label="Vega is writing your extra question…" tone="vega" fill="flex-1" />
+            ) : (
+              <>
+                <div
+                  className={`flex-1 overflow-y-auto p-4 flex flex-col gap-5 transition-opacity ${phase === 'retrying' ? 'opacity-50 pointer-events-none' : ''}`}
+                >
+                  <p className="font-pixel text-[7px] text-white/35 leading-loose">
+                    Fix your missed questions, plus one new question. Pass mark: {results?.threshold ?? 70}%.
+                  </p>
+                  {failedQuestions.map((q, i) => {
+                    const r = results?.results.find((x) => x.questionId === q.id)
+                    return (
+                      <div key={q.id} className="flex flex-col gap-2">
+                        <div className="flex items-baseline gap-2">
+                          <span className="font-pixel text-[8px] text-[#F5C518] shrink-0">{i + 1}.</span>
+                          <p className="text-sm text-white/85 leading-relaxed">{q.prompt}</p>
+                        </div>
+                        {answers[q.id] && (
+                          <p className="text-[13px] text-white/50 leading-relaxed pl-5 border-l border-white/10 ml-1">
+                            <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest block mb-0.5">
+                              Your previous answer
+                            </span>
+                            {answers[q.id]}
+                          </p>
+                        )}
+                        {r?.rationale && (
+                          <p className="text-[13px] text-white/45 leading-relaxed pl-5 italic">
+                            <span className="font-pixel text-[6px] text-[#F5C518]/40 uppercase tracking-widest block mb-0.5 not-italic">
+                              Vega
+                            </span>
+                            {r.rationale}
+                          </p>
+                        )}
+                        {r?.strongAnswer && (
+                          <p className="text-[13px] text-white/60 leading-relaxed pl-5">
+                            <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest block mb-0.5">
+                              What a strong answer covers
+                            </span>
+                            {r.strongAnswer}
+                          </p>
+                        )}
+                        <textarea
+                          value={retryAnswers[q.id] ?? ''}
+                          onChange={(e) =>
+                            setRetryAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))
+                          }
+                          rows={3}
+                          placeholder="Your new answer…"
+                          readOnly={phase === 'retrying'}
+                          className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
+                        />
+                      </div>
+                    )
+                  })}
+                  {newQuestion && (
+                    <div className="flex flex-col gap-2 pt-2 border-t border-white/10">
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-pixel text-[8px] text-[#F5C518] shrink-0">
+                          {failedQuestions.length + 1}.
+                        </span>
+                        <p className="text-sm text-white/85 leading-relaxed">{newQuestion.prompt}</p>
+                        <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest shrink-0">
+                          New
+                        </span>
+                      </div>
+                      <textarea
+                        value={retryAnswers[newQuestion.id] ?? ''}
+                        onChange={(e) =>
+                          setRetryAnswers((prev) => ({ ...prev, [newQuestion.id]: e.target.value }))
+                        }
+                        rows={3}
+                        placeholder="Your answer…"
+                        readOnly={phase === 'retrying'}
+                        className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-white/10 p-3 shrink-0">
+                  <BusyButton
+                    busy={phase === 'retrying'}
+                    busyLabel={
+                      <span className="flex items-center gap-2">
+                        <PixelSpinner size="xs" tone="vega" /> Grading your answers…
+                      </span>
+                    }
+                    showSpinner={false}
+                    onClick={submitRetry}
+                    disabled={!allRetryAnswered}
+                    className="w-full font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 rounded-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center"
+                  >
+                    {allRetryAnswered ? 'Submit retry for grading' : 'Answer all questions to submit'}
+                  </BusyButton>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -737,6 +1033,8 @@ export function LiteratureFeature() {
               proficiencyDemonstrated: Boolean(p.proficiencyDemonstrated),
               fileUrl: p.fileUrl ?? undefined,
               createdAt: p.createdAt,
+              credibilityTier: (p.credibilityTier as CredibilityTier | null) ?? null,
+              doi: (p.doi as string | undefined) ?? undefined,
             })),
           )
         }

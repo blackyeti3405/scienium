@@ -26,6 +26,9 @@ export default async function TeacherLayout({ children }: { children: React.Reac
             <Link href="/teacher/showcase-moderation" className="text-white/60 hover:text-white transition-colors">
               Showcases
             </Link>
+            <Link href="/teacher/reports" className="text-white/60 hover:text-white transition-colors">
+              Reports
+            </Link>
           </nav>
         </div>
         <UserButton afterSignOutUrl="/" />

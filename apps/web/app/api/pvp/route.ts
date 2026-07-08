@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
     throw err
   }
 
-  // TODO: initiate battle — quota check → matchmaking → create pvp_battles row
+  // TODO: initiate raid (spec §11) — quota check (pvp_raid_quota) → random
+  // matchmaking with refinds → snapshot defender base → create pvp_raids row
   return NextResponse.json({ message: 'not implemented' }, { status: 501 })
 }

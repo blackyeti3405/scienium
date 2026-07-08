@@ -12,15 +12,8 @@ export type ProjectPhase =
   | 'working'
   | 'showcase'
 
-export type MiniGameCategory =
-  | 'identification'
-  | 'configuration'
-  | 'prediction'
-  | 'diagnosis'
-  | 'optimization'
-  | 'decoding'
-
-export type CombatType = 'empirical' | 'theoretical' | 'applied'
+// PvP-raid spell type; cycle: empirical > theoretical > applied > empirical (spec §11.4)
+export type SpellType = 'empirical' | 'theoretical' | 'applied'
 
 export type BuildingRole = 'starter' | 'standard' | 'premium'
 
@@ -29,5 +22,3 @@ export type UserRole = 'student' | 'teacher' | 'admin'
 export type ProjectLogEntryType = 'progress' | 'failure'
 
 export type PrivacyLevel = 'public' | 'school_only' | 'link_only' | 'private'
-
-export type PvpTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond' | 'master'

@@ -28,12 +28,10 @@ model User {
   projectLogEntries    ProjectLog[]
   projectLogEdits      ProjectLog[]            @relation("projectLogEditor")
   discoveryNodes       DiscoveryNode[]
-  fieldDispatchResp    FieldDispatchResponse[]
   expertiseAttempts    ExpertiseAttempt[]
   expertiseExams       ExpertiseExam[]
   shopPurchases        TeamShopBuilding[]
   labCreditClaims      LabCreditClaim[]
-  miniGamePlays        MiniGamePlay[]
   rubricAssessments    RubricSelfAssessment[]
   teamRubricScores     TeamRubricScore[]
   activityFeedEntries  ActivityFeed[]
@@ -44,6 +42,8 @@ model User {
   notifications        Notification[]
   notificationPref     NotificationPref?
   experiments          Experiment[]            @relation("experimentAuthor")
+  codexLessonProgress  CodexLessonProgress[]
+  codexKpDays          CodexKpDay[]
 
   @@map("users")
 }
@@ -129,9 +129,8 @@ model Team {
   invites         TeamInvite[]
   researchPlan    ResearchPlan?
   ideaChecks      IdeaCheck[]
-  pvpTeam         PvpTeam?
   pvpTrophies     PvpTrophies?
-  pvpBattleQuota  PvpBattleQuota[]
+  pvpRaidQuota    PvpRaidQuota[]
   showcase        Showcase?
   formStatuses    TeamFormStatus[]
   activityFeed    ActivityFeed[]
@@ -140,6 +139,10 @@ model Team {
   notifications   Notification[]
   experiments     Experiment[]
   teamRubricScores TeamRubricScore[]
+  codexLessonProgress CodexLessonProgress[]
+  codexKpDays     CodexKpDay[]
+  studyPlan       TeamStudyPlan?
+  vegaStudyMessages VegaStudyMessage[]
 
   @@map("teams")
 }
@@ -597,15 +600,15 @@ model IdeaCheck {
 // ─── Lab Buildings ───────────────────────────────────────────────────────────
 
 model Building {
-  id               String           @id @default(cuid())
-  labType          LabType          @map("lab_type")
-  name             String
-  role             BuildingRole
-  description      String
-  miniGameCategory MiniGameCategory @map("mini_game_category")
+  id          String       @id @default(cuid())
+  labType     LabType      @map("lab_type")
+  name        String
+  role        BuildingRole
+  description String
+  // Type of the PvP-raid spell this building grants (spec §9.3 / §11).
+  spellType   SpellType    @map("spell_type")
 
   teamBuildings TeamBuilding[]
-  character     Character?
 
   @@map("buildings")
 }
@@ -618,15 +621,13 @@ enum BuildingRole {
   @@map("building_role")
 }
 
-enum MiniGameCategory {
-  identification
-  configuration
-  prediction
-  diagnosis
-  optimization
-  decoding
+// The research-type cycle: empirical > theoretical > applied > empirical (spec §11.4).
+enum SpellType {
+  empirical
+  theoretical
+  applied
 
-  @@map("mini_game_category")
+  @@map("spell_type")
 }
 
 model TeamBuilding {
@@ -712,39 +713,8 @@ model LabCreditClaim {
 }
 
 // ─── Daily Activities ─────────────────────────────────────────────────────────
-
-model FieldDispatchContent {
-  id                 String   @id @default(cuid())
-  labType            LabType  @map("lab_type")
-  body               String
-  reflectionQuestion String   @map("reflection_question")
-  publishedDate      DateTime @map("published_date")
-
-  responses FieldDispatchResponse[]
-
-  // One dispatch per lab type per day; the "today" lookup hits this index and
-  // the unique pair keeps the weekly cron idempotent (re-run upserts in place).
-  @@unique([labType, publishedDate])
-  @@index([labType, publishedDate])
-  @@map("field_dispatch_content")
-}
-
-model FieldDispatchResponse {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
-  contentId String   @map("content_id")
-  response  String
-  kpAwarded Int      @map("kp_awarded")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user    User                 @relation(fields: [userId], references: [id])
-  content FieldDispatchContent @relation(fields: [contentId], references: [id])
-
-  // A student answers each day's dispatch at most once — the KP award reads this
-  // unique pair so a double-submit can't double-pay.
-  @@unique([userId, contentId])
-  @@map("field_dispatch_responses")
-}
+// Field Dispatch was retired in favor of Field Codex (codex_* tables below) —
+// its tables were dropped in migration *_drop_field_dispatch.
 
 // Proof of Expertise — a conversational clearance exam (Feature: Clearance Level).
 // One exam attempts to raise the team from its current clearance to `targetLevel`.
@@ -847,19 +817,6 @@ model ProjectLogReference {
 
   @@id([projectLogId, referencesLogId])
   @@map("project_log_references")
-}
-
-model MiniGamePlay {
-  id         String   @id @default(cuid())
-  userId     String   @map("user_id")
-  teamId     String   @map("team_id")
-  buildingId String   @map("building_id")
-  score      Int
-  kpAwarded  Int      @map("kp_awarded")
-  playedAt   DateTime @default(now()) @map("played_at")
-  user       User     @relation(fields: [userId], references: [id])
-
-  @@map("mini_game_plays")
 }
 
 // ─── Teacher Dashboard ───────────────────────────────────────────────────────
@@ -1251,113 +1208,56 @@ enum FormStatus {
   @@map("form_status")
 }
 
-// ─── PvP Combat ──────────────────────────────────────────────────────────────
+// ─── PvP Raids (spec §11 — feature not built; api/pvp/* stubbed 501) ─────────
 
-model Character {
-  id         String          @id @default(cuid())
-  buildingId String          @unique @map("building_id")
-  name       String
-  type       CombatType
-  baseHp     Int             @map("base_hp")
-  baseAtk    Int             @map("base_atk")
-  baseDef    Int             @map("base_def")
-  baseSpd    Int             @map("base_spd")
-  sprite1Url String          @map("sprite_1_url")
-  sprite2Url String          @map("sprite_2_url")
-  building   Building        @relation(fields: [buildingId], references: [id])
-  moves      CharacterMove[]
+// One spell per economy building in the lib/shop.ts catalog (config-keyed like
+// TeamShopBuilding, not FK'd to the seeded Building rows). Spell level = the
+// owning building's level; per-level damage scaling lives in code.
+model Spell {
+  id          String    @id @default(cuid())
+  buildingKey String    @unique @map("building_key")
+  type        SpellType
+  baseDamage  Int       @map("base_damage")
+  radius      Int
+  cooldownMs  Int       @map("cooldown_ms")
 
-  @@map("characters")
+  @@map("spells")
 }
 
-enum CombatType {
-  empirical
-  theoretical
-  applied
+// One raid = one attacker vs a snapshot of a defender's base, 15s window.
+// The defender's real rows are never mutated; raid_log_json stores the cast
+// sequence for replay/dispute.
+model PvpRaid {
+  id               String    @id @default(cuid())
+  attackerTeamId   String    @map("attacker_team_id")
+  defenderTeamId   String    @map("defender_team_id")
+  startedAt        DateTime  @default(now()) @map("started_at")
+  endedAt          DateTime? @map("ended_at")
+  percentDestroyed Float?    @map("percent_destroyed")
+  trophiesDelta    Int?      @map("trophies_delta")
+  raidLogJson      Json?     @map("raid_log_json")
 
-  @@map("combat_type")
-}
-
-model Move {
-  id                  String          @id @default(cuid())
-  name                String
-  type                CombatType
-  baseDamage          Int             @map("base_damage")
-  accuracy            Int
-  pp                  Int
-  secondaryEffectJson Json?           @map("secondary_effect_json")
-  flavorText          String          @map("flavor_text")
-  characters          CharacterMove[]
-
-  @@map("moves")
-}
-
-model CharacterMove {
-  characterId  String    @map("character_id")
-  moveId       String    @map("move_id")
-  levelLearned Int       @map("level_learned")
-  character    Character @relation(fields: [characterId], references: [id])
-  move         Move      @relation(fields: [moveId], references: [id])
-
-  @@id([characterId, moveId])
-  @@map("character_moves")
-}
-
-model PvpTeam {
-  id                 String   @id @default(cuid())
-  teamId             String   @unique @map("team_id")
-  characterSlotsJson Json     @map("character_slots_json")
-  updatedAt          DateTime @updatedAt @map("updated_at")
-  team               Team     @relation(fields: [teamId], references: [id])
-
-  @@map("pvp_teams")
-}
-
-model PvpBattle {
-  id                    String       @id @default(cuid())
-  attackerTeamId        String       @map("attacker_team_id")
-  defenderTeamId        String       @map("defender_team_id")
-  phase                 ProjectPhase
-  startedAt             DateTime     @default(now()) @map("started_at")
-  endedAt               DateTime?    @map("ended_at")
-  winnerTeamId          String?      @map("winner_team_id")
-  trophiesDeltaAttacker Int?         @map("trophies_delta_attacker")
-  trophiesDeltaDefender Int?         @map("trophies_delta_defender")
-  battleLogJson         Json?        @map("battle_log_json")
-
-  @@map("pvp_battles")
+  @@map("pvp_raids")
 }
 
 model PvpTrophies {
   teamId          String   @id @map("team_id")
   currentTrophies Int      @default(0) @map("current_trophies")
-  tier            PvpTier  @default(bronze)
-  season          Int      @default(1)
   updatedAt       DateTime @updatedAt @map("updated_at")
   team            Team     @relation(fields: [teamId], references: [id])
 
   @@map("pvp_trophies")
 }
 
-enum PvpTier {
-  bronze
-  silver
-  gold
-  platinum
-  diamond
-  master
-
-  @@map("pvp_tier")
-}
-
-model PvpBattleQuota {
+model PvpRaidQuota {
   teamId      String   @map("team_id")
   date        DateTime @db.Date
-  battlesUsed Int      @default(0) @map("battles_used")
+  raidsUsed   Int      @default(0) @map("raids_used")
+  refindsUsed Int      @default(0) @map("refinds_used")
   team        Team     @relation(fields: [teamId], references: [id])
 
   @@id([teamId, date])
-  @@map("pvp_battle_quota")
+  @@map("pvp_raid_quota")
 }
 
 // ─── Activity Feed ───────────────────────────────────────────────────────────
@@ -1374,4 +1274,92 @@ model ActivityFeed {
 
   @@index([teamId, createdAt])
   @@map("activity_feed")
+}
+
+// ─── Field Codex (Feature F13) ──────────────────────────────────────────────
+// Track → Core/Branch → Unit → Lesson curriculum. Content itself is typed TS
+// (apps/web/lib/ops/codex/**) — these tables are only the per-student
+// progress ledger, the daily-cap rollup, and the cached team study plan.
+
+// Per-student, per-lesson progress — the once-ever KP claim ledger.
+// `bestScore`/`kpAwarded` are high-water marks (never lowered by a weaker
+// retake), mirroring PaperProficiency. `completed` flips true on the first
+// pass; a later re-pass may raise `bestScore` further but never re-pays KP.
+model CodexLessonProgress {
+  userId      String    @map("user_id")
+  teamId      String    @map("team_id")
+  trackSlug   String    @map("track_slug")
+  lessonId    String    @map("lesson_id")
+  completed   Boolean   @default(false)
+  bestScore   Int       @default(0) @map("best_score")
+  kpAwarded   Int       @default(0) @map("kp_awarded")
+  completedAt DateTime? @map("completed_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@id([userId, lessonId])
+  @@index([userId, trackSlug])
+  @@map("codex_lesson_progress")
+}
+
+// Daily-cap rollup, PER STUDENT (unlike DiscoveryKpDay which is per-team) —
+// counts first-time lesson COMPLETIONS (not KP), enforced atomically at the
+// route so a student cannot slip a 4th first-time completion past the cap.
+model CodexKpDay {
+  id               String   @id @default(cuid())
+  userId           String   @map("user_id")
+  teamId           String   @map("team_id")
+  day              DateTime @db.Date
+  lessonsCompleted Int      @default(0) @map("lessons_completed")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([userId, day])
+  @@map("codex_kp_days")
+}
+
+// Cached "Study Plan" — one Haiku classification of the team's topic/research
+// idea/plan into recommended tracks + branches, re-runnable with a daily cap.
+// 1:1 on Team. `manualTrackSlugs` lets a student add tracks the classifier
+// didn't recommend, without another LLM call.
+model TeamStudyPlan {
+  teamId           String    @id @map("team_id")
+  tracksJson       Json      @map("tracks_json")
+  sourceHash       String    @map("source_hash")
+  generatedAt      DateTime  @default(now()) @map("generated_at")
+  runsToday        Int       @default(0) @map("runs_today")
+  runsDay          DateTime? @db.Date @map("runs_day")
+  manualTrackSlugs String[]  @default([]) @map("manual_track_slugs")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@map("team_study_plans")
+}
+
+// ─── Study with Vega (Feature F18) ────────────────────────────────────────────
+
+// A team-shared, persistent study-chat thread with Vega, grounded in the
+// team's own project (topic/research idea/plan/recent log — see
+// lib/ops/vega-study-context.ts). TEAM-SHARED (not per-user) like
+// ProjectLog/ResearchPlan: the whole team sees one continuous thread. `userId`
+// still records the author of each turn (attribution only) — the GET query
+// filters by teamId ONLY. Contrast with PaperChatMessage, which IS per-user
+// because paper comprehension is graded per-student.
+model VegaStudyMessage {
+  id        String   @id @default(cuid())
+  teamId    String   @map("team_id")
+  userId    String   @map("user_id")
+  role      String // 'user' | 'assistant'
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@index([teamId, createdAt])
+  @@map("vega_study_messages")
 }

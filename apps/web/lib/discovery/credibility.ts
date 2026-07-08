@@ -67,3 +67,85 @@ export const TIER_META: Record<CredibilityTier, TierMeta> = {
     color: '#60A5FA', // blue
   },
 }
+
+// ── F12: Literature Review credibility badge (read-time resolution) ──────────
+// "Self-uploaded" is a UI-only fallback for papers with no derivable tier
+// (raw uploads with no DOI, or plain `text` sources) — deliberately NOT a 4th
+// `CredibilityTier` enum value (that would be a schema change). The API
+// returns `credibilityTier: CredibilityTier | null`; the client resolves
+// `null` to this meta via `tierMeta()` below.
+export const SELF_UPLOADED_META: TierMeta = {
+  label: 'Self-uploaded',
+  caveat: 'You uploaded this — no source host to vouch for it. Vet it yourself using the checklist.',
+  color: '#94A3B8', // slate — neutral, distinct from the 3 tier colors
+}
+
+/** Single resolver the UI calls: maps a nullable tier to its display metadata. */
+export function tierMeta(tier: CredibilityTier | null): TierMeta {
+  return tier ? TIER_META[tier] : SELF_UPLOADED_META
+}
+
+// DOI regex: registrar prefix `10.xxxx` (4-9 digits) + suffix of the
+// characters DOIs commonly use. Scanning only the first ~4000 chars of full
+// text keeps this cheap and matches where a DOI typically appears (title
+// page / header / footer), not deep in references.
+const DOI_RE = /\b10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/
+
+/**
+ * Find a DOI in raw extracted PDF text, deterministically (no network, no
+ * LLM). Only scans the first ~4000 chars — where a DOI is conventionally
+ * printed — and trims trailing punctuation a sentence boundary may have
+ * glued on (e.g. a trailing `.` or `)` that isn't part of the DOI itself).
+ */
+export function extractDoi(text: string): string | null {
+  const match = text.slice(0, 4000).match(DOI_RE)
+  if (!match) return null
+  return match[0].replace(/[.,;:)\]]+$/, '') || null
+}
+
+/**
+ * Deterministic, offline DOI → tier mapping. A DOI is only minted by a
+ * registrar (Crossref, DataCite, …) for a formally published/versioned work —
+ * so its mere presence implies "published somewhere," the cautious signal we
+ * can support without resolving the DOI against any network. We have no
+ * resolved host for a raw upload (unlike a Discovery-promoted source), so we
+ * can't distinguish peer-reviewed from open-access from a DOI alone — treat
+ * every registered DOI as `peer_reviewed`, the tier that best matches "this
+ * is a real, indexed publication."
+ */
+export function tierFromDoi(_doi: string): CredibilityTier {
+  return 'peer_reviewed'
+}
+
+/**
+ * Static "how to vet a source" checklist — pure authored content, no LLM.
+ * Shown in the Q&A panel so students do the credibility judgement themselves
+ * rather than trusting the badge alone.
+ */
+export const VETTING_CHECKLIST: { key: string; label: string; hint: string }[] = [
+  {
+    key: 'authorship',
+    label: 'Authorship & affiliation',
+    hint: 'Who wrote this, and what institution or lab are they affiliated with? Real experts publish under their real names and institutions.',
+  },
+  {
+    key: 'funding',
+    label: 'Funding disclosure',
+    hint: 'Does the paper disclose who paid for the research? A funder with a stake in the outcome (e.g. the manufacturer of the product being tested) is a red flag worth weighing.',
+  },
+  {
+    key: 'retraction',
+    label: 'Retraction check',
+    hint: 'Has this paper (or its journal) been flagged for retraction or correction? Search the title plus "retraction" before you rely on it.',
+  },
+  {
+    key: 'publisher',
+    label: 'Publisher reputation',
+    hint: 'Is it in a journal or on a platform you recognize as legitimate (an indexed journal, arXiv, PubMed) — or a site you\'ve never heard of with no editorial process?',
+  },
+  {
+    key: 'citations',
+    label: 'Citation count',
+    hint: 'How many other papers cite this one? A widely-cited paper has been checked and used by other researchers; a paper with zero citations may be too new or too weak to have caught on.',
+  },
+]

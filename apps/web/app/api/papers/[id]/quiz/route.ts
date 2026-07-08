@@ -12,6 +12,17 @@ import {
   extractJson,
 } from '@/lib/literature/quiz'
 
+/** Fixed deterministic quiz used only when E2E_SKIP_LLM=1 (never in production). */
+function e2eFixtureQuestions(): QuizQuestion[] {
+  const focuses = ['findings', 'methodology', 'relevance', 'findings', 'field knowledge']
+  return Array.from({ length: QUIZ_QUESTION_COUNT }, (_, i) => ({
+    id: `q${i + 1}`,
+    prompt: `[E2E fixture] Question ${i + 1}: describe a key aspect of this paper.`,
+    focus: focuses[i] ?? 'findings',
+    key: `E2E fixture grading key ${i + 1}`,
+  }))
+}
+
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 // GET: return the most recent GRADED quiz session for this paper (so past
@@ -31,7 +42,8 @@ export async function GET(
 
   if (!session) return NextResponse.json({ session: null })
 
-  const questions = (session.questionsJson as unknown as QuizQuestion[]).map((q, i) => ({
+  const storedQuestions = session.questionsJson as unknown as QuizQuestion[]
+  const questions = storedQuestions.map((q, i) => ({
     id: q.id ?? `q${i + 1}`,
     prompt: q.prompt,
     focus: q.focus,
@@ -39,6 +51,11 @@ export async function GET(
 
   // Match attempts back to questions by prompt text.
   const byPrompt = new Map(session.attempts.map((a) => [a.question, a]))
+  const strongAnswerById = new Map(storedQuestions.map((q, i) => [q.id ?? `q${i + 1}`, q.strongAnswer]))
+
+  // A session that has been through the retry loop always carries one more
+  // question than the original generated set (retry appends exactly one).
+  const retried = storedQuestions.length > QUIZ_QUESTION_COUNT
 
   return NextResponse.json({
     session: {
@@ -47,13 +64,21 @@ export async function GET(
       passed: session.passed,
       threshold: QUIZ_PASS_THRESHOLD,
       gradedAt: session.gradedAt,
+      retried,
       questions,
       answers: Object.fromEntries(
         questions.map((q) => [q.id, byPrompt.get(q.prompt)?.response ?? '']),
       ),
       results: questions.map((q) => {
         const a = byPrompt.get(q.prompt)
-        return { questionId: q.id, score: a?.score ?? 0, rationale: a?.evaluation ?? '' }
+        const score = a?.score ?? 0
+        const strongAnswer = strongAnswerById.get(q.id)
+        return {
+          questionId: q.id,
+          score,
+          rationale: a?.evaluation ?? '',
+          ...(score < QUIZ_PASS_THRESHOLD && strongAnswer ? { strongAnswer } : {}),
+        }
       }),
     },
   })
@@ -77,41 +102,50 @@ export async function POST(
     return NextResponse.json({ error: 'Paper is still processing' }, { status: 409 })
   }
 
-  const rubric = await loadRubric()
+  let questions: QuizQuestion[]
+  if (process.env.E2E_SKIP_LLM === '1') {
+    // E2E test-mode short-circuit: skip the real Anthropic call when
+    // E2E_SKIP_LLM=1 is set in the environment. Returns a fixed 5-question set
+    // so the whole E2E flow is deterministic and LLM-free. Never set this in
+    // production.
+    questions = e2eFixtureQuestions()
+  } else {
+    const rubric = await loadRubric()
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2048,
-    system: [
-      { type: 'text', text: GENERATION_INSTRUCTIONS(rubric, QUIZ_QUESTION_COUNT) },
-      {
-        type: 'text',
-        text: `FULL PAPER TEXT:\n---\n${(paper.fullText ?? '').slice(0, 120000)}`,
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
-    messages: [
-      {
-        role: 'user',
-        content: `Generate exactly ${QUIZ_QUESTION_COUNT} questions for this paper as a JSON array. Each element: { "prompt": "...", "focus": "...", "key": "..." }. Return ONLY the JSON array.`,
-      },
-    ],
-  })
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2048,
+      system: [
+        { type: 'text', text: GENERATION_INSTRUCTIONS(rubric, QUIZ_QUESTION_COUNT) },
+        {
+          type: 'text',
+          text: `FULL PAPER TEXT:\n---\n${(paper.fullText ?? '').slice(0, 120000)}`,
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+      messages: [
+        {
+          role: 'user',
+          content: `Generate exactly ${QUIZ_QUESTION_COUNT} questions for this paper as a JSON array. Each element: { "prompt": "...", "focus": "...", "key": "..." }. Return ONLY the JSON array.`,
+        },
+      ],
+    })
 
-  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-  const parsed = extractJson<Array<{ prompt: string; focus: string; key: string }>>(raw)
+    const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+    const parsed = extractJson<Array<{ prompt: string; focus: string; key: string }>>(raw)
 
-  if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
-    console.error('[quiz] generation failed to parse:', raw.slice(0, 500))
-    return NextResponse.json({ error: 'Failed to generate quiz' }, { status: 502 })
+    if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
+      console.error('[quiz] generation failed to parse:', raw.slice(0, 500))
+      return NextResponse.json({ error: 'Failed to generate quiz' }, { status: 502 })
+    }
+
+    questions = parsed.map((q, i) => ({
+      id: `q${i + 1}`,
+      prompt: q.prompt,
+      focus: q.focus ?? 'general',
+      key: q.key ?? '',
+    }))
   }
-
-  const questions: QuizQuestion[] = parsed.map((q, i) => ({
-    id: `q${i + 1}`,
-    prompt: q.prompt,
-    focus: q.focus ?? 'general',
-    key: q.key ?? '',
-  }))
 
   const session = await db.paperQuizSession.create({
     data: {

@@ -32,7 +32,7 @@ describe('feature gating', () => {
     expect(f.has('showcase')).toBe(false)
   })
 
-  it('working unlocks buildings/minigames/pvp and everything earlier', () => {
+  it('working unlocks buildings/pvp and everything earlier', () => {
     expect(isFeatureUnlocked('working', 'buildings')).toBe(true)
     expect(isFeatureUnlocked('working', 'literature')).toBe(true)
     expect(isFeatureUnlocked('working', 'showcase')).toBe(false)
@@ -40,7 +40,7 @@ describe('feature gating', () => {
 
   it('showcase phase unlocks everything', () => {
     const f = getUnlockedFeatures('showcase')
-    for (const feature of ['discovery', 'fair_hub', 'lab_selection', 'literature', 'research_plan', 'daily', 'buildings', 'minigames', 'pvp', 'showcase'] as const) {
+    for (const feature of ['discovery', 'fair_hub', 'lab_selection', 'literature', 'research_plan', 'daily', 'buildings', 'pvp', 'showcase'] as const) {
       expect(f.has(feature)).toBe(true)
     }
   })
