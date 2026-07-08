@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import Anthropic from '@anthropic-ai/sdk'
+import { anthropic } from '@/lib/anthropic'
 import {
   CLEARANCE_PASS_THRESHOLD,
   levelInfo,
@@ -15,8 +15,6 @@ import { extractJson } from '@/lib/literature/quiz'
 import { getProjectContext, renderProjectContext } from '@/lib/clearance/context'
 import { clampScore, computeClearanceRaise } from '@/lib/economy'
 import { logActivity } from '@/lib/activity/log'
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 // A clearance exam is a small fixed set of short free-response answers — this
 // bounds the grading prompt we forward to Claude.
@@ -69,7 +67,7 @@ export async function POST(req: NextRequest) {
 
   let response
   try {
-    response = await client.messages.create({
+    response = await anthropic().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system: [

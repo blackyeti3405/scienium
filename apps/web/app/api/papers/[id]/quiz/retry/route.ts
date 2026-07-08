@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import Anthropic from '@anthropic-ai/sdk'
+import { anthropic } from '@/lib/anthropic'
 import {
   QUIZ_QUESTION_COUNT,
   QUIZ_PASS_THRESHOLD,
@@ -21,7 +21,6 @@ import { clampScore, computeQuizAward, computeRetryAggregate } from '@/lib/econo
 import { logActivity } from '@/lib/activity/log'
 
 // Server-side only; the Anthropic key never reaches the browser.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 // Mirrors GradeBody in quiz/grade/route.ts: a fixed handful of re-answered
 // questions, each with short free text.
@@ -106,7 +105,7 @@ async function generateNewQuestion(
   }
 
   const rubric = await loadRubric()
-  const genResponse = await client.messages.create({
+  const genResponse = await anthropic().messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 512,
     system: [
@@ -276,7 +275,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const rubric = await loadRubric()
     let gradeResponse
     try {
-      gradeResponse = await client.messages.create({
+      gradeResponse = await anthropic().messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
         system: [

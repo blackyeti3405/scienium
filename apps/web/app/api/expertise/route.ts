@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import Anthropic from '@anthropic-ai/sdk'
+import { anthropic } from '@/lib/anthropic'
 import {
   MAX_CLEARANCE,
   CLEARANCE_PASS_THRESHOLD,
@@ -18,7 +18,6 @@ import { extractJson } from '@/lib/literature/quiz'
 import { getProjectContext, hasMinimumContext, renderProjectContext } from '@/lib/clearance/context'
 
 // Server-side only; the Anthropic key never reaches the browser.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 /** Read the team's current clearance, defaulting to 0 if no currency row yet. */
 async function currentClearance(teamId: string): Promise<number> {
@@ -149,7 +148,7 @@ export async function POST(req: NextRequest) {
   }
 
   const rubric = await loadExpertiseRubric()
-  const response = await client.messages.create({
+  const response = await anthropic().messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1600,
     system: [

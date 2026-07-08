@@ -1,12 +1,16 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getTeamContext } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
 import { Firecrawl } from 'firecrawl'
+import { serverEnv } from '@/lib/env'
 
-const firecrawl = new Firecrawl({ apiKey: process.env.FIRECRAWL_API_KEY! })
+// Built lazily on first use (never at import) so a missing FIRECRAWL_API_KEY
+// can't fail `next build`; validated by serverEnv when the route actually runs.
+let cachedFirecrawl: Firecrawl | undefined
+function firecrawl(): Firecrawl {
+  return (cachedFirecrawl ??= new Firecrawl({ apiKey: serverEnv.FIRECRAWL_API_KEY() }))
+}
 
 /**
  * Schema passed to Firecrawl extract. Firecrawl uses it to steer its LLM and
@@ -41,15 +45,9 @@ type ExtractedDates = z.infer<typeof DatesSchema>
  * that matches DatesSchema — no extra LLM step required.
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   // Strict rate limit: each call triggers a paid Firecrawl job.
-  const limited = await enforceRateLimit(req, 'ai', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
+  const { error: guardError } = await requireTeamContext(req, { tier: 'ai' })
+  if (guardError) return guardError
 
   const fair = await db.fair.findUnique({
     where: { id: params.id },
@@ -68,7 +66,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   let extracted: ExtractedDates | null = null
 
   try {
-    const res = await firecrawl.extract({
+    const res = await firecrawl().extract({
       urls: [fair.websiteUrl, `${base}/*`],
       prompt: `Extract the next upcoming event dates for the ${fair.name} science fair.
 Today is ${today}. Find:

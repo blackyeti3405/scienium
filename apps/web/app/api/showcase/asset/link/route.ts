@@ -1,8 +1,6 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getTeamContext, assertFeatureUnlocked, PhaseGateError } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import {
@@ -31,20 +29,8 @@ const MULTI_CAP: Partial<Record<ShowcaseAssetType, number>> = {
 }
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = await enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-  try {
-    assertFeatureUnlocked(ctx.phase, 'showcase')
-  } catch (err) {
-    if (err instanceof PhaseGateError) return NextResponse.json({ error: err.message }, { status: 403 })
-    throw err
-  }
+  const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate', feature: 'showcase' })
+  if (guardError) return guardError
 
   const showcase = await db.showcase.findUnique({ where: { teamId: ctx.teamId }, select: { id: true } })
   if (!showcase) {

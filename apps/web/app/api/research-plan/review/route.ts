@@ -1,15 +1,10 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { getTeamContext } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { loadResearchRubric } from '@/lib/research-plan/rubric'
 import { findProjectType, findSubtype } from '@/lib/research-plan/types'
 import { db } from '@/lib/db'
-import Anthropic from '@anthropic-ai/sdk'
-
-// Server-side only; the Anthropic key is never exposed to the client.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+import { anthropic } from '@/lib/anthropic'
 
 /**
  * POST /api/research-plan/review — AI critique of the synced plan against the
@@ -21,15 +16,9 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
  * review is persisted so it reloads in the same format.
  */
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   // Strict per-user + per-IP limit: a full plan review is a large paid Claude call.
-  const limited = await enforceRateLimit(req, 'ai', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'ai' })
+  if (error) return error
 
   const plan = await db.researchPlan.findUnique({ where: { teamId: ctx.teamId } })
   if (!plan?.lastSyncedText) {
@@ -119,7 +108,7 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        const ms = client.messages.stream({
+        const ms = anthropic().messages.stream({
           model: 'claude-sonnet-4-6',
           max_tokens: 2048,
           system: [

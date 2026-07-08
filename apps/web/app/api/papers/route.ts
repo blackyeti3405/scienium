@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
-import Anthropic from '@anthropic-ai/sdk'
+import { anthropic } from '@/lib/anthropic'
 import { extractText, getDocumentProxy } from 'unpdf'
 import { putObject, paperPdfKey } from '@/lib/storage'
 import { checkPaperRelevance } from '@/lib/literature/relevance'
@@ -11,7 +11,6 @@ import { extractDoi, tierFromDoi } from '@/lib/discovery/credibility'
 import type { CredibilityTier } from '@prisma/client'
 
 // Server-side only; the Anthropic key is never bundled for the browser.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 // Hard ceiling on an uploaded PDF. The bytes are buffered in memory, stored to
 // R2, and (as text) sent to Claude, so an unbounded upload is a memory + cost
@@ -204,7 +203,7 @@ async function extractMetadata(paperId: string, fullText: string, rawTitle: stri
   // The first ~6k tokens of a paper contain title/authors/abstract — no need to send more
   const excerpt = fullText.slice(0, 24000)
 
-  const response = await client.messages.create({
+  const response = await anthropic().messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 512,
     system: EXTRACTION_SYSTEM_PROMPT,

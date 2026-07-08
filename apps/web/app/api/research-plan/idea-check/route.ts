@@ -4,9 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { IDEA_CHECK_DAILY_LIMIT, ideaChecksUsedToday } from '@/lib/research-plan/idea-check'
 import { db } from '@/lib/db'
 import Anthropic from '@anthropic-ai/sdk'
-
-// Server-side only; the Anthropic key is never exposed to the client.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+import { anthropic } from '@/lib/anthropic'
 
 /**
  * POST /api/research-plan/idea-check — "Has this idea been done before?" (Feature 2C).
@@ -66,7 +64,7 @@ export async function POST(req: NextRequest) {
           verdictText = ''
           // Cast events to a loose shape — server-tool streaming blocks aren't
           // fully covered by the SDK's narrowed event union.
-          const ms = client.messages.stream({
+          const ms = anthropic().messages.stream({
             model: 'claude-sonnet-4-6',
             max_tokens: 2048,
             system: IDEA_CHECK_SYSTEM,

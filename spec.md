@@ -228,7 +228,7 @@ The daily learning pillar (it replaced the retired Field Dispatch — a daily LL
 - Lessons carry a worked example and a "why judges ask this" framing tying each concept to fair judging.
 - **Reward:** KP per first-ever lesson pass, capped per student per day (`lib/ops/codex/engine.ts` owns the constants), minted atomically with the same once-ever payment-ledger discipline as the rest of the economy.
 - A **Study Plan** (the feature's only LLM call, 2 regenerations/team/day) routes the team to the most relevant tracks for their project; teams without one default to their lab type's field list.
-- Content lives in code (`apps/web/lib/ops/codex/tracks/<slug>.ts`), code-split per track; a content-shape unit test gates every authored track.
+- Content lives as data (`apps/web/lib/ops/codex/content/<slug>.json`), built into thin code-split wrappers (`tracks/<slug>.ts`) via `pnpm --filter web codex:build`; a content-shape unit test plus a zod/checksum generated-content test gate every authored track.
 
 ### 7.2 Proof of Expertise (~3–5 min) — *implemented*
 - A short **clearance exam** about the team's own project: a small fixed set of free-response questions generated and graded by Vega (Claude Sonnet) against a tunable rubric, using the team's real project context.

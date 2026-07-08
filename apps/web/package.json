@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "codex:build": "node lib/ops/codex/scripts/build-codex-tracks.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "seed:e2e": "node --env-file=.env.local prisma/seed-e2e.mjs"

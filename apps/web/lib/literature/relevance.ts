@@ -1,6 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+import { anthropic } from '@/lib/anthropic'
 
 export interface RelevanceResult {
   relevant: boolean
@@ -33,7 +31,7 @@ export async function checkPaperRelevance(
 ): Promise<RelevanceResult> {
   const excerpt = textExcerpt.slice(0, 3500)
 
-  const response = await client.messages.create({
+  const response = await anthropic().messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 200,
     system: SYSTEM_PROMPT,
@@ -78,7 +76,7 @@ export async function batchCheckRelevance(
     .map((p, i) => `${i + 1}. ID: ${p.id}\n   Title: ${p.title}\n   Abstract: ${p.abstract ?? '(not yet extracted)'}`)
     .join('\n\n')
 
-  const response = await client.messages.create({
+  const response = await anthropic().messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 800,
     system: SYSTEM_PROMPT,

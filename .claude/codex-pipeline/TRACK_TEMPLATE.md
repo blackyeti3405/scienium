@@ -1,62 +1,78 @@
-# Field Codex track — canonical typed-module pattern
+# Field Codex track — canonical content pattern
 
-Copy this pattern for every new track (the analogue of "copy this from
-workshop.py" in `.claude/pixel-art-pipeline/evolution-plan.md`). Proven on
-`apps/web/lib/ops/codex/tracks/biomechanics.ts` (flagship, Core + 1 branch)
-and the six `*-home.ts` Core-only tracks — read one of those as a live worked
+Copy this pattern for every new track. A track's lesson content is authored as
+**data** — one `CodexTrack` object per file at
+`apps/web/lib/ops/codex/content/<slug>.json` — and a tiny typed wrapper module
+`apps/web/lib/ops/codex/tracks/<slug>.ts` is **generated** from it by
+`pnpm --filter web codex:build` (never hand-edit a `tracks/*.ts` — it says
+`@generated` at the top). Read a shipped file
+(`apps/web/lib/ops/codex/content/gait-biomechanics.json`) as a live worked
 example alongside this template.
+
+Why data, not a TS literal: the content is pure JSON (strings, numbers, arrays,
+objects — no code), and inlining ~270 lessons as a TypeScript literal made a
+single 29,000-line file that was slow to typecheck and dangerous to edit.
+Splitting content (JSON) from the code-split boundary (the generated wrapper)
+keeps each `tracks/*.ts` ~10 lines and the content reviewable as data.
 
 ## 1. The exact `CodexTrack` shape (from `apps/web/lib/ops/codex/types.ts`)
 
-```ts
-import type { CodexTrack } from '../types'
+The shape below is shown as JSON — the exact format of `content/<slug>.json`.
+(It is fine to DRAFT a unit as a commented TS `export default unit` literal in
+`WORK/drafts/` while authoring; the splice step serializes the assembled track
+to JSON. JSON itself has **no comments, no trailing commas**, double-quoted keys,
+and `true`/`false`/`null` — the `//` notes here are guidance, not literal.)
 
-const track: CodexTrack = {
-  slug: 'my-new-track',          // globally unique, slug-safe
-  label: 'My New Track',
-  home: false,                    // true ONLY for one of the six lab-type home tracks
-  // labType: 'biocore',          // set ONLY when home: true
-  core: {
-    id: 'core',
-    kind: 'core',
-    label: 'Core',
-    units: [
+```jsonc
+{
+  "slug": "my-new-track",          // globally unique, slug-safe
+  "label": "My New Track",
+  "home": false,                    // true ONLY for one of the six lab-type home tracks
+  // "labType": "biocore",          // set ONLY when home: true (omit the key otherwise)
+  "core": {
+    "id": "core",
+    "kind": "core",
+    "label": "Core",
+    "units": [
       {
-        id: 'unit-1-slug',
-        label: 'Unit 1 Human Label',
-        lessons: [
+        "id": "unit-1-slug",
+        "label": "Unit 1 Human Label",
+        "lessons": [
           {
-            id: 'my-new-track-unit1-lesson-slug',   // GLOBALLY unique across every track
-            label: 'Lesson Human Label',
-            readingMinutes: 5,                        // 4-6 is the norm
-            sections: [
-              { heading: 'Concept heading', body: 'Real prose. 2-4 sections per lesson.' },
+            "id": "my-new-track-unit1-lesson-slug",   // GLOBALLY unique across every track
+            "label": "Lesson Human Label",
+            "readingMinutes": 5,                        // 4-6 is the norm
+            "sections": [
+              { "heading": "Concept heading", "body": "Real prose. 2-4 sections per lesson." }
             ],
-            workedExample: 'A concrete, specific worked example — not generic filler.',
-            judgeFraming: 'Why judges ask about this — tied to THIS concept, not boilerplate.',
-            checkpoint: {
-              questions: [
+            "workedExample": "A concrete, specific worked example — not generic filler.",
+            "judgeFraming": "Why judges ask about this — tied to THIS concept, not boilerplate.",
+            "checkpoint": {
+              "questions": [
                 // 3-5 questions total, any mix of mc / ordering / matching (see below).
-              ],
-            },
-          },
+              ]
+            }
+          }
           // ...more lessons, sequential within the unit
-        ],
-      },
+        ]
+      }
       // ...more units, sequential within the segment
-    ],
+    ]
   },
-  branches: [
+  "branches": [
     // Empty [] for a Core-only (home) track. 3-5 Segment objects (kind:
-    // 'branch') for a specialist/flagship track — same Unit/Lesson shape as
-    // Core, nested under `units`.
-  ],
+    // "branch") for a specialist/flagship track — same Unit/Lesson shape as
+    // Core, nested under "units".
+  ]
 }
-
-export default track
 ```
 
+Then generate the wrapper: `pnpm --filter web codex:build`.
+
 ## 2. The three checkpoint question kinds — copy the exact shape
+
+(Shown as TS for readability; in `content/<slug>.json` they are JSON — double
+quotes, no comments, no trailing commas.)
 
 **MC** — every option (INCLUDING the correct one) needs a written
 explanation, since the grading UI shows an explanation whenever the chosen
@@ -112,7 +128,17 @@ every paired right id must be a real right-side id:
 }
 ```
 
-## 3. Registration in `index.ts` (do this for every new/updated track)
+## 3. Build the wrapper, then register in `index.ts`
+
+After writing/updating `content/<slug>.json`, generate its wrapper module and
+checksum:
+
+```
+pnpm --filter web codex:build      # writes tracks/<slug>.ts + content/.checksums.json
+```
+
+Then register the track in `index.ts` (hand-maintained — the build cross-checks
+that every content file has both entries and fails loudly if one is missing):
 
 ```ts
 // In CODEX_TRACKS — keep branchCount/lessonCount EXACTLY accurate; the
@@ -124,19 +150,24 @@ every paired right id must be a real right-side id:
 'my-new-track': () => import('./tracks/my-new-track'),
 ```
 
-If the new track is one of the six home tracks, also confirm/update
-`HOME_TRACK_BY_LABTYPE`.
+If the new track is a default for a lab type, also update `LABTYPE_FIELDS`.
 
 ## 4. Validate before calling it done
 
 ```
-pnpm --filter web test lib/ops/codex/__tests__/content-shape.test.ts
+pnpm --filter web codex:build -- --check                                  # wrappers + checksums + registry in sync
+pnpm --filter web test lib/ops/codex/__tests__/content-shape.test.ts      # semantic content invariants
+pnpm --filter web test lib/ops/codex/__tests__/generated-content.test.ts  # zod schema + deep-equal + checksum lock
+pnpm --filter web typecheck                                               # compiles the wrapper + registry
 ```
 
-This is the automated backstop for: globally-unique + slug-safe lesson ids,
-checkpoints in the 3-5 question range, complete MC explanation maps,
-ordering/matching answer-key coverage, and `CODEX_TRACKS` count accuracy.
-Fix any failure by editing the content — never by loosening the test.
+Because the content is now JSON, `typecheck` no longer shape-checks the lessons
+themselves (a JSON import widens the `kind` union to `string`) — that guarantee
+moved to the **zod `TrackSchema`** in `__tests__/track-schema.ts` (parsed in
+`generated-content.test.ts`) plus the content-shape invariants: globally-unique +
+slug-safe lesson ids, checkpoints in the 3-5 question range, complete MC
+explanation maps, ordering/matching answer-key coverage, and `CODEX_TRACKS` count
+accuracy. Fix any failure by editing the content — never by loosening a test.
 
 ## Pitfalls learned on Biomechanics (the reference track)
 

@@ -52,7 +52,7 @@ scienium is a **single-service architecture**: all UI, API routes, AI calls, and
 |---|---|---|
 | Framework | **Next.js 14+ (App Router)** | SSR for Showcase SEO, file-based routing, React Native sharing later |
 | Language | **TypeScript** | Type safety |
-| Styling | **Tailwind CSS + shadcn/ui** | Fast iteration, no runtime CSS overhead |
+| Styling | **Tailwind CSS** + custom pixel-styled primitives (`components/ui/`) | Fast iteration, no runtime CSS overhead; no shadcn |
 | State | **Zustand** (client), **TanStack Query** (server state) | Lightweight |
 | Visualization | **Recharts** (charts); the Discovery tree is a **custom SVG** component (`DiscoveryTree.tsx`) | No react-flow dependency — the tree layout is hand-rolled |
 | Markdown | **react-markdown + remark-gfm** | Renders Vega's chat replies (styled via `.chat-md`) |
@@ -168,11 +168,18 @@ scienium/
 │   │   │   ├── layout.tsx
 │   │   │   └── sitemap.ts                # Auto-generated incl. public showcases
 │   │   ├── components/
-│   │   │   ├── ui/                       # shadcn primitives
-│   │   │   ├── lab/                      # Lab canvas, building cards, upgrade modal
-│   │   │   ├── discovery/                # DiscoveryFeature/Home/Tree, DiscoveryTopicList, TopicSearch, WikiReader, YouTubeViewer
-│   │   │   ├── literature/
-│   │   │   │   ├── LiteratureFeature.tsx # 25 slots, upload, PDF viewer, graded quiz, Q&A chat
+│   │   │   ├── ui/                       # Pixel-styled primitives: Card, BusyButton, ConfirmDialog, PixelSpinner/Skeleton/ProgressBar, SectionTabs, skeletons/
+│   │   │   ├── lab/                      # LabScene/LabPlot/Sprite/TileBackground, Shop/Team/Activity/Feedback panels, phase advance, StatusStrip, NotificationBell
+│   │   │   ├── discovery/                # DiscoveryFeature/Home/Tree, DiscoveryTopicList, TopicSearch, WikiReader, YouTubeViewer, SourceReader, PapersSearch, InterestSeeds
+│   │   │   ├── literature/               # Shell + workflow components (split from the old monolith)
+│   │   │   │   ├── LiteratureFeature.tsx # Shell: 25 slots, header, idea box, sub-view routing
+│   │   │   │   ├── PaperSlot.tsx / UploadSourceButton.tsx # One source slot + the upload dropzone
+│   │   │   │   ├── QAPanel.tsx           # Split PDF + quiz/chat view; owns usePaperQuiz + usePaperChat
+│   │   │   │   ├── QuizPanel.tsx / PaperChat.tsx # Presentational quiz+retry / chat-with-Vega bodies
+│   │   │   │   ├── CredibilityBadge.tsx / VettingChecklist.tsx # Source-credibility chrome
+│   │   │   │   ├── usePapers.ts / usePaperQuiz.ts / usePaperChat.ts # Feature-local hooks (fetch/mutate/state)
+│   │   │   │   ├── types.ts              # Paper/ChatMessage/Quiz shapes + TOTAL_SLOTS
+│   │   │   │   ├── CitationsPanel.tsx    # Citation graph panel
 │   │   │   │   └── ResearchGuidePanel.tsx # 70-term glossary + anatomy-of-a-paper (lib/literature/research-guide)
 │   │   │   ├── ops/                       # Operations Hub (daily pillars)
 │   │   │   │   ├── OperationsHubFeature.tsx # Tab shell (Codex default) + Project/Failure Log tabs, shared edit/delete, reference picker
@@ -186,41 +193,29 @@ scienium/
 │   │   │   │   ├── DataQualityGuidePanel.tsx # Renders lib/data-terminal/data-quality-guide (36 concepts)
 │   │   │   │   ├── guide-chrome.tsx       # Shared guide-panel chrome: SectionLabel, CsvTable, filter bar, GuideBox
 │   │   │   │   └── RichEditor.tsx         # TipTap notes editor (Markdown round-trip)
-│   │   │   ├── pvp/
-│   │   │   │   ├── RaidScreen.tsx        # Opponent base (top) + spell bar (bottom), 15s timer
-│   │   │   │   ├── SpellBar.tsx          # Chosen spell(s), cooldown state, click-to-cast
-│   │   │   │   ├── RaidResults.tsx       # % destroyed + trophy delta
-│   │   │   │   ├── TrophyDisplay.tsx     # Current trophy count
-│   │   │   │   └── Leaderboard.tsx       # Class trophy leaderboard
+│   │   │   ├── research-plan/
+│   │   │   │   └── ResearchPlanFeature.tsx # Research plan editor + rubric review flow
 │   │   │   ├── showcase/
 │   │   │   │   ├── ShowcaseEditor.tsx    # Internal editing UI
-│   │   │   │   ├── ShowcaseRenderer.tsx  # Public rendering (used both internally + publicly)
-│   │   │   │   ├── AssetUploader.tsx
-│   │   │   │   ├── PrivacyControls.tsx
-│   │   │   │   └── ConsentBanner.tsx
-│   │   │   ├── fair-hub/
-│   │   │   │   ├── FairCalendar.tsx      # Personalized upcoming fairs
-│   │   │   │   ├── FairCard.tsx          # Single fair display
-│   │   │   │   ├── RubricViewer.tsx      # ISEF rubric display
-│   │   │   │   ├── RubricSelfAssessment.tsx
-│   │   │   │   ├── CategoryBrowser.tsx
-│   │   │   │   ├── FormsChecklist.tsx
-│   │   │   │   └── DeadlineBanner.tsx    # Urgency banner
+│   │   │   │   ├── AbstractGuidePanel.tsx
+│   │   │   │   └── PrintButton.tsx
+│   │   │   ├── fair/
+│   │   │   │   ├── ScienceFairFeature.tsx # Fair hub shell (calendar, deadlines)
+│   │   │   │   ├── CategoryBrowser.tsx   # ISEF categories
+│   │   │   │   ├── RubricSelfCheck.tsx   # Rubric self-assessment
+│   │   │   │   └── FormsChecklist.tsx
 │   │   │   ├── teacher/
-│   │   │   │   ├── ClassRoster.tsx       # Main roster table
-│   │   │   │   ├── AttentionIndicator.tsx
-│   │   │   │   ├── StudentDetailView.tsx
-│   │   │   │   ├── PhaseAdapter.tsx      # Switches view based on student phase
+│   │   │   │   ├── TeacherRoster.tsx     # Main roster table
+│   │   │   │   ├── StudentDetail.tsx     # Per-student drill-down
+│   │   │   │   ├── DecisionControls.tsx
 │   │   │   │   ├── ValidationQueue.tsx
-│   │   │   │   ├── ValidationCard.tsx
-│   │   │   │   ├── FeedbackEditor.tsx
-│   │   │   │   ├── ShowcaseReviewQueue.tsx
-│   │   │   │   └── TeacherRubricRating.tsx
-│   │   │   └── shared/                   # Layout, nav, modals
+│   │   │   │   ├── ShowcaseModerationQueue.tsx
+│   │   │   │   ├── TeacherReports.tsx
+│   │   │   │   └── TeacherRubricScoring.tsx
+│   │   │   └── settings/                 # SettingsPanel, LabProfileSettings
+│   │   │   # PvP raid UI lives in route components under app/(dashboard)/pvp/
+│   │   │   # (team-builder, lobby, battle/[id], leaderboard) — no components/pvp dir
 │   │   ├── lib/
-│   │   │   ├── wikipedia.ts
-│   │   │   ├── db.ts                     # Prisma client singleton
-│   │   │   ├── auth.ts                   # Clerk helpers
 │   │   │   ├── db.ts                     # Prisma client singleton
 │   │   │   ├── data-terminal/            # Static authored reference guides (see §5)
 │   │   │   │   ├── stats-guide.ts        # 65 stat measures (verified-Python code+output)
@@ -231,7 +226,9 @@ scienium/
 │   │   │   ├── phase.ts                  # Phase order, feature gates, getTeamContext()
 │   │   │   ├── rate-limit.ts             # Per-user + per-IP rate limiter (tiers, 429)
 │   │   │   ├── validation.ts             # parseJson() + strict zod schemas
-│   │   │   ├── storage.ts                # R2: putObject, getObjectStream, paperPdfKey
+│   │   │   ├── env.ts                     # Lazy, per-variable zod validation of server env (memoized; never at import)
+│   │   │   ├── anthropic.ts               # Shared, lazily-constructed Anthropic client (validates ANTHROPIC_API_KEY on first use)
+│   │   │   ├── storage.ts                # R2: putObject, getObjectStream, paperPdfKey (client built lazily via env.ts)
 │   │   │   ├── gateways.ts               # 7 gateway building configs + unlock phases
 │   │   │   ├── featureRegistry.tsx        # Maps gateway key → feature component
 │   │   │   ├── shop.ts                   # Economy building catalog (60 buildings, 10 per lab, derived from TIER_LADDER)
@@ -500,10 +497,10 @@ activity_feed         id, team_id, user_id, action_type, payload_json, created_a
 
 ### Field Codex flow (daily pillar)
 1. The Operations Hub gateway (route `/daily/codex`) opens `components/ops/OperationsHubFeature.tsx` defaulting to the **Field Codex** tab (`CodexTab.tsx`) — the daily pillar that replaced Field Dispatch
-2. Content is authored, typed TS under `lib/ops/codex/tracks/<slug>.ts` (one `CodexTrack` per field, 1:1 with the Charts-Guide taxonomy; code-split via `loadTrack`); `lib/ops/codex/engine.ts` is the pure rules engine — sequential unit/lesson gating, checkpoint grading at the 0.8 pass bar, per-first-pass KP with a per-student daily cap — mirrored client-side for UX but authoritative on the server
+2. Content is authored as **data** under `lib/ops/codex/content/<slug>.json` (one `CodexTrack` per field, 1:1 with the Charts-Guide taxonomy); `pnpm --filter web codex:build` (`lib/ops/codex/scripts/build-codex-tracks.mjs`) generates the thin, typed `@generated` wrapper `lib/ops/codex/tracks/<slug>.ts` (the code-split boundary `loadTrack` imports) plus a `.checksums.json` lock — so ~270-lesson fields stay out of TypeScript (each wrapper is ~10 lines, not ~29,000). `lib/ops/codex/engine.ts` is the pure rules engine — sequential unit/lesson gating, checkpoint grading at the 0.8 pass bar, per-first-pass KP with a per-student daily cap — mirrored client-side for UX but authoritative on the server
 3. `GET /api/ops/codex/progress` returns the student's per-lesson progress; `POST /api/ops/codex/complete` grades a checkpoint and mints KP atomically (raw `INSERT … ON CONFLICT … RETURNING` for both the once-ever award high-water and the daily-cap counter — the 25P02 payment-invariant pattern); `POST /api/ops/codex/study-plan` is the feature's ONLY LLM call (2/team/day), persisting to `team_study_plans`
 4. Teacher visibility: the student drill-down's **Field Codex** section (`/api/teacher/student/[id]/overview` codex block — lessons completed, KP, recent lessons with track/lesson labels resolved server-side); Codex KP also feeds the Momentum card's rolling 7-day window (`/api/team/momentum`)
-5. Content is authored segment-by-segment via the `.claude/codex-pipeline/` harness (`/codex-pipeline`), gated by `lib/ops/codex/__tests__/content-shape.test.ts`
+5. Content is authored segment-by-segment via the `.claude/codex-pipeline/` harness (`/codex-pipeline`) as `content/<slug>.json`, then built into wrappers via `codex:build`; gated by `lib/ops/codex/__tests__/content-shape.test.ts` (semantic invariants) plus `generated-content.test.ts` (zod `TrackSchema` + wrapper deep-equals JSON + checksum lock)
 
 ### Operations Hub flow (Project Log / Failure Log) — shared, attributed
 1. The Operations Hub gateway opens `components/ops/OperationsHubFeature.tsx`; the Project Log / Failure Log tabs are backed by `project_logs`
@@ -591,7 +588,7 @@ The Momentum recap card (see its flow above) deliberately does **not** call this
 2. Next.js SSR queries `showcases` with privacy check; serves 404 if not public/link-only
 3. Renders with Open Graph meta tags, structured data, video player
 4. Assets served from R2 + Cloudflare CDN — fast even globally
-5. View counter increments via lightweight beacon to `/api/showcase/[slug]/view`
+5. View counter increments server-side during the public page render (`app/(public)/showcase/[slug]/page.tsx` → `lib/showcase-server.ts`, daily-deduped fingerprint) — no beacon endpoint
 6. **One-pager print export:** `/showcase/[slug]?print=1` renders a print-optimized one-pager (gated by the same `canViewShowcase` privacy check, with `@media print` CSS). A `PrintButton.tsx` opens it; the print path skips the view-count insert so printing doesn't inflate analytics.
 
 ### Rubric self-check flow (Science Fair Hub)

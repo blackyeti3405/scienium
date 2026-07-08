@@ -1,16 +1,21 @@
 /**
  * Field Codex (Feature F13) — track index + lazy loader.
  *
- * Content is authored as typed TS modules under `./tracks/<slug>.ts`, one
- * `CodexTrack` per module. This index is the ONLY eager import: it exports
- * the lightweight `CODEX_TRACKS` summary list (for the "browse full
+ * Content is authored as DATA under `./content/<slug>.json` (one `CodexTrack`
+ * per file); `pnpm --filter web codex:build`
+ * (`./scripts/build-codex-tracks.mjs`) generates the thin, typed wrapper
+ * `./tracks/<slug>.ts` for each — a `@generated` re-export that is the
+ * code-split boundary. This keeps ~270-lesson tracks out of TypeScript (each
+ * wrapper is ~10 lines, not ~29,000). This index is the ONLY eager import: it
+ * exports the lightweight `CODEX_TRACKS` summary list (for the "browse full
  * library" view) plus `loadTrack`, a thin wrapper over a static `import()`
  * map so Next code-splits every track into its own chunk — mirrors
  * `lib/data-terminal/charts-guide.ts`'s `loadChartField` exactly.
  *
  * Do NOT import a `./tracks/*` module eagerly from panel code — always go
  * through `loadTrack` (or the LOADERS map in a test) so a track's full
- * lesson content is only fetched once a student actually opens it.
+ * lesson content is only fetched once a student actually opens it. Do NOT
+ * hand-edit a `./tracks/*.ts` wrapper — edit the JSON and re-run codex:build.
  *
  * Taxonomy note: track slugs are 1:1 with the 29 Data Terminal Charts-Guide
  * fields (`lib/data-terminal/charts-guide.ts` `CHART_FIELDS`), per the
@@ -57,17 +62,22 @@ export interface CodexTrackSummary {
  * units/48 lessons, ultrasound-vibration 8 units/48 lessons — 287 lessons
  * total; see `.claude/pipeline/changes-acoustics-core.md` for Core and
  * `.claude/pipeline/changes-acoustics-subfields.md` for the branch splice);
- * plus `astronomy-astrophysics`'s deep-authored Core (8 units / 48 lessons:
- * the sky and its objects, light as data, telescopes, photometry, diagnostic
- * plots, distance/inference, landmark work and open debates, and
- * applications) — branches not yet built (see
- * `.claude/pipeline/changes-astronomy-core.md`).
+ * plus the now also fully-branched `astronomy-astrophysics` (8-unit /
+ * 48-lesson deep-authored Core — the sky and its objects, light as data,
+ * telescopes, photometry, diagnostic plots, distance/inference, landmark
+ * work and open debates, and applications — plus all 5 canonical
+ * TAXONOMY.md subfield branches: cosmology 7 units/42 lessons, exoplanets 7
+ * units/42 lessons, galactic-extragalactic 8 units/49 lessons,
+ * observational-methods-timedomain 8 units/45 lessons, stellar-astrophysics
+ * 8 units/45 lessons — 271 lessons total; see
+ * `.claude/pipeline/changes-astronomy-core.md` for Core and
+ * `.claude/pipeline/changes-astronomy-subfields.md` for the branch splice).
  * The remaining 27 fields in TAXONOMY.md are authored later via
  * `.claude/codex-pipeline/` the same way — append here + to LOADERS below.
  */
 export const CODEX_TRACKS: CodexTrackSummary[] = [
   { slug: 'acoustics-sound', label: 'Acoustics / Sound', home: false, branchCount: 5, lessonCount: 287 },
-  { slug: 'astronomy-astrophysics', label: 'Astronomy / Astrophysics', home: false, branchCount: 0, lessonCount: 48 },
+  { slug: 'astronomy-astrophysics', label: 'Astronomy / Astrophysics', home: false, branchCount: 5, lessonCount: 271 },
   { slug: 'gait-biomechanics', label: 'Gait Biomechanics', home: false, branchCount: 5, lessonCount: 274 },
 ]
 

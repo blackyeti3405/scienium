@@ -1,9 +1,7 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import sharp from 'sharp'
 import { randomUUID } from 'crypto'
-import { getTeamContext, assertFeatureUnlocked, PhaseGateError } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { putObject, deleteObject } from '@/lib/storage'
 import { db } from '@/lib/db'
 
@@ -34,20 +32,8 @@ function isPdf(buf: Buffer): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = await enforceRateLimit(req, 'upload', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-  try {
-    assertFeatureUnlocked(ctx.phase, 'showcase')
-  } catch (err) {
-    if (err instanceof PhaseGateError) return NextResponse.json({ error: err.message }, { status: 403 })
-    throw err
-  }
+  const { ctx, error } = await requireTeamContext(req, { tier: 'upload', feature: 'showcase' })
+  if (error) return error
 
   const showcase = await db.showcase.findUnique({ where: { teamId: ctx.teamId }, select: { id: true } })
   if (!showcase) {

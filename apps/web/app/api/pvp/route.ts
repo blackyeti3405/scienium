@@ -1,26 +1,9 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { getTeamContext, assertFeatureUnlocked, PhaseGateError } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = await enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-
-  try {
-    assertFeatureUnlocked(ctx.phase, 'pvp')
-  } catch (err) {
-    if (err instanceof PhaseGateError) {
-      return NextResponse.json({ error: err.message }, { status: 403 })
-    }
-    throw err
-  }
+  const { error } = await requireTeamContext(req, { tier: 'mutate', feature: 'pvp' })
+  if (error) return error
 
   // TODO: initiate raid (spec §11) — quota check (pvp_raid_quota) → random
   // matchmaking with refinds → snapshot defender base → create pvp_raids row

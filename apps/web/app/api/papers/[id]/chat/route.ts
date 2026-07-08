@@ -3,11 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import Anthropic from '@anthropic-ai/sdk'
-
-// ANTHROPIC_API_KEY is read server-side only — this module never runs in the
-// browser, so the key is never shipped to the client.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+import { anthropic } from '@/lib/anthropic'
 
 // Bound the conversation we forward to Claude: caps both the number of turns and
 // the size of each message so a crafted request can't run up an unbounded bill.
@@ -88,7 +84,7 @@ export async function POST(
   try {
     // The paper text goes in a cached system block. The first request pays full price;
     // every follow-up question reuses the cache at ~10% the cost (5-minute TTL).
-    const response = await client.messages.create({
+    const response = await anthropic().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: [

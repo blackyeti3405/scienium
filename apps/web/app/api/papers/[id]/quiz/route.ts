@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
-import Anthropic from '@anthropic-ai/sdk'
+import { anthropic } from '@/lib/anthropic'
 import {
   QUIZ_QUESTION_COUNT,
   QUIZ_PASS_THRESHOLD,
@@ -22,8 +22,6 @@ function e2eFixtureQuestions(): QuizQuestion[] {
     key: `E2E fixture grading key ${i + 1}`,
   }))
 }
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 // GET: return the most recent GRADED quiz session for this paper (so past
 // answers + feedback stay accessible). Returns null if none has been graded.
@@ -112,7 +110,7 @@ export async function POST(
   } else {
     const rubric = await loadRubric()
 
-    const response = await client.messages.create({
+    const response = await anthropic().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system: [

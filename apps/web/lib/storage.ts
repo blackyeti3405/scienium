@@ -1,32 +1,34 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { serverEnv } from '@/lib/env'
 
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID!
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID!
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY!
-const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME!
-
-export const r2 = new S3Client({
-  region: 'auto',
-  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  credentials: {
-    accessKeyId: R2_ACCESS_KEY_ID,
-    secretAccessKey: R2_SECRET_ACCESS_KEY,
-  },
-})
+// The R2 client is built lazily on first use (never at import) and memoized, so a
+// missing R2_* var can't fail `next build` or a route that never touches storage.
+// The client isn't exported — callers use the helpers below.
+let cachedR2: S3Client | undefined
+function r2(): S3Client {
+  return (cachedR2 ??= new S3Client({
+    region: 'auto',
+    endpoint: `https://${serverEnv.R2_ACCOUNT_ID()}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: serverEnv.R2_ACCESS_KEY_ID(),
+      secretAccessKey: serverEnv.R2_SECRET_ACCESS_KEY(),
+    },
+  }))
+}
 
 export async function getUploadSignedUrl(key: string, contentType: string): Promise<string> {
   const command = new PutObjectCommand({
-    Bucket: R2_BUCKET_NAME,
+    Bucket: serverEnv.R2_BUCKET_NAME(),
     Key: key,
     ContentType: contentType,
   })
-  return getSignedUrl(r2, command, { expiresIn: 3600 })
+  return getSignedUrl(r2(), command, { expiresIn: 3600 })
 }
 
 export async function getDownloadSignedUrl(key: string): Promise<string> {
-  const command = new GetObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key })
-  return getSignedUrl(r2, command, { expiresIn: 3600 })
+  const command = new GetObjectCommand({ Bucket: serverEnv.R2_BUCKET_NAME(), Key: key })
+  return getSignedUrl(r2(), command, { expiresIn: 3600 })
 }
 
 // ─── Server-side object access ────────────────────────────────────────────────
@@ -41,9 +43,9 @@ export function paperPdfKey(teamId: string, paperId: string): string {
 
 /** Upload bytes to R2 under `key`. */
 export async function putObject(key: string, body: Buffer, contentType: string): Promise<void> {
-  await r2.send(
+  await r2().send(
     new PutObjectCommand({
-      Bucket: R2_BUCKET_NAME,
+      Bucket: serverEnv.R2_BUCKET_NAME(),
       Key: key,
       Body: body,
       ContentType: contentType,
@@ -53,7 +55,7 @@ export async function putObject(key: string, body: Buffer, contentType: string):
 
 /** Delete an object from R2. */
 export async function deleteObject(key: string): Promise<void> {
-  await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }))
+  await r2().send(new DeleteObjectCommand({ Bucket: serverEnv.R2_BUCKET_NAME(), Key: key }))
 }
 
 /** Fetch an object from R2 as a web ReadableStream for streaming to the client. */
@@ -62,7 +64,7 @@ export async function getObjectStream(key: string): Promise<{
   contentLength?: number
   contentType?: string
 }> {
-  const out = await r2.send(new GetObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }))
+  const out = await r2().send(new GetObjectCommand({ Bucket: serverEnv.R2_BUCKET_NAME(), Key: key }))
   if (!out.Body) throw new Error(`R2 object has no body: ${key}`)
   return {
     body: (out.Body as { transformToWebStream: () => ReadableStream }).transformToWebStream(),

@@ -43,6 +43,9 @@ const FAKE_TITLES = [
  * Development-only: fills the authenticated team's literature review with
  * 25 fake ready papers and marks every team member proficient on all of them.
  * Already-existing papers are counted toward the 25 and skipped.
+ *
+ * Deliberately NOT migrated to requireTeamContext: that helper enforces a
+ * rate limit, and this dev/E2E seeding route must stay unlimited.
  */
 export async function POST(req: NextRequest) {
   if (process.env.NODE_ENV === 'production') {

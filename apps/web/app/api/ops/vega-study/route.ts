@@ -4,11 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { buildStudyContext, STUDY_INSTRUCTIONS } from '@/lib/ops/vega-study-context'
-import Anthropic from '@anthropic-ai/sdk'
-
-// ANTHROPIC_API_KEY is read server-side only — this module never runs in the
-// browser, so the key is never shipped to the client.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+import { anthropic } from '@/lib/anthropic'
 
 // Bound the conversation we forward to Claude: caps both the number of turns and
 // the size of each message so a crafted request can't run up an unbounded bill.
@@ -80,7 +76,7 @@ export async function POST(req: NextRequest) {
       // The project-context block is cached: the first turn pays full price,
       // every follow-up in the session reuses the cache at ~10% the cost
       // (5-minute TTL) — same pattern as the paper chat route.
-      const response = await client.messages.create({
+      const response = await anthropic().messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
         system: [

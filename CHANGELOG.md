@@ -5,6 +5,49 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.20.0] — 2026-07-08
+
+A **maintainability and hardening pass** — no gameplay changes; all runtime behavior is
+preserved. It standardizes API auth, decomposes the largest feature component, moves the
+Field Codex's enormous authored tracks to generated data, and centralizes environment-variable
+access behind lazy validation.
+
+### Added
+- **`apps/web/lib/env.ts`** — centralized, **lazy, per-variable** zod validation for server env
+  (R2, Anthropic, Firecrawl, Database, Clerk, view-fingerprint salt). Each variable is validated
+  and memoized on first use, never at import — so `next build` and routes that don't need a given
+  secret never fail because an unrelated var is unset.
+- **`apps/web/lib/anthropic.ts`** — one shared, lazily-constructed Anthropic client.
+- **Field Codex generated-content pipeline** — JSON source (`lib/ops/codex/content/<slug>.json`) +
+  `pnpm --filter web codex:build` (`scripts/build-codex-tracks.mjs`) that emits the typed
+  `tracks/*.ts` wrappers and a checksum lock, plus a new `generated-content.test.ts` (zod
+  `TrackSchema` + wrapper-deep-equals-JSON + checksum) alongside the existing content-shape gate.
+- **`AGENTS.md`** and the `.agents/` / `.codex/` agent-tooling configs.
+
+### Changed
+- All remaining team-scoped **API routes migrated to `requireTeamContext`** — one standardized
+  auth → team-scope → rate-limit → feature-gate path.
+- **`ProjectPhase` / `LabType` / phase order / labels are now canonical in
+  `packages/shared-types`**; `lib/phase.ts` re-exports them (fixes drift with Prisma — adds
+  `lab_selection` and `research_planning`).
+- **Field Codex tracks moved from ~29,000-line authored TS modules to JSON data** generated into
+  ~10-line wrappers — runtime lesson data is unchanged (deep-equal, checksum-locked).
+- **`LiteratureFeature.tsx` (1,383 lines) decomposed** into a shell plus workflow components
+  (`PaperSlot`, `UploadSourceButton`, `QAPanel`, `QuizPanel`, `PaperChat`, `CredibilityBadge`,
+  `VettingChecklist`) and feature-local hooks (`usePapers`, `usePaperQuiz`, `usePaperChat`).
+- **Storage (R2), Firecrawl, and Anthropic clients now construct lazily** via `env.ts` instead of
+  eager `process.env.X!` reads.
+
+### Fixed
+- Stale doc pointers: `AGENTS.md` → `.claude/PARALLELISM.md`; `architecture.md` component tree and
+  flows brought back in line with the tree.
+
+### Removed
+- Eager `process.env.X!` non-null env reads (replaced by lazy validated getters in `env.ts`).
+- Stray `.DS_Store` files.
+
+---
+
 ## [0.19.0] — 2026-07-07
 
 **Field Codex replaces Field Dispatch** as the daily engagement pillar, plus the rest of the

@@ -1,26 +1,12 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { getTeamContext, assertFeatureUnlocked, PhaseGateError } from '@/lib/phase'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireTeamContext } from '@/lib/api/route-context'
 import { deleteObject } from '@/lib/storage'
 import { db } from '@/lib/db'
 
 // Remove one asset from the caller's team showcase (and its R2 object, if any).
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = await enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
-
-  const ctx = await getTeamContext(userId)
-  if (!ctx) return NextResponse.json({ error: 'No team found' }, { status: 404 })
-  try {
-    assertFeatureUnlocked(ctx.phase, 'showcase')
-  } catch (err) {
-    if (err instanceof PhaseGateError) return NextResponse.json({ error: err.message }, { status: 403 })
-    throw err
-  }
+  const { ctx, error } = await requireTeamContext(req, { tier: 'mutate', feature: 'showcase' })
+  if (error) return error
 
   // Scope the lookup to the caller's team so one team can't delete another's asset.
   const asset = await db.showcaseAsset.findFirst({

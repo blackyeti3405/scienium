@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import Anthropic from '@anthropic-ai/sdk'
+import { anthropic } from '@/lib/anthropic'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { logActivity } from '@/lib/activity/log'
@@ -13,7 +13,6 @@ import {
 } from '@/lib/ops/failure-followup'
 
 // Server-side only; the Anthropic key never reaches the browser.
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 const PatchBody = z.object({
   response: z.string().trim().min(1).max(1500),
@@ -83,7 +82,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // delimited inside <entry> tags — never embedded in the system prompt.
     let aiResponse
     try {
-      aiResponse = await client.messages.create({
+      aiResponse = await anthropic().messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 150,
         system: FOLLOWUP_SYSTEM,

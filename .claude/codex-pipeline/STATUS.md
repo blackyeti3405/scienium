@@ -10,7 +10,7 @@
 > Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
 > Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
 
-**Progress: 2 / 29 fields · 13 / 174 segments.**
+**Progress: 3 / 29 fields · 18 / 174 segments.**
 
 ---
 
@@ -24,15 +24,15 @@
 - [x] psychoacoustics-hearing
 - [x] ultrasound-vibration
 
-## astronomy-astrophysics 🔨
+## astronomy-astrophysics ✅
 *Astronomy / Astrophysics*
 
 - [x] Core
-- [ ] cosmology
-- [ ] exoplanets
-- [ ] galactic-extragalactic
-- [ ] observational-methods-timedomain
-- [ ] stellar-astrophysics
+- [x] cosmology
+- [x] exoplanets
+- [x] galactic-extragalactic
+- [x] observational-methods-timedomain
+- [x] stellar-astrophysics
 
 ## chemistry ⬜
 *Chemistry*

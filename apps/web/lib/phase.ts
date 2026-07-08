@@ -8,31 +8,22 @@
  *   discovery → lab_selection → literature_review → research_planning → working → showcase
  */
 
-// ─── Phase type (must match schema.prisma ProjectPhase enum exactly) ──────────
+// ─── Phase + lab types ─────────────────────────────────────────────────────────
+// Canonical definitions live in @scienium/shared-types (kept in lockstep with
+// schema.prisma). Re-exported here so app code keeps importing from '@/lib/phase'.
 
-export const PHASE_ORDER = [
-  'discovery',
-  'lab_selection',
-  'literature_review',
-  'research_planning',
-  'working',
-  'showcase',
-] as const
+import {
+  PHASE_ORDER,
+  LAB_TYPES,
+  type ProjectPhase,
+  type LabType,
+} from '@scienium/shared-types'
 
-export type Phase = (typeof PHASE_ORDER)[number]
+export { PHASE_ORDER, LAB_TYPES }
 
-// ─── Lab type (must match schema.prisma LabType enum exactly) ─────────────────
+export type Phase = ProjectPhase
 
-export const LAB_TYPES = [
-  'biocore',
-  'chemworks',
-  'volt_lab',
-  'terrabase',
-  'mindframe',
-  'axiom',
-] as const
-
-export type LabType = (typeof LAB_TYPES)[number]
+export type { LabType }
 
 export const LAB_TYPE_LABELS: Record<LabType, string> = {
   biocore: 'BioCore',
