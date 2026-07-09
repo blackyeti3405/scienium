@@ -5,6 +5,33 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.21.5] — 2026-07-09
+
+Refactor Phase 6 — chat turns are server-owned.
+
+### Changed
+- Paper chat and Study-with-Vega now own the conversation on the server. A request
+  sends only the new user message (`{ message }`); the server loads the bounded
+  history from the database. A client can no longer inject fabricated assistant
+  turns into the context Claude sees or into the persisted thread.
+
+### Added
+- `PaperChatMessage` and `VegaStudyMessage` gain `status` (`pending`/`complete`/
+  `error`), `requestId`, `error`, and `tokenUsageJson`. The user turn is written
+  `pending` before the paid Claude call and completed — with the assistant reply,
+  atomically — after; a failed call marks the turn `error`. The paid call and the
+  visible history no longer silently diverge, and only `complete` turns feed
+  future context.
+
+### Fixed
+- Chat history endpoints are bounded to the most recent 60 turns instead of an
+  unbounded read.
+- The bounded history window can begin mid-exchange under concurrent posts
+  (especially the team-shared Vega thread); leading assistant turns are trimmed so
+  the conversation handed to Claude always starts with a user turn.
+
+---
+
 ## [0.21.4] — 2026-07-09
 
 Refactor Phase 5 — paper processing is truly retryable.

@@ -1,35 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { anthropic } from '@/lib/anthropic'
 
-// Bound the conversation we forward to Claude: caps both the number of turns and
-// the size of each message so a crafted request can't run up an unbounded bill.
+// The server owns the conversation. A request carries ONE new user turn; the
+// history is loaded from the database, so a client can never inject fabricated
+// assistant turns into the context Claude sees. History (and the LLM context) is
+// bounded to the most recent MAX_MESSAGES turns.
 const MAX_MESSAGES = 60
 const MAX_MESSAGE_CHARS = 8_000
-const ChatBody = z
-  .object({
-    messages: z
-      .array(
-        z.object({
-          role: z.enum(['user', 'assistant']),
-          content: z.string().min(1).max(MAX_MESSAGE_CHARS),
-        }),
-      )
-      .min(1)
-      .max(MAX_MESSAGES),
-  })
-  .strict()
+const ChatBody = z.object({ message: z.string().trim().min(1).max(MAX_MESSAGE_CHARS) }).strict()
 
-type ChatMessage = z.infer<typeof ChatBody>['messages'][number]
-
-// GET: load this user's saved chat history for the paper.
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+// GET: this user's saved chat history for the paper, capped at the last MAX_MESSAGES.
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 
@@ -39,19 +25,18 @@ export async function GET(
   })
   if (!paper) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // Newest MAX_MESSAGES, then reversed to chronological order for the client.
   const rows = await db.paperChatMessage.findMany({
-    where: { paperId: paper.id, userId: ctx.dbUserId },
-    orderBy: { createdAt: 'asc' },
+    where: { paperId: paper.id, userId: ctx.dbUserId, status: 'complete' },
+    orderBy: { createdAt: 'desc' },
+    take: MAX_MESSAGES,
     select: { role: true, content: true },
   })
 
-  return NextResponse.json({ messages: rows })
+  return NextResponse.json({ messages: rows.reverse() })
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   // Strict per-user + per-IP limit: this handler makes a paid Claude call.
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'ai' })
   if (guardError) return guardError
@@ -60,7 +45,6 @@ export async function POST(
     where: { id: params.id, teamId: ctx.teamId },
     select: { id: true, title: true, authors: true, abstract: true, fullText: true, status: true },
   })
-
   if (!paper) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (paper.status !== 'ready') {
     return NextResponse.json({ error: 'Paper is still processing' }, { status: 409 })
@@ -68,22 +52,51 @@ export async function POST(
 
   const { data, error } = await parseJson(req, ChatBody)
   if (error) return error
-  const rawMessages: ChatMessage[] = data.messages
+  const message = data.message
 
-  // Anthropic requires the conversation to start with a user turn. The client's
-  // greeting (and any client-only error notices) are assistant messages, so drop
-  // everything up to the first user message.
-  const firstUser = rawMessages.findIndex((m) => m.role === 'user')
-  const convo = firstUser >= 0 ? rawMessages.slice(firstUser) : []
-  if (!convo.length) {
-    return NextResponse.json({ error: 'No user message to respond to' }, { status: 400 })
-  }
+  // Server-owned history: only completed turns, bounded. The rows begin with a
+  // user turn (we only ever persist user→assistant pairs), so the conversation we
+  // hand Claude satisfies the "must start with a user message" requirement.
+  const prior = await db.paperChatMessage.findMany({
+    where: { paperId: paper.id, userId: ctx.dbUserId, status: 'complete' },
+    orderBy: { createdAt: 'desc' },
+    take: MAX_MESSAGES,
+    select: { role: true, content: true },
+  })
+  // The bounded window can begin mid-exchange (on an assistant turn) when writes
+  // interleave — user rows are written before the paid call, assistant rows after.
+  // Anthropic requires the first message to be a user turn, so trim any leading
+  // assistant rows before prepending the history to the new user message.
+  const priorAsc = prior.reverse()
+  let head = 0
+  while (head < priorAsc.length && priorAsc[head].role !== 'user') head++
+  const convo = [
+    ...priorAsc.slice(head).map((m) => ({ role: m.role, content: m.content })),
+    { role: 'user' as const, content: message },
+  ]
+
+  // Persist the user turn as `pending` BEFORE the paid call, so a failed call
+  // leaves a durable record rather than silently dropping the turn.
+  const requestId = randomUUID()
+  const userRow = await db.paperChatMessage.create({
+    data: {
+      paperId: paper.id,
+      userId: ctx.dbUserId,
+      role: 'user',
+      content: message,
+      status: 'pending',
+      requestId,
+    },
+    select: { id: true },
+  })
 
   const authorLine = (paper.authors as string[]).join(', ') || 'Unknown authors'
 
+  let reply: string
+  let usageJson: { inputTokens: number; outputTokens: number } | undefined
   try {
-    // The paper text goes in a cached system block. The first request pays full price;
-    // every follow-up question reuses the cache at ~10% the cost (5-minute TTL).
+    // The paper text goes in a cached system block. The first request pays full
+    // price; every follow-up reuses the cache at ~10% the cost (5-minute TTL).
     const response = await anthropic().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
@@ -95,33 +108,44 @@ export async function POST(
           cache_control: { type: 'ephemeral' },
         },
       ],
-      messages: convo.map((m) => ({ role: m.role, content: m.content })),
+      messages: convo,
     })
-
-    const reply = response.content[0].type === 'text' ? response.content[0].text : ''
-
-    // Persist the latest user turn + the assistant reply so the conversation
-    // survives closing and reopening — best-effort so a DB hiccup never drops the
-    // reply the user just paid for.
-    try {
-      const lastUser = [...convo].reverse().find((m) => m.role === 'user')
-      await db.paperChatMessage.createMany({
-        data: [
-          ...(lastUser ? [{ paperId: paper.id, userId: ctx.dbUserId, role: 'user' as const, content: lastUser.content }] : []),
-          { paperId: paper.id, userId: ctx.dbUserId, role: 'assistant' as const, content: reply },
-        ],
-      })
-    } catch (persistErr) {
-      console.error('[chat] persist failed (reply still returned):', persistErr)
+    reply = response.content[0].type === 'text' ? response.content[0].text : ''
+    usageJson = {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
     }
-
-    return NextResponse.json({ reply })
   } catch (err) {
-    // Log the real error server-side; return a generic message so internal
-    // details (stack/SDK internals) never reach the client (OWASP API8/A09).
+    // Log the real error server-side; return a generic message so internal details
+    // never reach the client (OWASP API8/A09). Mark the user turn `error` so the
+    // paid-call outcome and the visible history don't silently diverge.
     console.error('[chat] error:', err)
+    await db.paperChatMessage
+      .update({ where: { id: userRow.id }, data: { status: 'error', error: 'Chat failed' } })
+      .catch(() => {})
     return NextResponse.json({ error: 'Chat failed' }, { status: 500 })
   }
+
+  // Complete the user turn and persist the assistant reply atomically.
+  await db.$transaction([
+    db.paperChatMessage.update({
+      where: { id: userRow.id },
+      data: { status: 'complete', tokenUsageJson: usageJson },
+    }),
+    db.paperChatMessage.create({
+      data: {
+        paperId: paper.id,
+        userId: ctx.dbUserId,
+        role: 'assistant',
+        content: reply,
+        status: 'complete',
+        requestId,
+        tokenUsageJson: usageJson,
+      },
+    }),
+  ])
+
+  return NextResponse.json({ reply })
 }
 
 function buildInstructions(title: string, authors: string, abstract: string): string {

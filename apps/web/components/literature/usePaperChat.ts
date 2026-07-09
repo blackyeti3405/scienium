@@ -53,7 +53,8 @@ export function usePaperChat(paper: Paper) {
       const res = await fetch(`/api/papers/${paper.id}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...messages, userMsg] }),
+        // Send only the new user turn — the server owns the history.
+        body: JSON.stringify({ message: text }),
       })
       const data = await res.json()
       setMessages((prev) => [...prev, { role: 'assistant', content: (data.reply ?? '').trim() }])

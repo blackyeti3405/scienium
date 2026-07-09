@@ -509,11 +509,26 @@ model PaperChatMessage {
   userId    String   @map("user_id")
   role      MessageRole
   content   String
+  // Server-owned turn lifecycle: `pending` is written before the paid LLM call,
+  // `complete` after a successful reply, `error` if the call failed — so the paid
+  // call and the visible/history state never silently diverge.
+  status         ChatMessageStatus @default(complete)
+  requestId      String?           @map("request_id")
+  error          String?
+  tokenUsageJson Json?             @map("token_usage_json")
   createdAt DateTime @default(now()) @map("created_at")
   paper     Paper    @relation(fields: [paperId], references: [id])
 
-  @@index([paperId, userId])
+  @@index([paperId, userId, createdAt])
   @@map("paper_chat_messages")
+}
+
+enum ChatMessageStatus {
+  pending
+  complete
+  error
+
+  @@map("chat_message_status")
 }
 
 enum MessageRole {
@@ -1441,6 +1456,11 @@ model VegaStudyMessage {
   userId    String   @map("user_id")
   role      MessageRole
   content   String
+  // See PaperChatMessage: server-owned turn lifecycle (pending → complete/error).
+  status         ChatMessageStatus @default(complete)
+  requestId      String?           @map("request_id")
+  error          String?
+  tokenUsageJson Json?             @map("token_usage_json")
   createdAt DateTime @default(now()) @map("created_at")
 
   team Team @relation(fields: [teamId], references: [id])
