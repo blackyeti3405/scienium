@@ -5,6 +5,27 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.21.9] — 2026-07-09
+
+Refactor Phase 10 — plot economy rules live in a domain module, not the routes.
+
+### Changed
+- The place / move / sell / upgrade buildings routes are now thin wrappers: parse,
+  resolve context, call a `lib/buildings/service` function, map its result to a
+  response. All the business logic — the shared `team-plot:<teamId>` advisory lock,
+  the in-lock occupancy re-checks, the race-safe currency debits, and the
+  activity-log calls — moved into one module instead of being duplicated across four
+  handlers, so cross-team scoping and the economy rules can be audited (and tested)
+  in one place. The refactor is behavior-preserving: every status code, response
+  shape, and error message is unchanged (verified by a route-vs-service diff).
+
+### Added
+- Unit tests for the extracted plot-economy service, exercising the pre-database
+  validation branches without a Next request — the rules are now callable and
+  assertable without spinning up a route or React.
+
+---
+
 ## [0.21.8] — 2026-07-09
 
 Refactor Phase 9 — the notification cron scales with the roster.
