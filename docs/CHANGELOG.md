@@ -5,9 +5,27 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
-## [0.21.9] — 2026-07-09
+## [0.21.10] — 2026-07-09
 
-Refactor Phase 10 — plot economy rules live in a domain module, not the routes.
+Refactor Phase 11 — documentation matches the shipped architecture.
+
+### Changed
+- `docs/ARCHITECTURE.md` now describes the invariants the refactor actually landed:
+  the membership-verified active-team resolver and DB-authoritative teacher role,
+  self-paced phase progression (no teacher gate), the uniform per-team plot lock and
+  the `lib/buildings/service` domain module, the uploaded-asset lifecycle, retryable
+  paper processing with metadata-only list reads, server-owned chat, and the bounded
+  notification cron — plus the Phase 3–8 migrations and the new `UploadedAsset` model.
+- The ADRs (`adr-001` ownership, `adr-002` paper processing, `adr-003` feature
+  boundaries) capture the final invariants rather than the transitional plan.
+
+### Fixed
+- Stale documentation drift: `.claude/PARALLELISM.md` claimed the E2E suite runs
+  `fullyParallel` with 4 workers when it is serial by default (`workers=1`);
+  `docs/TODO.md` referenced the moved `lib/fairs/dataset.ts` (now
+  `content/fairs/dataset.ts`) and described showcase teacher moderation as unbuilt
+  when it ships end-to-end (publish→`pending_review`, teacher queue + approve/reject
+  API, gallery gated on `approved`).
 
 ### Changed
 - The place / move / sell / upgrade buildings routes are now thin wrappers: parse,
