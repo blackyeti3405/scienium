@@ -5,15 +5,18 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
-## [0.21.0] — 2026-07-08
+## [0.21.0] — 2026-07-09
 
-An architecture-integrity pass focused on explicit ownership, durable background
-work, race-safe rewards, smaller feature boundaries, and immediate lab-building
-interactions.
+An architecture-integrity pass focused on authoritative ownership, durable
+background work, race-safe rewards, smaller feature boundaries, immediate
+lab-building interactions, and fully self-paced phase progression.
 
 ### Added
 - Explicit `User.activeTeamId` and `Team.classId` ownership, with an additive
-  backfill migration and centralized active-team resolution.
+  backfill migration and a membership-verified active-team resolver — a stale or
+  forged `activeTeamId` can never surface a team the user does not belong to.
+- Ownership access-path indexes (`users.class_id`, `classes.teacher_id`,
+  `team_members.team_id`, `team_invites(team_id, expires_at)`).
 - Durable `PaperProcessingJob` records, an atomic paper processor, and a
   five-minute recovery cron for pending, failed, or stale PDF work.
 - PostgreSQL advisory-lock helpers for team membership, plot occupancy, quiz
@@ -30,8 +33,13 @@ interactions.
   network latency from the visible interaction while preserving rollback.
 - Codex progress and daily rewards are scoped by user and team; first-completion
   and daily-cap writes are serialized.
-- Teacher authorization uses `Team.classId` as its primary boundary, with only a
-  temporary lead-class fallback for legacy rows.
+- Teacher authorization is fully `Team.classId`-scoped — the transitional
+  lead-class fallback was removed after a backfill — and the DB `User.role` is
+  authoritative, so a stale Clerk claim can no longer keep a downgraded teacher in.
+- Phase advancement is fully self-paced: `research_planning → working` and
+  `working → showcase` are free student-clicked advances (the literature-review
+  gate — 25 sources + per-member proficiency, then Haiku lab-type classification —
+  is unchanged).
 - Large authored Data Terminal guides and the fair dataset moved from `lib/` to
   `content/`; teacher paper Q&A moved into a feature-owned subfolder.
 - Former placeholder deep links now open the real Operations Hub, Literature,
@@ -61,8 +69,15 @@ interactions.
   a hard-coded Docker database, and resolves the fixture team by name rather
   than assuming a stale ID. Its KP baseline now covers the member-scaled purchase
   and upgrade sequence.
+- `E2E_SKIP_LLM` no longer leaks into a normal `pnpm dev` server — it moved from
+  `.env.local` to the Playwright config — so local quiz, grading, Vega, and Codex
+  study-plan features generate real content instead of deterministic test stubs.
 
 ### Removed
+- The teacher **phase-validation pipeline**: the `PhaseAdvanceRequest` model and
+  `validation_status` enum, the `/teacher/validations` queue (page, API, and
+  `ValidationQueue` component), and the student "request validation" affordance.
+  Phase advancement is self-paced instead.
 - Unused TanStack Query and React Hook Form dependencies.
 - Stale environment variables and documentation for the deleted Python AI
   service.

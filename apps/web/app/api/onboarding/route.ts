@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
+import { pickActiveTeam } from '@/lib/team/context'
 import { isValidZip, zipToState, geocodeZip } from '@/lib/fairs/zip'
 import { applySchoolAndClass, syncClerkDisplayName } from '@/lib/onboarding/profile'
 
@@ -44,16 +45,16 @@ export async function POST(req: NextRequest) {
 
   if (!email) return NextResponse.json({ error: 'No email on Clerk account' }, { status: 400 })
 
-  // Idempotent — if user already exists just return their team
+  // Idempotent — if user already exists just return their team (resolved through
+  // membership, so a stale activeTeamId never points outside their own labs).
   const existing = await db.user.findUnique({
     where: { clerkUserId: userId },
     include: {
-      activeTeam: true,
-      teamMemberships: { orderBy: { joinedAt: 'desc' }, include: { team: true }, take: 1 },
+      teamMemberships: { orderBy: { joinedAt: 'desc' }, include: { team: true } },
     },
   })
 
-  const existingTeam = existing?.activeTeam ?? existing?.teamMemberships[0]?.team
+  const existingTeam = existing ? pickActiveTeam(existing.activeTeamId, existing.teamMemberships) : null
   if (existingTeam) {
     return NextResponse.json({ teamId: existingTeam.id })
   }

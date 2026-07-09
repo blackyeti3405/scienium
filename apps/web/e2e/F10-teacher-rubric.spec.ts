@@ -6,6 +6,7 @@ import {
   type Page,
 } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api } from './api'
 
 /**
  * F10 (this batch) — Teacher-side rubric scoring + comparison + anchor content.
@@ -63,7 +64,7 @@ async function resetTeacherScore(browser: Browser, teamIdToReset: string) {
   const page = await browser.newPage({ baseURL: BASE_URL, storageState: STORAGE.teacher })
   try {
     await refreshTeacherSession(page)
-    const res = await page.request.put('/api/teacher/rubric', {
+    const res = await api.put(page, '/api/teacher/rubric', {
       data: { teamId: teamIdToReset, track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 0 },
     })
     if (res.status() !== 200) {
@@ -93,7 +94,7 @@ async function seedStudentScore(browser: Browser, score: number) {
   try {
     await page.goto('/fair-hub/rubric')
     await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 20_000 })
-    const res = await page.request.put('/api/rubric/self-assessment', {
+    const res = await api.put(page, '/api/rubric/self-assessment', {
       data: { track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score },
     })
     if (res.status() !== 200) {
@@ -121,7 +122,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     })
     try {
       await refreshTeacherSession(teacherPage)
-      const rosterRes = await teacherPage.request.get('/api/teacher/roster')
+      const rosterRes = await api.get(teacherPage, '/api/teacher/roster')
       if (!rosterRes.ok()) {
         throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
       }
@@ -381,7 +382,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
 
     await refreshTeacherSession(page)
 
-    const res = await page.request.get(
+    const res = await api.get(page, 
       `/api/teacher/rubric?teamId=${encodeURIComponent(teamId)}&track=science`,
     )
     expect(res.status()).toBe(200)
@@ -398,7 +399,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
 
     // A well-formed cuid-shaped id that is not owned by this teacher's classes.
     const foreignTeamId = 'clfakerandomteamidnotowned01'
-    const res = await page.request.get(
+    const res = await api.get(page, 
       `/api/teacher/rubric?teamId=${encodeURIComponent(foreignTeamId)}&track=science`,
     )
     expect(res.status()).toBe(403)
@@ -416,7 +417,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await refreshTeacherSession(page)
 
     const foreignTeamId = 'clfakerandomteamidnotowned02'
-    const putRes = await page.request.put('/api/teacher/rubric', {
+    const putRes = await api.put(page, '/api/teacher/rubric', {
       data: { teamId: foreignTeamId, track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 5 },
     })
     expect(putRes.status()).toBe(403)
@@ -424,7 +425,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     // Confirm no row was created: a GET as the teacher for that same foreign
     // team (still 403, since ownership never changed) proves no side effect
     // leaked a scored row back through the read path either.
-    const getRes = await page.request.get(
+    const getRes = await api.get(page, 
       `/api/teacher/rubric?teamId=${encodeURIComponent(foreignTeamId)}&track=science`,
     )
     expect(getRes.status()).toBe(403)
@@ -459,12 +460,12 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
 
     await refreshTeacherSession(page)
 
-    const putRes = await page.request.put('/api/teacher/rubric', {
+    const putRes = await api.put(page, '/api/teacher/rubric', {
       data: { teamId, track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 5 },
     })
     expect(putRes.status()).toBe(200)
 
-    const getRes = await page.request.get(
+    const getRes = await api.get(page, 
       `/api/teacher/rubric?teamId=${encodeURIComponent(teamId)}&track=science`,
     )
     expect(getRes.status()).toBe(200)

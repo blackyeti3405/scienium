@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api } from './api'
 
 /**
  * F8 — Teacher class-wide analytics / Reports tab.
@@ -71,7 +72,7 @@ test.describe('F8 — Teacher Reports', () => {
       timeout: 3000,
     })
 
-    const res = await page.request.get('/api/teacher/reports')
+    const res = await api.get(page, '/api/teacher/reports')
     expect(res.status()).toBe(200)
     const body = await res.json()
     expect(body).toHaveProperty('hasClasses')
@@ -112,7 +113,7 @@ test.describe('F8 — Teacher Reports', () => {
       await page.goto('/lab')
       await expect(page).toHaveURL(/\/lab/)
 
-      const res = await page.request.get('/api/teacher/reports')
+      const res = await api.get(page, '/api/teacher/reports')
       expect(res.status()).toBe(403)
       const body = await res.json()
       expect(body).toEqual({ error: 'Teacher access required' })
@@ -184,11 +185,11 @@ test.describe('F8 — Teacher Reports', () => {
       timeout: 3000,
     })
 
-    const reportsRes = await page.request.get('/api/teacher/reports')
+    const reportsRes = await api.get(page, '/api/teacher/reports')
     expect(reportsRes.status()).toBe(200)
     const reportsBody = await reportsRes.json()
 
-    const rosterRes = await page.request.get('/api/teacher/roster')
+    const rosterRes = await api.get(page, '/api/teacher/roster')
     expect(rosterRes.status()).toBe(200)
     const rosterBody = await rosterRes.json()
 

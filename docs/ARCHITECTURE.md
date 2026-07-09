@@ -172,7 +172,7 @@ The component folders are feature-owned:
   `AbstractGuidePanel`.
 - `components/teacher/`: `TeacherRoster`, `StudentDetail`,
   `student-detail/PaperQAPanel`, `TeacherReports`, `TeacherRubricScoring`,
-  `ValidationQueue`, `ShowcaseModerationQueue`, and `DecisionControls`.
+  `ShowcaseModerationQueue`, and `DecisionControls`.
 - `components/ui/`: `BusyButton`, `Card`, `ConfirmDialog`, `LabeledLoader`,
   `PixelProgressBar`, `PixelSkeleton`, `PixelSpinner`, `SectionTabs`, and
   feature/route skeletons.
@@ -212,7 +212,7 @@ Authenticated student pages:
 | `/pvp/*` | Incomplete PvP placeholders; raid API remains unimplemented |
 
 `app/(teacher)/layout.tsx` enforces teacher/admin access. Teacher pages are the
-roster, reports, validations, showcase moderation, and student detail views.
+roster, reports, showcase moderation, and student detail views.
 
 `app/(public)/showcase/` contains the public gallery and privacy-checked showcase
 page. Public asset bytes are served by `/api/showcase/public/asset`.
@@ -240,7 +240,7 @@ Every authored App Router file belongs to one of these surfaces:
   expertise, failure, and log; literature library/review; research plan; fair
   calendar/rubric; showcase edit; and PvP lobby, team builder, leaderboard, and
   battle detail pages.
-- Teacher: `(teacher)/layout.tsx`; roster home; reports; validations; showcase
+- Teacher: `(teacher)/layout.tsx`; roster home; reports; showcase
   moderation; and student detail.
 - Public: `(public)/layout.tsx`; showcase gallery and showcase-by-slug.
 
@@ -256,17 +256,27 @@ route handlers.
 
 1. Resolve the Clerk identity.
 2. Apply the selected rate-limit tier.
-3. Resolve the database user and explicit `activeTeam`.
-4. Temporarily fall back to the most recently joined membership for
-   pre-migration data.
+3. Resolve the database user and explicit `activeTeam` through the
+   `User.activeTeamId` relation.
+4. Fall back to the most recently joined membership when `activeTeamId` is
+   unset.
 5. Optionally enforce a phase feature gate.
 
-It returns Clerk user ID, database user ID, team ID, phase, and lab type.
+It returns Clerk user ID, database user ID, team ID, phase, and lab type. The
+team is resolved through membership by `pickActiveTeam` (`lib/team/active-team.ts`):
+a stored `User.activeTeamId` is honored only when a `TeamMember` row still backs
+it, so a stale or forged `activeTeamId` can never surface another team's data.
+`getTeamContext` (dashboard layout) and the server-rendered lab page use the same
+helper. (Phase 1 of the refactor plan.)
 
 `lib/teacher/auth.ts` is the teacher guard. It validates teacher/admin role,
 loads classes owned by the teacher, and scopes team access through
-`Team.classId`. A lead-class fallback exists only for legacy rows whose
-`Team.classId` has not been backfilled.
+`Team.classId`. The DB `User.role` is authoritative whenever a row exists
+(`resolveAuthoritativeRole`, `lib/teacher/role.ts`), so a stale Clerk claim can
+never override a DB downgrade; the claim only bootstraps an account with no row.
+`teacherOwnsTeam` scopes purely by `Team.classId` — the old `teamLead.classId`
+fallback was removed after migration `20260709000000_phase1_ownership_indexes`
+backfilled every team's class from its lead.
 
 `lib/cron/auth.ts` validates `Authorization: Bearer <CRON_SECRET>`.
 
@@ -313,7 +323,7 @@ PostgreSQL; Redis is not currently a general application state store.
 - `api/rubric/self-assessment`: team rubric read/write.
 - `api/settings`: team/profile settings.
 - `api/showcase/`: showcase CRUD, asset upload/link/delete, public streaming.
-- `api/teacher/`: class, roster, reports, feedback, nudge, rubric, validation,
+- `api/teacher/`: class, roster, reports, feedback, nudge, rubric,
   moderation, student overview, and teacher paper/Q&A access.
 - `api/team/`: active team, activity, feedback, invite/join, location, momentum,
   and phase advancement.
@@ -427,9 +437,18 @@ upgrades use optimistic rendering:
 5. Roll back immediately and refresh `/api/buildings` if the mutation fails or
    its response is lost.
 
-Server mutations remain race-safe. `lib/db-lock.ts` uses transaction-scoped
-PostgreSQL advisory locks for team plot and membership aggregates. Currency
-debits and building writes occur in transactions with conditional updates.
+Server mutation race-safety is inconsistent across the four plot routes.
+`lib/db-lock.ts` provides transaction-scoped PostgreSQL advisory locks for team
+plot and membership aggregates, and `api/buildings/place/route.ts` uses both a
+transaction and the lock. `api/buildings/sell/route.ts` and
+`api/buildings/upgrade/route.ts` use a transaction but do not take the
+advisory lock. `api/buildings/move/route.ts` uses neither — it checks
+occupancy and then writes with two unguarded calls, so two concurrent moves
+can both pass the check and collide on the same cell. Placement is also still
+split across `TeamShopBuilding.posX/posY` and `TeamGatewayPlacement.posX/posY`
+with no unifying table. See Phase 2 of
+[`repo-refactor-implementation-plan.md`](architecture/repo-refactor-implementation-plan.md)
+for the fix, prioritized on `move` first.
 
 `lib/shop.ts` is the catalog and tier ladder. `lib/economy.ts` contains pure
 cost, reward, retry-score, refund, and purchase policy. `lib/shop-server.ts` and
@@ -467,6 +486,13 @@ PDF upload workflow:
    through Anthropic, and marks the paper ready or failed.
 8. Status polling may process a claim; `/api/cron/papers` recovers jobs that
    outlive the original request.
+
+`process-paper.ts` currently marks `Paper.status = error` on any processing
+failure, even a transient one, without checking remaining attempts first —
+so a single retryable failure can present as a terminal error to the user.
+`PaperProcessingJob` has no `nextRunAt`/`terminalAt` fields to schedule
+backoff or distinguish retryable from terminal state; see Phase 5 of
+[`repo-refactor-implementation-plan.md`](architecture/repo-refactor-implementation-plan.md).
 
 The Literature client is decomposed into feature components and hooks. Paper
 list/get/delete responses are decoded by `components/literature/api.ts`.
@@ -540,7 +566,6 @@ The dashboard provides:
 - roster and attention flags;
 - full student/team drill-down;
 - read-only paper, quiz, and chat inspection;
-- phase-advance validation;
 - feedback and nudges;
 - separate teacher rubric scoring;
 - showcase moderation;
@@ -573,7 +598,7 @@ lab opens a `StubFeature`.
 | Literature | `Paper`, `PaperProcessingJob`, `PaperProficiency`, `PaperChatMessage`, `PaperQuizSession`, `PaperQuizAttempt`, `PaperRelevanceNote`, `Citation`, paper/job/message enums |
 | Research plan | `ResearchPlan`, `IdeaCheck` |
 | Expertise/logs | `ExpertiseExam`, `ExpertiseAttempt`, `ProjectLog`, `ProjectLogFollowup`, `ProjectLogReference`, `ProjectLogEntry` |
-| Teacher workflow | `PhaseAdvanceRequest`, `TeacherFeedback`, `ValidationStatus`, `FeedbackTarget` |
+| Teacher workflow | `TeacherFeedback`, `FeedbackTarget` |
 | Notifications | `Notification`, `NotificationPref`, `NotificationKind` |
 | Experiments | `Experiment`, `Measurement` |
 | Showcase | `Showcase`, `ShowcaseAsset`, `ShowcaseView`, privacy/moderation/asset enums |
@@ -603,11 +628,21 @@ The migration chain is append-only:
   `20260708002914_drop_field_dispatch`: introduced, then removed, Field Dispatch.
 - `20260707033902_codex_curriculum`: Codex curriculum persistence.
 - `20260707090651_vega_study_messages`: Vega history.
-- `20260708180000_team_ownership_integrity`: explicit team class/active-team
-  ownership and integrity.
-- `20260708181000_paper_processing_jobs`: durable PDF-processing queue.
+- `20260708180000_team_ownership_integrity`: adds `Team.classId` and backfills
+  it. Membership is proven in the resolver rather than by a DB constraint (see
+  section 5.1).
+- `20260708181000_paper_processing_jobs`: claim-based PDF-processing queue
+  (`status`, `attempts`, `claimedAt`). It does not yet add retry-backoff
+  fields (`nextRunAt`/`terminalAt`); see the note in section 8.2.
 - `20260708182000_codex_team_scoping`: team-scoped Codex keys and rewards.
 - `20260708183000_closed_vocabulary_enums`: database enums for bounded values.
+- `20260709000000_phase1_ownership_indexes`: ownership access-path indexes
+  (`users.class_id`, `classes.teacher_id`, `team_members.team_id`,
+  `team_invites(team_id, expires_at)`) and a top-up backfill of `teams.class_id`
+  from each team's lead.
+- `20260709120000_drop_phase_advance_requests`: drops the teacher
+  phase-validation pipeline (`phase_advance_requests` table + `validation_status`
+  enum); phase advancement is now fully self-paced.
 
 ## 10. Persistence and Consistency
 
@@ -619,8 +654,14 @@ The migration chain is append-only:
 - Unique constraints implement idempotency for rewards, visits, fair events,
   forms, and one-to-one rows.
 - Interactive transactions and conditional updates protect currency and level
-  changes.
-- Advisory locks serialize aggregates that span multiple tables.
+  changes in most routes, but not yet uniformly: `api/expertise/grade/route.ts`
+  computes the clearance raise and KP bonus from a pre-transaction read
+  (check-then-act) and returns them without confirming the conditional update
+  actually won, so a concurrent grade can report a raise that did not commit.
+  See Phase 3 of
+  [`repo-refactor-implementation-plan.md`](architecture/repo-refactor-implementation-plan.md).
+- Advisory locks serialize aggregates that span multiple tables, though not
+  every plot mutation takes one yet — see section 7.
 - AI outputs stored as JSON are validated before business use where schemas exist.
 
 ## 11. External Integrations and Environment

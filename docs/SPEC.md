@@ -8,7 +8,7 @@
 
 ## 1. Concept Overview
 
-scienium is a hybrid physical-digital STEM engagement game designed to motivate students through the science fair process. Students build and expand a personalized virtual research laboratory, earning upgrades through daily learning activities, demonstrated knowledge, and real science fair project progress. Teacher-validated real-world milestones unlock new phases and capabilities inside the app. Students can work solo or in shared-laboratory teams. Completed projects can be published as public Showcases visible beyond the app.
+scienium is a hybrid physical-digital STEM engagement game designed to motivate students through the science fair process. Students build and expand a personalized virtual research laboratory, earning upgrades through daily learning activities, demonstrated knowledge, and real science fair project progress. Students advance through the phases at their own pace as they meet each phase's requirements, unlocking new capabilities inside the app. Students can work solo or in shared-laboratory teams. Completed projects can be published as public Showcases visible beyond the app.
 
 **The lab is the interface.** scienium presents as a single pixel-art lab scene rather than a conventional tab-based web app. Navigation is spatial: each core feature lives behind a **building** on the student's plot, and the student enters a feature by clicking its building, which opens that feature's panel over the scene. New buildings appear on the plot as the student advances through phases, so the lab visibly grows alongside real project progress and the set of reachable features expands in lockstep. There are two distinct classes of building — **gateway buildings** (the navigation spine) and **economy buildings** (the game layer) — defined in Section 9.
 
@@ -36,9 +36,13 @@ scienium uses an explicit **phase** model stored on each team. Phases are sequen
 | 1 | **Discovery** | `discovery` | Commit to a research topic |
 | 2 | **Lab Selection** | `lab_selection` | *(Auto-assigned — see below; no manual step.)* |
 | 3 | **Literature Review** | `literature_review` | Complete 25-paper review gate, then submit a one-sentence research idea |
-| 4 | **Research Planning** | `research_planning` | Finalize hypothesis, methodology, and study design |
-| 5 | **Working** | `working` | Teacher validates data collection start |
-| 6 | **Showcase** | `showcase` | Teacher validates competition advancement |
+| 4 | **Research Planning** | `research_planning` | Finalize hypothesis, methodology, and study design; advance when ready |
+| 5 | **Working** | `working` | Self-paced — advance when ready to start data collection |
+| 6 | **Showcase** | `showcase` | Self-paced — advance when ready for competition |
+
+Phase advancement is **self-paced**: `literature_review → research_planning` is
+gated on the 25-source proficiency check (below), and the later transitions are
+free student-clicked advances. There is no teacher phase-validation step.
 
 **Lab type is auto-assigned (implemented).** Rather than a manual selection screen, the lab type is derived from the student's project itself. At the end of Literature Review — once the 25-source gate is met — the team submits a **one-sentence research idea**, which Claude Haiku classifies into one of the 6 lab types. The team then advances **directly from `literature_review` → `research_planning`**, skipping the standalone `lab_selection` phase (the phase key is retained in the lifecycle for ordering/back-compat but is no longer a stop). The assigned type and Haiku's rationale are shown immediately, and the idea is stored on `teams.research_idea`.
 
@@ -666,7 +670,7 @@ The editor's abstract field carries an **Abstract Structure guide** *(implemente
 
 ### 12.4 Unlock & Publishing
 
-- Showcase Wing feature unlocks when the team reaches the `showcase` phase (teacher-validated advancement to school/regional competition)
+- Showcase Wing feature unlocks when the team reaches the `showcase` phase (self-paced advancement to school/regional competition)
 - Available even if the student doesn't advance further — reaching this phase acknowledges the level most projects reach
 - For minors, **public publishing requires verified parental consent** (separate from initial app consent)
 - For school-only publishing, **teacher approval is required**

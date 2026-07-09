@@ -55,7 +55,7 @@ interface RosterStudent {
   name: string
   teamId: string | null
   teamName: string | null
-  flags: { pendingValidation: string | null; status: 'on_track' | 'unlogged' | 'stale' | null }
+  flags: { status: 'on_track' | 'unlogged' | 'stale' | null }
 }
 
 function resolveTeamId(students: RosterStudent[]): string | null {
@@ -382,7 +382,7 @@ test.describe('F9 — Teacher nudge from the roster', () => {
           students.find((s) => (s.flags.status === 'unlogged' || s.flags.status === 'stale') && s.teamId) ?? null
         healthyRow =
           students.find(
-            (s) => s.flags.status !== 'unlogged' && s.flags.status !== 'stale' && !s.flags.pendingValidation,
+            (s) => s.flags.status !== 'unlogged' && s.flags.status !== 'stale',
           ) ?? null
 
         // eslint-disable-next-line no-console

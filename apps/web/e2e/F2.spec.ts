@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api } from './api'
 
 /**
  * F2 — Failure Log AI "dig deeper" Socratic follow-up.
@@ -250,7 +251,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
     page,
   }) => {
     await page.goto('/lab')
-    const res = await page.request.post('/api/failure-log/clxxxxxxxxxxxxxxxxxxxxxxx/followup')
+    const res = await api.post(page, '/api/failure-log/clxxxxxxxxxxxxxxxxxxxxxxx/followup')
     expect(res.status()).toBe(404)
     const json = await res.json()
     expect(json.error).toBeTruthy()
@@ -261,7 +262,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
     page,
   }) => {
     await page.goto('/lab')
-    const res = await page.request.post(`/api/failure-log/${seededId}/followup`)
+    const res = await api.post(page, `/api/failure-log/${seededId}/followup`)
     expect(res.status()).toBe(409)
     const json = await res.json()
     expect(json.error).toMatch(/already/i)

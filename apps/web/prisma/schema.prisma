@@ -40,8 +40,6 @@ model User {
   teamRubricScores     TeamRubricScore[]
   activityFeedEntries  ActivityFeed[]
   paperProficiencies   PaperProficiency[]
-  advanceRequestsMade  PhaseAdvanceRequest[]   @relation("advanceRequester")
-  advanceReviews       PhaseAdvanceRequest[]   @relation("advanceReviewer")
   teacherFeedbackGiven TeacherFeedback[]       @relation("teacherFeedbackAuthor")
   notifications        Notification[]
   notificationPref     NotificationPref?
@@ -51,6 +49,7 @@ model User {
   vegaStudyMessages    VegaStudyMessage[]
 
   @@index([activeTeamId])
+  @@index([classId])
   @@map("users")
 }
 
@@ -91,6 +90,7 @@ model Class {
   users     User[]
   teams     Team[]
 
+  @@index([teacherId])
   @@map("classes")
 }
 
@@ -146,7 +146,6 @@ model Team {
   showcase        Showcase?
   formStatuses    TeamFormStatus[]
   activityFeed    ActivityFeed[]
-  advanceRequests PhaseAdvanceRequest[]
   teacherFeedback TeacherFeedback[]
   notifications   Notification[]
   experiments     Experiment[]
@@ -173,6 +172,7 @@ model TeamInvite {
   createdAt       DateTime  @default(now()) @map("created_at")
   team            Team      @relation(fields: [teamId], references: [id])
 
+  @@index([teamId, expiresAt])
   @@map("team_invites")
 }
 
@@ -185,6 +185,7 @@ model TeamMember {
   team     Team       @relation(fields: [teamId], references: [id])
 
   @@id([userId, teamId])
+  @@index([teamId])
   @@map("team_members")
 }
 
@@ -867,40 +868,9 @@ model ProjectLogReference {
 
 // ─── Teacher Dashboard ───────────────────────────────────────────────────────
 
-// A team's request to cross a teacher-gated phase boundary. The figurine system
-// was removed; instead the two real-world milestones (starting data collection →
-// `working`, advancing to competition → `showcase`) require a teacher to approve
-// a request in the teacher dashboard. The earlier literature_review →
-// research_planning gate stays auto/self-serve (it's mechanically checkable).
-model PhaseAdvanceRequest {
-  id                String           @id @default(cuid())
-  teamId            String           @map("team_id")
-  fromPhase         ProjectPhase     @map("from_phase")
-  toPhase           ProjectPhase     @map("to_phase")
-  status            ValidationStatus @default(pending)
-  note              String?
-  requestedByUserId String           @map("requested_by_user_id")
-  reviewedByUserId  String?          @map("reviewed_by_user_id")
-  reviewedAt        DateTime?        @map("reviewed_at")
-  reviewNote        String?          @map("review_note")
-  createdAt         DateTime         @default(now()) @map("created_at")
-
-  team        Team  @relation(fields: [teamId], references: [id])
-  requestedBy User  @relation("advanceRequester", fields: [requestedByUserId], references: [id])
-  reviewedBy  User? @relation("advanceReviewer", fields: [reviewedByUserId], references: [id])
-
-  @@index([teamId, status])
-  @@index([status])
-  @@map("phase_advance_requests")
-}
-
-enum ValidationStatus {
-  pending
-  approved
-  rejected
-
-  @@map("validation_status")
-}
+// Phase advancement is fully self-paced: literature_review → research_planning is
+// gated on sources + proficiency, and the later transitions are free student
+// clicks. There is no teacher phase-validation step.
 
 // Free-text feedback a teacher attaches to a team (optionally to a specific
 // target like a project log or paper). Visible to the team in their own view.

@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api } from './api'
 
 /**
  * F5 — Notification bell: all five kinds first-class.
@@ -174,7 +175,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     const page = await context.newPage()
     try {
       await page.goto('/lab')
-      const res = await page.request.post('/api/notifications', {
+      const res = await api.post(page, '/api/notifications', {
         data: { ids: [seededNotificationId] },
       })
       if (!res.ok()) {
@@ -236,7 +237,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     page,
   }) => {
     await page.goto('/lab')
-    const res = await page.request.get('/api/notifications')
+    const res = await api.get(page, '/api/notifications')
     expect(res.status()).toBe(200)
     const { items } = await res.json()
     const deadlineItem = (items as Array<{ kind: string; title: string }>).find(
@@ -261,7 +262,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
   // ── AC5 ──────────────────────────────────────────────────────────────────────
   test('AC5: an urgency item, if present, shows "Nudge" chip + ⚠ icon', async ({ page }) => {
     await page.goto('/lab')
-    const res = await page.request.get('/api/notifications')
+    const res = await api.get(page, '/api/notifications')
     expect(res.status()).toBe(200)
     const { items } = await res.json()
     const urgencyItem = (items as Array<{ kind: string; title: string }>).find(
@@ -304,7 +305,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     // already read by AC6 above (serial order), re-seed a second teacher_feedback
     // notification scoped to the same team so this test has its own unread item
     // independent of AC6/AC2/AC3's shared seed.
-    const preRes = await page.request.get('/api/notifications')
+    const preRes = await api.get(page, '/api/notifications')
     const pre = await preRes.json()
     let unreadItem = (
       pre.items as Array<{
@@ -321,7 +322,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
       await seedExtraFeedback('(AC7 re-seed)')
 
       await page.goto('/lab')
-      const res2 = await page.request.get('/api/notifications')
+      const res2 = await api.get(page, '/api/notifications')
       const json2 = await res2.json()
       unreadItem = (
         json2.items as Array<{
@@ -340,7 +341,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     await page.goto('/lab')
     // Read the true unread count from the API (the badge caps its display at
     // "9+", so the DOM text alone cannot be trusted to compute an exact N-1).
-    const countRes = await page.request.get('/api/notifications')
+    const countRes = await api.get(page, '/api/notifications')
     const { unreadCount: before } = await countRes.json()
     expect(before).toBeGreaterThan(0)
 
@@ -373,7 +374,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
     // Clean up any extra seed created for this test only.
     if (extraSeededId) {
-      await page.request.post('/api/notifications', { data: { ids: [extraSeededId] } }).catch(() => {})
+      await api.post(page, '/api/notifications', { data: { ids: [extraSeededId] } }).catch(() => {})
     }
   })
 
@@ -383,7 +384,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
     // Ensure there is at least one unread item so "Mark all read" is present and
     // meaningfully exercised; re-seed if the shared seeded item is already read.
-    const preRes = await page.request.get('/api/notifications')
+    const preRes = await api.get(page, '/api/notifications')
     const pre = await preRes.json()
     const hasUnread = (pre.items as Array<{ readAt: string | null }>).some((n) => n.readAt === null)
 
@@ -392,7 +393,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
       await seedExtraFeedback('(AC8 re-seed)')
 
       await page.goto('/lab')
-      const res2 = await page.request.get('/api/notifications')
+      const res2 = await api.get(page, '/api/notifications')
       const json2 = await res2.json()
       extraSeededId = (
         json2.items as Array<{ id: string; readAt: string | null; body?: string }>
@@ -412,7 +413,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     await expect(panel.locator('.notif-bell__item--unread')).toHaveCount(0)
 
     if (extraSeededId) {
-      await page.request.post('/api/notifications', { data: { ids: [extraSeededId] } }).catch(() => {})
+      await api.post(page, '/api/notifications', { data: { ids: [extraSeededId] } }).catch(() => {})
     }
   })
 
@@ -440,7 +441,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     page,
   }) => {
     await page.goto('/lab')
-    const res = await page.request.get('/api/notifications')
+    const res = await api.get(page, '/api/notifications')
     expect(res.status()).toBe(200)
     const json = await res.json()
     expect(Array.isArray(json.items)).toBe(true)

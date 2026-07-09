@@ -1,12 +1,13 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
+import { pickActiveTeam } from '@/lib/team/context'
 import { LabScene } from '@/components/lab/LabScene'
 import { loadPlotState, type PlotState } from '@/lib/plot-server'
 import { GATEWAYS } from '@/lib/gateways'
 import {
   getLiteratureAdvanceProgress,
-  TEACHER_GATED_TRANSITIONS,
+  SELF_ADVANCE_TRANSITIONS,
   type AdvanceProgress,
 } from '@/lib/team/advance'
 import { PHASE_ORDER, LAB_TYPES, type Phase, type LabType } from '@/lib/phase'
@@ -41,20 +42,11 @@ export default async function LabPage({
     const user = await db.user.findUnique({
       where: { clerkUserId: userId },
       select: {
-        activeTeam: {
-          select: {
-            id: true,
-            name: true,
-            phase: true,
-            labType: true,
-            currency: { select: { kp: true, clearanceLevel: true, lc: true } },
-            members: { select: { userId: true } },
-          },
-        },
+        activeTeamId: true,
         teamMemberships: {
           orderBy: { joinedAt: 'desc' },
-          take: 1,
           select: {
+            teamId: true,
             team: {
               select: {
                 id: true,
@@ -70,7 +62,7 @@ export default async function LabPage({
       },
     })
 
-    const team = user?.activeTeam ?? user?.teamMemberships[0]?.team
+    const team = user ? pickActiveTeam(user.activeTeamId, user.teamMemberships) : null
     if (team) {
       teamId = team.id
       teamName = team.name
@@ -120,21 +112,9 @@ export default async function LabPage({
     }
   }
 
-  // Teacher-gated transitions (→ working, → showcase): surface a request/awaiting
-  // affordance and reflect any pending request.
-  let advanceRequest: { toPhase: Phase; pending: boolean } | null = null
-  const gatedTo = TEACHER_GATED_TRANSITIONS[phase]
-  if (teamId && gatedTo) {
-    try {
-      const pending = await db.phaseAdvanceRequest.findFirst({
-        where: { teamId, status: 'pending' },
-        select: { id: true },
-      })
-      advanceRequest = { toPhase: gatedTo, pending: !!pending }
-    } catch {
-      // Non-fatal.
-    }
-  }
+  // Self-paced transitions (→ working, → showcase): surface a free advance button.
+  const selfAdvanceTo = SELF_ADVANCE_TRANSITIONS[phase]
+  const selfAdvance = teamId && selfAdvanceTo ? { toPhase: selfAdvanceTo } : null
 
   return (
     <LabScene
@@ -144,7 +124,7 @@ export default async function LabPage({
       currency={currency}
       memberCount={memberCount}
       advance={advance}
-      advanceRequest={advanceRequest}
+      selfAdvance={selfAdvance}
       seed={teamId ? seedFrom(teamId) : 1}
       initialPanel={searchParams.panel === 'feedback' ? 'feedback' : undefined}
       placedBuildings={plot.economy}

@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api } from './api'
 
 /**
  * F18 — "Study with Vega" persistent project-scoped study companion (Ops Hub),
@@ -215,7 +216,7 @@ test.describe('F18 — Study with Vega', () => {
     const studentPage = await studentContext.newPage()
     try {
       await studentPage.goto('/lab')
-      const res = await studentPage.request.get('/api/ops/vega-study')
+      const res = await api.get(studentPage, '/api/ops/vega-study')
       expect(res.status()).toBe(200)
       const body = (await res.json()) as { messages: { content: string }[] }
       expect(body.messages.some((m) => m.content === marker)).toBe(true)
@@ -289,7 +290,7 @@ test.describe('F18 — Study with Vega', () => {
   // ── AC8 ──────────────────────────────────────────────────────────────────
   test('AC8: a message over 8000 chars is rejected 400 before reaching Claude', async ({ page }) => {
     await page.goto('/lab')
-    const res = await page.request.post('/api/ops/vega-study', {
+    const res = await api.post(page, '/api/ops/vega-study', {
       data: { messages: [{ role: 'user', content: 'x'.repeat(8001) }] },
     })
     expect(res.status()).toBe(400)
@@ -303,7 +304,7 @@ test.describe('F18 — Study with Vega', () => {
       role: i % 2 === 0 ? 'user' : 'assistant',
       content: `turn ${i}`,
     }))
-    const res = await page.request.post('/api/ops/vega-study', { data: { messages } })
+    const res = await api.post(page, '/api/ops/vega-study', { data: { messages } })
     expect(res.status()).toBe(400)
     const body = await res.json()
     expect(body).not.toHaveProperty('reply')

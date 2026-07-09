@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Locator } from '@playwright/test'
+import { api } from './api'
 
 /**
  * Feature A — Papers tab (Discovery v2 foundation).
@@ -69,7 +70,7 @@ const PUBMED_SEED_ID = 'pmid:99900001'
  * node-count deltas. Polling the GET until empty makes each test start clean.
  */
 async function resetTree(page: Page) {
-  await page.request.delete('/api/discovery/tree')
+  await api.delete(page, '/api/discovery/tree')
   await expect
     .poll(() => treeNodeCount(page), { timeout: 15000, intervals: [200, 400, 800] })
     .toBe(0)
@@ -82,7 +83,7 @@ async function resetTree(page: Page) {
  */
 async function treeNodeCount(page: Page): Promise<number> {
   try {
-    const res = await page.request.get('/api/discovery/tree')
+    const res = await api.get(page, '/api/discovery/tree')
     if (!res.ok()) return -1
     if (!(res.headers()['content-type'] ?? '').includes('application/json')) return -1
     const body = await res.json()
@@ -157,7 +158,7 @@ async function waitForSeedPersisted(page: Page) {
 /** True when the tree GET (as JSON) contains the seed node; false on non-JSON/miss. */
 async function treeHasSeed(page: Page): Promise<boolean> {
   try {
-    const res = await page.request.get('/api/discovery/tree')
+    const res = await api.get(page, '/api/discovery/tree')
     if (!res.ok()) return false
     if (!(res.headers()['content-type'] ?? '').includes('application/json')) return false
     const body = await res.json()
@@ -219,7 +220,7 @@ test.describe('Feature A — Papers tab', () => {
     await openPapersTab(page)
 
     // arXiv (default filter) — API assertion.
-    const arxivRes = await page.request.get(
+    const arxivRes = await api.get(page, 
       `/api/discovery/sources/search?q=${encodeURIComponent(SEARCH_ARXIV_QUERY)}&platform=arxiv`,
     )
     expect(arxivRes.status()).toBe(200)
@@ -235,7 +236,7 @@ test.describe('Feature A — Papers tab', () => {
     await expect(resultRows(page).first()).toContainText('Preprint')
 
     // Switch filter to PubMed — a different platform-scoped result set.
-    const pubmedRes = await page.request.get(
+    const pubmedRes = await api.get(page, 
       `/api/discovery/sources/search?q=${encodeURIComponent(SEARCH_PUBMED_QUERY)}&platform=pubmed`,
     )
     expect(pubmedRes.status()).toBe(200)
@@ -293,12 +294,12 @@ test.describe('Feature A — Papers tab', () => {
 
     // Find the node id the reflection/citations routes address, via the tree API
     // (server-confirmed — avoids depending on the client store's currentNodeId).
-    const treeRes = await page.request.get('/api/discovery/tree')
+    const treeRes = await api.get(page, '/api/discovery/tree')
     const treeJson = await treeRes.json()
     const node = treeJson.nodes.find((n: { externalId?: string }) => n.externalId === ARXIV_SEED_ID)
     expect(node).toBeTruthy()
 
-    const citationsRes = await page.request.get(`/api/discovery/sources/${node.id}/citations`)
+    const citationsRes = await api.get(page, `/api/discovery/sources/${node.id}/citations`)
     expect(citationsRes.status()).toBe(200)
     const { lanes } = await citationsRes.json()
     expect(lanes).toHaveProperty('cites')
@@ -349,7 +350,7 @@ test.describe('Feature A — Papers tab', () => {
       await expect(thirdChip).toBeDisabled()
     }
 
-    const treeBefore = await page.request.get('/api/discovery/tree')
+    const treeBefore = await api.get(page, '/api/discovery/tree')
     const nodeCountBefore = (await treeBefore.json()).nodes.length
 
     const branchBtn = page.getByRole('button', { name: /Branch into/ })
@@ -364,7 +365,7 @@ test.describe('Feature A — Papers tab', () => {
 
     // Server-side: node count increased by ≤2 (exactly the number of NEW,
     // previously-unseen externalIds selected).
-    const treeAfter = await page.request.get('/api/discovery/tree')
+    const treeAfter = await api.get(page, '/api/discovery/tree')
     const nodesAfter = (await treeAfter.json()).nodes
     const newCount = nodesAfter.length - nodeCountBefore
     expect(newCount).toBeGreaterThanOrEqual(1)
@@ -376,7 +377,7 @@ test.describe('Feature A — Papers tab', () => {
     await page.reload()
     await dismissHome(page)
     await openPapersTab(page)
-    const treeReload = await page.request.get('/api/discovery/tree')
+    const treeReload = await api.get(page, '/api/discovery/tree')
     expect((await treeReload.json()).nodes.length).toBe(nodesAfter.length)
 
     const treeSvg = page.locator('svg[aria-label="Discovery tree"]')
@@ -420,7 +421,7 @@ test.describe('Feature A — Papers tab', () => {
     page,
   }) => {
     await openDiscovery(page)
-    const res = await page.request.get(
+    const res = await api.get(page, 
       '/api/discovery/sources/clxxxxxxxxxxxxxxxxxxxxxxx/citations',
     )
     expect(res.status()).toBe(404)
@@ -436,19 +437,19 @@ test.describe('Feature A — Papers tab', () => {
     await expect(resultRows(page).first()).toBeVisible({ timeout: 10000 })
     await pickFirstResultAndSettle(page)
 
-    const treeAfterFirst = await page.request.get('/api/discovery/tree')
+    const treeAfterFirst = await api.get(page, '/api/discovery/tree')
     const countAfterFirst = (await treeAfterFirst.json()).nodes.length
     expect(countAfterFirst).toBeGreaterThanOrEqual(1)
 
     // Resolving + persisting the SAME externalId a second time (server-side,
     // mirroring the client's resolve → tree-POST contract) must be a no-op.
-    const resolveRes = await page.request.post('/api/discovery/sources/resolve', {
+    const resolveRes = await api.post(page, '/api/discovery/sources/resolve', {
       data: { platform: 'arxiv', externalId: ARXIV_SEED_ID },
     })
     expect(resolveRes.status()).toBe(200)
     const resolved = await resolveRes.json()
 
-    const dupPostRes = await page.request.post('/api/discovery/tree', {
+    const dupPostRes = await api.post(page, '/api/discovery/tree', {
       data: {
         nodes: [
           {
@@ -469,7 +470,7 @@ test.describe('Feature A — Papers tab', () => {
     })
     expect(dupPostRes.status()).toBe(200)
 
-    const treeAfterDup = await page.request.get('/api/discovery/tree')
+    const treeAfterDup = await api.get(page, '/api/discovery/tree')
     const countAfterDup = (await treeAfterDup.json()).nodes.length
     expect(countAfterDup).toBe(countAfterFirst)
   })

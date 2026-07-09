@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { deleteE2eDiscoveryNodes, deleteE2eDiscoveryNodesByTitle } from './db'
+import { api } from './api'
 
 /**
  * F11 — Discovery interest color-coding + full-window Discovery Tree view +
@@ -80,7 +81,7 @@ interface TreeNode {
 //    Clerk-JWT-expiry convention) ─────────────────────────────────────────────
 
 async function getTree(page: Page): Promise<TreeNode[]> {
-  const res = await page.request.get('/api/discovery/tree')
+  const res = await api.get(page, '/api/discovery/tree')
   if (!res.ok()) return []
   const body = await res.json()
   return Array.isArray(body.nodes) ? body.nodes : []
@@ -104,7 +105,7 @@ async function rootCount(page: Page): Promise<number> {
  */
 async function seedRoot(page: Page, title: string): Promise<string> {
   const id = crypto.randomUUID()
-  const res = await page.request.post('/api/discovery/tree', {
+  const res = await api.post(page, '/api/discovery/tree', {
     data: { nodes: [{ id, title, parentId: null, source: 'wikipedia' }] },
   })
   expect(res.status(), `seedRoot POST for "${title}"`).toBe(200)
@@ -123,7 +124,7 @@ async function seedRoot(page: Page, title: string): Promise<string> {
  * before returning — same read-after-write-lag rationale as `seedRoot`.
  */
 async function seedInterest(page: Page, nodeId: string, level: 'high' | 'mid' | 'low'): Promise<void> {
-  const res = await page.request.patch(`/api/discovery/tree/${nodeId}`, {
+  const res = await api.patch(page, `/api/discovery/tree/${nodeId}`, {
     data: { interestLevel: level },
   })
   expect(res.status(), `seedInterest PATCH for ${nodeId}`).toBe(200)
@@ -475,7 +476,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     await seedInterest(page, nodeId, 'high')
 
     await page.goto('/discovery') // re-navigate: refresh the JWT again before the assertion GET
-    const res = await page.request.get('/api/discovery/tree')
+    const res = await api.get(page, '/api/discovery/tree')
     expect(res.status()).toBe(200)
     const body = await res.json()
     const node = body.nodes.find((n: TreeNode) => n.id === nodeId)
@@ -486,7 +487,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   // ── AC11 ─────────────────────────────────────────────────────────────────────
   test('AC11: PATCH on a foreign/fake node id returns 404 (team-scoped IDOR guard)', async ({ page }) => {
     await page.goto('/discovery')
-    const res = await page.request.patch('/api/discovery/tree/clxxxxxxxxxxxxxxxxxxxxxxx', {
+    const res = await api.patch(page, '/api/discovery/tree/clxxxxxxxxxxxxxxxxxxxxxxx', {
       data: { interestLevel: 'high' },
     })
     expect(res.status()).toBe(404)
@@ -499,13 +500,13 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     createdNodeIds.push(nodeId)
 
     await page.goto('/discovery') // re-navigate: refresh the JWT again before the assertion PATCH
-    const res = await page.request.patch(`/api/discovery/tree/${nodeId}`, {
+    const res = await api.patch(page, `/api/discovery/tree/${nodeId}`, {
       data: { interestLevel: 'purple' },
     })
     expect(res.status()).toBe(400)
 
     // The DB was never written — the node's interestLevel remains null/unset.
-    const treeRes = await page.request.get('/api/discovery/tree')
+    const treeRes = await api.get(page, '/api/discovery/tree')
     const node = (await treeRes.json()).nodes.find((n: TreeNode) => n.id === nodeId)
     expect(node.interestLevel).toBeNull()
   })

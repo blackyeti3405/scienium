@@ -45,19 +45,19 @@ export function nextPhase(phase: Phase): Phase | null {
 }
 
 /**
- * Transitions that require a teacher's sign-off rather than an automatic,
- * mechanically-checkable gate. These map to the real-world milestones that used
- * to hand out figurines (now removed): starting data collection (→ `working`)
- * and advancing to competition (→ `showcase`). A student *requests* the
- * advancement; a teacher approves it in the dashboard, which performs the bump.
+ * Transitions a student advances through at their own pace, with no
+ * mechanically-checkable gate — a free "Advance" click bumps the phase. These
+ * are the later milestones (starting data collection → `working`, and advancing
+ * to competition → `showcase`); teams self-pace them rather than waiting on a
+ * teacher sign-off.
  */
-export const TEACHER_GATED_TRANSITIONS: Partial<Record<Phase, Phase>> = {
+export const SELF_ADVANCE_TRANSITIONS: Partial<Record<Phase, Phase>> = {
   research_planning: 'working',
   working: 'showcase',
 }
 
-export function isTeacherGated(from: Phase): boolean {
-  return from in TEACHER_GATED_TRANSITIONS
+export function isSelfAdvance(from: Phase): boolean {
+  return from in SELF_ADVANCE_TRANSITIONS
 }
 
 /**

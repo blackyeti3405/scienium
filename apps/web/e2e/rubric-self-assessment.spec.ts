@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type Browser, type Page } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api } from './api'
 
 /**
  * Rubric self-assessment (Feature F1 — Rubric self-assessment).
@@ -71,7 +72,7 @@ async function resetResearchQuestion(browser?: Browser) {
     try {
       await page.goto('/fair-hub/rubric')
       await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 8000 })
-      const res = await page.request.put('/api/rubric/self-assessment', {
+      const res = await api.put(page, '/api/rubric/self-assessment', {
         data: { track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 0 },
       })
       if (res.status() !== 200) {
@@ -316,7 +317,7 @@ test.describe('Rubric self-assessment (F1)', () => {
     await page.goto('/fair-hub/rubric')
     await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 8000 })
 
-    const res = await page.request.get('/api/rubric/self-assessment?track=science')
+    const res = await api.get(page, '/api/rubric/self-assessment?track=science')
     expect(res.status()).toBe(200)
     const body = await res.json()
     expect(Array.isArray(body.criteria)).toBe(true)
@@ -329,12 +330,12 @@ test.describe('Rubric self-assessment (F1)', () => {
     await page.goto('/fair-hub/rubric')
     await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 8000 })
 
-    const putRes = await page.request.put('/api/rubric/self-assessment', {
+    const putRes = await api.put(page, '/api/rubric/self-assessment', {
       data: { track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 5 },
     })
     expect(putRes.status()).toBe(200)
 
-    const getRes = await page.request.get('/api/rubric/self-assessment?track=science')
+    const getRes = await api.get(page, '/api/rubric/self-assessment?track=science')
     expect(getRes.status()).toBe(200)
     const body = await getRes.json()
     const row = (body.criteria as Array<{ key: string; score: number | null }>).find(

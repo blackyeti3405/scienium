@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api } from './api'
 
 /**
  * F3 — Research Plan paste-text fallback.
@@ -135,7 +136,7 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
     const page = await browser.newPage({ storageState: STORAGE.leader })
     try {
       await page.goto('/lab')
-      const res = await page.request.get('/api/research-plan')
+      const res = await api.get(page, '/api/research-plan')
       if (res.status() !== 200) {
         throw new Error(`beforeAll snapshot GET failed: ${res.status()} ${await res.text()}`)
       }
@@ -167,7 +168,7 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
       }
 
       if (original && original.activeSource === 'google_doc' && original.googleDocUrl) {
-        const res = await page.request.post('/api/research-plan', {
+        const res = await api.post(page, '/api/research-plan', {
           data: {
             googleDocUrl: original.googleDocUrl,
             projectType: original.projectType ?? undefined,
@@ -188,7 +189,7 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
         // E2E-tagged paste state the suite's own tests already exercise so
         // a human/teacher glancing at this team's plan sees obviously-fake
         // E2E content, not silently-orphaned data.
-        const res = await page.request.post('/api/research-plan', {
+        const res = await api.post(page, '/api/research-plan', {
           data: {
             planText: `[E2E-F3-${RUN_ID}] cleanup marker — this row started empty; the E2E suite could not delete it back to empty (no DELETE endpoint exists).`,
             projectType: 'engineering',
@@ -317,7 +318,7 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
     // when quota permits, exactly mirroring the button's own gating logic
     // (never asserting a hard-coded remaining count, since other suites in
     // this shared dev DB may consume the same daily budget).
-    const res = await page.request.get('/api/research-plan')
+    const res = await api.get(page, '/api/research-plan')
     expect(res.status()).toBe(200)
     const { ideaCheck } = await res.json()
     expect(typeof ideaCheck.remaining).toBe('number')
@@ -411,7 +412,7 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
       expect(res.status()).toBe(200)
 
       // Stored/reloaded text is truncated to at most 100,000 chars.
-      const getRes = await page.request.get('/api/research-plan')
+      const getRes = await api.get(page, '/api/research-plan')
       expect(getRes.status()).toBe(200)
       const { plan } = await getRes.json()
       expect(plan.activeSource).toBe('paste')
@@ -466,7 +467,7 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
     await expect(dialog.getByText('synced preview', { exact: false })).toBeVisible()
     await expect(dialog.getByText('Sample doc', { exact: false })).toBeVisible()
 
-    const getRes = await page.request.get('/api/research-plan')
+    const getRes = await api.get(page, '/api/research-plan')
     const { plan } = await getRes.json()
     expect(plan.activeSource).toBe('google_doc')
     expect(plan.googleDocUrl).toBe(PUBLIC_DOC_URL)
@@ -488,7 +489,7 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
     // server-side guard behind that disabled-button UX is real (not merely
     // client-side theatre) and degrades cleanly, not with a 500.
     await page.goto('/lab') // fresh session cookie before the request call
-    const res = await page.request.post('/api/research-plan', {
+    const res = await api.post(page, '/api/research-plan', {
       data: { projectType: 'engineering', projectSubtype: 'robotics' },
     })
     expect(res.status()).toBe(400)

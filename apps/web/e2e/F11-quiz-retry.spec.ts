@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { api } from './api'
 
 /**
  * F11 — Vega quiz-miss review + targeted retry loop (Literature Review).
@@ -422,7 +423,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
     // spec ran, so a passing retry is a first-ever pass -> strictly positive KP.
     expect(body.kpEarned).toBeGreaterThan(0)
 
-    const getRes = await page.request.get(`/api/papers/${paper.id}/quiz`)
+    const getRes = await api.get(page, `/api/papers/${paper.id}/quiz`)
     expect(getRes.status()).toBe(200)
     const getBody = await getRes.json()
     expect(getBody.session.passed).toBe(true)
@@ -436,7 +437,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
     // Navigate first to establish session cookies before any page.request call.
     await page.goto('/lab')
     const res = await requestWithRateLimitRetry(() =>
-      page.request.post(`/api/papers/${paper.id}/quiz/retry`, {
+      api.post(page, `/api/papers/${paper.id}/quiz/retry`, {
         data: { sessionId: 'not-a-real-session-id', answers: [{ questionId: 'q1', response: 'x' }] },
       }),
     )
@@ -454,13 +455,13 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
     await page.goto('/lab')
 
     // Ungraded session: generate a fresh quiz (POST /quiz) but never grade it.
-    const genRes = await requestWithRateLimitRetry(() => page.request.post(`/api/papers/${paper.id}/quiz`))
+    const genRes = await requestWithRateLimitRetry(() => api.post(page, `/api/papers/${paper.id}/quiz`))
     expect(genRes.status()).toBe(200)
     const genBody = await genRes.json()
     const sessionId = genBody.sessionId as string
 
     const retryOnUngraded = await requestWithRateLimitRetry(() =>
-      page.request.post(`/api/papers/${paper.id}/quiz/retry`, {
+      api.post(page, `/api/papers/${paper.id}/quiz/retry`, {
         data: {
           sessionId,
           answers: genBody.questions.map((q: { id: string }) => ({ questionId: q.id, response: 'x' })),
@@ -472,7 +473,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
     // Grade it — the E2E fixture always scores 40 (a fail) — a graded, FAILED
     // session is the one state a retry IS eligible against.
     const gradeRes = await requestWithRateLimitRetry(() =>
-      page.request.post(`/api/papers/${paper.id}/quiz/grade`, {
+      api.post(page, `/api/papers/${paper.id}/quiz/grade`, {
         data: {
           sessionId,
           answers: genBody.questions.map((q: { id: string }) => ({ questionId: q.id, response: 'x' })),
@@ -485,7 +486,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
 
     // Retry it to a PASS (the E2E retry fixture always scores 90 >= 70).
     const retryToPassRes = await requestWithRateLimitRetry(() =>
-      page.request.post(`/api/papers/${paper.id}/quiz/retry`, {
+      api.post(page, `/api/papers/${paper.id}/quiz/retry`, {
         data: {
           sessionId,
           answers: genBody.questions.map((q: { id: string }) => ({ questionId: q.id, response: 'x' })),
@@ -499,7 +500,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
     // Re-submitting a retry against a session that's already been retried to a
     // PASS must 409 (passed === true makes it ineligible for another retry).
     const retryOnAlreadyPassed = await requestWithRateLimitRetry(() =>
-      page.request.post(`/api/papers/${paper.id}/quiz/retry`, {
+      api.post(page, `/api/papers/${paper.id}/quiz/retry`, {
         data: {
           sessionId,
           answers: genBody.questions.map((q: { id: string }) => ({ questionId: q.id, response: 'x' })),
@@ -556,7 +557,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
     await expect(page.getByText('Proficiency demonstrated!')).toBeVisible({ timeout: 10000 })
 
     // Full (original 5 + 1 new) question set persisted.
-    const getRes = await page.request.get(`/api/papers/${paper.id}/quiz`)
+    const getRes = await api.get(page, `/api/papers/${paper.id}/quiz`)
     const getBody = await getRes.json()
     expect(getBody.session.questions.length).toBe(6)
     expect(getBody.session.retried).toBe(true)

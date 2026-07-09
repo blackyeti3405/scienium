@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api } from './api'
 
 /**
  * F1 — Student-facing teacher feedback inbox.
@@ -139,7 +140,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
   }) => {
     await page.goto('/lab')
     // Fetch to get the teacher name for the seeded item.
-    const res = await page.request.get('/api/team/feedback')
+    const res = await api.get(page, '/api/team/feedback')
     const json = await res.json()
     const seeded = json.items.find((i: { id: string }) => i.id === seededId) ?? json.items[0]
 
@@ -166,7 +167,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
     // Navigate first so the session cookies are live before making API calls.
     await page.goto('/lab')
     if (seededId) {
-      await page.request.patch('/api/team/feedback', {
+      await api.patch(page, '/api/team/feedback', {
         data: { id: seededId, resolved: false },
       })
     }
@@ -197,7 +198,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
   // ── AC6 ──────────────────────────────────────────────────────────────────────
   test('AC6: badge unread count is not visible after all notes are resolved', async ({ page }) => {
     await page.goto('/lab')
-    const res = await page.request.get('/api/team/feedback')
+    const res = await api.get(page, '/api/team/feedback')
     const json = await res.json()
     const unresolved = json.items.filter((i: { resolved: boolean }) => !i.resolved)
 
@@ -210,7 +211,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
 
     // Resolve all unresolved items via the API, then reload to check the badge.
     for (const item of unresolved) {
-      await page.request.patch('/api/team/feedback', {
+      await api.patch(page, '/api/team/feedback', {
         data: { id: item.id, resolved: true },
       })
     }
@@ -227,14 +228,14 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
 
     // Reset the seeded item to unresolved so this test always has something to resolve.
     if (seededId) {
-      await page.request.patch('/api/team/feedback', {
+      await api.patch(page, '/api/team/feedback', {
         data: { id: seededId, resolved: false },
       })
     }
 
     // Reload to pick up the reset state.
     await page.goto('/lab')
-    const res = await page.request.get('/api/team/feedback')
+    const res = await api.get(page, '/api/team/feedback')
     const json = await res.json()
     // Prefer the seeded item (by id); fall back to any unresolved item.
     const target =
@@ -247,7 +248,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
     }
 
     // Resolve the target via API (the feature under test is that this persists through a reload).
-    await page.request.patch('/api/team/feedback', {
+    await api.patch(page, '/api/team/feedback', {
       data: { id: target.id, resolved: true },
     })
 
@@ -274,7 +275,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
   // ── AC9 ──────────────────────────────────────────────────────────────────────
   test('AC9: empty state text appears when the team has no feedback', async ({ page }) => {
     await page.goto('/lab')
-    const res = await page.request.get('/api/team/feedback')
+    const res = await api.get(page, '/api/team/feedback')
     const json = await res.json()
 
     await page.getByRole('button', { name: 'Open teacher feedback' }).click()
@@ -295,7 +296,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
   }) => {
     await page.goto('/lab')
     // A fake / cross-team id — updateMany's teamId guard means count is always 0.
-    const res = await page.request.patch('/api/team/feedback', {
+    const res = await api.patch(page, '/api/team/feedback', {
       data: { id: 'clxxxxxxxxxxxxxxxxxxxxxxx', resolved: true },
     })
     expect(res.status()).toBe(200)
@@ -309,7 +310,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
     page,
   }) => {
     await page.goto('/lab')
-    const res = await page.request.get('/api/team/feedback')
+    const res = await api.get(page, '/api/team/feedback')
     expect(res.status()).toBe(200)
     const json = await res.json()
     expect(Array.isArray(json.items)).toBe(true)

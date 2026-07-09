@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
   const teams = [...teamMap.values()]
   const teamIds = teams.map((t) => t.id)
 
-  const [kpRows, proficiencyRows, approvedAdvances] = await Promise.all([
+  const [kpRows, proficiencyRows] = await Promise.all([
     db.teamCurrency.findMany({
       where: { teamId: { in: teamIds } },
       select: { teamId: true, kp: true },
@@ -100,11 +100,6 @@ export async function GET(req: NextRequest) {
         bestScore: true,
         paper: { select: { teamId: true, title: true } },
       },
-    }),
-    db.phaseAdvanceRequest.findMany({
-      where: { teamId: { in: teamIds }, status: 'approved' },
-      select: { teamId: true, toPhase: true, reviewedAt: true },
-      orderBy: { reviewedAt: 'desc' },
     }),
   ])
 
@@ -162,20 +157,13 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  // ── Phase pacing: days since the latest approved advance INTO the team's
-  // current phase, falling back to Team.createdAt when no such advance exists. ──
-  const latestAdvanceToCurrentPhase = new Map<string, Date>()
-  for (const adv of approvedAdvances) {
-    if (latestAdvanceToCurrentPhase.has(adv.teamId) || !adv.reviewedAt) continue
-    const team = teamMap.get(adv.teamId)
-    if (team && adv.toPhase === team.phase) {
-      latestAdvanceToCurrentPhase.set(adv.teamId, adv.reviewedAt)
-    }
-  }
+  // ── Phase pacing: days since the team was created. (Per-phase pacing used to
+  // key off approved teacher advances; with self-paced advancement removed, the
+  // team's age is the available proxy for "how long has this team been going".) ──
   const now = new Date()
   const pacing = teams
     .map((t) => {
-      const since = latestAdvanceToCurrentPhase.get(t.id) ?? t.createdAt
+      const since = t.createdAt
       return {
         teamId: t.id,
         teamName: t.name,

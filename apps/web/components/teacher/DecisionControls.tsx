@@ -7,8 +7,8 @@ import { BusyButton } from '@/components/ui/BusyButton'
 export type QueueDecision = 'approve' | 'reject'
 
 /**
- * Shared decide flow for the teacher review queues (ValidationQueue and
- * ShowcaseModerationQueue), which are structural twins: POST
+ * Shared decide flow for teacher review queues (currently ShowcaseModerationQueue):
+ * POST
  * `{ [payloadKey]: id, decision, note }` to `endpoint`, remove the card on
  * success, show an inline error on failure.
  *

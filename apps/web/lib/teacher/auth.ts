@@ -1,16 +1,22 @@
 import { auth, currentUser } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { resolveAuthoritativeRole } from '@/lib/teacher/role'
 import { enforceRateLimit, type TierName } from '@/lib/rate-limit'
+
+// Re-exported so the role decision has one public home on the teacher guard; the
+// implementation lives in the import-free role module so it stays unit-testable.
+export { resolveAuthoritativeRole }
 
 /**
  * Teacher authorization + class scoping — the highest-risk new surface, so the
  * checks live in one guard rather than being re-derived per route.
  *
  * Two layers of defense:
- *   1. ROLE — the caller must be teacher|admin, via the Clerk session
- *      `metadata.role` (fast path) OR the DB `User.role` fallback for a just-
- *      promoted teacher whose token hasn't re-minted yet. Never client-gated alone.
+ *   1. ROLE — the caller must be teacher|admin. The DB `User.role` is
+ *      authoritative whenever a row exists, so a stale Clerk `metadata.role`
+ *      claim can never override a DB downgrade. The claim only bootstraps a
+ *      brand-new account that has no row yet. Never client-gated alone.
  *   2. SCOPE — every data query is constrained to the classes this teacher owns
  *      (`Class.teacherId`). A teacher must never read another class's students,
  *      so callers filter by `ctx.classIds` and verify ownership before returning
@@ -50,20 +56,15 @@ export async function requireTeacher(
   const limited = await enforceRateLimit(req, opts.tier, userId)
   if (limited) return { ctx: null, error: limited }
 
-  // Role: the session claim is the fast path, but a just-promoted teacher's token
-  // hasn't re-minted the claim yet, so fall back to the DB role (set synchronously
-  // at teacher onboarding). The DB is the source of truth; the claim is a shortcut.
+  // Role: the DB is the source of truth. For an existing row we ignore the claim
+  // entirely, so a downgraded teacher whose token still says "teacher" is denied.
+  // The claim only bootstraps a claim-only teacher who has no row yet.
   const claimRole = roleFromClaims(sessionClaims)
   let user = await db.user.findUnique({
     where: { clerkUserId: userId },
     select: { id: true, role: true },
   })
-  const role: 'teacher' | 'admin' | null =
-    claimRole === 'teacher' || claimRole === 'admin'
-      ? claimRole
-      : user?.role === 'teacher' || user?.role === 'admin'
-        ? user.role
-        : null
+  const role = resolveAuthoritativeRole(user?.role, claimRole, !!user)
   if (!role) {
     return { ctx: null, error: NextResponse.json({ error: 'Teacher access required' }, { status: 403 }) }
   }
@@ -97,42 +98,29 @@ export async function requireTeacher(
 }
 
 /**
- * Verify a team falls within the teacher's scope through its explicit class.
- * The lead's class is consulted only for legacy teams that predate Team.classId.
- * An empty class scope is never in-scope.
+ * Verify a team falls within the teacher's scope through its explicit
+ * `Team.classId`. Backfilled for all teams whose lead has a class (migration
+ * 20260709000000), so no lead-class fallback is needed. An empty class scope is
+ * never in-scope.
  */
 export async function teacherOwnsTeam(classIds: string[], teamId: string): Promise<boolean> {
   if (classIds.length === 0) return false
   const team = await db.team.findFirst({
-    where: {
-      id: teamId,
-      OR: [
-        { classId: { in: classIds } },
-        { classId: null, teamLead: { classId: { in: classIds } } },
-      ],
-    },
+    where: { id: teamId, classId: { in: classIds } },
     select: { id: true },
   })
   return !!team
 }
 
-/** Server-component role check (mirrors requireTeacher's role layer). */
-export function teacherRole(sessionClaims: unknown): 'teacher' | 'admin' | null {
-  const role = roleFromClaims(sessionClaims)
-  return role === 'teacher' || role === 'admin' ? role : null
-}
-
 /**
- * Server-component teacher check with the same DB fallback as requireTeacher: the
- * session claim is the fast path; a freshly-promoted teacher whose token hasn't
- * re-minted yet falls back to the DB role (the source of truth).
+ * Server-component teacher check with the same DB-authoritative rule as
+ * requireTeacher: an existing `User.role` wins over any claim (so a downgrade
+ * takes effect immediately); the claim only bootstraps an account with no row.
  */
 export async function resolveTeacherRole(
   userId: string,
   sessionClaims: unknown,
 ): Promise<'teacher' | 'admin' | null> {
-  const claim = teacherRole(sessionClaims)
-  if (claim) return claim
   const u = await db.user.findUnique({ where: { clerkUserId: userId }, select: { role: true } })
-  return u?.role === 'teacher' || u?.role === 'admin' ? u.role : null
+  return resolveAuthoritativeRole(u?.role, roleFromClaims(sessionClaims), !!u)
 }

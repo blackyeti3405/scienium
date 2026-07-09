@@ -55,11 +55,19 @@ async function findUser(identifier, fallbackName, roleFilter) {
 
 try {
   // ── 1. Users (locate-only) ────────────────────────────────────────────────
-  const [leader, student, teacher] = await Promise.all([
+  // Single-account dev setups can point E2E_STUDENT at the leader (so the user's
+  // own account isn't conscripted as a second team member). When the identifiers
+  // match, the student IS the leader — the co-member specs (codex/vega) collapse
+  // to one account and skip their cross-member assertions.
+  const studentIsLeader =
+    process.env.E2E_STUDENT_IDENTIFIER === process.env.E2E_LEADER_IDENTIFIER
+  const [leader, teacher] = await Promise.all([
     findUser(process.env.E2E_LEADER_IDENTIFIER, 'E2E Leader', undefined),
-    findUser(process.env.E2E_STUDENT_IDENTIFIER, 'E2E Student', undefined),
     findUser(process.env.E2E_TEACHER_IDENTIFIER, 'DevTeacher', 'teacher'),
   ])
+  const student = studentIsLeader
+    ? leader
+    : await findUser(process.env.E2E_STUDENT_IDENTIFIER, 'E2E Student', undefined)
   const missing = [
     ['E2E leader', leader],
     ['E2E student', student],

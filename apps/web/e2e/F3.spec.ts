@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api } from './api'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -326,7 +327,7 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
   test('AC5: pressing Escape dismisses the dialog without deleting', async ({ page }) => {
     // Fetch the current paper count via API before opening the UI.
     await page.goto('/lab')
-    const resBefore = await page.request.get('/api/papers')
+    const resBefore = await api.get(page, '/api/papers')
     const { papers: papersBefore } = await resBefore.json()
     const countBefore = (papersBefore as Array<{ id: string }>).length
     expect(countBefore).toBeGreaterThan(0)
@@ -350,7 +351,7 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
     // The paper was NOT deleted — verify via API that the count is unchanged.
     // (Escape may also close the FeaturePanel due to both listeners on document;
     //  we verify the data-level outcome: no paper was removed.)
-    const resAfter = await page.request.get('/api/papers')
+    const resAfter = await api.get(page, '/api/papers')
     const { papers: papersAfter } = await resAfter.json()
     expect((papersAfter as Array<{ id: string }>).length).toBe(countBefore)
   })
@@ -475,7 +476,7 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
     // We'll use the failure-log path since it's easier to seed fresh.
     // Seed a new failure entry for this test.
     await page.goto('/lab')
-    const seedRes = await page.request.post('/api/failure-log', {
+    const seedRes = await api.post(page, '/api/failure-log', {
       data: {
         happened: `[E2E-F3-AC9-${RUN_ID}] Entry to trigger alert-variant test.`,
         learned: `[E2E-F3-AC9-${RUN_ID}] Alert variant appears on delete error.`,
@@ -527,7 +528,7 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
     // Clean up: delete the entry (route interceptor only matched the DELETE once;
     // unrouting here then deleting via API from outside the page is cleanest).
     await page.unrouteAll()
-    await page.request.delete(`/api/failure-log/${ac9Entry.id}`).catch(() => {})
+    await api.delete(page, `/api/failure-log/${ac9Entry.id}`).catch(() => {})
   })
 
   // ── AC10 ──────────────────────────────────────────────────────────────────────

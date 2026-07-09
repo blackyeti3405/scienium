@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { LAB_TYPE_LABELS } from '@/lib/phase'
+import { LAB_TYPE_LABELS, PHASE_INFO, type Phase } from '@/lib/phase'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import {
   getLiteratureAdvanceProgress,
-  isTeacherGated,
-  TEACHER_GATED_TRANSITIONS,
+  isSelfAdvance,
+  SELF_ADVANCE_TRANSITIONS,
 } from '@/lib/team/advance'
 import { classifyLabType } from '@/lib/lab-type/classify'
 import { logActivity } from '@/lib/activity/log'
@@ -29,30 +29,30 @@ const AdvanceBody = z
  *   - Requires `researchIdea` in body: one sentence describing the project
  *   - Haiku classifies the idea → auto-assigns `teams.lab_type`
  *   - Skips `lab_selection`; jumps directly to `research_planning`
+ *
+ * research_planning → working and working → showcase:
+ *   - Self-paced: a free "Advance" click bumps the phase (no gate, no teacher).
  */
 export async function POST(req: NextRequest) {
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
 
-  // Teacher-gated transitions (research_planning → working, working → showcase):
-  // the student requests advancement and a teacher approves it in the dashboard.
-  if (isTeacherGated(ctx.phase)) {
-    const toPhase = TEACHER_GATED_TRANSITIONS[ctx.phase]!
-    const existing = await db.phaseAdvanceRequest.findFirst({
-      where: { teamId: ctx.teamId, status: 'pending' },
+  // Self-paced transitions (research_planning → working, working → showcase):
+  // the student advances at their own pace — a conditional bump keeps concurrent
+  // clicks from skipping a phase.
+  if (isSelfAdvance(ctx.phase)) {
+    const toPhase = SELF_ADVANCE_TRANSITIONS[ctx.phase]!
+    const { count } = await db.team.updateMany({
+      where: { id: ctx.teamId, phase: ctx.phase },
+      data: { phase: toPhase },
     })
-    if (existing) {
-      return NextResponse.json({ requested: true, status: 'pending', request: existing })
-    }
-    const request = await db.phaseAdvanceRequest.create({
-      data: {
-        teamId: ctx.teamId,
+    if (count > 0) {
+      logActivity(ctx.teamId, ctx.dbUserId, 'phase_advanced', {
         fromPhase: ctx.phase,
         toPhase,
-        requestedByUserId: ctx.dbUserId,
-      },
-    })
-    return NextResponse.json({ requested: true, status: 'pending', request })
+      }).catch(console.error)
+    }
+    return NextResponse.json({ phase: toPhase, phaseLabel: PHASE_INFO[toPhase].label })
   }
 
   if (ctx.phase !== 'literature_review') {

@@ -30,7 +30,7 @@ interface RosterStudent {
   labType: string | null
   readyPapers: number
   lastActivityAt: string | null
-  flags: { pendingValidation: string | null; status: 'on_track' | 'unlogged' | 'stale' | null }
+  flags: { status: 'on_track' | 'unlogged' | 'stale' | null }
 }
 
 interface ClassRow {
@@ -83,7 +83,7 @@ export function TeacherRoster() {
   }, [])
 
   const hasAttention = (s: RosterStudent) =>
-    !!s.flags.pendingValidation || s.flags.status === 'unlogged' || s.flags.status === 'stale'
+    s.flags.status === 'unlogged' || s.flags.status === 'stale'
   const visible = attentionOnly ? students.filter(hasAttention) : students
 
   async function nudge(teamId: string) {
@@ -247,14 +247,6 @@ export function TeacherRoster() {
                       )}
                     </span>
                     <span className="flex items-center gap-1.5 sm:justify-end flex-wrap">
-                      {s.flags.pendingValidation && (
-                        <span
-                          title="This team has a pending phase-advance request awaiting your approval."
-                          className="inline-flex items-center gap-1 text-xs text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-2 py-0.5 whitespace-nowrap"
-                        >
-                          <AlertCircle size={11} /> validate
-                        </span>
-                      )}
                       {s.flags.status === 'unlogged' && (
                         <span
                           title="Team is actively earning KP or completing tasks but hasn't written a progress log in the last 5 days."

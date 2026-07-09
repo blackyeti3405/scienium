@@ -358,8 +358,18 @@ else goes through the gate.
 ## E2E tests (Playwright)
 
 The E2E suite (`apps/web/e2e/`) drives a real logged-in browser against the dev
-DB using three Clerk test accounts — set `E2E_LEADER_*`, `E2E_STUDENT_*`, and
+DB using Clerk test accounts — set `E2E_LEADER_*`, `E2E_STUDENT_*`, and
 `E2E_TEACHER_*` in `apps/web/.env.local` (see `.env.example`).
+
+**Use dedicated test accounts — never a personal/play account.** The suite
+churns the leader/student team every run (spends KP, places/sells buildings,
+resets currency to a baseline), so any account wired as `E2E_LEADER`/`E2E_STUDENT`
+has its lab continuously reset. To avoid burning a second dedicated account, you
+can point `E2E_STUDENT_IDENTIFIER`/`_PASSWORD` at the **same** account as
+`E2E_LEADER`: `seed:e2e` then reuses the leader as the student, and the two
+cross-member specs (`F13` codex isolation, `F18` vega sharing) collapse to one
+account (F13's isolation assertion is skipped in that mode). Provision a separate
+student account only if you need to exercise true multi-member isolation.
 
 Beyond the accounts, the suite needs a **fixture graph** in the dev DB that the
 app never creates on its own: an "E2E School" + "E2E Class" owned by the
@@ -378,6 +388,45 @@ team's KP, and economy rebalances (e.g. Robotics Bay now requires clearance 3)
 otherwise strand it below what placement/upgrade specs need. The three user rows themselves are created by the app on
 first sign-in; if the script reports them missing, run
 `pnpm --filter web exec playwright test --project=setup` once and re-run.
+
+### Running one spec instead of the whole suite
+
+`pnpm --filter web test:e2e <substring>` looks like it filters to one file but
+doesn't — Playwright's positional argument is a substring match against test
+file paths, so e.g. `F1` also matches `F10.spec.ts`, `F11.spec.ts`,
+`F13-codex.spec.ts`, and more. Use the scoped wrapper instead, which requires
+an exact path and fails loudly otherwise:
+
+```bash
+pnpm --filter web test:e2e:file e2e/F1.spec.ts
+```
+
+This still runs the `setup` project first (one sign-in per role, cached to
+`e2e/.auth/`), then only the named spec — seconds instead of the full serial
+suite. Use it while iterating on one feature; run the full `test:e2e` before
+calling a change done.
+
+### Authenticated API calls inside a spec
+
+Clerk's session JWT is short-lived and only refreshes when clerk-js runs
+inside a live page. A `page.request.*` call made long enough after the last
+refresh silently 307-redirects to sign-in instead of returning JSON — the
+suite's most common source of a mid-run "crash." Specs use `e2e/api.ts`'s
+`api.get/post/put/patch/delete(page, url, opts)` instead of `page.request.*`
+directly; it forces a Clerk token refresh from inside the page (no navigation,
+no lost UI state) before every call. New specs should do the same rather than
+calling `page.request` directly.
+
+A related, not-yet-fixed gap: several specs also open a bare
+`playwrightRequest.newContext({ storageState: STORAGE.<role> })` for
+cross-role assertions (e.g. asserting what the teacher session sees from
+inside a leader-authenticated spec). That API-only context has no page to run
+Clerk's refresh in, so it is stuck with whatever JWT was on disk when the
+`setup` project ran and goes stale the same way, deeper into a long run. The
+known working pattern is a real `browser.newPage({ storageState })` +
+`page.goto()` first (several specs already do this by hand — see
+`F10-teacher-rubric.spec.ts`'s `refreshTeacherSession`); it has not yet been
+consolidated into a shared helper.
 
 ### Faster, less flaky E2E: run against local Postgres
 
@@ -773,8 +822,18 @@ else goes through the gate.
 ## E2E tests (Playwright, Windows)
 
 The E2E suite (`apps/web/e2e/`) drives a real logged-in browser against the dev
-DB using three Clerk test accounts — set `E2E_LEADER_*`, `E2E_STUDENT_*`, and
+DB using Clerk test accounts — set `E2E_LEADER_*`, `E2E_STUDENT_*`, and
 `E2E_TEACHER_*` in `apps/web/.env.local` (see `.env.example`).
+
+**Use dedicated test accounts — never a personal/play account.** The suite
+churns the leader/student team every run (spends KP, places/sells buildings,
+resets currency to a baseline), so any account wired as `E2E_LEADER`/`E2E_STUDENT`
+has its lab continuously reset. To avoid burning a second dedicated account, you
+can point `E2E_STUDENT_IDENTIFIER`/`_PASSWORD` at the **same** account as
+`E2E_LEADER`: `seed:e2e` then reuses the leader as the student, and the two
+cross-member specs (`F13` codex isolation, `F18` vega sharing) collapse to one
+account (F13's isolation assertion is skipped in that mode). Provision a separate
+student account only if you need to exercise true multi-member isolation.
 
 Beyond the accounts, the suite needs a **fixture graph** in the dev DB that the
 app never creates on its own: an "E2E School" + "E2E Class" owned by the
@@ -794,6 +853,42 @@ otherwise strand it below what placement/upgrade specs need. The three user rows
 themselves are created by the app on first sign-in; if the script reports them
 missing, run `pnpm --filter web exec playwright test --project=setup` once and
 re-run.
+
+### Running one spec instead of the whole suite
+
+`pnpm --filter web test:e2e <substring>` looks like it filters to one file but
+doesn't — Playwright's positional argument is a substring match against test
+file paths, so e.g. `F1` also matches `F10.spec.ts`, `F11.spec.ts`,
+`F13-codex.spec.ts`, and more. Use the scoped wrapper instead, which requires
+an exact path and fails loudly otherwise:
+
+```powershell
+pnpm --filter web test:e2e:file e2e/F1.spec.ts
+```
+
+This still runs the `setup` project first (one sign-in per role, cached to
+`e2e/.auth/`), then only the named spec — seconds instead of the full serial
+suite. Use it while iterating on one feature; run the full `test:e2e` before
+calling a change done.
+
+### Authenticated API calls inside a spec
+
+Clerk's session JWT is short-lived and only refreshes when clerk-js runs
+inside a live page. A `page.request.*` call made long enough after the last
+refresh silently 307-redirects to sign-in instead of returning JSON — the
+suite's most common source of a mid-run "crash." Specs use `e2e/api.ts`'s
+`api.get/post/put/patch/delete(page, url, opts)` instead of `page.request.*`
+directly; it forces a Clerk token refresh from inside the page (no navigation,
+no lost UI state) before every call. New specs should do the same rather than
+calling `page.request` directly.
+
+A related, not-yet-fixed gap: several specs also open a bare
+`playwrightRequest.newContext({ storageState: STORAGE.<role> })` for
+cross-role assertions. That API-only context has no page to run Clerk's
+refresh in, so it goes stale the same way, deeper into a long run. The known
+working pattern is a real `browser.newPage({ storageState })` + `page.goto()`
+first (see `F10-teacher-rubric.spec.ts`'s `refreshTeacherSession`); it has not
+yet been consolidated into a shared helper.
 
 ### Faster, less flaky E2E: run against local Postgres
 

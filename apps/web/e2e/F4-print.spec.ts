@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api } from './api'
 
 /**
  * F4 — Showcase one-pager print export (`?print=1` on `/showcase/[slug]`).
@@ -120,80 +121,20 @@ test.describe('F4-print — Showcase one-pager print export', () => {
     })
 
     try {
-      // 0. Probe whether the showcase feature is reachable; advance the phase if not.
-      const probeRes = await leaderCtx.get('/api/showcase')
-      if (!probeRes.ok() && probeRes.status() === 403) {
+      // 0. Probe whether the showcase feature is reachable; self-advance the team
+      // until it is. Advancement is self-paced now — each POST bumps one phase
+      // (research_planning → working → showcase), no teacher approval. A dev
+      // fixture may sit a couple of phases back, so loop a few times.
+      for (let i = 0; i < 4; i++) {
+        const probeRes = await leaderCtx.get('/api/showcase')
+        // ok() = showcase exists; 404 = no showcase yet but the phase is fine.
+        if (probeRes.ok() || probeRes.status() === 404) break
+        if (probeRes.status() !== 403) {
+          throw new Error(`Unexpected showcase probe: ${probeRes.status()} ${await probeRes.text()}`)
+        }
         const advanceRes = await leaderCtx.post('/api/team/advance-phase', { data: {} })
         if (!advanceRes.ok()) {
-          throw new Error(`Phase advance request failed: ${advanceRes.status()} ${await advanceRes.text()}`)
-        }
-        const advanceJson = await advanceRes.json()
-        const requestId: string = (advanceJson.request ?? advanceJson).id
-        if (!requestId) {
-          throw new Error(`Phase advance did not return a request id: ${JSON.stringify(advanceJson)}`)
-        }
-
-        const teacherCtx = await playwrightRequest.newContext({
-          baseURL: BASE_URL,
-          storageState: STORAGE.teacher,
-        })
-        try {
-          // Clerk only silently refreshes an expired session JWT on GET — a
-          // brand-new context's very first request must not be the mutate that
-          // actually matters, or a stale storageState JWT 200s to a sign-in page
-          // instead of erroring. Warm the session with a throwaway GET first.
-          await teacherCtx.get('/api/showcase').catch(() => {})
-          const approvePhaseRes = await teacherCtx.post('/api/teacher/validations', {
-            data: { requestId, decision: 'approve' },
-          })
-          if (!approvePhaseRes.ok()) {
-            throw new Error(
-              `Phase advance approval failed: ${approvePhaseRes.status()} ${await approvePhaseRes.text()} — ` +
-                `the E2E teacher account must be linked to a class containing the E2E leader team's members ` +
-                `for the standard working→showcase approval path to succeed.`,
-            )
-          }
-        } finally {
-          await teacherCtx.dispose()
-        }
-      }
-      // A second re-probe: some dev fixtures are one phase further back
-      // (research_planning) than 'working', which the single advance-phase call
-      // above does not reach. Retry the same probe→advance→approve dance once more.
-      const reprobeRes = await leaderCtx.get('/api/showcase')
-      if (!reprobeRes.ok() && reprobeRes.status() === 403) {
-        const advanceRes2 = await leaderCtx.post('/api/team/advance-phase', { data: {} })
-        if (!advanceRes2.ok()) {
-          throw new Error(`Second phase advance request failed: ${advanceRes2.status()} ${await advanceRes2.text()}`)
-        }
-        const advanceJson2 = await advanceRes2.json()
-        const requestId2: string = (advanceJson2.request ?? advanceJson2).id
-        if (!requestId2) {
-          throw new Error(`Second phase advance did not return a request id: ${JSON.stringify(advanceJson2)}`)
-        }
-        const teacherCtx2 = await playwrightRequest.newContext({
-          baseURL: BASE_URL,
-          storageState: STORAGE.teacher,
-        })
-        try {
-          // See the warm-up comment on teacherCtx above — same reasoning.
-          await teacherCtx2.get('/api/showcase').catch(() => {})
-          const approvePhaseRes2 = await teacherCtx2.post('/api/teacher/validations', {
-            data: { requestId: requestId2, decision: 'approve' },
-          })
-          if (!approvePhaseRes2.ok()) {
-            throw new Error(
-              `Second phase advance approval failed: ${approvePhaseRes2.status()} ${await approvePhaseRes2.text()}`,
-            )
-          }
-        } finally {
-          await teacherCtx2.dispose()
-        }
-        const finalProbe = await leaderCtx.get('/api/showcase')
-        if (!finalProbe.ok() && finalProbe.status() !== 404) {
-          throw new Error(
-            `Team still not in 'showcase' phase after two advance+approve rounds: ${finalProbe.status()} ${await finalProbe.text()}`,
-          )
+          throw new Error(`Phase advance failed: ${advanceRes.status()} ${await advanceRes.text()}`)
         }
       }
 
@@ -307,14 +248,14 @@ test.describe('F4-print — Showcase one-pager print export', () => {
 
       // Best-effort cleanup: unpublish so the seeded showcase doesn't pollute the
       // gallery/queue, then remove every asset this suite created.
-      await page.request.put('/api/showcase', { data: { published: false } }).catch(() => {})
+      await api.put(page, '/api/showcase', { data: { published: false } }).catch(() => {})
 
-      const getRes = await page.request.get('/api/showcase').catch(() => null)
+      const getRes = await api.get(page, '/api/showcase').catch(() => null)
       const contentType = getRes?.headers()['content-type'] ?? ''
       if (getRes?.ok() && contentType.includes('application/json')) {
         const { showcase } = await getRes.json()
         for (const asset of (showcase?.assets ?? []) as Array<{ id: string }>) {
-          const delRes = await page.request.delete(`/api/showcase/asset/${asset.id}`).catch(() => null)
+          const delRes = await api.delete(page, `/api/showcase/asset/${asset.id}`).catch(() => null)
           if (!delRes?.ok()) {
             console.error(`afterAll cleanup: failed to delete asset ${asset.id}: ${delRes?.status()}`)
           }
@@ -451,7 +392,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
       // which can go stale this deep into a serial suite (documented convention;
       // see e2e/F4.spec.ts:518 / the batch instructions).
       await page.goto('/showcase/edit')
-      const quadRes = await page.request.post('/api/showcase/asset', {
+      const quadRes = await api.post(page, '/api/showcase/asset', {
         multipart: {
           kind: 'quad_chart',
           file: { name: 'quad.png', mimeType: 'image/png', buffer: Buffer.from(minimalPngBytes()) },
@@ -509,7 +450,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
 
     // Switch privacy to 'private' — the teacher (not a team member) can never
     // qualify under canViewShowcase for a private showcase, print or not.
-    const privRes = await page.request.put('/api/showcase', { data: { privacyLevel: 'private' } })
+    const privRes = await api.put(page, '/api/showcase', { data: { privacyLevel: 'private' } })
     expect(privRes.ok()).toBe(true)
     expect((await privRes.json()).showcase.privacyLevel).toBe('private')
 
@@ -530,7 +471,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
       // Restore to link_only for the remaining tests (AC11, AC12). Re-navigate
       // first for the same session-freshness reason as above.
       await page.goto('/showcase/edit')
-      const restoreRes = await page.request.put('/api/showcase', { data: { privacyLevel: 'link_only' } })
+      const restoreRes = await api.put(page, '/api/showcase', { data: { privacyLevel: 'link_only' } })
       expect(restoreRes.ok()).toBe(true)
     }
   })
@@ -543,14 +484,14 @@ test.describe('F4-print — Showcase one-pager print export', () => {
     // (documented convention — see e2e/F4.spec.ts:518 / the batch instructions).
     await page.goto('/showcase/edit')
 
-    const beforeRes = await page.request.get('/api/showcase')
+    const beforeRes = await api.get(page, '/api/showcase')
     expect(beforeRes.ok()).toBe(true)
     const beforeViews = (await beforeRes.json()).showcase.views as number
 
     await page.goto(`/showcase/${showcaseSlug}?print=1`)
     await expect(page.locator('[data-print-onepager]')).toBeVisible()
 
-    const afterRes = await page.request.get('/api/showcase')
+    const afterRes = await api.get(page, '/api/showcase')
     expect(afterRes.ok()).toBe(true)
     const afterViews = (await afterRes.json()).showcase.views as number
 

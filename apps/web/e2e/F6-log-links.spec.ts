@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api } from './api'
 
 /**
  * F6 — Project-Log log↔log linking (activates `ProjectLogReference`).
@@ -174,7 +175,7 @@ test.describe('F6 — Project-Log log↔log linking', () => {
       const seededIds = [entryA?.id, entryB?.id, entryC?.id].filter((id): id is string => !!id)
       const results: string[] = []
       for (const id of seededIds) {
-        const res = await page.request.delete(`/api/project-log/${id}`).catch(() => null)
+        const res = await api.delete(page, `/api/project-log/${id}`).catch(() => null)
         if (!res) {
           results.push(`${id}: request threw`)
         } else if (res.ok() || res.status() === 404) {
@@ -189,7 +190,7 @@ test.describe('F6 — Project-Log log↔log linking', () => {
 
       // Confirm the leader team's Project Log no longer contains any of the
       // seeded bodies — loud verification that cleanup actually worked.
-      const verifyRes = await page.request.get('/api/project-log')
+      const verifyRes = await api.get(page, '/api/project-log')
       if (verifyRes.ok()) {
         const { entries } = await verifyRes.json()
         const leftover = (entries as Array<{ body: string }>).filter((e) => e.body.includes(`E2E-F6-${RUN_ID}`))
@@ -427,19 +428,19 @@ test.describe('F6 — Project-Log log↔log linking', () => {
     await page.goto('/lab') // fresh session cookie before page.request calls
 
     // Link A -> C via the API directly (equivalent to the UI flow, faster to set up).
-    const linkRes = await page.request.post(`/api/project-log/${entryA.id}/references`, {
+    const linkRes = await api.post(page, `/api/project-log/${entryA.id}/references`, {
       data: { targetId: entryC.id },
     })
     expect(linkRes.ok()).toBe(true)
 
     // Delete entry C (the referenced/target entry) while A still references it.
-    const deleteRes = await page.request.delete(`/api/project-log/${entryC.id}`)
+    const deleteRes = await api.delete(page, `/api/project-log/${entryC.id}`)
     expect(deleteRes.ok()).toBe(true)
     expect((await deleteRes.json()).ok).toBe(true)
 
     // The read path must NOT 500 — the dangling ProjectLogReference row (if the
     // cascade fix were missing) would break the join in GET /api/project-log.
-    const getRes = await page.request.get('/api/project-log')
+    const getRes = await api.get(page, '/api/project-log')
     expect(getRes.status()).toBe(200)
     const { entries } = await getRes.json()
 

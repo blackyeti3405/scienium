@@ -35,7 +35,6 @@ import {
   type Phase,
   type LabType,
 } from '@/lib/phase'
-import { TEACHER_GATED_TRANSITIONS } from '@/lib/team/advance'
 import { PaperQAPanel } from './student-detail/PaperQAPanel'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -59,14 +58,6 @@ interface OverviewTeam {
   researchIdea: string | null
   currency: { kp: number; clearanceLevel: number; lc: number } | null
   members: { user: { id: string; name: string }; role: string }[]
-}
-
-interface PendingAdvance {
-  fromPhase: string
-  toPhase: string
-  note: string | null
-  requestedBy: { name: string }
-  createdAt: string
 }
 
 interface TeamBuilding {
@@ -203,7 +194,6 @@ interface FeedbackRow {
 interface Overview {
   student: OverviewStudent
   team: OverviewTeam | null
-  pendingAdvance: PendingAdvance | null
   studentKp: number
   teamBuildings: TeamBuilding[]
   shopBuildings: ShopBuilding[]
@@ -339,7 +329,6 @@ function StudentHeader({ overview }: { overview: Overview }) {
               const info = PHASE_INFO[p]
               const isCurrent = p === phase
               const isPast = idx < currentIdx
-              const isGated = p in TEACHER_GATED_TRANSITIONS
               const isLast = idx === PHASE_ORDER.length - 1
               return (
                 <div key={p} className="flex items-center flex-1 min-w-0">
@@ -364,11 +353,6 @@ function StudentHeader({ overview }: { overview: Overview }) {
                       }`}
                     >
                       {info.label}
-                      {isGated && (
-                        <span className="block font-pixel text-[8px] text-amber-400/60 uppercase">
-                          gated
-                        </span>
-                      )}
                     </span>
                   </div>
                   {/* Connector line */}
@@ -434,7 +418,7 @@ function IdentitySection({ overview }: { overview: Overview }) {
 }
 
 function PhaseSection({ overview }: { overview: Overview }) {
-  const { team, pendingAdvance } = overview
+  const { team } = overview
   if (!team) return <Empty>No team yet.</Empty>
 
   const currentPhase = team.phase as Phase
@@ -450,7 +434,6 @@ function PhaseSection({ overview }: { overview: Overview }) {
               const info = PHASE_INFO[p]
               const isCurrent = p === currentPhase
               const isPast = idx < currentIdx
-              const isGated = p in TEACHER_GATED_TRANSITIONS
               return (
                 <div
                   key={p}
@@ -471,11 +454,6 @@ function PhaseSection({ overview }: { overview: Overview }) {
                       <span className="text-[#F5C518]/50 text-xs">✓</span>
                     )}
                   </div>
-                  {isGated && (
-                    <span className="font-pixel text-[8px] text-amber-400/70 uppercase block mt-0.5">
-                      teacher-gated
-                    </span>
-                  )}
                 </div>
               )
             })}
@@ -483,31 +461,6 @@ function PhaseSection({ overview }: { overview: Overview }) {
         </div>
       </Card>
 
-      {/* Pending advance */}
-      {pendingAdvance && (
-        <div className="border border-amber-400/30 bg-amber-400/5 rounded-lg px-4 py-3 space-y-1.5">
-          <p className="font-pixel text-[10px] text-amber-300 uppercase tracking-widest">
-            Pending advance request
-          </p>
-          <p className="text-sm text-white/80">
-            {PHASE_INFO[pendingAdvance.fromPhase as Phase]?.label ?? pendingAdvance.fromPhase}
-            {' → '}
-            {PHASE_INFO[pendingAdvance.toPhase as Phase]?.label ?? pendingAdvance.toPhase}
-          </p>
-          <p className="text-xs text-white/50">
-            Requested by {pendingAdvance.requestedBy.name} on {fmtDate(pendingAdvance.createdAt)}
-          </p>
-          {pendingAdvance.note && (
-            <p className="text-sm text-white/70 italic">&ldquo;{pendingAdvance.note}&rdquo;</p>
-          )}
-          <Link
-            href="/teacher/validations"
-            className="inline-block text-xs text-amber-300 underline hover:text-amber-200 transition-colors mt-1"
-          >
-            Review in Validations →
-          </Link>
-        </div>
-      )}
     </div>
   )
 }
@@ -1480,27 +1433,11 @@ export function StudentDetail({ studentId }: { studentId: string }) {
     )
   }
 
-  const { student, team, pendingAdvance } = overview
+  const { student, team } = overview
 
   return (
     <div className="space-y-6">
       <BackLink />
-
-      {/* Pending advance banner */}
-      {pendingAdvance && (
-        <div className="border border-amber-400/40 bg-amber-400/5 rounded-lg px-4 py-2.5">
-          <span className="text-sm text-amber-300">
-            Awaiting validation:{' '}
-            {PHASE_INFO[pendingAdvance.fromPhase as Phase]?.label ?? pendingAdvance.fromPhase}
-            {' → '}
-            {PHASE_INFO[pendingAdvance.toPhase as Phase]?.label ?? pendingAdvance.toPhase}
-            {' · '}
-            <Link href="/teacher/validations" className="underline hover:text-amber-200 transition-colors">
-              review
-            </Link>
-          </span>
-        </div>
-      )}
 
       {!team ? (
         <div className="border border-white/10 bg-[#0a1628] rounded-lg px-4 py-8 text-center space-y-4">

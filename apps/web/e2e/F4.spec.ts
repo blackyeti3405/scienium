@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api } from './api'
 
 /**
  * F4 — Teacher moderation gate for public showcases.
@@ -98,35 +99,10 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       //    In that case, request a working → showcase phase advance and have the teacher approve it.
       const probeRes = await leaderCtx.get('/api/showcase')
       if (!probeRes.ok() && probeRes.status() === 403) {
-        // Phase-gated: advance from 'working' to 'showcase'.
+        // Phase-gated: self-advance from 'working' to 'showcase' (no teacher gate).
         const advanceRes = await leaderCtx.post('/api/team/advance-phase', { data: {} })
         if (!advanceRes.ok()) {
-          throw new Error(`Phase advance request failed: ${advanceRes.status()} ${await advanceRes.text()}`)
-        }
-        const advanceJson = await advanceRes.json()
-        // advanceJson.request.id is the PhaseAdvanceRequest id.
-        // If 'requested' is true, we may already have a pending request — use whichever id is returned.
-        const requestId: string = (advanceJson.request ?? advanceJson).id
-        if (!requestId) {
-          throw new Error(`Phase advance did not return a request id: ${JSON.stringify(advanceJson)}`)
-        }
-
-        // Teacher approves the advance.
-        const teacherCtx = await playwrightRequest.newContext({
-          baseURL: BASE_URL,
-          storageState: STORAGE.teacher,
-        })
-        try {
-          const approvePhaseRes = await teacherCtx.post('/api/teacher/validations', {
-            data: { requestId, decision: 'approve' },
-          })
-          if (!approvePhaseRes.ok()) {
-            throw new Error(
-              `Phase advance approval failed: ${approvePhaseRes.status()} ${await approvePhaseRes.text()}`,
-            )
-          }
-        } finally {
-          await teacherCtx.dispose()
+          throw new Error(`Phase advance failed: ${advanceRes.status()} ${await advanceRes.text()}`)
         }
         phasedToShowcase = true
       }
@@ -515,11 +491,8 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
   test('AC9: after approval, team has notification "Showcase approved — now public" linking to /lab', async ({
     page,
   }) => {
-    // Navigate first to establish session cookies before using page.request.
-    await page.goto('/lab')
-
     // Check via the notifications API. The route is at /api/notifications (from the build output).
-    const res = await page.request.get('/api/notifications')
+    const res = await api.get(page, '/api/notifications')
     if (res.ok()) {
       const json = await res.json()
       const items = (json.items ?? json.notifications ?? []) as Array<{
@@ -693,7 +666,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
     await expect(publicOption).toHaveClass(/sc-priv__opt--on/)
 
     // Confirm via API: privacyLevel is 'public', moderationStatus is 'rejected'.
-    const apiRes = await page.request.get('/api/showcase')
+    const apiRes = await api.get(page, '/api/showcase')
     expect(apiRes.ok()).toBe(true)
     const { showcase } = await apiRes.json()
     expect(showcase.privacyLevel).toBe('public')
