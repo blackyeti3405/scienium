@@ -414,6 +414,12 @@ model Paper {
   fileUrl          String?     @map("file_url")
   contentHash      String?     @map("content_hash")
   fullText         String?     @map("full_text")
+  // List-view metadata, computed once at upload so the paper list never has to
+  // read `fullText` to derive a DOI/credibility badge. `sourceHost` is the
+  // origin host for externally-sourced papers (null for self-uploaded PDFs).
+  doi              String?         @map("doi")
+  credibilityTier  CredibilityTier? @map("credibility_tier")
+  sourceHost       String?         @map("source_host")
   // PDF binary lives in Cloudflare R2; `pdfKey` is the object key (see lib/storage.ts).
   // `pdfData` is the legacy in-DB blob, kept only as a fallback for rows uploaded
   // before the R2 migration — new uploads leave it null and a cleanup migration
@@ -435,6 +441,12 @@ model Paper {
   promotedFromNode DiscoveryNode?     @relation("promotedFrom")
   citation       Citation?
 
+  // DB-level duplicate-upload guard. Postgres treats NULL content hashes as
+  // distinct, so non-PDF/legacy papers (null hash) are unaffected; two uploads of
+  // the same PDF bytes for one team cannot both persist even under a race.
+  @@unique([teamId, contentHash])
+  @@index([teamId, createdAt])
+  @@index([teamId, status])
   @@map("papers")
 }
 

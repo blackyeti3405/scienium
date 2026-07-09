@@ -7,7 +7,7 @@ import { putObject, paperPdfKey } from '@/lib/storage'
 import { checkPaperRelevance } from '@/lib/literature/relevance'
 import { logActivity } from '@/lib/activity/log'
 import { extractDoi, tierFromDoi } from '@/lib/discovery/credibility'
-import type { CredibilityTier } from '@prisma/client'
+import { Prisma, type CredibilityTier } from '@prisma/client'
 import { processPaperJob } from '@/lib/literature/process-paper'
 
 // Server-side only; the Anthropic key is never bundled for the browser.
@@ -100,19 +100,40 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const paper = await db.paper.create({
-    data: {
-      teamId: ctx.teamId,
-      title,
-      authors: [],
-      abstract: null,
-      sourceType: 'pdf',
-      status: 'processing',
-      uploadedByUserId: ctx.dbUserId,
-      fullText,
-      contentHash,
-    },
-  })
+  // Derive list-view metadata once, here, so the paper list never has to read
+  // full text to show a DOI / credibility badge.
+  const doi = extractDoi(fullText)
+  const credibilityTier: CredibilityTier | null = doi ? tierFromDoi(doi) : null
+
+  let paper
+  try {
+    paper = await db.paper.create({
+      data: {
+        teamId: ctx.teamId,
+        title,
+        authors: [],
+        abstract: null,
+        sourceType: 'pdf',
+        status: 'processing',
+        uploadedByUserId: ctx.dbUserId,
+        fullText,
+        contentHash,
+        doi,
+        credibilityTier,
+      },
+    })
+  } catch (err) {
+    // A concurrent upload of the same PDF that won the race is now committed; the
+    // unique (teamId, contentHash) index rejects this one. Return the same 409 as
+    // the pre-check above rather than a 500.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'This paper is already in your literature review.' },
+        { status: 409 },
+      )
+    }
+    throw err
+  }
 
   // Upload the PDF to R2 under a team/paper-scoped key. If this fails the row is
   // useless (no file to view), so roll it back rather than leave an orphan.
@@ -163,39 +184,32 @@ export async function GET(req: NextRequest) {
       fileUrl: true,
       // Proficiency is per-student now: surface only THIS user's demonstration.
       proficiencies: { where: { userId: ctx.dbUserId }, select: { demonstrated: true } },
-      // F12 credibility badge — resolved below, at read time, from whichever
-      // signal the paper actually has. `fullText` is only read to derive the
-      // tier server-side and is stripped before the response is built (never
-      // sent to the client).
-      sourceType: true,
-      fullText: true,
+      // F12 credibility badge — read from the metadata persisted at upload; NO
+      // longer parsed from `fullText` here, so the list stays metadata-only and
+      // fast as the library grows.
+      doi: true,
+      credibilityTier: true,
       promotedFromNode: { select: { externalSource: { select: { credibilityTier: true } } } },
     },
   })
 
   return NextResponse.json({
-    papers: papers.map(({ proficiencies, sourceType, fullText, promotedFromNode, ...p }) => {
-      let credibilityTier: CredibilityTier | null = null
-      let doi: string | null = null
+    papers: papers.map(
+      ({ proficiencies, doi, credibilityTier: storedTier, promotedFromNode, ...p }) => {
+        // A promoted Discovery source carries an authoritative server-derived tier
+        // from its resolved host; otherwise use the tier computed at upload. `text`
+        // sources (and PDFs with no DOI) fall through to null — resolved client-side
+        // to the "self-uploaded — verify yourself" meta.
+        const credibilityTier: CredibilityTier | null =
+          promotedFromNode?.externalSource?.credibilityTier ?? storedTier ?? null
 
-      const promotedTier = promotedFromNode?.externalSource?.credibilityTier
-      if (promotedTier) {
-        // Authoritative — a promoted Discovery source already carries a
-        // server-derived tier from its resolved host. Reuse it, never re-derive.
-        credibilityTier = promotedTier
-      } else if (sourceType === 'pdf' && fullText) {
-        doi = extractDoi(fullText)
-        credibilityTier = doi ? tierFromDoi(doi) : null
-      }
-      // `text` sources (and PDFs with no DOI) fall through to `null` —
-      // resolved client-side to the "self-uploaded — verify yourself" meta.
-
-      return {
-        ...p,
-        proficiencyDemonstrated: proficiencies[0]?.demonstrated ?? false,
-        credibilityTier,
-        ...(doi ? { doi } : {}),
-      }
-    }),
+        return {
+          ...p,
+          proficiencyDemonstrated: proficiencies[0]?.demonstrated ?? false,
+          credibilityTier,
+          ...(doi ? { doi } : {}),
+        }
+      },
+    ),
   })
 }

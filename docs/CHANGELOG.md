@@ -5,6 +5,29 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.21.3] — 2026-07-09
+
+Refactor Phase 4 — paper lists are metadata-only, and duplicate uploads are
+prevented by the database.
+
+### Added
+- `Paper.doi`, `Paper.credibilityTier`, and `Paper.sourceHost`, computed once at
+  upload. The paper list now reads these stored columns instead of loading every
+  paper's extracted full text to derive a DOI/credibility badge, so listing a
+  library stays metadata-only and fast as it grows.
+- A `(teamId, contentHash)` unique index. Two uploads of the same PDF for one
+  team can no longer both persist even under a race — the second is rejected and
+  returns the same 409 as the application-level pre-check. (Null content hashes
+  stay distinct, so non-PDF papers are unaffected.)
+- `Paper(teamId, createdAt)` and `Paper(teamId, status)` indexes for the common
+  list queries.
+
+_Deferred:_ moving `Paper.fullText` into a separate `PaperContent` table (the
+plan's larger "heavy content" split) — the list no longer reads full text, so
+the high-value outcome is already achieved; leaning the row is a follow-up.
+
+---
+
 ## [0.21.2] — 2026-07-09
 
 Refactor Phase 3 — expertise grading is now claim-based, idempotent, and honest.
