@@ -604,10 +604,9 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
     )
     const source = fs.readFileSync(routePath, 'utf8')
 
-    // Exactly one generation call site (generateNewQuestion) and one grading
-    // call site (the POST handler's client.messages.create), each system block
-    // carrying the paper text with cache_control: ephemeral.
-    const messagesCreateCalls = source.match(/client\.messages\.create\(/g) ?? []
+    // Exactly one generation call site and one grading call site through the
+    // shared lazy Anthropic client, each with a cached paper-text system block.
+    const messagesCreateCalls = source.match(/anthropic\(\)\.messages\.create\(/g) ?? []
     expect(messagesCreateCalls.length).toBe(2) // one generate, one grade
 
     const cacheControlOccurrences = source.match(/cache_control:\s*\{\s*type:\s*'ephemeral'\s*\}/g) ?? []

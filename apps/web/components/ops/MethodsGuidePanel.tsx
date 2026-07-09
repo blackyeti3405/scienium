@@ -1,8 +1,8 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { METHODS, METHOD_CATEGORIES, filterMethods } from '@/lib/data-terminal/methods-guide'
-import type { MethodConcept } from '@/lib/data-terminal/methods-guide'
+import { METHODS, METHOD_CATEGORIES, filterMethods } from '@/content/data-terminal/methods-guide'
+import type { MethodConcept } from '@/content/data-terminal/methods-guide'
 import { useToggleSet } from '@/lib/hooks/useToggleSet'
 import {
   SectionLabel,

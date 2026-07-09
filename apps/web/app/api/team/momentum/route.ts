@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { differenceInCalendarDays } from 'date-fns'
 import { requireTeamContext } from '@/lib/api/route-context'
-import { FAIRS, type SeedFair } from '@/lib/fairs/dataset'
+import { FAIRS, type SeedFair } from '@/content/fairs/dataset'
 import { STATE_CENTROIDS, haversineMiles } from '@/lib/fairs/zip'
 import { db } from '@/lib/db'
 
@@ -59,7 +59,12 @@ export async function GET(req: NextRequest) {
     // so it works as the per-award timestamp for the rolling window.
     db.codexLessonProgress.aggregate({
       _sum: { kpAwarded: true },
-      where: { userId: { in: memberIds }, kpAwarded: { gt: 0 }, completedAt: { gte: since } },
+      where: {
+        teamId: ctx.teamId,
+        userId: { in: memberIds },
+        kpAwarded: { gt: 0 },
+        completedAt: { gte: since },
+      },
     }),
     db.team.findUnique({
       where: { id: ctx.teamId },

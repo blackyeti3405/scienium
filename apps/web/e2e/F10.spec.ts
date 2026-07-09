@@ -85,7 +85,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
   // Serial: several tests share the same localStorage dismiss key on the same
   // team/context; running them out of order or concurrently would let one
   // test's dismiss action bleed into another's "card should be visible" assertion.
-  test.describe.configure({ mode: 'serial' })
+  test.describe.configure({ mode: 'serial', timeout: 60_000 })
 
   test.afterAll(async ({ browser }) => {
     // Best-effort: leave the dismiss key cleared so a later run/spec always
@@ -110,7 +110,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
     await clearDismissAndReload(page)
 
     const card = momentumCard(page)
-    await expect(card).toBeVisible({ timeout: 10_000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
     await expect(card).toContainText(/THIS WEEK|LAST 7 DAYS/)
 
     // Anchored inside the lab viewport per the plan's placement decision.
@@ -129,7 +129,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
   test('AC2: card shows a "KP EARNED" row with a non-negative numeric value', async ({ page }) => {
     await clearDismissAndReload(page)
     const card = momentumCard(page)
-    await expect(card).toBeVisible({ timeout: 10_000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
 
     await expect(card).toContainText('KP EARNED')
     const text = await card.innerText()
@@ -146,7 +146,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
   test('AC3: card shows SOURCES, LOGS, EXPERIMENTS, DATA POINTS rows, each numeric', async ({ page }) => {
     await clearDismissAndReload(page)
     const card = momentumCard(page)
-    await expect(card).toBeVisible({ timeout: 10_000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
 
     const text = await card.innerText()
     for (const label of ['SOURCES', 'LOGS', 'EXPERIMENTS', 'DATA POINTS']) {
@@ -167,7 +167,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
     // scoped, same session) so the branch taken matches this team's real data.
     await clearDismissAndReload(page)
     const card = momentumCard(page)
-    await expect(card).toBeVisible({ timeout: 10_000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
 
     const momentum = (await page.evaluate(async () => {
       const res = await fetch('/api/team/momentum')
@@ -196,7 +196,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
   }) => {
     await clearDismissAndReload(page)
     const card = momentumCard(page)
-    await expect(card).toBeVisible({ timeout: 10_000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
     const cardBox = (await card.boundingBox())!
     expect(cardBox).not.toBeNull()
 
@@ -227,7 +227,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
   test('AC6: clicking the ✕ dismiss button removes the recap card', async ({ page }) => {
     await clearDismissAndReload(page)
     const card = momentumCard(page)
-    await expect(card).toBeVisible({ timeout: 10_000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
 
     const dismissBtn = page.locator('[data-testid="momentum-card-dismiss"]')
     await expect(dismissBtn).toBeVisible()
@@ -244,14 +244,14 @@ test.describe('F10 — Momentum weekly recap card', () => {
     // (it does not rely on AC6's click having happened first in a shared page).
     await clearDismissAndReload(page)
     const card = momentumCard(page)
-    await expect(card).toBeVisible({ timeout: 10_000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
 
     await page.locator('[data-testid="momentum-card-dismiss"]').click()
     await expect(card).toBeHidden()
 
     // Same context/origin — localStorage persists across this reload.
     await page.reload()
-    await expect(card).toBeHidden({ timeout: 10_000 })
+    await expect(card).toBeHidden({ timeout: 20_000 })
     // Give any self-fetch a moment to resolve and confirm it still renders nothing.
     await page.waitForLoadState('networkidle')
     await expect(card).toHaveCount(0)
@@ -327,7 +327,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
   test('AC10: card renders with font-pixel + dark/gold lab chrome, not plain browser text', async ({ page }) => {
     await clearDismissAndReload(page)
     const card = momentumCard(page)
-    await expect(card).toBeVisible({ timeout: 10_000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
 
     // The card (or a descendant carrying the header/labels) uses the pixel font
     // family, matching StatusStrip/FeedbackPanel chrome, not a default sans font.

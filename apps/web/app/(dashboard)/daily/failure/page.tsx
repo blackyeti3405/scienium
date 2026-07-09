@@ -1,8 +1,5 @@
+import { OperationsHubFeature } from '@/components/ops/OperationsHubFeature'
+
 export default function FailureLogPage() {
-  return (
-    <div className="space-y-6 max-w-2xl">
-      <h1 className="text-2xl font-bold">Failure Log</h1>
-      {/* TODO: FailureLogForm with structured prompts */}
-    </div>
-  )
+  return <div className="min-h-screen"><OperationsHubFeature initialTab="failure" /></div>
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Sprite } from '@/components/lab/Sprite'
 import { getBuildingSprite, getGatewaySprite, type GatewaySkin, type GatewayKey } from '@/lib/sprites/manifest'
 import { GATEWAYS } from '@/lib/gateways'
@@ -68,10 +68,6 @@ interface LabPlotProps {
   arrangeMode: boolean
   /** Building attached to the cursor; the grid + footprint preview show while set. */
   ghost: PlotGhost | null
-  /** True while a placement/move POST for the current ghost is in flight — the
-   *  ghost sprite pulses instead of sitting static, so a drop reads as "working"
-   *  during the 1–3s round trip instead of looking unresponsive. */
-  ghostBusy?: boolean
   onOpenGateway: (key: string) => void
   onPick: (kind: 'economy' | 'gateway', key: string, from: IsoPos) => void
   /** Drop the ghost on a (validated) cell. No-op caller-side if invalid. */
@@ -94,7 +90,6 @@ export function LabPlot({
   economy,
   arrangeMode,
   ghost,
-  ghostBusy = false,
   onOpenGateway,
   onPick,
   onDrop,
@@ -103,6 +98,7 @@ export function LabPlot({
   onSelectEconomy,
 }: LabPlotProps) {
   const ref = useRef<HTMLDivElement>(null)
+  const suppressClickRef = useRef(false)
   const [dims, setDims] = useState({ w: 0, h: 0 })
   const [hover, setHover] = useState<IsoPos | null>(null)
 
@@ -128,9 +124,12 @@ export function LabPlot({
   // Cells occupied by every building currently on the plot. The picked-up building
   // is already removed from `gateways`/`economy` by the parent, so a move can drop
   // back onto its own cell.
-  const occupied = new Set<string>()
-  for (const g of gateways) occupied.add(cellKey(g.gx, g.gy))
-  for (const e of economy) occupied.add(cellKey(e.gx, e.gy))
+  const occupied = useMemo(() => {
+    const cells = new Set<string>()
+    for (const g of gateways) cells.add(cellKey(g.gx, g.gy))
+    for (const e of economy) cells.add(cellKey(e.gx, e.gy))
+    return cells
+  }, [economy, gateways])
 
   const hoverValid = hover ? isPlaceable(hover.gx, hover.gy, occupied) : false
 
@@ -152,6 +151,10 @@ export function LabPlot({
   }
 
   function handleClick(e: React.MouseEvent) {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false
+      return
+    }
     if (!ghost) {
       // Background click in regular mode → deselect any open Sell/Upgrade menu.
       // (Building clicks stopPropagation, so this only fires on empty space.)
@@ -177,7 +180,7 @@ export function LabPlot({
   }
 
   // Resolve a placed item to its sprite + label for rendering.
-  function renderItem(kind: 'economy' | 'gateway', item: PlacedItem) {
+  const renderItem = useCallback((kind: 'economy' | 'gateway', item: PlacedItem) => {
     const { dx, dy } = cellToScreen(item.gx, item.gy)
     const interactive = !ghost
     const sprite =
@@ -201,9 +204,20 @@ export function LabPlot({
     function onClickItem(e: React.MouseEvent) {
       if (ghost) return // drops are handled by the container
       e.stopPropagation()
-      if (arrangeMode) onPick(kind, item.key, { gx: item.gx, gy: item.gy })
+      if (arrangeMode) return // pointer-down picks up immediately
       else if (kind === 'gateway') onOpenGateway(item.key)
       else onSelectEconomy(item.key) // regular click on an economy building → Sell/Upgrade menu
+    }
+
+    function onPointerDownItem(e: React.PointerEvent) {
+      if (!arrangeMode || ghost) return
+      e.preventDefault()
+      e.stopPropagation()
+      suppressClickRef.current = true
+      window.setTimeout(() => {
+        suppressClickRef.current = false
+      }, 0)
+      onPick(kind, item.key, { gx: item.gx, gy: item.gy })
     }
 
     // Accessible name: arrange mode → "Move X"; normal mode a gateway opens its
@@ -231,6 +245,7 @@ export function LabPlot({
           top: pos.top,
           zIndex: 20 + depth(item.gx, item.gy) * 2,
         }}
+        onPointerDown={onPointerDownItem}
         onClick={onClickItem}
         onMouseEnter={() => onHoverBuilding(label)}
         onMouseLeave={() => onHoverBuilding(null)}
@@ -245,7 +260,16 @@ export function LabPlot({
         )}
       </button>
     )
-  }
+  }, [
+    arrangeMode,
+    ghost,
+    labType,
+    onHoverBuilding,
+    onOpenGateway,
+    onPick,
+    onSelectEconomy,
+    skin,
+  ])
 
   // Ghost preview sprite (attached to the cursor's snapped cell).
   const ghostSprite = ghost
@@ -255,6 +279,17 @@ export function LabPlot({
         ? getBuildingSprite(labType, shopBuilding(ghost.key)?.sprite ?? '', ghost.level ?? 1)
         : null
     : null
+
+  const renderedItems = useMemo(
+    () =>
+      [
+        ...gateways.map((item) => ({ kind: 'gateway' as const, item })),
+        ...economy.map((item) => ({ kind: 'economy' as const, item })),
+      ]
+        .sort((a, b) => depth(a.item.gx, a.item.gy) - depth(b.item.gx, b.item.gy))
+        .map(({ kind, item }) => renderItem(kind, item)),
+    [economy, gateways, renderItem],
+  )
 
   return (
     <div
@@ -281,19 +316,14 @@ export function LabPlot({
         </svg>
       )}
 
-      {[
-        ...gateways.map((g) => ({ kind: 'gateway' as const, item: g })),
-        ...economy.map((e) => ({ kind: 'economy' as const, item: e })),
-      ]
-        .sort((a, b) => depth(a.item.gx, a.item.gy) - depth(b.item.gx, b.item.gy))
-        .map(({ kind, item }) => renderItem(kind, item))}
+      {renderedItems}
 
       {ghost && ghostSprite && hover && (() => {
         const { dx, dy } = cellToScreen(hover.gx, hover.gy)
         const pos = placeSprite(ghostSprite, dx, dy)
         return (
           <span
-            className={`plot-ghost ${hoverValid ? 'plot-ghost--valid' : 'plot-ghost--invalid'}${ghostBusy ? ' plot-ghost--busy' : ''}`}
+            className={`plot-ghost ${hoverValid ? 'plot-ghost--valid' : 'plot-ghost--invalid'}`}
             style={{
               left: pos.left,
               top: pos.top,

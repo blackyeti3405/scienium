@@ -106,62 +106,73 @@ type NewNode = {
   publishedAt?: string
 }
 
-/** POST new nodes; returns the KP the server reports it awarded (0 on failure). */
-async function persistCreate(nodes: NewNode[]): Promise<number> {
+/** POST new nodes and distinguish a real zero-KP award from a failed write. */
+async function persistCreate(nodes: NewNode[]): Promise<{ ok: boolean; kp: number }> {
   try {
     const res = await fetch('/api/discovery/tree', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nodes }),
     })
-    if (!res.ok) return 0
+    if (!res.ok) return { ok: false, kp: 0 }
     const data = await res.json().catch(() => ({}))
-    return typeof data.kpAwarded === 'number' ? data.kpAwarded : 0
+    return { ok: true, kp: typeof data.kpAwarded === 'number' ? data.kpAwarded : 0 }
   } catch (err) {
     console.error('[discovery] create failed:', err)
-    return 0
+    return { ok: false, kp: 0 }
   }
 }
 
-async function persistStar(id: string, starred: boolean) {
+async function persistStar(id: string, starred: boolean): Promise<boolean> {
   try {
-    await fetch(`/api/discovery/tree/${id}`, {
+    const res = await fetch(`/api/discovery/tree/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ starred }),
     })
+    return res.ok
   } catch (err) {
     console.error('[discovery] star failed:', err)
+    return false
   }
 }
 
 // #11: persist a node's interest tier. Log-and-swallow on failure — the next
 // hydrate() reconciles with the DB-authoritative value, same as `persistStar`.
-async function persistInterest(id: string, level: 'high' | 'mid' | 'low' | null) {
+async function persistInterest(
+  id: string,
+  level: 'high' | 'mid' | 'low' | null,
+): Promise<boolean> {
   try {
-    await fetch(`/api/discovery/tree/${id}`, {
+    const res = await fetch(`/api/discovery/tree/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ interestLevel: level }),
     })
+    return res.ok
   } catch (err) {
     console.error('[discovery] interest failed:', err)
+    return false
   }
 }
 
-async function persistDelete(id: string) {
+async function persistDelete(id: string): Promise<boolean> {
   try {
-    await fetch(`/api/discovery/tree/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/discovery/tree/${id}`, { method: 'DELETE' })
+    return res.ok
   } catch (err) {
     console.error('[discovery] delete failed:', err)
+    return false
   }
 }
 
-async function persistReset() {
+async function persistReset(): Promise<boolean> {
   try {
-    await fetch('/api/discovery/tree', { method: 'DELETE' })
+    const res = await fetch('/api/discovery/tree', { method: 'DELETE' })
+    return res.ok
   } catch (err) {
     console.error('[discovery] reset failed:', err)
+    return false
   }
 }
 
@@ -230,7 +241,10 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
       pendingLinks: [],
       newTreePending: false,
     }))
-    persistCreate([{ id, title, parentId: null, source: 'wikipedia' }]).then((kp) => reportKp(set, kp))
+    persistCreate([{ id, title, parentId: null, source: 'wikipedia' }]).then((result) => {
+      if (result.ok) reportKp(set, result.kp)
+      else void get().hydrate()
+    })
   },
 
   // Add a pasted YouTube video. Attaches under the current node (a branch — and a
@@ -269,8 +283,11 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
       pendingLinks: [],
       newTreePending: false,
     }))
-    persistCreate([{ id, title, parentId: targetParentId, source: 'youtube', videoId }]).then((kp) =>
-      reportKp(set, kp),
+    persistCreate([{ id, title, parentId: targetParentId, source: 'youtube', videoId }]).then(
+      (result) => {
+        if (result.ok) reportKp(set, result.kp)
+        else void get().hydrate()
+      },
     )
   },
 
@@ -333,7 +350,10 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
         abstract: resolved.abstract ?? undefined,
         publishedAt: resolved.publishedAt ?? undefined,
       },
-    ])
+    ]).then((result) => {
+      if (result.ok) reportKp(set, result.kp)
+      else void get().hydrate()
+    })
     return id
   },
 
@@ -417,7 +437,9 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
       currentNodeId: created[0].id,
       pendingLinks: [],
     }))
-    persistCreate(toPersist)
+    const result = await persistCreate(toPersist)
+    if (result.ok) reportKp(set, result.kp)
+    else await get().hydrate()
   },
 
   navigateToNode: (nodeId) => {
@@ -464,7 +486,10 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
     }))
     persistCreate(
       newNodes.map((n) => ({ id: n.id, title: n.title, parentId: n.parentId, source: 'wikipedia' as const })),
-    ).then((kp) => reportKp(set, kp))
+    ).then((result) => {
+      if (result.ok) reportKp(set, result.kp)
+      else void get().hydrate()
+    })
   },
 
   setNodeReflection: (nodeId, reflection) => {
@@ -511,7 +536,9 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
         return { ...n, starred: nextStarred }
       }),
     }))
-    persistStar(nodeId, nextStarred)
+    persistStar(nodeId, nextStarred).then((ok) => {
+      if (!ok) void get().hydrate()
+    })
   },
 
   // #11: optimistically set the local interest tier, then persist (mirrors
@@ -520,7 +547,9 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
     set((state) => ({
       nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, interestLevel: level } : n)),
     }))
-    persistInterest(nodeId, level)
+    persistInterest(nodeId, level).then((ok) => {
+      if (!ok) void get().hydrate()
+    })
   },
 
   // #11: mark that the next opened/added source starts a brand-new tree.
@@ -556,11 +585,15 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
       }
     })
     // Server cascades the subtree delete from this id.
-    persistDelete(nodeId)
+    persistDelete(nodeId).then((ok) => {
+      if (!ok) void get().hydrate()
+    })
   },
 
   reset: () => {
     set({ nodes: [], currentNodeId: null, pendingLinks: [], newTreePending: false })
-    persistReset()
+    persistReset().then((ok) => {
+      if (!ok) void get().hydrate()
+    })
   },
 }))

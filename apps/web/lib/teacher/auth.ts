@@ -97,17 +97,23 @@ export async function requireTeacher(
 }
 
 /**
- * Verify a team falls within the teacher's scope: at least one member is a
- * student in one of the teacher's classes. Returns true if the teacher may view
- * or act on the team. An empty class scope is never in-scope.
+ * Verify a team falls within the teacher's scope through its explicit class.
+ * The lead's class is consulted only for legacy teams that predate Team.classId.
+ * An empty class scope is never in-scope.
  */
 export async function teacherOwnsTeam(classIds: string[], teamId: string): Promise<boolean> {
   if (classIds.length === 0) return false
-  const member = await db.teamMember.findFirst({
-    where: { teamId, user: { classId: { in: classIds } } },
-    select: { userId: true },
+  const team = await db.team.findFirst({
+    where: {
+      id: teamId,
+      OR: [
+        { classId: { in: classIds } },
+        { classId: null, teamLead: { classId: { in: classIds } } },
+      ],
+    },
+    select: { id: true },
   })
-  return !!member
+  return !!team
 }
 
 /** Server-component role check (mirrors requireTeacher's role layer). */

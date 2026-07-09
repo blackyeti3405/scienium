@@ -107,8 +107,8 @@ export async function POST(
       const lastUser = [...convo].reverse().find((m) => m.role === 'user')
       await db.paperChatMessage.createMany({
         data: [
-          ...(lastUser ? [{ paperId: paper.id, userId: ctx.dbUserId, role: 'user', content: lastUser.content }] : []),
-          { paperId: paper.id, userId: ctx.dbUserId, role: 'assistant', content: reply },
+          ...(lastUser ? [{ paperId: paper.id, userId: ctx.dbUserId, role: 'user' as const, content: lastUser.content }] : []),
+          { paperId: paper.id, userId: ctx.dbUserId, role: 'assistant' as const, content: reply },
         ],
       })
     } catch (persistErr) {

@@ -7,7 +7,6 @@ import {
   Send,
   ExternalLink,
   MessageSquare,
-  X,
   FileText,
   User,
   TrendingUp,
@@ -23,8 +22,6 @@ import {
   MessageCircle,
   Coins,
 } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { Card } from '@/components/ui/Card'
 import { SectionTabs } from '@/components/ui/SectionTabs'
 import { BusyButton } from '@/components/ui/BusyButton'
@@ -39,6 +36,7 @@ import {
   type LabType,
 } from '@/lib/phase'
 import { TEACHER_GATED_TRANSITIONS } from '@/lib/team/advance'
+import { PaperQAPanel } from './student-detail/PaperQAPanel'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -620,230 +618,6 @@ function BuildingsSection({ overview }: { overview: Overview }) {
   )
 }
 
-// ─── Literature Q&A types ──────────────────────────────────────────────────────
-
-interface PaperQA {
-  paper: { id: string; title: string; authors: string[]; status: string }
-  proficiency: { demonstrated: boolean; bestScore: number } | null
-  quiz: {
-    score: number
-    passed: boolean
-    threshold: number
-    gradedAt: string
-    questions: { id: string; prompt: string; focus: string }[]
-    answers: Record<string, string>
-    results: { questionId: string; score: number; rationale: string }[]
-  } | null
-  chat: { role: string; content: string }[]
-}
-
-// ─── Q&A Panel ─────────────────────────────────────────────────────────────────
-
-function QAPanel({
-  studentId,
-  paperId,
-  onClose,
-}: {
-  studentId: string
-  paperId: string
-  onClose: () => void
-}) {
-  const [data, setData] = useState<PaperQA | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [err, setErr] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetch(`/api/teacher/student/${studentId}/literature/${paperId}`)
-      .then(async (r) => {
-        if (!r.ok) throw new Error('Failed to load')
-        return r.json() as Promise<PaperQA>
-      })
-      .then(setData)
-      .catch(() => setErr('Could not load Q&A data.'))
-      .finally(() => setLoading(false))
-  }, [studentId, paperId])
-
-  return (
-    /* Backdrop */
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#0a1628] border border-white/15 rounded-lg shadow-2xl">
-        {/* Modal header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between bg-[#0a1628] border-b border-white/10 px-4 py-3">
-          {data ? (
-            <div className="min-w-0 pr-4">
-              <p className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
-                Q&amp;A — read only
-              </p>
-              <p className="text-sm text-white truncate mt-0.5">{data.paper.title}</p>
-            </div>
-          ) : (
-            <p className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
-              Q&amp;A — read only
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 text-white/40 hover:text-white/80 transition-colors cursor-pointer"
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-6">
-          {loading && (
-            <div className="space-y-6">
-              {/* Score header */}
-              <div className="flex items-center gap-3">
-                <PixelSkeleton variant="line" h="h-7" w="w-16" />
-                <PixelSkeleton variant="pill" h="h-5" w="w-20" />
-              </div>
-              {/* Transcript rows */}
-              <div className="space-y-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <PixelSkeleton key={i} variant="box" h="h-16" w="w-full" />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {err && (
-            <p className="text-sm text-red-400 text-center py-8">{err}</p>
-          )}
-
-          {data && !loading && (
-            <>
-              {/* View PDF link */}
-              {data.paper.status === 'ready' && (
-                <div>
-                  <a
-                    href={`/api/teacher/student/${studentId}/literature/${paperId}/file`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-sm text-[#F5C518] hover:brightness-110 transition-all"
-                  >
-                    <FileText size={14} /> View PDF
-                  </a>
-                </div>
-              )}
-
-              {/* Quiz section */}
-              <section className="space-y-3">
-                <h3 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
-                  Quiz
-                </h3>
-
-                {data.quiz ? (
-                  <div className="space-y-3">
-                    {/* Score + pass/fail */}
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl font-semibold tabular-nums text-white">
-                        {data.quiz.score}
-                        <span className="text-base text-white/40">%</span>
-                      </span>
-                      <span
-                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                          data.quiz.passed
-                            ? 'bg-emerald-400/15 text-emerald-400'
-                            : 'bg-red-400/15 text-red-400'
-                        }`}
-                      >
-                        {data.quiz.passed ? 'Passed' : 'Not passed'}
-                      </span>
-                      <span className="text-xs text-white/30">
-                        threshold {data.quiz.threshold}%
-                      </span>
-                    </div>
-
-                    {/* Per-question breakdown */}
-                    <ul className="space-y-3">
-                      {data.quiz.questions.map((q) => {
-                        const answer = data.quiz!.answers[q.id] ?? ''
-                        const result = data.quiz!.results.find((r) => r.questionId === q.id)
-                        const qScore = result?.score ?? 0
-                        const scoreColor =
-                          qScore >= 70
-                            ? 'text-emerald-400'
-                            : qScore >= 40
-                            ? 'text-amber-400'
-                            : 'text-red-400'
-                        return (
-                          <li
-                            key={q.id}
-                            className="border border-white/10 bg-[#0d1b2e] rounded-md p-3 space-y-2"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="text-sm text-white/85 flex-1">{q.prompt}</p>
-                              <span className={`shrink-0 text-sm font-semibold tabular-nums ${scoreColor}`}>
-                                {qScore}%
-                              </span>
-                            </div>
-                            {answer && (
-                              <p className="text-sm text-white/60 bg-white/5 px-2.5 py-1.5 border-l-2 border-white/20 italic rounded-sm">
-                                {answer}
-                              </p>
-                            )}
-                            {result?.rationale && (
-                              <p className="text-xs text-white/40">{result.rationale}</p>
-                            )}
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  </div>
-                ) : (
-                  <p className="text-sm text-white/30 py-2">No quiz taken yet.</p>
-                )}
-              </section>
-
-              {/* Chat transcript */}
-              <section className="space-y-3">
-                <h3 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
-                  Discussion transcript
-                </h3>
-
-                {data.chat.length > 0 ? (
-                  <ul className="space-y-3">
-                    {data.chat.map((msg, i) => (
-                      <li
-                        key={i}
-                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div
-                          className={`max-w-[85%] px-3 py-2 text-sm rounded-md ${
-                            msg.role === 'user'
-                              ? 'bg-[#F5C518]/10 border border-[#F5C518]/20 text-white/85'
-                              : 'bg-white/5 border border-white/10 text-white/75'
-                          }`}
-                        >
-                          <span className="text-[10px] uppercase text-white/30 block mb-1 font-medium tracking-wide">
-                            {msg.role === 'user' ? 'student' : 'vega'}
-                          </span>
-                          <div className="prose prose-sm prose-invert max-w-none text-inherit">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {msg.content}
-                            </ReactMarkdown>
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-white/30 py-2">No discussion yet.</p>
-                )}
-              </section>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Literature section ─────────────────────────────────────────────────────────
 
 function LiteratureSection({ overview }: { overview: Overview }) {
@@ -954,7 +728,7 @@ function LiteratureSection({ overview }: { overview: Overview }) {
 
       {/* Q&A modal */}
       {openPaperId && (
-        <QAPanel
+        <PaperQAPanel
           studentId={studentId}
           paperId={openPaperId}
           onClose={() => setOpenPaperId(null)}

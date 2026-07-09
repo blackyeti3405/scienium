@@ -30,6 +30,7 @@ import { LabeledLoader } from '@/components/ui/LabeledLoader'
 import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
 import { OpsTabSkeleton } from '@/components/ui/skeletons/OpsTabSkeleton'
 import { uploadWithProgress } from '@/lib/uploadWithProgress'
+import type { LabType } from '@/lib/phase'
 
 // The Field Codex tab pulls the full typed curriculum content (lazily
 // per-track, but the panel shell itself still carries the engine + index),
@@ -65,11 +66,13 @@ const ENGINEERING_STAGES = [
   'Documentation & Report',
 ]
 
-const ENGINEERING_LAB_TYPES = ['volt_lab', 'aero_lab', 'mech_lab', 'comp_lab']
+const ENGINEERING_LAB_TYPES: readonly LabType[] = ['volt_lab']
 
 function getStages(labType: string | null): string[] {
   if (!labType) return [...SCIENCE_STAGES, ...ENGINEERING_STAGES]
-  return ENGINEERING_LAB_TYPES.includes(labType) ? ENGINEERING_STAGES : SCIENCE_STAGES
+  return ENGINEERING_LAB_TYPES.some((type) => type === labType)
+    ? ENGINEERING_STAGES
+    : SCIENCE_STAGES
 }
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -1168,12 +1171,12 @@ function FailureLogTab() {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'codex' | 'log' | 'failure' | 'expertise' | 'data' | 'vega'
+export type OperationsTab = 'codex' | 'log' | 'failure' | 'expertise' | 'data' | 'vega'
 
 // Fourth tuple slot is an optional data-testid — only Field Codex + Study with
 // Vega need one per their plans' acceptance criteria; other tabs are untouched.
 // Field Codex leads: it replaced Field Dispatch as the daily pillar.
-const TAB_DEFS: [Tab, string, string, string?][] = [
+const TAB_DEFS: [OperationsTab, string, string, string?][] = [
   ['codex', '📖', 'Field Codex', 'codex-tab'],
   ['log', '📋', 'Project Log'],
   ['failure', '⚡', 'Failure Log'],
@@ -1182,8 +1185,12 @@ const TAB_DEFS: [Tab, string, string, string?][] = [
   ['vega', '🧠', 'Study with Vega', 'vega-tab'],
 ]
 
-export function OperationsHubFeature() {
-  const [tab, setTab] = useState<Tab>('codex')
+export function OperationsHubFeature({
+  initialTab = 'codex',
+}: {
+  initialTab?: OperationsTab
+}) {
+  const [tab, setTab] = useState<OperationsTab>(initialTab)
 
   return (
     <div className="flex flex-col h-full bg-[#0d1b2e] text-white">

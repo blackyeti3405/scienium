@@ -5,7 +5,7 @@ import { X, MessageSquare, CheckCircle } from 'lucide-react'
 import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
 
-interface FeedbackItem {
+export interface FeedbackItem {
   id: string
   targetType: string
   targetId: string | null
@@ -42,12 +42,19 @@ function targetLabel(targetType: string): string {
 interface FeedbackPanelProps {
   onClose: () => void
   onUnresolvedCount?: (n: number) => void
+  initialData?: { items: FeedbackItem[]; unresolvedCount: number } | null
+  onDataChange?: (data: { items: FeedbackItem[]; unresolvedCount: number }) => void
 }
 
-export function FeedbackPanel({ onClose, onUnresolvedCount }: FeedbackPanelProps) {
+export function FeedbackPanel({
+  onClose,
+  onUnresolvedCount,
+  initialData,
+  onDataChange,
+}: FeedbackPanelProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
-  const [items, setItems] = useState<FeedbackItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [items, setItems] = useState<FeedbackItem[]>(initialData?.items ?? [])
+  const [loading, setLoading] = useState(!initialData)
   const [error, setError] = useState<string | null>(null)
   const [patching, setPatching] = useState<string | null>(null)
 
@@ -73,16 +80,22 @@ export function FeedbackPanel({ onClose, onUnresolvedCount }: FeedbackPanelProps
       const data = await res.json()
       setItems(data.items)
       onUnresolvedCount?.(data.unresolvedCount)
+      onDataChange?.(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error')
     } finally {
       setLoading(false)
     }
-  }, [onUnresolvedCount])
+  }, [onDataChange, onUnresolvedCount])
 
   useEffect(() => {
-    loadFeedback()
-  }, [loadFeedback])
+    if (initialData) {
+      setItems(initialData.items)
+      setLoading(false)
+      return
+    }
+    void loadFeedback()
+  }, [initialData, loadFeedback])
 
   async function toggleResolved(item: FeedbackItem, resolved: boolean) {
     setPatching(item.id)
@@ -91,6 +104,7 @@ export function FeedbackPanel({ onClose, onUnresolvedCount }: FeedbackPanelProps
     setItems(next)
     const newCount = next.filter((i) => !i.resolved).length
     onUnresolvedCount?.(newCount)
+    onDataChange?.({ items: next, unresolvedCount: newCount })
 
     try {
       const res = await fetch('/api/team/feedback', {
@@ -102,7 +116,9 @@ export function FeedbackPanel({ onClose, onUnresolvedCount }: FeedbackPanelProps
         // Revert on failure — functional updater avoids clobbering a concurrent item's optimistic state
         setItems((prev) => {
           const reverted = prev.map((i) => (i.id === item.id ? { ...i, resolved: !resolved } : i))
-          onUnresolvedCount?.(reverted.filter((i) => !i.resolved).length)
+          const count = reverted.filter((i) => !i.resolved).length
+          onUnresolvedCount?.(count)
+          onDataChange?.({ items: reverted, unresolvedCount: count })
           return reverted
         })
       }
@@ -110,7 +126,9 @@ export function FeedbackPanel({ onClose, onUnresolvedCount }: FeedbackPanelProps
       // Revert on failure — functional updater avoids clobbering a concurrent item's optimistic state
       setItems((prev) => {
         const reverted = prev.map((i) => (i.id === item.id ? { ...i, resolved: !resolved } : i))
-        onUnresolvedCount?.(reverted.filter((i) => !i.resolved).length)
+        const count = reverted.filter((i) => !i.resolved).length
+        onUnresolvedCount?.(count)
+        onDataChange?.({ items: reverted, unresolvedCount: count })
         return reverted
       })
     } finally {

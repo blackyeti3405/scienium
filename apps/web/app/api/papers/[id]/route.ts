@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
+import { processPaperJob } from '@/lib/literature/process-paper'
 
 export async function GET(
   req: NextRequest,
@@ -10,7 +11,7 @@ export async function GET(
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 
-  const paper = await db.paper.findFirst({
+  let paper = await db.paper.findFirst({
     where: { id: params.id, teamId: ctx.teamId },
     select: {
       id: true,
@@ -26,6 +27,24 @@ export async function GET(
   })
 
   if (!paper) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  if (paper.status === 'processing' || paper.status === 'error') {
+    await processPaperJob(paper.id)
+    paper = await db.paper.findFirst({
+      where: { id: params.id, teamId: ctx.teamId },
+      select: {
+        id: true,
+        title: true,
+        authors: true,
+        abstract: true,
+        status: true,
+        fileUrl: true,
+        createdAt: true,
+        proficiencies: { where: { userId: ctx.dbUserId }, select: { demonstrated: true } },
+      },
+    })
+    if (!paper) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
 
   const { proficiencies, ...rest } = paper
   return NextResponse.json({

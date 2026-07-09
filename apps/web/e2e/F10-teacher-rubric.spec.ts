@@ -1,4 +1,10 @@
-import { test, expect, request as playwrightRequest, type Browser } from '@playwright/test'
+import {
+  test,
+  expect,
+  request as playwrightRequest,
+  type Browser,
+  type Page,
+} from '@playwright/test'
 import { STORAGE } from './roles'
 
 /**
@@ -48,17 +54,23 @@ const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 let teamId: string | null = null
 let studentId: string | null = null
 
-async function resetTeacherScore(teamIdToReset: string) {
-  const ctx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: STORAGE.teacher })
+async function refreshTeacherSession(page: Page) {
+  await page.goto('/teacher')
+  await expect(page.getByText('Class Roster')).toBeVisible({ timeout: 20_000 })
+}
+
+async function resetTeacherScore(browser: Browser, teamIdToReset: string) {
+  const page = await browser.newPage({ baseURL: BASE_URL, storageState: STORAGE.teacher })
   try {
-    const res = await ctx.put('/api/teacher/rubric', {
+    await refreshTeacherSession(page)
+    const res = await page.request.put('/api/teacher/rubric', {
       data: { teamId: teamIdToReset, track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 0 },
     })
     if (res.status() !== 200) {
       throw new Error(`resetTeacherScore PUT failed: ${res.status()} ${await res.text()}`)
     }
   } finally {
-    await ctx.dispose()
+    await page.close()
   }
 }
 
@@ -80,7 +92,7 @@ async function seedStudentScore(browser: Browser, score: number) {
   const page = await browser.newPage({ storageState: STORAGE.leader })
   try {
     await page.goto('/fair-hub/rubric')
-    await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 20_000 })
     const res = await page.request.put('/api/rubric/self-assessment', {
       data: { track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score },
     })
@@ -93,19 +105,23 @@ async function seedStudentScore(browser: Browser, score: number) {
 }
 
 test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison + anchor content', () => {
-  test.describe.configure({ mode: 'serial' })
+  // These tests intentionally exercise the remote development database through
+  // multiple full student-detail loads. Reload cases can exceed Playwright's
+  // 30-second default even when every individual request is healthy.
+  test.describe.configure({ mode: 'serial', timeout: 60_000 })
   // Every test in this suite drives the teacher-only drill-down / API — override
   // the default chromium storageState (lab leader) once for the whole describe
   // block. test.use() cannot be called from inside an async test body.
   test.use({ storageState: STORAGE.teacher })
 
-  test.beforeAll(async () => {
-    const teacherCtx = await playwrightRequest.newContext({
+  test.beforeAll(async ({ browser }) => {
+    const teacherPage = await browser.newPage({
       baseURL: BASE_URL,
       storageState: STORAGE.teacher,
     })
     try {
-      const rosterRes = await teacherCtx.get('/api/teacher/roster')
+      await refreshTeacherSession(teacherPage)
+      const rosterRes = await teacherPage.request.get('/api/teacher/roster')
       if (!rosterRes.ok()) {
         throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
       }
@@ -122,16 +138,16 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
       teamId = withTeam.teamId
       studentId = withTeam.studentId
     } finally {
-      await teacherCtx.dispose()
+      await teacherPage.close()
     }
 
     // Belt-and-suspenders: start from a known-clean teacher score.
-    await resetTeacherScore(teamId!)
+    await resetTeacherScore(browser, teamId!)
   })
 
   test.afterAll(async ({ browser }) => {
     if (!teamId) return
-    await resetTeacherScore(teamId)
+    await resetTeacherScore(browser, teamId)
     await seedStudentScore(browser, 0)
   })
 
@@ -145,7 +161,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
-    await expect(card).toBeVisible({ timeout: 8000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
     await expect(card).toContainText('Research Question')
     await expect(card).toContainText('10 pts')
   })
@@ -158,7 +174,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
-    await expect(card).toBeVisible({ timeout: 8000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
 
     await expect(card).toContainText('Rubric anchors')
     await expect(card).toContainText(/Low|Mid|High/)
@@ -175,7 +191,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
-    await expect(card).toBeVisible({ timeout: 8000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
 
     const urlBefore = page.url()
     const scoreInput = card.locator('input[type="number"]')
@@ -200,7 +216,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
-    await expect(card).toBeVisible({ timeout: 8000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
 
     const urlBefore = page.url()
     const scoreInput = card.locator('input[type="number"]')
@@ -233,7 +249,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
-    await expect(card).toBeVisible({ timeout: 8000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
 
     const scoreInput = card.locator('input[type="number"]')
     // Save via the button: blur skips unchanged values, and 7 is already stored.
@@ -247,7 +263,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await page.reload()
     await page.getByRole('button', { name: 'Rubric' }).first().click()
     const cardAfterReload = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
-    await expect(cardAfterReload).toBeVisible({ timeout: 8000 })
+    await expect(cardAfterReload).toBeVisible({ timeout: 20_000 })
     await expect(cardAfterReload.locator('input[type="number"]')).toHaveValue('7')
   })
 
@@ -260,7 +276,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
-    await expect(card).toBeVisible({ timeout: 8000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
 
     const notesArea = card.locator('textarea')
     await notesArea.fill(noteText)
@@ -273,7 +289,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await page.reload()
     await page.getByRole('button', { name: 'Rubric' }).first().click()
     const cardAfterReload = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
-    await expect(cardAfterReload).toBeVisible({ timeout: 8000 })
+    await expect(cardAfterReload).toBeVisible({ timeout: 20_000 })
     await expect(cardAfterReload.locator('textarea')).toHaveValue(noteText)
   })
 
@@ -287,7 +303,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
-    await expect(card).toBeVisible({ timeout: 8000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
 
     const scoreInput = card.locator('input[type="number"]')
     await scoreInput.fill('99')
@@ -319,7 +335,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
-    await expect(card).toBeVisible({ timeout: 8000 })
+    await expect(card).toBeVisible({ timeout: 20_000 })
     const studentScore = card.getByTestId('student-score')
     await expect(studentScore).toContainText(/9\s*\/\s*10/)
 
@@ -349,13 +365,13 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const scienceCard = page.locator('[data-criterion-key="science:I"]')
-    await expect(scienceCard).toBeVisible({ timeout: 8000 })
+    await expect(scienceCard).toBeVisible({ timeout: 20_000 })
     await expect(scienceCard).toContainText('Research Question')
 
     await page.locator('button[data-track="engineering"]').click()
 
     const engineeringCard = page.locator('[data-criterion-key="engineering:I"]')
-    await expect(engineeringCard).toBeVisible({ timeout: 8000 })
+    await expect(engineeringCard).toBeVisible({ timeout: 20_000 })
     await expect(engineeringCard).toContainText('Research Problem')
   })
 
@@ -363,9 +379,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   test('AC10: IDOR (own team) — GET returns 200 with a criteria array and totalMax 100', async ({ page }) => {
     if (!studentId || !teamId) throw new Error('studentId/teamId not set — beforeAll failed')
 
-    // Navigate first to refresh the Clerk session cookie before a bare page.request call.
-    await page.goto(`/teacher/student/${studentId}`)
-    await expect(page.getByRole('button', { name: 'Rubric' }).first()).toBeVisible({ timeout: 8000 })
+    await refreshTeacherSession(page)
 
     const res = await page.request.get(
       `/api/teacher/rubric?teamId=${encodeURIComponent(teamId)}&track=science`,
@@ -380,8 +394,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   test('AC11: IDOR (foreign team) — GET returns 403 and no criteria data', async ({ page }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
-    await expect(page.getByRole('button', { name: 'Rubric' }).first()).toBeVisible({ timeout: 8000 })
+    await refreshTeacherSession(page)
 
     // A well-formed cuid-shaped id that is not owned by this teacher's classes.
     const foreignTeamId = 'clfakerandomteamidnotowned01'
@@ -400,8 +413,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
-    await expect(page.getByRole('button', { name: 'Rubric' }).first()).toBeVisible({ timeout: 8000 })
+    await refreshTeacherSession(page)
 
     const foreignTeamId = 'clfakerandomteamidnotowned02'
     const putRes = await page.request.put('/api/teacher/rubric', {
@@ -445,9 +457,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     // Seed a distinct student self-check value so we can prove it's untouched.
     await seedStudentScore(browser, 6)
 
-    // Navigate first to refresh the Clerk session cookie before bare page.request calls.
-    await page.goto(`/teacher/student/${studentId}`)
-    await expect(page.getByRole('button', { name: 'Rubric' }).first()).toBeVisible({ timeout: 8000 })
+    await refreshTeacherSession(page)
 
     const putRes = await page.request.put('/api/teacher/rubric', {
       data: { teamId, track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 5 },

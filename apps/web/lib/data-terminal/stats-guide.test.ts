@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { STATS_GUIDE, STAT_CATEGORIES, filterConcepts } from '@/lib/data-terminal/stats-guide'
-import type { StatCategory } from '@/lib/data-terminal/stats-guide'
+import { STATS_GUIDE, STAT_CATEGORIES, filterConcepts } from '@/content/data-terminal/stats-guide'
+import type { StatCategory } from '@/content/data-terminal/stats-guide'
 
 // ---------------------------------------------------------------------------
 // Content shape invariants — cheap guard that the 25-item authored guide

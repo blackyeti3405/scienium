@@ -13,7 +13,7 @@ import { dirname, join } from 'path'
 import https from 'https'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const DATASET_PATH = join(__dirname, '../lib/fairs/dataset.ts')
+const DATASET_PATH = join(__dirname, '../content/fairs/dataset.ts')
 
 const STATE_CENTROIDS = {
   AL: [32.8, -86.8], AK: [64.2, -149.5], AZ: [34.2, -111.7], AR: [34.9, -92.4],

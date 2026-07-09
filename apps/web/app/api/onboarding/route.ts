@@ -47,11 +47,15 @@ export async function POST(req: NextRequest) {
   // Idempotent — if user already exists just return their team
   const existing = await db.user.findUnique({
     where: { clerkUserId: userId },
-    include: { teamMemberships: { include: { team: true }, take: 1 } },
+    include: {
+      activeTeam: true,
+      teamMemberships: { orderBy: { joinedAt: 'desc' }, include: { team: true }, take: 1 },
+    },
   })
 
-  if (existing?.teamMemberships[0]) {
-    return NextResponse.json({ teamId: existing.teamMemberships[0].team.id })
+  const existingTeam = existing?.activeTeam ?? existing?.teamMemberships[0]?.team
+  if (existingTeam) {
+    return NextResponse.json({ teamId: existingTeam.id })
   }
 
   const user =
@@ -62,25 +66,30 @@ export async function POST(req: NextRequest) {
 
   // Ingest the student's high school (find-or-create) and optional classroom.
   // Non-fatal — a school lookup hiccup must not block lab creation.
-  await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => {})
+  const profile = await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => ({
+    classId: null,
+  }))
 
   // Mirror the display name into Clerk so the avatar/account match from day one.
   await syncClerkDisplayName(userId, user.name)
 
-  const team = await db.team.create({
-    data: {
-      name: teamName.trim(),
-      teamLeadId: user.id,
-      phase: 'literature_review',
-      locationZip,
-      locationState,
-      locationLat: locationCoords?.[0] ?? null,
-      locationLng: locationCoords?.[1] ?? null,
-      members: { create: { userId: user.id, role: 'lead' } },
-      // Every team starts with a zeroed currency ledger so KP/CLR/LC awards
-      // (e.g. literature-review quiz proficiency) always have a row to update.
-      currency: { create: {} },
-    },
+  const team = await db.$transaction(async (tx) => {
+    const created = await tx.team.create({
+      data: {
+        name: teamName.trim(),
+        teamLeadId: user.id,
+        classId: profile.classId,
+        phase: 'literature_review',
+        locationZip,
+        locationState,
+        locationLat: locationCoords?.[0] ?? null,
+        locationLng: locationCoords?.[1] ?? null,
+        members: { create: { userId: user.id, role: 'lead' } },
+        currency: { create: {} },
+      },
+    })
+    await tx.user.update({ where: { id: user.id }, data: { activeTeamId: created.id } })
+    return created
   })
 
   return NextResponse.json({ teamId: team.id })

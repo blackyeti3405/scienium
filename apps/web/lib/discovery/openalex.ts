@@ -2,6 +2,7 @@ import { LruCache } from '@/lib/lru'
 import { normalizeArxivId } from '@/lib/discovery/arxiv'
 import { sanitizeAbstract } from '@/lib/discovery/sanitize'
 import type { CredibilityTier } from '@prisma/client'
+import { serverEnv } from '@/lib/env'
 
 // ── OpenAlex (arXiv citation graph — Option A) ────────────────────────────────
 //
@@ -18,10 +19,10 @@ import type { CredibilityTier } from '@prisma/client'
 // Free + keyless. `mailto=` is a politeness param that gets us the faster pool.
 
 const OPENALEX_API = 'https://api.openalex.org'
-const MAILTO = process.env.OPENALEX_MAILTO || 'hello@scienium.app'
+const MAILTO = serverEnv.OPENALEX_MAILTO() || 'hello@scienium.app'
 // Optional free OpenAlex API key. Set OPENALEX_API_KEY in .env.local to stop the
 // anonymous-pool 503s ("retry shortly, or use a free API key for uninterrupted access").
-const OPENALEX_API_KEY = process.env.OPENALEX_API_KEY
+const OPENALEX_API_KEY = serverEnv.OPENALEX_API_KEY()
 const UA = 'scienium/1.0 (https://scienium.app; contact: hello@scienium.app) node-fetch'
 
 const CACHE_TTL_MS = 1000 * 60 * 30

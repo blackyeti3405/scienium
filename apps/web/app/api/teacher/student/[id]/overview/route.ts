@@ -28,6 +28,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       email: true,
       createdAt: true,
       class: { select: { id: true, name: true } },
+      activeTeam: { select: { id: true } },
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
         take: 1,
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   const membership = student.teamMemberships[0] ?? null
-  const teamId = membership?.team.id ?? null
+  const teamId = student.activeTeam?.id ?? membership?.team.id ?? null
 
   if (!teamId) {
     return NextResponse.json({
@@ -136,7 +137,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     // This student's KP from Codex lessons
     db.codexLessonProgress.aggregate({
-      where: { userId: params.id, kpAwarded: { gt: 0 } },
+      where: { userId: params.id, teamId, kpAwarded: { gt: 0 } },
       _sum: { kpAwarded: true },
     }),
 
@@ -235,7 +236,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     // Codex — this student's most recent lesson completions
     db.codexLessonProgress.findMany({
-      where: { userId: params.id, completed: true },
+      where: { userId: params.id, teamId, completed: true },
       orderBy: { completedAt: 'desc' },
       take: 10,
       select: {
@@ -248,7 +249,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }),
 
     db.codexLessonProgress.count({
-      where: { userId: params.id, completed: true },
+      where: { userId: params.id, teamId, completed: true },
     }),
 
     // Science fair associations for this student

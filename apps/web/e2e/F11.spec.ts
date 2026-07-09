@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { deleteE2eDiscoveryNodes, deleteE2eDiscoveryNodesByTitle } from './db'
 
 /**
  * F11 — Discovery interest color-coding + full-window Discovery Tree view +
@@ -137,14 +138,6 @@ async function seedInterest(page: Page, nodeId: string, level: 'high' | 'mid' | 
     .toBe(level)
 }
 
-/** Delete one node (and its subtree) via the existing DELETE surface — self-cleaning per PARALLELISM.md. */
-async function deleteNode(page: Page, nodeId: string): Promise<void> {
-  const res = await page.request.delete(`/api/discovery/tree/${nodeId}`)
-  // Log loudly but don't fail the suite on cleanup — a node already gone
-  // (e.g. removed by a prior "Start over" / resetTree) is a 404, not a bug.
-  console.log(`[F11 cleanup] DELETE /api/discovery/tree/${nodeId} -> ${res.status()}`)
-}
-
 /** Dismiss the Discovery home screen to reach the main explorer (mirrors papers-tab.spec.ts). */
 async function dismissHome(page: Page): Promise<void> {
   await page.getByRole('button', { name: /Continue Exploring|Start Exploring/ }).click()
@@ -197,30 +190,19 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   // Serial: several tests seed/mark/delete nodes on the one shared team tree;
   // running out of order or concurrently would race root counts and tier
   // section membership between tests.
-  test.describe.configure({ mode: 'serial' })
+  test.describe.configure({ mode: 'serial', timeout: 90_000 })
 
   // Track every node this spec creates so afterAll can self-clean regardless
   // of which tests passed/failed (self-cleaning per .claude/PARALLELISM.md).
   const createdNodeIds: string[] = []
 
-  test.afterAll(async ({ browser }) => {
-    // Navigate first (fresh context = no session cookie yet) so the Clerk JWT
-    // is on the page before any page.request call. Re-navigate every few
-    // deletes too — this spec can create ~20 nodes, and the storageState JWT
-    // is only ~60s-lived (measured), so a long sequential cleanup loop risks
-    // going stale partway through without a periodic refresh.
-    const context = await browser.newContext()
-    try {
-      const page = await context.newPage()
-      await page.goto('/discovery')
-      for (let i = 0; i < createdNodeIds.length; i++) {
-        if (i > 0 && i % 5 === 0) await page.goto('/discovery')
-        await deleteNode(page, createdNodeIds[i])
-      }
-      console.log(`[F11 cleanup] afterAll removed ${createdNodeIds.length} seeded node(s).`)
-    } finally {
-      await context.close()
-    }
+  test.beforeAll(async () => {
+    await deleteE2eDiscoveryNodesByTitle(TAG, [WIKI_TOPIC, WIKI_TOPIC_2])
+  })
+
+  test.afterAll(async () => {
+    await deleteE2eDiscoveryNodes(createdNodeIds)
+    console.log(`[F11 cleanup] afterAll removed ${createdNodeIds.length} seeded node(s).`)
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────
@@ -687,8 +669,11 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
 
     // Gold accent (#F5C518) appears in the active tab's chrome (background,
     // since the active toggle button is filled gold with dark text).
-    const activeTabBg = await treeTab(page).evaluate((el) => getComputedStyle(el).backgroundColor)
-    expect(activeTabBg).toBe(GOLD_RGB)
+    await expect
+      .poll(() => treeTab(page).evaluate((el) => getComputedStyle(el).backgroundColor), {
+        timeout: 2000,
+      })
+      .toBe(GOLD_RGB)
   })
 
   // ── AC17 ─────────────────────────────────────────────────────────────────────

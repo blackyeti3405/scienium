@@ -1,8 +1,8 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { PLOTS, PLOT_CATEGORIES, filterPlots } from '@/lib/data-terminal/plot-guide'
-import type { PlotConcept } from '@/lib/data-terminal/plot-guide'
+import { PLOTS, PLOT_CATEGORIES, filterPlots } from '@/content/data-terminal/plot-guide'
+import type { PlotConcept } from '@/content/data-terminal/plot-guide'
 import { useToggleSet } from '@/lib/hooks/useToggleSet'
 import {
   SectionLabel,

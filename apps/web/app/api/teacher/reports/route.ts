@@ -56,11 +56,16 @@ export async function GET(req: NextRequest) {
     where: { classId: { in: ctx.classIds }, role: 'student' },
     select: {
       id: true,
+      activeTeam: {
+        select: { id: true, name: true, phase: true, createdAt: true, classId: true },
+      },
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
         take: 1,
         select: {
-          team: { select: { id: true, name: true, phase: true, createdAt: true } },
+          team: {
+            select: { id: true, name: true, phase: true, createdAt: true, classId: true },
+          },
         },
       },
     },
@@ -69,8 +74,15 @@ export async function GET(req: NextRequest) {
   // De-duped teams from the scoped student set — the ONLY teams any aggregate below may touch.
   const teamMap = new Map<string, { id: string; name: string; phase: Phase; createdAt: Date }>()
   for (const s of students) {
-    const team = s.teamMemberships[0]?.team
-    if (team) teamMap.set(team.id, { id: team.id, name: team.name, phase: team.phase as Phase, createdAt: team.createdAt })
+    const team = s.activeTeam ?? s.teamMemberships[0]?.team
+    if (team?.classId && ctx.classIds.includes(team.classId)) {
+      teamMap.set(team.id, {
+        id: team.id,
+        name: team.name,
+        phase: team.phase as Phase,
+        createdAt: team.createdAt,
+      })
+    }
   }
   const teams = [...teamMap.values()]
   const teamIds = teams.map((t) => t.id)

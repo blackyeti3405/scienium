@@ -28,16 +28,28 @@ export async function GET(req: NextRequest) {
     select: {
       id: true,
       name: true,
+      activeTeam: {
+        select: { id: true, name: true, phase: true, labType: true, classId: true },
+      },
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
         take: 1,
-        select: { team: { select: { id: true, name: true, phase: true, labType: true } } },
+        select: {
+          team: { select: { id: true, name: true, phase: true, labType: true, classId: true } },
+        },
       },
     },
   })
 
   const teamIds = [
-    ...new Set(students.map((s) => s.teamMemberships[0]?.team.id).filter((x): x is string => !!x)),
+    ...new Set(
+      students
+        .map((s) => {
+          const team = s.activeTeam ?? s.teamMemberships[0]?.team
+          return team?.classId && ctx.classIds.includes(team.classId) ? team.id : undefined
+        })
+        .filter((x): x is string => !!x),
+    ),
   ]
 
   const [pending, lastLogs, lastActivity, readyPapers] = await Promise.all([
@@ -69,7 +81,9 @@ export async function GET(req: NextRequest) {
 
   const now = new Date()
   const roster = students.map((s) => {
-    const team = s.teamMemberships[0]?.team ?? null
+    const candidate = s.activeTeam ?? s.teamMemberships[0]?.team ?? null
+    const team =
+      candidate?.classId && ctx.classIds.includes(candidate.classId) ? candidate : null
     const teamId = team?.id ?? null
     const lastLog = teamId ? (lastLogMap.get(teamId) ?? null) : null
     const lastActivity = teamId ? (lastActivityMap.get(teamId) ?? null) : null

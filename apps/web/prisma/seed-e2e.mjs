@@ -105,7 +105,9 @@ try {
   if (team) {
     note(`team: ${TEAM_NAME}`, 'found')
   } else {
-    team = await db.team.create({ data: { name: TEAM_NAME, teamLeadId: leader.user.id } })
+    team = await db.team.create({
+      data: { name: TEAM_NAME, teamLeadId: leader.user.id, classId: klass.id },
+    })
     note(`team: ${TEAM_NAME}`, 'created')
   }
 
@@ -140,6 +142,24 @@ try {
       note(`links: ${label} classId/schoolId`, 'updated')
     }
   }
+  if (team.classId === klass.id) {
+    note('links: team classId', 'found')
+  } else {
+    await db.team.update({ where: { id: team.id }, data: { classId: klass.id } })
+    note('links: team classId', 'updated')
+  }
+
+  for (const [label, user] of [
+    ['leader', leader.user],
+    ['student', student.user],
+  ]) {
+    if (user.activeTeamId === team.id) {
+      note(`links: ${label} activeTeamId`, 'found')
+    } else {
+      await db.user.update({ where: { id: user.id }, data: { activeTeamId: team.id } })
+      note(`links: ${label} activeTeamId`, 'updated')
+    }
+  }
   if (teacher.user.schoolId === school.id) {
     note('links: teacher schoolId', 'found')
   } else {
@@ -155,7 +175,7 @@ try {
   // deterministically on a missing .shop-card__buy). Restore UP to the
   // baseline only — never lower an above-baseline value, and never touch LC
   // (upgrades.spec.ts seeds and resets LC itself).
-  const KP_BASELINE = 20000
+  const KP_BASELINE = 100000
   const CLEARANCE_BASELINE = 3
   const currency = await db.teamCurrency.findUnique({ where: { teamId: team.id } })
   if (currency && currency.kp >= KP_BASELINE && currency.clearanceLevel >= CLEARANCE_BASELINE) {

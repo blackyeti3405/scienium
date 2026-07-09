@@ -102,9 +102,9 @@ export async function POST(req: NextRequest) {
     await db.vegaStudyMessage.createMany({
       data: [
         ...(lastUser
-          ? [{ teamId: ctx.teamId, userId: ctx.dbUserId, role: 'user', content: lastUser.content }]
+          ? [{ teamId: ctx.teamId, userId: ctx.dbUserId, role: 'user' as const, content: lastUser.content }]
           : []),
-        { teamId: ctx.teamId, userId: ctx.dbUserId, role: 'assistant', content: reply },
+        { teamId: ctx.teamId, userId: ctx.dbUserId, role: 'assistant' as const, content: reply },
       ],
     })
   } catch (persistErr) {

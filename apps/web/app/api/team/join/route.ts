@@ -7,6 +7,7 @@ import { normalizeInviteCode } from '@/lib/team/invite'
 import { applySchoolAndClass, syncClerkDisplayName, teamLeadClass } from '@/lib/onboarding/profile'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
+import { lockAggregate } from '@/lib/db-lock'
 
 const JoinBody = z
   .object({
@@ -70,17 +71,33 @@ export async function POST(req: NextRequest) {
       if (invite.usedByUserId) throw new JoinError('That join code has already been used', 409)
       if (invite.expiresAt < new Date()) throw new JoinError('That join code has expired', 410)
 
+      await lockAggregate(tx, `team-membership:${invite.teamId}`)
       const team = await tx.team.findUnique({
         where: { id: invite.teamId },
-        select: { id: true, maxMembers: true, members: { select: { userId: true } } },
+        select: {
+          id: true,
+          classId: true,
+          maxMembers: true,
+          members: { select: { userId: true } },
+        },
       })
       if (!team) throw new JoinError('That lab no longer exists', 404)
+      const joiningUser = await tx.user.findUnique({
+        where: { id: user.id },
+        select: { classId: true },
+      })
 
       // Already on this team? Treat as success (idempotent) and leave the code unused.
-      if (team.members.some((m) => m.userId === user.id)) return team.id
+      if (team.members.some((m) => m.userId === user.id)) {
+        await tx.user.update({ where: { id: user.id }, data: { activeTeamId: team.id } })
+        return team.id
+      }
 
       if (team.members.length >= team.maxMembers) {
         throw new JoinError('That lab is already full', 409)
+      }
+      if (joiningUser?.classId && team.classId && joiningUser.classId !== team.classId) {
+        throw new JoinError('That lab belongs to a different class', 409)
       }
 
       await tx.teamMember.create({ data: { userId: user.id, teamId: team.id, role: 'member' } })
@@ -88,6 +105,7 @@ export async function POST(req: NextRequest) {
         where: { code: normalized },
         data: { usedByUserId: user.id, usedAt: new Date() },
       })
+      await tx.user.update({ where: { id: user.id }, data: { activeTeamId: team.id } })
       return team.id
     })
 

@@ -5,6 +5,70 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.21.0] — 2026-07-08
+
+An architecture-integrity pass focused on explicit ownership, durable background
+work, race-safe rewards, smaller feature boundaries, and immediate lab-building
+interactions.
+
+### Added
+- Explicit `User.activeTeamId` and `Team.classId` ownership, with an additive
+  backfill migration and centralized active-team resolution.
+- Durable `PaperProcessingJob` records, an atomic paper processor, and a
+  five-minute recovery cron for pending, failed, or stale PDF work.
+- PostgreSQL advisory-lock helpers for team membership, plot occupancy, quiz
+  rewards, and other multi-row aggregates.
+- Runtime-validated Literature API contracts and a shared browser JSON client.
+- Architecture decision records for team/class ownership, paper processing, and
+  feature boundaries.
+- Closed Prisma enums and migrations for bounded roles, statuses, source types,
+  notification kinds, showcase policy, and fair workflow values.
+
+### Changed
+- Building pickup now begins on pointer-down. Placement, movement, and upgrades
+  render optimistically and reconcile with the server afterward, eliminating
+  network latency from the visible interaction while preserving rollback.
+- Codex progress and daily rewards are scoped by user and team; first-completion
+  and daily-cap writes are serialized.
+- Teacher authorization uses `Team.classId` as its primary boundary, with only a
+  temporary lead-class fallback for legacy rows.
+- Large authored Data Terminal guides and the fair dataset moved from `lib/` to
+  `content/`; teacher paper Q&A moved into a feature-owned subfolder.
+- Former placeholder deep links now open the real Operations Hub, Literature,
+  Research Plan, and Science Fair surfaces on the requested tab.
+- Discovery optimistic mutations now rehydrate after failed persistence instead
+  of leaving unsaved client state.
+- `architecture.md` was rewritten and fact-checked against the routes, modules,
+  workflows, schema, migrations, integrations, tests, assets, and deployment
+  configuration. `SETUP.md` and `.env.example` no longer describe the removed
+  Python AI service.
+
+### Fixed
+- Class joins can no longer split a lab across classes, and concurrent team joins
+  cannot overfill a team.
+- Concurrent building placement cannot occupy one cell twice.
+- Concurrent quiz grading/retry submissions and Codex completions cannot award
+  duplicate KP.
+- Paper processing survives request timeout or process loss and can be retried
+  safely.
+- Teacher roster, reports, student detail, and paper inspection no longer infer
+  authorization from any coincidental class membership.
+- Owned-but-unplaced buildings preserve their real paid cost and level when
+  positioned.
+- Lab feedback reuses its prefetched snapshot instead of issuing a duplicate
+  request when the panel opens.
+- Building E2E setup now mutates the configured application database instead of
+  a hard-coded Docker database, and resolves the fixture team by name rather
+  than assuming a stale ID. Its KP baseline now covers the member-scaled purchase
+  and upgrade sequence.
+
+### Removed
+- Unused TanStack Query and React Hook Form dependencies.
+- Stale environment variables and documentation for the deleted Python AI
+  service.
+
+---
+
 ## [0.20.0] — 2026-07-08
 
 A **maintainability and hardening pass** — no gameplay changes; all runtime behavior is

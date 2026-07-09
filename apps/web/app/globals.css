@@ -447,17 +447,6 @@
 }
 .plot-ghost--valid { filter: drop-shadow(0 0 6px #5ef08a); }
 .plot-ghost--invalid { filter: drop-shadow(0 0 6px #ff8a8a) grayscale(0.3); }
-/* Placement/move POST in flight — pulse the ghost so a drop reads as "working"
-   through the round trip instead of sitting static. Quantized steps, matching
-   the house pixel-sprite motion language (px-spin/px-shimmer). */
-@keyframes plot-ghost-busy {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 0.35; }
-}
-.plot-ghost--busy { animation: plot-ghost-busy 0.6s steps(4) infinite; }
-@media (prefers-reduced-motion: reduce) {
-  .plot-ghost--busy { animation: none; opacity: 0.5; }
-}
 
 /* Top-of-screen banner: the hovered building's name, or the current edit-mode
    instruction. Pinned to the very top of the green viewport, centred. */

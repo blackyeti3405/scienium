@@ -5,6 +5,7 @@ import type { CredibilityTier } from '@prisma/client'
 import type { useConfirm } from '@/components/ui/ConfirmDialog'
 import { uploadWithProgress } from '@/lib/uploadWithProgress'
 import { type Paper, TOTAL_SLOTS } from './types'
+import { deletePaper, getPaper, listPapers } from './api'
 
 type ConfirmFn = ReturnType<typeof useConfirm>['confirm']
 
@@ -27,24 +28,21 @@ export function usePapers({
   const [uploadError, setUploadError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/papers')
-      .then((r) => r.json())
+    listPapers()
       .then((data) => {
-        if (Array.isArray(data.papers)) {
-          setPapers(
-            data.papers.map((p: Record<string, unknown>) => ({
+        setPapers(
+          data.papers.map((p) => ({
               id: p.id,
               title: p.title,
-              authors: p.authors ?? [],
+              authors: p.authors,
               status: p.status,
               proficiencyDemonstrated: Boolean(p.proficiencyDemonstrated),
               fileUrl: p.fileUrl ?? undefined,
               createdAt: p.createdAt,
               credibilityTier: (p.credibilityTier as CredibilityTier | null) ?? null,
-              doi: (p.doi as string | undefined) ?? undefined,
+              doi: p.doi,
             })),
-          )
-        }
+        )
       })
       .catch((err) => console.error('[papers] failed to load:', err))
       .finally(() => setPapersLoaded(true))
@@ -53,8 +51,7 @@ export function usePapers({
   const pollStatus = useCallback((paperId: string) => {
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/papers/${paperId}`)
-        const data = await res.json()
+        const data = await getPaper(paperId)
         if (data.status === 'ready' || data.status === 'error') {
           setPapers((prev) =>
             prev.map((p) =>
@@ -137,8 +134,7 @@ export function usePapers({
     setPapers((cur) => cur.filter((p) => p.id !== paper.id))
     onPaperDeleted?.(paper.id)
     try {
-      const res = await fetch(`/api/papers/${paper.id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('delete failed')
+      await deletePaper(paper.id)
     } catch (err) {
       console.error('[papers] delete failed:', err)
       setPapers(prev) // roll back

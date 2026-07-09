@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react'
 import { Copy, Check } from 'lucide-react'
-import { STATS_GUIDE, STAT_CATEGORIES, filterConcepts } from '@/lib/data-terminal/stats-guide'
-import type { StatCategory, StatConcept } from '@/lib/data-terminal/stats-guide'
+import { STATS_GUIDE, STAT_CATEGORIES, filterConcepts } from '@/content/data-terminal/stats-guide'
+import type { StatCategory, StatConcept } from '@/content/data-terminal/stats-guide'
 import { useToggleSet } from '@/lib/hooks/useToggleSet'
 import {
   SectionLabel,

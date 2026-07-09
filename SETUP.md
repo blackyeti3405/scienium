@@ -9,9 +9,8 @@ This guide contains **two complete, self-contained walkthroughs**: follow
 on either platform should be able to go from a fresh machine to a running app
 using only their section.
 
-> The web app (Next.js) is the part you've been iterating on (the spatial lab
-> scene). The Python **AI service** is optional and only needed for paper
-> processing / content generation — skip it until you need those features.
+> The web app is the complete runtime. AI features call Anthropic from Next.js;
+> Python is used only by repository art and maintenance scripts.
 
 ---
 
@@ -74,7 +73,6 @@ Then edit `apps/web/.env.local`:
 | `R2_*` | Cloudflare R2 | required for PDF storage **and project-log photo attachments** (uploads + viewer) |
 | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | optional — only the Science Fair "sync deadlines" feature scrapes fair sites with it (`fc-…`) |
 | `OPENALEX_API_KEY` / `NCBI_API_KEY` | [OpenAlex](https://openalex.org/rest-api) / [NCBI](https://www.ncbi.nlm.nih.gov/account/) | optional — the Discovery **Papers tab** (arXiv + PubMed search + citations). Works keyless, but the anonymous pools rate-limit (503s); a free key avoids that. No AI — keyword search + factual citation edges only |
-| `AI_SERVICE_URL` / `AI_SERVICE_API_KEY` | leave as-is | only for the optional external Python AI service; the web app doesn't read them |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | — |
 
 You need **Clerk keys + `DATABASE_URL` + `DIRECT_URL` + `ANTHROPIC_API_KEY`** to run
@@ -375,7 +373,7 @@ pnpm --filter web seed:e2e
 
 Idempotent — it prints each node as CREATED/FOUND/UPDATED and a second run
 performs zero writes. It also restores the E2E team's currency baseline
-(KP ≥ 20,000, clearance ≥ 3 — never lowered): suite runs spend the fixture
+(KP ≥ 100,000, clearance ≥ 3 — never lowered): suite runs spend the fixture
 team's KP, and economy rebalances (e.g. Robotics Bay now requires clearance 3)
 otherwise strand it below what placement/upgrade specs need. The three user rows themselves are created by the app on
 first sign-in; if the script reports them missing, run
@@ -483,7 +481,6 @@ Then edit `apps/web/.env.local`:
 | `R2_*` | Cloudflare R2 | required for PDF storage **and project-log photo attachments** (uploads + viewer) |
 | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | optional — only the Science Fair "sync deadlines" feature scrapes fair sites with it (`fc-…`) |
 | `OPENALEX_API_KEY` / `NCBI_API_KEY` | [OpenAlex](https://openalex.org/rest-api) / [NCBI](https://www.ncbi.nlm.nih.gov/account/) | optional — the Discovery **Papers tab** (arXiv + PubMed search + citations). Works keyless, but the anonymous pools rate-limit (503s); a free key avoids that. No AI — keyword search + factual citation edges only |
-| `AI_SERVICE_URL` / `AI_SERVICE_API_KEY` | leave as-is | only for the optional external Python AI service; the web app doesn't read them |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | — |
 
 You need **Clerk keys + `DATABASE_URL` + `DIRECT_URL` + `ANTHROPIC_API_KEY`** to run
@@ -791,7 +788,7 @@ pnpm --filter web seed:e2e
 
 Idempotent — it prints each node as CREATED/FOUND/UPDATED and a second run
 performs zero writes. It also restores the E2E team's currency baseline
-(KP ≥ 20,000, clearance ≥ 3 — never lowered): suite runs spend the fixture
+(KP ≥ 100,000, clearance ≥ 3 — never lowered): suite runs spend the fixture
 team's KP, and economy rebalances (e.g. Robotics Bay now requires clearance 3)
 otherwise strand it below what placement/upgrade specs need. The three user rows
 themselves are created by the app on first sign-in; if the script reports them

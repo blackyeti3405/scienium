@@ -1,6 +1,7 @@
 import { clerkClient } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
 import { normalizeInviteCode } from '@/lib/team/invite'
+import type { Prisma } from '@prisma/client'
 
 /**
  * School + classroom resolution shared by every path that creates a User row
@@ -74,29 +75,32 @@ export async function applySchoolAndClass(
 export async function teamLeadClass(
   teamId: string,
 ): Promise<{ classId: string; schoolId: string } | null> {
-  const lead = await db.teamMember.findFirst({
-    where: { teamId, role: 'lead' },
-    select: { user: { select: { classId: true, schoolId: true } } },
+  const team = await db.team.findUnique({
+    where: { id: teamId },
+    select: {
+      class: { select: { id: true, schoolId: true } },
+      teamLead: { select: { classId: true, schoolId: true } },
+    },
   })
-  const classId = lead?.user.classId
-  const schoolId = lead?.user.schoolId
+  const classId = team?.class?.id ?? team?.teamLead.classId
+  const schoolId = team?.class?.schoolId ?? team?.teamLead.schoolId
   return classId && schoolId ? { classId, schoolId } : null
 }
 
 /**
  * Enroll a whole lab into a classroom: copy the class + school onto every team
- * member who isn't already in a class, so all lab members appear on the teacher's
- * roster — even those who joined by team code without ever entering a class code.
- * Never overrides a member who deliberately joined a different class. Returns the
- * number of members enrolled.
+ * member, so a lab can never straddle teacher authorization boundaries. Returns
+ * the number of members enrolled or moved.
  */
 export async function enrollTeamInClass(
   teamId: string,
   classId: string,
   schoolId: string,
+  client: Pick<Prisma.TransactionClient, 'team' | 'user'> = db,
 ): Promise<number> {
-  const { count } = await db.user.updateMany({
-    where: { classId: null, teamMemberships: { some: { teamId } } },
+  await client.team.update({ where: { id: teamId }, data: { classId } })
+  const { count } = await client.user.updateMany({
+    where: { teamMemberships: { some: { teamId } } },
     data: { classId, schoolId },
   })
   return count

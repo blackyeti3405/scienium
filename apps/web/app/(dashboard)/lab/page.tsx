@@ -41,6 +41,16 @@ export default async function LabPage({
     const user = await db.user.findUnique({
       where: { clerkUserId: userId },
       select: {
+        activeTeam: {
+          select: {
+            id: true,
+            name: true,
+            phase: true,
+            labType: true,
+            currency: { select: { kp: true, clearanceLevel: true, lc: true } },
+            members: { select: { userId: true } },
+          },
+        },
         teamMemberships: {
           orderBy: { joinedAt: 'desc' },
           take: 1,
@@ -60,7 +70,7 @@ export default async function LabPage({
       },
     })
 
-    const team = user?.teamMemberships[0]?.team
+    const team = user?.activeTeam ?? user?.teamMemberships[0]?.team
     if (team) {
       teamId = team.id
       teamName = team.name

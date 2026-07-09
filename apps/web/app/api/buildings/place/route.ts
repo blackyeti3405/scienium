@@ -9,6 +9,7 @@ import { loadShopState } from '@/lib/shop-server'
 import { loadPlotState, occupancyOf } from '@/lib/plot-server'
 import { isOnGrid, cellKey, PLOT_RADIUS } from '@/lib/plot'
 import { logActivity } from '@/lib/activity/log'
+import { lockAggregate } from '@/lib/db-lock'
 
 /**
  * Place an economy building on the plot. This IS the purchase: dropping an unowned
@@ -63,17 +64,38 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await db.$transaction(async (tx) => {
+      await lockAggregate(tx, `team-plot:${ctx.teamId}`)
+
+      const [occupiedBuilding, occupiedGateway] = await Promise.all([
+        tx.teamShopBuilding.findFirst({
+          where: { teamId: ctx.teamId, posX: data.gx, posY: data.gy },
+          select: { buildingKey: true },
+        }),
+        tx.teamGatewayPlacement.findFirst({
+          where: { teamId: ctx.teamId, posX: data.gx, posY: data.gy },
+          select: { gatewayKey: true },
+        }),
+      ])
+      if (occupiedBuilding || occupiedGateway) {
+        throw new PlaceError('That spot is already taken.', 409)
+      }
+
       if (ownedUnplaced) {
         // Already paid for — just position it (free move from the inventory).
-        await tx.teamShopBuilding.update({
+        const positioned = await tx.teamShopBuilding.update({
           where: { teamId_buildingKey: { teamId: ctx.teamId, buildingKey: building.key } },
           data: { posX: data.gx, posY: data.gy },
+          select: { costPaid: true, level: true },
         })
         const cur = await tx.teamCurrency.findUnique({
           where: { teamId: ctx.teamId },
           select: { kp: true },
         })
-        return { kp: cur?.kp ?? shop.kp, costPaid: 0 }
+        return {
+          kp: cur?.kp ?? shop.kp,
+          costPaid: positioned.costPaid,
+          level: positioned.level,
+        }
       }
 
       // New purchase: the pre-check computes the cost; the conditional debit makes
@@ -102,7 +124,7 @@ export async function POST(req: NextRequest) {
         where: { teamId: ctx.teamId },
         select: { kp: true },
       })
-      return { kp: after?.kp ?? Math.max(0, shop.kp - cost), costPaid: cost }
+      return { kp: after?.kp ?? Math.max(0, shop.kp - cost), costPaid: cost, level: 1 }
     })
 
     if (!ownedUnplaced) {
@@ -116,7 +138,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       kp: result.kp,
-      building: { key: building.key, gx: data.gx, gy: data.gy, costPaid: result.costPaid },
+      building: {
+        key: building.key,
+        gx: data.gx,
+        gy: data.gy,
+        costPaid: result.costPaid,
+        level: result.level,
+      },
     })
   } catch (err) {
     if (err instanceof PlaceError) {

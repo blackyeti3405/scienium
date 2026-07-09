@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { METHODS, METHOD_CATEGORIES, filterMethods } from '@/lib/data-terminal/methods-guide'
+import { METHODS, METHOD_CATEGORIES, filterMethods } from '@/content/data-terminal/methods-guide'
 
 // ---------------------------------------------------------------------------
 // Content shape invariants — cheap guard that the assembled 45-item methods

@@ -1,6 +1,7 @@
 import { XMLParser } from 'fast-xml-parser'
 import { LruCache } from '@/lib/lru'
 import { sanitizeAbstract } from '@/lib/discovery/sanitize'
+import { serverEnv } from '@/lib/env'
 
 // ── NCBI E-utilities (PubMed metadata + abstract + citation graph) ────────────
 //
@@ -19,8 +20,8 @@ import { sanitizeAbstract } from '@/lib/discovery/sanitize'
 const EUTILS = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils'
 const UA = 'scienium/1.0 (https://scienium.app; contact: hello@scienium.app) node-fetch'
 const TOOL = 'scienium'
-const EMAIL = process.env.NCBI_EMAIL || 'hello@scienium.app'
-const API_KEY = process.env.NCBI_API_KEY
+const EMAIL = serverEnv.NCBI_EMAIL() || 'hello@scienium.app'
+const API_KEY = serverEnv.NCBI_API_KEY()
 
 // Cache hard — the shared-IP 3 req/s ceiling is the real risk (longer TTL).
 const CACHE_TTL_MS = 1000 * 60 * 60 // 60 minutes

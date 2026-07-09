@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
-import { anthropic } from '@/lib/anthropic'
 import { extractText, getDocumentProxy } from 'unpdf'
 import { putObject, paperPdfKey } from '@/lib/storage'
 import { checkPaperRelevance } from '@/lib/literature/relevance'
 import { logActivity } from '@/lib/activity/log'
 import { extractDoi, tierFromDoi } from '@/lib/discovery/credibility'
 import type { CredibilityTier } from '@prisma/client'
+import { processPaperJob } from '@/lib/literature/process-paper'
 
 // Server-side only; the Anthropic key is never bundled for the browser.
 
@@ -127,10 +127,13 @@ export async function POST(req: NextRequest) {
 
   // fileUrl points at our authenticated streaming route (set now that we have the id)
   const fileUrl = `/api/papers/${paper.id}/file`
-  await db.paper.update({ where: { id: paper.id }, data: { pdfKey, fileUrl } })
+  await db.$transaction([
+    db.paper.update({ where: { id: paper.id }, data: { pdfKey, fileUrl } }),
+    db.paperProcessingJob.create({ data: { paperId: paper.id } }),
+  ])
 
   // Fire-and-forget: extract metadata from the text we already have
-  extractMetadata(paper.id, fullText, title).catch(console.error)
+  processPaperJob(paper.id).catch(console.error)
   logActivity(ctx.teamId, ctx.dbUserId, 'paper_upload', { title }).catch(console.error)
 
   return NextResponse.json({
@@ -196,57 +199,3 @@ export async function GET(req: NextRequest) {
     }),
   })
 }
-
-// ─── Background: extract metadata from the already-parsed text ───────────────
-
-async function extractMetadata(paperId: string, fullText: string, rawTitle: string) {
-  // The first ~6k tokens of a paper contain title/authors/abstract — no need to send more
-  const excerpt = fullText.slice(0, 24000)
-
-  const response = await anthropic().messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 512,
-    system: EXTRACTION_SYSTEM_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: `Extract the title, authors, and a 2–3 sentence abstract from this paper text. Return ONLY valid JSON.\n\n---\n${excerpt}`,
-      },
-    ],
-  })
-
-  try {
-    const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-    const jsonMatch = raw.match(/\{[\s\S]*\}/)
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0])
-      await db.paper.update({
-        where: { id: paperId },
-        data: {
-          title: parsed.title ?? rawTitle,
-          authors: Array.isArray(parsed.authors) ? parsed.authors : [],
-          abstract: parsed.abstract ?? null,
-          status: 'ready',
-        },
-      })
-      return
-    }
-  } catch {
-    // fall through to status-only update
-  }
-
-  await db.paper.update({ where: { id: paperId }, data: { status: 'ready' } })
-}
-
-const EXTRACTION_SYSTEM_PROMPT = `You are a precise academic metadata extractor. Given raw text extracted from a research paper PDF, return a JSON object with exactly these fields:
-{
-  "title": "Full paper title as it appears in the document",
-  "authors": ["Last, First", "Last, First"],
-  "abstract": "2-3 sentence summary of the paper's main contribution and findings"
-}
-
-Rules:
-- Return ONLY the JSON object, no markdown, no explanation
-- If you cannot find the title, use a short descriptive phrase based on the content
-- If authors are unclear, return an empty array
-- Keep the abstract factual and concise`

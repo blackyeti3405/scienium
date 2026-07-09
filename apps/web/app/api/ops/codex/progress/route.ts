@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
   const [progressRows, kpDay, studyPlan] = await Promise.all([
     db.codexLessonProgress.findMany({
-      where: { userId: ctx.dbUserId },
+      where: { userId: ctx.dbUserId, teamId: ctx.teamId },
       select: {
         trackSlug: true,
         lessonId: true,
@@ -36,7 +36,9 @@ export async function GET(req: NextRequest) {
       },
     }),
     db.codexKpDay.findUnique({
-      where: { userId_day: { userId: ctx.dbUserId, day: todayUtc } },
+      where: {
+        userId_teamId_day: { userId: ctx.dbUserId, teamId: ctx.teamId, day: todayUtc },
+      },
       select: { lessonsCompleted: true },
     }),
     db.teamStudyPlan.findUnique({

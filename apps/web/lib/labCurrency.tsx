@@ -16,6 +16,8 @@ interface LabCurrencyContextValue {
   currency: Currency
   /** Add a delta to one or more currencies (e.g. `{ kp: 80 }`). */
   addCurrency: (delta: Partial<Currency>) => void
+  /** Reconcile one or more balances to server-authoritative absolute values. */
+  setCurrency: (next: Partial<Currency>) => void
 }
 
 const ZERO: Currency = { kp: 0, clearanceLevel: 0, lc: 0 }
@@ -23,6 +25,7 @@ const ZERO: Currency = { kp: 0, clearanceLevel: 0, lc: 0 }
 const LabCurrencyContext = createContext<LabCurrencyContextValue>({
   currency: ZERO,
   addCurrency: () => {},
+  setCurrency: () => {},
 })
 
 export function LabCurrencyProvider({
@@ -42,8 +45,14 @@ export function LabCurrencyProvider({
     }))
   }, [])
 
+  const setCurrencyValues = useCallback((next: Partial<Currency>) => {
+    setCurrency((current) => ({ ...current, ...next }))
+  }, [])
+
   return (
-    <LabCurrencyContext.Provider value={{ currency, addCurrency }}>
+    <LabCurrencyContext.Provider
+      value={{ currency, addCurrency, setCurrency: setCurrencyValues }}
+    >
       {children(currency)}
     </LabCurrencyContext.Provider>
   )

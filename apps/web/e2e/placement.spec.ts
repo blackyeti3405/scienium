@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { deleteE2eBuilding, setE2eKnowledgePoints } from './db'
 
 /**
  * Building placement (Clash-of-Clans style) on the lab plot. Exercises the parts
@@ -12,6 +13,15 @@ import { test, expect } from '@playwright/test'
 const STEP_X = 68
 const STEP_Y = 34
 const CLUSTER_Y = -12
+
+test.beforeAll(async () => {
+  await deleteE2eBuilding('printing_shop')
+  await setE2eKnowledgePoints(100_000)
+})
+
+test.afterAll(async () => {
+  await deleteE2eBuilding('printing_shop')
+})
 
 test('shop shows gateways as placed and economy buildings as placeable', async ({ page }) => {
   await page.goto('/lab')
@@ -33,10 +43,13 @@ test('arrange mode toggles and a gateway can be moved and persists', async ({ pa
   await expect(page.getByText(/Arrange mode/)).toBeVisible()
 
   // Operations Hub is the front-most building (highest iso depth), so it is drawn
-  // on top of its overlapping neighbours and is always clickable. Pick it up.
+  // on top of its overlapping neighbours and is always clickable. Pickup begins
+  // on pointer-down rather than waiting for a complete click.
   const opsArrange = page.getByRole('button', { name: 'Move Operations Hub' })
   await expect(opsArrange).toBeVisible()
-  await opsArrange.click()
+  await opsArrange.dispatchEvent('pointerdown', { button: 0, pointerId: 1 })
+  await expect(opsArrange).toHaveCount(0, { timeout: 300 })
+  await expect(page.getByText(/Click a tile to move/)).toBeVisible({ timeout: 300 })
 
   // Drop it on a free far-right cell (gx=3, gy=-3 → dx=+348, dy=0). Absolute
   // assertions keep the test idempotent across reruns (it persists the move).
@@ -47,13 +60,28 @@ test('arrange mode toggles and a gateway can be moved and persists', async ({ pa
   const centerY = box!.y + box!.height / 2 + CLUSTER_Y
   const expectedX = centerX + (3 - -3) * STEP_X
   const expectedY = centerY + (3 + -3) * STEP_Y
+  let releaseMove!: () => void
+  const moveReleased = new Promise<void>((resolve) => {
+    releaseMove = resolve
+  })
+  await page.route('**/api/buildings/move', async (route) => {
+    await moveReleased
+    await route.continue()
+  })
+  const persisted = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/buildings/move') && response.request().method() === 'POST',
+  )
   await page.mouse.click(expectedX, expectedY)
 
-  // The hub's centre now sits on the target cell (within a small tolerance).
+  // The hub moves before the deliberately delayed API request is allowed through.
   const movedBtn = page.getByRole('button', { name: 'Move Operations Hub' })
-  await expect(movedBtn).toBeVisible()
+  await expect(movedBtn).toBeVisible({ timeout: 300 })
   const moved = await movedBtn.boundingBox()
   expect(Math.abs(moved!.x + moved!.width / 2 - expectedX)).toBeLessThan(20)
+  releaseMove()
+  await persisted
+  await page.unroute('**/api/buildings/move')
 
   // Persisted: after a reload (arrange mode resets) the hub is still on the cell.
   await page.reload()
@@ -80,10 +108,17 @@ test('an economy building can be placed (purchased) and sold for a refund', asyn
   // ghost is centred in its tile — then screenshot, then drop.
   await page.mouse.move(dropX, dropY)
   await page.screenshot({ path: 'test-results/ghost-on-grid.png' })
+  const placed = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/buildings/place') && response.request().method() === 'POST',
+  )
   await page.mouse.click(dropX, dropY)
 
   // It now stands on the plot.
-  await expect(page.getByRole('button', { name: '3D Printing Shop' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '3D Printing Shop' })).toBeVisible({
+    timeout: 300,
+  })
+  expect((await placed).ok()).toBe(true)
 
   // Hovering it shows the building name in the top-of-screen banner.
   await page.getByRole('button', { name: '3D Printing Shop' }).hover()

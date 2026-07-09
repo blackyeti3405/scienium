@@ -8,7 +8,7 @@ import { ShopPanel } from '@/components/lab/ShopPanel'
 import { TeamPanel } from '@/components/lab/TeamPanel'
 import { SettingsPanel } from '@/components/settings/SettingsPanel'
 import { ActivityPanel } from '@/components/lab/ActivityPanel'
-import { FeedbackPanel } from '@/components/lab/FeedbackPanel'
+import { FeedbackPanel, type FeedbackItem } from '@/components/lab/FeedbackPanel'
 import { PhaseAdvance } from '@/components/lab/PhaseAdvance'
 import { RequestAdvance } from '@/components/lab/RequestAdvance'
 import { StatusStrip, type Currency } from '@/components/lab/StatusStrip'
@@ -116,7 +116,7 @@ function LabSceneContent({
   unplacedKeys,
   gatewayPositions,
 }: LabSceneProps) {
-  const { currency, addCurrency } = useLabCurrency()
+  const { currency, addCurrency, setCurrency } = useLabCurrency()
 
   const [openKey, setOpenKey] = useState<Gateway['key'] | null>(null)
   const [shopOpen, setShopOpen] = useState(false)
@@ -125,6 +125,10 @@ function LabSceneContent({
   const [activityOpen, setActivityOpen] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [unresolvedCount, setUnresolvedCount] = useState(0)
+  const [feedbackSnapshot, setFeedbackSnapshot] = useState<{
+    items: FeedbackItem[]
+    unresolvedCount: number
+  } | null>(null)
   // Momentum card (Feature F10) — default hidden until the mount effect below
   // decides, based on whether THIS ISO week's tag is already recorded as dismissed.
   const [momentumDismissed, setMomentumDismissed] = useState(true)
@@ -157,7 +161,10 @@ function LabSceneContent({
     fetch('/api/team/feedback')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (d) setUnresolvedCount(d.unresolvedCount)
+        if (d) {
+          setUnresolvedCount(d.unresolvedCount)
+          setFeedbackSnapshot({ items: d.items, unresolvedCount: d.unresolvedCount })
+        }
       })
       .catch(() => {})
   }, [])
@@ -219,21 +226,30 @@ function LabSceneContent({
     return () => document.removeEventListener('keydown', onKey)
   }, [ghost, arrangeMode, selected])
 
-  /** Reconcile the optimistic balance to the server's authoritative KP total. */
-  const applyKp = useCallback(
-    (serverKp: number) => addCurrency({ kp: serverKp - currency.kp }),
-    [addCurrency, currency.kp],
-  )
-
   async function post(url: string, body: unknown) {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      keepalive: true,
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(data.error ?? 'Something went wrong')
     return data
+  }
+
+  async function refreshPlotState() {
+    try {
+      const res = await fetch('/api/buildings')
+      if (!res.ok) return
+      const data = await res.json()
+      setEconomy(data.economy)
+      setGateways(data.gateways)
+      setUnplaced(data.unplaced)
+      setCurrency({ kp: data.kp, lc: data.lc, clearanceLevel: data.clearanceLevel })
+    } catch {
+      // Immediate rollback already restored the previous local state.
+    }
   }
 
   // Start placing a building chosen from the shop. Owned (unplaced) buildings are
@@ -266,29 +282,78 @@ function LabSceneContent({
     const g = ghost
     if (!g || placing) return
     setPlacing(true)
-    try {
-      if (g.mode === 'new' || g.mode === 'place-owned') {
-        const key = g.building.key
+
+    if (g.mode === 'new' || g.mode === 'place-owned') {
+      const key = g.building.key
+      const predictedCost = g.mode === 'new' ? g.building.cost * Math.max(1, memberCount) : 0
+      setEconomy((prev) => [
+        ...prev,
+        { key, gx, gy, costPaid: predictedCost, level: 1 },
+      ])
+      setUnplaced((prev) => prev.filter((item) => item !== key))
+      if (predictedCost > 0) addCurrency({ kp: -predictedCost })
+      setGhost(null)
+
+      try {
         const data = await post('/api/buildings/place', { key, gx, gy })
-        setEconomy((prev) => [
-          ...prev,
-          { key: data.building.key, gx, gy, costPaid: data.building.costPaid, level: data.building.level ?? 1 },
-        ])
-        setUnplaced((prev) => prev.filter((k) => k !== key))
-        applyKp(data.kp)
-      } else if (g.mode === 'move-economy') {
-        const key = g.key
-        await post('/api/buildings/move', { kind: 'economy', key, gx, gy })
-        setEconomy((prev) => prev.map((e) => (e.key === key ? { ...e, gx, gy } : e)))
-      } else {
-        const key = g.key
-        await post('/api/buildings/move', { kind: 'gateway', key, gx, gy })
-        setGateways((prev) => prev.map((gw) => (gw.key === key ? { ...gw, gx, gy } : gw)))
+        setEconomy((prev) =>
+          prev.map((item) =>
+            item.key === key
+              ? {
+                  ...item,
+                  costPaid: data.building.costPaid,
+                  level: data.building.level ?? item.level,
+                }
+              : item,
+          ),
+        )
+        setCurrency({ kp: data.kp })
+      } catch (err) {
+        setEconomy((prev) => prev.filter((item) => item.key !== key))
+        if (g.mode === 'place-owned') setUnplaced((prev) => [...prev, key])
+        if (predictedCost > 0) addCurrency({ kp: predictedCost })
+        setToast(err instanceof Error ? err.message : 'Something went wrong')
+        await refreshPlotState()
+      } finally {
+        setPlacing(false)
       }
-      setGhost(null)
+      return
+    }
+
+    const previous = g.from
+    if (g.mode === 'move-economy') {
+      setEconomy((prev) =>
+        prev.map((item) => (item.key === g.key ? { ...item, gx, gy } : item)),
+      )
+    } else {
+      setGateways((prev) =>
+        prev.map((item) => (item.key === g.key ? { ...item, gx, gy } : item)),
+      )
+    }
+    setGhost(null)
+
+    try {
+      if (g.mode === 'move-economy') {
+        await post('/api/buildings/move', { kind: 'economy', key: g.key, gx, gy })
+      } else {
+        await post('/api/buildings/move', { kind: 'gateway', key: g.key, gx, gy })
+      }
     } catch (err) {
+      if (g.mode === 'move-economy') {
+        setEconomy((prev) =>
+          prev.map((item) =>
+            item.key === g.key ? { ...item, gx: previous.gx, gy: previous.gy } : item,
+          ),
+        )
+      } else {
+        setGateways((prev) =>
+          prev.map((item) =>
+            item.key === g.key ? { ...item, gx: previous.gx, gy: previous.gy } : item,
+          ),
+        )
+      }
       setToast(err instanceof Error ? err.message : 'Something went wrong')
-      setGhost(null)
+      await refreshPlotState()
     } finally {
       setPlacing(false)
     }
@@ -302,7 +367,7 @@ function LabSceneContent({
     try {
       const data = await post('/api/buildings/sell', { key })
       setEconomy((prev) => prev.filter((e) => e.key !== key))
-      applyKp(data.kp)
+      setCurrency({ kp: data.kp })
       setGhost(null)
       setSelected(null)
       setToast(`Sold ${shopBuilding(key)?.name ?? 'building'} for ${data.refund} KP`)
@@ -322,6 +387,17 @@ function LabSceneContent({
     const kpCost = upgradeKpCost(base, b.level + 1)
     const lcCost = upgradeLcCost(b.level + 1)
     setUpgradingKey(key)
+    const optimisticLevel = b.level + 1
+    setEconomy((prev) =>
+      prev.map((item) =>
+        item.key === key
+          ? { ...item, level: optimisticLevel, costPaid: item.costPaid + kpCost }
+          : item,
+      ),
+    )
+    addCurrency({ kp: -kpCost, lc: -lcCost })
+    setBurst({ gx: b.gx, gy: b.gy, id: ++burstSeq.current })
+
     try {
       const data = await post('/api/buildings/upgrade', { key })
       setEconomy((prev) =>
@@ -331,11 +407,19 @@ function LabSceneContent({
             : e,
         ),
       )
-      addCurrency({ kp: -kpCost, lc: -lcCost }) // optimistic debit (KP always, LC at tiers)
-      setBurst({ gx: b.gx, gy: b.gy, id: ++burstSeq.current }) // green upgrade particles
+      setCurrency({ kp: data.kp, lc: data.lc })
       setToast(`Upgraded ${shopBuilding(key)?.name ?? 'building'} to L${data.level}`)
     } catch (err) {
+      setEconomy((prev) =>
+        prev.map((item) =>
+          item.key === key
+            ? { ...item, level: b.level, costPaid: b.costPaid }
+            : item,
+        ),
+      )
+      addCurrency({ kp: kpCost, lc: lcCost })
       setToast(err instanceof Error ? err.message : 'Could not upgrade')
+      await refreshPlotState()
     } finally {
       setUpgradingKey(null)
     }
@@ -391,7 +475,6 @@ function LabSceneContent({
           economy={plotEconomy}
           arrangeMode={arrangeMode}
           ghost={plotGhost}
-          ghostBusy={placing}
           onOpenGateway={(key) => setOpenKey(key as Gateway['key'])}
           onPick={onPick}
           onDrop={onDrop}
@@ -449,7 +532,7 @@ function LabSceneContent({
                   busyLabel="Selling…"
                   showSpinner={false}
                   onClick={() => sellBuilding(b.key)}
-                  disabled={upgradingKey === b.key}
+                  disabled={placing || upgradingKey === b.key}
                   className="plot-menu__sell"
                 >
                   Sell · +{sellRefund(b.costPaid).toLocaleString()} KP
@@ -462,7 +545,7 @@ function LabSceneContent({
                     busyLabel="Upgrading…"
                     showSpinner={false}
                     onClick={() => upgradeBuilding(b.key)}
-                    disabled={sellingKey === b.key}
+                    disabled={placing || sellingKey === b.key}
                     className="plot-menu__upgrade"
                   >
                     Upgrade to L{b.level + 1} · {upCostLabel}
@@ -614,6 +697,8 @@ function LabSceneContent({
         <FeedbackPanel
           onClose={() => setFeedbackOpen(false)}
           onUnresolvedCount={setUnresolvedCount}
+          initialData={feedbackSnapshot}
+          onDataChange={setFeedbackSnapshot}
         />
       )}
     </div>

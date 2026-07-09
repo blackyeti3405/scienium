@@ -32,23 +32,37 @@ export async function POST(req: NextRequest) {
   const match = await resolveClass(data.code)
   if (!match) return NextResponse.json({ error: 'That class code is not valid' }, { status: 404 })
 
-  const klass = await db.class.update({
-    where: { id: match.classId },
-    data: { users: { connect: { id: user.id } } },
-    select: { id: true, name: true, schoolId: true },
+  const memberships = await db.teamMember.findMany({
+    where: { userId: user.id },
+    select: { role: true, team: { select: { id: true, classId: true } } },
   })
-  // Adopt the class's school (find-or-create already done by the teacher).
-  await db.user.update({ where: { id: user.id }, data: { schoolId: klass.schoolId } })
-
-  // A lab joining a class brings its whole roster: if this student leads any
-  // labs, enroll their labmates (who aren't already in a class) into it too.
-  const ledTeams = await db.teamMember.findMany({
-    where: { userId: user.id, role: 'lead' },
-    select: { teamId: true },
-  })
-  for (const { teamId } of ledTeams) {
-    await enrollTeamInClass(teamId, klass.id, klass.schoolId)
+  const conflictingMemberTeam = memberships.find(
+    ({ role, team }) =>
+      role !== 'lead' && team.classId !== null && team.classId !== match.classId,
+  )
+  if (conflictingMemberTeam) {
+    return NextResponse.json(
+      { error: 'Your lab lead must move the whole lab into this class.' },
+      { status: 409 },
+    )
   }
+
+  const klass = await db.$transaction(async (tx) => {
+    const target = await tx.class.findUniqueOrThrow({
+      where: { id: match.classId },
+      select: { id: true, name: true, schoolId: true },
+    })
+    await tx.user.update({
+      where: { id: user.id },
+      data: { classId: target.id, schoolId: target.schoolId },
+    })
+    for (const { role, team } of memberships) {
+      if (role === 'lead') {
+        await enrollTeamInClass(team.id, target.id, target.schoolId, tx)
+      }
+    }
+    return target
+  })
 
   return NextResponse.json({ classId: klass.id, className: klass.name })
 }

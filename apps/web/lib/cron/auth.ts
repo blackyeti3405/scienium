@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverEnv } from '@/lib/env'
 
 /**
  * Shared guard for scheduled (cron) routes.
@@ -13,7 +14,7 @@ import { NextRequest, NextResponse } from 'next/server'
  * NextResponse to return when unauthorized, or null to proceed.
  */
 export function assertCron(req: NextRequest): NextResponse | null {
-  const secret = process.env.CRON_SECRET
+  const secret = serverEnv.CRON_SECRET()
   if (!secret) {
     return NextResponse.json({ error: 'Cron not configured' }, { status: 503 })
   }

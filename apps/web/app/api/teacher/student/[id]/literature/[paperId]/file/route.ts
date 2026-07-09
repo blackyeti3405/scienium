@@ -24,6 +24,7 @@ export async function GET(
     where: { id: params.id, classId: { in: ctx.classIds } },
     select: {
       id: true,
+      activeTeam: { select: { id: true } },
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
         take: 1,
@@ -36,7 +37,7 @@ export async function GET(
     return NextResponse.json({ error: 'Student not found in your classes' }, { status: 404 })
   }
 
-  const teamId = student.teamMemberships[0]?.team.id ?? null
+  const teamId = student.activeTeam?.id ?? student.teamMemberships[0]?.team.id ?? null
   if (!teamId) {
     return NextResponse.json({ error: 'Student not found in your classes' }, { status: 404 })
   }

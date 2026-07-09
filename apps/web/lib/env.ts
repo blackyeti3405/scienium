@@ -33,6 +33,26 @@ function lazyEnv(name: string, schema: z.ZodType<string> = z.string().min(1)): (
   }
 }
 
+function lazyOptionalEnv(
+  name: string,
+  schema: z.ZodType<string> = z.string().min(1),
+): () => string | undefined {
+  let initialized = false
+  let cached: string | undefined
+  return () => {
+    if (initialized) return cached
+    initialized = true
+    const value = process.env[name]
+    if (value === undefined || value === '') return undefined
+    const parsed = schema.safeParse(value)
+    if (!parsed.success) {
+      throw new Error(`Invalid server env var ${name}: ${parsed.error.issues[0]?.message}`)
+    }
+    cached = parsed.data
+    return cached
+  }
+}
+
 /**
  * Required server secrets, each resolved lazily + memoized. Call the getter at
  * the point of use (e.g. inside a route handler or a memoized client factory) —
@@ -48,6 +68,16 @@ export const serverEnv = {
   DATABASE_URL: lazyEnv('DATABASE_URL', z.string().url()),
   CLERK_SECRET_KEY: lazyEnv('CLERK_SECRET_KEY'),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: lazyEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY'),
+  UPSTASH_REDIS_REST_URL: lazyOptionalEnv('UPSTASH_REDIS_REST_URL', z.string().url()),
+  UPSTASH_REDIS_REST_TOKEN: lazyOptionalEnv('UPSTASH_REDIS_REST_TOKEN'),
+  RATE_LIMIT_IP_HEADER: lazyOptionalEnv('RATE_LIMIT_IP_HEADER'),
+  CRON_SECRET: lazyOptionalEnv('CRON_SECRET'),
+  RESEND_API_KEY: lazyOptionalEnv('RESEND_API_KEY'),
+  NOTIFICATION_EMAIL_FROM: lazyOptionalEnv('NOTIFICATION_EMAIL_FROM'),
+  OPENALEX_MAILTO: lazyOptionalEnv('OPENALEX_MAILTO', z.string().email()),
+  OPENALEX_API_KEY: lazyOptionalEnv('OPENALEX_API_KEY'),
+  NCBI_EMAIL: lazyOptionalEnv('NCBI_EMAIL', z.string().email()),
+  NCBI_API_KEY: lazyOptionalEnv('NCBI_API_KEY'),
 }
 
 /**

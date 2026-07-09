@@ -1,11 +1,11 @@
 import { db } from '@/lib/db'
-import { FAIRS, type SeedFairLevel } from '@/lib/fairs/dataset'
+import { FAIRS, type SeedFairLevel } from '@/content/fairs/dataset'
 import { STATE_CENTROIDS, zipToApproxCoords, haversineMiles } from '@/lib/fairs/zip'
 import type { FairLevel, Prisma } from '@prisma/client'
 
 /**
  * Fair matching (Feature 3b). Lazily mirrors the affiliated-fair dataset
- * (lib/fairs/dataset.ts) into the Fair/FairEvent tables, then matches a team's
+ * (content/fairs/dataset.ts) into the Fair/FairEvent tables, then matches a team's
  * US location to its state fair, nearest regional fair, and ISEF.
  */
 

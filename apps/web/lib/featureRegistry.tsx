@@ -8,10 +8,7 @@ import { HubPanelSkeleton } from '@/components/ui/skeletons/HubPanelSkeleton'
 
 /**
  * Maps each gateway building to the feature component rendered inside its
- * overlay panel (FeaturePanel). Discovery is the real, fully-built feature and
- * is code-split (it pulls in the Wikipedia reader + tree). The remaining six
- * open a StubFeature placeholder until their internals are built — wiring a real
- * one in later is a single edit here, with no changes to the scene/overlay shell.
+ * overlay panel. PvP remains the only intentionally unfinished surface.
  *
  * Keep this as the ONLY place gateway keys map to UI, so the shell stays generic.
  */
@@ -58,7 +55,7 @@ export const FEATURE_COMPONENTS: Record<GatewayKey, ComponentType> = {
   pvp: () => (
     <StubFeature
       title="Battle Arena"
-      description="6v6 turn-based PvP using characters derived from your lab buildings. Two battles a day, leaderboard glory."
+      description="Raid another lab with spells unlocked by your buildings."
       route="/pvp/lobby"
     />
   ),

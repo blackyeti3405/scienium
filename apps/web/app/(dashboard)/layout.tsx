@@ -1,6 +1,6 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
-import { getTeamContext } from '@/lib/phase'
+import { getTeamContext } from '@/lib/team/context'
 import { resolveTeacherRole } from '@/lib/teacher/auth'
 
 /**

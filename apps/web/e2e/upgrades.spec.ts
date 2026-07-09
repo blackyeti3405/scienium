@@ -41,13 +41,16 @@
  */
 
 import { test, expect, type Page } from '@playwright/test'
-import { execSync } from 'child_process'
+import {
+  deleteE2eBuilding,
+  deleteE2eLabCreditClaimsToday,
+  getE2eLabCredits,
+  setE2eBuildingLevel,
+  setE2eKnowledgePoints,
+  setE2eLabCredits,
+} from './db'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-// The dedicated E2E Test Lab (devuser2 leads it) — NOT the user's real DevLab.
-// All seed/reset DB ops below target this throwaway team only.
-const TEAM_ID = 'e2e_test_lab_01'
 
 // Isometric grid constants — must match lib/plot.ts.
 const STEP_X = 68
@@ -64,35 +67,6 @@ const UPGRADE_BUILDING_NAME = 'Robotics Bay'
 const DROP_GX = -3
 const DROP_GY = 3
 
-// ─── DB helpers (execSync — synchronous, fine in beforeAll/afterAll) ──────────
-
-function dbExec(sql: string) {
-  execSync(`docker exec infra-postgres-1 psql -U postgres -d scienium -c "${sql}"`, {
-    stdio: 'pipe',
-  })
-}
-
-function seedLC(lc: number) {
-  dbExec(`UPDATE team_currency SET lc=${lc} WHERE team_id='${TEAM_ID}';`)
-}
-
-function resetLC() {
-  dbExec(`UPDATE team_currency SET lc=0 WHERE team_id='${TEAM_ID}';`)
-}
-
-function deleteTestBuilding() {
-  dbExec(
-    `DELETE FROM team_shop_buildings WHERE team_id='${TEAM_ID}' AND building_key='${UPGRADE_BUILDING_KEY}';`,
-  )
-}
-
-function deleteLabCreditClaimsToday() {
-  // Remove any claims created today so reruns get a fresh daily cap.
-  const today = new Date()
-  const dayStr = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
-  dbExec(`DELETE FROM lab_credit_claims WHERE team_id='${TEAM_ID}' AND day='${dayStr}';`)
-}
-
 // ─── All upgrades tests wrapped in a single serial describe ──────────────────
 // mode:'serial' here prevents the two sub-describes (seeded-LC upgrades and
 // LC-earning) from interleaving when fullyParallel:true is set in the config.
@@ -106,18 +80,19 @@ test.describe('upgrades feature', () => {
   // files run in parallel.
 
   test.describe('upgrade flow (seeded LC)', () => {
-    test.beforeAll(() => {
+    test.beforeAll(async () => {
       // Delete any stale robotics_bay row first so reruns start clean, then seed LC.
-      deleteTestBuilding()
-      deleteLabCreditClaimsToday()
-      seedLC(30)
+      await deleteE2eBuilding(UPGRADE_BUILDING_KEY)
+      await deleteE2eLabCreditClaimsToday()
+      await setE2eKnowledgePoints(100_000)
+      await setE2eLabCredits(30)
     })
 
-    test.afterAll(() => {
+    test.afterAll(async () => {
       // Clean up: remove the test building and reset LC to 0.
-      deleteTestBuilding()
-      deleteLabCreditClaimsToday()
-      resetLC()
+      await deleteE2eBuilding(UPGRADE_BUILDING_KEY)
+      await deleteE2eLabCreditClaimsToday()
+      await setE2eLabCredits(0)
     })
 
     // Helper: place the Robotics Bay on the plot via the shop UI (used in AC4/AC5/AC6).
@@ -136,9 +111,17 @@ test.describe('upgrades feature', () => {
       const dropX = centerX + (DROP_GX - DROP_GY) * STEP_X
       const dropY = centerY + (DROP_GX + DROP_GY) * STEP_Y
       await page.mouse.move(dropX, dropY)
+      const placed = page.waitForResponse(
+        (response) =>
+          response.url().includes('/api/buildings/place') &&
+          response.request().method() === 'POST',
+      )
       await page.mouse.click(dropX, dropY)
 
-      await expect(page.getByRole('button', { name: UPGRADE_BUILDING_NAME })).toBeVisible()
+      await expect(page.getByRole('button', { name: UPGRADE_BUILDING_NAME })).toBeVisible({
+        timeout: 300,
+      })
+      expect((await placed).ok()).toBe(true)
     }
 
     // Open a placed economy building's Sell/Upgrade menu via a REGULAR-mode click
@@ -187,7 +170,8 @@ test.describe('upgrades feature', () => {
       await page.getByRole('button', { name: 'Arrange buildings' }).click()
       await page
         .getByRole('button', { name: 'Move Operations Hub' })
-        .evaluate((el) => (el as HTMLButtonElement).click())
+        .dispatchEvent('pointerdown', { button: 0, pointerId: 1 })
+      await expect(page.getByText(/Click a tile to move/)).toBeVisible({ timeout: 300 })
       await expect(page.locator('.plot-delete')).toHaveCount(0)
       await page.keyboard.press('Escape')
     })
@@ -203,17 +187,38 @@ test.describe('upgrades feature', () => {
     //      leaves the menu open showing the next level — without a reload.
     test('AC5 — Upgrade on L1 building: level 2, KP drops, LC unchanged, toast', async ({ page }) => {
       // Ensure a clean L1 building with known funds.
-      dbExec(
-        `UPDATE team_shop_buildings SET level=1 WHERE team_id='${TEAM_ID}' AND building_key='${UPGRADE_BUILDING_KEY}';`,
-      )
-      seedLC(30)
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 1)
+      await setE2eLabCredits(30)
       await page.goto('/lab')
 
       const kp0 = await readStat(page, 'KP')
       const lc0 = await readStat(page, 'LC')
 
       await openBuildingMenu(page)
+      let releaseUpgrade!: () => void
+      const upgradeReleased = new Promise<void>((resolve) => {
+        releaseUpgrade = resolve
+      })
+      await page.route('**/api/buildings/upgrade', async (route) => {
+        await upgradeReleased
+        await route.continue()
+      })
+      const persisted = page.waitForResponse(
+        (response) =>
+          response.url().includes('/api/buildings/upgrade') &&
+          response.request().method() === 'POST',
+      )
       await page.locator('.plot-menu__upgrade').click()
+
+      // Level and currency update before the deliberately delayed request proceeds.
+      await expect(
+        page.getByRole('button', { name: UPGRADE_BUILDING_NAME }).locator('.plot-level'),
+      ).toHaveText('L2', { timeout: 300 })
+      expect(await readStat(page, 'KP')).toBeLessThan(kp0)
+      expect(await readStat(page, 'LC')).toBe(lc0)
+      releaseUpgrade()
+      expect((await persisted).ok()).toBe(true)
+      await page.unroute('**/api/buildings/upgrade')
 
       await expect(page.getByText(new RegExp(`Upgraded ${UPGRADE_BUILDING_NAME} to L2`))).toBeVisible()
       // Menu stays open, now offers L3.
@@ -240,10 +245,8 @@ test.describe('upgrades feature', () => {
 
     // A TIER upgrade (→4) charges LC in addition to KP.
     test('a tier upgrade (→L4) charges LC as well as KP', async ({ page }) => {
-      dbExec(
-        `UPDATE team_shop_buildings SET level=3 WHERE team_id='${TEAM_ID}' AND building_key='${UPGRADE_BUILDING_KEY}';`,
-      )
-      seedLC(30)
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 3)
+      await setE2eLabCredits(30)
       await page.goto('/lab')
 
       const lc0 = await readStat(page, 'LC')
@@ -264,7 +267,7 @@ test.describe('upgrades feature', () => {
       await page.getByRole('button', { name: 'Arrange buildings' }).click()
       await page
         .getByRole('button', { name: `Move ${UPGRADE_BUILDING_NAME}` })
-        .evaluate((el) => (el as HTMLButtonElement).click())
+        .dispatchEvent('pointerdown', { button: 0, pointerId: 1 })
 
       // In arrange mode the only action is Delete — no Upgrade.
       const del = page.locator('.plot-delete')
@@ -284,10 +287,8 @@ test.describe('upgrades feature', () => {
     // Use the TOP tier (14→15 needs 10 LC) with LC drained to 0, so a stray +LC grant
     // from a parallel spec sharing this test team can't push LC over the threshold.
     test('AC9 — tier upgrade returns 402 when LC is insufficient', async ({ page }) => {
-      dbExec(
-        `UPDATE team_shop_buildings SET level=14 WHERE team_id='${TEAM_ID}' AND building_key='${UPGRADE_BUILDING_KEY}';`,
-      )
-      dbExec(`UPDATE team_currency SET lc=0 WHERE team_id='${TEAM_ID}';`)
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 14)
+      await setE2eLabCredits(0)
 
       await page.goto('/lab')
 
@@ -305,10 +306,8 @@ test.describe('upgrades feature', () => {
       expect(response.body.error).toContain('Not enough Lab Credits')
 
       // Restore for remaining tests: level back to 2, LC topped up.
-      dbExec(
-        `UPDATE team_shop_buildings SET level=2 WHERE team_id='${TEAM_ID}' AND building_key='${UPGRADE_BUILDING_KEY}';`,
-      )
-      seedLC(30)
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 2)
+      await setE2eLabCredits(30)
     })
 
     // AC12: the activity feed records a building_upgraded entry after upgrade.
@@ -345,9 +344,7 @@ test.describe('upgrades feature', () => {
       page,
     }) => {
       // Set the building to max level via DB.
-      dbExec(
-        `UPDATE team_shop_buildings SET level=15 WHERE team_id='${TEAM_ID}' AND building_key='${UPGRADE_BUILDING_KEY}';`,
-      )
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 15)
 
       await page.goto('/lab')
 
@@ -377,9 +374,7 @@ test.describe('upgrades feature', () => {
       expect(response.body.error).toContain('already at max level')
 
       // Reset building level back to 2 for any remaining tests.
-      dbExec(
-        `UPDATE team_shop_buildings SET level=2 WHERE team_id='${TEAM_ID}' AND building_key='${UPGRADE_BUILDING_KEY}';`,
-      )
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 2)
     })
 
     // AC7: at level >= 4, the menu's Upgrade label shows L5; manifest resolves _t2.png.
@@ -390,9 +385,7 @@ test.describe('upgrades feature', () => {
       page,
     }) => {
       // Set building to level 4 via DB.
-      dbExec(
-        `UPDATE team_shop_buildings SET level=4 WHERE team_id='${TEAM_ID}' AND building_key='${UPGRADE_BUILDING_KEY}';`,
-      )
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 4)
 
       await page.goto('/lab')
 
@@ -406,9 +399,7 @@ test.describe('upgrades feature', () => {
       await page.keyboard.press('Escape')
 
       // Reset to level 1 for a clean state.
-      dbExec(
-        `UPDATE team_shop_buildings SET level=1 WHERE team_id='${TEAM_ID}' AND building_key='${UPGRADE_BUILDING_KEY}';`,
-      )
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 1)
     })
   })
 
@@ -419,16 +410,16 @@ test.describe('upgrades feature', () => {
   // Runs after the seeded-LC describe (enforced by the outer serial wrapper).
 
   test.describe('LC earning via log creation (daily cap)', () => {
-    test.beforeAll(() => {
+    test.beforeAll(async () => {
       // Start with 0 LC and no claims today so the earning path is clear.
-      resetLC()
-      deleteLabCreditClaimsToday()
+      await setE2eLabCredits(0)
+      await deleteE2eLabCreditClaimsToday()
     })
 
-    test.afterAll(() => {
+    test.afterAll(async () => {
       // Clean up: remove any claims created during these tests.
-      deleteLabCreditClaimsToday()
-      resetLC()
+      await deleteE2eLabCreditClaimsToday()
+      await setE2eLabCredits(0)
     })
 
     // AC1: the first log of the real day grants the team exactly +1 LC. Verified at
@@ -459,12 +450,7 @@ test.describe('upgrades feature', () => {
 
       // The LC in the DB should now be initialLC + 1.
       // We verify via the DB since the StatusStrip is SSR-seeded and not live-polled.
-      const lcAfterStr = execSync(
-        `docker exec infra-postgres-1 psql -U postgres -d scienium -t -c "SELECT lc FROM team_currency WHERE team_id='${TEAM_ID}';"`,
-      )
-        .toString()
-        .trim()
-      const lcAfter = parseInt(lcAfterStr, 10)
+      const lcAfter = await getE2eLabCredits()
       expect(lcAfter).toBe(initialLC + 1)
     })
 
@@ -475,12 +461,7 @@ test.describe('upgrades feature', () => {
       await page.goto('/lab')
 
       // Get current LC from DB (after AC1 granted 1).
-      const lcBeforeStr = execSync(
-        `docker exec infra-postgres-1 psql -U postgres -d scienium -t -c "SELECT lc FROM team_currency WHERE team_id='${TEAM_ID}';"`,
-      )
-        .toString()
-        .trim()
-      const lcBefore = parseInt(lcBeforeStr, 10)
+      const lcBefore = await getE2eLabCredits()
 
       // POST a second failure log.
       const postResult = await page.evaluate(async () => {
@@ -497,12 +478,7 @@ test.describe('upgrades feature', () => {
       expect(postResult.ok).toBe(true)
 
       // LC should NOT have changed (daily cap).
-      const lcAfterStr = execSync(
-        `docker exec infra-postgres-1 psql -U postgres -d scienium -t -c "SELECT lc FROM team_currency WHERE team_id='${TEAM_ID}';"`,
-      )
-        .toString()
-        .trim()
-      const lcAfter = parseInt(lcAfterStr, 10)
+      const lcAfter = await getE2eLabCredits()
       expect(lcAfter).toBe(lcBefore)
     })
   })

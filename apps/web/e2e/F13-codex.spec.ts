@@ -139,8 +139,10 @@ async function openCodex(page: Page, phase?: string) {
   await page.goto(phase ? `/lab?phase=${phase}` : '/lab')
   await page.getByRole('button', { name: 'Open Operations Hub' }).waitFor({ state: 'attached' })
   await clickBuilding(page, 'Open Operations Hub')
-  await expect(page.getByRole('dialog', { name: 'Operations Hub' })).toBeVisible({ timeout: 5000 })
-  await page.getByTestId('codex-tab').click()
+  await expect(page.getByRole('dialog', { name: 'Operations Hub' })).toBeVisible({ timeout: 15_000 })
+  const codexTab = page.getByTestId('codex-tab')
+  await expect(codexTab).toBeVisible({ timeout: 30_000 })
+  await codexTab.click()
 }
 
 /** Correct-answer submission for a given real biomechanics lesson id, built
@@ -207,7 +209,7 @@ async function cleanLessonAndCapRows(db: import('@prisma/client').PrismaClient) 
 }
 
 test.describe('F13 — Field Codex', () => {
-  test.describe.configure({ mode: 'serial' })
+  test.describe.configure({ mode: 'serial', timeout: 180_000 })
 
   test.beforeAll(async () => {
     const { PrismaClient } = await import('@prisma/client')
@@ -273,7 +275,7 @@ test.describe('F13 — Field Codex', () => {
   test('AC1: Field Codex tab is visible and renders codex-home, in every phase the Operations Hub exists in', async ({ page }) => {
     for (const phase of HUB_VISIBLE_PHASES) {
       await openCodex(page, phase)
-      await expect(page.getByTestId('codex-home')).toBeVisible({ timeout: 15000 })
+      await expect(page.getByTestId('codex-home')).toBeVisible({ timeout: 30_000 })
       await expect(page.getByTestId('codex-tab')).toHaveClass(/font-pixel/)
     }
   })
@@ -528,7 +530,13 @@ test.describe('F13 — Field Codex', () => {
     const dbCapReset = new PrismaClientForCapReset()
     const todayForReset = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()))
     await dbCapReset.codexKpDay.upsert({
-      where: { userId_day: { userId: leaderUserId!, day: todayForReset } },
+      where: {
+        userId_teamId_day: {
+          userId: leaderUserId!,
+          teamId: teamId!,
+          day: todayForReset,
+        },
+      },
       create: { userId: leaderUserId!, teamId: teamId!, day: todayForReset, lessonsCompleted: 0 },
       update: { lessonsCompleted: 0 },
     })
@@ -563,7 +571,14 @@ test.describe('F13 — Field Codex', () => {
     const db = new PrismaClient()
     for (const lessonId of [UNIT1_LESSON_IDS[3], ...UNIT1_REMAINING_LESSON_IDS]) {
       await db.codexLessonProgress.upsert({
-        where: { userId_lessonId: { userId: leaderUserId!, lessonId } },
+        where: {
+          userId_teamId_trackSlug_lessonId: {
+            userId: leaderUserId!,
+            teamId: teamId!,
+            trackSlug: 'gait-biomechanics',
+            lessonId,
+          },
+        },
         create: {
           userId: leaderUserId!,
           teamId: teamId!,

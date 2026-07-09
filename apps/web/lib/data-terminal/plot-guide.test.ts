@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { PLOTS, PLOT_CATEGORIES, filterPlots } from '@/lib/data-terminal/plot-guide'
+import { PLOTS, PLOT_CATEGORIES, filterPlots } from '@/content/data-terminal/plot-guide'
 
 // ---------------------------------------------------------------------------
 // Content shape invariants — cheap guard that the assembled 45-item plot

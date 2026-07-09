@@ -77,6 +77,4 @@ Tracked items intentionally deferred during development. Remove an entry once do
 
 ## Dependency hygiene
 - `recharts` is now **in use** (Data Terminal charts).
-- `video.js`, `react-hook-form`, `@tanstack/react-query` are still unused but
-  earmarked for planned stub features (showcase video, forms, data fetching).
-  Remove if those plans change.
+- `video.js` remains reserved for uploaded Showcase video playback.

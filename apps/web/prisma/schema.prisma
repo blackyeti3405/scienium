@@ -17,12 +17,16 @@ model User {
   email       String   @unique
   schoolId    String?  @map("school_id")
   classId     String?  @map("class_id")
+  activeTeamId String? @map("active_team_id")
   role        UserRole @default(student)
   isMinor     Boolean  @default(true) @map("is_minor")
   createdAt   DateTime @default(now()) @map("created_at")
 
   school               School?                 @relation(fields: [schoolId], references: [id])
   class                Class?                  @relation(fields: [classId], references: [id])
+  activeTeam           Team?                   @relation("activeTeam", fields: [activeTeamId], references: [id], onDelete: SetNull)
+  schoolsAdministered  School[]                @relation("schoolAdmin")
+  teamsLed             Team[]                  @relation("teamLead")
   classesTeaching      Class[]                 @relation("classTeacher")
   teamMemberships      TeamMember[]
   projectLogEntries    ProjectLog[]
@@ -44,7 +48,9 @@ model User {
   experiments          Experiment[]            @relation("experimentAuthor")
   codexLessonProgress  CodexLessonProgress[]
   codexKpDays          CodexKpDay[]
+  vegaStudyMessages    VegaStudyMessage[]
 
+  @@index([activeTeamId])
   @@map("users")
 }
 
@@ -63,6 +69,7 @@ model School {
   id      String  @id @default(cuid())
   name    String  @unique
   adminId String? @map("admin_id")
+  admin   User?   @relation("schoolAdmin", fields: [adminId], references: [id], onDelete: SetNull)
   users   User[]
   classes Class[]
 
@@ -82,6 +89,7 @@ model Class {
   school    School   @relation(fields: [schoolId], references: [id])
   teacher   User     @relation("classTeacher", fields: [teacherId], references: [id])
   users     User[]
+  teams     Team[]
 
   @@map("classes")
 }
@@ -92,6 +100,7 @@ model Team {
   id            String       @id @default(cuid())
   name          String
   teamLeadId    String       @map("team_lead_id")
+  classId       String?      @map("class_id")
   labType       LabType?     @map("lab_type")
   topic         String?
   phase         ProjectPhase @default(discovery)
@@ -111,6 +120,9 @@ model Team {
   researchIdea  String?      @map("research_idea")
   createdAt     DateTime     @default(now()) @map("created_at")
 
+  teamLead        User                    @relation("teamLead", fields: [teamLeadId], references: [id])
+  class           Class?                  @relation(fields: [classId], references: [id], onDelete: SetNull)
+  activeUsers     User[]                  @relation("activeTeam")
   members         TeamMember[]
   currency        TeamCurrency?
   buildings       TeamBuilding[]
@@ -144,6 +156,7 @@ model Team {
   studyPlan       TeamStudyPlan?
   vegaStudyMessages VegaStudyMessage[]
 
+  @@index([classId])
   @@map("teams")
 }
 
@@ -416,11 +429,37 @@ model Paper {
   relevanceNotes PaperRelevanceNote[]
   chatMessages   PaperChatMessage[]
   proficiencies  PaperProficiency[]
+  processingJob PaperProcessingJob?
   // #13: the source node this Paper was promoted from (if any) + its formatted citation.
   promotedFromNode DiscoveryNode?     @relation("promotedFrom")
   citation       Citation?
 
   @@map("papers")
+}
+
+enum ProcessingJobStatus {
+  pending
+  running
+  completed
+  failed
+
+  @@map("processing_job_status")
+}
+
+model PaperProcessingJob {
+  id          String              @id @default(cuid())
+  paperId     String              @unique @map("paper_id")
+  status      ProcessingJobStatus @default(pending)
+  attempts    Int                 @default(0)
+  lastError   String?             @map("last_error")
+  claimedAt   DateTime?           @map("claimed_at")
+  completedAt DateTime?           @map("completed_at")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+  paper       Paper               @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([status, claimedAt])
+  @@map("paper_processing_jobs")
 }
 
 // Per-student proficiency on a single source. Each member demonstrates
@@ -449,13 +488,20 @@ model PaperChatMessage {
   id        String   @id @default(cuid())
   paperId   String   @map("paper_id")
   userId    String   @map("user_id")
-  role      String // 'user' | 'assistant'
+  role      MessageRole
   content   String
   createdAt DateTime @default(now()) @map("created_at")
   paper     Paper    @relation(fields: [paperId], references: [id])
 
   @@index([paperId, userId])
   @@map("paper_chat_messages")
+}
+
+enum MessageRole {
+  user
+  assistant
+
+  @@map("message_role")
 }
 
 enum PaperSource {
@@ -862,7 +908,7 @@ model TeacherFeedback {
   id            String   @id @default(cuid())
   teamId        String   @map("team_id")
   teacherUserId String   @map("teacher_user_id")
-  targetType    String   @map("target_type") // 'team' | 'project_log' | 'paper' | 'showcase'
+  targetType    FeedbackTarget @map("target_type")
   targetId      String?  @map("target_id")
   body          String
   resolved      Boolean  @default(false)
@@ -875,6 +921,15 @@ model TeacherFeedback {
   @@map("teacher_feedback")
 }
 
+enum FeedbackTarget {
+  team
+  project_log
+  paper
+  showcase
+
+  @@map("feedback_target")
+}
+
 // ─── Notifications ───────────────────────────────────────────────────────────
 
 // An in-app notification. `userId` null means the whole team. `dedupeKey` is
@@ -884,7 +939,7 @@ model Notification {
   id        String    @id @default(cuid())
   teamId    String    @map("team_id")
   userId    String?   @map("user_id")
-  kind      String // 'fair_deadline' | 'urgency' | 'teacher_feedback' | 'phase_reviewed' | 'showcase_reviewed'
+  kind      NotificationKind
   title     String
   body      String
   linkUrl   String?   @map("link_url")
@@ -897,6 +952,16 @@ model Notification {
 
   @@index([teamId, createdAt])
   @@map("notifications")
+}
+
+enum NotificationKind {
+  fair_deadline
+  urgency
+  teacher_feedback
+  phase_reviewed
+  showcase_reviewed
+
+  @@map("notification_kind")
 }
 
 model NotificationPref {
@@ -1151,11 +1216,11 @@ model RubricSelfAssessment {
 model TeamRubricScore {
   id              String   @id @default(cuid())
   teamId          String   @map("team_id")
-  track           String // 'science' | 'engineering'
+  track           RubricTrack
   criterionKey    String   @map("criterion_key") // e.g. "science:III"
   score           Int // 0..maxScore for that criterion (validated server-side against ISEF_RUBRIC)
   notes           String?
-  scorerRole      String   @default("student") @map("scorer_role") // 'student' | 'teacher'
+  scorerRole      RubricScorerRole @default(student) @map("scorer_role")
   updatedByUserId String   @map("updated_by_user_id")
   updatedAt       DateTime @updatedAt @map("updated_at")
   team            Team     @relation(fields: [teamId], references: [id])
@@ -1163,6 +1228,20 @@ model TeamRubricScore {
 
   @@unique([teamId, criterionKey, scorerRole])
   @@map("team_rubric_scores")
+}
+
+enum RubricTrack {
+  science
+  engineering
+
+  @@map("rubric_track")
+}
+
+enum RubricScorerRole {
+  student
+  teacher
+
+  @@map("rubric_scorer_role")
 }
 
 model IsefCategory {
@@ -1299,8 +1378,8 @@ model CodexLessonProgress {
   user User @relation(fields: [userId], references: [id])
   team Team @relation(fields: [teamId], references: [id])
 
-  @@id([userId, lessonId])
-  @@index([userId, trackSlug])
+  @@id([userId, teamId, trackSlug, lessonId])
+  @@index([userId, teamId, trackSlug])
   @@map("codex_lesson_progress")
 }
 
@@ -1318,7 +1397,7 @@ model CodexKpDay {
   user User @relation(fields: [userId], references: [id])
   team Team @relation(fields: [teamId], references: [id])
 
-  @@unique([userId, day])
+  @@unique([userId, teamId, day])
   @@map("codex_kp_days")
 }
 
@@ -1354,11 +1433,12 @@ model VegaStudyMessage {
   id        String   @id @default(cuid())
   teamId    String   @map("team_id")
   userId    String   @map("user_id")
-  role      String // 'user' | 'assistant'
+  role      MessageRole
   content   String
   createdAt DateTime @default(now()) @map("created_at")
 
   team Team @relation(fields: [teamId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
   @@index([teamId, createdAt])
   @@map("vega_study_messages")

@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
   // trackSlug — a completed lesson in a DIFFERENT track must never count
   // toward unlocking gates in this one).
   const completedRows = await db.codexLessonProgress.findMany({
-    where: { userId: ctx.dbUserId, trackSlug, completed: true },
+    where: { userId: ctx.dbUserId, teamId: ctx.teamId, trackSlug, completed: true },
     select: { lessonId: true },
   })
   const completedLessonIds = new Set(completedRows.map((r) => r.lessonId))
@@ -111,7 +111,14 @@ export async function POST(req: NextRequest) {
   const grade = gradeCheckpoint(lesson.checkpoint.questions as CheckpointQuestion[], submission)
 
   const existing = await db.codexLessonProgress.findUnique({
-    where: { userId_lessonId: { userId: ctx.dbUserId, lessonId } },
+    where: {
+      userId_teamId_trackSlug_lessonId: {
+        userId: ctx.dbUserId,
+        teamId: ctx.teamId,
+        trackSlug,
+        lessonId,
+      },
+    },
     select: { bestScore: true, kpAwarded: true, completed: true },
   })
   const priorBest = existing?.bestScore ?? 0
@@ -124,7 +131,14 @@ export async function POST(req: NextRequest) {
     // Persist a non-completing bestScore high-water only — no KP, no cap
     // consumption, completion status unchanged.
     await db.codexLessonProgress.upsert({
-      where: { userId_lessonId: { userId: ctx.dbUserId, lessonId } },
+      where: {
+        userId_teamId_trackSlug_lessonId: {
+          userId: ctx.dbUserId,
+          teamId: ctx.teamId,
+          trackSlug,
+          lessonId,
+        },
+      },
       create: {
         userId: ctx.dbUserId,
         teamId: ctx.teamId,
@@ -152,7 +166,14 @@ export async function POST(req: NextRequest) {
   // does either.
   if (alreadyClaimed) {
     await db.codexLessonProgress.update({
-      where: { userId_lessonId: { userId: ctx.dbUserId, lessonId } },
+      where: {
+        userId_teamId_trackSlug_lessonId: {
+          userId: ctx.dbUserId,
+          teamId: ctx.teamId,
+          trackSlug,
+          lessonId,
+        },
+      },
       data: { bestScore: newBestScore, completed: true, completedAt: new Date() },
     })
     return NextResponse.json({
@@ -170,7 +191,9 @@ export async function POST(req: NextRequest) {
   // below, not this pre-check alone.
   const today = todayUtc()
   const kpDay = await db.codexKpDay.findUnique({
-    where: { userId_day: { userId: ctx.dbUserId, day: today } },
+    where: {
+      userId_teamId_day: { userId: ctx.dbUserId, teamId: ctx.teamId, day: today },
+    },
     select: { lessonsCompleted: true },
   })
   if ((kpDay?.lessonsCompleted ?? 0) >= CODEX_DAILY_LESSON_CAP) {
@@ -197,7 +220,7 @@ export async function POST(req: NextRequest) {
     const capRows = await tx.$queryRaw<{ lessons_completed: number }[]>(Prisma.sql`
       INSERT INTO "codex_kp_days" (id, user_id, team_id, day, lessons_completed, updated_at)
       VALUES (gen_random_uuid()::text, ${ctx.dbUserId}, ${ctx.teamId}, ${today}, 1, now())
-      ON CONFLICT (user_id, day) DO UPDATE
+      ON CONFLICT (user_id, team_id, day) DO UPDATE
         SET lessons_completed = "codex_kp_days".lessons_completed + 1, updated_at = now()
         WHERE "codex_kp_days".lessons_completed < ${CODEX_DAILY_LESSON_CAP}
       RETURNING lessons_completed
@@ -216,7 +239,7 @@ export async function POST(req: NextRequest) {
     await tx.$queryRaw(Prisma.sql`
       INSERT INTO "codex_lesson_progress" (user_id, team_id, track_slug, lesson_id, completed, best_score, kp_awarded, completed_at, updated_at)
       VALUES (${ctx.dbUserId}, ${ctx.teamId}, ${trackSlug}, ${lessonId}, true, ${newBestScore}, ${award.kpEarned}, now(), now())
-      ON CONFLICT (user_id, lesson_id) DO UPDATE
+      ON CONFLICT (user_id, team_id, track_slug, lesson_id) DO UPDATE
         SET completed = true,
             best_score = GREATEST("codex_lesson_progress".best_score, ${newBestScore}),
             kp_awarded = GREATEST("codex_lesson_progress".kp_awarded, ${award.kpEarned}),

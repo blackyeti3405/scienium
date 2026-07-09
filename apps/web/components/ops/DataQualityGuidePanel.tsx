@@ -6,8 +6,8 @@ import {
   DATA_QUALITY_GUIDE,
   DQ_CATEGORIES,
   filterDataQualityConcepts,
-} from '@/lib/data-terminal/data-quality-guide'
-import type { DataQualityCategory, DataQualityConcept } from '@/lib/data-terminal/data-quality-guide'
+} from '@/content/data-terminal/data-quality-guide'
+import type { DataQualityCategory, DataQualityConcept } from '@/content/data-terminal/data-quality-guide'
 import { useToggleSet } from '@/lib/hooks/useToggleSet'
 import {
   SectionLabel,

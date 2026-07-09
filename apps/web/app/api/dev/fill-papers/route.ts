@@ -1,6 +1,6 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { getTeamContext } from '@/lib/phase'
+import { getTeamContext } from '@/lib/team/context'
 import { db } from '@/lib/db'
 import { createHash } from 'crypto'
 

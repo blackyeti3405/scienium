@@ -8,10 +8,12 @@
  * Never throws — a delivery failure must never break the cron batch.
  */
 
-const FROM = process.env.NOTIFICATION_EMAIL_FROM ?? 'scienium <notifications@scienium.app>'
+import { serverEnv } from '@/lib/env'
+
+const FROM = serverEnv.NOTIFICATION_EMAIL_FROM() ?? 'scienium <notifications@scienium.app>'
 
 export function emailConfigured(): boolean {
-  return !!process.env.RESEND_API_KEY
+  return !!serverEnv.RESEND_API_KEY()
 }
 
 export async function sendNotificationEmail(opts: {
@@ -19,7 +21,7 @@ export async function sendNotificationEmail(opts: {
   subject: string
   body: string
 }): Promise<boolean> {
-  const apiKey = process.env.RESEND_API_KEY
+  const apiKey = serverEnv.RESEND_API_KEY()
   if (!apiKey) return false // not configured — in-app notification stands alone
 
   try {

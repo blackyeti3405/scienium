@@ -14,6 +14,7 @@ import {
 } from '@/lib/literature/quiz'
 import { clampScore, computeQuizAward } from '@/lib/economy'
 import { logActivity } from '@/lib/activity/log'
+import { lockAggregate } from '@/lib/db-lock'
 
 // Server-side only; the Anthropic key never reaches the browser.
 
@@ -131,15 +132,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // own `kpAwarded` is their high-water mark, so we top up only by the improvement
   // (never below 0). A failing quiz, or a passing retake that doesn't beat this
   // student's prior best, grants nothing.
-  const existing = await db.paperProficiency.findUnique({
-    where: { paperId_userId: { paperId: session.paper.id, userId: ctx.dbUserId } },
-    select: { kpAwarded: true, bestScore: true },
-  })
-  const priorKp = existing?.kpAwarded ?? 0
-  const priorBest = existing?.bestScore ?? 0
-  const award = computeQuizAward({ passed, aggregate, priorKp, priorBest })
-  const kpEarned = award.kpEarned
-
   // Store the grader's per-question "strong answer" teaching note into
   // questionsJson (no schema change) — only for questions scored below the
   // pass threshold. It's a teaching note, never the grading key.
@@ -153,8 +145,28 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   // Persist atomically: per-question attempts, session result, and — when passed —
   // this student's proficiency row (new high-water mark) + the team's KP bump.
-  await db.$transaction([
-    db.paperQuizAttempt.createMany({
+  const kpEarned = await db.$transaction(async (tx) => {
+    await lockAggregate(tx, `paper-quiz:${session.paper.id}:${ctx.dbUserId}`)
+    const [freshSession, existing] = await Promise.all([
+      tx.paperQuizSession.findUnique({
+        where: { id: session.id },
+        select: { gradedAt: true },
+      }),
+      tx.paperProficiency.findUnique({
+        where: { paperId_userId: { paperId: session.paper.id, userId: ctx.dbUserId } },
+        select: { kpAwarded: true, bestScore: true },
+      }),
+    ])
+    if (freshSession?.gradedAt) return 0
+
+    const award = computeQuizAward({
+      passed,
+      aggregate,
+      priorKp: existing?.kpAwarded ?? 0,
+      priorBest: existing?.bestScore ?? 0,
+    })
+
+    await tx.paperQuizAttempt.createMany({
       data: questions.map((q) => {
         const g = gradeMap.get(q.id)
         return {
@@ -167,8 +179,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           score: clampScore(g?.score ?? 0),
         }
       }),
-    }),
-    db.paperQuizSession.update({
+    })
+    await tx.paperQuizSession.update({
       where: { id: session.id },
       data: {
         score: aggregate,
@@ -176,38 +188,33 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         gradedAt: new Date(),
         questionsJson: questionsWithNotes as unknown as Prisma.InputJsonValue,
       },
-    }),
-    ...(passed
-      ? [
-          db.paperProficiency.upsert({
-            where: { paperId_userId: { paperId: session.paper.id, userId: ctx.dbUserId } },
-            create: {
-              paperId: session.paper.id,
-              userId: ctx.dbUserId,
-              demonstrated: true,
-              bestScore: award.newBestScore,
-              kpAwarded: award.newKpAwarded,
-            },
-            // Raise the high-water marks only — never lower them on a weaker retake.
-            update: {
-              demonstrated: true,
-              bestScore: award.newBestScore,
-              kpAwarded: award.newKpAwarded,
-            },
-          }),
-        ]
-      : []),
-    ...(kpEarned > 0
-      ? [
-          // Upsert so teams created before the currency ledger existed still award.
-          db.teamCurrency.upsert({
-            where: { teamId: session.paper.teamId },
-            create: { teamId: session.paper.teamId, kp: kpEarned },
-            update: { kp: { increment: kpEarned } },
-          }),
-        ]
-      : []),
-  ])
+    })
+    if (passed) {
+      await tx.paperProficiency.upsert({
+        where: { paperId_userId: { paperId: session.paper.id, userId: ctx.dbUserId } },
+        create: {
+          paperId: session.paper.id,
+          userId: ctx.dbUserId,
+          demonstrated: true,
+          bestScore: award.newBestScore,
+          kpAwarded: award.newKpAwarded,
+        },
+        update: {
+          demonstrated: true,
+          bestScore: award.newBestScore,
+          kpAwarded: award.newKpAwarded,
+        },
+      })
+    }
+    if (award.kpEarned > 0) {
+      await tx.teamCurrency.upsert({
+        where: { teamId: session.paper.teamId },
+        create: { teamId: session.paper.teamId, kp: award.kpEarned },
+        update: { kp: { increment: award.kpEarned } },
+      })
+    }
+    return award.kpEarned
+  })
 
   if (passed) {
     logActivity(ctx.teamId, ctx.dbUserId, 'quiz_passed', {

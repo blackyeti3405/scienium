@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverEnv } from '@/lib/env'
 
 /**
  * Rate limiter — OWASP API4:2023 (Unrestricted Resource Consumption).
@@ -139,8 +140,8 @@ export class UpstashStore implements RateLimitStore {
 }
 
 function createStore(): RateLimitStore {
-  const url = process.env.UPSTASH_REDIS_REST_URL
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+  const url = serverEnv.UPSTASH_REDIS_REST_URL()
+  const token = serverEnv.UPSTASH_REDIS_REST_TOKEN()
   if (url && token) return new UpstashStore(url, token)
   return new MemoryStore()
 }
@@ -186,7 +187,7 @@ async function hit(key: string, tier: RateLimitTier, now: number): Promise<HitRe
  * limited) bucket rather than throwing.
  */
 export function clientIp(req: NextRequest): string {
-  const configured = process.env.RATE_LIMIT_IP_HEADER
+  const configured = serverEnv.RATE_LIMIT_IP_HEADER()
   if (configured) {
     const v = req.headers.get(configured)
     if (v) return v.split(',')[0]!.trim()
