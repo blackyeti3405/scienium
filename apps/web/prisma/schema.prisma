@@ -467,11 +467,17 @@ model PaperProcessingJob {
   lastError   String?             @map("last_error")
   claimedAt   DateTime?           @map("claimed_at")
   completedAt DateTime?           @map("completed_at")
+  // Earliest time a retryable (`failed`, attempts remaining) job may be re-claimed
+  // — set to a backoff on each failure so retries space out instead of hammering.
+  nextRunAt   DateTime?           @map("next_run_at")
+  // Set once retries are exhausted: the paper is now a terminal error, not a
+  // transient failure. Distinguishes "will retry" from "gave up for good".
+  terminalAt  DateTime?           @map("terminal_at")
   createdAt   DateTime            @default(now()) @map("created_at")
   updatedAt   DateTime            @updatedAt @map("updated_at")
   paper       Paper               @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
-  @@index([status, claimedAt])
+  @@index([status, nextRunAt, claimedAt])
   @@map("paper_processing_jobs")
 }
 

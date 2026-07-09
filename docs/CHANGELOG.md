@@ -5,6 +5,29 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.21.4] — 2026-07-09
+
+Refactor Phase 5 — paper processing is truly retryable.
+
+### Added
+- `PaperProcessingJob.nextRunAt` (backed-off retry scheduling — each failure
+  spaces the next attempt further out) and `terminalAt` (records when retries were
+  exhausted). The processor claim and the cron both respect `nextRunAt`.
+
+### Fixed
+- A transient processing failure no longer surfaces as a terminal paper error.
+  The paper stays in `processing` while attempts remain and only becomes `error`
+  once all retries are exhausted — so a momentary Anthropic hiccup no longer looks
+  like a permanently broken paper.
+
+### Changed
+- Every claim path (pending / retryable-failed / stale-running) is capped at three
+  attempts, so a crash-loop can't run the extractor a fourth time. A final attempt
+  that crashes mid-run is terminalized by the cron sweep instead of hanging in
+  `processing` forever, and the cron reports how many it terminalized.
+
+---
+
 ## [0.21.3] — 2026-07-09
 
 Refactor Phase 4 — paper lists are metadata-only, and duplicate uploads are
