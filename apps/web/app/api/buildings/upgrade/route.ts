@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
+import { lockAggregate } from '@/lib/db-lock'
 import { shopBuilding } from '@/lib/shop'
 import { upgradeKpCost, upgradeLcCost, MAX_BUILDING_LEVEL } from '@/lib/economy'
 import { logActivity } from '@/lib/activity/log'
@@ -50,6 +51,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await db.$transaction(async (tx) => {
+      // Serialize with other plot mutations (place/move/sell) on the same per-team
+      // lock; the conditional updates below already make the currency/level bump
+      // race-safe on their own.
+      await lockAggregate(tx, `team-plot:${ctx.teamId}`)
       // Atomic, race-safe debit of BOTH currencies (LC only when this tier costs it)
       // — one conditional updateMany so the level can't bump unless the team can pay.
       const debit = await tx.teamCurrency.updateMany({

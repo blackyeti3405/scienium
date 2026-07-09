@@ -5,6 +5,31 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.21.1] — 2026-07-09
+
+Refactor Phase 2 — plot placement occupancy races.
+
+### Fixed
+- Building **move** is now race-safe. It runs inside the per-team plot advisory
+  lock (the same `team-plot:<teamId>` lock `place` uses) and re-checks cell
+  occupancy against committed rows before writing, so two simultaneous moves can
+  never land two items on the same cell. Previously `move` wrote with no
+  transaction and no lock at all.
+- **Sell** reads the building row and deletes it inside the plot lock, so a
+  concurrent double-sell now returns 404 instead of a delete-not-found 500.
+
+### Changed
+- **Upgrade** takes the per-team plot lock as well, so every plot mutation
+  (place / move / sell / upgrade) serializes on one key. Its conditional currency
+  debit and level-bump guards are unchanged.
+
+_Deferred:_ a unified `TeamPlotPlacement` table with a DB-level `(teamId, posX,
+posY)` uniqueness constraint (the plan's larger "durable refactor") — the
+advisory lock already delivers the race-safety outcome; the table is a
+defense-in-depth follow-up.
+
+---
+
 ## [0.21.0] — 2026-07-09
 
 An architecture-integrity pass focused on authoritative ownership, durable
