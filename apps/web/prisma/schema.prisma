@@ -595,7 +595,7 @@ model Citation {
 // One research-plan workspace per team. The plan text comes from either a Google
 // Doc the team connects by pasting an "anyone with the link" URL (we fetch the
 // published text on demand — lib/research-plan/google-doc.ts — OAuth deferred, see
-// TODO.md) or pasted/typed text saved directly; whichever was last saved is the
+// docs/TODO.md) or pasted/typed text saved directly; whichever was last saved is the
 // active source (`lastSyncedSource`). The project type/subtype selects the rubric
 // the AI review grades against.
 model ResearchPlan {

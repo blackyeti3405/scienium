@@ -94,4 +94,4 @@ clutter (shrubs / bushes / trees).
 gateway `BuildingSprite`s that are present for the current `phase`, and opens the
 clicked building's feature in a `FeaturePanel` overlay. Which buildings appear,
 their skin, and the plot size all derive from `lib/phase.ts` + `lib/gateways.ts`
-— see `architecture.md` §8.4.
+— see `docs/ARCHITECTURE.md` §8.4.

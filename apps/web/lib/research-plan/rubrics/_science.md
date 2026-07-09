@@ -1,7 +1,7 @@
 # Science Research Plan — Review Rubric (base)
 
 > Loaded for every science project, then specialized by a subtype file. Based on
-> the Regeneron ISEF **Science** judging criteria (docs/isef-2026.md).
+> the Regeneron ISEF **Science** judging criteria (docs/reference/ISEF-2026.md).
 
 You are reviewing an early **research plan** for a high-school science project —
 not finished results. Judge whether the *plan* sets the team up to score well at

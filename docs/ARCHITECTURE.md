@@ -1,10 +1,10 @@
 # scienium Technical Architecture
 
-> Last fact-checked against the repository: 2026-07-08
-> Product behavior: [`spec.md`](spec.md)
+> Last fact-checked against the repository: 2026-07-09
+> Product behavior: [`SPEC.md`](SPEC.md)
 > Setup and operations: [`SETUP.md`](SETUP.md)
 > Security launch checklist: [`SECURITY.md`](SECURITY.md)
-> Durable decisions: [`docs/architecture/`](docs/architecture/)
+> Durable decisions: [`architecture/`](architecture/)
 
 ## 1. System Summary
 
@@ -24,11 +24,11 @@ Next.js 14 App Router on Vercel
   |-- React server/client components
   |-- route handlers under app/api
   |-- Prisma application services
-  |-- Anthropic, Firecrawl, scholarly API adapters
+  |-- Anthropic, Firecrawl, OpenAlex, NCBI, arXiv adapters
   |
-  +--> Supabase PostgreSQL
+  +--> Supabase PostgreSQL through Prisma
   +--> Cloudflare R2 private object storage
-  +--> Upstash Redis (optional distributed rate limiting)
+  +--> Upstash Redis REST (optional shared rate-limit counters)
   +--> Resend REST API (optional notification email)
 ```
 
@@ -44,11 +44,12 @@ under `art/` and `apps/web/scripts/` is build tooling only.
 | UI runtime | React 18, TypeScript, Tailwind CSS |
 | UI style | Custom pixel-art system and generated sprite assets |
 | Authentication | Clerk middleware and server APIs |
-| Database | PostgreSQL through Prisma 5 |
+| Database | Supabase PostgreSQL through Prisma 5, with pooled runtime URL and direct migration URL |
 | Object storage | Cloudflare R2 through the AWS S3 SDK |
 | AI | Anthropic SDK, constructed lazily in `lib/anthropic.ts` |
 | External extraction | Firecrawl |
-| Scholarly discovery | arXiv, NCBI E-utilities, OpenAlex |
+| Scholarly discovery | arXiv, NCBI E-utilities, and OpenAlex API |
+| Caching and throttling | In-process bounded LRU caches plus optional Upstash Redis REST for shared rate-limit counters |
 | Rich text | TipTap with Markdown round-tripping |
 | Markdown rendering | react-markdown and remark-gfm |
 | Charts | Recharts plus authored chart-guide content |
@@ -66,20 +67,22 @@ part of the current implementation.
 ```text
 scienium/
 |-- AGENTS.md                     repository rules and required gates
-|-- README.md                     product and lab-interface introduction
-|-- spec.md                       current product specification
-|-- architecture.md               this document
-|-- CHANGELOG.md                  release history
-|-- SETUP.md                      local, CI, E2E, and deployment setup
-|-- SECURITY.md                   pre-pilot security and privacy checklist
-|-- TODO.md                       explicitly deferred work
+|-- CLAUDE.md                     Claude Code project memory
 |-- package.json                  workspace-level scripts
 |-- pnpm-workspace.yaml           apps/* and packages/* workspace definition
 |-- pnpm-lock.yaml                dependency lock
 |-- .claude/PARALLELISM.md        worktree and test parallelism rules
 |-- docs/
-|   |-- architecture/             architecture decision records
-|   `-- isef-2026.md              ISEF reference notes
+|   |-- README.md                 product and lab-interface introduction
+|   |-- SPEC.md                   current product specification
+|   |-- ARCHITECTURE.md           this document
+|   |-- CHANGELOG.md              release history
+|   |-- SETUP.md                  local, CI, E2E, and deployment setup
+|   |-- SECURITY.md               pre-pilot security and privacy checklist
+|   |-- TODO.md                   explicitly deferred work
+|   |-- architecture/             architecture decision records and refactor plans
+|   `-- reference/
+|       `-- ISEF-2026.md          ISEF reference notes
 |-- infra/
 |   `-- docker-compose.yml        optional local PostgreSQL
 |-- art/                          reproducible sprite-generation pipeline
@@ -271,13 +274,18 @@ loads classes owned by the teacher, and scopes team access through
 `lib/api/client.ts` provides consistent client-side JSON errors and runtime
 response validation where a feature contract has been defined.
 
-### 5.2 Rate limiting
+### 5.2 Caching and rate limiting
 
 `lib/rate-limit.ts` defines `read`, `mutate`, `join`, `upload`, and `ai` tiers.
 Each authenticated request is counted per user and against a larger shared-IP
 backstop. The default store is process memory. When both Upstash variables are
 configured, counters use Redis REST and work across server instances. Redis
 failure currently fails open and is logged.
+
+`lib/lru.ts` provides bounded in-process TTL/LRU caching for cheap read-through
+caches such as the Wikipedia article proxy. These caches are intentionally
+best-effort and per-instance. Durable data and user-visible state live in
+PostgreSQL; Redis is not currently a general application state store.
 
 ### 5.3 API route inventory
 
@@ -437,8 +445,9 @@ multiple trees, citations, reflections, starring, and topic locking.
 `stores/discoveryStore.ts` owns cursor/tree interaction but the database remains
 authoritative. Mutations update optimistically; failed HTTP responses trigger a
 rehydration instead of leaving unsaved local state. External scholarly metadata
-is sanitized and cached in `ExternalWork`. Citation traversal uses factual edges,
-not algorithmic related-work recommendations.
+is fetched through the OpenAlex, NCBI, and arXiv adapters, sanitized, and cached
+in `ExternalWork`. Citation traversal uses factual edges, not algorithmic
+related-work recommendations.
 
 Discovery KP uses an idempotent visit ledger, a per-team daily rollup, and a
 one-time topic bonus.
@@ -622,7 +631,7 @@ created only when used so unrelated missing secrets do not break route imports.
 Required by the corresponding deployed features:
 
 - Clerk publishable and secret keys.
-- `DATABASE_URL` and `DIRECT_URL`.
+- Supabase `DATABASE_URL` and `DIRECT_URL`.
 - `ANTHROPIC_API_KEY`.
 - R2 account, access keys, and bucket.
 - `FIRECRAWL_API_KEY`.
@@ -631,7 +640,7 @@ Required by the corresponding deployed features:
 
 Optional:
 
-- Upstash URL/token.
+- Upstash Redis REST URL/token for shared rate-limit counters.
 - trusted rate-limit IP header.
 - OpenAlex and NCBI identity/API keys.
 - Resend API key and sender.
@@ -639,8 +648,11 @@ Optional:
 
 ## 12. Deployment and Scheduled Work
 
-The intended hosted stack is Vercel + Supabase + private Cloudflare R2. Upstash
-and Resend are optional.
+The intended hosted stack is Vercel + Supabase + private Cloudflare R2. Supabase
+is already wired through `DATABASE_URL` for pooled app runtime queries and
+`DIRECT_URL` for Prisma migrations. Upstash Redis is wired as the optional
+multi-instance rate-limit backend; in-process LRU remains the app's best-effort
+read cache. Resend is optional for email notifications.
 
 `apps/web/vercel.json` schedules:
 

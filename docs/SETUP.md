@@ -168,7 +168,7 @@ pnpm --filter web typecheck     # tsc --noEmit
 
 ## 6. Pixel-art pipeline
 
-Sprites are generated from code under `art/`. Full docs: [`art/README.md`](art/README.md).
+Sprites are generated from code under `art/`. Full docs: [`art/README.md`](../art/README.md).
 
 ```bash
 pip3 install Pillow numpy       # numpy only needed to re-import the Discovery reference
@@ -184,7 +184,7 @@ Output PNGs land in `apps/web/public/sprites/`. The reference art (including
 so `art/iso.py` reproduces everything.
 
 > **Economy buildings no longer get bespoke per-building sprites** (design
-> change — see `spec.md` §19); in-game they use a shared generic sprite
+> change — see `SPEC.md` §19); in-game they use a shared generic sprite
 > treatment. The old per-building builders under
 > `.claude/pixel-art-pipeline/builders/` and `art/montage.py` remain in the repo
 > for reference only and are not part of the sprite regeneration flow.
@@ -205,10 +205,10 @@ claude                                       # sign in with your Anthropic accou
 
 Inside Claude Code, type `/pixel-art-generator` (or just ask it to make/recolor a
 sprite) and it will use the `art/` pipeline. The plan/skill files from this work
-are in the repo; project context lives in `spec.md`, `architecture.md`, and
+are in the repo; project context lives in `SPEC.md`, `ARCHITECTURE.md`, and
 `art/README.md`.
 
-> Tip: the repo's [`CLAUDE.md`](CLAUDE.md) at the root is auto-loaded as project
+> Tip: the repo's [`CLAUDE.md`](../CLAUDE.md) at the root is auto-loaded as project
 > memory by Claude Code — the house rules and pipeline gates live there.
 
 ---
@@ -276,7 +276,7 @@ the var and redeploy (config-only fix, no code change).
 
 Architecture, hosting choices, the schema, and the 0.6.0 hardening details
 (rate-limit backends, `requireTeamContext`, view-fingerprint salt) are documented
-in [`architecture.md`](architecture.md) (see §12).
+in [`ARCHITECTURE.md`](ARCHITECTURE.md) (see §12).
 
 ---
 
@@ -578,7 +578,7 @@ pnpm --filter web typecheck     # tsc --noEmit
 
 ## 6. Pixel-art pipeline
 
-Sprites are generated from code under `art/`. Full docs: [`art/README.md`](art/README.md).
+Sprites are generated from code under `art/`. Full docs: [`art/README.md`](../art/README.md).
 
 ```powershell
 py -3 -m pip install Pillow numpy       # numpy only needed to re-import the Discovery reference
@@ -594,7 +594,7 @@ Output PNGs land in `apps/web/public/sprites/`. The reference art (including
 so `art/iso.py` reproduces everything.
 
 > **Economy buildings no longer get bespoke per-building sprites** (design
-> change — see `spec.md` §19); in-game they use a shared generic sprite
+> change — see `SPEC.md` §19); in-game they use a shared generic sprite
 > treatment. The old per-building builders under
 > `.claude/pixel-art-pipeline/builders/` and `art/montage.py` remain in the repo
 > for reference only and are not part of the sprite regeneration flow.
@@ -615,10 +615,10 @@ claude                                       # sign in with your Anthropic accou
 
 Inside Claude Code, type `/pixel-art-generator` (or just ask it to make/recolor a
 sprite) and it will use the `art/` pipeline. The plan/skill files from this work
-are in the repo; project context lives in `spec.md`, `architecture.md`, and
+are in the repo; project context lives in `SPEC.md`, `ARCHITECTURE.md`, and
 `art/README.md`.
 
-> Tip: the repo's [`CLAUDE.md`](CLAUDE.md) at the root is auto-loaded as project
+> Tip: the repo's [`CLAUDE.md`](../CLAUDE.md) at the root is auto-loaded as project
 > memory by Claude Code — the house rules and pipeline gates live there.
 
 ---
@@ -687,7 +687,7 @@ the var and redeploy (config-only fix, no code change).
 
 Architecture, hosting choices, the schema, and the 0.6.0 hardening details
 (rate-limit backends, `requireTeamContext`, view-fingerprint salt) are documented
-in [`architecture.md`](architecture.md) (see §12).
+in [`ARCHITECTURE.md`](ARCHITECTURE.md) (see §12).
 
 ---
 

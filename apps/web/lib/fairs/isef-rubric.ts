@@ -1,6 +1,6 @@
 /**
  * ISEF judging rubric, structured for the Science Fair gateway's ISEF card.
- * Source of truth is docs/isef-2026.md / the Regeneron ISEF "What to Expect"
+ * Source of truth is docs/reference/ISEF-2026.md / the Regeneron ISEF "What to Expect"
  * judging criteria (provided 2026-06-18). Science and engineering use different
  * five-section criteria; each section lists the exact checklist items judges
  * score against. Both also feed the Research Plan building's review (Feature 2B).

@@ -38,7 +38,7 @@ interactions.
   Research Plan, and Science Fair surfaces on the requested tab.
 - Discovery optimistic mutations now rehydrate after failed persistence instead
   of leaving unsaved client state.
-- `architecture.md` was rewritten and fact-checked against the routes, modules,
+- `ARCHITECTURE.md` was rewritten and fact-checked against the routes, modules,
   workflows, schema, migrations, integrations, tests, assets, and deployment
   configuration. `SETUP.md` and `.env.example` no longer describe the removed
   Python AI service.
@@ -103,7 +103,7 @@ access behind lazy validation.
   eager `process.env.X!` reads.
 
 ### Fixed
-- Stale doc pointers: `AGENTS.md` → `.claude/PARALLELISM.md`; `architecture.md` component tree and
+- Stale doc pointers: `AGENTS.md` → `.claude/PARALLELISM.md`; `ARCHITECTURE.md` component tree and
   flows brought back in line with the tree.
 
 ### Removed
@@ -432,7 +432,7 @@ Vitest (115), Playwright E2E (70). Two additive migrations.
 
 ### Changed
 
-- **Upgrade economy redesigned** (was: clearance-capped levels, LC-per-level). Now KP-per-level + LC-only-at-tier-ups, no clearance cap; clearance gates *purchase* only. `spec.md` §8/§9.2/§14 updated to match.
+- **Upgrade economy redesigned** (was: clearance-capped levels, LC-per-level). Now KP-per-level + LC-only-at-tier-ups, no clearance cap; clearance gates *purchase* only. `SPEC.md` §8/§9.2/§14 updated to match.
 - **Schema** — `team_shop_buildings` gains `pos_x`, `pos_y`, `level`, `cost_paid`; new `team_gateway_placements` and `lab_credit_claims` tables. Migrations `20260627000000_building_placement`, `20260627000001_building_upgrades` (applied via `migrate deploy`, not shadow `migrate dev`).
 - **E2E test isolation** — the suite now runs as a dedicated test account (`devuser2`) on a throwaway **E2E Test Lab**, so `pnpm test:e2e` never mutates a real lab. New `e2e/placement.spec.ts` + `e2e/upgrades.spec.ts`; `BuildingSprite.tsx` (orphaned by `LabPlot`) removed.
 
@@ -606,7 +606,7 @@ A two-part release: the **Showcase Wing** and **Proof of Expertise / Clearance +
 
 ### Notes / follow-ups
 
-- The in-memory rate-limit and article-cache stores remain per-instance unless Upstash is configured; this resolves the long-standing "move counters to a shared store" open question (see architecture.md §12).
+- The in-memory rate-limit and article-cache stores remain per-instance unless Upstash is configured; this resolves the long-standing "move counters to a shared store" open question (see ARCHITECTURE.md §12).
 - `next lint` / `next build` were not run in the authoring environment (lint needs interactive ESLint setup; build needs Clerk/DB/R2 env). `tsc --noEmit` (strict) is clean, `--noUnusedLocals` shows no dead imports, and 60 unit tests pass. Run lint + build in CI before release.
 
 ---
@@ -639,7 +639,7 @@ A two-part release: the **Showcase Wing** and **Proof of Expertise / Clearance +
 ### Added
 
 #### API security hardening (OWASP API Top 10)
-- **Rate limiting on every API route** — new `lib/rate-limit.ts`. `enforceRateLimit(req, tier, userId)` returns a graceful **429 + `Retry-After`** when exceeded. Tiers (per minute): `ai` 12, `upload` 8, `mutate` 40, `read` 120, `join` 10. Checks **both a per-user and a per-IP bucket**; the per-user bucket is the real limit while the per-IP bucket is a generous `×12` backstop so a classroom behind one school NAT IP isn't locked out. Specifically caps the Claude-backed endpoints (chat, quiz gen/grade, paper-upload metadata, research-plan review/idea-check, fair deadline sync) so a single account can't run up unbounded Anthropic spend. `join` is kept tight against invite-code brute-forcing. Counters are in-memory (per instance) by design — see architecture.md §6/§7.1 for the shared-store / Cloudflare-edge upgrade path
+- **Rate limiting on every API route** — new `lib/rate-limit.ts`. `enforceRateLimit(req, tier, userId)` returns a graceful **429 + `Retry-After`** when exceeded. Tiers (per minute): `ai` 12, `upload` 8, `mutate` 40, `read` 120, `join` 10. Checks **both a per-user and a per-IP bucket**; the per-user bucket is the real limit while the per-IP bucket is a generous `×12` backstop so a classroom behind one school NAT IP isn't locked out. Specifically caps the Claude-backed endpoints (chat, quiz gen/grade, paper-upload metadata, research-plan review/idea-check, fair deadline sync) so a single account can't run up unbounded Anthropic spend. `join` is kept tight against invite-code brute-forcing. Counters are in-memory (per instance) by design — see ARCHITECTURE.md §6/§7.1 for the shared-store / Cloudflare-edge upgrade path
 - **Strict input validation** — new `lib/validation.ts`. Every body-accepting route now parses via `parseJson(req, schema)` against **strict** zod schemas: type checks, length caps (names ≤80, chat ≤60 msgs × 8k chars, quiz answers ≤50 × 5k, node batches ≤200, …), and `.strict()` so unexpected fields are rejected (mass-assignment defense). Malformed JSON returns a clean 400 instead of an unhandled 500
 - **Upload limits** — paper PDF upload capped at **20 MB** and verified by **`%PDF-` magic bytes** (the client-declared MIME type is no longer trusted)
 
@@ -672,7 +672,7 @@ A two-part release: the **Showcase Wing** and **Proof of Expertise / Clearance +
 - Both the review and the idea-check **stream live** (NDJSON): the review's rubric rows grade in one at a time with filling bars and the three columns populate as bullets arrive; the idea-check shows each web search + sources as they happen. Both results are **persisted on the plan** (`lastReviewJson` / `lastIdeaCheckJson`) so they survive reloads, and each re-run **replaces** the prior result in the DB and on screen
 
 #### Location-based Science Fair gateway (Feature 3)
-- `science_fair` gateway is now a real feature (`components/fair/ScienceFairFeature.tsx`): countdown to the team's fair day, cards for the matched **regional** / **state** / **ISEF** fairs, and the full **ISEF rubric** (science + engineering criteria + board guidance) from `docs/isef-2026.md`
+- `science_fair` gateway is now a real feature (`components/fair/ScienceFairFeature.tsx`): countdown to the team's fair day, cards for the matched **regional** / **state** / **ISEF** fairs, and the full **ISEF rubric** (science + engineering criteria + board guidance) from `docs/reference/ISEF-2026.md`
 - **US location** — `Team.locationZip` / `locationState`, captured at onboarding (optional ZIP) or inline (`POST /api/team/location`); `lib/fairs/zip.ts` derives the state from ZIP prefixes
 - **Fair matching** — provisional affiliated-fair dataset in `lib/fairs/dataset.ts` (lazily upserted into `Fair`/`FairEvent` with coordinates + `seedKey`); `matchFairs` finds the state fair + nearest regional by distance (`GET /api/fairs/match`)
 - **AI deadline sync** — `POST /api/fairs/[id]/sync-deadlines` reads a fair's site and extracts dates into a `FairEvent` marked **estimated**; the UI is upfront that dates need per-fair verification
@@ -852,4 +852,4 @@ A two-part release: the **Showcase Wing** and **Proof of Expertise / Clearance +
 - `StubFeature` placeholder for all 6 non-Discovery gateway buildings
 - Docker Compose local dev environment (`infra/docker-compose.yml`): `pgvector/pgvector:pg16` + `redis:7-alpine`
 - `SETUP.md` with full macOS setup instructions
-- `spec.md` and `architecture.md` design documentation
+- `SPEC.md` and `ARCHITECTURE.md` design documentation

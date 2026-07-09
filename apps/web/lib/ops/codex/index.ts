@@ -103,7 +103,7 @@ const LOADERS: Record<CodexTrackSlug, () => Promise<{ default: CodexTrack }>> = 
  * `gait-biomechanics` is built this cycle) — every consumer MUST filter
  * against `CODEX_TRACKS` (e.g. via `labTypeFields`) before using a slug, so
  * the map degrades gracefully as more fields are authored without another
- * code change here. Domains per lab type per spec.md §4.
+ * code change here. Domains per lab type per docs/SPEC.md §4.
  */
 export const LABTYPE_FIELDS: Record<LabType, string[]> = {
   // BioCore — Biology / Environmental Science: life sciences, ecology, genetics.

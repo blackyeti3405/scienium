@@ -7,7 +7,7 @@ Parallelism is applied only where the work is genuinely independent and verifiab
 - **E2E scenarios.** `playwright.config.ts` sets `fullyParallel: true` with `workers` = `E2E_WORKERS` (default 4 locally, 2 in CI). Playwright gives each test its own browser context, so scenarios don't share client state. Bounded well under the 11 cores on purpose: the bottleneck is the single dev server + shared dev DB, not CPU.
 - **Research agents.** Before a brainstorm, dispatch several `researcher` subagents at once, each on a different angle (competing apps, a UX pattern, one subsystem), each writing `pipeline/research/<topic>.md`. They only read + write their own file, so they can't collide.
 - **Candidate generation.** The `brainstormer` synthesizes the parallel research outputs into `pipeline/ideas.md` — stronger, better-grounded candidates than a cold start.
-- **Separate-worktree features.** Several approved issues can ship at once, each in its own worktree on its own branch via `/ship`, run as **separate Claude Code sessions** (not one session juggling them). To also run their E2E suites concurrently, give each worktree its own local Postgres (see SETUP.md "Faster, less flaky E2E") — the shared dev DB is the real serialization point, not the code.
+- **Separate-worktree features.** Several approved issues can ship at once, each in its own worktree on its own branch via `/ship`, run as **separate Claude Code sessions** (not one session juggling them). To also run their E2E suites concurrently, give each worktree its own local Postgres (see docs/SETUP.md "Faster, less flaky E2E") — the shared dev DB is the real serialization point, not the code.
 
 ## What MUST NOT run in parallel
 

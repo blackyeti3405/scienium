@@ -26,7 +26,7 @@ otherwise done.
 3. pnpm --filter web lint                         # next lint
 4. pnpm --filter web build                        # next build; loads apps/web/.env.local automatically
 5. pnpm --filter web test:e2e                     # Playwright E2E in a real logged-in browser; needs the dev DB up + E2E_* creds in .env.local
-   # If teacher-flow specs fail their roster precondition, restore the DB fixture graph first: pnpm --filter web seed:e2e (idempotent; see SETUP.md "E2E tests")
+   # If teacher-flow specs fail their roster precondition, restore the DB fixture graph first: pnpm --filter web seed:e2e (idempotent; see docs/SETUP.md "E2E tests")
 
 ## Parallelism
 What may run concurrently — and what must not — is in .claude/PARALLELISM.md. The hard rule: never run two implementation agents (coders) on the same working tree. Isolate concurrent features in separate git worktrees via `/ship`, run as separate sessions.

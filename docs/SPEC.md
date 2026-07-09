@@ -757,7 +757,7 @@ Each fair entry includes:
 When a date for the current year has not yet been officially announced, the app shows: *"Estimated: [Month] [Year] (based on [Previous Year] timing)"* until the official date is published. The estimate is computed from the same week-of-year as the prior year's event.
 
 ### 13.3 ISEF Rubric Integration
-The full official ISEF judging rubric is built into the Fair Hub and rendered in the ISEF card. **Content is in `docs/isef-2026.md`** and structured for display in `lib/fairs/isef-rubric.ts` — Science and Engineering tracks, each with the five sections, every section's checklist subpoints (what judges score), the Poster (10) / Interview (25) split of Section V, the judging-emphasis notes, and the project-board guidance.
+The full official ISEF judging rubric is built into the Fair Hub and rendered in the ISEF card. **Content is in `docs/reference/ISEF-2026.md`** and structured for display in `lib/fairs/isef-rubric.ts` — Science and Engineering tracks, each with the five sections, every section's checklist subpoints (what judges score), the Poster (10) / Interview (25) split of Section V, the judging-emphasis notes, and the project-board guidance.
 
 - Each criterion (e.g. Research Question, Design and Methodology, Execution, Creativity, Presentation) explained in plain language
 - **Self-assessment tool (implemented):** a **Self-check** tab (also reachable at `/fair-hub/rubric`) where the team rates itself on each ISEF criterion for their chosen track (Science or Engineering). Scores are validated server-side against the `ISEF_RUBRIC` literal and roll up into a live **judge-readiness score out of 100**. Team-scoped and shared (one score per criterion per team, in `team_rubric_scores`); no AI and no seed data involved. Reads/writes via `GET/PUT /api/rubric/self-assessment`.
@@ -1065,7 +1065,7 @@ showcase_review_queue      id, showcase_id, status, flagged_reasons_json,
 
 ### 17.1 Security & Abuse Prevention
 
-scienium serves minors and calls paid AI APIs, so abuse prevention is a first-class requirement, not an afterthought. (Implementation details live in `architecture.md` §7.)
+scienium serves minors and calls paid AI APIs, so abuse prevention is a first-class requirement, not an afterthought. (Implementation details live in `ARCHITECTURE.md` §7.)
 
 - **Rate limiting on all endpoints.** Every API route is rate-limited per authenticated user (with a coarse per-IP backstop tuned so a shared school/NAT network isn't penalized). The AI-backed actions — paper chat, quiz generation/grading, research-plan review, "has this been done before?" idea-check, and fair-deadline reads — are capped tightly because each call costs money; runaway or scripted use is throttled with a friendly "slow down" response rather than a hard failure. Idea-checks keep their per-team daily cap (3/day). Invite-code redemption is throttled to make code guessing impractical.
 - **Strict input validation.** All user input is validated against a schema: correct types, sensible length limits, and rejection of unexpected fields. Oversized or malformed submissions are refused with a clear error.
@@ -1109,7 +1109,7 @@ scienium serves minors and calls paid AI APIs, so abuse prevention is a first-cl
 
 ## 19. Visual & Art Direction
 
-> **Status:** Direction set. The **7 gateway sprites are drawn** — code-generated at 64×64 on a 16-colour palette and wired through the sprite manifest. **Per-building economy sprites are retired**: economy buildings no longer receive bespoke individual sprites (nor per-building upgrade-tier reskins); they render with a **shared generic sprite treatment** instead. The previously generated per-building art and its catalog (`art/building.md`) remain in the repo for reference only and are no longer maintained. This section remains the source of truth for the pixel-art look; technical asset specs (dimensions, file paths, manifest) live in `architecture.md` §9.4.
+> **Status:** Direction set. The **7 gateway sprites are drawn** — code-generated at 64×64 on a 16-colour palette and wired through the sprite manifest. **Per-building economy sprites are retired**: economy buildings no longer receive bespoke individual sprites (nor per-building upgrade-tier reskins); they render with a **shared generic sprite treatment** instead. The previously generated per-building art and its catalog (`art/building.md`) remain in the repo for reference only and are no longer maintained. This section remains the source of truth for the pixel-art look; technical asset specs (dimensions, file paths, manifest) live in `ARCHITECTURE.md` §9.4.
 
 ### 19.1 Overall Aesthetic
 scienium is a **pixel-art** game. The target is a **chunkier, lower-resolution** look than the two reference images supplied during design — those references read as high-resolution/HD pixel art, and the intended style is more visibly pixelated (fewer, larger pixels; a tighter palette). Think classic 2D top-down/isometric game art rather than detailed illustration.

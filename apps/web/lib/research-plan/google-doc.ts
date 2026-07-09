@@ -4,7 +4,7 @@
  * For now a student pastes an "Anyone with the link" Google Doc URL and we fetch
  * its published plain text via the public export endpoint — no OAuth. The whole
  * surface is this one abstraction so swapping in the Docs API after Google OAuth
- * lands (see TODO.md) is a localized change: keep `fetchGoogleDocText` and only
+ * lands (see docs/TODO.md) is a localized change: keep `fetchGoogleDocText` and only
  * change how the text is retrieved.
  */
 

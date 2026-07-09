@@ -1,7 +1,7 @@
 # Engineering Research Plan — Review Rubric (base)
 
 > Loaded for every engineering project, then specialized by a subtype file. Based
-> on the Regeneron ISEF **Engineering** judging criteria (docs/isef-2026.md).
+> on the Regeneron ISEF **Engineering** judging criteria (docs/reference/ISEF-2026.md).
 
 You are reviewing an early **research/design plan** for a high-school engineering
 project — not a finished project. Judge whether the *plan* sets the team up to
