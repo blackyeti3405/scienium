@@ -264,6 +264,8 @@ model DiscoveryNode {
 
   // A team can't double-add the same external work (dedup on branch/resolve).
   @@unique([teamId, externalId])
+  @@index([teamId, visitedAt])
+  @@index([teamId, parentId])
   @@map("discovery_nodes")
 }
 
@@ -571,6 +573,7 @@ model PaperQuizSession {
   paper    Paper              @relation(fields: [paperId], references: [id])
   attempts PaperQuizAttempt[]
 
+  @@index([paperId, userId, createdAt])
   @@map("paper_quiz_sessions")
 }
 
@@ -587,6 +590,8 @@ model PaperQuizAttempt {
   paper      Paper            @relation(fields: [paperId], references: [id])
   session    PaperQuizSession @relation(fields: [sessionId], references: [id])
 
+  @@index([sessionId])
+  @@index([paperId, userId, createdAt])
   @@map("paper_quiz_attempts")
 }
 
@@ -885,6 +890,8 @@ model ProjectLog {
   references   ProjectLogReference[] @relation("from")
   referencedBy ProjectLogReference[] @relation("to")
 
+  @@index([teamId, entryType, createdAt])
+  @@index([createdByUserId, createdAt])
   @@map("project_logs")
 }
 
@@ -938,7 +945,7 @@ model TeacherFeedback {
   team    Team @relation(fields: [teamId], references: [id])
   teacher User @relation("teacherFeedbackAuthor", fields: [teacherUserId], references: [id])
 
-  @@index([teamId])
+  @@index([teamId, resolved, createdAt])
   @@map("teacher_feedback")
 }
 
@@ -971,7 +978,8 @@ model Notification {
   team Team  @relation(fields: [teamId], references: [id])
   user User? @relation(fields: [userId], references: [id])
 
-  @@index([teamId, createdAt])
+  @@index([teamId, readAt, createdAt])
+  @@index([userId, readAt, createdAt])
   @@map("notifications")
 }
 
@@ -1017,7 +1025,7 @@ model Experiment {
   createdBy    User          @relation("experimentAuthor", fields: [createdByUserId], references: [id])
   measurements Measurement[]
 
-  @@index([teamId])
+  @@index([teamId, createdAt])
   @@map("experiments")
 }
 
@@ -1032,7 +1040,7 @@ model Measurement {
 
   experiment Experiment @relation(fields: [experimentId], references: [id])
 
-  @@index([experimentId])
+  @@index([experimentId, recordedAt])
   @@map("measurements")
 }
 
@@ -1088,6 +1096,7 @@ model ShowcaseAsset {
   uploadedAt   DateTime  @default(now()) @map("uploaded_at")
   showcase     Showcase  @relation(fields: [showcaseId], references: [id])
 
+  @@index([showcaseId, assetType])
   @@map("showcase_assets")
 }
 
@@ -1112,6 +1121,7 @@ model ShowcaseView {
   viewedAt           DateTime @default(now()) @map("viewed_at")
   showcase           Showcase @relation(fields: [showcaseId], references: [id])
 
+  @@index([showcaseId, viewedAt])
   @@map("showcase_views")
 }
 

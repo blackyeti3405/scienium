@@ -5,6 +5,24 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.21.6] — 2026-07-09
+
+Refactor Phase 7 — growth-path indexes.
+
+### Added
+- Composite indexes matching the common classroom-scale list and dashboard access
+  paths, so those queries stay index-backed as teams accumulate data: project logs
+  (`teamId, entryType, createdAt` and `createdByUserId, createdAt`), quiz sessions
+  and attempts (`paperId, userId, createdAt`; attempts also by `sessionId`),
+  notifications (`teamId, readAt, createdAt` and `userId, readAt, createdAt`),
+  showcase assets (`showcaseId, assetType`) and views (`showcaseId, viewedAt`),
+  discovery nodes (`teamId, visitedAt` and `teamId, parentId`), teacher feedback
+  (`teamId, resolved, createdAt`), experiments (`teamId, createdAt`), and
+  measurements (`experimentId, recordedAt`). Single-column indexes that the new
+  composites subsume were replaced.
+
+---
+
 ## [0.21.5] — 2026-07-09
 
 Refactor Phase 6 — chat turns are server-owned.
