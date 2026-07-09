@@ -47,6 +47,7 @@ model User {
   codexLessonProgress  CodexLessonProgress[]
   codexKpDays          CodexKpDay[]
   vegaStudyMessages    VegaStudyMessage[]
+  uploadedAssets       UploadedAsset[]
 
   @@index([activeTeamId])
   @@index([classId])
@@ -154,6 +155,7 @@ model Team {
   codexKpDays     CodexKpDay[]
   studyPlan       TeamStudyPlan?
   vegaStudyMessages VegaStudyMessage[]
+  uploadedAssets  UploadedAsset[]
 
   @@index([classId])
   @@map("teams")
@@ -893,6 +895,43 @@ model ProjectLog {
   @@index([teamId, entryType, createdAt])
   @@index([createdByUserId, createdAt])
   @@map("project_logs")
+}
+
+// A durable record of every object uploaded to R2, so an abandoned upload is
+// discoverable and cleanable rather than an orphaned blob. Created `temporary`
+// on upload, flipped to `attached` when the owning domain row is saved, and
+// swept to `deleted` (with the object removed) once it's been temporary too long.
+model UploadedAsset {
+  id             String              @id @default(cuid())
+  teamId         String              @map("team_id")
+  userId         String              @map("user_id")
+  objectKey      String              @unique @map("object_key")
+  url            String
+  contentType    String              @map("content_type")
+  sizeBytes      Int                 @map("size_bytes")
+  purpose        String
+  attachedToType String?             @map("attached_to_type")
+  attachedToId   String?             @map("attached_to_id")
+  status         UploadedAssetStatus @default(temporary)
+  createdAt      DateTime            @default(now()) @map("created_at")
+  attachedAt     DateTime?           @map("attached_at")
+  deletedAt      DateTime?           @map("deleted_at")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([teamId, status, createdAt])
+  @@index([attachedToType, attachedToId])
+  @@map("uploaded_assets")
+}
+
+enum UploadedAssetStatus {
+  temporary
+  attached
+  orphaned
+  deleted
+
+  @@map("uploaded_asset_status")
 }
 
 enum ProjectLogEntry {

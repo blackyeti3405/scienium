@@ -5,6 +5,39 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.21.7] — 2026-07-09
+
+Refactor Phase 8 — uploaded files have a lifecycle instead of leaking.
+
+### Added
+- `UploadedAsset` ledger: every object written to R2 (starting with project-log
+  photo attachments) gets a durable row through a four-state lifecycle —
+  `temporary` on upload, `attached` once the owning log saves, `orphaned` when the
+  log drops it or is deleted, `deleted` once the object is actually gone. Team- and
+  user-scoped, with a unique `objectKey` and indexes on `(teamId, status, createdAt)`
+  and the attachment target.
+- A single bounded reclaim sweep (`reclaimAbandonedAssets`, run from the papers
+  cron) is the one and only place that physically deletes stored objects — for
+  `orphaned` assets and for `temporary` uploads abandoned past 24 h. It uses
+  claim-then-delete (guarded status flip first, object delete second) so a concurrent
+  save can never have its live object removed, and a failed delete releases the claim
+  for a later retry instead of leaking the blob.
+
+### Changed
+- Domain routes now record intent, not physical deletes: saving a log flips its
+  uploads to `attached` in the same transaction as the write, editing attaches new
+  photos and marks removed ones `orphaned`, and deleting a log marks its attachments
+  `orphaned` — all atomically, with no inline object deletion. The ledger can no
+  longer disagree with storage after a mid-request crash.
+
+### Fixed
+- Saving or editing a log now rejects (409) if a referenced upload was already swept
+  away, instead of persisting a permanently broken photo reference.
+- Attachment keys are validated at write time to live under the caller team's upload
+  prefix (400 otherwise), closing a cross-team object-reference vector.
+
+---
+
 ## [0.21.6] — 2026-07-09
 
 Refactor Phase 7 — growth-path indexes.

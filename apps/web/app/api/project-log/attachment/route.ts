@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import sharp from 'sharp'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { putObject } from '@/lib/storage'
+import { recordTemporaryAsset } from '@/lib/uploads/assets'
 import { randomUUID } from 'crypto'
 
 const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
@@ -59,5 +60,19 @@ export async function POST(req: NextRequest) {
 
   // Served through the authenticated streaming route (R2 bucket is private).
   const url = `/api/project-log/attachment/view?key=${encodeURIComponent(key)}`
-  return NextResponse.json({ url, key }, { status: 201 })
+
+  // Record a durable `temporary` row so an upload the user never attaches to a
+  // log is discoverable and cleanable (see lib/uploads + the cron sweep) rather
+  // than an orphaned object.
+  const asset = await recordTemporaryAsset({
+    teamId: ctx.teamId,
+    userId: ctx.dbUserId,
+    objectKey: key,
+    url,
+    contentType: mapped.contentType,
+    sizeBytes: buffer.length,
+    purpose: 'project_log_attachment',
+  })
+
+  return NextResponse.json({ url, key, assetId: asset.id }, { status: 201 })
 }

@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { deleteObject } from '@/lib/storage'
 import { logActivity } from '@/lib/activity/log'
+import {
+  attachAssetsByKey,
+  markAssetsOrphanedByKey,
+  attachmentKeysUnderTeam,
+  keyFromAttachmentUrl,
+} from '@/lib/uploads/assets'
 import { db } from '@/lib/db'
 
 const Body = z.object({
@@ -17,11 +22,9 @@ const Body = z.object({
     .max(20),
 }).strict()
 
-/** Pull the R2 object key back out of an attachment view URL. */
-function keyFromUrl(url: string): string | null {
-  const m = url.match(/[?&]key=([^&]+)/)
-  return m ? decodeURIComponent(m[1]) : null
-}
+// Thrown inside the save transaction when a newly-added upload can't be attached
+// (already swept, or not this team's) so the whole edit rolls back.
+class AttachmentError extends Error {}
 
 // PATCH — edit an existing progress entry. Author-only.
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -50,39 +53,69 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Select who was present' }, { status: 400 })
   }
 
-  const entry = await db.projectLog.update({
-    where: { id: existing.id },
-    data: {
-      body: data.body.trim(),
-      nextSteps: data.nextSteps.trim(),
-      stage: data.stage.trim(),
-      attendeeIds,
-      attachmentUrls: data.attachmentUrls,
-      lastEditedByUserId: ctx.dbUserId,
-      lastEditedAt: new Date(),
-    },
-    select: {
-      id: true,
-      body: true,
-      nextSteps: true,
-      stage: true,
-      attendeeIds: true,
-      attachmentUrls: true,
-      createdAt: true,
-      lastEditedAt: true,
-      createdBy: { select: { id: true, name: true } },
-      lastEditedBy: { select: { id: true, name: true } },
-    },
-  })
-
-  // Best-effort cleanup of attachments removed during the edit.
-  const removed = existing.attachmentUrls.filter((u) => !data.attachmentUrls.includes(u))
-  await Promise.allSettled(
-    removed.map((u) => {
-      const key = keyFromUrl(u)
-      return key ? deleteObject(key) : Promise.resolve()
-    }),
+  // Resolve + team-scope the submitted attachments. Only keys not already on this
+  // entry are "new" and must resolve to a fresh temporary upload; keys carried over
+  // (including legacy ones that predate the ledger) are left as-is. Dropped keys are
+  // marked `orphaned` for the reclaim sweep — no object is deleted here.
+  const submittedKeys = attachmentKeysUnderTeam(ctx.teamId, data.attachmentUrls)
+  if (submittedKeys === null) {
+    return NextResponse.json({ error: 'Invalid attachment reference' }, { status: 400 })
+  }
+  const existingKeys = new Set(
+    existing.attachmentUrls.map(keyFromAttachmentUrl).filter((k): k is string => k !== null),
   )
+  const newlyAddedKeys = submittedKeys.filter((k) => !existingKeys.has(k))
+  const removedKeys = existing.attachmentUrls
+    .filter((u) => !data.attachmentUrls.includes(u))
+    .map(keyFromAttachmentUrl)
+    .filter((k): k is string => k !== null)
+
+  let entry
+  try {
+    entry = await db.$transaction(async (tx) => {
+      const updated = await tx.projectLog.update({
+        where: { id: existing.id },
+        data: {
+          body: data.body.trim(),
+          nextSteps: data.nextSteps.trim(),
+          stage: data.stage.trim(),
+          attendeeIds,
+          attachmentUrls: data.attachmentUrls,
+          lastEditedByUserId: ctx.dbUserId,
+          lastEditedAt: new Date(),
+        },
+        select: {
+          id: true,
+          body: true,
+          nextSteps: true,
+          stage: true,
+          attendeeIds: true,
+          attachmentUrls: true,
+          createdAt: true,
+          lastEditedAt: true,
+          createdBy: { select: { id: true, name: true } },
+          lastEditedBy: { select: { id: true, name: true } },
+        },
+      })
+      const attached = await attachAssetsByKey(tx, {
+        teamId: ctx.teamId,
+        objectKeys: newlyAddedKeys,
+        attachedToType: 'project_log',
+        attachedToId: updated.id,
+      })
+      if (attached !== newlyAddedKeys.length) throw new AttachmentError()
+      await markAssetsOrphanedByKey(tx, { teamId: ctx.teamId, objectKeys: removedKeys })
+      return updated
+    })
+  } catch (e) {
+    if (e instanceof AttachmentError) {
+      return NextResponse.json(
+        { error: 'One or more photos are no longer available. Please re-upload and try again.' },
+        { status: 409 },
+      )
+    }
+    throw e
+  }
 
   logActivity(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'progress' }).catch(console.error)
 
@@ -101,22 +134,24 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   })
   if (!existing) return NextResponse.json({ error: 'Entry not found' }, { status: 404 })
 
-  // ProjectLogReference has no cascade on either FK — delete rows on BOTH
-  // sides first, or a dangling row pointing at this now-deleted log would
-  // 500 the GET /api/project-log read path (its select joins through `to`
-  // and `from`).
-  await db.projectLogReference.deleteMany({
-    where: { OR: [{ projectLogId: existing.id }, { referencesLogId: existing.id }] },
+  const removedKeys = existing.attachmentUrls
+    .map(keyFromAttachmentUrl)
+    .filter((k): k is string => k !== null)
+
+  // One transaction so the log, its references, and the ledger stay consistent: a
+  // crash can't leave the log gone with its assets still `attached` (which the
+  // reclaim sweep would never revisit). The objects themselves are removed later by
+  // the sweep, which is the only physical-delete site.
+  await db.$transaction(async (tx) => {
+    // ProjectLogReference has no cascade on either FK — delete rows on BOTH sides
+    // first, or a dangling row pointing at this now-deleted log would 500 the GET
+    // /api/project-log read path (its select joins through `to` and `from`).
+    await tx.projectLogReference.deleteMany({
+      where: { OR: [{ projectLogId: existing.id }, { referencesLogId: existing.id }] },
+    })
+    await tx.projectLog.delete({ where: { id: existing.id } })
+    await markAssetsOrphanedByKey(tx, { teamId: ctx.teamId, objectKeys: removedKeys })
   })
-
-  await db.projectLog.delete({ where: { id: existing.id } })
-
-  await Promise.allSettled(
-    existing.attachmentUrls.map((u) => {
-      const key = keyFromUrl(u)
-      return key ? deleteObject(key) : Promise.resolve()
-    }),
-  )
 
   logActivity(ctx.teamId, ctx.dbUserId, 'log_deleted', { kind: 'progress' }).catch(console.error)
 

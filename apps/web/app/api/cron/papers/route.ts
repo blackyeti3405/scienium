@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { assertCron } from '@/lib/cron/auth'
 import { db } from '@/lib/db'
 import { processPaperJob } from '@/lib/literature/process-paper'
+import { reclaimAbandonedAssets } from '@/lib/uploads/assets'
+
+/** Reclaim uploads that were never attached to a domain row within this window. */
+const STALE_ASSET_MS = 24 * 60 * 60 * 1000
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -54,5 +58,11 @@ export async function GET(req: NextRequest) {
   })
 
   await Promise.all(jobs.map((job) => processPaperJob(job.paperId)))
-  return NextResponse.json({ processed: jobs.length, terminalized: stuck.length })
+
+  // Reclaim abandoned uploads: orphaned attachments (a deleted/edited log) plus
+  // temporary assets never attached within the stale window. Physical delete of the
+  // object happens here — the only site that removes stored objects. Bounded.
+  const cleanedAssets = await reclaimAbandonedAssets({ olderThanMs: STALE_ASSET_MS, limit: 50 })
+
+  return NextResponse.json({ processed: jobs.length, terminalized: stuck.length, cleanedAssets })
 }
