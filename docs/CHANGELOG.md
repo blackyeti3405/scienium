@@ -5,6 +5,28 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.21.2] — 2026-07-09
+
+Refactor Phase 3 — expertise grading is now claim-based, idempotent, and honest.
+
+### Added
+- `ExpertiseExam.status` (`active`/`grading`/`graded`/`failed`) plus
+  `gradingClaimedAt`/`gradingRequestId`, so a grade is claimed before the paid
+  Claude call. A second concurrent grade of the same exam is refused instead of
+  calling the model twice, and a claim older than five minutes is treated as
+  stale and may be retaken (a crashed grade never strands the exam).
+
+### Fixed
+- The grade response now derives `raised`, `newClearance`, and `kpEarned` from
+  the committed transaction — the conditional clearance raise's row count — rather
+  than a pre-transaction guess. A pass that didn't actually advance the team (a
+  teammate already raised clearance) can no longer report a raise or bonus that
+  never happened.
+- A failed or unparseable grading call releases the claim back to `active`, so
+  the exam stays retryable instead of stuck.
+
+---
+
 ## [0.21.1] — 2026-07-09
 
 Refactor Phase 2 — plot placement occupancy races.

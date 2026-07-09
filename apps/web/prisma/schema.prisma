@@ -784,14 +784,32 @@ model ExpertiseExam {
   score         Int? // aggregate 0-100, set on grading
   passed        Boolean   @default(false)
   gradedAt      DateTime? @map("graded_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
+  // Grading lifecycle. `active` = answerable/regradable; `grading` = a request
+  // has claimed it and the paid Claude call is in flight (a second concurrent
+  // grade is refused, so the LLM is never called twice for one exam); `graded` =
+  // committed. A claim older than a few minutes is treated as stale and may be
+  // re-claimed, so a crashed grade never strands the exam.
+  status           ExpertiseExamStatus @default(active)
+  gradingClaimedAt DateTime?           @map("grading_claimed_at")
+  gradingRequestId String?             @map("grading_request_id")
+  createdAt        DateTime            @default(now()) @map("created_at")
 
   team     Team               @relation(fields: [teamId], references: [id])
   user     User               @relation(fields: [userId], references: [id])
   attempts ExpertiseAttempt[]
 
   @@index([teamId, gradedAt])
+  @@index([teamId, userId, status, createdAt])
   @@map("expertise_exams")
+}
+
+enum ExpertiseExamStatus {
+  active
+  grading
+  graded
+  failed
+
+  @@map("expertise_exam_status")
 }
 
 model ExpertiseAttempt {
