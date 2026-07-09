@@ -11,6 +11,11 @@ export const maxDuration = 60
 /** Team-level reminders use the default windows; per-user windows drive only email. */
 const DEFAULT_DEADLINE_DAYS = [30, 14, 7, 1]
 
+/** Teams fetched per query — bounds the working set instead of loading the roster at once. */
+const TEAM_PAGE_SIZE = 100
+/** Safety cap on teams handled in one invocation (well above pilot scale). */
+const MAX_TEAMS_PER_RUN = 1000
+
 /**
  * GET /api/cron/notifications — daily deadline + smart-urgency reminder pass
  * (spec §13.7). For every team with a location it matches the team's regional /
@@ -18,37 +23,65 @@ const DEFAULT_DEADLINE_DAYS = [30, 14, 7, 1]
  * `notifications.dedupe_key` unique column makes this idempotent — re-runs and
  * caught-up missed runs never double-notify. Each team is isolated so one
  * team's failure can't abort the batch.
+ *
+ * Teams are streamed in id-ordered pages rather than loaded all at once, so the
+ * memory and per-query cost stay flat as the roster grows. A per-run cap bounds a
+ * single invocation; if it's ever hit, `stoppedEarly` in the response makes the
+ * truncation visible instead of silently skipping teams.
  */
 export async function GET(req: NextRequest) {
   const denied = assertCron(req)
   if (denied) return denied
 
-  const teams = await db.team.findMany({
-    where: { locationState: { not: null } },
-    select: { id: true, locationState: true, locationLat: true, locationLng: true },
-  })
-
   let created = 0
   let failedTeams = 0
+  let processed = 0
+  let cursor: string | null = null
+  let stoppedEarly = false
 
-  for (const team of teams) {
-    try {
-      created += await processTeam(team)
-    } catch (err) {
-      failedTeams++
-      console.error(`[cron/notifications] team ${team.id} failed:`, err)
+  pages: while (true) {
+    const page: TeamRow[] = await db.team.findMany({
+      where: { locationState: { not: null }, ...(cursor ? { id: { gt: cursor } } : {}) },
+      select: { id: true, locationState: true, locationLat: true, locationLng: true },
+      orderBy: { id: 'asc' },
+      take: TEAM_PAGE_SIZE,
+    })
+    if (page.length === 0) break
+
+    for (const team of page) {
+      // Cap reached with a team still in hand — genuinely more work remains.
+      if (processed >= MAX_TEAMS_PER_RUN) {
+        stoppedEarly = true
+        break pages
+      }
+      processed++
+      try {
+        created += await processTeam(team)
+      } catch (err) {
+        failedTeams++
+        console.error(`[cron/notifications] team ${team.id} failed:`, err)
+      }
     }
+
+    if (page.length < TEAM_PAGE_SIZE) break // last page — roster exhausted.
+    cursor = page[page.length - 1].id
   }
 
-  return NextResponse.json({ teams: teams.length, created, failedTeams })
+  if (stoppedEarly) {
+    console.warn(`[cron/notifications] hit per-run cap of ${MAX_TEAMS_PER_RUN} teams; more remain`)
+  }
+
+  return NextResponse.json({ teams: processed, created, failedTeams, stoppedEarly })
 }
 
-async function processTeam(team: {
+type TeamRow = {
   id: string
   locationState: string | null
   locationLat: number | null
   locationLng: number | null
-}): Promise<number> {
+}
+
+async function processTeam(team: TeamRow): Promise<number> {
   const coords: [number, number] | null =
     team.locationLat != null && team.locationLng != null
       ? [team.locationLat, team.locationLng]

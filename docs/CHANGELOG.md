@@ -5,6 +5,21 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.21.8] — 2026-07-09
+
+Refactor Phase 9 — the notification cron scales with the roster.
+
+### Changed
+- The daily deadline/urgency reminder cron no longer loads every team into memory
+  in one query. It streams teams in id-ordered keyset pages (100 at a time), so
+  memory and per-query cost stay flat as classes are added. A per-run cap
+  (1,000 teams) bounds a single invocation; the `dedupeKey` idempotency is
+  unchanged, and the response reports `teams`, `created`, `failedTeams`, and
+  `stoppedEarly` so a truncated run is visible in logs rather than silently
+  skipping teams.
+
+---
+
 ## [0.21.7] — 2026-07-09
 
 Refactor Phase 8 — uploaded files have a lifecycle instead of leaking.
