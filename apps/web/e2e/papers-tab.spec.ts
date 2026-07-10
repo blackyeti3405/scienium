@@ -195,6 +195,11 @@ test.describe('Feature A — Papers tab', () => {
   test.describe.configure({ mode: 'serial' })
 
   test.beforeEach(async ({ page }) => {
+    // resetTree makes api.* calls, which refresh the Clerk token via the page's
+    // live clerk-js. A never-navigated page (about:blank) has no clerk-js, so the
+    // request would ride the frozen storageState token, 307 to /sign-in, and the
+    // reset would never confirm. Navigate first so the token is refreshable.
+    await page.goto('/discovery')
     await resetTree(page)
   })
 

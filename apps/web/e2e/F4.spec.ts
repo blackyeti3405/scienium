@@ -212,13 +212,26 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
   // State going in: pending_review.
   // State going out: unchanged.
   test('AC3: non-team viewer gets HTTP 404 on /showcase/{slug} while pending', async ({ browser }) => {
-    // Use a fresh teacher page: teacher is NOT a team member.
-    // canViewShowcase → isOwner=false, live=false (pending_review ≠ approved) → notFound() → 404.
-    if (!showcaseSlug) throw new Error('Showcase slug not set — beforeAll failed')
+    // Establish the exact precondition HERE rather than trusting the state beforeAll
+    // left: F4 and F4-print drive the SAME per-team showcase row (Showcase.teamId is
+    // @unique), so ambient serial state is unreliable. Re-publish public → the server
+    // sets pending_review (not live), which a non-member teacher must not be able to view.
+    const slug = await withSeedPage(browser, 'leader', async (leaderPage) => {
+      await api.put(leaderPage, '/api/showcase', { data: { published: false } })
+      const pubRes = await api.put(leaderPage, '/api/showcase', {
+        data: { published: true, privacyLevel: 'public' },
+      })
+      expect(pubRes.ok()).toBe(true)
+      const { showcase } = await pubRes.json()
+      expect(showcase.moderationStatus).toBe('pending_review') // not live → must 404
+      showcaseSlug = showcase.slug
+      return showcase.slug as string
+    })
 
-    await withSeedPage(browser, 'teacher', async (page) => {
-      const res = await api.get(page, `/showcase/${showcaseSlug}`)
-      // Next.js notFound() renders a 404 page; the HTTP status is 404.
+    // Teacher is NOT a team member (isOwner=false); pending ≠ live → notFound() → 404.
+    // Separate (non-nested) session so the teacher context is fully isolated.
+    await withSeedPage(browser, 'teacher', async (teacherPage) => {
+      const res = await api.get(teacherPage, `/showcase/${slug}`)
       expect(res.status()).toBe(404)
     })
   })

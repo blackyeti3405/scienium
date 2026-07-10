@@ -123,20 +123,19 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
 
     await card.getByRole('button', { name: /Dig deeper/i }).click()
 
-    // When generating=true the component renders text "Generating…" and disabled=true.
-    // The button name changes so we look it up by its new label.
-    const generatingBtn = card.getByRole('button', { name: /Generating/i })
-    await expect(generatingBtn).toBeVisible({ timeout: 3000 })
-    await expect(generatingBtn).toBeDisabled()
+    // While generating, the "Dig deeper" button unmounts and a Vega loader labelled
+    // "Vega is thinking about this failure…" is shown — the disabled/in-flight state
+    // (the v0.17.0 loading overhaul replaced the old disabled "Generating…" button
+    // with the LabeledLoader). Match by label text (the loader has two role="status"
+    // nodes — the container and its spinner). No button = no double-submit.
+    await expect(card.getByText(/Vega is thinking about this failure/i)).toBeVisible({ timeout: 3000 })
+    await expect(card.getByRole('button', { name: /Dig deeper/i })).toHaveCount(0)
 
-    // Wait for generation to complete (the route returns after the 2.5s delay).
-    await expect(card).not.toContainText(/Generating/i, { timeout: 15_000 })
+    // Generation completes after the 2.5s route delay: the follow-up renders
+    // ("Mentor asks"). If the route errored, the component reverts to "Dig deeper"
+    // and this assertion catches the silent failure that AC3 previously masked.
+    await expect(card).toContainText(/Mentor asks/i, { timeout: 15_000 })
     expect(routeResolved).toBe(true)
-
-    // Confirm success: the question must be labelled "Mentor asks". If the route
-    // returned an error (e.g. 502), the component reverts to "Dig deeper" and this
-    // assertion catches the silent failure that AC3 previously masked.
-    await expect(card).toContainText(/Mentor asks/i)
   })
 
   // ── AC2 ─────────────────────────────────────────────────────────────────────

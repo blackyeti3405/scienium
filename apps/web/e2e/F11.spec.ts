@@ -222,7 +222,15 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC2: clicking the Discovery Tree tab switches to the full-window tree view within 2s', async ({
     page,
   }) => {
-    await openDiscovery(page)
+    // The tree SVG renders only for a NON-empty tree (DiscoveryTree shows an
+    // empty-state placeholder at nodes.length === 0), so seed a root first —
+    // otherwise this asserts against ambient tree state that a fresh fixture lacks.
+    await page.goto('/discovery')
+    const nodeId = await seedRoot(page, seedTitle('tree-view'))
+    createdNodeIds.push(nodeId)
+    await page.reload() // settle the seeded node past the mount-time hydrate race
+    await dismissHome(page)
+
     await treeTab(page).click()
     await expect(treeSvg(page)).toBeVisible({ timeout: 2000 })
     await expect(topicList(page)).toBeVisible({ timeout: 2000 })

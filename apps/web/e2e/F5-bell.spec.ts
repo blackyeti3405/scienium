@@ -333,7 +333,11 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     await bell.click()
     const panel = page.locator('.notif-bell__panel')
     await expect(panel).toBeVisible()
-    const item = panel.locator('.notif-bell__item', { hasText: unreadItem!.title }).first()
+    // Click an item that is actually unread. Titles are NOT unique on the shared
+    // E2E team (every teacher_feedback notification is titled identically), so a
+    // title match + `.first()` can land on an already-read row → no decrement. The
+    // `--unread` class targets a genuinely unread row (DOM order = API order).
+    const item = panel.locator('.notif-bell__item--unread').first()
     await item.click()
 
     if (before <= 1) {

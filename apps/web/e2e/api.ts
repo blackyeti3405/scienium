@@ -17,6 +17,15 @@ const LANDING: Record<Role, string> = { leader: '/lab', student: '/lab', teacher
  */
 async function refreshClerkSession(page: Page): Promise<void> {
   try {
+    // Wait (bounded) for clerk-js to boot a session on a just-navigated page. Without
+    // this, `getToken` runs before `window.Clerk.session` exists, silently no-ops, and
+    // the request rides the frozen storageState token — which 307s to /sign-in once its
+    // ~60s TTL lapses (Playwright then follows the redirect and reads a 200 sign-in page).
+    await page
+      .waitForFunction(() => Boolean((window as { Clerk?: { session?: unknown } }).Clerk?.session), null, {
+        timeout: 5_000,
+      })
+      .catch(() => {})
     await page.evaluate(async () => {
       const clerk = (window as unknown as {
         Clerk?: { session?: { getToken(opts: { skipCache: boolean }): Promise<unknown> } }
