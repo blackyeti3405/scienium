@@ -1,4 +1,8 @@
-import type { APIRequestContext, APIResponse, Page } from '@playwright/test'
+import type { APIRequestContext, APIResponse, Browser, Page } from '@playwright/test'
+import { STORAGE, type Role } from './roles'
+
+const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
+const LANDING: Record<Role, string> = { leader: '/lab', student: '/lab', teacher: '/teacher' }
 
 /**
  * Clerk's session JWT (the `__session` cookie) is short-lived and only
@@ -51,4 +55,55 @@ export const api = {
     refreshed(page, () => page.request.patch(url, opts)),
   delete: (page: Page, url: string, opts?: DeleteOpts): Promise<APIResponse> =>
     refreshed(page, () => page.request.delete(url, opts)),
+}
+
+/**
+ * Run a seed/cleanup routine with a FRESH authenticated page. `beforeAll`/`afterAll`
+ * have no `page` fixture, and a raw `request.newContext({ storageState })` carries a
+ * frozen Clerk token that 307-redirects to /sign-in once its short (~60s) TTL lapses —
+ * the seed then parses an HTML sign-in page as JSON and throws
+ * `Unexpected token '<'`. This opens a real page (so clerk-js can mint a fresh token),
+ * navigates to the role's landing surface, hands the page to `fn` (use `api.*` on it,
+ * which re-refreshes before every call), and always tears the context down.
+ *
+ * Seeders written against a request context (`ctx.get/post/...`) port over by taking
+ * a `page` and swapping `ctx.` for `api.`(page, ...)`.
+ */
+export async function withSeedPage<T>(
+  browser: Browser,
+  role: Role,
+  fn: (page: Page) => Promise<T>,
+): Promise<T> {
+  const context = await browser.newContext({ storageState: STORAGE[role], baseURL: BASE_URL })
+  const page = await context.newPage()
+  try {
+    await page.goto(LANDING[role])
+    return await fn(page)
+  } finally {
+    await context.close()
+  }
+}
+
+// Smallest valid PNG (1×1, transparent). sharp decodes it, so the attachment
+// upload route accepts it as a real image.
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+/**
+ * Upload a real (tiny) image via the project-log attachment route and return its
+ * view URL. Use this instead of fabricating an attachment URL: a log POST now
+ * requires each referenced attachment to be a genuine upload (team-prefixed object
+ * key + a `temporary` UploadedAsset ledger row), so a made-up URL is rejected 400/409.
+ */
+export async function uploadLogAttachment(page: Page): Promise<string> {
+  const res = await api.post(page, '/api/project-log/attachment', {
+    multipart: { file: { name: 'e2e-seed.png', mimeType: 'image/png', buffer: TINY_PNG } },
+  })
+  if (!res.ok()) {
+    throw new Error(`Attachment upload failed while seeding: ${res.status()} ${await res.text()}`)
+  }
+  const { url } = (await res.json()) as { url: string }
+  return url
 }

@@ -1,6 +1,5 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { STORAGE } from './roles'
-import { api } from './api'
+import { api, withSeedPage } from './api'
 
 /**
  * F18 — "Study with Vega" persistent project-scoped study companion (Ops Hub),
@@ -212,17 +211,12 @@ test.describe('F18 — Study with Vega', () => {
     await expect(page.getByText(marker)).toBeVisible({ timeout: 20000 })
 
     // Same-team co-member (student) DOES see the shared thread (by design).
-    const studentContext = await browser.newContext({ storageState: STORAGE.student })
-    const studentPage = await studentContext.newPage()
-    try {
-      await studentPage.goto('/lab')
+    await withSeedPage(browser, 'student', async (studentPage) => {
       const res = await api.get(studentPage, '/api/ops/vega-study')
       expect(res.status()).toBe(200)
       const body = (await res.json()) as { messages: { content: string }[] }
       expect(body.messages.some((m) => m.content === marker)).toBe(true)
-    } finally {
-      await studentContext.close()
-    }
+    })
 
     // Server-side scoping proof: the route's own query filters strictly by
     // ctx.teamId (static check — a live second-team fixture isn't seeded in
@@ -234,7 +228,9 @@ test.describe('F18 — Study with Vega', () => {
       path.join(__dirname, '..', 'app', 'api', 'ops', 'vega-study', 'route.ts'),
       'utf8',
     )
-    expect(routeSrc).toMatch(/vegaStudyMessage\.findMany\(\{\s*where:\s*\{\s*teamId:\s*ctx\.teamId\s*\}/)
+    // Team-scoped by ctx.teamId (a trailing filter like `, status: 'complete'` is
+    // fine — the guarantee is that the where-clause is keyed on ctx.teamId).
+    expect(routeSrc).toMatch(/vegaStudyMessage\.findMany\(\{\s*where:\s*\{\s*teamId:\s*ctx\.teamId\b/)
   })
 
   // ── AC5 ──────────────────────────────────────────────────────────────────

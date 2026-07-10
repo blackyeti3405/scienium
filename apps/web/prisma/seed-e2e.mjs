@@ -109,14 +109,35 @@ try {
   }
 
   // ── 4. Team ───────────────────────────────────────────────────────────────
+  // The suite exercises features across every phase (literature, buildings,
+  // showcase, …) so the fixture team sits at the terminal `showcase` phase, which
+  // unlocks all features cumulatively. `labType` is `volt_lab` because the
+  // placement/upgrade specs buy that lab's buildings (3D Printing Shop, Robotics
+  // Bay) — lab-specific buildings only render for a matching labType. Without both,
+  // the phase-gated shop is empty / building specs can't find their buy button.
+  const FIXTURE_PHASE = 'showcase'
+  const FIXTURE_LAB_TYPE = 'volt_lab'
   let team = await db.team.findFirst({ where: { name: TEAM_NAME } })
   if (team) {
     note(`team: ${TEAM_NAME}`, 'found')
+    if (team.phase !== FIXTURE_PHASE || team.labType !== FIXTURE_LAB_TYPE) {
+      await db.team.update({
+        where: { id: team.id },
+        data: { phase: FIXTURE_PHASE, labType: FIXTURE_LAB_TYPE },
+      })
+      note(`team: phase/labType`, 'updated', `${FIXTURE_PHASE} / ${FIXTURE_LAB_TYPE}`)
+    }
   } else {
     team = await db.team.create({
-      data: { name: TEAM_NAME, teamLeadId: leader.user.id, classId: klass.id },
+      data: {
+        name: TEAM_NAME,
+        teamLeadId: leader.user.id,
+        classId: klass.id,
+        phase: FIXTURE_PHASE,
+        labType: FIXTURE_LAB_TYPE,
+      },
     })
-    note(`team: ${TEAM_NAME}`, 'created')
+    note(`team: ${TEAM_NAME}`, 'created', `${FIXTURE_PHASE} / ${FIXTURE_LAB_TYPE}`)
   }
 
   // ── 5. Memberships ────────────────────────────────────────────────────────

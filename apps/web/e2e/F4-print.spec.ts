@@ -1,6 +1,6 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api } from './api'
+import { api, withSeedPage } from './api'
 
 /**
  * F4 — Showcase one-pager print export (`?print=1` on `/showcase/[slug]`).
@@ -114,25 +114,20 @@ test.describe('F4-print — Showcase one-pager print export', () => {
 
   // ── Seed ─────────────────────────────────────────────────────────────────────
 
-  test.beforeAll(async () => {
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
-    })
-
-    try {
+  test.beforeAll(async ({ browser }) => {
+    await withSeedPage(browser, 'leader', async (page) => {
       // 0. Probe whether the showcase feature is reachable; self-advance the team
       // until it is. Advancement is self-paced now — each POST bumps one phase
       // (research_planning → working → showcase), no teacher approval. A dev
       // fixture may sit a couple of phases back, so loop a few times.
       for (let i = 0; i < 4; i++) {
-        const probeRes = await leaderCtx.get('/api/showcase')
+        const probeRes = await api.get(page, '/api/showcase')
         // ok() = showcase exists; 404 = no showcase yet but the phase is fine.
         if (probeRes.ok() || probeRes.status() === 404) break
         if (probeRes.status() !== 403) {
           throw new Error(`Unexpected showcase probe: ${probeRes.status()} ${await probeRes.text()}`)
         }
-        const advanceRes = await leaderCtx.post('/api/team/advance-phase', { data: {} })
+        const advanceRes = await api.post(page, '/api/team/advance-phase', { data: {} })
         if (!advanceRes.ok()) {
           throw new Error(`Phase advance failed: ${advanceRes.status()} ${await advanceRes.text()}`)
         }
@@ -140,7 +135,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
 
       // 1. Upsert showcase (link_only — self-serve/approved; none of F4-print's ACs
       // exercise moderation, so there is no reason to route through pending_review).
-      const putRes = await leaderCtx.put('/api/showcase', {
+      const putRes = await api.put(page, '/api/showcase', {
         data: {
           shortTitle: SHORT_TITLE,
           title: FULL_TITLE,
@@ -156,7 +151,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
       showcaseSlug = showcase.slug
 
       // 2. Board PDF (required to publish).
-      const boardRes = await leaderCtx.post('/api/showcase/asset', {
+      const boardRes = await api.post(page, '/api/showcase/asset', {
         multipart: {
           kind: 'board',
           file: { name: 'board.pdf', mimeType: 'application/pdf', buffer: Buffer.from(minimalPdfBytes()) },
@@ -167,7 +162,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
       }
 
       // 3. Quad chart PNG (required to publish; also the AC6 fixture).
-      const quadRes = await leaderCtx.post('/api/showcase/asset', {
+      const quadRes = await api.post(page, '/api/showcase/asset', {
         multipart: {
           kind: 'quad_chart',
           file: { name: 'quad.png', mimeType: 'image/png', buffer: Buffer.from(minimalPngBytes()) },
@@ -179,14 +174,14 @@ test.describe('F4-print — Showcase one-pager print export', () => {
       pngQuadAssetId = (await quadRes.json()).asset.id
 
       // 4. Video + repo links (required to publish / AC9 fixtures).
-      const videoRes = await leaderCtx.post('/api/showcase/asset/link', {
+      const videoRes = await api.post(page, '/api/showcase/asset/link', {
         data: { assetType: 'video', url: VIDEO_URL },
       })
       if (!videoRes.ok()) {
         throw new Error(`Video link failed: ${videoRes.status()} ${await videoRes.text()}`)
       }
 
-      const repoRes = await leaderCtx.post('/api/showcase/asset/link', {
+      const repoRes = await api.post(page, '/api/showcase/asset/link', {
         data: { assetType: 'repo_link', url: REPO_URL },
       })
       if (!repoRes.ok()) {
@@ -194,7 +189,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
       }
 
       // 5. Publish (link_only → self-serve approved, no teacher step, no pending_review).
-      const publishRes = await leaderCtx.put('/api/showcase', {
+      const publishRes = await api.put(page, '/api/showcase', {
         data: { privacyLevel: 'link_only', published: true },
       })
       if (!publishRes.ok()) {
@@ -204,9 +199,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
       if (published.moderationStatus !== 'approved') {
         throw new Error(`Expected approved after link_only publish; got '${published.moderationStatus}'`)
       }
-    } finally {
-      await leaderCtx.dispose()
-    }
+    })
 
     // 6. Works-Cited supplement (AC8). No exposed API writes the
     // {kind: 'works_cited', text} metadata shape without real Citation rows
@@ -241,7 +234,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
     // bare playwrightRequest.newContext's session to go stale, which silently
     // serves an HTML sign-in page with a 200 status instead of throwing, so
     // `.ok()` alone is not a reliable staleness check.
-    const context = await browser.newContext({ storageState: STORAGE.leader })
+    const context = await browser.newContext({ storageState: STORAGE.leader, baseURL: BASE_URL })
     const page = await context.newPage()
     try {
       await page.goto('/showcase/edit')
@@ -296,18 +289,18 @@ test.describe('F4-print — Showcase one-pager print export', () => {
   })
 
   // ── AC3 ───────────────────────────────────────────────────────────────────────
-  test('AC3: owner GET /showcase/<slug>?print=1 returns 200 with data-print-onepager present', async () => {
+  test('AC3: owner GET /showcase/<slug>?print=1 returns 200 with data-print-onepager present', async ({
+    page,
+  }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set')
 
-    const leaderCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: STORAGE.leader })
-    try {
-      const res = await leaderCtx.get(`/showcase/${showcaseSlug}?print=1`)
-      expect(res.status()).toBe(200)
-      const html = await res.text()
-      expect(html).toContain('data-print-onepager')
-    } finally {
-      await leaderCtx.dispose()
-    }
+    // Navigate first (documented convention — see e2e/F4.spec.ts:518 / the batch
+    // instructions) so the leader session is fresh before the owner GET below.
+    await page.goto('/showcase/edit')
+    const res = await api.get(page, `/showcase/${showcaseSlug}?print=1`)
+    expect(res.status()).toBe(200)
+    const html = await res.text()
+    expect(html).toContain('data-print-onepager')
   })
 
   // ── AC4 ───────────────────────────────────────────────────────────────────────
@@ -437,10 +430,11 @@ test.describe('F4-print — Showcase one-pager print export', () => {
   // manifest 500s trying to render that redirect target as a POST). A real
   // browser `page` runs clerk-js on every navigation, which keeps the session
   // alive, exactly like every other page-based test in this file already relies
-  // on. A separate teacher-side `playwrightRequest` context is still used for the
-  // actual assertion (GET-only — never observed to fail in that role here).
+  // on. A separate teacher-side `withSeedPage` session (a fresh authed page) is
+  // used for the actual assertion (GET-only — never observed to fail in that role here).
   test('AC10: a non-owner viewer for whom the showcase is not published+approved gets 404 at ?print=1', async ({
     page,
+    browser,
   }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set')
 
@@ -455,18 +449,18 @@ test.describe('F4-print — Showcase one-pager print export', () => {
     expect((await privRes.json()).showcase.privacyLevel).toBe('private')
 
     try {
-      const teacherCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: STORAGE.teacher })
-      try {
-        const printRes = await teacherCtx.get(`/showcase/${showcaseSlug}?print=1`)
+      // Teacher is a DIFFERENT role than this test's leader page — make the
+      // role-gate GETs from a fresh teacher-authed page so its Clerk token can't
+      // go stale mid-suite.
+      await withSeedPage(browser, 'teacher', async (teacherPage) => {
+        const printRes = await api.get(teacherPage, `/showcase/${showcaseSlug}?print=1`)
         expect(printRes.status()).toBe(404)
 
         // Same viewer, same showcase, no ?print=1 — must 404 identically (the
         // flag grants no extra access).
-        const normalRes = await teacherCtx.get(`/showcase/${showcaseSlug}`)
+        const normalRes = await api.get(teacherPage, `/showcase/${showcaseSlug}`)
         expect(normalRes.status()).toBe(404)
-      } finally {
-        await teacherCtx.dispose()
-      }
+      })
     } finally {
       // Restore to link_only for the remaining tests (AC11, AC12). Re-navigate
       // first for the same session-freshness reason as above.

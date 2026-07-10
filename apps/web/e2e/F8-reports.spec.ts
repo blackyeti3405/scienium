@@ -1,6 +1,6 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api } from './api'
+import { api, withSeedPage } from './api'
 
 /**
  * F8 — Teacher class-wide analytics / Reports tab.
@@ -106,20 +106,17 @@ test.describe('F8 — Teacher Reports', () => {
   test('AC5: an authenticated non-teacher (leader) gets requireTeacher\'s real role-gate response (403)', async ({
     browser,
   }) => {
-    const page = await browser.newPage({ storageState: STORAGE.leader })
-    try {
-      // Navigate first — refresh the leader's Clerk session cookie before the
-      // bare page.request call (same convention as F10's IDOR checks).
-      await page.goto('/lab')
-      await expect(page).toHaveURL(/\/lab/)
-
+    // The describe default session is the teacher; this cross-role check needs a
+    // LEADER session instead. withSeedPage opens a fresh authed leader page
+    // (navigating to /lab so clerk-js mints a live token — same freshness
+    // convention as F10's IDOR checks) and hands it to api.get, which
+    // re-refreshes the Clerk session before the call.
+    await withSeedPage(browser, 'leader', async (page) => {
       const res = await api.get(page, '/api/teacher/reports')
       expect(res.status()).toBe(403)
       const body = await res.json()
       expect(body).toEqual({ error: 'Teacher access required' })
-    } finally {
-      await page.close()
-    }
+    })
   })
 
   // ── AC6 ──────────────────────────────────────────────────────────────────

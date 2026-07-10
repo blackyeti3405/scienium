@@ -1,6 +1,5 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
-import { STORAGE } from './roles'
-import { api } from './api'
+import { api, withSeedPage } from './api'
 
 /**
  * F4 — Teacher moderation gate for public showcases.
@@ -33,7 +32,7 @@ import { api } from './api'
  * - afterAll unpublishes the showcase to restore a clean state.
  *
  * Note: test.use() cannot be called inside a test body (it's a configure-phase call).
- * Teacher-session assertions are made via playwrightRequest.newContext(STORAGE.teacher)
+ * Teacher-session assertions are made via withSeedPage(browser, 'teacher', ...)
  * so they share the serial state without requiring a separate test.describe + test.use block.
  */
 
@@ -87,20 +86,15 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
 
   // ── Seed ─────────────────────────────────────────────────────────────────────
 
-  test.beforeAll(async () => {
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
-    })
-
-    try {
+  test.beforeAll(async ({ browser }) => {
+    await withSeedPage(browser, 'leader', async (page) => {
       // 0. Probe whether the showcase feature is accessible.
       //    If the team is in 'working', the showcase PUT returns 403 with a phase gate error.
       //    In that case, request a working → showcase phase advance and have the teacher approve it.
-      const probeRes = await leaderCtx.get('/api/showcase')
+      const probeRes = await api.get(page, '/api/showcase')
       if (!probeRes.ok() && probeRes.status() === 403) {
         // Phase-gated: self-advance from 'working' to 'showcase' (no teacher gate).
-        const advanceRes = await leaderCtx.post('/api/team/advance-phase', { data: {} })
+        const advanceRes = await api.post(page, '/api/team/advance-phase', { data: {} })
         if (!advanceRes.ok()) {
           throw new Error(`Phase advance failed: ${advanceRes.status()} ${await advanceRes.text()}`)
         }
@@ -110,7 +104,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       // probeRes.status() === 200 means showcase exists and team is in showcase phase — OK.
 
       // 1. Upsert showcase (link_only first — avoids a publish gate before assets are attached).
-      const putRes = await leaderCtx.put('/api/showcase', {
+      const putRes = await api.put(page, '/api/showcase', {
         data: {
           shortTitle: SHORT_TITLE,
           title: FULL_TITLE,
@@ -126,7 +120,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       showcaseSlug = showcase.slug
 
       // 2. Board PDF (required for publish).
-      const boardRes = await leaderCtx.post('/api/showcase/asset', {
+      const boardRes = await api.post(page, '/api/showcase/asset', {
         multipart: {
           kind: 'board',
           file: { name: 'board.pdf', mimeType: 'application/pdf', buffer: Buffer.from(minimalPdfBytes()) },
@@ -137,7 +131,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       }
 
       // 3. Quad chart PNG (required for publish).
-      const quadRes = await leaderCtx.post('/api/showcase/asset', {
+      const quadRes = await api.post(page, '/api/showcase/asset', {
         multipart: {
           kind: 'quad_chart',
           file: { name: 'quad.png', mimeType: 'image/png', buffer: Buffer.from(minimalPngBytes()) },
@@ -148,7 +142,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       }
 
       // 4. Video link (required for publish).
-      const videoRes = await leaderCtx.post('/api/showcase/asset/link', {
+      const videoRes = await api.post(page, '/api/showcase/asset/link', {
         data: { assetType: 'video', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
       })
       if (!videoRes.ok()) {
@@ -156,7 +150,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       }
 
       // 5. Publish with public privacy → server sets moderationStatus: 'pending_review'.
-      const publishRes = await leaderCtx.put('/api/showcase', {
+      const publishRes = await api.put(page, '/api/showcase', {
         data: { privacyLevel: 'public', published: true },
       })
       if (!publishRes.ok()) {
@@ -168,34 +162,26 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
           `Expected pending_review after public publish; got '${published.moderationStatus}'`,
         )
       }
-    } finally {
-      await leaderCtx.dispose()
-    }
+    })
   })
 
-  test.afterAll(async () => {
+  test.afterAll(async ({ browser }) => {
     // Best-effort cleanup: unpublish so the showcase doesn't pollute gallery or queue.
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
-    })
-    try {
-      await leaderCtx.put('/api/showcase', { data: { published: false } }).catch(() => {})
+    await withSeedPage(browser, 'leader', async (page) => {
+      await api.put(page, '/api/showcase', { data: { published: false } }).catch(() => {})
       // Remove seeded assets so the slot is free for future runs.
-      const getRes = await leaderCtx.get('/api/showcase').catch(() => null)
+      const getRes = await api.get(page, '/api/showcase').catch(() => null)
       if (getRes?.ok()) {
         const { showcase } = await getRes.json()
         for (const asset of (showcase?.assets ?? []) as Array<{ id: string }>) {
-          await leaderCtx.delete(`/api/showcase/asset/${asset.id}`).catch(() => {})
+          await api.delete(page, `/api/showcase/asset/${asset.id}`).catch(() => {})
         }
       }
       // If we advanced the team to 'showcase' phase, revert to 'working'.
       // There is no standard API to revert phase, so we skip this for now.
       // The team stays in 'showcase' phase after the test run. This is acceptable:
       // 'showcase' is the final phase and does not interfere with other test suites.
-    } finally {
-      await leaderCtx.dispose()
-    }
+    })
   })
 
   // ── AC1 ───────────────────────────────────────────────────────────────────────
@@ -225,43 +211,30 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
   // ── AC3 ───────────────────────────────────────────────────────────────────────
   // State going in: pending_review.
   // State going out: unchanged.
-  test('AC3: non-team viewer gets HTTP 404 on /showcase/{slug} while pending', async () => {
-    // Use the teacher request context: teacher is NOT a team member.
+  test('AC3: non-team viewer gets HTTP 404 on /showcase/{slug} while pending', async ({ browser }) => {
+    // Use a fresh teacher page: teacher is NOT a team member.
     // canViewShowcase → isOwner=false, live=false (pending_review ≠ approved) → notFound() → 404.
     if (!showcaseSlug) throw new Error('Showcase slug not set — beforeAll failed')
 
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
-    try {
-      const res = await teacherCtx.get(`/showcase/${showcaseSlug}`)
+    await withSeedPage(browser, 'teacher', async (page) => {
+      const res = await api.get(page, `/showcase/${showcaseSlug}`)
       // Next.js notFound() renders a 404 page; the HTTP status is 404.
       expect(res.status()).toBe(404)
-    } finally {
-      await teacherCtx.dispose()
-    }
+    })
   })
 
   // ── AC4 ───────────────────────────────────────────────────────────────────────
   // State going in: pending_review.
   // State going out: public + pending_review (restored after link_only test).
-  test('AC4: link_only publish is self-serve: showcase reachable immediately (HTTP 200)', async () => {
+  test('AC4: link_only publish is self-serve: showcase reachable immediately (HTTP 200)', async ({
+    browser,
+  }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set')
 
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
-    })
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
-
-    try {
+    await withSeedPage(browser, 'leader', async (leaderPage) => {
       // Switch privacy to link_only on the already-published showcase.
       // The route's privacy-change logic: nextPrivacy !== 'public' && current !== 'approved' → approved.
-      const switchRes = await leaderCtx.put('/api/showcase', {
+      const switchRes = await api.put(leaderPage, '/api/showcase', {
         data: { privacyLevel: 'link_only' },
       })
       expect(switchRes.ok()).toBe(true)
@@ -270,40 +243,36 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       expect(switched.moderationStatus).toBe('approved')
 
       // Teacher (non-team member) can now reach the showcase at its slug.
-      const viewRes = await teacherCtx.get(`/showcase/${showcaseSlug}`)
-      expect(viewRes.status()).toBe(200)
+      await withSeedPage(browser, 'teacher', async (teacherPage) => {
+        const viewRes = await api.get(teacherPage, `/showcase/${showcaseSlug}`)
+        expect(viewRes.status()).toBe(200)
+      })
 
       // Restore to public + pending_review for subsequent tests via unpublish + re-publish.
-      const unpubRes = await leaderCtx.put('/api/showcase', { data: { published: false } })
+      const unpubRes = await api.put(leaderPage, '/api/showcase', { data: { published: false } })
       expect(unpubRes.ok()).toBe(true)
-      const restoreRes = await leaderCtx.put('/api/showcase', {
+      const restoreRes = await api.put(leaderPage, '/api/showcase', {
         data: { published: true, privacyLevel: 'public' },
       })
       expect(restoreRes.ok()).toBe(true)
       const { showcase: restored } = await restoreRes.json()
       // A fresh public publish always sets pending_review.
       expect(restored.moderationStatus).toBe('pending_review')
-    } finally {
-      await leaderCtx.dispose()
-      await teacherCtx.dispose()
-    }
+    })
   })
 
   // ── AC4b ──────────────────────────────────────────────────────────────────────
   // Regression: link_only → public privacy-only bypass path must be blocked.
   // State going in: pending_review (set by AC4 restore).
   // State going out: pending_review (the bypass is blocked; restored below).
-  test('AC4b: privacy-only switch link_only→public re-queues for moderation (bypass blocked)', async () => {
+  test('AC4b: privacy-only switch link_only→public re-queues for moderation (bypass blocked)', async ({
+    browser,
+  }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set')
 
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
-    })
-
-    try {
+    await withSeedPage(browser, 'leader', async (leaderPage) => {
       // Step 1: switch an already-published showcase to link_only → auto-approved (self-serve).
-      const toLinkOnly = await leaderCtx.put('/api/showcase', {
+      const toLinkOnly = await api.put(leaderPage, '/api/showcase', {
         data: { privacyLevel: 'link_only' },
       })
       expect(toLinkOnly.ok()).toBe(true)
@@ -314,27 +283,27 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       // Step 2: privacy-only PUT to switch back to public while already approved.
       // Without the fix this would keep moderationStatus 'approved' and land in gallery.
       // With the fix ANY transition to public unconditionally sets pending_review.
-      const toPublic = await leaderCtx.put('/api/showcase', {
+      const toPublic = await api.put(leaderPage, '/api/showcase', {
         data: { privacyLevel: 'public' },
       })
       expect(toPublic.ok()).toBe(true)
       const { showcase: afterSwitch } = await toPublic.json()
       // Must be re-queued, not bypassed.
       expect(afterSwitch.moderationStatus).toBe('pending_review')
+    })
 
-      // Step 3: confirm the showcase is absent from the public gallery (bypass blocked).
-      // Use the same approach as AC2: fetch the gallery page HTML and check the short title is absent.
-      const galleryCtx = await playwrightRequest.newContext({ baseURL: BASE_URL })
-      try {
-        const galleryRes = await galleryCtx.get('/showcase/gallery')
-        expect(galleryRes.ok()).toBe(true)
-        const html = await galleryRes.text()
-        expect(html).not.toContain(SHORT_TITLE)
-      } finally {
-        await galleryCtx.dispose()
-      }
+    // Step 3: confirm the showcase is absent from the public gallery (bypass blocked).
+    // Use the same approach as AC2: fetch the gallery page HTML and check the short title is absent.
+    // An anonymous context (no storageState → no Clerk token) is intentional here: it exercises
+    // the truly-public view and carries no stale-token risk, so it stays a raw request context.
+    const galleryCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: undefined })
+    try {
+      const galleryRes = await galleryCtx.get('/showcase/gallery')
+      expect(galleryRes.ok()).toBe(true)
+      const html = await galleryRes.text()
+      expect(html).not.toContain(SHORT_TITLE)
     } finally {
-      await leaderCtx.dispose()
+      await galleryCtx.dispose()
     }
     // State is now: published public + pending_review — correct for AC5 onward.
   })
@@ -342,15 +311,13 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
   // ── AC5 ───────────────────────────────────────────────────────────────────────
   // State going in: pending_review.
   // State going out: unchanged.
-  test('AC5: teacher GET /api/teacher/showcase-moderation lists the pending showcase', async () => {
+  test('AC5: teacher GET /api/teacher/showcase-moderation lists the pending showcase', async ({
+    browser,
+  }) => {
     if (!showcaseId) throw new Error('Showcase id not set')
 
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
-    try {
-      const res = await teacherCtx.get('/api/teacher/showcase-moderation')
+    await withSeedPage(browser, 'teacher', async (page) => {
+      const res = await api.get(page, '/api/teacher/showcase-moderation')
       expect(res.ok()).toBe(true)
       const { showcases } = await res.json()
 
@@ -361,26 +328,22 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       expect(found).toBeTruthy()
       // Short title must be present (the component renders it as the card headline).
       expect(found?.shortTitle).toBe(SHORT_TITLE)
-    } finally {
-      await teacherCtx.dispose()
-    }
+    })
   })
 
   // ── AC6 ───────────────────────────────────────────────────────────────────────
   // State going in: pending_review.
   // State going out: unchanged.
-  test('AC6: teacher GET is scoped — all returned showcases have valid team data (no cross-class leak)', async () => {
+  test('AC6: teacher GET is scoped — all returned showcases have valid team data (no cross-class leak)', async ({
+    browser,
+  }) => {
     // Since there's only one teacher in E2E, we verify scope by confirming:
     // (a) GET returns ONLY showcases whose team has a valid name (never null).
     // (b) The WHERE clause in the route filters on ctx.classIds, which is the observable
     //     contract: a showcase from a different class is absent from the result set.
     // The cross-class 403 guard is directly asserted in AC7.
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
-    try {
-      const res = await teacherCtx.get('/api/teacher/showcase-moderation')
+    await withSeedPage(browser, 'teacher', async (page) => {
+      const res = await api.get(page, '/api/teacher/showcase-moderation')
       expect(res.ok()).toBe(true)
       const { showcases } = await res.json()
 
@@ -392,32 +355,23 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
         expect(typeof s.team?.name).toBe('string')
         expect(s.team!.name.length).toBeGreaterThan(0)
       }
-    } finally {
-      await teacherCtx.dispose()
-    }
+    })
   })
 
   // ── AC7 ───────────────────────────────────────────────────────────────────────
   // State going in: pending_review.
   // State going out: pending_review (reset via unpublish + re-publish).
-  test('AC7: POST with a nonexistent showcaseId returns 404; state restored to pending_review', async () => {
+  test('AC7: POST with a nonexistent showcaseId returns 404; state restored to pending_review', async ({
+    browser,
+  }) => {
     // Route logic: load showcase → 404 if missing OR not pending_review.
     // The 403 path (teacherOwnsTeam) is reached only for real pending_review showcases
     // outside the teacher's classes. With one teacher, the best observable assertion is:
     // - nonexistent id → 404
     // - we then restore to pending_review so subsequent tests have the correct state.
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
-    })
-
-    try {
+    await withSeedPage(browser, 'teacher', async (teacherPage) => {
       // (a) Nonexistent showcaseId → 404 (not 200 / 500 / 403).
-      const fakeRes = await teacherCtx.post('/api/teacher/showcase-moderation', {
+      const fakeRes = await api.post(teacherPage, '/api/teacher/showcase-moderation', {
         data: { showcaseId: 'cl000000000000000000000000', decision: 'approve' },
       })
       expect(fakeRes.status()).toBe(404)
@@ -425,29 +379,28 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       // (b) Approve the seeded showcase to move it out of pending_review, then verify a
       // second POST for the same id returns 404 (already actioned — not pending_review).
       // This confirms the "not pending_review → 404" guard works on real ids.
-      const approveRes = await teacherCtx.post('/api/teacher/showcase-moderation', {
+      const approveRes = await api.post(teacherPage, '/api/teacher/showcase-moderation', {
         data: { showcaseId, decision: 'approve' },
       })
       expect(approveRes.ok()).toBe(true)
 
-      const doubleRes = await teacherCtx.post('/api/teacher/showcase-moderation', {
+      const doubleRes = await api.post(teacherPage, '/api/teacher/showcase-moderation', {
         data: { showcaseId, decision: 'approve' },
       })
       expect(doubleRes.status()).toBe(404)
 
       // (c) Restore to pending_review so AC8 can test the approve flow fresh.
-      await leaderCtx.put('/api/showcase', { data: { published: false } })
-      const repubRes = await leaderCtx.put('/api/showcase', {
-        data: { published: true, privacyLevel: 'public' },
+      await withSeedPage(browser, 'leader', async (leaderPage) => {
+        await api.put(leaderPage, '/api/showcase', { data: { published: false } })
+        const repubRes = await api.put(leaderPage, '/api/showcase', {
+          data: { published: true, privacyLevel: 'public' },
+        })
+        expect(repubRes.ok()).toBe(true)
+        const { showcase: repub } = await repubRes.json()
+        expect(repub.moderationStatus).toBe('pending_review')
+        showcaseId = repub.id
       })
-      expect(repubRes.ok()).toBe(true)
-      const { showcase: repub } = await repubRes.json()
-      expect(repub.moderationStatus).toBe('pending_review')
-      showcaseId = repub.id
-    } finally {
-      await teacherCtx.dispose()
-      await leaderCtx.dispose()
-    }
+    })
   })
 
   // ── AC8 ───────────────────────────────────────────────────────────────────────
@@ -455,34 +408,31 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
   // State going out: approved.
   test('AC8: after teacher approves, showcase appears in gallery and slug page returns 200', async ({
     page,
+    browser,
   }) => {
     if (!showcaseId || !showcaseSlug) throw new Error('Showcase id/slug not set')
 
     // Teacher approves via the moderation API.
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
-    try {
-      const approveRes = await teacherCtx.post('/api/teacher/showcase-moderation', {
+    await withSeedPage(browser, 'teacher', async (teacherPage) => {
+      const approveRes = await api.post(teacherPage, '/api/teacher/showcase-moderation', {
         data: { showcaseId, decision: 'approve' },
       })
       expect(approveRes.ok()).toBe(true)
       const { ok, decision } = await approveRes.json()
       expect(ok).toBe(true)
       expect(decision).toBe('approve')
+    })
 
-      // /showcase/gallery must now list the showcase (gallery filters approved only).
-      // The leader's page is fine here: the gallery is public, the leader can see it.
-      await page.goto('/showcase/gallery')
-      await expect(page.getByText(SHORT_TITLE)).toBeVisible({ timeout: 8000 })
+    // /showcase/gallery must now list the showcase (gallery filters approved only).
+    // The leader's page is fine here: the gallery is public, the leader can see it.
+    await page.goto('/showcase/gallery')
+    await expect(page.getByText(SHORT_TITLE)).toBeVisible({ timeout: 8000 })
 
-      // /showcase/{slug} returns 200 for the teacher (non-team viewer) after approval.
-      const slugRes = await teacherCtx.get(`/showcase/${showcaseSlug}`)
+    // /showcase/{slug} returns 200 for the teacher (non-team viewer) after approval.
+    await withSeedPage(browser, 'teacher', async (teacherPage) => {
+      const slugRes = await api.get(teacherPage, `/showcase/${showcaseSlug}`)
       expect(slugRes.status()).toBe(200)
-    } finally {
-      await teacherCtx.dispose()
-    }
+    })
   })
 
   // ── AC9 ───────────────────────────────────────────────────────────────────────
@@ -508,28 +458,20 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       )
       expect(found).toBeTruthy()
     } else {
-      // Fallback: verify via a direct DB-level check using the leader request context.
-      const leaderCtx = await playwrightRequest.newContext({
-        baseURL: BASE_URL,
-        storageState: STORAGE.leader,
-      })
-      try {
-        const fallbackRes = await leaderCtx.get('/api/notifications')
-        expect(fallbackRes.ok()).toBe(true)
-        const json = await fallbackRes.json()
-        const items = (json.items ?? json.notifications ?? []) as Array<{
-          title: string
-          linkUrl: string
-        }>
-        const found = items.find(
-          (n) =>
-            n.title === 'Showcase approved — now public' &&
-            n.linkUrl === '/lab',
-        )
-        expect(found).toBeTruthy()
-      } finally {
-        await leaderCtx.dispose()
-      }
+      // Fallback: verify via a direct check using the leader's own page session.
+      const fallbackRes = await api.get(page, '/api/notifications')
+      expect(fallbackRes.ok()).toBe(true)
+      const json = await fallbackRes.json()
+      const items = (json.items ?? json.notifications ?? []) as Array<{
+        title: string
+        linkUrl: string
+      }>
+      const found = items.find(
+        (n) =>
+          n.title === 'Showcase approved — now public' &&
+          n.linkUrl === '/lab',
+      )
+      expect(found).toBeTruthy()
     }
   })
 
@@ -538,37 +480,26 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
   // State going out: rejected (with REJECTION_NOTE).
   test('AC10: teacher rejects with note; editor shows "Changes requested" + note; gallery absent', async ({
     page,
+    browser,
   }) => {
     // Restore to pending_review first (unpublish + re-publish).
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
+    await api.put(page, '/api/showcase', { data: { published: false } })
+    const repubRes = await api.put(page, '/api/showcase', {
+      data: { published: true, privacyLevel: 'public' },
     })
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
+    expect(repubRes.ok()).toBe(true)
+    const { showcase: repub } = await repubRes.json()
+    expect(repub.moderationStatus).toBe('pending_review')
+    showcaseId = repub.id
 
-    try {
-      await leaderCtx.put('/api/showcase', { data: { published: false } })
-      const repubRes = await leaderCtx.put('/api/showcase', {
-        data: { published: true, privacyLevel: 'public' },
-      })
-      expect(repubRes.ok()).toBe(true)
-      const { showcase: repub } = await repubRes.json()
-      expect(repub.moderationStatus).toBe('pending_review')
-      showcaseId = repub.id
-
-      // Teacher rejects with a note.
-      const rejectRes = await teacherCtx.post('/api/teacher/showcase-moderation', {
+    // Teacher rejects with a note.
+    await withSeedPage(browser, 'teacher', async (teacherPage) => {
+      const rejectRes = await api.post(teacherPage, '/api/teacher/showcase-moderation', {
         data: { showcaseId, decision: 'reject', note: REJECTION_NOTE },
       })
       expect(rejectRes.ok()).toBe(true)
       expect((await rejectRes.json()).decision).toBe('reject')
-    } finally {
-      await leaderCtx.dispose()
-      await teacherCtx.dispose()
-    }
+    })
 
     // Student opens the editor: "Changes requested" pill must be visible.
     await page.goto('/showcase/edit')
@@ -589,42 +520,31 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
   // State going out: pending_review (note cleared).
   test('AC11: after rejection, re-publish returns to pending_review and reappears in queue', async ({
     page,
+    browser,
   }) => {
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
+    // Student unpublishes (required to re-trigger the publish gate).
+    const unpubRes = await api.put(page, '/api/showcase', { data: { published: false } })
+    expect(unpubRes.ok()).toBe(true)
+
+    // Re-publish with public privacy → pending_review + note cleared.
+    const repubRes = await api.put(page, '/api/showcase', {
+      data: { published: true, privacyLevel: 'public' },
     })
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
+    expect(repubRes.ok()).toBe(true)
+    const { showcase: repub } = await repubRes.json()
+    expect(repub.moderationStatus).toBe('pending_review')
+    // The route clears moderationNote on every public publish.
+    expect(repub.moderationNote).toBeNull()
+    showcaseId = repub.id
 
-    try {
-      // Student unpublishes (required to re-trigger the publish gate).
-      const unpubRes = await leaderCtx.put('/api/showcase', { data: { published: false } })
-      expect(unpubRes.ok()).toBe(true)
-
-      // Re-publish with public privacy → pending_review + note cleared.
-      const repubRes = await leaderCtx.put('/api/showcase', {
-        data: { published: true, privacyLevel: 'public' },
-      })
-      expect(repubRes.ok()).toBe(true)
-      const { showcase: repub } = await repubRes.json()
-      expect(repub.moderationStatus).toBe('pending_review')
-      // The route clears moderationNote on every public publish.
-      expect(repub.moderationNote).toBeNull()
-      showcaseId = repub.id
-
-      // Teacher's queue must include the showcase again.
-      const queueRes = await teacherCtx.get('/api/teacher/showcase-moderation')
+    // Teacher's queue must include the showcase again.
+    await withSeedPage(browser, 'teacher', async (teacherPage) => {
+      const queueRes = await api.get(teacherPage, '/api/teacher/showcase-moderation')
       expect(queueRes.ok()).toBe(true)
       const { showcases } = await queueRes.json()
       const found = (showcases as Array<{ id: string }>).find((s) => s.id === showcaseId)
       expect(found).toBeTruthy()
-    } finally {
-      await leaderCtx.dispose()
-      await teacherCtx.dispose()
-    }
+    })
 
     // Editor: "Pending teacher review" pill is back; rejection banner gone.
     await page.goto('/showcase/edit')
@@ -638,20 +558,14 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
   // ── AC12 ──────────────────────────────────────────────────────────────────────
   // State going in: pending_review.
   // State going out: rejected.
-  test('AC12: rejected showcase keeps privacyLevel "public" in the editor', async ({ page }) => {
+  test('AC12: rejected showcase keeps privacyLevel "public" in the editor', async ({ page, browser }) => {
     // Reject the showcase again to observe the privacy preservation.
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
-    try {
-      const rejectRes = await teacherCtx.post('/api/teacher/showcase-moderation', {
+    await withSeedPage(browser, 'teacher', async (teacherPage) => {
+      const rejectRes = await api.post(teacherPage, '/api/teacher/showcase-moderation', {
         data: { showcaseId, decision: 'reject', note: 'AC12 check.' },
       })
       expect(rejectRes.ok()).toBe(true)
-    } finally {
-      await teacherCtx.dispose()
-    }
+    })
 
     // Open the editor as the student.
     await page.goto('/showcase/edit')

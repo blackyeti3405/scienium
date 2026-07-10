@@ -1,6 +1,5 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { STORAGE } from './roles'
-import { api } from './api'
+import { api, withSeedPage } from './api'
 
 /**
  * F13 — Field Codex (interactive, KP-earning, project-tailored field-
@@ -695,16 +694,14 @@ test.describe('F13 — Field Codex', () => {
 
     // A different team member (the E2E student, co-member of the same team)
     // must see only their OWN codex progress, never the leader's. Use a real
-    // browser context + page (not a bare `request.newContext`) and navigate
-    // FIRST — this test runs ~2+ minutes into a long serial suite, well past
-    // the point the stored Clerk JWT in STORAGE.student can have expired; a
-    // cold `request.newContext` with no navigation gets redirect-followed to
-    // a sign-in HTML page instead of JSON (documented convention: navigate
-    // before any page.request call, including in helper contexts).
-    const studentContext = await browser.newContext({ storageState: STORAGE.student })
-    const studentPage = await studentContext.newPage()
-    try {
-      await studentPage.goto('/lab')
+    // authed page (not a bare `request.newContext`) that navigates FIRST —
+    // this test runs ~2+ minutes into a long serial suite, well past the point
+    // the stored Clerk JWT in STORAGE.student can have expired; a cold
+    // `request.newContext` with no navigation gets redirect-followed to a
+    // sign-in HTML page instead of JSON (documented convention: navigate before
+    // any page.request call, including in helper contexts). withSeedPage opens
+    // that page, lands it on /lab, and hands it to `api.*`.
+    await withSeedPage(browser, 'student', async (studentPage) => {
       const studentRes = await api.get(studentPage, '/api/ops/codex/progress')
       expect(studentRes.status()).toBe(200)
       const studentPayload = (await studentRes.json()) as ProgressResponse
@@ -719,9 +716,7 @@ test.describe('F13 — Field Codex', () => {
       if (process.env.E2E_STUDENT_IDENTIFIER !== process.env.E2E_LEADER_IDENTIFIER) {
         expect(leakedLeaderLesson).toBe(false)
       }
-    } finally {
-      await studentContext.close()
-    }
+    })
   })
 
   // ── AC12 ─────────────────────────────────────────────────────────────────

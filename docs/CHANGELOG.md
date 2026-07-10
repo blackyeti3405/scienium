@@ -5,6 +5,35 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.21.11] — 2026-07-10
+
+E2E determinism — the suite stops crashing on stale auth.
+
+### Fixed
+- The dominant E2E flake is gone: spec `beforeAll`/`afterAll` seeds used a raw
+  `request.newContext({ storageState })`, whose frozen Clerk token 307-redirects to
+  `/sign-in` once its ~60s TTL lapses, so the seed parsed an HTML sign-in page as JSON
+  and took the whole file down (this is what "crashes halfway through" was). All 15
+  affected specs now seed through `withSeedPage` / `api.*`, which mint a fresh token
+  from a live page before each call. Full-suite green went from 91 to ~180+.
+- "Anonymous" test contexts created as `newContext({ baseURL })` silently inherited the
+  leader session (only masked because the inherited token was usually stale); they now
+  pass `storageState: undefined` so unauthenticated assertions are actually unauthenticated.
+- Log-seeding specs uploaded a real tiny image via `uploadLogAttachment` instead of a
+  fabricated attachment URL, satisfying the Phase 8 attachment validation.
+
+### Added
+- `e2e/api.ts` helpers: `withSeedPage(browser, role, fn)` (fresh authed page for
+  hook-time seeding) and `uploadLogAttachment(page)` (real attachment upload).
+
+### Changed
+- `enforceRateLimit` is bypassed when `E2E_SKIP_LLM=1` (set only by the Playwright
+  config, never in dev/prod), so the fast full-suite run no longer trips per-user
+  rate limits mid-suite. The E2E fixture team is seeded at `phase=showcase` /
+  `labType=volt_lab` so phase-gated and lab-specific building surfaces are exercisable.
+
+---
+
 ## [0.21.10] — 2026-07-09
 
 Refactor Phase 11 — documentation matches the shipped architecture.

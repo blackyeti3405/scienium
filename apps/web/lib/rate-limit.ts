@@ -217,6 +217,13 @@ export async function enforceRateLimit(
   tierName: TierName,
   userId?: string | null,
 ): Promise<NextResponse | null> {
+  // E2E bypass: the Playwright suite runs the whole app as ONE user in a few
+  // minutes, so real per-user tiers would 429 mid-run. `E2E_SKIP_LLM` is set ONLY
+  // by playwright.config.ts (never in a dev server or production — same flag that
+  // stubs paid Claude calls), so this can't relax limits anywhere real. No spec
+  // asserts a live rate-limit 429; F11-quiz-retry only tolerates one.
+  if (process.env.E2E_SKIP_LLM === '1') return null
+
   const tier = RATE_LIMITS[tierName]
   const now = Date.now()
 

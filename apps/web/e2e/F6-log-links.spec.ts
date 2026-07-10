@@ -1,6 +1,6 @@
-import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api } from './api'
+import { api, withSeedPage, uploadLogAttachment } from './api'
 
 /**
  * F6 — Project-Log log↔log linking (activates `ProjectLogReference`).
@@ -45,11 +45,6 @@ const BODY_C = `[E2E-F6-${RUN_ID}] Entry C — disposable entry for the delete-c
 const NEXT_STEPS = `[E2E-F6-${RUN_ID}] Clean up after the test.`
 const STAGE = 'Data Collection'
 
-/** A schema-valid (Zod prefix-check only) fake attachment URL — required by the POST body. */
-function fakeAttachmentUrl(tag: string): string {
-  return `/api/project-log/attachment/view?key=log-attachments/e2e-f6-seed/${RUN_ID}-${tag}.jpg`
-}
-
 interface SeededEntry {
   id: string
   entryNumber: number
@@ -61,25 +56,25 @@ let entryB: SeededEntry | null = null
 let entryC: SeededEntry | null = null
 
 /** Create one progress log entry via the API, tagged with a unique body. Returns id + entryNumber. */
-async function seedEntry(
-  ctx: Awaited<ReturnType<typeof playwrightRequest.newContext>>,
-  body: string,
-  attachmentTag: string,
-): Promise<SeededEntry> {
+async function seedEntry(page: Page, body: string): Promise<SeededEntry> {
   // Discover currentUserId first — multi-member teams require attendeeIds.
-  const getRes = await ctx.get('/api/project-log')
+  const getRes = await api.get(page, '/api/project-log')
   if (!getRes.ok()) {
     throw new Error(`GET /api/project-log failed while seeding: ${getRes.status()} ${await getRes.text()}`)
   }
   const { currentUserId } = await getRes.json()
 
-  const postRes = await ctx.post('/api/project-log', {
+  // A log requires ≥1 attachment; upload a real one so it passes the attachment
+  // validation (team-prefixed key + ledger row) instead of a fabricated URL.
+  const attachmentUrl = await uploadLogAttachment(page)
+
+  const postRes = await api.post(page, '/api/project-log', {
     data: {
       body,
       nextSteps: NEXT_STEPS,
       stage: STAGE,
       attendeeIds: currentUserId ? [currentUserId] : [],
-      attachmentUrls: [fakeAttachmentUrl(attachmentTag)],
+      attachmentUrls: [attachmentUrl],
     },
   })
   if (!postRes.ok()) {
@@ -135,18 +130,12 @@ test.describe('F6 — Project-Log log↔log linking', () => {
 
   // ── Seed / teardown ───────────────────────────────────────────────────────────
 
-  test.beforeAll(async () => {
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
+  test.beforeAll(async ({ browser }) => {
+    await withSeedPage(browser, 'leader', async (page) => {
+      entryA = await seedEntry(page, BODY_A)
+      entryB = await seedEntry(page, BODY_B)
+      entryC = await seedEntry(page, BODY_C)
     })
-    try {
-      entryA = await seedEntry(leaderCtx, BODY_A, 'a')
-      entryB = await seedEntry(leaderCtx, BODY_B, 'b')
-      entryC = await seedEntry(leaderCtx, BODY_C, 'c')
-    } finally {
-      await leaderCtx.dispose()
-    }
   })
 
   test.afterAll(async ({ browser }) => {

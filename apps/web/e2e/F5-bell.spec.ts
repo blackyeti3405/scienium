@@ -1,6 +1,6 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api } from './api'
+import { api, withSeedPage } from './api'
 
 /**
  * F5 — Notification bell: all five kinds first-class.
@@ -65,29 +65,21 @@ function resolveTeamId(students: Array<{ teamId: string | null }>): string | nul
 }
 
 /** POST one extra teacher_feedback notification for the E2E team, via the teacher session. */
-async function seedExtraFeedback(bodySuffix: string): Promise<void> {
-  const teacherCtx = await playwrightRequest.newContext({
-    baseURL: BASE_URL,
-    storageState: STORAGE.teacher,
+async function seedExtraFeedback(page: Page, bodySuffix: string): Promise<void> {
+  const rosterRes = await api.get(page, '/api/teacher/roster')
+  if (!rosterRes.ok()) {
+    throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
+  }
+  const { students } = await rosterRes.json()
+  const teamId = resolveTeamId(students)
+  if (!teamId) {
+    throw new Error('resolveTeamId found no team in roster for extra-feedback seeding.')
+  }
+  const feedRes = await api.post(page, '/api/teacher/feedback', {
+    data: { teamId, targetType: 'team', body: `${SEED_BODY} ${bodySuffix}` },
   })
-  try {
-    const rosterRes = await teacherCtx.get('/api/teacher/roster')
-    if (!rosterRes.ok()) {
-      throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
-    }
-    const { students } = await rosterRes.json()
-    const teamId = resolveTeamId(students)
-    if (!teamId) {
-      throw new Error('resolveTeamId found no team in roster for extra-feedback seeding.')
-    }
-    const feedRes = await teacherCtx.post('/api/teacher/feedback', {
-      data: { teamId, targetType: 'team', body: `${SEED_BODY} ${bodySuffix}` },
-    })
-    if (!feedRes.ok()) {
-      throw new Error(`Extra feedback seed failed: ${feedRes.status()} ${await feedRes.text()}`)
-    }
-  } finally {
-    await teacherCtx.dispose()
+  if (!feedRes.ok()) {
+    throw new Error(`Extra feedback seed failed: ${feedRes.status()} ${await feedRes.text()}`)
   }
 }
 
@@ -98,48 +90,37 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
   // ── Seed / teardown ───────────────────────────────────────────────────────────
 
-  test.beforeAll(async () => {
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
+  test.beforeAll(async ({ browser }) => {
+    await withSeedPage(browser, 'teacher', async (page) => {
+      const rosterRes = await api.get(page, '/api/teacher/roster')
+      if (!rosterRes.ok()) {
+        throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
+      }
+      const { students } = await rosterRes.json()
+      const teamId = resolveTeamId(students)
+      if (!teamId) {
+        throw new Error(
+          'No team found in teacher roster — E2E teacher account must be linked to the dev class that contains the E2E leader team.',
+        )
+      }
 
-    const rosterRes = await teacherCtx.get('/api/teacher/roster')
-    if (!rosterRes.ok()) {
-      await teacherCtx.dispose()
-      throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
-    }
-    const { students } = await rosterRes.json()
-    const teamId = resolveTeamId(students)
-    if (!teamId) {
-      await teacherCtx.dispose()
-      throw new Error(
-        'No team found in teacher roster — E2E teacher account must be linked to the dev class that contains the E2E leader team.',
-      )
-    }
-
-    const feedRes = await teacherCtx.post('/api/teacher/feedback', {
-      data: {
-        teamId,
-        targetType: 'team',
-        body: SEED_BODY,
-      },
+      const feedRes = await api.post(page, '/api/teacher/feedback', {
+        data: {
+          teamId,
+          targetType: 'team',
+          body: SEED_BODY,
+        },
+      })
+      if (!feedRes.ok()) {
+        throw new Error(`Feedback seed failed: ${feedRes.status()} ${await feedRes.text()}`)
+      }
     })
-    if (!feedRes.ok()) {
-      await teacherCtx.dispose()
-      throw new Error(`Feedback seed failed: ${feedRes.status()} ${await feedRes.text()}`)
-    }
-    await teacherCtx.dispose()
 
     // The feedback route's notification insert is best-effort (fire-and-forget
     // `.catch(() => {})`); confirm the notification actually landed and resolve
     // its id via the leader session (whose bell we test) before any test runs.
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
-    })
-    try {
-      const notifRes = await leaderCtx.get('/api/notifications')
+    await withSeedPage(browser, 'leader', async (page) => {
+      const notifRes = await api.get(page, '/api/notifications')
       if (!notifRes.ok()) {
         throw new Error(`Notifications fetch failed: ${notifRes.status()} ${await notifRes.text()}`)
       }
@@ -153,9 +134,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
         )
       }
       seededNotificationId = seeded.id
-    } finally {
-      await leaderCtx.dispose()
-    }
+    })
   })
 
   test.afterAll(async ({ browser }) => {
@@ -298,6 +277,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
   test('AC7: clicking an unread item decreases the unread badge by one, no full reload', async ({
     page,
+    browser,
   }) => {
     await page.goto('/lab')
 
@@ -319,7 +299,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
     let extraSeededId: string | null = null
     if (!unreadItem) {
-      await seedExtraFeedback('(AC7 re-seed)')
+      await withSeedPage(browser, 'teacher', (p) => seedExtraFeedback(p, '(AC7 re-seed)'))
 
       await page.goto('/lab')
       const res2 = await api.get(page, '/api/notifications')
@@ -379,7 +359,10 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
   })
 
   // ── AC8 ──────────────────────────────────────────────────────────────────────
-  test('AC8: "Mark all read" clears the badge and all unread item styling', async ({ page }) => {
+  test('AC8: "Mark all read" clears the badge and all unread item styling', async ({
+    page,
+    browser,
+  }) => {
     await page.goto('/lab')
 
     // Ensure there is at least one unread item so "Mark all read" is present and
@@ -390,7 +373,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
     let extraSeededId: string | null = null
     if (!hasUnread) {
-      await seedExtraFeedback('(AC8 re-seed)')
+      await withSeedPage(browser, 'teacher', (p) => seedExtraFeedback(p, '(AC8 re-seed)'))
 
       await page.goto('/lab')
       const res2 = await api.get(page, '/api/notifications')

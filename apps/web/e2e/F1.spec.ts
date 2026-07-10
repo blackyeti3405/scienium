@@ -1,6 +1,5 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test'
-import { STORAGE } from './roles'
-import { api } from './api'
+import { test, expect } from '@playwright/test'
+import { api, withSeedPage } from './api'
 
 /**
  * F1 — Student-facing teacher feedback inbox.
@@ -21,7 +20,7 @@ import { api } from './api'
  *  AC11 — GET returns 200 + items array for authenticated user; 401 path documented
  *  AC12 — Panel uses pixel aesthetic: font-pixel chrome, dark bg, gold accent on FAB
  *
- * Seeding: beforeAll uses the teacher session (STORAGE.teacher) to POST one
+ * Seeding: beforeAll uses a fresh teacher session (withSeedPage) to POST one
  * TeacherFeedback row via /api/teacher/feedback. The teacher first calls
  * GET /api/teacher/roster to discover the test team's id. afterAll resolves the
  * seeded row via the student (leader) session.
@@ -33,74 +32,60 @@ const SEED_BODY = '[E2E F1 seed] Great job on the hypothesis section!'
 /** Seeded feedback id (set in beforeAll, read/reset in tests, cleaned up in afterAll). */
 let seededId: string | null = null
 
-/** Student base URL for API calls in beforeAll/afterAll. */
-const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
-
 test.describe('F1 — Student-facing teacher feedback inbox', () => {
   // Run tests in serial so DB state mutations (mark-addressed, resolve) do not race.
   test.describe.configure({ mode: 'serial' })
 
   // ── Seed / teardown ───────────────────────────────────────────────────────────
 
-  test.beforeAll(async () => {
-    // 1. Create a teacher request context using the saved session state.
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
+  test.beforeAll(async ({ browser }) => {
+    await withSeedPage(browser, 'teacher', async (page) => {
+      // 1. Discover the test team id via the teacher roster.
+      const rosterRes = await api.get(page, '/api/teacher/roster')
+      if (!rosterRes.ok()) {
+        throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
+      }
+      const { students } = await rosterRes.json()
+      // Seed feedback to the E2E leader's own team (the dedicated E2E Test Lab) so
+      // the leader sees it in their inbox — and so we never touch a real lab that
+      // happens to share the teacher's class. Fall back to any team with a member.
+      const TEST_TEAM_ID = 'e2e_test_lab_01'
+      const teamId: string | null =
+        students.find((s: { teamId: string | null }) => s.teamId === TEST_TEAM_ID)?.teamId ??
+        students.find((s: { teamId: string | null }) => s.teamId)?.teamId ??
+        null
+      if (!teamId) {
+        throw new Error(
+          'No team found in teacher roster — E2E teacher account must be linked to the dev class that contains the E2E leader team.',
+        )
+      }
+
+      // 2. Seed one TeacherFeedback row scoped to that team.
+      const feedRes = await api.post(page, '/api/teacher/feedback', {
+        data: {
+          teamId,
+          targetType: 'team',
+          body: SEED_BODY,
+        },
+      })
+      if (!feedRes.ok()) {
+        throw new Error(`Feedback seed failed: ${feedRes.status()} ${await feedRes.text()}`)
+      }
+      const { feedback } = await feedRes.json()
+      seededId = feedback.id
     })
-
-    // 2. Discover the test team id via the teacher roster.
-    const rosterRes = await teacherCtx.get('/api/teacher/roster')
-    if (!rosterRes.ok()) {
-      await teacherCtx.dispose()
-      throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
-    }
-    const { students } = await rosterRes.json()
-    // Seed feedback to the E2E leader's own team (the dedicated E2E Test Lab) so
-    // the leader sees it in their inbox — and so we never touch a real lab that
-    // happens to share the teacher's class. Fall back to any team with a member.
-    const TEST_TEAM_ID = 'e2e_test_lab_01'
-    const teamId: string | null =
-      students.find((s: { teamId: string | null }) => s.teamId === TEST_TEAM_ID)?.teamId ??
-      students.find((s: { teamId: string | null }) => s.teamId)?.teamId ??
-      null
-    if (!teamId) {
-      await teacherCtx.dispose()
-      throw new Error(
-        'No team found in teacher roster — E2E teacher account must be linked to the dev class that contains the E2E leader team.',
-      )
-    }
-
-    // 3. Seed one TeacherFeedback row scoped to that team.
-    const feedRes = await teacherCtx.post('/api/teacher/feedback', {
-      data: {
-        teamId,
-        targetType: 'team',
-        body: SEED_BODY,
-      },
-    })
-    if (!feedRes.ok()) {
-      await teacherCtx.dispose()
-      throw new Error(`Feedback seed failed: ${feedRes.status()} ${await feedRes.text()}`)
-    }
-    const { feedback } = await feedRes.json()
-    seededId = feedback.id
-
-    await teacherCtx.dispose()
   })
 
-  test.afterAll(async () => {
+  test.afterAll(async ({ browser }) => {
     // Teardown: mark the seeded row resolved so it does not pollute later runs.
     // There is no DELETE endpoint; resolved:true is the best available cleanup.
     if (!seededId) return
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
+    const id = seededId
+    await withSeedPage(browser, 'leader', async (page) => {
+      await api
+        .patch(page, '/api/team/feedback', { data: { id, resolved: true } })
+        .catch(() => {})
     })
-    await leaderCtx
-      .patch('/api/team/feedback', { data: { id: seededId, resolved: true } })
-      .catch(() => {})
-    await leaderCtx.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────

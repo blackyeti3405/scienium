@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api } from './api'
+import { api, withSeedPage } from './api'
 
 /**
  * F11 — Vega quiz-miss review + targeted retry loop (Literature Review).
@@ -77,26 +77,19 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
     }
   })
 
-  test.afterAll(async () => {
+  test.afterAll(async ({ browser }) => {
     if (seededPaperIds.length === 0) return
-    // Self-clean via the app's own delete path — navigate first to establish a
-    // valid session before any page.request call (Clerk JWT expiry, see F4.spec.ts).
-    const { request: playwrightRequest } = await import('@playwright/test')
-    const { STORAGE } = await import('./roles')
-    const ctx = await playwrightRequest.newContext({
-      baseURL: `http://localhost:${process.env.E2E_PORT ?? 3000}`,
-      storageState: STORAGE.leader,
-    })
-    try {
+    // Self-clean via the app's own delete path — withSeedPage opens a fresh
+    // authed page so clerk-js mints a live token, keeping the DELETE calls off a
+    // stale JWT (Clerk expiry, see F4.spec.ts).
+    await withSeedPage(browser, 'leader', async (page) => {
       for (const id of seededPaperIds) {
-        const res = await ctx.delete(`/api/papers/${id}`)
+        const res = await api.delete(page, `/api/papers/${id}`)
         if (!res.ok()) {
           console.warn(`F11 afterAll: cleanup DELETE /api/papers/${id} returned ${res.status()}`)
         }
       }
-    } finally {
-      await ctx.dispose()
-    }
+    })
   })
 
   // ── Seeding helper ─────────────────────────────────────────────────────────

@@ -1,6 +1,5 @@
-import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { STORAGE } from './roles'
-import { api } from './api'
+import { test, expect, type Page } from '@playwright/test'
+import { api, withSeedPage, uploadLogAttachment } from './api'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -24,12 +23,11 @@ import path from 'node:path'
  * Seeding strategy:
  *  - Papers: POST /api/dev/fill-papers (dev-only endpoint) ensures ≥1 paper exists, then GET
  *    /api/papers to identify a deletable paper.
- *  - Project log: POST /api/project-log with a fake (but schema-valid) attachmentUrl. For
+ *  - Project log: POST /api/project-log with a real uploaded attachment. For
  *    multi-member teams the currentUserId (from GET /api/project-log) is passed as attendeeId.
  *  - Failure log: POST /api/failure-log (same pattern as F2).
  */
 
-const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 const RUN_ID = Date.now().toString(36)
 
 // ── Seeded resource ids (set in beforeAll, cleaned up in afterAll) ─────────────
@@ -91,115 +89,102 @@ async function openDiscovery(page: Page) {
 test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
   test.describe.configure({ mode: 'serial' })
 
-  test.beforeAll(async () => {
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
+  test.beforeAll(async ({ browser }) => {
+    await withSeedPage(browser, 'leader', async (page) => {
+      // 1. Ensure papers exist (dev fill endpoint creates up to 25 fake ones).
+      const fillRes = await api.post(page, '/api/dev/fill-papers')
+      if (!fillRes.ok()) {
+        throw new Error(`fill-papers failed: ${fillRes.status()} ${await fillRes.text()}`)
+      }
+
+      // 2. Fetch the paper list.
+      const papersRes = await api.get(page, '/api/papers')
+      if (!papersRes.ok()) {
+        throw new Error(`GET /api/papers failed: ${papersRes.status()}`)
+      }
+      const { papers } = await papersRes.json()
+      const readyPapers = (papers as Array<{ id: string; status: string }>).filter(
+        (p) => p.status === 'ready',
+      )
+
+      if (readyPapers.length < 3) {
+        throw new Error(`Need ≥3 ready papers for F3 tests; got ${readyPapers.length}`)
+      }
+
+      // If we have exactly 25 papers (locked), delete one via the API so that delete
+      // buttons become visible in the UI (the feature hides them when locked at 25/25).
+      // We track the ids we might delete during tests.
+      const TOTAL_SLOTS = 25
+      if (readyPapers.length >= TOTAL_SLOTS) {
+        // Delete the last paper to bring the count to 24, unlocking the delete buttons.
+        const toRemove = readyPapers[readyPapers.length - 1]
+        await api.delete(page, `/api/papers/${toRemove.id}`)
+        // Re-fetch to get updated list.
+        const refreshRes = await api.get(page, '/api/papers')
+        const { papers: refreshed } = await refreshRes.json()
+        seededPaperIds = (refreshed as Array<{ id: string; status: string }>)
+          .filter((p) => p.status === 'ready')
+          .map((p) => p.id)
+      } else {
+        seededPaperIds = readyPapers.map((p) => p.id)
+      }
+
+      // 3. Seed one project-log entry. The POST requires at least one attachmentUrl
+      //    (a genuine upload — team-prefixed key + `temporary` ledger row; a fabricated
+      //    URL is rejected). First fetch the roster to get currentUserId for
+      //    multi-member team compliance.
+      const logGetRes = await api.get(page, '/api/project-log')
+      const { currentUserId, members } = await logGetRes.json()
+      const isMultiMember = (members as unknown[]).length > 1
+
+      const attachmentUrl = await uploadLogAttachment(page)
+      const projectLogBody: Record<string, unknown> = {
+        body: `[E2E-F3-${RUN_ID}] Project log test entry for confirm-dialog assertion.`,
+        nextSteps: `[E2E-F3-${RUN_ID}] Clean up after the test.`,
+        stage: 'Testing',
+        attachmentUrls: [attachmentUrl],
+      }
+      if (isMultiMember) {
+        projectLogBody.attendeeIds = [currentUserId]
+      }
+
+      const logPostRes = await api.post(page, '/api/project-log', { data: projectLogBody })
+      if (logPostRes.ok()) {
+        const { entry } = await logPostRes.json()
+        seededProjectLogId = entry.id
+      }
+      // Not fatal if project-log seeding fails — AC6 handles missing entry gracefully.
+
+      // 4. Seed one failure-log entry.
+      const failureRes = await api.post(page, '/api/failure-log', {
+        data: {
+          happened: `[E2E-F3-${RUN_ID}] A test failure occurred.`,
+          learned: `[E2E-F3-${RUN_ID}] We learned to handle errors gracefully.`,
+        },
+      })
+      if (failureRes.ok()) {
+        const { entry } = await failureRes.json()
+        seededFailureId = entry.id
+      }
     })
-
-    // 1. Ensure papers exist (dev fill endpoint creates up to 25 fake ones).
-    const fillRes = await leaderCtx.post('/api/dev/fill-papers')
-    if (!fillRes.ok()) {
-      await leaderCtx.dispose()
-      throw new Error(`fill-papers failed: ${fillRes.status()} ${await fillRes.text()}`)
-    }
-
-    // 2. Fetch the paper list.
-    const papersRes = await leaderCtx.get('/api/papers')
-    if (!papersRes.ok()) {
-      await leaderCtx.dispose()
-      throw new Error(`GET /api/papers failed: ${papersRes.status()}`)
-    }
-    const { papers } = await papersRes.json()
-    const readyPapers = (papers as Array<{ id: string; status: string }>).filter(
-      (p) => p.status === 'ready',
-    )
-
-    if (readyPapers.length < 3) {
-      await leaderCtx.dispose()
-      throw new Error(`Need ≥3 ready papers for F3 tests; got ${readyPapers.length}`)
-    }
-
-    // If we have exactly 25 papers (locked), delete one via the API so that delete
-    // buttons become visible in the UI (the feature hides them when locked at 25/25).
-    // We track the ids we might delete during tests.
-    const TOTAL_SLOTS = 25
-    if (readyPapers.length >= TOTAL_SLOTS) {
-      // Delete the last paper to bring the count to 24, unlocking the delete buttons.
-      const toRemove = readyPapers[readyPapers.length - 1]
-      await leaderCtx.delete(`/api/papers/${toRemove.id}`)
-      // Re-fetch to get updated list.
-      const refreshRes = await leaderCtx.get('/api/papers')
-      const { papers: refreshed } = await refreshRes.json()
-      seededPaperIds = (refreshed as Array<{ id: string; status: string }>)
-        .filter((p) => p.status === 'ready')
-        .map((p) => p.id)
-    } else {
-      seededPaperIds = readyPapers.map((p) => p.id)
-    }
-
-    // 3. Seed one project-log entry. The POST requires at least one attachmentUrl
-    //    (path must start with /api/project-log/attachment/view — Zod prefix check only).
-    //    First fetch the roster to get currentUserId for multi-member team compliance.
-    const logGetRes = await leaderCtx.get('/api/project-log')
-    const { currentUserId, members } = await logGetRes.json()
-    const isMultiMember = (members as unknown[]).length > 1
-
-    const projectLogBody: Record<string, unknown> = {
-      body: `[E2E-F3-${RUN_ID}] Project log test entry for confirm-dialog assertion.`,
-      nextSteps: `[E2E-F3-${RUN_ID}] Clean up after the test.`,
-      stage: 'Testing',
-      attachmentUrls: [
-        `/api/project-log/attachment/view?key=log-attachments/e2e-seed/${RUN_ID}.jpg`,
-      ],
-    }
-    if (isMultiMember) {
-      projectLogBody.attendeeIds = [currentUserId]
-    }
-
-    const logPostRes = await leaderCtx.post('/api/project-log', { data: projectLogBody })
-    if (logPostRes.ok()) {
-      const { entry } = await logPostRes.json()
-      seededProjectLogId = entry.id
-    }
-    // Not fatal if project-log seeding fails — AC6 handles missing entry gracefully.
-
-    // 4. Seed one failure-log entry.
-    const failureRes = await leaderCtx.post('/api/failure-log', {
-      data: {
-        happened: `[E2E-F3-${RUN_ID}] A test failure occurred.`,
-        learned: `[E2E-F3-${RUN_ID}] We learned to handle errors gracefully.`,
-      },
-    })
-    if (failureRes.ok()) {
-      const { entry } = await failureRes.json()
-      seededFailureId = entry.id
-    }
-
-    await leaderCtx.dispose()
   })
 
-  test.afterAll(async () => {
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
+  test.afterAll(async ({ browser }) => {
+    await withSeedPage(browser, 'leader', async (page) => {
+      // Clean up any papers that weren't deleted during the tests. The dev fill
+      // creates persistent papers — we delete only the ones we noted.
+      for (const id of seededPaperIds) {
+        await api.delete(page, `/api/papers/${id}`).catch(() => {})
+      }
+
+      if (seededProjectLogId) {
+        await api.delete(page, `/api/project-log/${seededProjectLogId}`).catch(() => {})
+      }
+
+      if (seededFailureId) {
+        await api.delete(page, `/api/failure-log/${seededFailureId}`).catch(() => {})
+      }
     })
-
-    // Clean up any papers that weren't deleted during the tests. The dev fill
-    // creates persistent papers — we delete only the ones we noted.
-    for (const id of seededPaperIds) {
-      await leaderCtx.delete(`/api/papers/${id}`).catch(() => {})
-    }
-
-    if (seededProjectLogId) {
-      await leaderCtx.delete(`/api/project-log/${seededProjectLogId}`).catch(() => {})
-    }
-
-    if (seededFailureId) {
-      await leaderCtx.delete(`/api/failure-log/${seededFailureId}`).catch(() => {})
-    }
-
-    await leaderCtx.dispose()
   })
 
   // ── AC1 ───────────────────────────────────────────────────────────────────────

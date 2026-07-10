@@ -1,6 +1,5 @@
-import { test, expect, request as playwrightRequest, type Browser, type Page } from '@playwright/test'
-import { STORAGE } from './roles'
-import { api } from './api'
+import { test, expect, type Page } from '@playwright/test'
+import { api, withSeedPage } from './api'
 
 /**
  * Rubric self-assessment (Feature F1 — Rubric self-assessment).
@@ -32,11 +31,12 @@ import { api } from './api'
  * endpoint exists — a 0-score PUT is the documented reset), so reruns are
  * deterministic. beforeAll/afterAll also reset around the whole suite as a
  * belt-and-suspenders guard against a failed test leaving dirty state.
- * afterAll navigates a fresh page first (see resetResearchQuestion) to avoid
- * the same stale-session-token issue AC11/AC12 guard against in their own
- * bodies — by ~2 minutes into this serial suite, the on-disk STORAGE.leader
- * token is stale, so a bare page.request/APIRequestContext call needs a
- * navigation first to force Clerk to refresh the session cookie.
+ * Both hooks reset via withSeedPage (a fresh authed page whose Clerk session
+ * api.* refreshes before every call), which sidesteps the same stale-session-
+ * token issue AC11/AC12 guard against in their own bodies — by ~2 minutes into
+ * this serial suite the on-disk STORAGE.leader token is stale, so a bare
+ * request-context call would silently 307 to an HTML sign-in page instead of
+ * running the reset.
  */
 
 const RESEARCH_QUESTION_KEY = 'science:I'
@@ -44,63 +44,24 @@ const RESEARCH_QUESTION_KEY = 'science:I'
 /**
  * Reset science:I to score 0 / notes null, scoped to the leader's team.
  *
- * `beforeAll` runs right after auth.setup, so the STORAGE.leader token on
- * disk is still fresh — a bare playwrightRequest.newContext(storageState)
- * PUT works reliably there (verified directly: fresh-token PUT returns 200
- * with the expected JSON body). But `afterAll` runs ~2 minutes later, after
- * all 12 tests, by which point that same on-disk token is stale — the same
- * session-refresh issue AC11/AC12 hit (see their comments), just here in the
- * cleanup helper instead of a test body. A stale-token PUT here doesn't
- * throw (Playwright's APIRequestContext doesn't reject on a 200-with-HTML
- * response), so the reset would silently no-op and leave science:I dirty for
- * whatever the last test set it to — breaking the next run's determinism
- * (e.g. AC5's exact "8 / 100" assertion assumes a 0 starting score).
- *
- * Fix: when a Browser is supplied (afterAll), open a fresh page and
- * navigate first to force Clerk's client to refresh the session cookie —
- * the same fix applied to AC11/AC12 — then reset via that page's own
- * page.request (which shares the refreshed cookie), and assert the PUT
- * actually succeeded so a broken reset fails loudly instead of silently
- * leaving dirty shared-DB state (PARALLELISM.md: write-touching specs must
- * leave their own data clean). beforeAll has no Browser yet at that point in
- * the fixture lifecycle here, so it keeps the simpler, already-reliable
- * bare-newContext path.
+ * Called from both beforeAll and afterAll (see the hooks below) on a fresh
+ * authed seed page. `api.put` refreshes the Clerk session before firing, so
+ * this stays reliable even in afterAll — ~2 minutes into this serial suite,
+ * by which point the on-disk STORAGE.leader token is stale and a bare
+ * request-context PUT would silently 307 to an HTML sign-in page (Playwright
+ * doesn't reject on a 200-with-HTML response) and leave science:I dirty for
+ * whatever the last test set it to, breaking the next run's determinism (e.g.
+ * AC5's exact "8 / 100" assertion assumes a 0 starting score). The status
+ * check asserts the PUT actually succeeded so a broken reset fails loudly
+ * instead of silently leaving dirty shared-DB state (PARALLELISM.md:
+ * write-touching specs must leave their own data clean).
  */
-async function resetResearchQuestion(browser?: Browser) {
-  if (browser) {
-    const page = await browser.newPage({ storageState: STORAGE.leader })
-    try {
-      await page.goto('/fair-hub/rubric')
-      await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 8000 })
-      const res = await api.put(page, '/api/rubric/self-assessment', {
-        data: { track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 0 },
-      })
-      if (res.status() !== 200) {
-        throw new Error(
-          `resetResearchQuestion (afterAll) PUT failed: ${res.status()} ${await res.text()}`,
-        )
-      }
-    } finally {
-      await page.close()
-    }
-    return
-  }
-
-  const ctx = await playwrightRequest.newContext({
-    baseURL: `http://localhost:${process.env.E2E_PORT ?? 3000}`,
-    storageState: STORAGE.leader,
+async function resetResearchQuestion(page: Page) {
+  const res = await api.put(page, '/api/rubric/self-assessment', {
+    data: { track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 0 },
   })
-  try {
-    const res = await ctx.put('/api/rubric/self-assessment', {
-      data: { track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 0 },
-    })
-    if (res.status() !== 200) {
-      throw new Error(
-        `resetResearchQuestion (beforeAll) PUT failed: ${res.status()} ${await res.text()}`,
-      )
-    }
-  } finally {
-    await ctx.dispose()
+  if (res.status() !== 200) {
+    throw new Error(`resetResearchQuestion PUT failed: ${res.status()} ${await res.text()}`)
   }
 }
 
@@ -151,12 +112,12 @@ async function fillAndSave(card: import('@playwright/test').Locator, value: stri
 test.describe('Rubric self-assessment (F1)', () => {
   test.describe.configure({ mode: 'serial' })
 
-  test.beforeAll(async () => {
-    await resetResearchQuestion()
+  test.beforeAll(async ({ browser }) => {
+    await withSeedPage(browser, 'leader', (page) => resetResearchQuestion(page))
   })
 
   test.afterAll(async ({ browser }) => {
-    await resetResearchQuestion(browser)
+    await withSeedPage(browser, 'leader', (page) => resetResearchQuestion(page))
   })
 
   // ── AC1 ───────────────────────────────────────────────────────────────────
