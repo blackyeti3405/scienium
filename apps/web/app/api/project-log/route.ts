@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { logActivity } from '@/lib/activity/log'
+import { attachAssetsByKey, attachmentKeysUnderTeam } from '@/lib/uploads/assets'
 import { db } from '@/lib/db'
 
 const Body = z.object({
@@ -20,6 +21,10 @@ const Body = z.object({
     .min(1, 'At least one photo is required')
     .max(20),
 }).strict()
+
+// Thrown inside the save transaction when a referenced upload can't be attached
+// (already swept, or not this team's) so the whole log write rolls back.
+class AttachmentError extends Error {}
 
 // Shared shape for the `select` on a linked/back-linked log — kept as a const
 // so the chip-projection reads the exact same fields on both sides.
@@ -113,35 +118,66 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Select who was present' }, { status: 400 })
   }
 
+  // Resolve + team-scope the referenced uploads before we write anything.
+  const keys = attachmentKeysUnderTeam(ctx.teamId, data.attachmentUrls)
+  if (keys === null) {
+    return NextResponse.json({ error: 'Invalid attachment reference' }, { status: 400 })
+  }
+
   // Count existing entries to compute the entry number for this new one
   const existingCount = await db.projectLog.count({
     where: { teamId: ctx.teamId, entryType: 'progress' },
   })
 
-  const entry = await db.projectLog.create({
-    data: {
-      teamId: ctx.teamId,
-      createdByUserId: ctx.dbUserId,
-      entryType: 'progress',
-      body: data.body.trim(),
-      nextSteps: data.nextSteps.trim(),
-      stage: data.stage.trim(),
-      attendeeIds,
-      attachmentUrls: data.attachmentUrls,
-    },
-    select: {
-      id: true,
-      body: true,
-      nextSteps: true,
-      stage: true,
-      attendeeIds: true,
-      attachmentUrls: true,
-      createdAt: true,
-      lastEditedAt: true,
-      createdBy: { select: { id: true, name: true } },
-      lastEditedBy: { select: { id: true, name: true } },
-    },
-  })
+  let entry
+  try {
+    entry = await db.$transaction(async (tx) => {
+      const created = await tx.projectLog.create({
+        data: {
+          teamId: ctx.teamId,
+          createdByUserId: ctx.dbUserId,
+          entryType: 'progress',
+          body: data.body.trim(),
+          nextSteps: data.nextSteps.trim(),
+          stage: data.stage.trim(),
+          attendeeIds,
+          attachmentUrls: data.attachmentUrls,
+        },
+        select: {
+          id: true,
+          body: true,
+          nextSteps: true,
+          stage: true,
+          attendeeIds: true,
+          attachmentUrls: true,
+          createdAt: true,
+          lastEditedAt: true,
+          createdBy: { select: { id: true, name: true } },
+          lastEditedBy: { select: { id: true, name: true } },
+        },
+      })
+      // Bind the uploads to this log. Every referenced key is freshly uploaded, so
+      // all must flip temporary -> attached; if one doesn't, it was already swept
+      // (form left open past the TTL) and the log would persist a broken photo —
+      // roll the whole save back rather than store a dangling reference.
+      const attached = await attachAssetsByKey(tx, {
+        teamId: ctx.teamId,
+        objectKeys: keys,
+        attachedToType: 'project_log',
+        attachedToId: created.id,
+      })
+      if (attached !== keys.length) throw new AttachmentError()
+      return created
+    })
+  } catch (e) {
+    if (e instanceof AttachmentError) {
+      return NextResponse.json(
+        { error: 'One or more photos are no longer available. Please re-upload and try again.' },
+        { status: 409 },
+      )
+    }
+    throw e
+  }
 
   logActivity(ctx.teamId, ctx.dbUserId, 'log_created', { kind: 'progress' }).catch(console.error)
 

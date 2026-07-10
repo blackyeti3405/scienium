@@ -65,7 +65,8 @@ export function VegaStudyTab() {
       const res = await fetch('/api/ops/vega-study', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...messages, userMsg] }),
+        // Send only the new user turn — the server owns the shared thread history.
+        body: JSON.stringify({ message: content }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Chat failed')

@@ -55,11 +55,19 @@ async function findUser(identifier, fallbackName, roleFilter) {
 
 try {
   // ── 1. Users (locate-only) ────────────────────────────────────────────────
-  const [leader, student, teacher] = await Promise.all([
+  // Single-account dev setups can point E2E_STUDENT at the leader (so the user's
+  // own account isn't conscripted as a second team member). When the identifiers
+  // match, the student IS the leader — the co-member specs (codex/vega) collapse
+  // to one account and skip their cross-member assertions.
+  const studentIsLeader =
+    process.env.E2E_STUDENT_IDENTIFIER === process.env.E2E_LEADER_IDENTIFIER
+  const [leader, teacher] = await Promise.all([
     findUser(process.env.E2E_LEADER_IDENTIFIER, 'E2E Leader', undefined),
-    findUser(process.env.E2E_STUDENT_IDENTIFIER, 'E2E Student', undefined),
     findUser(process.env.E2E_TEACHER_IDENTIFIER, 'DevTeacher', 'teacher'),
   ])
+  const student = studentIsLeader
+    ? leader
+    : await findUser(process.env.E2E_STUDENT_IDENTIFIER, 'E2E Student', undefined)
   const missing = [
     ['E2E leader', leader],
     ['E2E student', student],
@@ -101,14 +109,35 @@ try {
   }
 
   // ── 4. Team ───────────────────────────────────────────────────────────────
+  // The suite exercises features across every phase (literature, buildings,
+  // showcase, …) so the fixture team sits at the terminal `showcase` phase, which
+  // unlocks all features cumulatively. `labType` is `volt_lab` because the
+  // placement/upgrade specs buy that lab's buildings (3D Printing Shop, Robotics
+  // Bay) — lab-specific buildings only render for a matching labType. Without both,
+  // the phase-gated shop is empty / building specs can't find their buy button.
+  const FIXTURE_PHASE = 'showcase'
+  const FIXTURE_LAB_TYPE = 'volt_lab'
   let team = await db.team.findFirst({ where: { name: TEAM_NAME } })
   if (team) {
     note(`team: ${TEAM_NAME}`, 'found')
+    if (team.phase !== FIXTURE_PHASE || team.labType !== FIXTURE_LAB_TYPE) {
+      await db.team.update({
+        where: { id: team.id },
+        data: { phase: FIXTURE_PHASE, labType: FIXTURE_LAB_TYPE },
+      })
+      note(`team: phase/labType`, 'updated', `${FIXTURE_PHASE} / ${FIXTURE_LAB_TYPE}`)
+    }
   } else {
     team = await db.team.create({
-      data: { name: TEAM_NAME, teamLeadId: leader.user.id, classId: klass.id },
+      data: {
+        name: TEAM_NAME,
+        teamLeadId: leader.user.id,
+        classId: klass.id,
+        phase: FIXTURE_PHASE,
+        labType: FIXTURE_LAB_TYPE,
+      },
     })
-    note(`team: ${TEAM_NAME}`, 'created')
+    note(`team: ${TEAM_NAME}`, 'created', `${FIXTURE_PHASE} / ${FIXTURE_LAB_TYPE}`)
   }
 
   // ── 5. Memberships ────────────────────────────────────────────────────────

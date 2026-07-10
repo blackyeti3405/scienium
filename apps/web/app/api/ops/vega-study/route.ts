@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
@@ -6,41 +7,26 @@ import { db } from '@/lib/db'
 import { buildStudyContext, STUDY_INSTRUCTIONS } from '@/lib/ops/vega-study-context'
 import { anthropic } from '@/lib/anthropic'
 
-// Bound the conversation we forward to Claude: caps both the number of turns and
-// the size of each message so a crafted request can't run up an unbounded bill.
-// Mirrors app/api/papers/[id]/chat/route.ts exactly.
+// The server owns the team's shared study thread. A request carries ONE new user
+// turn; history is loaded from the database (keyed by teamId only — team-shared),
+// so a client can never inject fabricated assistant turns. Bounded to MAX_MESSAGES.
 const MAX_MESSAGES = 60
 const MAX_MESSAGE_CHARS = 8_000
-const ChatBody = z
-  .object({
-    messages: z
-      .array(
-        z.object({
-          role: z.enum(['user', 'assistant']),
-          content: z.string().min(1).max(MAX_MESSAGE_CHARS),
-        }),
-      )
-      .min(1)
-      .max(MAX_MESSAGES),
-  })
-  .strict()
+const ChatBody = z.object({ message: z.string().trim().min(1).max(MAX_MESSAGE_CHARS) }).strict()
 
-type ChatMessage = z.infer<typeof ChatBody>['messages'][number]
-
-// GET: load the team's shared study-thread history. Thread is keyed by
-// teamId ONLY (team-shared, per the plan's persistence decision) — every
-// member sees the whole conversation, unlike the per-user PaperChatMessage.
+// GET: the team's shared study-thread history, capped at the last MAX_MESSAGES.
 export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 
   const rows = await db.vegaStudyMessage.findMany({
-    where: { teamId: ctx.teamId },
-    orderBy: { createdAt: 'asc' },
+    where: { teamId: ctx.teamId, status: 'complete' },
+    orderBy: { createdAt: 'desc' },
+    take: MAX_MESSAGES,
     select: { role: true, content: true },
   })
 
-  return NextResponse.json({ messages: rows })
+  return NextResponse.json({ messages: rows.reverse() })
 }
 
 export async function POST(req: NextRequest) {
@@ -50,32 +36,51 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await parseJson(req, ChatBody)
   if (error) return error
-  const rawMessages: ChatMessage[] = data.messages
+  const message = data.message
 
-  // Anthropic requires the conversation to start with a user turn. The client's
-  // greeting is an assistant-only message, so drop everything up to the first
-  // user message.
-  const firstUser = rawMessages.findIndex((m) => m.role === 'user')
-  const convo = firstUser >= 0 ? rawMessages.slice(firstUser) : []
-  if (!convo.length) {
-    return NextResponse.json({ error: 'No user message to respond to' }, { status: 400 })
-  }
+  // Server-owned, bounded history (only completed turns). Begins with a user turn.
+  const prior = await db.vegaStudyMessage.findMany({
+    where: { teamId: ctx.teamId, status: 'complete' },
+    orderBy: { createdAt: 'desc' },
+    take: MAX_MESSAGES,
+    select: { role: true, content: true },
+  })
+  // Team-shared: concurrent teammate posts interleave user/assistant rows by
+  // createdAt, so the bounded window can begin on an assistant turn. Anthropic
+  // requires the first message to be a user turn, so trim any leading assistant
+  // rows before prepending the history to the new user message.
+  const priorAsc = prior.reverse()
+  let head = 0
+  while (head < priorAsc.length && priorAsc[head].role !== 'user') head++
+  const convo = [
+    ...priorAsc.slice(head).map((m) => ({ role: m.role, content: m.content })),
+    { role: 'user' as const, content: message },
+  ]
 
-  const lastUser = [...convo].reverse().find((m) => m.role === 'user')
+  // Persist the user turn as `pending` before the paid call.
+  const requestId = randomUUID()
+  const userRow = await db.vegaStudyMessage.create({
+    data: {
+      teamId: ctx.teamId,
+      userId: ctx.dbUserId,
+      role: 'user',
+      content: message,
+      status: 'pending',
+      requestId,
+    },
+    select: { id: true },
+  })
 
-  // E2E test-mode short-circuit: skip the real Anthropic call when
-  // E2E_SKIP_LLM=1 is set in the environment. The DB row is still written so
-  // persistence assertions (reload) are valid. Never set this in production.
   let reply: string
+  let usageJson: { inputTokens: number; outputTokens: number } | undefined
+  // E2E test-mode short-circuit: skip the real Anthropic call when E2E_SKIP_LLM=1
+  // (set by the Playwright config, never in a normal dev server or production).
   if (process.env.E2E_SKIP_LLM === '1') {
     reply =
       "That's a great question to dig into — but I can't write that deliverable for you. Let's work through it together: what's the core idea you're trying to explain, in your own words?"
   } else {
     try {
       const context = await buildStudyContext(ctx.teamId)
-      // The project-context block is cached: the first turn pays full price,
-      // every follow-up in the session reuses the cache at ~10% the cost
-      // (5-minute TTL) — same pattern as the paper chat route.
       const response = await anthropic().messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
@@ -83,33 +88,39 @@ export async function POST(req: NextRequest) {
           { type: 'text', text: STUDY_INSTRUCTIONS },
           { type: 'text', text: context, cache_control: { type: 'ephemeral' } },
         ],
-        messages: convo.map((m) => ({ role: m.role, content: m.content })),
+        messages: convo,
       })
       reply = response.content[0].type === 'text' ? response.content[0].text : ''
+      usageJson = {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      }
     } catch (err) {
-      // Log the real error server-side; return a generic message so internal
-      // details (stack/SDK internals) never reach the client (OWASP API8/A09).
       console.error('[vega-study] error:', err)
+      await db.vegaStudyMessage
+        .update({ where: { id: userRow.id }, data: { status: 'error', error: 'Chat failed' } })
+        .catch(() => {})
       return NextResponse.json({ error: 'Chat failed' }, { status: 500 })
     }
   }
 
-  // Persist the latest user turn + the assistant reply so the conversation
-  // survives closing and reopening — best-effort so a DB hiccup never drops the
-  // reply the user just paid for. Assistant turns store the same userId as the
-  // triggering user turn (author of the exchange), matching the plan.
-  try {
-    await db.vegaStudyMessage.createMany({
-      data: [
-        ...(lastUser
-          ? [{ teamId: ctx.teamId, userId: ctx.dbUserId, role: 'user' as const, content: lastUser.content }]
-          : []),
-        { teamId: ctx.teamId, userId: ctx.dbUserId, role: 'assistant' as const, content: reply },
-      ],
-    })
-  } catch (persistErr) {
-    console.error('[vega-study] persist failed (reply still returned):', persistErr)
-  }
+  await db.$transaction([
+    db.vegaStudyMessage.update({
+      where: { id: userRow.id },
+      data: { status: 'complete', tokenUsageJson: usageJson },
+    }),
+    db.vegaStudyMessage.create({
+      data: {
+        teamId: ctx.teamId,
+        userId: ctx.dbUserId,
+        role: 'assistant',
+        content: reply,
+        status: 'complete',
+        requestId,
+        tokenUsageJson: usageJson,
+      },
+    }),
+  ])
 
   return NextResponse.json({ reply })
 }

@@ -6,6 +6,7 @@ import {
   type Page,
 } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api, withSeedPage } from './api'
 
 /**
  * F10 (this batch) — Teacher-side rubric scoring + comparison + anchor content.
@@ -60,18 +61,15 @@ async function refreshTeacherSession(page: Page) {
 }
 
 async function resetTeacherScore(browser: Browser, teamIdToReset: string) {
-  const page = await browser.newPage({ baseURL: BASE_URL, storageState: STORAGE.teacher })
-  try {
+  await withSeedPage(browser, 'teacher', async (page) => {
     await refreshTeacherSession(page)
-    const res = await page.request.put('/api/teacher/rubric', {
+    const res = await api.put(page, '/api/teacher/rubric', {
       data: { teamId: teamIdToReset, track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 0 },
     })
     if (res.status() !== 200) {
       throw new Error(`resetTeacherScore PUT failed: ${res.status()} ${await res.text()}`)
     }
-  } finally {
-    await page.close()
-  }
+  })
 }
 
 /**
@@ -89,19 +87,16 @@ async function resetTeacherScore(browser: Browser, teamIdToReset: string) {
  * silently leaving stale shared-DB state.
  */
 async function seedStudentScore(browser: Browser, score: number) {
-  const page = await browser.newPage({ storageState: STORAGE.leader })
-  try {
+  await withSeedPage(browser, 'leader', async (page) => {
     await page.goto('/fair-hub/rubric')
     await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 20_000 })
-    const res = await page.request.put('/api/rubric/self-assessment', {
+    const res = await api.put(page, '/api/rubric/self-assessment', {
       data: { track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score },
     })
     if (res.status() !== 200) {
       throw new Error(`seedStudentScore(${score}) PUT failed: ${res.status()} ${await res.text()}`)
     }
-  } finally {
-    await page.close()
-  }
+  })
 }
 
 test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison + anchor content', () => {
@@ -115,13 +110,9 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   test.use({ storageState: STORAGE.teacher })
 
   test.beforeAll(async ({ browser }) => {
-    const teacherPage = await browser.newPage({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
-    try {
-      await refreshTeacherSession(teacherPage)
-      const rosterRes = await teacherPage.request.get('/api/teacher/roster')
+    await withSeedPage(browser, 'teacher', async (page) => {
+      await refreshTeacherSession(page)
+      const rosterRes = await api.get(page, '/api/teacher/roster')
       if (!rosterRes.ok()) {
         throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
       }
@@ -137,9 +128,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
       }
       teamId = withTeam.teamId
       studentId = withTeam.studentId
-    } finally {
-      await teacherPage.close()
-    }
+    })
 
     // Belt-and-suspenders: start from a known-clean teacher score.
     await resetTeacherScore(browser, teamId!)
@@ -381,7 +370,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
 
     await refreshTeacherSession(page)
 
-    const res = await page.request.get(
+    const res = await api.get(page, 
       `/api/teacher/rubric?teamId=${encodeURIComponent(teamId)}&track=science`,
     )
     expect(res.status()).toBe(200)
@@ -398,7 +387,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
 
     // A well-formed cuid-shaped id that is not owned by this teacher's classes.
     const foreignTeamId = 'clfakerandomteamidnotowned01'
-    const res = await page.request.get(
+    const res = await api.get(page, 
       `/api/teacher/rubric?teamId=${encodeURIComponent(foreignTeamId)}&track=science`,
     )
     expect(res.status()).toBe(403)
@@ -416,7 +405,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     await refreshTeacherSession(page)
 
     const foreignTeamId = 'clfakerandomteamidnotowned02'
-    const putRes = await page.request.put('/api/teacher/rubric', {
+    const putRes = await api.put(page, '/api/teacher/rubric', {
       data: { teamId: foreignTeamId, track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 5 },
     })
     expect(putRes.status()).toBe(403)
@@ -424,7 +413,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     // Confirm no row was created: a GET as the teacher for that same foreign
     // team (still 403, since ownership never changed) proves no side effect
     // leaked a scored row back through the read path either.
-    const getRes = await page.request.get(
+    const getRes = await api.get(page, 
       `/api/teacher/rubric?teamId=${encodeURIComponent(foreignTeamId)}&track=science`,
     )
     expect(getRes.status()).toBe(403)
@@ -432,7 +421,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
 
   // ── AC13 ─────────────────────────────────────────────────────────────────────
   test('AC13: unauthenticated GET is blocked pre-route with a 307 redirect to /sign-in', async () => {
-    const anonCtx = await playwrightRequest.newContext({ baseURL: BASE_URL })
+    const anonCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: undefined })
     try {
       const res = await anonCtx.get('/api/teacher/rubric?teamId=anything&track=science', {
         maxRedirects: 0,
@@ -459,12 +448,12 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
 
     await refreshTeacherSession(page)
 
-    const putRes = await page.request.put('/api/teacher/rubric', {
+    const putRes = await api.put(page, '/api/teacher/rubric', {
       data: { teamId, track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 5 },
     })
     expect(putRes.status()).toBe(200)
 
-    const getRes = await page.request.get(
+    const getRes = await api.get(page, 
       `/api/teacher/rubric?teamId=${encodeURIComponent(teamId)}&track=science`,
     )
     expect(getRes.status()).toBe(200)

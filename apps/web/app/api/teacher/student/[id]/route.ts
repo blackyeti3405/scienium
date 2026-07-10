@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireTeacher } from '@/lib/teacher/auth'
+import { requireTeacher, teacherOwnsTeam } from '@/lib/teacher/auth'
+import { pickActiveTeam } from '@/lib/team/context'
 import { db } from '@/lib/db'
 
 /**
@@ -19,11 +20,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     select: {
       id: true,
       name: true,
-      activeTeam: { select: { id: true } },
+      activeTeamId: true,
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
-        take: 1,
-        select: { team: { select: { id: true } } },
+        select: { teamId: true, team: { select: { id: true } } },
       },
     },
   })
@@ -31,12 +31,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: 'Student not found in your classes' }, { status: 404 })
   }
 
-  const teamId = student.activeTeam?.id ?? student.teamMemberships[0]?.team.id ?? null
-  if (!teamId) {
+  // Resolve through membership (never a bare activeTeam), then DB-prove the team
+  // is in this teacher's class before returning any of its data.
+  const teamId = pickActiveTeam(student.activeTeamId, student.teamMemberships)?.id ?? null
+  if (!teamId || !(await teacherOwnsTeam(ctx.classIds, teamId))) {
     return NextResponse.json({ student: { id: student.id, name: student.name }, team: null })
   }
 
-  const [team, papers, logs, pending, feedback] = await Promise.all([
+  const [team, papers, logs, feedback] = await Promise.all([
     db.team.findUnique({
       where: { id: teamId },
       select: {
@@ -62,10 +64,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       take: 15,
       select: { id: true, entryType: true, stage: true, body: true, createdAt: true },
     }),
-    db.phaseAdvanceRequest.findFirst({
-      where: { teamId, status: 'pending' },
-      select: { id: true, fromPhase: true, toPhase: true, createdAt: true },
-    }),
     db.teacherFeedback.findMany({
       where: { teamId },
       orderBy: { createdAt: 'desc' },
@@ -79,7 +77,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     team,
     papers,
     logs,
-    pendingRequest: pending,
     feedback,
   })
 }

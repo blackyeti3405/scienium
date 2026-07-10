@@ -10,7 +10,7 @@ import { SettingsPanel } from '@/components/settings/SettingsPanel'
 import { ActivityPanel } from '@/components/lab/ActivityPanel'
 import { FeedbackPanel, type FeedbackItem } from '@/components/lab/FeedbackPanel'
 import { PhaseAdvance } from '@/components/lab/PhaseAdvance'
-import { RequestAdvance } from '@/components/lab/RequestAdvance'
+import { SelfAdvance } from '@/components/lab/SelfAdvance'
 import { StatusStrip, type Currency } from '@/components/lab/StatusStrip'
 import { MomentumCard } from '@/components/lab/MomentumCard'
 import { Activity, MessageSquare, Move, X } from 'lucide-react'
@@ -51,8 +51,8 @@ export interface LabSceneProps {
   memberCount: number
   /** Literature-phase advance gate, or null when no gate applies (Feature 1e). */
   advance: AdvanceProgress | null
-  /** Teacher-gated advance affordance (research_planning/working), or null. */
-  advanceRequest: { toPhase: Phase; pending: boolean } | null
+  /** Self-paced advance affordance (research_planning/working), or null. */
+  selfAdvance: { toPhase: Phase } | null
   /** Stable per-team seed so the tiled background never reshuffles. */
   seed?: number
   /** When 'feedback', auto-opens the Feedback panel on mount (deep-link). */
@@ -109,7 +109,7 @@ function LabSceneContent({
   labType,
   memberCount,
   advance,
-  advanceRequest,
+  selfAdvance,
   seed = 1,
   initialPanel,
   placedBuildings,
@@ -459,9 +459,7 @@ function LabSceneContent({
       />
 
       {advance && <PhaseAdvance progress={advance} />}
-      {advanceRequest && (
-        <RequestAdvance toPhase={advanceRequest.toPhase} pending={advanceRequest.pending} />
-      )}
+      {selfAdvance && <SelfAdvance toPhase={selfAdvance.toPhase} />}
 
       <div className="lab-scene__viewport">
         <TileBackground seed={seed} />

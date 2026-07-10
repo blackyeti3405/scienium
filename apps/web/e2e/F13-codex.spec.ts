@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { STORAGE } from './roles'
+import { api, withSeedPage } from './api'
 
 /**
  * F13 — Field Codex (interactive, KP-earning, project-tailored field-
@@ -283,7 +283,7 @@ test.describe('F13 — Field Codex', () => {
   // ── AC10 (part 1) ──────────────────────────────────────────────────────────
   test('AC10: POST complete with an unknown lessonId in a real track 404s', async ({ page }) => {
     await page.goto('/lab')
-    const res = await page.request.post('/api/ops/codex/complete', {
+    const res = await api.post(page, '/api/ops/codex/complete', {
       data: { trackSlug: 'gait-biomechanics', lessonId: 'not-a-real-lesson-id', submission: { answers: [] } },
     })
     expect(res.status()).toBe(404)
@@ -322,7 +322,7 @@ test.describe('F13 — Field Codex', () => {
     // `waitForResponse` here (that helper is for clicks that trigger an
     // in-page fetch; see AC13's click-through instead). Assert directly on
     // the resolved response.
-    const completeRes = await page.request.post('/api/ops/codex/complete', {
+    const completeRes = await api.post(page, '/api/ops/codex/complete', {
       data: { trackSlug: 'gait-biomechanics', lessonId: UNIT1_LESSON_IDS[0], submission },
     })
     expect(completeRes.status()).toBe(200)
@@ -331,7 +331,7 @@ test.describe('F13 — Field Codex', () => {
     expect(completeBody.kpEarned).toBe(CODEX_KP_PER_LESSON)
     expect(completeBody.capReached).toBe(false)
 
-    const getRes = await page.request.get('/api/ops/codex/progress')
+    const getRes = await api.get(page, '/api/ops/codex/progress')
     expect(getRes.status()).toBe(200)
     const payload = (await getRes.json()) as ProgressResponse
     const row = payload.progress.find((p) => p.lessonId === UNIT1_LESSON_IDS[0])
@@ -347,7 +347,7 @@ test.describe('F13 — Field Codex', () => {
     // AC8: reload and re-fetch — progress must still show completed (DB, not
     // client-only state).
     await page.reload()
-    const afterReload = await page.request.get('/api/ops/codex/progress')
+    const afterReload = await api.get(page, '/api/ops/codex/progress')
     const afterPayload = (await afterReload.json()) as ProgressResponse
     const afterRow = afterPayload.progress.find((p) => p.lessonId === UNIT1_LESSON_IDS[0])
     expect(afterRow?.completed).toBe(true)
@@ -364,7 +364,7 @@ test.describe('F13 — Field Codex', () => {
     await db.$disconnect()
 
     const submission = await correctSubmissionFor(UNIT1_LESSON_IDS[0])
-    const res = await page.request.post('/api/ops/codex/complete', {
+    const res = await api.post(page, '/api/ops/codex/complete', {
       data: { trackSlug: 'gait-biomechanics', lessonId: UNIT1_LESSON_IDS[0], submission },
     })
     expect(res.status()).toBe(200)
@@ -372,7 +372,7 @@ test.describe('F13 — Field Codex', () => {
     expect(body.passed).toBe(true)
     expect(body.kpEarned).toBe(0)
 
-    const progressRes = await page.request.get('/api/ops/codex/progress')
+    const progressRes = await api.get(page, '/api/ops/codex/progress')
     const payload = (await progressRes.json()) as ProgressResponse
     const row = payload.progress.find((p) => p.lessonId === UNIT1_LESSON_IDS[0])
     // kpAwarded stays at the original high-water — never double-paid.
@@ -389,7 +389,7 @@ test.describe('F13 — Field Codex', () => {
   test('AC6: a deliberately-wrong checkpoint fails, shows explanations, does not complete or pay KP', async ({ page }) => {
     await page.goto('/lab')
     const submission = await wrongSubmissionFor(UNIT1_LESSON_IDS[1])
-    const res = await page.request.post('/api/ops/codex/complete', {
+    const res = await api.post(page, '/api/ops/codex/complete', {
       data: { trackSlug: 'gait-biomechanics', lessonId: UNIT1_LESSON_IDS[1], submission },
     })
     expect(res.status()).toBe(200)
@@ -399,7 +399,7 @@ test.describe('F13 — Field Codex', () => {
     const wrongWithExplanation = body.perQuestion.filter((q) => !q.correct && q.explanation)
     expect(wrongWithExplanation.length).toBeGreaterThan(0)
 
-    const progressRes = await page.request.get('/api/ops/codex/progress')
+    const progressRes = await api.get(page, '/api/ops/codex/progress')
     const payload = (await progressRes.json()) as ProgressResponse
     const row = payload.progress.find((p) => p.lessonId === UNIT1_LESSON_IDS[1])
     expect(row?.completed ?? false).toBe(false)
@@ -461,7 +461,7 @@ test.describe('F13 — Field Codex', () => {
     // consumed). Complete two more distinct lessons to reach the cap of 3.
     for (const lessonId of [UNIT1_LESSON_IDS[1], UNIT1_LESSON_IDS[2]]) {
       const submission = await correctSubmissionFor(lessonId)
-      const res = await page.request.post('/api/ops/codex/complete', {
+      const res = await api.post(page, '/api/ops/codex/complete', {
         data: { trackSlug: 'gait-biomechanics', lessonId, submission },
       })
       expect(res.status()).toBe(200)
@@ -470,13 +470,13 @@ test.describe('F13 — Field Codex', () => {
       expect(body.kpEarned).toBe(CODEX_KP_PER_LESSON)
     }
 
-    const progressBefore = await page.request.get('/api/ops/codex/progress')
+    const progressBefore = await api.get(page, '/api/ops/codex/progress')
     const beforePayload = (await progressBefore.json()) as ProgressResponse
     expect(beforePayload.dailyCap.completedToday).toBe(3)
 
     // A 4th DISTINCT lesson, passing, must report capReached — no completion, no KP.
     const submission4 = await correctSubmissionFor(UNIT1_LESSON_IDS[3])
-    const res4 = await page.request.post('/api/ops/codex/complete', {
+    const res4 = await api.post(page, '/api/ops/codex/complete', {
       data: { trackSlug: 'gait-biomechanics', lessonId: UNIT1_LESSON_IDS[3], submission: submission4 },
     })
     expect(res4.status()).toBe(200)
@@ -485,7 +485,7 @@ test.describe('F13 — Field Codex', () => {
     expect(body4.capReached).toBe(true)
     expect(body4.kpEarned).toBe(0)
 
-    const progressAfter = await page.request.get('/api/ops/codex/progress')
+    const progressAfter = await api.get(page, '/api/ops/codex/progress')
     const afterPayload = (await progressAfter.json()) as ProgressResponse
     const row4 = afterPayload.progress.find((p) => p.lessonId === UNIT1_LESSON_IDS[3])
     expect(row4?.completed ?? false).toBe(false)
@@ -543,7 +543,7 @@ test.describe('F13 — Field Codex', () => {
     await dbCapReset.$disconnect()
 
     const submissionU2 = await correctSubmissionFor(UNIT2_FIRST_LESSON_ID)
-    const lockedRes = await page.request.post('/api/ops/codex/complete', {
+    const lockedRes = await api.post(page, '/api/ops/codex/complete', {
       data: { trackSlug: 'gait-biomechanics', lessonId: UNIT2_FIRST_LESSON_ID, submission: submissionU2 },
     })
     const lockedBody = (await lockedRes.json()) as CompleteResponse & { error?: string }
@@ -554,7 +554,7 @@ test.describe('F13 — Field Codex', () => {
     // the exact class of bug this criterion exists to catch.
     const gateHeldServerSide = lockedRes.status() >= 400 || !(lockedBody.passed && lockedBody.kpEarned > 0)
     expect(gateHeldServerSide).toBe(true)
-    const progressAfterLockedAttempt = await page.request.get('/api/ops/codex/progress')
+    const progressAfterLockedAttempt = await api.get(page, '/api/ops/codex/progress')
     const lockedPayload = (await progressAfterLockedAttempt.json()) as ProgressResponse
     const u2Row = lockedPayload.progress.find((p) => p.lessonId === UNIT2_FIRST_LESSON_ID)
     expect(u2Row?.completed ?? false).toBe(false)
@@ -605,7 +605,7 @@ test.describe('F13 — Field Codex', () => {
     await expect(page.getByTestId('codex-lesson-row').filter({ hasText: 'Spatiotemporal Parameters' }).first()).toBeVisible({ timeout: 15000 })
 
     // Server-side: the SAME direct POST that was refused above now succeeds.
-    const unlockedRes = await page.request.post('/api/ops/codex/complete', {
+    const unlockedRes = await api.post(page, '/api/ops/codex/complete', {
       data: { trackSlug: 'gait-biomechanics', lessonId: UNIT2_FIRST_LESSON_ID, submission: submissionU2 },
     })
     expect(unlockedRes.status()).toBe(200)
@@ -662,7 +662,7 @@ test.describe('F13 — Field Codex', () => {
     // Part A — cache-hit path: calling again with UNCHANGED team topic/idea/
     // plan must return the cached plan and consume neither the LLM nor the
     // daily-run cap (no new real LLM call here — this is the "free" branch).
-    const cacheHitRes = await page.request.post('/api/ops/codex/study-plan')
+    const cacheHitRes = await api.post(page, '/api/ops/codex/study-plan')
     expect(cacheHitRes.status()).toBe(200)
     const cacheHitBody = (await cacheHitRes.json()) as { cached: boolean }
     expect(cacheHitBody.cached).toBe(true)
@@ -680,31 +680,29 @@ test.describe('F13 — Field Codex', () => {
     })
     await db.$disconnect()
 
-    const cappedRes = await page.request.post('/api/ops/codex/study-plan')
+    const cappedRes = await api.post(page, '/api/ops/codex/study-plan')
     expect(cappedRes.status()).toBe(429)
   })
 
   // ── AC10 (part 2 — IDOR scoping) ────────────────────────────────────────
   test("AC10: progress GET never leaks another team member's data", async ({ page, browser }) => {
     await page.goto('/lab')
-    const res = await page.request.get('/api/ops/codex/progress')
+    const res = await api.get(page, '/api/ops/codex/progress')
     expect(res.status()).toBe(200)
     const payload = (await res.json()) as ProgressResponse
     expect(Array.isArray(payload.progress)).toBe(true)
 
     // A different team member (the E2E student, co-member of the same team)
     // must see only their OWN codex progress, never the leader's. Use a real
-    // browser context + page (not a bare `request.newContext`) and navigate
-    // FIRST — this test runs ~2+ minutes into a long serial suite, well past
-    // the point the stored Clerk JWT in STORAGE.student can have expired; a
-    // cold `request.newContext` with no navigation gets redirect-followed to
-    // a sign-in HTML page instead of JSON (documented convention: navigate
-    // before any page.request call, including in helper contexts).
-    const studentContext = await browser.newContext({ storageState: STORAGE.student })
-    const studentPage = await studentContext.newPage()
-    try {
-      await studentPage.goto('/lab')
-      const studentRes = await studentPage.request.get('/api/ops/codex/progress')
+    // authed page (not a bare `request.newContext`) that navigates FIRST —
+    // this test runs ~2+ minutes into a long serial suite, well past the point
+    // the stored Clerk JWT in STORAGE.student can have expired; a cold
+    // `request.newContext` with no navigation gets redirect-followed to a
+    // sign-in HTML page instead of JSON (documented convention: navigate before
+    // any page.request call, including in helper contexts). withSeedPage opens
+    // that page, lands it on /lab, and hands it to `api.*`.
+    await withSeedPage(browser, 'student', async (studentPage) => {
+      const studentRes = await api.get(studentPage, '/api/ops/codex/progress')
       expect(studentRes.status()).toBe(200)
       const studentPayload = (await studentRes.json()) as ProgressResponse
       const leakedLeaderLesson = studentPayload.progress.some(
@@ -712,10 +710,13 @@ test.describe('F13 — Field Codex', () => {
       )
       // The student has not completed these lessons in this run, so none of
       // the leader's completed rows should appear as the STUDENT's own.
-      expect(leakedLeaderLesson).toBe(false)
-    } finally {
-      await studentContext.close()
-    }
+      // Skipped when E2E_STUDENT reuses the leader account (single-account dev
+      // setup): the "student" IS the leader, so per-user isolation can't be
+      // exercised — but the 200 + array-shape checks above still run.
+      if (process.env.E2E_STUDENT_IDENTIFIER !== process.env.E2E_LEADER_IDENTIFIER) {
+        expect(leakedLeaderLesson).toBe(false)
+      }
+    })
   })
 
   // ── AC12 ─────────────────────────────────────────────────────────────────

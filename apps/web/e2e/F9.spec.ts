@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api, withSeedPage } from './api'
 
 /**
  * F9 — Teacher nudge / "check in" from the roster.
@@ -55,7 +56,7 @@ interface RosterStudent {
   name: string
   teamId: string | null
   teamName: string | null
-  flags: { pendingValidation: string | null; status: 'on_track' | 'unlogged' | 'stale' | null }
+  flags: { status: 'on_track' | 'unlogged' | 'stale' | null }
 }
 
 function resolveTeamId(students: RosterStudent[]): string | null {
@@ -88,13 +89,9 @@ test.describe('F9 — Teacher nudge from the roster', () => {
 
   // ── Seed ─────────────────────────────────────────────────────────────────────
 
-  test.beforeAll(async () => {
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
-    try {
-      const rosterRes = await teacherCtx.get('/api/teacher/roster')
+  test.beforeAll(async ({ browser }) => {
+    await withSeedPage(browser, 'teacher', async (page) => {
+      const rosterRes = await api.get(page, '/api/teacher/roster')
       if (!rosterRes.ok()) {
         throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
       }
@@ -109,7 +106,7 @@ test.describe('F9 — Teacher nudge from the roster', () => {
       // First call of this suite run. Per the dedupeKey trap, this may report
       // alreadyNudged:true if an earlier run already nudged today — both
       // outcomes are legitimate and handled by AC1/AC2/AC8 below.
-      const firstRes = await teacherCtx.post('/api/teacher/nudge', { data: { teamId } })
+      const firstRes = await api.post(page, '/api/teacher/nudge', { data: { teamId } })
       if (!firstRes.ok()) {
         throw new Error(`First nudge POST failed: ${firstRes.status()} ${await firstRes.text()}`)
       }
@@ -119,7 +116,7 @@ test.describe('F9 — Teacher nudge from the roster', () => {
 
       // Second call, same team, same day — deterministically idempotent
       // regardless of what the first call reported.
-      const secondRes = await teacherCtx.post('/api/teacher/nudge', { data: { teamId } })
+      const secondRes = await api.post(page, '/api/teacher/nudge', { data: { teamId } })
       if (!secondRes.ok()) {
         throw new Error(`Second nudge POST failed: ${secondRes.status()} ${await secondRes.text()}`)
       }
@@ -131,9 +128,7 @@ test.describe('F9 — Teacher nudge from the roster', () => {
           `secondCall.alreadyNudged=${secondCallAlreadyNudged}, dedupeKey=nudge:${teamId}:${utcDay()}. ` +
           `${seededFeedbackCreatedThisRun ? 'This run performed the actual first-of-day insert.' : 'Today was already nudged by a prior run — reusing existing state.'}`,
       )
-    } finally {
-      await teacherCtx.dispose()
-    }
+    })
   })
 
   test.afterAll(async () => {
@@ -190,7 +185,9 @@ test.describe('F9 — Teacher nudge from the roster', () => {
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────
-  test('AC1: POST /api/teacher/nudge for an owned team returns 200 { ok, alreadyNudged }', async () => {
+  test('AC1: POST /api/teacher/nudge for an owned team returns 200 { ok, alreadyNudged }', async ({
+    browser,
+  }) => {
     // Asserted against beforeAll's first call — first-or-already semantics per
     // the dedupeKey trap: `ok` is always true; `alreadyNudged` is a real
     // boolean either way (both values are legitimate "first call of this run"
@@ -202,23 +199,21 @@ test.describe('F9 — Teacher nudge from the roster', () => {
     // on beforeAll's side effect) to directly exercise this criterion's own
     // HTTP contract — same team, same day, so it is guaranteed the "already
     // nudged" branch by this point in the serial suite.
-    const teacherCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: STORAGE.teacher })
-    try {
-      const res = await teacherCtx.post('/api/teacher/nudge', { data: { teamId } })
+    await withSeedPage(browser, 'teacher', async (page) => {
+      const res = await api.post(page, '/api/teacher/nudge', { data: { teamId } })
       expect(res.status()).toBe(200)
       const json = await res.json()
       expect(json.ok).toBe(true)
       expect(typeof json.alreadyNudged).toBe('boolean')
-    } finally {
-      await teacherCtx.dispose()
-    }
+    })
   })
 
   // ── AC2 ──────────────────────────────────────────────────────────────────────
-  test('AC2: team notification created — title ends "checked in", body/kind/linkUrl correct', async () => {
-    const studentCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: STORAGE.leader })
-    try {
-      const res = await studentCtx.get('/api/notifications')
+  test('AC2: team notification created — title ends "checked in", body/kind/linkUrl correct', async ({
+    browser,
+  }) => {
+    await withSeedPage(browser, 'leader', async (page) => {
+      const res = await api.get(page, '/api/notifications')
       expect(res.ok()).toBe(true)
       const { items } = await res.json()
       const found = (
@@ -230,35 +225,33 @@ test.describe('F9 — Teacher nudge from the roster', () => {
       expect(found!.body.startsWith('Log your latest session')).toBe(true)
       expect(found!.kind).toBe('teacher_feedback')
       expect(found!.linkUrl).toBe('/lab?panel=feedback')
-    } finally {
-      await studentCtx.dispose()
-    }
+    })
   })
 
   // ── AC3 ──────────────────────────────────────────────────────────────────────
-  test('AC3: a same-day repeat POST returns 200 { ok: true, alreadyNudged: true }', async () => {
+  test('AC3: a same-day repeat POST returns 200 { ok: true, alreadyNudged: true }', async ({
+    browser,
+  }) => {
     // beforeAll's second call is guaranteed to land after the first, same team,
     // same day — deterministically idempotent regardless of what happened on
     // prior days/runs.
     expect(secondCallAlreadyNudged).toBe(true)
 
     // Independently re-verify with a fresh POST right now too.
-    const teacherCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: STORAGE.teacher })
-    try {
-      const res = await teacherCtx.post('/api/teacher/nudge', { data: { teamId } })
+    await withSeedPage(browser, 'teacher', async (page) => {
+      const res = await api.post(page, '/api/teacher/nudge', { data: { teamId } })
       expect(res.status()).toBe(200)
       const json = await res.json()
       expect(json).toEqual({ ok: true, alreadyNudged: true })
-    } finally {
-      await teacherCtx.dispose()
-    }
+    })
   })
 
   // ── AC4 ──────────────────────────────────────────────────────────────────────
-  test('AC4: no duplicate notification — exactly one "checked in" item exists after repeats', async () => {
-    const studentCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: STORAGE.leader })
-    try {
-      const res = await studentCtx.get('/api/notifications')
+  test('AC4: no duplicate notification — exactly one "checked in" item exists after repeats', async ({
+    browser,
+  }) => {
+    await withSeedPage(browser, 'leader', async (page) => {
+      const res = await api.get(page, '/api/notifications')
       expect(res.ok()).toBe(true)
       const { items } = await res.json()
       const matches = (items as Array<{ title: string; createdAt: string }>).filter((n) =>
@@ -268,29 +261,26 @@ test.describe('F9 — Teacher nudge from the roster', () => {
       // plus AC1's) must never have produced more than one notification row —
       // the unique dedupeKey constraint is the enforcement mechanism.
       expect(matches.length).toBe(1)
-    } finally {
-      await studentCtx.dispose()
-    }
+    })
   })
 
   // ── AC5 ──────────────────────────────────────────────────────────────────────
-  test('AC5: cross-class IDOR blocked — non-owned teamId returns 403, creates no notification', async () => {
+  test('AC5: cross-class IDOR blocked — non-owned teamId returns 403, creates no notification', async ({
+    browser,
+  }) => {
     // A syntactically-valid but non-existent teamId — teacherOwnsTeam's
     // findFirst fails identically for a real non-owned team and a nonexistent
     // id (per plan-F9.md AC5's own wording), so this exercises the same 403
     // branch without needing a second real class/team fixture.
     const fakeTeamId = 'e2e_f9_nonexistent_team_id'
 
-    const teacherCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: STORAGE.teacher })
-    try {
-      const res = await teacherCtx.post('/api/teacher/nudge', { data: { teamId: fakeTeamId } })
+    await withSeedPage(browser, 'teacher', async (page) => {
+      const res = await api.post(page, '/api/teacher/nudge', { data: { teamId: fakeTeamId } })
       expect(res.status()).toBe(403)
       const json = await res.json()
       expect(typeof json.error).toBe('string')
       expect(json.error.length).toBeGreaterThan(0)
-    } finally {
-      await teacherCtx.dispose()
-    }
+    })
 
     // No notification exists for the fake team — confirm directly via Prisma
     // (there is no API to read another team's notifications, which is itself
@@ -306,62 +296,55 @@ test.describe('F9 — Teacher nudge from the roster', () => {
   })
 
   // ── AC6 ──────────────────────────────────────────────────────────────────────
-  test('AC6: bad body (empty/missing teamId) is rejected with 400, not 500', async () => {
-    const teacherCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: STORAGE.teacher })
-    try {
-      const emptyRes = await teacherCtx.post('/api/teacher/nudge', { data: { teamId: '' } })
+  test('AC6: bad body (empty/missing teamId) is rejected with 400, not 500', async ({ browser }) => {
+    await withSeedPage(browser, 'teacher', async (page) => {
+      const emptyRes = await api.post(page, '/api/teacher/nudge', { data: { teamId: '' } })
       expect(emptyRes.status()).toBe(400)
 
-      const missingRes = await teacherCtx.post('/api/teacher/nudge', { data: {} })
+      const missingRes = await api.post(page, '/api/teacher/nudge', { data: {} })
       expect(missingRes.status()).toBe(400)
-    } finally {
-      await teacherCtx.dispose()
-    }
+    })
   })
 
   // ── AC7 ──────────────────────────────────────────────────────────────────────
-  test('AC7: unauthenticated POST is blocked (401/403), creates no notification', async () => {
+  test('AC7: unauthenticated POST is blocked (401/403), creates no notification', async ({ browser }) => {
     // A bare context with no storageState carries no Clerk session cookie.
-    const anonCtx = await playwrightRequest.newContext({ baseURL: BASE_URL })
+    const anonCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: undefined })
     try {
-      const res = await anonCtx.post('/api/teacher/nudge', { data: { teamId } })
-      // requireTeacher returns 401 with no userId; a non-teacher role (should
-      // Clerk middleware let an unauthenticated request through to the route
-      // at all in this dev setup) would surface as 403 — both are acceptable
-      // per the plan's own AC7 wording.
-      expect([401, 403]).toContain(res.status())
+      const res = await anonCtx.post('/api/teacher/nudge', { data: { teamId }, maxRedirects: 0 })
+      // The request is BLOCKED before the handler: Clerk's middleware 307-redirects
+      // an unauthenticated request to /sign-in in this setup; requireTeacher would
+      // otherwise 401 (no userId) / 403 (non-teacher). All three mean "not allowed"
+      // per AC7's wording — the point is that no notification is created (below).
+      expect([307, 401, 403]).toContain(res.status())
     } finally {
       await anonCtx.dispose()
     }
 
     // The team's notification count is unaffected by the rejected call — reuse
     // AC4's exact-count assertion as the "no side effect" signal.
-    const studentCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: STORAGE.leader })
-    try {
-      const notifRes = await studentCtx.get('/api/notifications')
+    await withSeedPage(browser, 'leader', async (page) => {
+      const notifRes = await api.get(page, '/api/notifications')
       expect(notifRes.ok()).toBe(true)
       const { items } = await notifRes.json()
       const matches = (items as Array<{ title: string }>).filter((n) => n.title.endsWith('checked in'))
       expect(matches.length).toBe(1)
-    } finally {
-      await studentCtx.dispose()
-    }
+    })
   })
 
   // ── AC8 ──────────────────────────────────────────────────────────────────────
-  test('AC8: TeacherFeedback audit row written — team feedback inbox has the matching body', async () => {
-    const studentCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: STORAGE.leader })
-    try {
-      const res = await studentCtx.get('/api/team/feedback')
+  test('AC8: TeacherFeedback audit row written — team feedback inbox has the matching body', async ({
+    browser,
+  }) => {
+    await withSeedPage(browser, 'leader', async (page) => {
+      const res = await api.get(page, '/api/team/feedback')
       expect(res.ok()).toBe(true)
       const { items } = await res.json()
       const found = (items as Array<{ targetType: string; body: string }>).find(
         (f) => f.targetType === 'team' && f.body.startsWith('Log your latest session'),
       )
       expect(found, 'expected a team-targeted feedback row from the nudge to exist by now').toBeTruthy()
-    } finally {
-      await studentCtx.dispose()
-    }
+    })
   })
 
   // ── AC9 / AC10 / AC11 / AC12 — roster UI ─────────────────────────────────────
@@ -371,10 +354,9 @@ test.describe('F9 — Teacher nudge from the roster', () => {
     let attentionRow: RosterStudent | null = null
     let healthyRow: RosterStudent | null = null
 
-    test.beforeAll(async () => {
-      const teacherCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: STORAGE.teacher })
-      try {
-        const res = await teacherCtx.get('/api/teacher/roster')
+    test.beforeAll(async ({ browser }) => {
+      await withSeedPage(browser, 'teacher', async (page) => {
+        const res = await api.get(page, '/api/teacher/roster')
         if (!res.ok()) throw new Error(`Roster fetch failed: ${res.status()} ${await res.text()}`)
         const { students } = (await res.json()) as { students: RosterStudent[] }
 
@@ -382,7 +364,7 @@ test.describe('F9 — Teacher nudge from the roster', () => {
           students.find((s) => (s.flags.status === 'unlogged' || s.flags.status === 'stale') && s.teamId) ?? null
         healthyRow =
           students.find(
-            (s) => s.flags.status !== 'unlogged' && s.flags.status !== 'stale' && !s.flags.pendingValidation,
+            (s) => s.flags.status !== 'unlogged' && s.flags.status !== 'stale',
           ) ?? null
 
         // eslint-disable-next-line no-console
@@ -390,9 +372,7 @@ test.describe('F9 — Teacher nudge from the roster', () => {
           `F9 roster UI beforeAll: attentionRow=${attentionRow ? `${attentionRow.name} (${attentionRow.flags.status})` : 'NONE'}, ` +
             `healthyRow=${healthyRow ? healthyRow.name : 'NONE'} (of ${students.length} roster row(s)).`,
         )
-      } finally {
-        await teacherCtx.dispose()
-      }
+      })
     })
 
     test.use({ storageState: STORAGE.teacher })

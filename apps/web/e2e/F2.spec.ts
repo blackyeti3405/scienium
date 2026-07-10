@@ -1,5 +1,5 @@
-import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { STORAGE } from './roles'
+import { test, expect, type Page } from '@playwright/test'
+import { api, withSeedPage } from './api'
 
 /**
  * F2 — Failure Log AI "dig deeper" Socratic follow-up.
@@ -27,8 +27,6 @@ import { STORAGE } from './roles'
  * - afterAll skips DELETE if the entry has a followup (FK constraint limitation
  *   in the app DELETE route — reported to coder); entry is left in DB.
  */
-
-const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 
 /** The seeded failure entry id (set in beforeAll). */
 let seededId: string | null = null
@@ -63,34 +61,27 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
 
   // ── Seed / teardown ─────────────────────────────────────────────────────────
 
-  test.beforeAll(async () => {
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
+  test.beforeAll(async ({ browser }) => {
+    await withSeedPage(browser, 'leader', async (page) => {
+      const res = await api.post(page, '/api/failure-log', {
+        data: { happened: SEED_HAPPENED, learned: SEED_LEARNED },
+      })
+      if (!res.ok()) {
+        throw new Error(`Seed failure-log failed: ${res.status()} ${await res.text()}`)
+      }
+      const { entry } = await res.json()
+      seededId = entry.id
     })
-    const res = await leaderCtx.post('/api/failure-log', {
-      data: { happened: SEED_HAPPENED, learned: SEED_LEARNED },
-    })
-    if (!res.ok()) {
-      await leaderCtx.dispose()
-      throw new Error(`Seed failure-log failed: ${res.status()} ${await res.text()}`)
-    }
-    const { entry } = await res.json()
-    seededId = entry.id
-    await leaderCtx.dispose()
   })
 
-  test.afterAll(async () => {
+  test.afterAll(async ({ browser }) => {
     if (!seededId) return
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
+    await withSeedPage(browser, 'leader', async (page) => {
+      // The FK cascade-delete fix (migration 20260621060000_followup_cascade_delete)
+      // means DELETE on a failure entry now also removes any child ProjectLogFollowup
+      // rows. This cleanup is therefore reliable regardless of follow-up state.
+      await api.delete(page, `/api/failure-log/${seededId}`).catch(() => {})
     })
-    // The FK cascade-delete fix (migration 20260621060000_followup_cascade_delete)
-    // means DELETE on a failure entry now also removes any child ProjectLogFollowup
-    // rows. This cleanup is therefore reliable regardless of follow-up state.
-    await leaderCtx.delete(`/api/failure-log/${seededId}`).catch(() => {})
-    await leaderCtx.dispose()
   })
 
   // ── AC1 ─────────────────────────────────────────────────────────────────────
@@ -132,20 +123,19 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
 
     await card.getByRole('button', { name: /Dig deeper/i }).click()
 
-    // When generating=true the component renders text "Generating…" and disabled=true.
-    // The button name changes so we look it up by its new label.
-    const generatingBtn = card.getByRole('button', { name: /Generating/i })
-    await expect(generatingBtn).toBeVisible({ timeout: 3000 })
-    await expect(generatingBtn).toBeDisabled()
+    // While generating, the "Dig deeper" button unmounts and a Vega loader labelled
+    // "Vega is thinking about this failure…" is shown — the disabled/in-flight state
+    // (the v0.17.0 loading overhaul replaced the old disabled "Generating…" button
+    // with the LabeledLoader). Match by label text (the loader has two role="status"
+    // nodes — the container and its spinner). No button = no double-submit.
+    await expect(card.getByText(/Vega is thinking about this failure/i)).toBeVisible({ timeout: 3000 })
+    await expect(card.getByRole('button', { name: /Dig deeper/i })).toHaveCount(0)
 
-    // Wait for generation to complete (the route returns after the 2.5s delay).
-    await expect(card).not.toContainText(/Generating/i, { timeout: 15_000 })
+    // Generation completes after the 2.5s route delay: the follow-up renders
+    // ("Mentor asks"). If the route errored, the component reverts to "Dig deeper"
+    // and this assertion catches the silent failure that AC3 previously masked.
+    await expect(card).toContainText(/Mentor asks/i, { timeout: 15_000 })
     expect(routeResolved).toBe(true)
-
-    // Confirm success: the question must be labelled "Mentor asks". If the route
-    // returned an error (e.g. 502), the component reverts to "Dig deeper" and this
-    // assertion catches the silent failure that AC3 previously masked.
-    await expect(card).toContainText(/Mentor asks/i)
   })
 
   // ── AC2 ─────────────────────────────────────────────────────────────────────
@@ -250,7 +240,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
     page,
   }) => {
     await page.goto('/lab')
-    const res = await page.request.post('/api/failure-log/clxxxxxxxxxxxxxxxxxxxxxxx/followup')
+    const res = await api.post(page, '/api/failure-log/clxxxxxxxxxxxxxxxxxxxxxxx/followup')
     expect(res.status()).toBe(404)
     const json = await res.json()
     expect(json.error).toBeTruthy()
@@ -261,14 +251,14 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
     page,
   }) => {
     await page.goto('/lab')
-    const res = await page.request.post(`/api/failure-log/${seededId}/followup`)
+    const res = await api.post(page, `/api/failure-log/${seededId}/followup`)
     expect(res.status()).toBe(409)
     const json = await res.json()
     expect(json.error).toMatch(/already/i)
   })
 
   // ── AC10 ────────────────────────────────────────────────────────────────────
-  test('AC10: Exceeding the per-team daily cap (10/day) returns 429', async () => {
+  test('AC10: Exceeding the per-team daily cap (10/day) returns 429', async ({ page }) => {
     // Strategy:
     // 1. Count how many followups the team has already generated today.
     // 2. Seed just enough entries to push the count to 10, calling POST /followup
@@ -277,14 +267,11 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
     // 4. Clean up all seeded entries (cascade-delete handles child followup rows).
     const DAILY_LIMIT = 10
 
-    const leaderCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.leader,
-    })
+    await page.goto('/lab') // fresh session cookie before page.request calls
 
     // Count followups used today by fetching all entries and counting those with
     // a followup created on or after local midnight.
-    const logsRes = await leaderCtx.get('/api/failure-log')
+    const logsRes = await api.get(page, '/api/failure-log')
     const { entries } = (await logsRes.json()) as {
       entries: Array<{ id: string; followup: unknown; createdAt: string }>
     }
@@ -302,7 +289,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
 
     const capFillIds: string[] = []
     for (let i = 0; i < neededToFill; i++) {
-      const eRes = await leaderCtx.post('/api/failure-log', {
+      const eRes = await api.post(page, '/api/failure-log', {
         data: {
           happened: `[E2E-F2-cap-${RUN_ID}-${i}] Fill entry for daily cap test.`,
           learned: `[E2E-F2-cap-${RUN_ID}-${i}] Filling cap slot ${i}.`,
@@ -311,12 +298,12 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
       if (!eRes.ok()) continue
       const { entry } = (await eRes.json()) as { entry: { id: string } }
       capFillIds.push(entry.id)
-      await leaderCtx.post(`/api/failure-log/${entry.id}/followup`)
+      await api.post(page, `/api/failure-log/${entry.id}/followup`)
       // Ignore result — it may succeed (filling the cap) or 429 (already at cap).
     }
 
     // Now create the entry that should trigger the 429.
-    const triggerRes = await leaderCtx.post('/api/failure-log', {
+    const triggerRes = await api.post(page, '/api/failure-log', {
       data: {
         happened: `[E2E-F2-cap-trigger-${RUN_ID}] Cap trigger entry.`,
         learned: `[E2E-F2-cap-trigger-${RUN_ID}] Should return 429 on followup POST.`,
@@ -329,7 +316,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
     if (triggerRes.ok()) {
       const { entry } = (await triggerRes.json()) as { entry: { id: string } }
       triggerId = entry.id
-      const capRes = await leaderCtx.post(`/api/failure-log/${entry.id}/followup`)
+      const capRes = await api.post(page, `/api/failure-log/${entry.id}/followup`)
       if (capRes.status() === 429) {
         capTriggered = true
         const json = (await capRes.json()) as { error: string }
@@ -342,13 +329,11 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
     // means DELETE on a failure entry also removes any child ProjectLogFollowup row,
     // so entries with followups can now be deleted without a P2003 error.
     if (triggerId) {
-      await leaderCtx.delete(`/api/failure-log/${triggerId}`).catch(() => {})
+      await api.delete(page, `/api/failure-log/${triggerId}`).catch(() => {})
     }
     for (const id of capFillIds) {
-      await leaderCtx.delete(`/api/failure-log/${id}`).catch(() => {})
+      await api.delete(page, `/api/failure-log/${id}`).catch(() => {})
     }
-
-    await leaderCtx.dispose()
 
     expect(capTriggered).toBe(true)
   })

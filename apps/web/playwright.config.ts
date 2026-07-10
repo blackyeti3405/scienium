@@ -6,6 +6,12 @@ import { STORAGE } from './e2e/roles'
 // (the app process gets them on its own via `next dev`).
 loadTestEnv(__dirname)
 
+// Stub every paid LLM call (paper quiz/grade/retry, Vega study, failure-log
+// follow-up, Codex study-plan) during E2E. This is set HERE, not in .env.local,
+// so a normal `pnpm dev` server generates REAL content — only the Playwright-
+// managed dev server (which gets it via webServer.env below) runs in stub mode.
+process.env.E2E_SKIP_LLM = '1'
+
 const PORT = Number(process.env.E2E_PORT ?? 3000)
 const baseURL = `http://localhost:${PORT}`
 
@@ -44,5 +50,9 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    // The Playwright-spawned dev server inherits this process's env (E2E_SKIP_LLM
+    // set above), so it stubs LLM calls. A manually-started `pnpm dev` never sees
+    // it. Caveat: if reuseExistingServer picks up an already-running dev server,
+    // that one won't have the flag — don't run `pnpm dev` and E2E on the same port.
   },
 })

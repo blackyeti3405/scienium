@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
@@ -13,8 +14,11 @@ import {
 import { loadExpertiseRubric } from '@/lib/clearance/rubric'
 import { extractJson } from '@/lib/literature/quiz'
 import { getProjectContext, renderProjectContext } from '@/lib/clearance/context'
-import { clampScore, computeClearanceRaise } from '@/lib/economy'
+import { clampScore } from '@/lib/economy'
 import { logActivity } from '@/lib/activity/log'
+
+/** A grading claim older than this is treated as abandoned and may be re-taken. */
+const STALE_CLAIM_MS = 5 * 60 * 1000
 
 // A clearance exam is a small fixed set of short free-response answers — this
 // bounds the grading prompt we forward to Claude.
@@ -46,9 +50,36 @@ export async function POST(req: NextRequest) {
     where: { id: examId, userId: ctx.dbUserId, teamId: ctx.teamId },
   })
   if (!exam) return NextResponse.json({ error: 'Exam not found' }, { status: 404 })
-  if (exam.gradedAt) {
+  if (exam.status === 'graded' || exam.gradedAt) {
     return NextResponse.json({ error: 'This exam has already been graded' }, { status: 409 })
   }
+
+  // Atomically CLAIM the exam before the paid Claude call: flip active → grading
+  // (or steal a stale grading claim). If no row is claimed, another request is
+  // already grading it, so we refuse rather than call Claude a second time.
+  const requestId = randomUUID()
+  const staleBefore = new Date(Date.now() - STALE_CLAIM_MS)
+  const claim = await db.expertiseExam.updateMany({
+    where: {
+      id: examId,
+      userId: ctx.dbUserId,
+      teamId: ctx.teamId,
+      OR: [{ status: 'active' }, { status: 'grading', gradingClaimedAt: { lt: staleBefore } }],
+    },
+    data: { status: 'grading', gradingClaimedAt: new Date(), gradingRequestId: requestId },
+  })
+  if (claim.count === 0) {
+    return NextResponse.json({ error: 'This exam is already being graded' }, { status: 409 })
+  }
+
+  // Release our claim (back to `active`, retryable) if grading fails for any reason.
+  const releaseClaim = () =>
+    db.expertiseExam
+      .updateMany({
+        where: { id: examId, status: 'grading', gradingRequestId: requestId },
+        data: { status: 'active', gradingClaimedAt: null, gradingRequestId: null },
+      })
+      .catch(() => {})
 
   const questions = exam.questionsJson as unknown as ExpertiseQuestion[]
   const answerMap = new Map(answers.map((a) => [a.questionId, a.response ?? '']))
@@ -91,6 +122,7 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     console.error('[expertise] grading call failed:', err)
+    await releaseClaim()
     return NextResponse.json({ error: 'Failed to grade exam' }, { status: 502 })
   }
 
@@ -98,6 +130,7 @@ export async function POST(req: NextRequest) {
   const graded = extractJson<GradedExpertiseAnswer[]>(raw)
   if (!graded || !Array.isArray(graded) || graded.length === 0) {
     console.error('[expertise] grading failed to parse:', raw.slice(0, 500))
+    await releaseClaim()
     return NextResponse.json({ error: 'Failed to grade exam' }, { status: 502 })
   }
 
@@ -106,56 +139,76 @@ export async function POST(req: NextRequest) {
     questions.reduce((sum, q) => sum + clampScore(gradeMap.get(q.id)?.score ?? 0), 0) / questions.length,
   )
   const passed = aggregate >= CLEARANCE_PASS_THRESHOLD
+  // The clearance bonus is a fixed property of the target level; whether it is
+  // actually awarded is decided by the conditional raise below, not here.
+  const kpBonus = levelInfo(exam.targetLevel)?.kpBonus ?? 0
 
-  // Whether this pass actually advances the team's clearance. The raise is a
-  // high-water mark: if a teammate already lifted clearance to/past this exam's
-  // target since it began, the pass still records but grants no bonus.
-  const clearanceRow = await db.teamCurrency.findUnique({
-    where: { teamId: ctx.teamId },
-    select: { clearanceLevel: true },
-  })
-  const current = clearanceRow?.clearanceLevel ?? 0
-  const { raised, kpBonus } = computeClearanceRaise({
-    passed,
-    targetLevel: exam.targetLevel,
-    currentLevel: current,
-    levelKpBonus: levelInfo(exam.targetLevel)?.kpBonus ?? 0,
-  })
+  // Commit everything in one interactive transaction and DERIVE the response from
+  // the committed writes — never from a pre-read guess. The exam is marked graded
+  // only from our own claim, and the clearance raise is a high-water conditional
+  // update whose row count tells us whether this pass truly advanced the team.
+  let committed
+  try {
+    committed = await db.$transaction(async (tx) => {
+      // Mark graded from OUR claim. If another (stale-recovered) request took over,
+      // this affects 0 rows — bail out so we never double-award or lie about state.
+      const mark = await tx.expertiseExam.updateMany({
+        where: { id: exam.id, status: 'grading', gradingRequestId: requestId },
+        data: {
+          status: 'graded',
+          score: aggregate,
+          passed,
+          gradedAt: new Date(),
+          gradingClaimedAt: null,
+          gradingRequestId: null,
+        },
+      })
+      if (mark.count === 0) throw new GradeConflict()
 
-  await db.$transaction([
-    db.expertiseAttempt.createMany({
-      data: questions.map((q) => {
-        const g = gradeMap.get(q.id)
-        return {
-          examId: exam.id,
-          userId: ctx.dbUserId,
-          question: q.prompt,
-          response: answerMap.get(q.id) ?? '',
-          evaluation: g?.rationale ?? '',
-          score: clampScore(g?.score ?? 0),
-        }
-      }),
-    }),
-    db.expertiseExam.update({
-      where: { id: exam.id },
-      data: { score: aggregate, passed, gradedAt: new Date() },
-    }),
-    // Ensure a currency row exists (legacy teams), then raise atomically. The
-    // `lt` guard makes the raise idempotent and safe against concurrent passes.
-    db.teamCurrency.upsert({
-      where: { teamId: ctx.teamId },
-      create: { teamId: ctx.teamId },
-      update: {},
-    }),
-    ...(raised
-      ? [
-          db.teamCurrency.updateMany({
+      await tx.expertiseAttempt.createMany({
+        data: questions.map((q) => {
+          const g = gradeMap.get(q.id)
+          return {
+            examId: exam.id,
+            userId: ctx.dbUserId,
+            question: q.prompt,
+            response: answerMap.get(q.id) ?? '',
+            evaluation: g?.rationale ?? '',
+            score: clampScore(g?.score ?? 0),
+          }
+        }),
+      })
+
+      // Ensure a currency row exists (legacy teams), then raise atomically. The
+      // `lt` guard makes the raise idempotent and safe against concurrent passes —
+      // its row count is the authoritative answer to "did this pass raise us?".
+      await tx.teamCurrency.upsert({
+        where: { teamId: ctx.teamId },
+        create: { teamId: ctx.teamId },
+        update: {},
+      })
+      const raise = passed
+        ? await tx.teamCurrency.updateMany({
             where: { teamId: ctx.teamId, clearanceLevel: { lt: exam.targetLevel } },
             data: { clearanceLevel: exam.targetLevel, kp: { increment: kpBonus } },
-          }),
-        ]
-      : []),
-  ])
+          })
+        : { count: 0 }
+      const cur = await tx.teamCurrency.findUnique({
+        where: { teamId: ctx.teamId },
+        select: { clearanceLevel: true },
+      })
+      return { raised: raise.count > 0, newClearance: cur?.clearanceLevel ?? 0 }
+    })
+  } catch (err) {
+    if (err instanceof GradeConflict) {
+      return NextResponse.json({ error: 'This exam is already being graded' }, { status: 409 })
+    }
+    await releaseClaim()
+    throw err
+  }
+
+  const raised = committed.raised
+  const kpEarned = raised ? kpBonus : 0
 
   if (raised) {
     logActivity(ctx.teamId, ctx.dbUserId, 'clearance_raised', {
@@ -171,14 +224,17 @@ export async function POST(req: NextRequest) {
     threshold: CLEARANCE_PASS_THRESHOLD,
     targetLevel: exam.targetLevel,
     raised,
-    newClearance: raised ? exam.targetLevel : current,
-    kpEarned: kpBonus,
+    newClearance: committed.newClearance,
+    kpEarned,
     results: questions.map((q) => {
       const g = gradeMap.get(q.id)
       return { questionId: q.id, score: clampScore(g?.score ?? 0), rationale: g?.rationale ?? '' }
     }),
   })
 }
+
+/** Thrown inside the commit tx when our grading claim was superseded (stale recovery). */
+class GradeConflict extends Error {}
 
 function GRADING_INSTRUCTIONS(rubric: string, level: number): string {
   return `You are Vega, grading a student's answers to a LEVEL ${level} clearance exam about their own science-fair project. Follow this rubric exactly:

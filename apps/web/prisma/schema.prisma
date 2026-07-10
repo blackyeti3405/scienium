@@ -40,8 +40,6 @@ model User {
   teamRubricScores     TeamRubricScore[]
   activityFeedEntries  ActivityFeed[]
   paperProficiencies   PaperProficiency[]
-  advanceRequestsMade  PhaseAdvanceRequest[]   @relation("advanceRequester")
-  advanceReviews       PhaseAdvanceRequest[]   @relation("advanceReviewer")
   teacherFeedbackGiven TeacherFeedback[]       @relation("teacherFeedbackAuthor")
   notifications        Notification[]
   notificationPref     NotificationPref?
@@ -49,8 +47,10 @@ model User {
   codexLessonProgress  CodexLessonProgress[]
   codexKpDays          CodexKpDay[]
   vegaStudyMessages    VegaStudyMessage[]
+  uploadedAssets       UploadedAsset[]
 
   @@index([activeTeamId])
+  @@index([classId])
   @@map("users")
 }
 
@@ -91,6 +91,7 @@ model Class {
   users     User[]
   teams     Team[]
 
+  @@index([teacherId])
   @@map("classes")
 }
 
@@ -146,7 +147,6 @@ model Team {
   showcase        Showcase?
   formStatuses    TeamFormStatus[]
   activityFeed    ActivityFeed[]
-  advanceRequests PhaseAdvanceRequest[]
   teacherFeedback TeacherFeedback[]
   notifications   Notification[]
   experiments     Experiment[]
@@ -155,6 +155,7 @@ model Team {
   codexKpDays     CodexKpDay[]
   studyPlan       TeamStudyPlan?
   vegaStudyMessages VegaStudyMessage[]
+  uploadedAssets  UploadedAsset[]
 
   @@index([classId])
   @@map("teams")
@@ -173,6 +174,7 @@ model TeamInvite {
   createdAt       DateTime  @default(now()) @map("created_at")
   team            Team      @relation(fields: [teamId], references: [id])
 
+  @@index([teamId, expiresAt])
   @@map("team_invites")
 }
 
@@ -185,6 +187,7 @@ model TeamMember {
   team     Team       @relation(fields: [teamId], references: [id])
 
   @@id([userId, teamId])
+  @@index([teamId])
   @@map("team_members")
 }
 
@@ -263,6 +266,8 @@ model DiscoveryNode {
 
   // A team can't double-add the same external work (dedup on branch/resolve).
   @@unique([teamId, externalId])
+  @@index([teamId, visitedAt])
+  @@index([teamId, parentId])
   @@map("discovery_nodes")
 }
 
@@ -413,6 +418,12 @@ model Paper {
   fileUrl          String?     @map("file_url")
   contentHash      String?     @map("content_hash")
   fullText         String?     @map("full_text")
+  // List-view metadata, computed once at upload so the paper list never has to
+  // read `fullText` to derive a DOI/credibility badge. `sourceHost` is the
+  // origin host for externally-sourced papers (null for self-uploaded PDFs).
+  doi              String?         @map("doi")
+  credibilityTier  CredibilityTier? @map("credibility_tier")
+  sourceHost       String?         @map("source_host")
   // PDF binary lives in Cloudflare R2; `pdfKey` is the object key (see lib/storage.ts).
   // `pdfData` is the legacy in-DB blob, kept only as a fallback for rows uploaded
   // before the R2 migration — new uploads leave it null and a cleanup migration
@@ -434,6 +445,12 @@ model Paper {
   promotedFromNode DiscoveryNode?     @relation("promotedFrom")
   citation       Citation?
 
+  // DB-level duplicate-upload guard. Postgres treats NULL content hashes as
+  // distinct, so non-PDF/legacy papers (null hash) are unaffected; two uploads of
+  // the same PDF bytes for one team cannot both persist even under a race.
+  @@unique([teamId, contentHash])
+  @@index([teamId, createdAt])
+  @@index([teamId, status])
   @@map("papers")
 }
 
@@ -454,11 +471,17 @@ model PaperProcessingJob {
   lastError   String?             @map("last_error")
   claimedAt   DateTime?           @map("claimed_at")
   completedAt DateTime?           @map("completed_at")
+  // Earliest time a retryable (`failed`, attempts remaining) job may be re-claimed
+  // — set to a backoff on each failure so retries space out instead of hammering.
+  nextRunAt   DateTime?           @map("next_run_at")
+  // Set once retries are exhausted: the paper is now a terminal error, not a
+  // transient failure. Distinguishes "will retry" from "gave up for good".
+  terminalAt  DateTime?           @map("terminal_at")
   createdAt   DateTime            @default(now()) @map("created_at")
   updatedAt   DateTime            @updatedAt @map("updated_at")
   paper       Paper               @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
-  @@index([status, claimedAt])
+  @@index([status, nextRunAt, claimedAt])
   @@map("paper_processing_jobs")
 }
 
@@ -490,11 +513,26 @@ model PaperChatMessage {
   userId    String   @map("user_id")
   role      MessageRole
   content   String
+  // Server-owned turn lifecycle: `pending` is written before the paid LLM call,
+  // `complete` after a successful reply, `error` if the call failed — so the paid
+  // call and the visible/history state never silently diverge.
+  status         ChatMessageStatus @default(complete)
+  requestId      String?           @map("request_id")
+  error          String?
+  tokenUsageJson Json?             @map("token_usage_json")
   createdAt DateTime @default(now()) @map("created_at")
   paper     Paper    @relation(fields: [paperId], references: [id])
 
-  @@index([paperId, userId])
+  @@index([paperId, userId, createdAt])
   @@map("paper_chat_messages")
+}
+
+enum ChatMessageStatus {
+  pending
+  complete
+  error
+
+  @@map("chat_message_status")
 }
 
 enum MessageRole {
@@ -537,6 +575,7 @@ model PaperQuizSession {
   paper    Paper              @relation(fields: [paperId], references: [id])
   attempts PaperQuizAttempt[]
 
+  @@index([paperId, userId, createdAt])
   @@map("paper_quiz_sessions")
 }
 
@@ -553,6 +592,8 @@ model PaperQuizAttempt {
   paper      Paper            @relation(fields: [paperId], references: [id])
   session    PaperQuizSession @relation(fields: [sessionId], references: [id])
 
+  @@index([sessionId])
+  @@index([paperId, userId, createdAt])
   @@map("paper_quiz_attempts")
 }
 
@@ -783,14 +824,32 @@ model ExpertiseExam {
   score         Int? // aggregate 0-100, set on grading
   passed        Boolean   @default(false)
   gradedAt      DateTime? @map("graded_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
+  // Grading lifecycle. `active` = answerable/regradable; `grading` = a request
+  // has claimed it and the paid Claude call is in flight (a second concurrent
+  // grade is refused, so the LLM is never called twice for one exam); `graded` =
+  // committed. A claim older than a few minutes is treated as stale and may be
+  // re-claimed, so a crashed grade never strands the exam.
+  status           ExpertiseExamStatus @default(active)
+  gradingClaimedAt DateTime?           @map("grading_claimed_at")
+  gradingRequestId String?             @map("grading_request_id")
+  createdAt        DateTime            @default(now()) @map("created_at")
 
   team     Team               @relation(fields: [teamId], references: [id])
   user     User               @relation(fields: [userId], references: [id])
   attempts ExpertiseAttempt[]
 
   @@index([teamId, gradedAt])
+  @@index([teamId, userId, status, createdAt])
   @@map("expertise_exams")
+}
+
+enum ExpertiseExamStatus {
+  active
+  grading
+  graded
+  failed
+
+  @@map("expertise_exam_status")
 }
 
 model ExpertiseAttempt {
@@ -833,7 +892,46 @@ model ProjectLog {
   references   ProjectLogReference[] @relation("from")
   referencedBy ProjectLogReference[] @relation("to")
 
+  @@index([teamId, entryType, createdAt])
+  @@index([createdByUserId, createdAt])
   @@map("project_logs")
+}
+
+// A durable record of every object uploaded to R2, so an abandoned upload is
+// discoverable and cleanable rather than an orphaned blob. Created `temporary`
+// on upload, flipped to `attached` when the owning domain row is saved, and
+// swept to `deleted` (with the object removed) once it's been temporary too long.
+model UploadedAsset {
+  id             String              @id @default(cuid())
+  teamId         String              @map("team_id")
+  userId         String              @map("user_id")
+  objectKey      String              @unique @map("object_key")
+  url            String
+  contentType    String              @map("content_type")
+  sizeBytes      Int                 @map("size_bytes")
+  purpose        String
+  attachedToType String?             @map("attached_to_type")
+  attachedToId   String?             @map("attached_to_id")
+  status         UploadedAssetStatus @default(temporary)
+  createdAt      DateTime            @default(now()) @map("created_at")
+  attachedAt     DateTime?           @map("attached_at")
+  deletedAt      DateTime?           @map("deleted_at")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([teamId, status, createdAt])
+  @@index([attachedToType, attachedToId])
+  @@map("uploaded_assets")
+}
+
+enum UploadedAssetStatus {
+  temporary
+  attached
+  orphaned
+  deleted
+
+  @@map("uploaded_asset_status")
 }
 
 enum ProjectLogEntry {
@@ -867,40 +965,9 @@ model ProjectLogReference {
 
 // ─── Teacher Dashboard ───────────────────────────────────────────────────────
 
-// A team's request to cross a teacher-gated phase boundary. The figurine system
-// was removed; instead the two real-world milestones (starting data collection →
-// `working`, advancing to competition → `showcase`) require a teacher to approve
-// a request in the teacher dashboard. The earlier literature_review →
-// research_planning gate stays auto/self-serve (it's mechanically checkable).
-model PhaseAdvanceRequest {
-  id                String           @id @default(cuid())
-  teamId            String           @map("team_id")
-  fromPhase         ProjectPhase     @map("from_phase")
-  toPhase           ProjectPhase     @map("to_phase")
-  status            ValidationStatus @default(pending)
-  note              String?
-  requestedByUserId String           @map("requested_by_user_id")
-  reviewedByUserId  String?          @map("reviewed_by_user_id")
-  reviewedAt        DateTime?        @map("reviewed_at")
-  reviewNote        String?          @map("review_note")
-  createdAt         DateTime         @default(now()) @map("created_at")
-
-  team        Team  @relation(fields: [teamId], references: [id])
-  requestedBy User  @relation("advanceRequester", fields: [requestedByUserId], references: [id])
-  reviewedBy  User? @relation("advanceReviewer", fields: [reviewedByUserId], references: [id])
-
-  @@index([teamId, status])
-  @@index([status])
-  @@map("phase_advance_requests")
-}
-
-enum ValidationStatus {
-  pending
-  approved
-  rejected
-
-  @@map("validation_status")
-}
+// Phase advancement is fully self-paced: literature_review → research_planning is
+// gated on sources + proficiency, and the later transitions are free student
+// clicks. There is no teacher phase-validation step.
 
 // Free-text feedback a teacher attaches to a team (optionally to a specific
 // target like a project log or paper). Visible to the team in their own view.
@@ -917,7 +984,7 @@ model TeacherFeedback {
   team    Team @relation(fields: [teamId], references: [id])
   teacher User @relation("teacherFeedbackAuthor", fields: [teacherUserId], references: [id])
 
-  @@index([teamId])
+  @@index([teamId, resolved, createdAt])
   @@map("teacher_feedback")
 }
 
@@ -950,7 +1017,8 @@ model Notification {
   team Team  @relation(fields: [teamId], references: [id])
   user User? @relation(fields: [userId], references: [id])
 
-  @@index([teamId, createdAt])
+  @@index([teamId, readAt, createdAt])
+  @@index([userId, readAt, createdAt])
   @@map("notifications")
 }
 
@@ -996,7 +1064,7 @@ model Experiment {
   createdBy    User          @relation("experimentAuthor", fields: [createdByUserId], references: [id])
   measurements Measurement[]
 
-  @@index([teamId])
+  @@index([teamId, createdAt])
   @@map("experiments")
 }
 
@@ -1011,7 +1079,7 @@ model Measurement {
 
   experiment Experiment @relation(fields: [experimentId], references: [id])
 
-  @@index([experimentId])
+  @@index([experimentId, recordedAt])
   @@map("measurements")
 }
 
@@ -1067,6 +1135,7 @@ model ShowcaseAsset {
   uploadedAt   DateTime  @default(now()) @map("uploaded_at")
   showcase     Showcase  @relation(fields: [showcaseId], references: [id])
 
+  @@index([showcaseId, assetType])
   @@map("showcase_assets")
 }
 
@@ -1091,6 +1160,7 @@ model ShowcaseView {
   viewedAt           DateTime @default(now()) @map("viewed_at")
   showcase           Showcase @relation(fields: [showcaseId], references: [id])
 
+  @@index([showcaseId, viewedAt])
   @@map("showcase_views")
 }
 
@@ -1435,6 +1505,11 @@ model VegaStudyMessage {
   userId    String   @map("user_id")
   role      MessageRole
   content   String
+  // See PaperChatMessage: server-owned turn lifecycle (pending → complete/error).
+  status         ChatMessageStatus @default(complete)
+  requestId      String?           @map("request_id")
+  error          String?
+  tokenUsageJson Json?             @map("token_usage_json")
   createdAt DateTime @default(now()) @map("created_at")
 
   team Team @relation(fields: [teamId], references: [id])

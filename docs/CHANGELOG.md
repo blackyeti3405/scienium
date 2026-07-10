@@ -5,15 +5,272 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
-## [0.21.0] — 2026-07-08
+## [0.21.11] — 2026-07-10
 
-An architecture-integrity pass focused on explicit ownership, durable background
-work, race-safe rewards, smaller feature boundaries, and immediate lab-building
-interactions.
+E2E determinism — the suite stops crashing on stale auth.
+
+### Fixed
+- The dominant E2E flake is gone: spec `beforeAll`/`afterAll` seeds used a raw
+  `request.newContext({ storageState })`, whose frozen Clerk token 307-redirects to
+  `/sign-in` once its ~60s TTL lapses, so the seed parsed an HTML sign-in page as JSON
+  and took the whole file down (this is what "crashes halfway through" was). All 15
+  affected specs now seed through `withSeedPage` / `api.*`, which mint a fresh token
+  from a live page before each call. Full-suite green went from 91 to ~180+.
+- "Anonymous" test contexts created as `newContext({ baseURL })` silently inherited the
+  leader session (only masked because the inherited token was usually stale); they now
+  pass `storageState: undefined` so unauthenticated assertions are actually unauthenticated.
+- Log-seeding specs uploaded a real tiny image via `uploadLogAttachment` instead of a
+  fabricated attachment URL, satisfying the Phase 8 attachment validation.
+
+### Added
+- `e2e/api.ts` helpers: `withSeedPage(browser, role, fn)` (fresh authed page for
+  hook-time seeding) and `uploadLogAttachment(page)` (real attachment upload).
+
+### Changed
+- `enforceRateLimit` is bypassed when `E2E_SKIP_LLM=1` (set only by the Playwright
+  config, never in dev/prod), so the fast full-suite run no longer trips per-user
+  rate limits mid-suite. The E2E fixture team is seeded at `phase=showcase` /
+  `labType=volt_lab` so phase-gated and lab-specific building surfaces are exercisable.
+
+---
+
+## [0.21.10] — 2026-07-09
+
+Refactor Phase 11 — documentation matches the shipped architecture.
+
+### Changed
+- `docs/ARCHITECTURE.md` now describes the invariants the refactor actually landed:
+  the membership-verified active-team resolver and DB-authoritative teacher role,
+  self-paced phase progression (no teacher gate), the uniform per-team plot lock and
+  the `lib/buildings/service` domain module, the uploaded-asset lifecycle, retryable
+  paper processing with metadata-only list reads, server-owned chat, and the bounded
+  notification cron — plus the Phase 3–8 migrations and the new `UploadedAsset` model.
+- The ADRs (`adr-001` ownership, `adr-002` paper processing, `adr-003` feature
+  boundaries) capture the final invariants rather than the transitional plan.
+
+### Fixed
+- Stale documentation drift: `.claude/PARALLELISM.md` claimed the E2E suite runs
+  `fullyParallel` with 4 workers when it is serial by default (`workers=1`);
+  `docs/TODO.md` referenced the moved `lib/fairs/dataset.ts` (now
+  `content/fairs/dataset.ts`) and described showcase teacher moderation as unbuilt
+  when it ships end-to-end (publish→`pending_review`, teacher queue + approve/reject
+  API, gallery gated on `approved`).
+
+### Changed
+- The place / move / sell / upgrade buildings routes are now thin wrappers: parse,
+  resolve context, call a `lib/buildings/service` function, map its result to a
+  response. All the business logic — the shared `team-plot:<teamId>` advisory lock,
+  the in-lock occupancy re-checks, the race-safe currency debits, and the
+  activity-log calls — moved into one module instead of being duplicated across four
+  handlers, so cross-team scoping and the economy rules can be audited (and tested)
+  in one place. The refactor is behavior-preserving: every status code, response
+  shape, and error message is unchanged (verified by a route-vs-service diff).
+
+### Added
+- Unit tests for the extracted plot-economy service, exercising the pre-database
+  validation branches without a Next request — the rules are now callable and
+  assertable without spinning up a route or React.
+
+---
+
+## [0.21.8] — 2026-07-09
+
+Refactor Phase 9 — the notification cron scales with the roster.
+
+### Changed
+- The daily deadline/urgency reminder cron no longer loads every team into memory
+  in one query. It streams teams in id-ordered keyset pages (100 at a time), so
+  memory and per-query cost stay flat as classes are added. A per-run cap
+  (1,000 teams) bounds a single invocation; the `dedupeKey` idempotency is
+  unchanged, and the response reports `teams`, `created`, `failedTeams`, and
+  `stoppedEarly` so a truncated run is visible in logs rather than silently
+  skipping teams.
+
+---
+
+## [0.21.7] — 2026-07-09
+
+Refactor Phase 8 — uploaded files have a lifecycle instead of leaking.
+
+### Added
+- `UploadedAsset` ledger: every object written to R2 (starting with project-log
+  photo attachments) gets a durable row through a four-state lifecycle —
+  `temporary` on upload, `attached` once the owning log saves, `orphaned` when the
+  log drops it or is deleted, `deleted` once the object is actually gone. Team- and
+  user-scoped, with a unique `objectKey` and indexes on `(teamId, status, createdAt)`
+  and the attachment target.
+- A single bounded reclaim sweep (`reclaimAbandonedAssets`, run from the papers
+  cron) is the one and only place that physically deletes stored objects — for
+  `orphaned` assets and for `temporary` uploads abandoned past 24 h. It uses
+  claim-then-delete (guarded status flip first, object delete second) so a concurrent
+  save can never have its live object removed, and a failed delete releases the claim
+  for a later retry instead of leaking the blob.
+
+### Changed
+- Domain routes now record intent, not physical deletes: saving a log flips its
+  uploads to `attached` in the same transaction as the write, editing attaches new
+  photos and marks removed ones `orphaned`, and deleting a log marks its attachments
+  `orphaned` — all atomically, with no inline object deletion. The ledger can no
+  longer disagree with storage after a mid-request crash.
+
+### Fixed
+- Saving or editing a log now rejects (409) if a referenced upload was already swept
+  away, instead of persisting a permanently broken photo reference.
+- Attachment keys are validated at write time to live under the caller team's upload
+  prefix (400 otherwise), closing a cross-team object-reference vector.
+
+---
+
+## [0.21.6] — 2026-07-09
+
+Refactor Phase 7 — growth-path indexes.
+
+### Added
+- Composite indexes matching the common classroom-scale list and dashboard access
+  paths, so those queries stay index-backed as teams accumulate data: project logs
+  (`teamId, entryType, createdAt` and `createdByUserId, createdAt`), quiz sessions
+  and attempts (`paperId, userId, createdAt`; attempts also by `sessionId`),
+  notifications (`teamId, readAt, createdAt` and `userId, readAt, createdAt`),
+  showcase assets (`showcaseId, assetType`) and views (`showcaseId, viewedAt`),
+  discovery nodes (`teamId, visitedAt` and `teamId, parentId`), teacher feedback
+  (`teamId, resolved, createdAt`), experiments (`teamId, createdAt`), and
+  measurements (`experimentId, recordedAt`). Single-column indexes that the new
+  composites subsume were replaced.
+
+---
+
+## [0.21.5] — 2026-07-09
+
+Refactor Phase 6 — chat turns are server-owned.
+
+### Changed
+- Paper chat and Study-with-Vega now own the conversation on the server. A request
+  sends only the new user message (`{ message }`); the server loads the bounded
+  history from the database. A client can no longer inject fabricated assistant
+  turns into the context Claude sees or into the persisted thread.
+
+### Added
+- `PaperChatMessage` and `VegaStudyMessage` gain `status` (`pending`/`complete`/
+  `error`), `requestId`, `error`, and `tokenUsageJson`. The user turn is written
+  `pending` before the paid Claude call and completed — with the assistant reply,
+  atomically — after; a failed call marks the turn `error`. The paid call and the
+  visible history no longer silently diverge, and only `complete` turns feed
+  future context.
+
+### Fixed
+- Chat history endpoints are bounded to the most recent 60 turns instead of an
+  unbounded read.
+- The bounded history window can begin mid-exchange under concurrent posts
+  (especially the team-shared Vega thread); leading assistant turns are trimmed so
+  the conversation handed to Claude always starts with a user turn.
+
+---
+
+## [0.21.4] — 2026-07-09
+
+Refactor Phase 5 — paper processing is truly retryable.
+
+### Added
+- `PaperProcessingJob.nextRunAt` (backed-off retry scheduling — each failure
+  spaces the next attempt further out) and `terminalAt` (records when retries were
+  exhausted). The processor claim and the cron both respect `nextRunAt`.
+
+### Fixed
+- A transient processing failure no longer surfaces as a terminal paper error.
+  The paper stays in `processing` while attempts remain and only becomes `error`
+  once all retries are exhausted — so a momentary Anthropic hiccup no longer looks
+  like a permanently broken paper.
+
+### Changed
+- Every claim path (pending / retryable-failed / stale-running) is capped at three
+  attempts, so a crash-loop can't run the extractor a fourth time. A final attempt
+  that crashes mid-run is terminalized by the cron sweep instead of hanging in
+  `processing` forever, and the cron reports how many it terminalized.
+
+---
+
+## [0.21.3] — 2026-07-09
+
+Refactor Phase 4 — paper lists are metadata-only, and duplicate uploads are
+prevented by the database.
+
+### Added
+- `Paper.doi`, `Paper.credibilityTier`, and `Paper.sourceHost`, computed once at
+  upload. The paper list now reads these stored columns instead of loading every
+  paper's extracted full text to derive a DOI/credibility badge, so listing a
+  library stays metadata-only and fast as it grows.
+- A `(teamId, contentHash)` unique index. Two uploads of the same PDF for one
+  team can no longer both persist even under a race — the second is rejected and
+  returns the same 409 as the application-level pre-check. (Null content hashes
+  stay distinct, so non-PDF papers are unaffected.)
+- `Paper(teamId, createdAt)` and `Paper(teamId, status)` indexes for the common
+  list queries.
+
+_Deferred:_ moving `Paper.fullText` into a separate `PaperContent` table (the
+plan's larger "heavy content" split) — the list no longer reads full text, so
+the high-value outcome is already achieved; leaning the row is a follow-up.
+
+---
+
+## [0.21.2] — 2026-07-09
+
+Refactor Phase 3 — expertise grading is now claim-based, idempotent, and honest.
+
+### Added
+- `ExpertiseExam.status` (`active`/`grading`/`graded`/`failed`) plus
+  `gradingClaimedAt`/`gradingRequestId`, so a grade is claimed before the paid
+  Claude call. A second concurrent grade of the same exam is refused instead of
+  calling the model twice, and a claim older than five minutes is treated as
+  stale and may be retaken (a crashed grade never strands the exam).
+
+### Fixed
+- The grade response now derives `raised`, `newClearance`, and `kpEarned` from
+  the committed transaction — the conditional clearance raise's row count — rather
+  than a pre-transaction guess. A pass that didn't actually advance the team (a
+  teammate already raised clearance) can no longer report a raise or bonus that
+  never happened.
+- A failed or unparseable grading call releases the claim back to `active`, so
+  the exam stays retryable instead of stuck.
+
+---
+
+## [0.21.1] — 2026-07-09
+
+Refactor Phase 2 — plot placement occupancy races.
+
+### Fixed
+- Building **move** is now race-safe. It runs inside the per-team plot advisory
+  lock (the same `team-plot:<teamId>` lock `place` uses) and re-checks cell
+  occupancy against committed rows before writing, so two simultaneous moves can
+  never land two items on the same cell. Previously `move` wrote with no
+  transaction and no lock at all.
+- **Sell** reads the building row and deletes it inside the plot lock, so a
+  concurrent double-sell now returns 404 instead of a delete-not-found 500.
+
+### Changed
+- **Upgrade** takes the per-team plot lock as well, so every plot mutation
+  (place / move / sell / upgrade) serializes on one key. Its conditional currency
+  debit and level-bump guards are unchanged.
+
+_Deferred:_ a unified `TeamPlotPlacement` table with a DB-level `(teamId, posX,
+posY)` uniqueness constraint (the plan's larger "durable refactor") — the
+advisory lock already delivers the race-safety outcome; the table is a
+defense-in-depth follow-up.
+
+---
+
+## [0.21.0] — 2026-07-09
+
+An architecture-integrity pass focused on authoritative ownership, durable
+background work, race-safe rewards, smaller feature boundaries, immediate
+lab-building interactions, and fully self-paced phase progression.
 
 ### Added
 - Explicit `User.activeTeamId` and `Team.classId` ownership, with an additive
-  backfill migration and centralized active-team resolution.
+  backfill migration and a membership-verified active-team resolver — a stale or
+  forged `activeTeamId` can never surface a team the user does not belong to.
+- Ownership access-path indexes (`users.class_id`, `classes.teacher_id`,
+  `team_members.team_id`, `team_invites(team_id, expires_at)`).
 - Durable `PaperProcessingJob` records, an atomic paper processor, and a
   five-minute recovery cron for pending, failed, or stale PDF work.
 - PostgreSQL advisory-lock helpers for team membership, plot occupancy, quiz
@@ -30,8 +287,13 @@ interactions.
   network latency from the visible interaction while preserving rollback.
 - Codex progress and daily rewards are scoped by user and team; first-completion
   and daily-cap writes are serialized.
-- Teacher authorization uses `Team.classId` as its primary boundary, with only a
-  temporary lead-class fallback for legacy rows.
+- Teacher authorization is fully `Team.classId`-scoped — the transitional
+  lead-class fallback was removed after a backfill — and the DB `User.role` is
+  authoritative, so a stale Clerk claim can no longer keep a downgraded teacher in.
+- Phase advancement is fully self-paced: `research_planning → working` and
+  `working → showcase` are free student-clicked advances (the literature-review
+  gate — 25 sources + per-member proficiency, then Haiku lab-type classification —
+  is unchanged).
 - Large authored Data Terminal guides and the fair dataset moved from `lib/` to
   `content/`; teacher paper Q&A moved into a feature-owned subfolder.
 - Former placeholder deep links now open the real Operations Hub, Literature,
@@ -61,8 +323,15 @@ interactions.
   a hard-coded Docker database, and resolves the fixture team by name rather
   than assuming a stale ID. Its KP baseline now covers the member-scaled purchase
   and upgrade sequence.
+- `E2E_SKIP_LLM` no longer leaks into a normal `pnpm dev` server — it moved from
+  `.env.local` to the Playwright config — so local quiz, grading, Vega, and Codex
+  study-plan features generate real content instead of deterministic test stubs.
 
 ### Removed
+- The teacher **phase-validation pipeline**: the `PhaseAdvanceRequest` model and
+  `validation_status` enum, the `/teacher/validations` queue (page, API, and
+  `ValidationQueue` component), and the student "request validation" affordance.
+  Phase advancement is self-paced instead.
 - Unused TanStack Query and React Hook Form dependencies.
 - Stale environment variables and documentation for the deleted Python AI
   service.

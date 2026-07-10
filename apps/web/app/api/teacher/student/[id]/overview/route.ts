@@ -78,7 +78,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // Fan out parallel queries for all sections.
   const [
     team,
-    pendingAdvance,
     kpPapers,
     kpCodex,
     teamBuildings,
@@ -114,18 +113,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
             role: true,
           },
         },
-      },
-    }),
-
-    // Pending phase advance request
-    db.phaseAdvanceRequest.findFirst({
-      where: { teamId, status: 'pending' },
-      select: {
-        fromPhase: true,
-        toPhase: true,
-        note: true,
-        requestedBy: { select: { name: true } },
-        createdAt: true,
       },
     }),
 
@@ -376,7 +363,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       joinedAt: membership?.joinedAt ?? null,
     },
     team,
-    pendingAdvance,
     studentKp,
     teamBuildings: teamBuildingsEnriched,
     shopBuildings: shopBuildingsEnriched,

@@ -648,9 +648,17 @@ where t.class_id is null
 ### Problem
 
 Building and gateway placement is split across `TeamShopBuilding.posX/posY` and
-`TeamGatewayPlacement.posX/posY`. The move route checks occupancy, then writes.
-That can race, and the two-table placement model makes it harder to enforce a
-single building per cell at the database level.
+`TeamGatewayPlacement.posX/posY`. Protection against the placement race is
+inconsistent across mutations, and the two-table placement model makes it
+harder to enforce a single building per cell at the database level.
+
+`apps/web/app/api/buildings/place/route.ts` wraps its write in a transaction
+and takes a per-team advisory lock via `lib/db-lock.ts`. `sell/route.ts` and
+`upgrade/route.ts` use a transaction but do not take the advisory lock.
+`move/route.ts` reads occupancy, then writes with two bare `db.teamGatewayPlacement.upsert` /
+`db.teamShopBuilding.update` calls — no transaction and no lock at all. `move`
+is the most exposed of the four: two concurrent moves can both pass the
+occupancy check and both write, leaving two items on the same cell.
 
 ### Target Files
 
@@ -673,8 +681,10 @@ single building per cell at the database level.
 
 Wrap every plot mutation that can affect placement or currency in one
 transaction and take a per-team advisory lock with `lib/db-lock.ts`. `place`
-already does this; add or verify the same protection for move, sell, and upgrade
-where it is missing or incomplete.
+already does this. `move` has neither a transaction nor a lock and should be
+fixed first — it is the only route where two concurrent requests can both
+succeed and collide on the same cell. `sell` and `upgrade` already use a
+transaction but are still missing the advisory lock; add it there too.
 
 The route should respond from the committed transaction result. Do not compute
 success, KP, or placement state before the write has actually won.
@@ -999,9 +1009,20 @@ Add these unless a current migration already added an equivalent index:
 
 ### Problem
 
-Some upload flows can create orphaned files because they upload directly to
-object storage and only later attach URLs to a domain model. If the form is
-abandoned, the app has no durable record for cleanup.
+Project log attachment uploads (`apps/web/app/api/project-log/attachment/route.ts`)
+upload straight to R2 and return a bare URL with no DB row at all; the object is
+only referenced once the client later submits the log entry with
+`attachmentUrls`. If the form is abandoned, nothing tracks or cleans up the
+orphaned object.
+
+Showcase asset uploads (`apps/web/app/api/showcase/asset/route.ts`) are not
+orphan-prone the same way: the route creates a `ShowcaseAsset` row in the same
+request as the R2 upload and replaces any prior asset of that kind, so the
+asset is durable from the moment of upload. (The old object's deletion is
+still fire-and-forget best effort, so a failed delete can leak a stale object,
+but this is a narrower cleanup gap than the project-log case.) Folding both
+flows into one `UploadedAsset` model is still worthwhile for consistency, but
+the urgent gap is project-log attachments specifically.
 
 ### Target Files
 
@@ -1065,8 +1086,12 @@ this with scalar ids only. Do not leave Prisma relation fields one-sided.
 Route behavior:
 
 - Upload returns an asset id, not just a raw URL.
-- Form submission attaches existing temporary assets inside the same transaction
-  as the project log or showcase save.
+- Project log form submission attaches existing temporary assets inside the
+  same transaction as the project log save; this is the flow that actually
+  fixes an orphaning bug.
+- Showcase asset upload can adopt the same model for consistency, but should
+  keep creating/replacing its row synchronously on upload rather than
+  introducing a temporary/unattached window it does not currently have.
 - Cleanup cron deletes stale temporary assets from storage and marks rows
   `deleted`.
 
