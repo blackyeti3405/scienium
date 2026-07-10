@@ -167,6 +167,15 @@ __pycache__/
 .claude/pipeline/
 .claude/tmp/
 
+# Third-party design/skills toolkit — machine-level, never commit into the repo.
+# (A prior branch accidentally committed ~350 of these files across three dirs.)
+# Already-tracked project skills stay tracked; this only blocks the auto-installed
+# toolkit + its lockfile. Add a genuinely new project skill with `git add -f`.
+skills-lock.json
+.github/skills/
+.agents/skills/
+.claude/skills/
+
 # Python virtualenvs
 .venv/
 art/.venv/
