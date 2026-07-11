@@ -5,6 +5,22 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.22.1] — 2026-07-11
+
+The Classical Mechanics / Physics field authored to full depth (Field Codex
+content only — no runtime or schema changes).
+
+### Added
+- **Classical Mechanics / Physics Field Codex — 275 lessons** across Core (52) and
+  five specializations (Projectile Motion & Ballistics 44, Oscillations & Simple
+  Harmonic Motion 44, Collisions, Impulse & Momentum 43, Rotational Dynamics &
+  Rigid Bodies 48, Gravitation & Orbital Mechanics 44), each lesson with real
+  concept prose, a worked example, judge framing, and a 3–5-question checkpoint.
+  It is the fifth fully-authored field and the first built for the Axiom and Volt
+  Lab lab types.
+
+---
+
 ## [0.22.0] — 2026-07-10
 
 A Field Codex learning-experience redesign, a far cheaper content-authoring

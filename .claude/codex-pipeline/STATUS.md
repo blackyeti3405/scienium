@@ -10,7 +10,7 @@
 > Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
 > Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
 
-**Progress: 4 / 29 fields · 24 / 174 segments.**
+**Progress: 5 / 29 fields · 30 / 174 segments.**
 
 ---
 
@@ -44,15 +44,15 @@
 - [x] organic-synthesis
 - [x] physical-chemistry
 
-## classical-mechanics-physics ⬜
+## classical-mechanics-physics ✅
 *Classical Mechanics / Physics*
 
-- [ ] Core
-- [ ] collisions-momentum
-- [ ] gravitation-orbits
-- [ ] oscillations-shm
-- [ ] projectile-ballistics
-- [ ] rotational-mechanics
+- [x] Core
+- [x] collisions-momentum
+- [x] gravitation-orbits
+- [x] oscillations-shm
+- [x] projectile-ballistics
+- [x] rotational-mechanics
 
 ## clinical-medicine-pharmacology ⬜
 *Clinical Medicine / Pharmacology*
