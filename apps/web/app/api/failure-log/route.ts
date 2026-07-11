@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { logActivity } from '@/lib/activity/log'
+import { incrementDailyTaskCount } from '@/lib/pvp/spell-power'
 import { db } from '@/lib/db'
 
 // Body is stored as JSON string: { happened, learned }
@@ -87,6 +88,7 @@ export async function POST(req: NextRequest) {
   try { parsed = JSON.parse(entry.body) } catch {}
 
   logActivity(ctx.teamId, ctx.dbUserId, 'log_created', { kind: 'failure' }).catch(console.error)
+  incrementDailyTaskCount(ctx.teamId).catch(() => {})
 
   // +1 LC the first time this member files a log today (real calendar day, team pool).
   try {

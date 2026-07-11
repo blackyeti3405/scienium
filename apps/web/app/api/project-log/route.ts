@@ -4,6 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { logActivity } from '@/lib/activity/log'
 import { attachAssetsByKey, attachmentKeysUnderTeam } from '@/lib/uploads/assets'
+import { incrementDailyTaskCount } from '@/lib/pvp/spell-power'
 import { db } from '@/lib/db'
 
 const Body = z.object({
@@ -180,6 +181,7 @@ export async function POST(req: NextRequest) {
   }
 
   logActivity(ctx.teamId, ctx.dbUserId, 'log_created', { kind: 'progress' }).catch(console.error)
+  incrementDailyTaskCount(ctx.teamId).catch(() => {})
 
   // +1 LC the first time this member files a log today (real calendar day, team pool).
   try {

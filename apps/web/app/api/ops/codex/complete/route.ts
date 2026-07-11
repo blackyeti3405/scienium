@@ -6,6 +6,7 @@ import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { loadTrack } from '@/lib/ops/codex/index'
 import { gradeCheckpoint, computeKpAward, findLessonLocation, lessonUnlocked, CODEX_DAILY_LESSON_CAP } from '@/lib/ops/codex/engine'
+import { incrementDailyTaskCount } from '@/lib/pvp/spell-power'
 import { logActivity } from '@/lib/activity/log'
 import type { CheckpointQuestion } from '@/lib/ops/codex/types'
 
@@ -265,6 +266,7 @@ export async function POST(req: NextRequest) {
   }
 
   logActivity(ctx.teamId, ctx.dbUserId, 'codex_lesson_completed', { trackSlug, lessonId }).catch(console.error)
+  incrementDailyTaskCount(ctx.teamId).catch(() => {})
 
   return NextResponse.json({
     passed: true,

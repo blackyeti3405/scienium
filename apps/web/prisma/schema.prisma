@@ -817,7 +817,10 @@ model TeamDailyTaskDay {
   @@map("team_daily_task_days")
 }
 
+
+
 // Field Dispatch was retired in favor of Field Codex (codex_* tables below) —
+
 // its tables were dropped in migration *_drop_field_dispatch.
 
 // Proof of Expertise — a conversational clearance exam (Feature: Clearance Level).

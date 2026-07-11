@@ -15,6 +15,7 @@ import { loadExpertiseRubric } from '@/lib/clearance/rubric'
 import { extractJson } from '@/lib/literature/quiz'
 import { getProjectContext, renderProjectContext } from '@/lib/clearance/context'
 import { clampScore } from '@/lib/economy'
+import { incrementDailyTaskCount } from '@/lib/pvp/spell-power'
 import { logActivity } from '@/lib/activity/log'
 
 /** A grading claim older than this is treated as abandoned and may be re-taken. */
@@ -211,11 +212,12 @@ export async function POST(req: NextRequest) {
   const kpEarned = raised ? kpBonus : 0
 
   if (raised) {
-    logActivity(ctx.teamId, ctx.dbUserId, 'clearance_raised', {
-      level: exam.targetLevel,
-      title: levelInfo(exam.targetLevel)?.title,
-      score: aggregate,
-    }).catch(console.error)
+  logActivity(ctx.teamId, ctx.dbUserId, 'clearance_raised', {
+    level: exam.targetLevel,
+    title: levelInfo(exam.targetLevel)?.title,
+    score: aggregate,
+  }).catch(console.error)
+  incrementDailyTaskCount(ctx.teamId).catch(() => {})
   }
 
   return NextResponse.json({
