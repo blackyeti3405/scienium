@@ -193,6 +193,24 @@ async function wrongSubmissionFor(lessonId: string) {
   return { answers }
 }
 
+/** Answer the currently-shown checkpoint question (Khan-style, one at a time)
+ *  with a deterministically WRONG choice: the LAST MC option — never the answer
+ *  key for this spec's lessons (keys are 'b'/'c' among a-d) — or, for a matching
+ *  question, point every left at the first right, which a bijective answer key
+ *  can never fully satisfy. Radios are visually hidden (sr-only), so check with
+ *  `force`. */
+async function answerCurrentWrong(page: Page) {
+  const scope = page.getByTestId('codex-checkpoint')
+  const radios = scope.locator('input[type="radio"]')
+  if ((await radios.count()) > 0) {
+    await radios.last().check({ force: true })
+    return
+  }
+  const selects = scope.locator('select')
+  const n = await selects.count()
+  for (let i = 0; i < n; i++) await selects.nth(i).selectOption({ index: 1 })
+}
+
 let leaderUserId: string | null = null
 let teamId: string | null = null
 /** Whether a TeamStudyPlan row already existed before this spec ran — if so,
@@ -407,8 +425,9 @@ test.describe('F13 — Field Codex', () => {
 
     // UI half: open the SAME lesson through the panel (no study plan exists
     // yet at this point in the serial run, so reach it via "Browse full
-    // library"), submit the real checkpoint form with wrong answers, and
-    // confirm the fail state + explanations + retry affordance render.
+    // library"), enter the checkpoint from the reading phase, walk the redesigned
+    // one-question-at-a-time flow answering every question WRONG, and confirm
+    // the fail state + explanations + retry affordance render.
     await openCodex(page)
     await expect(page.getByTestId('codex-home')).toBeVisible({ timeout: 15000 })
     await page.getByTestId('codex-browse-library-toggle').click()
@@ -416,36 +435,44 @@ test.describe('F13 — Field Codex', () => {
     const lessonRow = page.getByTestId('codex-lesson-row').filter({ hasText: 'Stride, Step, Stance' })
     await expect(lessonRow.first()).toBeVisible({ timeout: 15000 })
     await lessonRow.first().click()
+
+    // Opening a lesson now lands on the READ phase; the checkpoint is a separate,
+    // distraction-free phase reached via the single "Start checkpoint" CTA.
+    await page.getByTestId('codex-start-checkpoint').click()
     await expect(page.getByTestId('codex-checkpoint')).toBeVisible({ timeout: 15000 })
 
-    // This lesson's real checkpoint (verified against the module source) is
-    // 3 MC questions (answerIds 'b', 'c', 'b' among 4 options each) + 1
-    // matching question. Selecting the LAST radio option in every MC group is
-    // guaranteed wrong for all three (none of their answer keys is the last
-    // option, 'd'), and leaving the matching question's selects at their
-    // default "— match —" empty value is guaranteed wrong (empty pairs never
-    // satisfy correctPairs) — so this submission deterministically scores
-    // 0/4, unconditionally exercising the FAIL path (no `if` branching on the
-    // grading outcome).
-    const mcGroupNames = await page
-      .locator('input[type="radio"]')
-      .evaluateAll((els: HTMLInputElement[]) => Array.from(new Set(els.map((el) => el.name))))
-    for (const name of mcGroupNames) {
-      const group = page.locator(`input[type="radio"][name="${name}"]`)
-      await group.last().check({ force: true })
+    // This lesson's real checkpoint (verified against the module source) is 3 MC
+    // questions (answerIds 'b','c','b' among 4 options) + 1 matching question,
+    // shown one at a time. `answerCurrentWrong` picks a deterministically-wrong
+    // choice for whichever question is on screen; per-question "Check" locks it
+    // and reveals feedback, then "Continue" advances — the LAST question swaps
+    // Continue for the final "See results" (codex-checkpoint-submit) which posts
+    // the whole batch. This deterministically scores 0/4 → FAIL path (no `if`
+    // branching on the grading outcome, only on which control the flow surfaces).
+    const submitBtn = page.getByTestId('codex-checkpoint-submit')
+    const continueBtn = page.getByTestId('codex-continue')
+    for (let step = 0; step < 10; step++) {
+      await answerCurrentWrong(page)
+      await page.getByTestId('codex-check').click()
+      await expect(submitBtn.or(continueBtn)).toBeVisible({ timeout: 10000 })
+      if ((await submitBtn.count()) > 0) {
+        await Promise.all([
+          page.waitForResponse((r) => r.url().includes('/api/ops/codex/complete') && r.request().method() === 'POST'),
+          submitBtn.click(),
+        ])
+        break
+      }
+      await continueBtn.click()
     }
-    await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/ops/codex/complete') && r.request().method() === 'POST'),
-      page.getByTestId('codex-checkpoint-submit').click(),
-    ])
 
     await expect(page.getByTestId('codex-checkpoint-fail')).toBeVisible({ timeout: 15000 })
     await expect(page.getByTestId('codex-explanation').first()).toBeVisible()
     const retryButton = page.getByTestId('codex-retry')
     await expect(retryButton).toBeVisible()
     await retryButton.click()
+    // Retry reshuffles and returns to the first question of the checkpoint.
     await expect(page.getByTestId('codex-checkpoint')).toBeVisible({ timeout: 15000 })
-    await expect(page.getByTestId('codex-checkpoint-submit')).toBeVisible()
+    await expect(page.getByTestId('codex-check')).toBeVisible()
   })
 
   // ── AC4 ──────────────────────────────────────────────────────────────────
@@ -747,8 +774,9 @@ test.describe('F13 — Field Codex', () => {
     const firstLessonRow = page.getByTestId('codex-lesson-row').first()
     await expect(firstLessonRow).toBeVisible({ timeout: 15000 })
     await firstLessonRow.click()
-    // Lesson prose paragraphs must NOT carry font-pixel (regular body font).
-    const proseParagraph = page.locator('p.text-sm.text-white\\/70').first()
+    // Opening a lesson lands on the reading phase; its prose paragraphs must NOT
+    // carry font-pixel (regular body font — the house pixel-chrome rule).
+    const proseParagraph = page.getByTestId('codex-lesson-prose').first()
     await expect(proseParagraph).toBeVisible({ timeout: 15000 })
     const cls = await proseParagraph.getAttribute('class')
     expect(cls).not.toMatch(/font-pixel/)

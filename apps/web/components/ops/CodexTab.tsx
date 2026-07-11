@@ -1,15 +1,15 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { BookOpen, Lock, ChevronLeft, ChevronRight, CheckCircle2, XCircle, Sparkles, ArrowUpDown } from 'lucide-react'
+import { BookOpen, Lock, ChevronLeft, ChevronRight, CheckCircle2, Sparkles } from 'lucide-react'
 import { OpsTabSkeleton } from '@/components/ui/skeletons/OpsTabSkeleton'
 import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
 import { CODEX_TRACKS, loadTrack } from '@/lib/ops/codex/index'
-import { unitUnlocked, fluencyTier, shuffleCheckpoint } from '@/lib/ops/codex/engine'
-import type { CodexTrack, Lesson, Segment, CheckpointQuestion } from '@/lib/ops/codex/types'
-import type { QuestionSubmission, PerQuestionResult } from '@/lib/ops/codex/engine'
+import { unitUnlocked, fluencyTier } from '@/lib/ops/codex/engine'
+import type { CodexTrack, Lesson, Segment } from '@/lib/ops/codex/types'
+import { LessonExperience } from './codex/LessonExperience'
 
 // ─── Server payload shapes ──────────────────────────────────────────────────
 
@@ -32,14 +32,6 @@ interface ProgressPayload {
   progress: ProgressRow[]
   dailyCap: { limit: number; completedToday: number }
   studyPlan: { tracks: RecommendedTrackPayload[]; manualTrackSlugs: string[]; generatedAt: string } | null
-}
-
-interface CompleteResponse {
-  passed: boolean
-  perQuestion: PerQuestionResult[]
-  ratio: number
-  kpEarned: number
-  capReached: boolean
 }
 
 const FLUENCY_LABEL: Record<string, string> = {
@@ -362,284 +354,6 @@ function trackProgressPctForSegment(segment: Segment, completedLessonIds: Set<st
   return Math.round((done / lessons.length) * 100)
 }
 
-// ─── Lesson view (prose + checkpoint) ──────────────────────────────────────
-
-function McAnswer({ question, value, onChange }: { question: Extract<CheckpointQuestion, { kind: 'mc' }>; value?: string; onChange: (v: string) => void }) {
-  return (
-    <div className="space-y-1.5">
-      {question.options.map((opt) => (
-        <label key={opt.id} className="flex items-center gap-2 border border-white/10 px-2.5 py-2 cursor-pointer hover:border-white/25">
-          <input
-            type="radio"
-            name={question.id}
-            checked={value === opt.id}
-            onChange={() => onChange(opt.id)}
-            className="accent-[#F5C518]"
-          />
-          <span className="text-sm text-white/80">{opt.text}</span>
-        </label>
-      ))}
-    </div>
-  )
-}
-
-function OrderingAnswer({
-  question,
-  order,
-  onChange,
-}: {
-  question: Extract<CheckpointQuestion, { kind: 'ordering' }>
-  order: string[]
-  onChange: (order: string[]) => void
-}) {
-  function move(idx: number, dir: -1 | 1) {
-    const next = [...order]
-    const target = idx + dir
-    if (target < 0 || target >= next.length) return
-    ;[next[idx], next[target]] = [next[target], next[idx]]
-    onChange(next)
-  }
-  return (
-    <div className="space-y-1.5">
-      {order.map((itemId, idx) => {
-        const item = question.items.find((i) => i.id === itemId)!
-        return (
-          <div key={itemId} className="flex items-center gap-2 border border-white/10 px-2.5 py-2">
-            <span className="font-pixel text-[7px] text-white/35 w-4">{idx + 1}</span>
-            <span className="text-sm text-white/80 flex-1">{item.text}</span>
-            <button type="button" onClick={() => move(idx, -1)} className="text-white/30 hover:text-white/70">
-              <ArrowUpDown size={12} className="rotate-180" />
-            </button>
-            <button type="button" onClick={() => move(idx, 1)} className="text-white/30 hover:text-white/70">
-              <ArrowUpDown size={12} />
-            </button>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function MatchingAnswer({
-  question,
-  pairs,
-  onChange,
-}: {
-  question: Extract<CheckpointQuestion, { kind: 'matching' }>
-  pairs: Record<string, string>
-  onChange: (pairs: Record<string, string>) => void
-}) {
-  return (
-    <div className="space-y-1.5">
-      {question.left.map((l) => (
-        <div key={l.id} className="flex items-center gap-2 border border-white/10 px-2.5 py-2">
-          <span className="text-sm text-white/80 flex-1">{l.text}</span>
-          <select
-            value={pairs[l.id] ?? ''}
-            onChange={(e) => onChange({ ...pairs, [l.id]: e.target.value })}
-            className="ops-select"
-          >
-            <option value="">— match —</option>
-            {question.right.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.text}
-              </option>
-            ))}
-          </select>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function CheckpointForm({
-  questions,
-  onSubmit,
-  submitting,
-}: {
-  questions: CheckpointQuestion[]
-  onSubmit: (submission: { answers: QuestionSubmission[] }) => void
-  submitting: boolean
-}) {
-  const [mcAnswers, setMcAnswers] = useState<Record<string, string>>({})
-  const [orderAnswers, setOrderAnswers] = useState<Record<string, string[]>>(
-    Object.fromEntries(questions.filter((q) => q.kind === 'ordering').map((q) => [q.id, q.items.map((i) => i.id)])),
-  )
-  const [matchAnswers, setMatchAnswers] = useState<Record<string, Record<string, string>>>({})
-
-  function submit() {
-    const answers: QuestionSubmission[] = questions.map((q) => {
-      if (q.kind === 'mc') return { kind: 'mc', id: q.id, selectedOptionId: mcAnswers[q.id] ?? '' }
-      if (q.kind === 'ordering') return { kind: 'ordering', id: q.id, order: orderAnswers[q.id] ?? q.items.map((i) => i.id) }
-      const pairsMap = matchAnswers[q.id] ?? {}
-      return { kind: 'matching', id: q.id, pairs: Object.entries(pairsMap) as [string, string][] }
-    })
-    onSubmit({ answers })
-  }
-
-  return (
-    <div data-testid="codex-checkpoint" className="space-y-4">
-      {questions.map((q, i) => (
-        <div key={q.id} className="border border-white/10 bg-[#0a1628] p-3">
-          <p className="font-pixel text-[6px] text-white/35 uppercase tracking-widest mb-1.5">Question {i + 1}</p>
-          <p className="text-sm text-white/90 mb-2.5">{q.prompt}</p>
-          {q.kind === 'mc' && <McAnswer question={q} value={mcAnswers[q.id]} onChange={(v) => setMcAnswers((p) => ({ ...p, [q.id]: v }))} />}
-          {q.kind === 'ordering' && (
-            <OrderingAnswer
-              question={q}
-              order={orderAnswers[q.id] ?? q.items.map((it) => it.id)}
-              onChange={(order) => setOrderAnswers((p) => ({ ...p, [q.id]: order }))}
-            />
-          )}
-          {q.kind === 'matching' && (
-            <MatchingAnswer
-              question={q}
-              pairs={matchAnswers[q.id] ?? {}}
-              onChange={(pairs) => setMatchAnswers((p) => ({ ...p, [q.id]: pairs }))}
-            />
-          )}
-        </div>
-      ))}
-      <BusyButton
-        busy={submitting}
-        busyLabel="Grading…"
-        onClick={submit}
-        data-testid="codex-checkpoint-submit"
-        className="font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
-      >
-        Submit
-      </BusyButton>
-    </div>
-  )
-}
-
-function LessonView({
-  track,
-  lesson,
-  onBack,
-  onCompleted,
-}: {
-  track: CodexTrack
-  lesson: Lesson
-  onBack: () => void
-  onCompleted: (result: CompleteResponse) => void
-}) {
-  const [questions, setQuestions] = useState<CheckpointQuestion[]>(lesson.checkpoint.questions)
-  const [attempt, setAttempt] = useState(1)
-  const [submitting, setSubmitting] = useState(false)
-  const [result, setResult] = useState<CompleteResponse | null>(null)
-  const [submitError, setSubmitError] = useState<string | null>(null)
-
-  async function submit(submission: { answers: QuestionSubmission[] }) {
-    setSubmitting(true)
-    setSubmitError(null)
-    try {
-      const res = await fetch('/api/ops/codex/complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trackSlug: track.slug, lessonId: lesson.id, submission }),
-      })
-      const out = (await res.json()) as CompleteResponse & { error?: string }
-      if (!res.ok) throw new Error(out.error ?? 'Could not grade checkpoint')
-      setResult(out)
-      onCompleted(out)
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Something went wrong')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  function retry() {
-    const nextAttempt = attempt + 1
-    setAttempt(nextAttempt)
-    setQuestions(shuffleCheckpoint(lesson.checkpoint.questions, nextAttempt))
-    setResult(null)
-  }
-
-  return (
-    <div className="ops-tab-body">
-      <div className="max-w-2xl mx-auto w-full space-y-4 py-2">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-1 font-pixel text-[8px] text-white/40 hover:text-white/70"
-        >
-          <ChevronLeft size={12} /> Back to {track.label}
-        </button>
-
-        <h2 className="text-lg text-white font-medium">{lesson.label}</h2>
-        <span className="font-pixel text-[7px] text-white/35">{lesson.readingMinutes} min read</span>
-
-        {/* Regular body font for lesson prose — chrome above/below stays font-pixel. */}
-        <div className="space-y-3">
-          {lesson.sections.map((s, i) => (
-            <div key={i}>
-              <h3 className="text-base text-white/90 font-medium mb-1">{s.heading}</h3>
-              <p className="text-sm text-white/70 leading-relaxed">{s.body}</p>
-            </div>
-          ))}
-          <div className="border-l-2 border-[#F5C518]/40 pl-3">
-            <p className="font-pixel text-[6px] text-[#F5C518]/70 uppercase tracking-widest mb-1">Worked example</p>
-            <p className="text-sm text-white/70 leading-relaxed">{lesson.workedExample}</p>
-          </div>
-          <div className="border-l-2 border-white/15 pl-3">
-            <p className="font-pixel text-[6px] text-white/40 uppercase tracking-widest mb-1">Why judges ask this</p>
-            <p className="text-sm text-white/60 leading-relaxed italic">{lesson.judgeFraming}</p>
-          </div>
-        </div>
-
-        <div className="border-t border-white/10 pt-4">
-          {!result ? (
-            <CheckpointForm questions={questions} onSubmit={submit} submitting={submitting} />
-          ) : result.capReached ? (
-            <div data-testid="codex-cap-reached" className="border border-[#F5C518]/30 bg-[#F5C518]/[0.06] p-3">
-              <span className="font-pixel text-[8px] text-[#F5C518]">
-                Daily limit reached — come back tomorrow for more lessons.
-              </span>
-            </div>
-          ) : result.passed ? (
-            <div data-testid="codex-checkpoint-pass" className="space-y-2">
-              <div className="flex items-center gap-2 text-emerald-400">
-                <CheckCircle2 size={14} />
-                <span className="font-pixel text-[8px]">Lesson complete.</span>
-              </div>
-              {result.kpEarned > 0 && (
-                <div data-testid="codex-kp-earned" className="font-pixel text-[9px] text-[#F5C518]">
-                  +{result.kpEarned} KP earned
-                </div>
-              )}
-            </div>
-          ) : (
-            <div data-testid="codex-checkpoint-fail" className="space-y-3">
-              <div className="flex items-center gap-2 text-red-400">
-                <XCircle size={14} />
-                <span className="font-pixel text-[8px]">Not quite — review the explanations below.</span>
-              </div>
-              {result.perQuestion
-                .filter((q) => !q.correct && q.explanation)
-                .map((q) => (
-                  <p key={q.id} data-testid="codex-explanation" className="text-sm text-white/70 border border-white/10 bg-[#0a1628] p-2.5">
-                    {q.explanation}
-                  </p>
-                ))}
-              <button
-                type="button"
-                onClick={retry}
-                data-testid="codex-retry"
-                className="font-pixel text-[8px] border border-[#F5C518]/40 text-[#F5C518] px-3 py-2 hover:bg-[#F5C518]/10 transition-colors"
-              >
-                Retry
-              </button>
-            </div>
-          )}
-          {submitError && <p className="font-pixel text-[7px] text-red-400 mt-2">{submitError}</p>}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Main tab ───────────────────────────────────────────────────────────────
 
 type View = { kind: 'home' } | { kind: 'track'; slug: string } | { kind: 'lesson'; slug: string; lessonId: string }
@@ -730,17 +444,45 @@ export function CodexTab() {
   if (!activeTrack || activeTrack.slug !== view.slug) {
     return <LabeledLoader label="Loading lesson…" fill="tab" />
   }
-  const lesson = [activeTrack.core, ...activeTrack.branches]
-    .flatMap((s) => s.units.flatMap((u) => u.lessons))
-    .find((l) => l.id === view.lessonId)
+  const allLessons = [activeTrack.core, ...activeTrack.branches].flatMap((s) => s.units.flatMap((u) => u.lessons))
+  const lesson = allLessons.find((l) => l.id === view.lessonId)
   if (!lesson) {
     return <LabeledLoader label="Loading lesson…" fill="tab" />
   }
+
+  // Progress-derived context for the lesson experience (all local compute).
+  const completedLessonIds = new Set(
+    payload.progress.filter((p) => p.completed && p.trackSlug === activeTrack.slug).map((p) => p.lessonId),
+  )
+  const completed = completedLessonIds.has(lesson.id)
+  const capReached = payload.dailyCap.completedToday >= payload.dailyCap.limit && !completed
+  let unitLabel = ''
+  for (const seg of [activeTrack.core, ...activeTrack.branches]) {
+    const owning = seg.units.find((u) => u.lessons.some((l) => l.id === lesson.id))
+    if (owning) {
+      unitLabel = owning.label
+      break
+    }
+  }
+  // The next lesson in track order the student hasn't finished — the target for
+  // "Next lesson" after a pass (structural, so it's correct even before the
+  // just-passed lesson's completion has refreshed in).
+  const lessonIdx = allLessons.findIndex((l) => l.id === lesson.id)
+  const nextLesson =
+    lessonIdx >= 0 ? (allLessons.slice(lessonIdx + 1).find((l) => !completedLessonIds.has(l.id)) ?? null) : null
+
   return (
-    <LessonView
-      track={activeTrack}
+    <LessonExperience
+      key={lesson.id}
+      trackSlug={activeTrack.slug}
+      trackLabel={activeTrack.label}
       lesson={lesson}
-      onBack={() => setView({ kind: 'track', slug: view.slug })}
+      unitLabel={unitLabel}
+      completed={completed}
+      capReached={capReached}
+      nextLesson={nextLesson}
+      onBackToTrack={() => setView({ kind: 'track', slug: view.slug })}
+      onOpenLesson={(l) => setView({ kind: 'lesson', slug: view.slug, lessonId: l.id })}
       onCompleted={() => {
         refresh()
       }}
