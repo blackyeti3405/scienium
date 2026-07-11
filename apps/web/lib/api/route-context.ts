@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { pickActiveTeam } from '@/lib/team/context'
 import { enforceRateLimit, type TierName } from '@/lib/rate-limit'
 import {
   assertFeatureUnlocked,
@@ -20,9 +21,10 @@ import {
  *   4. `user.findUnique`   → 404 if no user row            (queries `user` AGAIN)
  *   5. `assertFeatureUnlocked` wrapped in a PhaseGateError try/catch → 403
  *
- * This helper resolves both the internal `User.id` (`dbUserId`) and explicit
- * `activeTeam` in one query. The membership lookup is a temporary compatibility
- * fallback for users created before active-team selection was persisted.
+ * This helper resolves both the internal `User.id` (`dbUserId`) and the active
+ * team in one query. The team is resolved through membership (see
+ * `pickActiveTeam`): a stored `activeTeamId` is trusted only when the user still
+ * has a `TeamMember` row for it, so it can never leak another team's data.
  *
  *   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate', feature: 'buildings' })
  *   if (error) return error
@@ -61,25 +63,22 @@ export async function requireTeamContext(
   const limited = await enforceRateLimit(req, opts.tier, userId)
   if (limited) return { ctx: null, error: limited }
 
-  // Resolve the explicit active team and keep one legacy-membership fallback
-  // until all deployed users have activeTeamId backfilled.
+  // Resolve the active team through membership so a stored activeTeamId is only
+  // trusted when a TeamMember row still backs it.
   const user = await db.user.findUnique({
     where: { clerkUserId: userId },
     select: {
       id: true,
-      activeTeam: {
-        select: { id: true, phase: true, labType: true },
-      },
+      activeTeamId: true,
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
-        take: 1,
-        select: { team: { select: { id: true, phase: true, labType: true } } },
+        select: { teamId: true, team: { select: { id: true, phase: true, labType: true } } },
       },
     },
   })
 
-  const team = user?.activeTeam ?? user?.teamMemberships[0]?.team
-  if (!team) {
+  const team = user ? pickActiveTeam(user.activeTeamId, user.teamMemberships) : null
+  if (!user || !team) {
     return { ctx: null, error: NextResponse.json({ error: 'No team found' }, { status: 404 }) }
   }
 
@@ -97,7 +96,7 @@ export async function requireTeamContext(
   return {
     ctx: {
       userId,
-      dbUserId: user!.id,
+      dbUserId: user.id,
       teamId: team.id,
       phase: team.phase,
       labType: team.labType,

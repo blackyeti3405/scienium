@@ -22,32 +22,57 @@ Rules:
 - Keep the abstract factual and concise`
 
 const STALE_CLAIM_MS = 5 * 60_000
+/** How many times a paper job is tried before it becomes a terminal error. */
+const MAX_ATTEMPTS = 3
+/** Retry backoff: attempt N schedules the next try ~N × this into the future. */
+const RETRY_BACKOFF_MS = 2 * 60_000
 
 /** Claim and process one paper job. Concurrent callers are harmless. */
 export async function processPaperJob(paperId: string): Promise<void> {
-  const staleBefore = new Date(Date.now() - STALE_CLAIM_MS)
+  const now = new Date()
+  const staleBefore = new Date(now.getTime() - STALE_CLAIM_MS)
   const claimed = await db.paperProcessingJob.updateMany({
     where: {
       paperId,
       OR: [
         { status: 'pending' },
-        { status: 'failed', attempts: { lt: 3 } },
-        { status: 'running', claimedAt: { lt: staleBefore } },
+        // A retryable failure whose backoff window has elapsed.
+        {
+          AND: [
+            { status: 'failed' },
+            { attempts: { lt: MAX_ATTEMPTS } },
+            { OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }] },
+          ],
+        },
+        // A stale in-flight claim (a previous attempt crashed before its catch
+        // ran). Still capped at MAX_ATTEMPTS so a crash-loop can't over-run the
+        // model; a stale claim that has already used all attempts is terminalized
+        // by the cron sweep instead.
+        {
+          AND: [
+            { status: 'running' },
+            { claimedAt: { lt: staleBefore } },
+            { attempts: { lt: MAX_ATTEMPTS } },
+          ],
+        },
       ],
     },
     data: {
       status: 'running',
-      claimedAt: new Date(),
+      claimedAt: now,
       attempts: { increment: 1 },
       lastError: null,
     },
   })
   if (claimed.count === 0) return
 
-  const paper = await db.paper.findUnique({
-    where: { id: paperId },
-    select: { id: true, title: true, fullText: true },
-  })
+  const [job, paper] = await Promise.all([
+    db.paperProcessingJob.findUnique({ where: { paperId }, select: { attempts: true } }),
+    db.paper.findUnique({
+      where: { id: paperId },
+      select: { id: true, title: true, fullText: true },
+    }),
+  ])
   if (!paper) return
 
   try {
@@ -78,16 +103,30 @@ export async function processPaperJob(paperId: string): Promise<void> {
       }),
       db.paperProcessingJob.update({
         where: { paperId },
-        data: { status: 'completed', completedAt: new Date() },
+        data: { status: 'completed', completedAt: new Date(), nextRunAt: null },
       }),
     ])
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 1_000) : 'Unknown error'
+    // A transient failure is NOT a terminal paper error: keep the paper in
+    // `processing` and schedule a backed-off retry while attempts remain. Only
+    // once retries are exhausted does the paper become a real `error`.
+    const attempts = job?.attempts ?? MAX_ATTEMPTS
+    const exhausted = attempts >= MAX_ATTEMPTS
     await db.$transaction([
-      db.paper.update({ where: { id: paper.id }, data: { status: 'error' } }),
+      db.paper.update({
+        where: { id: paper.id },
+        data: { status: exhausted ? 'error' : 'processing' },
+      }),
       db.paperProcessingJob.update({
         where: { paperId },
-        data: { status: 'failed', lastError: message },
+        data: exhausted
+          ? { status: 'failed', lastError: message, terminalAt: new Date(), nextRunAt: null }
+          : {
+              status: 'failed',
+              lastError: message,
+              nextRunAt: new Date(Date.now() + attempts * RETRY_BACKOFF_MS),
+            },
       }),
     ])
   }

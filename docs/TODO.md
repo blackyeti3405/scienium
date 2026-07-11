@@ -53,7 +53,7 @@ Tracked items intentionally deferred during development. Remove an entry once do
     update `R2_BUCKET_NAME`).
 
 ## Science Fair dataset (Feature 3 follow-up)
-- `lib/fairs/dataset.ts` is a **provisional starter** modeled on the Society for
+- `content/fairs/dataset.ts` is a **provisional starter** modeled on the Society for
   Science affiliated-fair directory — coordinates are approximations and **all dates
   are estimated**. Replace/extend it with the full affiliated-fair list (regional +
   state). `ensureFairsSeeded()` upserts by `key`, so growing the array and re-running
@@ -64,16 +64,17 @@ Tracked items intentionally deferred during development. Remove an entry once do
 - Optional precision upgrade: ZIP→state matching uses a state centroid for distance.
   Layer in true ZIP-centroid coordinates for finer "nearest regional fair" ordering.
 
-## Showcase teacher moderation (Showcase Wing follow-up)
-- Showcases currently **auto-approve on publish** (`moderationStatus = 'approved'`),
-  with `link_only` the default privacy so sharing is safe out of the box. The
-  `ModerationStatus` enum (`draft|pending_review|approved|rejected`) and the
-  `showcases.moderation_status` column are retained for a future teacher gate.
-- **Needed for a stricter rollout:** when privacy is `public`/`school_only`, publish
-  should set `pending_review` and a teacher approves in the teacher area
-  (`app/(teacher)/validations`) before the showcase appears in the gallery / is
-  publicly viewable. `canViewShowcase` already requires `approved`, and the gallery
-  query already filters on it — only the publish transition + a teacher UI are missing.
+## Showcase teacher moderation — SHIPPED (kept here as a map, not a TODO)
+- Teacher moderation is implemented end-to-end: publishing at `public`/`school_only`
+  privacy sets `moderationStatus = 'pending_review'` (`app/api/showcase/route.ts`);
+  `link_only` still auto-approves so sharing is safe out of the box. Teachers review
+  the queue at `app/(teacher)/teacher/showcase-moderation` (`ShowcaseModerationQueue`
+  + `DecisionControls`) backed by `app/api/teacher/showcase-moderation` (GET pending /
+  POST approve|reject, class-scoped), which flips the status and notifies the team.
+  `canViewShowcase` and the gallery query both require `approved`, so a pending or
+  rejected showcase never appears publicly.
+- Remaining polish (optional): a resubmit-after-rejection nudge and teacher-side
+  bulk actions. The core gate is done.
 
 ## Dependency hygiene
 - `recharts` is now **in use** (Data Terminal charts).

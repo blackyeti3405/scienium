@@ -297,7 +297,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
 
   // ── AC9 ──────────────────────────────────────────────────────────────────────
   test('AC9: GET /api/team/momentum (signed out) is blocked pre-route (307 sign-in redirect) or 401, never team stats', async () => {
-    const anonCtx = await playwrightRequest.newContext({ baseURL: BASE_URL })
+    const anonCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: undefined })
     try {
       // Do not follow redirects — the real contract here is `clerkMiddleware`
       // redirecting ALL non-public routes (including /api/team/*) to sign-in

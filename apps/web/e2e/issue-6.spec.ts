@@ -1,5 +1,6 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { STORAGE } from './roles'
+import { api, withSeedPage } from './api'
 
 /**
  * Issue 6 — Teacher dashboard revamp (roster restyle + student drill-down).
@@ -17,14 +18,13 @@ import { STORAGE } from './roles'
  *
  * All browser tests run under the TEACHER session because the teacher
  * dashboard is teacher-only (/teacher redirects students away).
- * The IDOR test uses a playwrightRequest context with STORAGE.teacher.
+ * The IDOR test makes its teacher-authed call on its own page via `api.*`.
  *
- * Seeding: beforeAll uses the teacher request context to discover the first
- * in-scope student (devuser1/devuser2's team), then stores their id for the
- * drill-down tests. No data mutation is required — the feature is read-only.
+ * Seeding: beforeAll uses a fresh authed teacher page (withSeedPage) to
+ * discover the first in-scope student (devuser1/devuser2's team), then stores
+ * their id for the drill-down tests. No data mutation is required — the
+ * feature is read-only.
  */
-
-const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 
 /** Student id discovered in beforeAll from the teacher's roster. */
 let inScopeStudentId: string | null = null
@@ -37,13 +37,9 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
 
   // ── Seed ─────────────────────────────────────────────────────────────────────
 
-  test.beforeAll(async () => {
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
-    })
-    try {
-      const rosterRes = await teacherCtx.get('/api/teacher/roster')
+  test.beforeAll(async ({ browser }) => {
+    await withSeedPage(browser, 'teacher', async (page) => {
+      const rosterRes = await api.get(page, '/api/teacher/roster')
       if (!rosterRes.ok()) {
         throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
       }
@@ -58,9 +54,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
           'No students found in teacher roster — DevTeacher must be linked to the dev class.',
         )
       }
-    } finally {
-      await teacherCtx.dispose()
-    }
+    })
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────
@@ -270,32 +264,26 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
 
   // ── AC7 ──────────────────────────────────────────────────────────────────────
   // IDOR guard: GET /api/teacher/student/<out-of-scope-id>/overview returns 404.
-  // Uses the teacher's authenticated request context to prove it is a scoping
+  // Uses the teacher's own authenticated page (api.*) to prove it is a scoping
   // failure (not an auth failure), and the endpoint is GET-only.
-  test('AC7: IDOR guard — out-of-scope student ID returns HTTP 404', async () => {
-    const teacherCtx = await playwrightRequest.newContext({
-      baseURL: BASE_URL,
-      storageState: STORAGE.teacher,
+  test('AC7: IDOR guard — out-of-scope student ID returns HTTP 404', async ({ page }) => {
+    await page.goto('/teacher') // fresh session cookie before api.* calls
+
+    // A syntactically valid but non-existent/out-of-scope CUID.
+    const fakeId = 'cl000000000000000000000000'
+    const res = await api.get(page, `/api/teacher/student/${fakeId}/overview`)
+    expect(res.status()).toBe(404)
+
+    // Confirm the response body has an error field (not a generic crash).
+    const body = await res.json()
+    expect(typeof body.error).toBe('string')
+
+    // The endpoint is GET-only; POST should return 405.
+    const postRes = await api.post(page, `/api/teacher/student/${fakeId}/overview`, {
+      data: {},
     })
-    try {
-      // A syntactically valid but non-existent/out-of-scope CUID.
-      const fakeId = 'cl000000000000000000000000'
-      const res = await teacherCtx.get(`/api/teacher/student/${fakeId}/overview`)
-      expect(res.status()).toBe(404)
-
-      // Confirm the response body has an error field (not a generic crash).
-      const body = await res.json()
-      expect(typeof body.error).toBe('string')
-
-      // The endpoint is GET-only; POST should return 405.
-      const postRes = await teacherCtx.post(`/api/teacher/student/${fakeId}/overview`, {
-        data: {},
-      })
-      // Next.js returns 405 for unimplemented methods.
-      expect(postRes.status()).toBe(405)
-    } finally {
-      await teacherCtx.dispose()
-    }
+    // Next.js returns 405 for unimplemented methods.
+    expect(postRes.status()).toBe(405)
   })
 
   // ── AC8 ──────────────────────────────────────────────────────────────────────

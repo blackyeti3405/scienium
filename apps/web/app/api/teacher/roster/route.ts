@@ -52,11 +52,7 @@ export async function GET(req: NextRequest) {
     ),
   ]
 
-  const [pending, lastLogs, lastActivity, readyPapers] = await Promise.all([
-    db.phaseAdvanceRequest.findMany({
-      where: { teamId: { in: teamIds }, status: 'pending' },
-      select: { teamId: true, toPhase: true },
-    }),
+  const [lastLogs, lastActivity, readyPapers] = await Promise.all([
     db.projectLog.groupBy({
       by: ['teamId'],
       where: { teamId: { in: teamIds }, entryType: 'progress' },
@@ -74,7 +70,6 @@ export async function GET(req: NextRequest) {
     }),
   ])
 
-  const pendingMap = new Map(pending.map((p) => [p.teamId, p.toPhase]))
   const lastLogMap = new Map(lastLogs.map((l) => [l.teamId, l._max.createdAt]))
   const lastActivityMap = new Map(lastActivity.map((a) => [a.teamId, a._max.createdAt]))
   const paperMap = new Map(readyPapers.map((p) => [p.teamId, p._count._all]))
@@ -87,7 +82,6 @@ export async function GET(req: NextRequest) {
     const teamId = team?.id ?? null
     const lastLog = teamId ? (lastLogMap.get(teamId) ?? null) : null
     const lastActivity = teamId ? (lastActivityMap.get(teamId) ?? null) : null
-    const pendingTo = teamId ? (pendingMap.get(teamId) ?? null) : null
 
     // Status is only meaningful for working/showcase-phase teams.
     let status: 'on_track' | 'unlogged' | 'stale' | null = null
@@ -116,7 +110,6 @@ export async function GET(req: NextRequest) {
       readyPapers: teamId ? (paperMap.get(teamId) ?? 0) : 0,
       lastActivityAt: lastActivity,
       flags: {
-        pendingValidation: pendingTo, // null | target phase string
         status,
       },
     }
@@ -129,7 +122,7 @@ export async function GET(req: NextRequest) {
     if (s.phase) {
       phaseCounts[s.phase] = (phaseCounts[s.phase] ?? 0) + 1
     }
-    if (s.flags.pendingValidation || s.flags.status === 'unlogged' || s.flags.status === 'stale') {
+    if (s.flags.status === 'unlogged' || s.flags.status === 'stale') {
       attentionCount++
     }
   }
