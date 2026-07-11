@@ -153,6 +153,7 @@ model Team {
   teamRubricScores TeamRubricScore[]
   codexLessonProgress CodexLessonProgress[]
   codexKpDays     CodexKpDay[]
+ teamDailyTaskDays TeamDailyTaskDay[]
   studyPlan       TeamStudyPlan?
   vegaStudyMessages VegaStudyMessage[]
   uploadedAssets  UploadedAsset[]
@@ -800,6 +801,25 @@ model LabCreditClaim {
 }
 
 // ─── Daily Activities ─────────────────────────────────────────────────────────
+// Rollup of daily task completions across all pillars (Codex, Project Log,
+// Failure Log, Proof of Expertise, etc.). Injected by each pillar's route
+// via lib/pvp/spell-power.ts incrementDailyTaskCount(). Drives the PvP
+// Spell Power Meter (spec §4.4 Option B).
+model TeamDailyTaskDay {
+  id String @id @default(cuid())
+  teamId String @map("team_id")
+  date DateTime @db.Date
+  tasksCompleted Int @default(0) @map("tasks_completed")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([teamId, date])
+  @@index([teamId, date])
+  @@map("team_daily_task_days")
+}
+
 // Field Dispatch was retired in favor of Field Codex (codex_* tables below) —
 // its tables were dropped in migration *_drop_field_dispatch.
 

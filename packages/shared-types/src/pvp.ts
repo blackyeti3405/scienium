@@ -2,6 +2,10 @@ import type { SpellType } from './enums'
 
 // PvP raid system (spec §11). Each economy building grants one spell; the spell's
 // level equals the building's level and all per-level scaling lives in code.
+
+// Spell Power Meter tiers — determines how hard the attacker's spells hit today
+// based on daily task completion (Option B, spec §4.4).
+export type SpellPowerTier = 'NONE' | 'BASE' | 'BOOSTED' | 'MAX'
 export interface Spell {
   id: string
   buildingKey: string
