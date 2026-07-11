@@ -806,17 +806,14 @@ model LabCreditClaim {
 // via lib/pvp/spell-power.ts incrementDailyTaskCount(). Drives the PvP
 // Spell Power Meter (spec §4.4 Option B).
 model TeamDailyTaskDay {
-  id String @id @default(cuid())
   teamId String @map("team_id")
   date DateTime @db.Date
   tasksCompleted Int @default(0) @map("tasks_completed")
-  createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   team Team @relation(fields: [teamId], references: [id])
 
-  @@unique([teamId, date])
-  @@index([teamId, date])
+  @@id([teamId, date])
   @@map("team_daily_task_days")
 }
 

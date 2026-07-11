@@ -93,8 +93,8 @@ export async function incrementDailyTaskCount(teamId: string): Promise<number> {
 
   // Atomic upsert: if the row exists, increment; if not, create with 1.
   const result = await db.$queryRaw<[{ tasks_completed: number }]>`
-    INSERT INTO "team_daily_task_days" ("team_id", "date", "tasks_completed", "created_at", "updated_at")
-    VALUES (${teamId}, ${today}, 1, NOW(), NOW())
+    INSERT INTO "team_daily_task_days" ("team_id", "date", "tasks_completed", "updated_at")
+    VALUES (${teamId}, ${today}, 1, NOW())
     ON CONFLICT ("team_id", "date")
     DO UPDATE SET "tasks_completed" = "team_daily_task_days"."tasks_completed" + 1,
                   "updated_at" = NOW()
