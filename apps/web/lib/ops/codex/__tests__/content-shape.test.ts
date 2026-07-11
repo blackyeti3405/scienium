@@ -9,11 +9,13 @@ import { LAB_TYPES } from '@/lib/phase'
 // `loadTrack` loader separately.
 import acousticsSound from '../tracks/acoustics-sound'
 import astronomyAstrophysics from '../tracks/astronomy-astrophysics'
+import chemistry from '../tracks/chemistry'
 import gaitBiomechanics from '../tracks/gait-biomechanics'
 
 const ALL_TRACK_MODULES: Record<string, CodexTrack> = {
   'acoustics-sound': acousticsSound,
   'astronomy-astrophysics': astronomyAstrophysics,
+  'chemistry': chemistry,
   'gait-biomechanics': gaitBiomechanics,
 }
 

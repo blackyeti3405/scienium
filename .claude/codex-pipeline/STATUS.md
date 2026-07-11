@@ -10,7 +10,7 @@
 > Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
 > Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
 
-**Progress: 3 / 29 fields · 18 / 174 segments.**
+**Progress: 4 / 29 fields · 24 / 174 segments.**
 
 ---
 
@@ -34,15 +34,15 @@
 - [x] observational-methods-timedomain
 - [x] stellar-astrophysics
 
-## chemistry ⬜
+## chemistry ✅
 *Chemistry*
 
-- [ ] Core
-- [ ] analytical-chemistry
-- [ ] electrochemistry
-- [ ] green-environmental-chemistry
-- [ ] organic-synthesis
-- [ ] physical-chemistry
+- [x] Core
+- [x] analytical-chemistry
+- [x] electrochemistry
+- [x] green-environmental-chemistry
+- [x] organic-synthesis
+- [x] physical-chemistry
 
 ## classical-mechanics-physics ⬜
 *Classical Mechanics / Physics*
