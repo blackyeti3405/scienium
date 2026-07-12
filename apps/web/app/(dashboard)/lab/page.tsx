@@ -29,8 +29,9 @@ export default async function LabPage({
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
 
-  // Resolve the player's team + everything the scene needs in one query.
-  // Falls back to discovery defaults for brand-new users without a team yet.
+  // Resolve the player's team + identity in ONE atomic query, so name/currency/
+  // members always come from the same row as phase/labType (never a mix of real
+  // team + blank identity). Falls back to discovery defaults for brand-new users.
   let teamId = ''
   let teamName = 'Your Lab'
   let phase: Phase = 'discovery'
@@ -86,30 +87,27 @@ export default async function LabPage({
     }
   }
 
-  // Buildings already placed on the plot (+ effective gateway positions). For a
-  // brand-new user with no team, fall back to the gateways at their default cells.
+  // The placed buildings and the literature-phase advance gate (Feature 1e) both
+  // depend only on teamId, so fetch them in ONE parallel batch rather than a
+  // sequential chain. Each keeps its own fallback, so one failure degrades just that
+  // affordance. A brand-new user with no team gets the gateway defaults below.
   let plot: PlotState = {
     economy: [],
     unplaced: [],
     gateways: GATEWAYS.map((g) => ({ key: g.key, gx: g.cell.gx, gy: g.cell.gy })),
   }
-  if (teamId) {
-    try {
-      plot = await loadPlotState(teamId)
-    } catch {
-      // Non-fatal: render the gateway defaults.
-    }
-  }
-
-  // Literature-phase advance gate (Feature 1e): progress toward 25 sources with
-  // every member proficient. Only meaningful during literature_review.
   let advance: AdvanceProgress | null = null
-  if (teamId && phase === 'literature_review') {
-    try {
-      advance = await getLiteratureAdvanceProgress(teamId, phase)
-    } catch {
-      // Non-fatal: the gate affordance simply won't render.
-    }
+
+  if (teamId) {
+    const [loadedPlot, loadedAdvance] = await Promise.all([
+      loadPlotState(teamId).catch(() => null),
+      // Advance progress is only meaningful during literature_review.
+      phase === 'literature_review'
+        ? getLiteratureAdvanceProgress(teamId, phase).catch(() => null)
+        : Promise.resolve(null),
+    ])
+    if (loadedPlot) plot = loadedPlot // Non-fatal on failure: keep the gateway defaults.
+    advance = loadedAdvance
   }
 
   // Self-paced transitions (→ working, → showcase): surface a free advance button.
