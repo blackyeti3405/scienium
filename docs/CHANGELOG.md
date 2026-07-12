@@ -5,6 +5,26 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.22.2] — 2026-07-11
+
+A launch-latency pass: opening the lab now feels instant, with no change to behaviour.
+
+### Added
+- Optimistic pre-loading on the home page — a signed-in player's browser prefetches
+  the lab route and warms its sprites during idle time, so the scene paints
+  immediately on launch.
+- Content-addressed sprite URLs (a `?v=<hash>` token regenerated at build time) with
+  long-lived immutable caching: sprites load instantly on repeat visits, and a
+  redrawn sprite is fetched fresh instead of served stale.
+
+### Changed
+- "Launch" links resolve their destination on the home page and go straight to the
+  lab (or teacher dashboard), removing the intermediate `/game` redirect hop.
+- The lab page loads plot and advance-gate data in a single parallel batch instead of
+  a sequential chain, cutting server round-trips.
+
+---
+
 ## [0.22.1] — 2026-07-11
 
 The Classical Mechanics / Physics field authored to full depth (Field Codex

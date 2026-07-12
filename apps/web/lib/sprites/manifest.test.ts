@@ -31,11 +31,15 @@ describe('getBuildingSprite — staged sprite resolution', () => {
     expect(getBuildingSprite(labType, 'nonexistent-building', 1)).toBeNull()
   })
 
+  // Paths carry a `?v=<hash>` cache-bust token from the sprite manifest, so compare
+  // only the path before the query.
+  const bare = (p: string) => p.split('?')[0]
+
   it('levels 1 and 3 → base path (no stage suffix)', () => {
     for (const lvl of [1, 3]) {
       const entry = getBuildingSprite(labType, slug, lvl)
       expect(entry).not.toBeNull()
-      expect(entry!.path).toBe(`/sprites/buildings/${labType}/${slug}.png`)
+      expect(bare(entry!.path)).toBe(`/sprites/buildings/${labType}/${slug}.png`)
     }
   })
 
@@ -48,13 +52,13 @@ describe('getBuildingSprite — staged sprite resolution', () => {
     ]
     for (const [lvl, suffix] of cases) {
       const entry = getBuildingSprite(labType, slug, lvl)
-      expect(entry!.path).toBe(`/sprites/buildings/${labType}/${slug}${suffix}.png`)
+      expect(bare(entry!.path)).toBe(`/sprites/buildings/${labType}/${slug}${suffix}.png`)
     }
   })
 
   it('default level (no argument) behaves as level 1 — base path', () => {
     const entry = getBuildingSprite(labType, slug)
-    expect(entry!.path).toBe(`/sprites/buildings/${labType}/${slug}.png`)
+    expect(bare(entry!.path)).toBe(`/sprites/buildings/${labType}/${slug}.png`)
   })
 
   it('description notes the stage at level >= 4, not at the base', () => {
