@@ -5,6 +5,31 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.1] — 2026-07-13
+
+A Volt Lab visual pass: the lab now reads as electric-yellow machinery rather than grey
+steel. The root problem wasn't colour — the economy buildings were 80–96% flat wall with
+almost no windows, so recolouring the glass did nothing. This adds the missing surface
+detail and retunes the palette to match.
+
+### Changed
+- Volt Lab reskin retuned to **bold electric yellow** — the glass/energy ramp flips from
+  cyan to a glowing yellow across both the seven gateways (`recolor.py`) and all fifty
+  economy building sprites (10 buildings × 5 tiers), so windows and holograms read as
+  electricity against the steel bodies.
+- Economy buildings gained real **fenestration**: glowing window bands stamped onto the
+  visible wall faces (following the iso slant, bright glass on the lit face and dimmer on
+  the shadow face) plus an accent eave line at the roofline. Open-frame builds that have
+  no solid face to window (e.g. mechanical-testing-rig) were hand-tuned instead — kept as
+  clean powered frames rather than sprinkled with stray windows.
+
+### Added
+- `art/detail_buildings.py` — a reproducible, idempotent pass that adds the window bands +
+  eave trim to economy-building char grids, excluding roof planes and the ground plinth.
+  Reusable for the other five lab sets.
+
+---
+
 ## [0.23.0] — 2026-07-13
 
 A full pixel-art overhaul of the lab world: every gateway building redrawn in a bold

@@ -48,10 +48,11 @@ LAB_PALETTES = {
         "h": "#d6ecff", "c": "#a8d4ff", "g": "#4aa0e6", "G": "#2166b0",
         "o": "#c89cf0", "O": "#e0c2ff", "r": "#6a34a8",
     },
-    # Volt Lab — industrial steel grey + electric yellow/cyan
+    # Volt Lab — industrial steel grey + ELECTRIC YELLOW energy (glass ramp is yellow,
+    # not cyan, so the glowing masses read as electricity against the cool steel body)
     "volt_lab": {
         "K": "#15181d", "W": "#eef2f6", "L": "#cdd6dd", "M": "#9aa3ad", "D": "#6c7682", "d": "#49515b",
-        "h": "#d6f9ff", "c": "#aef0fb", "g": "#38cfe2", "G": "#1f8ba0",
+        "h": "#fffde6", "c": "#ffe96b", "g": "#ffc915", "G": "#a8770c",
         "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14",
     },
     # TerraBase — earthy ochre/slate + mineral teal
