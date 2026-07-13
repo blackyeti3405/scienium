@@ -308,6 +308,16 @@
   image-rendering: pixelated;
 }
 
+/* Nature decoration layer — dense scatter of trees/bushes/etc on top of the grass,
+   below the building plot. Its own stacking context keeps it under the plot (z 1). */
+.decor-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 /* Building cluster layer — centred on the viewport; buildings offset from centre. */
 .lab-scene__cluster {
   position: absolute;

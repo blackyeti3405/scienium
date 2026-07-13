@@ -211,3 +211,80 @@ def cylinder(c: Canvas, cx: float, top_y: float, rx: float, h: float,
         y = top_y + h + ry * math.sin(math.radians(a))
         c.set(x, y, outline)
     return {"top": (cx, top_y), "rx": rx, "ry": ry, "h": h}
+
+
+def _point_in_poly(pts, x, y):
+    n = len(pts); inside = False; j = n - 1
+    for i in range(n):
+        xi, yi = pts[i]; xj, yj = pts[j]
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi + 1e-9) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def poly_prism(c: Canvas, corners_uv, top: tuple[float, float], h: float,
+               roof="L", lwall="M", rwall="D", roof_hi="W", outline="K") -> dict:
+    """A SINGLE extruded iso solid from an arbitrary footprint POLYGON.
+
+    Where `Box` makes one rectangular prism, this makes ONE continuous solid of any
+    footprint — L-shapes, T-shapes, notched plans — with one roof, continuous walls,
+    and a single silhouette outline (NO internal seams, so it reads as one building,
+    not several blocks abutted). `corners_uv` is the footprint polygon in iso units
+    (u = +RIGHT axis, v = +LEFT axis), ordered around the outline; `top` is the
+    screen (x,y) of unit (0,0), the back-top corner; walls drop `h` px.
+
+    Returns {'top': screen_pts, 'walls': [{'a','b','side'}]} — each front wall face
+    with its 'left'(lit) / 'right'(shaded) orientation so callers can place glazing.
+    """
+    ax, ay = top
+
+    def scr(uv):
+        u, v = uv
+        return (ax + RX * u + LX * v, ay + RY * u + LY * v)
+
+    pts = [scr(uv) for uv in corners_uv]
+    n = len(pts)
+
+    def is_front(a, b):
+        return not _point_in_poly(pts, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + 2)
+
+    walls = []
+    for i in range(n):  # front walls first
+        a, b = pts[i], pts[(i + 1) % n]
+        if is_front(a, b):
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            side = "left" if dx * dy > 0 else "right"
+            c.fill_poly([a, b, (b[0], b[1] + h), (a[0], a[1] + h)], lwall if side == "left" else rwall)
+            walls.append({"a": a, "b": b, "side": side})
+    c.fill_poly(pts, roof)  # single roof on top
+    for i in range(n):      # brighten the back roof edges for depth
+        a, b = pts[i], pts[(i + 1) % n]
+        if not is_front(a, b):
+            c.line(a, b, roof_hi)
+    for i in range(n):      # one continuous silhouette outline
+        a, b = pts[i], pts[(i + 1) % n]
+        c.line(a, b, outline)
+        if is_front(a, b):
+            c.line(a, (a[0], a[1] + h), outline)
+            c.line(b, (b[0], b[1] + h), outline)
+            c.line((a[0], a[1] + h), (b[0], b[1] + h), outline)
+    return {"top": pts, "walls": walls}
+
+
+def dome(c: Canvas, cx: float, cy: float, rx: float, ry: float,
+         top="L", shade="M", dark="D", outline="K") -> None:
+    """A curved (observatory) roof: a filled half-ellipse dome centred at (cx, cy),
+    lit from the upper-left, sitting on a drum/box. rx/ry are the half-extents."""
+    import math
+    for yy in range(-int(round(ry)), 1):
+        t = 1 - (yy / ry) ** 2
+        if t < 0:
+            continue
+        half = rx * (t ** 0.5)
+        for xx in range(-int(round(half)), int(round(half)) + 1):
+            col = top if xx < -half * 0.15 else (shade if xx < half * 0.55 else dark)
+            c.set(cx + xx, cy + yy, col)
+    for a in range(180, 361, 3):  # rim arc
+        c.set(cx + rx * math.cos(math.radians(a)), cy + ry * math.sin(math.radians(a)), outline)
+    c.line((cx - rx, cy), (cx + rx, cy), outline)

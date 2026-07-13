@@ -225,10 +225,10 @@ are still reserved here so nothing else in the catalog reuses them.
 
 | Status | Building | Feature in app | Signature feature (reserved) |
 |---|---|---|---|
-| [x] | Discovery | Topic / Wikipedia deep dives | Canonical hub — the imported reference building at plot center |
-| [x] | Literature Review | Papers, library & citation graph | Library with a hologram of an open book floating above the roof |
-| [x] | Research Plan | Hypothesis & study design | Drafting hall with a glowing blueprint/study-design schematic projected over it |
-| [x] | Operations Hub | Field Dispatch, Proof of Expertise, logs | Central command post crowned by a rotating radar/dispatch dish |
+| [x] | Discovery | Topic / Wikipedia deep dives | Exploration hub crowned by a rooftop satellite dish + a cylindrical scanner drum (designer mockup, 2026-07) |
+| [x] | Literature Review | Papers, library & citation graph | Two-tier reading hall topped by a glowing slanted glass skylight, with a book-spine color band (designer mockup, 2026-07) |
+| [x] | Research Plan | Hypothesis & study design | Twin drafting-table wings flanking an oversized pen/pencil holder centerpiece (designer mockup, 2026-07) |
+| [x] | Operations Hub | Field Dispatch, Proof of Expertise, logs | Wide mission-control block with an orange console band and a rooftop command post — green ops screen + antenna (designer mockup, 2026-07) |
 | [x] | Science Fair | Fair dates, rubric, categories, forms | Pavilion with a pennant-flag banner ridge and prize-ribbon marquee |
 | [x] | Showcase | Publish research to the world | Grand gallery topped by a beaming broadcast spire |
 | [x] | Battle Arena (PvP) | PvP combat | Coliseum with a crossed-tools emblem and twin tournament flags |

@@ -155,7 +155,7 @@ The component folders are feature-owned:
 - `components/fair/`: `ScienceFairFeature`, `CategoryBrowser`,
   `FormsChecklist`, and `RubricSelfCheck`.
 - `components/lab/`: `LabScene`, `LabPlot`, `ShopPanel`, `StatusStrip`,
-  `Sprite`, `TileBackground`, `FeaturePanel`, `TeamPanel`, `SettingsPanel`
+  `Sprite`, `TileBackground`, `DecorationLayer`, `FeaturePanel`, `TeamPanel`, `SettingsPanel`
   integration, `ActivityPanel`, `FeedbackPanel`, `NotificationBell`,
   `MomentumCard`, `PhaseAdvance`, `RequestAdvance`, and the intentional PvP
   `StubFeature`.

@@ -5,6 +5,35 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.0] — 2026-07-13
+
+A full pixel-art overhaul of the lab world: every gateway building redrawn in a bold
+style, a new nature background, and the art pipeline/toolkit extended to support it.
+
+### Added
+- Seven redesigned gateway buildings in a "clearance-5" style — each a **distinct
+  building form** (dome observatory, paneled studio, columned gallery, hexagonal
+  bunker, peaked pavilion, tiered coliseum, domed rotunda) crowned by its own glowing
+  floating hologram — reskinned across all six lab types via `recolor.py`.
+- A nature **decoration layer** (`components/lab/DecorationLayer.tsx`) that scatters
+  varied shrubs and rocks densely across the grass beneath the buildings. Placement is
+  deterministic (seeded per team), and the building plot renders over it, so a placed
+  building simply covers the vegetation in its footprint.
+- New decoration + ground-tile sprites and manifest entries, plus iso toolkit
+  primitives `poly_prism` (a single continuous solid from any footprint — L-shapes,
+  hexagons — not abutted cubes) and `dome`.
+- Pixel-art pipeline **modes** — *image-match* (reproduce a reference drawing;
+  painters and reviewers must open the reference and grade the silhouette first) and
+  *creative* (bold reinterpretation on the canonical, recolor-safe palette) — and the
+  designer's reference mockups under `art_ref/mockups/`.
+
+### Changed
+- The ground background is a refreshed 6-tile grass set with graded clutter.
+- Gateway sources are re-authored as bespoke forms instead of a shared cube; all lab
+  reskins regenerate from them.
+
+---
+
 ## [0.22.2] — 2026-07-11
 
 A launch-latency pass: opening the lab now feels instant, with no change to behaviour.
