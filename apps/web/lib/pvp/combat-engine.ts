@@ -180,10 +180,24 @@ function isSuperEffective(attacker: SpellType, defender: SpellType): boolean {
 
 /**
  * Call when the raid ends (timeout or attacker finishes). Computes results,
- * persists the raid row, updates trophies, and returns the result.
+ * persists the raid row, updates trophies for BOTH teams, and returns the result.
+ *
+ * If `existingRaidId` is provided, the PvpRaid row already exists (created by
+ * start_raid) and is updated in-place — only endedAt / percentDestroyed /
+ * trophiesDelta are written; raidLogJson is left as-is (the action route has
+ * been updating it after each cast). Otherwise a new row is created — this
+ * preserves backward compatibility for callers that don't pre-create the row.
+ *
+ * Trophy math (v1 spec §5): attacker gains trophyDelta, defender loses the
+ * same amount. Both teams' current counts are read before the upsert so
+ * neither side's history is overwritten.
+ *
  * NOTE: does NOT touch TeamDailyTaskDay — raiding does not fill the meter.
  */
-export async function completeRaid(session: RaidSession): Promise<RaidResult> {
+export async function completeRaid(
+  session: RaidSession,
+  existingRaidId?: string,
+): Promise<RaidResult> {
   const now = Date.now()
   session.endedAt = now
 
@@ -202,46 +216,79 @@ export async function completeRaid(session: RaidSession): Promise<RaidResult> {
   // 2. Compute trophy delta
   const trophyDelta = calculateTrophyDelta(percentDestroyed)
 
-  // 3. Persist raid
-  const defenderTrophiesRow = await db.pvpTrophies.findUnique({
-    where: { teamId: session.defenderTeamId },
-    select: { currentTrophies: true },
-  })
-  const defenderTrophies = defenderTrophiesRow?.currentTrophies ?? 0
-  const attackerTrophies = defenderTrophies + trophyDelta
+  // 3. Read current trophy counts for BOTH teams
+  const [attackerTrophiesRow, defenderTrophiesRow] = await Promise.all([
+    db.pvpTrophies.findUnique({
+      where: { teamId: session.attackerTeamId },
+      select: { currentTrophies: true },
+    }),
+    db.pvpTrophies.findUnique({
+      where: { teamId: session.defenderTeamId },
+      select: { currentTrophies: true },
+    }),
+  ])
+  const attackerBefore = attackerTrophiesRow?.currentTrophies ?? 0
+  const defenderBefore = defenderTrophiesRow?.currentTrophies ?? 0
 
-  await db.pvpRaid.create({
-    data: {
-      attackerTeamId: session.attackerTeamId,
-      defenderTeamId: session.defenderTeamId,
-      startedAt: new Date(session.startedAt),
-      endedAt: new Date(now),
-      percentDestroyed: percentDestroyed,
-      trophiesDelta: trophyDelta,
-      raidLogJson: {
-        spellsAvailable: session.spellsAvailable,
-        defenderBase: session.defenderBase,
-      },
+  // 4. Persist raid (create new or update existing row from start_raid)
+  const raidData = {
+    endedAt: new Date(now),
+    percentDestroyed: percentDestroyed,
+    trophiesDelta: trophyDelta,
+    raidLogJson: {
+      spellsAvailable: session.spellsAvailable,
+      defenderBase: session.defenderBase,
     },
-  })
+  }
 
-  // 4. Update trophy counts
-  await db.pvpTrophies.upsert({
-    where: { teamId: session.attackerTeamId },
-    create: { teamId: session.attackerTeamId, currentTrophies: attackerTrophies },
-    update: { currentTrophies: attackerTrophies },
-  })
-  await db.pvpTrophies.upsert({
-    where: { teamId: session.defenderTeamId },
-    create: { teamId: session.defenderTeamId, currentTrophies: defenderTrophies },
-    update: { currentTrophies: defenderTrophies },
-  })
+  if (existingRaidId) {
+    // Row already exists — only mark ended + results; raidLogJson was
+    // already kept up-to-date by the action route after each cast.
+    await db.pvpRaid.update({
+      where: { id: existingRaidId },
+      data: {
+        endedAt: raidData.endedAt,
+        percentDestroyed: raidData.percentDestroyed,
+        trophiesDelta: raidData.trophiesDelta,
+      },
+    })
+  } else {
+    await db.pvpRaid.create({
+      data: {
+        id: session.id,
+        attackerTeamId: session.attackerTeamId,
+        defenderTeamId: session.defenderTeamId,
+        startedAt: new Date(session.startedAt),
+        ...raidData,
+      },
+    })
+  }
+
+  // 5. Update trophy counts — attacker gains delta, defender loses same amount
+  await Promise.all([
+    db.pvpTrophies.upsert({
+      where: { teamId: session.attackerTeamId },
+      create: {
+        teamId: session.attackerTeamId,
+        currentTrophies: attackerBefore + trophyDelta,
+      },
+      update: { currentTrophies: { increment: trophyDelta } },
+    }),
+    db.pvpTrophies.upsert({
+      where: { teamId: session.defenderTeamId },
+      create: {
+        teamId: session.defenderTeamId,
+        currentTrophies: defenderBefore - trophyDelta,
+      },
+      update: { currentTrophies: { decrement: trophyDelta } },
+    }),
+  ])
 
   const result: RaidResult = {
     raidId: session.id,
     percentDestroyed: Math.round(percentDestroyed * 100) / 100,
     trophyDelta,
-    attackerTrophiesAfter: attackerTrophies,
+    attackerTrophiesAfter: attackerBefore + trophyDelta,
   }
 
   session.result = result
