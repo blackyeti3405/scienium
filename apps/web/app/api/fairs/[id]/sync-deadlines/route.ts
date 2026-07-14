@@ -46,16 +46,50 @@ type ExtractedDates = z.infer<typeof DatesSchema>
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   // Strict rate limit: each call triggers a paid Firecrawl job.
-  const { error: guardError } = await requireTeamContext(req, { tier: 'ai' })
+  const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'ai' })
   if (guardError) return guardError
 
   const fair = await db.fair.findUnique({
     where: { id: params.id },
-    select: { id: true, name: true, websiteUrl: true },
+    select: { id: true, name: true, websiteUrl: true, level: true, state: true },
   })
   if (!fair) return NextResponse.json({ error: 'Fair not found' }, { status: 404 })
+
+  // `Fair` is a GLOBAL catalog row and `FairEvent` is shared by every team, so
+  // "caller has some team" is not authority to rewrite it (BLK-5). Restrict the
+  // paid scrape to fairs this team is actually matched with — ISEF or a fair in
+  // the team's own state (the same set matchFairs surfaces in the UI).
+  if (fair.level !== 'international') {
+    const team = await db.team.findUnique({
+      where: { id: ctx.teamId },
+      select: { locationState: true },
+    })
+    if (!team?.locationState || fair.state !== team.locationState) {
+      return NextResponse.json({ error: 'Fair not found' }, { status: 404 })
+    }
+  }
+
   if (!fair.websiteUrl) {
     return NextResponse.json({ error: 'This fair has no website to read' }, { status: 400 })
+  }
+
+  // Never overwrite curated data with scrape output: if the latest event is
+  // already `confirmed`, return it as-is — no Firecrawl spend, no downgrade.
+  const latest = await db.fairEvent.findFirst({
+    where: { fairId: fair.id },
+    orderBy: { year: 'desc' },
+  })
+  if (latest?.status === 'confirmed') {
+    return NextResponse.json({
+      event: {
+        year: latest.year,
+        eventDate: latest.eventDate?.toISOString() ?? null,
+        registrationDeadline: latest.registrationDeadline?.toISOString() ?? null,
+        abstractDeadline: latest.abstractDeadline?.toISOString() ?? null,
+        venue: latest.venue,
+        status: 'confirmed',
+      },
+    })
   }
 
   const today = new Date().toISOString().slice(0, 10)
@@ -109,8 +143,16 @@ Return null for any date not found on the site — do not guess.`,
 
   const existing = await db.fairEvent.findFirst({
     where: { fairId: fair.id, year },
-    select: { id: true },
+    select: { id: true, status: true },
   })
+  if (existing?.status === 'confirmed') {
+    // A confirmed row for this exact year appeared since the pre-check (or the
+    // scrape targeted an older year) — scrape output never downgrades it.
+    return NextResponse.json(
+      { error: 'This year\'s dates are already confirmed and cannot be overwritten.' },
+      { status: 409 },
+    )
+  }
   const event = existing
     ? await db.fairEvent.update({ where: { id: existing.id }, data })
     : await db.fairEvent.create({ data: { fairId: fair.id, year, ...data } })

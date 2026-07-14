@@ -5,6 +5,44 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.3] — 2026-07-13
+
+Refactor Phase 1 (of [docs/REFACTOR.md](REFACTOR.md)): the pilot blockers — core-loop
+stalls, currency races, the LLM cost ceiling, and unrecoverable UI dead-ends.
+
+### Fixed
+- **Paper ingestion no longer fire-and-forget on serverless** (BLK-1): the upload route
+  now awaits `processPaperJob` before responding (with `maxDuration: 60`) and returns the
+  processed title/status directly, so a paper can't sit `pending` until a cron sweep. The
+  cron batch also rose 3 → 30 so a stalled classroom drains in one cycle, not ~50 minutes.
+- **"Promote source" double-mint race** (BLK-2): the promote transaction now takes a
+  per-node advisory lock and re-reads `paperId` inside the transaction — a double-click
+  returns the winner's paper instead of minting a second quiz-able Paper.
+- **Codex lesson completion KP race** (BLK-4): the once-ever KP claim moved inside the
+  transaction as a WHERE-gated `kp_awarded = 0` transition; two concurrent first-time
+  completions can no longer both credit KP or both consume a daily-cap slot.
+- **`sync-deadlines` authority** (BLK-5): the paid Firecrawl scrape is now restricted to
+  fairs the team is actually matched with (ISEF or the team's own state), and scrape
+  output can never overwrite a `confirmed` FairEvent.
+- **Chat spend was O(N²)** (BLK-6): paper chat and Vega study now put prompt-cache
+  breakpoints on the newest conversation turns, so prior history re-reads at ~10% cost
+  instead of re-billing in full every turn.
+- **Fetch failures masqueraded as empty/new-user states** (BLK-7): the Literature list
+  and the Discovery tree now track a distinct load-error state and render a retry banner —
+  a returning team on flaky wifi no longer sees "0 / 25" empty slots or the first-run home.
+- **No React error boundaries** (BLK-8): every route group gained an `error.tsx` with a
+  pixel-styled reset UI (shared `components/ui/RouteError.tsx`), and the raw-JSON
+  `.map` in `TopicSearch` is guarded, so one bad payload can't dead-end a student on
+  Next's blank "Application error" screen.
+
+### Changed
+- **LLM cost cap fails closed** (BLK-3): in production without a shared rate-limit store
+  (Upstash), the paid `ai`/`upload` tiers now return 503 instead of silently multiplying
+  the per-student ceiling by the instance count (`RATE_LIMIT_ALLOW_MEMORY=1` opts out on
+  single-instance hosts). `.env.example` documents the requirement.
+
+---
+
 ## [0.23.2] — 2026-07-13
 
 Refactor Phase 0 (of [docs/REFACTOR.md](REFACTOR.md)): the foundational seams the

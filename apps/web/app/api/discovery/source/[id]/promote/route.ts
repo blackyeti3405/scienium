@@ -5,6 +5,7 @@ import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { checkPaperRelevance } from '@/lib/literature/relevance'
 import { buildCitations, parseYear } from '@/lib/literature/citation'
+import { lockAggregate } from '@/lib/db-lock'
 import { logActivity } from '@/lib/activity/log'
 
 // ── POST /api/discovery/source/[id]/promote (#13 Citation Manager) ────────────
@@ -78,7 +79,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // One transaction: create the Paper (status 'ready' — metadata authoritative,
   // no extractor), wire the reserved paperId column, cache the Citation, and (if
   // provided) persist the student's own words as the relevance note.
-  const paperId = await db.$transaction(async (tx) => {
+  //
+  // The early `node.paperId` check above is an unlocked read, and the paid
+  // relevance call between it and here widens the race window to seconds — a
+  // double-click could mint two Papers (and duplicate quiz KP) from one node
+  // (BLK-2). Serialize on the node and RE-READ paperId inside the tx; the loser
+  // returns the winner's paper instead of creating a second one.
+  const promoted = await db.$transaction(async (tx) => {
+    await lockAggregate(tx, `discovery-promote:${node.id}`)
+
+    const current = await tx.discoveryNode.findUnique({
+      where: { id: node.id },
+      select: { paperId: true },
+    })
+    if (current?.paperId) return { paperId: current.paperId, existing: true as const }
+
     const paper = await tx.paper.create({
       data: {
         teamId: ctx.teamId,
@@ -115,8 +130,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       })
     }
 
-    return paper.id
+    return { paperId: paper.id, existing: false as const }
   })
+
+  if (promoted.existing) {
+    return NextResponse.json(
+      { error: 'Already promoted.', paperId: promoted.paperId },
+      { status: 409 },
+    )
+  }
+  const paperId = promoted.paperId
 
   logActivity(ctx.teamId, ctx.dbUserId, 'source_promoted', {
     title: es.sourceTitle,

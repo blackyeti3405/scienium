@@ -25,10 +25,16 @@ export function TopicSearch({ onSelect, placeholder = 'Search a Wikipedia topicâ
       setLoading(true)
       try {
         const res = await fetch(`/api/discovery/search?q=${encodeURIComponent(q)}`)
-        const data: string[] = await res.json()
+        const raw: unknown = await res.json()
+        // A 429/error body is an object, not the expected array â€” rendering it
+        // would throw in the results .map (BLK-8). Degrade to "no results".
+        const data = Array.isArray(raw) ? (raw as string[]) : []
         setResults(data)
         setOpen(data.length > 0)
         setHighlighted(-1)
+      } catch {
+        setResults([])
+        setOpen(false)
       } finally {
         setLoading(false)
       }

@@ -151,6 +151,26 @@ function createStore(): RateLimitStore {
 const store: RateLimitStore = createStore()
 
 /**
+ * Tiers that trigger paid work (Claude calls). On multi-instance/serverless
+ * hosting the MemoryStore is per-instance — the "12 AI calls/min/user" ceiling
+ * silently becomes `12 × instances` and resets on every cold start, i.e. the
+ * cost cap isn't enforced at all. Rather than ship an unbounded ceiling to
+ * production, these tiers fail CLOSED (503) when no shared store is configured.
+ * Set `RATE_LIMIT_ALLOW_MEMORY=1` to opt out on a single long-lived Node server,
+ * where per-instance memory IS the correct global store.
+ */
+const PAID_TIERS: ReadonlySet<TierName> = new Set(['ai', 'upload'])
+
+function paidTierMisconfigured(tierName: TierName): boolean {
+  return (
+    PAID_TIERS.has(tierName) &&
+    process.env.NODE_ENV === 'production' &&
+    !(store instanceof UpstashStore) &&
+    process.env.RATE_LIMIT_ALLOW_MEMORY !== '1'
+  )
+}
+
+/**
  * The per-IP ceiling is this multiple of the per-user limit. scienium teams are
  * often a whole classroom or library behind a single NAT IP, so a flat per-IP
  * cap at the per-user limit would lock out legitimate shared-network users. The
@@ -224,6 +244,20 @@ export async function enforceRateLimit(
   // stubs paid Claude calls), so this can't relax limits anywhere real. No spec
   // asserts a live rate-limit 429; F11-quiz-retry only tolerates one.
   if (process.env.E2E_SKIP_LLM === '1') return null
+
+  // Cost-cap guard: refuse paid tiers in production without a shared store
+  // (see PAID_TIERS). Surfaces the misconfiguration loudly instead of quietly
+  // multiplying the per-student LLM budget by the instance count.
+  if (paidTierMisconfigured(tierName)) {
+    console.error(
+      `[rate-limit] '${tierName}' tier blocked: no shared rate-limit store in production. ` +
+        'Set UPSTASH_REDIS_REST_URL/TOKEN (or RATE_LIMIT_ALLOW_MEMORY=1 on single-instance hosts).',
+    )
+    return NextResponse.json(
+      { error: 'This feature is temporarily unavailable. Please tell your teacher.' },
+      { status: 503 },
+    )
+  }
 
   const tier = RATE_LIMITS[tierName]
   const now = Date.now()

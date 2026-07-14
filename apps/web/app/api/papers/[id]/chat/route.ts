@@ -70,10 +70,25 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const priorAsc = prior.reverse()
   let head = 0
   while (head < priorAsc.length && priorAsc[head].role !== 'user') head++
-  const convo = [
+  const convo: Array<{
+    role: 'user' | 'assistant'
+    content: string | Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }>
+  }> = [
     ...priorAsc.slice(head).map((m) => ({ role: m.role, content: m.content })),
     { role: 'user' as const, content: message },
   ]
+  // Cache breakpoints on the last two turns (BLK-6). The system block below
+  // caches the paper text, but without a breakpoint in `messages` every prior
+  // turn re-bills at full price each request — O(N²) spend over a long chat.
+  // Marking the newest turns caches the whole conversation prefix, so the next
+  // request re-reads it at ~10% cost; two breakpoints keep a hit even when
+  // concurrent turns interleave by one message.
+  for (const idx of [convo.length - 1, convo.length - 2]) {
+    const turn = idx >= 0 ? convo[idx] : undefined
+    if (turn && typeof turn.content === 'string') {
+      turn.content = [{ type: 'text', text: turn.content, cache_control: { type: 'ephemeral' } }]
+    }
+  }
 
   // Persist the user turn as `pending` BEFORE the paid call, so a failed call
   // leaves a durable record rather than silently dropping the turn.

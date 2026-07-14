@@ -42,6 +42,12 @@ interface DiscoveryStore {
   /** True once the tree has been loaded from the server at least once */
   hydrated: boolean
   /**
+   * True when the last hydrate attempt failed. Distinct from "hydrated with an
+   * empty tree" — a fetch failure must render a retry, never the first-run
+   * home implying the team's tree is gone (BLK-7).
+   */
+  loadError: boolean
+  /**
    * Server-reported first-visit KP from the most recent create/branch, plus a
    * monotonic nonce so the UI fires a "+N KP" tick-up exactly once per award
    * (even when two awards happen to be the same amount). 0 = nothing to show.
@@ -190,10 +196,12 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
   currentNodeId: null,
   pendingLinks: [],
   hydrated: false,
+  loadError: false,
   kpAward: { amount: 0, nonce: 0 },
   newTreePending: false,
 
   hydrate: async () => {
+    set({ loadError: false })
     try {
       const res = await fetch('/api/discovery/tree')
       if (!res.ok) throw new Error(`load failed (${res.status})`)
@@ -207,6 +215,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
       set((state) => ({
         nodes,
         hydrated: true,
+        loadError: false,
         // Keep the current selection if it still exists, else the most-recent node
         currentNodeId:
           state.currentNodeId && nodes.some((n) => n.id === state.currentNodeId)
@@ -215,7 +224,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => ({
       }))
     } catch (err) {
       console.error('[discovery] hydrate failed:', err)
-      set({ hydrated: true })
+      set({ hydrated: true, loadError: true })
     }
   },
 

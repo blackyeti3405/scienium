@@ -17,6 +17,10 @@ import { processPaperJob } from '@/lib/literature/process-paper'
 // DoS. 20 MB comfortably covers real papers.
 const MAX_PDF_BYTES = 20 * 1024 * 1024
 
+// Ingestion is awaited before the response (see below), and the metadata
+// extraction includes a paid LLM call — give the function room to finish.
+export const maxDuration = 60
+
 export async function POST(req: NextRequest) {
   // Strict per-user + per-IP limit: each upload triggers parsing, storage, and a
   // paid Claude metadata call.
@@ -153,15 +157,26 @@ export async function POST(req: NextRequest) {
     db.paperProcessingJob.create({ data: { paperId: paper.id } }),
   ])
 
-  // Fire-and-forget: extract metadata from the text we already have
-  processPaperJob(paper.id).catch(console.error)
-  logActivity(ctx.teamId, ctx.dbUserId, 'paper_upload', { title }).catch(console.error)
+  // Ingest BEFORE responding. On serverless a detached promise is frozen the
+  // moment the response flushes, which left papers stuck in `processing` until
+  // the cron sweep picked them up (BLK-1). processPaperJob owns its claim +
+  // retry bookkeeping and never throws, so awaiting it is just latency — and
+  // the paper comes back ready-to-read in the same request.
+  await processPaperJob(paper.id)
+  await logActivity(ctx.teamId, ctx.dbUserId, 'paper_upload', { title }).catch(console.error)
+
+  // Re-read the fields ingestion just filled so the client shows the real
+  // title/status without waiting for its first poll.
+  const processed = await db.paper.findUnique({
+    where: { id: paper.id },
+    select: { title: true, authors: true, status: true },
+  })
 
   return NextResponse.json({
     id: paper.id,
-    title: paper.title,
-    authors: paper.authors,
-    status: paper.status,
+    title: processed?.title ?? paper.title,
+    authors: processed?.authors ?? paper.authors,
+    status: processed?.status ?? paper.status,
     createdAt: paper.createdAt,
     fileUrl,
   })

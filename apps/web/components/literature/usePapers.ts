@@ -25,9 +25,15 @@ export function usePapers({
 }) {
   const [papers, setPapers] = useState<Paper[]>([])
   const [papersLoaded, setPapersLoaded] = useState(false)
+  // A failed list load is tracked separately from "loaded with zero papers" —
+  // on flaky wifi a returning team must see a retry banner, never the empty
+  // first-run slots implying their work is gone (BLK-7).
+  const [loadError, setLoadError] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const loadPapers = useCallback(() => {
+    setLoadError(false)
+    setPapersLoaded(false)
     listPapers()
       .then((data) => {
         setPapers(
@@ -44,9 +50,16 @@ export function usePapers({
             })),
         )
       })
-      .catch((err) => console.error('[papers] failed to load:', err))
+      .catch((err) => {
+        console.error('[papers] failed to load:', err)
+        setLoadError(true)
+      })
       .finally(() => setPapersLoaded(true))
   }, [])
+
+  useEffect(() => {
+    loadPapers()
+  }, [loadPapers])
 
   const pollStatus = useCallback((paperId: string) => {
     const interval = setInterval(async () => {
@@ -149,6 +162,8 @@ export function usePapers({
     papers,
     setPapers,
     papersLoaded,
+    loadError,
+    retryLoad: loadPapers,
     uploadError,
     setUploadError,
     handleUpload,

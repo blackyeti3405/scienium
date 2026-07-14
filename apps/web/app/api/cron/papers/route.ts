@@ -53,7 +53,11 @@ export async function GET(req: NextRequest) {
       ],
     },
     orderBy: { createdAt: 'asc' },
-    take: 3,
+    // Sized above a full classroom (30 uploads at lesson start), not at 3 — with
+    // the old batch size a room's worth of stalled papers took ~50 min to drain.
+    // Jobs run concurrently and each is one bounded LLM call, so a batch fits
+    // comfortably inside maxDuration.
+    take: 30,
     select: { paperId: true },
   })
 

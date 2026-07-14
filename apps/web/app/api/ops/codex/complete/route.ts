@@ -208,59 +208,76 @@ export async function POST(req: NextRequest) {
 
   const award = computeKpAward({ passed: true, alreadyClaimed: false })
 
-  let capReached = false
-  await db.$transaction(async (tx) => {
-    // Atomically claim ONE daily-cap slot: insert-or-increment the day's
-    // counter, but only when doing so keeps it under the cap. The WHERE
-    // clause is evaluated as part of the same atomic UPDATE, so two
-    // concurrent transactions racing for the last slot can never both
-    // succeed — exactly one RETURNING set will be non-empty. This adapts the
-    // once-ever `INSERT ... ON CONFLICT DO NOTHING RETURNING` claim pattern
-    // to a counter that must stay under a cap.
-    const capRows = await tx.$queryRaw<{ lessons_completed: number }[]>(Prisma.sql`
-      INSERT INTO "codex_kp_days" (id, user_id, team_id, day, lessons_completed, updated_at)
-      VALUES (gen_random_uuid()::text, ${ctx.dbUserId}, ${ctx.teamId}, ${today}, 1, now())
-      ON CONFLICT (user_id, team_id, day) DO UPDATE
-        SET lessons_completed = "codex_kp_days".lessons_completed + 1, updated_at = now()
-        WHERE "codex_kp_days".lessons_completed < ${CODEX_DAILY_LESSON_CAP}
-      RETURNING lessons_completed
-    `)
+  // The `alreadyClaimed` read above is outside this transaction, so two
+  // concurrent FIRST-time completions of the same lesson would both reach here
+  // and both mint KP (BLK-4). The KP claim is therefore re-run in-transaction
+  // as a genuine 0 → award transition: the WHERE-gated ON CONFLICT UPDATE lets
+  // exactly one request through — the loser's RETURNING set is empty, not a
+  // stale read. (This mirrors the daily-cap claim below; per the 25P02 lesson
+  // in the doc comment, races are resolved by RETURNING-set emptiness, never
+  // by catching a unique violation inside the transaction.)
+  class CapSlotUnavailable extends Error {}
+  let outcome: 'paid' | 'duplicate' | 'cap' = 'paid'
+  try {
+    await db.$transaction(async (tx) => {
+      // Claim the once-ever lesson payment.
+      const claimRows = await tx.$queryRaw<{ kp_awarded: number }[]>(Prisma.sql`
+        INSERT INTO "codex_lesson_progress" (user_id, team_id, track_slug, lesson_id, completed, best_score, kp_awarded, completed_at, updated_at)
+        VALUES (${ctx.dbUserId}, ${ctx.teamId}, ${trackSlug}, ${lessonId}, true, ${newBestScore}, ${award.kpEarned}, now(), now())
+        ON CONFLICT (user_id, team_id, track_slug, lesson_id) DO UPDATE
+          SET completed = true,
+              best_score = GREATEST("codex_lesson_progress".best_score, ${newBestScore}),
+              kp_awarded = ${award.kpEarned},
+              completed_at = now(),
+              updated_at = now()
+          WHERE "codex_lesson_progress".kp_awarded = 0
+        RETURNING kp_awarded
+      `)
+      if (claimRows.length === 0) {
+        // A concurrent request already claimed this lesson's KP. Nothing has
+        // been written in this transaction — just report the duplicate.
+        outcome = 'duplicate'
+        return
+      }
 
-    if (capRows.length === 0) {
-      // Lost the race for the last cap slot (or the cap was already reached
-      // by a concurrent request) — do NOT mark complete, do NOT mint KP.
-      capReached = true
-      return
-    }
+      // Atomically claim ONE daily-cap slot: insert-or-increment the day's
+      // counter, but only when doing so keeps it under the cap. The WHERE
+      // clause is evaluated as part of the same atomic UPDATE, so two
+      // concurrent transactions racing for the last slot can never both
+      // succeed — exactly one RETURNING set will be non-empty.
+      const capRows = await tx.$queryRaw<{ lessons_completed: number }[]>(Prisma.sql`
+        INSERT INTO "codex_kp_days" (id, user_id, team_id, day, lessons_completed, updated_at)
+        VALUES (gen_random_uuid()::text, ${ctx.dbUserId}, ${ctx.teamId}, ${today}, 1, now())
+        ON CONFLICT (user_id, team_id, day) DO UPDATE
+          SET lessons_completed = "codex_kp_days".lessons_completed + 1, updated_at = now()
+          WHERE "codex_kp_days".lessons_completed < ${CODEX_DAILY_LESSON_CAP}
+        RETURNING lessons_completed
+      `)
+      if (capRows.length === 0) {
+        // Lost the race for the last cap slot — abort so the lesson claim
+        // above rolls back too (no completion, no KP, no consumed slot).
+        throw new CapSlotUnavailable()
+      }
 
-    // Cap slot secured — raise the progress row's high-water marks (upsert
-    // via ON CONFLICT so this is safe even on a genuinely first-ever row)
-    // and mint the flat per-lesson KP onto the team's currency.
-    await tx.$queryRaw(Prisma.sql`
-      INSERT INTO "codex_lesson_progress" (user_id, team_id, track_slug, lesson_id, completed, best_score, kp_awarded, completed_at, updated_at)
-      VALUES (${ctx.dbUserId}, ${ctx.teamId}, ${trackSlug}, ${lessonId}, true, ${newBestScore}, ${award.kpEarned}, now(), now())
-      ON CONFLICT (user_id, team_id, track_slug, lesson_id) DO UPDATE
-        SET completed = true,
-            best_score = GREATEST("codex_lesson_progress".best_score, ${newBestScore}),
-            kp_awarded = GREATEST("codex_lesson_progress".kp_awarded, ${award.kpEarned}),
-            completed_at = now(),
-            updated_at = now()
-    `)
-
-    await tx.teamCurrency.upsert({
-      where: { teamId: ctx.teamId },
-      create: { teamId: ctx.teamId, kp: award.kpEarned },
-      update: { kp: { increment: award.kpEarned } },
+      // Both claims secured — mint the flat per-lesson KP onto the team.
+      await tx.teamCurrency.upsert({
+        where: { teamId: ctx.teamId },
+        create: { teamId: ctx.teamId, kp: award.kpEarned },
+        update: { kp: { increment: award.kpEarned } },
+      })
     })
-  })
+  } catch (err) {
+    if (!(err instanceof CapSlotUnavailable)) throw err
+    outcome = 'cap'
+  }
 
-  if (capReached) {
+  if (outcome !== 'paid') {
     return NextResponse.json({
       passed: true,
       perQuestion: grade.perQuestion,
       ratio: grade.ratio,
       kpEarned: 0,
-      capReached: true,
+      capReached: outcome === 'cap',
     })
   }
 

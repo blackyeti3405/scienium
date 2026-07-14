@@ -38,6 +38,7 @@ export function DiscoveryFeature() {
     pendingLinks,
     kpAward,
     hydrated,
+    loadError,
     hydrate,
     startExploration,
     addYouTubeVideo,
@@ -602,6 +603,20 @@ export function DiscoveryFeature() {
               <PixelSkeleton variant="pill" h="h-7" w="w-20" />
             </div>
             <PixelSkeleton variant="box" h="h-12" w="w-full" />
+          </div>
+        ) : loadError ? (
+          // A failed hydrate must never render the first-run home — a returning
+          // team on flaky wifi would think their tree is gone (BLK-7).
+          <div className="max-w-md mx-auto w-full px-6 py-16 flex flex-col items-center gap-4 text-center">
+            <p className="font-pixel text-[9px] text-red-300">
+              Couldn&apos;t load your discovery tree — check your connection.
+            </p>
+            <button
+              onClick={() => void hydrate()}
+              className="font-pixel text-[8px] border border-white/20 text-white/60 px-4 py-2 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+            >
+              Try again
+            </button>
           </div>
         ) : (
           <DiscoveryHome

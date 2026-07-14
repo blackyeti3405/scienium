@@ -52,10 +52,23 @@ export async function POST(req: NextRequest) {
   const priorAsc = prior.reverse()
   let head = 0
   while (head < priorAsc.length && priorAsc[head].role !== 'user') head++
-  const convo = [
+  const convo: Array<{
+    role: 'user' | 'assistant'
+    content: string | Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }>
+  }> = [
     ...priorAsc.slice(head).map((m) => ({ role: m.role, content: m.content })),
     { role: 'user' as const, content: message },
   ]
+  // Cache breakpoints on the last two turns (BLK-6): without one in `messages`
+  // every prior turn re-bills at full price each request. Marking the newest
+  // turns caches the conversation prefix for the next request; two breakpoints
+  // keep a hit even when teammates' turns interleave by one message.
+  for (const idx of [convo.length - 1, convo.length - 2]) {
+    const turn = idx >= 0 ? convo[idx] : undefined
+    if (turn && typeof turn.content === 'string') {
+      turn.content = [{ type: 'text', text: turn.content, cache_control: { type: 'ephemeral' } }]
+    }
+  }
 
   // Persist the user turn as `pending` before the paid call.
   const requestId = randomUUID()

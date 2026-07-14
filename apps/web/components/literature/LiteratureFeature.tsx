@@ -33,6 +33,8 @@ export function LiteratureFeature() {
     papers,
     setPapers,
     papersLoaded,
+    loadError,
+    retryLoad,
     uploadError,
     setUploadError,
     handleUpload,
@@ -287,6 +289,21 @@ export function LiteratureFeature() {
           Array.from({ length: TOTAL_SLOTS }).map((_, i) => (
             <PixelSkeleton key={`slot-skel-${i}`} variant="box" h="h-[52px]" w="w-full" />
           ))
+        ) : loadError ? (
+          // A failed load must never render as the empty first-run state — a
+          // returning team on flaky wifi would think their sources are gone
+          // (and might re-upload, burning relevance checks). Offer a retry.
+          <div className="border border-dashed border-red-400/25 rounded-sm py-10 text-center flex flex-col items-center gap-3">
+            <p className="font-pixel text-[9px] text-red-300">
+              Couldn&apos;t load your sources — check your connection.
+            </p>
+            <button
+              onClick={retryLoad}
+              className="font-pixel text-[8px] border border-white/20 text-white/60 px-4 py-2 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+            >
+              Try again
+            </button>
+          </div>
         ) : (
           <>
             {papers.map((paper) => (
