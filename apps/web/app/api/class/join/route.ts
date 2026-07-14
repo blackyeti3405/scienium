@@ -47,23 +47,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: 'approved', classId: target.id, className: target.name })
   }
 
-  // A non-lead whose lab is already committed to a different class can't unilaterally
-  // request a move — the lead must move the whole lab (labs can't straddle classes).
-  const memberships = await db.teamMember.findMany({
-    where: { userId: user.id },
-    select: { role: true, team: { select: { classId: true } } },
-  })
-  const conflictingMemberTeam = memberships.find(
-    ({ role, team }) =>
-      role !== 'lead' && team.classId !== null && team.classId !== target.id,
-  )
-  if (conflictingMemberTeam) {
-    return NextResponse.json(
-      { error: 'Your lab lead must move the whole lab into this class.' },
-      { status: 409 },
-    )
-  }
-
+  // Class membership is per-student, so any student can request their own
+  // teacher's class regardless of what class(es) their teammates are in — a lab
+  // can span classes/schools with each member in their respective class.
   await requestClassJoin(user.id, target.id)
   return NextResponse.json({ status: 'pending', className: target.name })
 }

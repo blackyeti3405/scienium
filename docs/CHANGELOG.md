@@ -5,6 +5,37 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.8] — 2026-07-14
+
+Class membership is now **per-student**, so a lab can span multiple classes/schools with
+each member in their own teacher's class — replacing the previous "one lab = one class =
+one school" assumption that silently rewrote a joiner's school to the lead's.
+
+### Changed
+- **A lab can span classes/schools.** Entering a class code (and its teacher approval) now
+  enrolls **only that student** — it no longer pulls their whole lab into one class or
+  overwrites teammates' class/school. Each student is in their own class; a lab is simply
+  the set of its members.
+- **Teacher visibility is membership-based.** `teacherOwnsTeam` now grants access to a
+  team's shared artifacts (papers, research plan, rubric, feedback, nudges, showcase) to
+  **every** teacher who owns at least one member — so both teachers of a cross-school lab
+  can see the collaborative work. The teacher roster and report aggregates resolve a
+  student's team via membership rather than the (now-vestigial) `Team.classId`.
+- **Individual-student privacy preserved.** A student's *personal* pages
+  (`/teacher/student/[id]…`) stay gated on that student's own class, so a teammate's
+  teacher can see the shared lab but not another teacher's student's individual profile.
+- Dropped the "your lab lead must move the whole lab" / "that lab belongs to a different
+  class" blocks (join + class-join) and the lab-class auto-adopt on team-join — all
+  artifacts of the single-class model. Removed the now-unused `enrollTeamInClass` /
+  `teamLeadClass` helpers.
+
+### Known limitation
+- Team-level scoring (rubric, feedback) is shared across every owning teacher — for a
+  cross-school lab, two teachers grade the same shared project (last write wins). Per-teacher
+  scoring is out of scope for the pilot.
+
+---
+
 ## [0.23.7] — 2026-07-14
 
 Teacher-approval gate for class enrollment, closing the "non-expiring, non-revocable class

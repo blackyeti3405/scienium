@@ -2,7 +2,6 @@ import 'server-only'
 import { clerkClient } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
 import { normalizeInviteCode } from '@/lib/team/invite'
-import type { Prisma } from '@prisma/client'
 
 /**
  * School + classroom resolution shared by every path that creates a User row
@@ -44,30 +43,26 @@ export async function resolveClass(code: string | null | undefined): Promise<Cla
 }
 
 /**
- * Assign a user's school from a typed high-school name and/or a class join code,
- * and — when a class code matches — file a PENDING class-join request instead of
- * enrolling directly (the teacher must approve; see `requestClassJoin`). A valid
- * class code takes precedence for the school. No-ops silently when neither is
- * provided so it's safe to call unconditionally.
+ * Assign a user's school from their typed high-school name, and — when a class
+ * code matches — file a PENDING class-join request instead of enrolling directly
+ * (the teacher must approve; see `requestClassJoin`). No-ops silently when
+ * neither is provided so it's safe to call unconditionally.
  *
- * `classId` in the return is always null now: enrollment only happens on teacher
- * approval, so callers that stamp a new team's class from this (onboarding) start
- * class-less until the request is approved. `pendingClassId` reports the class a
- * request was filed against, if any.
+ * Class membership is per-student: entering a code never changes the student's
+ * own school (they keep the one they typed) — the class's school is applied only
+ * on approval. `classId` in the return is always null (enrollment happens on
+ * approval); `pendingClassId` reports the class a request was filed against.
  */
 export async function applySchoolAndClass(
   dbUserId: string,
   opts: { highSchool?: string | null; classCode?: string | null },
 ): Promise<{ classId: null; pendingClassId: string | null }> {
-  const classMatch = await resolveClass(opts.classCode)
-  const schoolId = classMatch?.schoolId ?? (await resolveSchool(opts.highSchool))
-
-  // Adopt the school immediately (harmless — the roster is class-scoped, not
-  // school-scoped, so this never surfaces the student before approval).
+  const schoolId = await resolveSchool(opts.highSchool)
   if (schoolId) {
     await db.user.update({ where: { id: dbUserId }, data: { schoolId } })
   }
 
+  const classMatch = await resolveClass(opts.classCode)
   const pendingClassId = classMatch ? await requestClassJoin(dbUserId, classMatch.classId) : null
   return { classId: null, pendingClassId }
 }
@@ -97,11 +92,11 @@ export async function requestClassJoin(
 }
 
 /**
- * Approve a pending class-join request: enroll the student (and, if they lead any
- * labs, the whole lab) into the class, exactly as the old direct-join did. Runs in
- * one transaction. Any other pending requests by now-enrolled lab members for this
- * same class are resolved to `approved` too, so the teacher's queue stays clean.
- * Caller must have already verified the request belongs to a class this teacher owns.
+ * Approve a pending class-join request: enroll ONLY the requesting student into
+ * the class (set their `classId` + adopt the class's school). Class membership is
+ * per-student — a lab can span multiple classes/schools, so approval never
+ * touches teammates or the team row. Caller must have already verified the
+ * request belongs to a class this teacher owns.
  */
 export async function approveClassJoin(
   requestId: string,
@@ -119,79 +114,15 @@ export async function approveClassJoin(
       select: { id: true, schoolId: true },
     })
 
-    // Enroll the student themselves.
     await tx.user.update({
       where: { id: request.userId },
       data: { classId: klass.id, schoolId: klass.schoolId },
     })
-
-    // If they lead any labs, move the whole lab in (a lab can't straddle classes),
-    // collecting every member the enrollment moved so their own pending requests
-    // for this class can be resolved in one sweep.
-    const ledTeams = await tx.team.findMany({
-      where: { teamLeadId: request.userId },
-      select: { id: true },
-    })
-    const enrolledUserIds = new Set<string>([request.userId])
-    for (const team of ledTeams) {
-      await enrollTeamInClass(team.id, klass.id, klass.schoolId, tx)
-      const members = await tx.teamMember.findMany({
-        where: { teamId: team.id },
-        select: { userId: true },
-      })
-      for (const m of members) enrolledUserIds.add(m.userId)
-    }
-
-    // Approve this request plus any now-satisfied pending requests for the same
-    // class from the lab members the enrollment just moved in.
-    await tx.classJoinRequest.updateMany({
-      where: {
-        classId: klass.id,
-        status: 'pending',
-        userId: { in: [...enrolledUserIds] },
-      },
+    await tx.classJoinRequest.update({
+      where: { id: request.id },
       data: { status: 'approved', decidedAt: new Date(), decidedByUserId },
     })
   })
-}
-
-/**
- * The classroom a lab belongs to — its lead's class. A lab is "in" a teacher's
- * class through its lead, so the lead's class (and school) defines the whole
- * lab's class. Returns null when the lead hasn't joined a class.
- */
-export async function teamLeadClass(
-  teamId: string,
-): Promise<{ classId: string; schoolId: string } | null> {
-  const team = await db.team.findUnique({
-    where: { id: teamId },
-    select: {
-      class: { select: { id: true, schoolId: true } },
-      teamLead: { select: { classId: true, schoolId: true } },
-    },
-  })
-  const classId = team?.class?.id ?? team?.teamLead.classId
-  const schoolId = team?.class?.schoolId ?? team?.teamLead.schoolId
-  return classId && schoolId ? { classId, schoolId } : null
-}
-
-/**
- * Enroll a whole lab into a classroom: copy the class + school onto every team
- * member, so a lab can never straddle teacher authorization boundaries. Returns
- * the number of members enrolled or moved.
- */
-export async function enrollTeamInClass(
-  teamId: string,
-  classId: string,
-  schoolId: string,
-  client: Pick<Prisma.TransactionClient, 'team' | 'user'> = db,
-): Promise<number> {
-  await client.team.update({ where: { id: teamId }, data: { classId } })
-  const { count } = await client.user.updateMany({
-    where: { teamMemberships: { some: { teamId } } },
-    data: { classId, schoolId },
-  })
-  return count
 }
 
 /**

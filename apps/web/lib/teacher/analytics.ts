@@ -47,21 +47,22 @@ interface StudentTeamRow {
  * De-duped teams from the scoped student set — the ONLY teams any report
  * aggregate may touch.
  *
- * IDOR scope: only teams whose `classId` is in `classIds` (the classes THIS
- * teacher owns) survive; a student's stale membership in an out-of-class team
- * never leaks into the report.
+ * IDOR scope: the caller passes students already filtered to the teacher's
+ * classes (per-student membership), so every one of their teams is legitimately
+ * in scope — a lab can span classes, and any owning teacher sees its team-level
+ * aggregates. Ownership is NOT read off `Team.classId` (which is vestigial under
+ * per-student membership).
  */
 export function dedupeScopedTeams(
   students: {
     activeTeam: StudentTeamRow | null
     teamMemberships: { team: StudentTeamRow }[]
   }[],
-  classIds: string[],
 ): ScopedTeam[] {
   const teamMap = new Map<string, ScopedTeam>()
   for (const s of students) {
     const team = s.activeTeam ?? s.teamMemberships[0]?.team
-    if (team?.classId && classIds.includes(team.classId)) {
+    if (team) {
       teamMap.set(team.id, {
         id: team.id,
         name: team.name,

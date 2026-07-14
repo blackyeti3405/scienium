@@ -104,15 +104,21 @@ export async function requireTeacher(
 }
 
 /**
- * Verify a team falls within the teacher's scope through its explicit
- * `Team.classId`. Backfilled for all teams whose lead has a class (migration
- * 20260709000000), so no lead-class fallback is needed. An empty class scope is
- * never in-scope.
+ * Verify a team falls within the teacher's scope through its MEMBERS: a teacher
+ * owns a team if at least one of its members is in one of the teacher's classes.
+ *
+ * Class membership is per-student (a lab can span multiple schools/classes — each
+ * student in their own class), so ownership can't be read off a single
+ * `Team.classId`. A team's shared artifacts (rubric, feedback, nudges, papers,
+ * showcase) are visible to EVERY teacher who owns ≥1 member; a student's
+ * INDIVIDUAL pages stay gated on that student's own class in the per-student
+ * routes (`student/[id]…`), so a teammate's teacher can't open them. An empty
+ * class scope is never in-scope.
  */
 export async function teacherOwnsTeam(classIds: string[], teamId: string): Promise<boolean> {
   if (classIds.length === 0) return false
   const team = await db.team.findFirst({
-    where: { id: teamId, classId: { in: classIds } },
+    where: { id: teamId, members: { some: { user: { classId: { in: classIds } } } } },
     select: { id: true },
   })
   return !!team

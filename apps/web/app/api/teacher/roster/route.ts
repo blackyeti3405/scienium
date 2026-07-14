@@ -49,13 +49,13 @@ export async function GET(req: NextRequest) {
     },
   })
 
+  // `students` are already scoped to this teacher's classes (per-student
+  // membership), so every one of their teams is in scope regardless of the
+  // team's own (now-vestigial) `classId` — a lab can span classes/schools.
   const teamIds = [
     ...new Set(
       students
-        .map((s) => {
-          const team = s.activeTeam ?? s.teamMemberships[0]?.team
-          return team?.classId && ctx.classIds.includes(team.classId) ? team.id : undefined
-        })
+        .map((s) => (s.activeTeam ?? s.teamMemberships[0]?.team)?.id)
         .filter((x): x is string => !!x),
     ),
   ]

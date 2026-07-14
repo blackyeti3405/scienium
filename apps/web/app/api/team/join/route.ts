@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { requireUserContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { normalizeInviteCode } from '@/lib/team/invite'
-import { applySchoolAndClass, syncClerkDisplayName, teamLeadClass } from '@/lib/onboarding/profile'
+import { applySchoolAndClass, syncClerkDisplayName } from '@/lib/onboarding/profile'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
@@ -80,10 +80,6 @@ export async function POST(req: NextRequest) {
         },
       })
       if (!team) throw new JoinError('That lab no longer exists', 404)
-      const joiningUser = await tx.user.findUnique({
-        where: { id: user.id },
-        select: { classId: true },
-      })
 
       // Already on this team? Treat as success (idempotent) and leave the code unused.
       if (team.members.some((m) => m.userId === user.id)) {
@@ -94,9 +90,8 @@ export async function POST(req: NextRequest) {
       if (team.members.length >= team.maxMembers) {
         throw new JoinError('That lab is already full', 409)
       }
-      if (joiningUser?.classId && team.classId && joiningUser.classId !== team.classId) {
-        throw new JoinError('That lab belongs to a different class', 409)
-      }
+      // No cross-class block: class membership is per-student, so a lab may hold
+      // members from different classes/schools — each stays in their own class.
 
       await tx.teamMember.create({ data: { userId: user.id, teamId: team.id, role: 'member' } })
       await tx.teamInvite.update({
@@ -107,18 +102,9 @@ export async function POST(req: NextRequest) {
       return team.id
     })
 
-    // If the joiner isn't in a class, adopt the lab's class (its lead's) so they
-    // show up on the teacher's roster alongside the rest of the lab.
-    const fresh = await db.user.findUnique({ where: { id: user.id }, select: { classId: true } })
-    if (!fresh?.classId) {
-      const labClass = await teamLeadClass(teamId)
-      if (labClass) {
-        await db.user.update({
-          where: { id: user.id },
-          data: { classId: labClass.classId, schoolId: labClass.schoolId },
-        })
-      }
-    }
+    // No lab-class auto-adopt: class membership is per-student. A joiner keeps
+    // their own class (or requests their own teacher's class separately); the
+    // teacher sees the lab because they own ≥1 member (teacherOwnsTeam).
 
     logActivity(teamId, user.id, 'member_joined', { name: user.name }).catch(console.error)
     return NextResponse.json({ teamId })

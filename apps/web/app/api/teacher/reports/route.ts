@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
   })
 
   // De-duped teams from the scoped student set — the ONLY teams any aggregate below may touch.
-  const teams = dedupeScopedTeams(students, ctx.classIds)
+  const teams = dedupeScopedTeams(students)
   const teamIds = teams.map((t) => t.id)
 
   const [kpRows, proficiencyRows] = await Promise.all([
