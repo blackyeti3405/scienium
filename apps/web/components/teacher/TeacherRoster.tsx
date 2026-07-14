@@ -6,6 +6,7 @@ import {
   Plus,
   Copy,
   Check,
+  X,
   AlertCircle,
   Clock,
   Activity,
@@ -14,6 +15,7 @@ import {
   BookOpen,
   GraduationCap,
   Bell,
+  RefreshCw,
 } from 'lucide-react'
 import { PHASE_INFO, PHASE_ORDER, type Phase } from '@/lib/phase'
 import { StatTile } from '@/components/ui/Card'
@@ -33,12 +35,19 @@ interface RosterStudent {
   flags: { status: 'on_track' | 'unlogged' | 'stale' | null }
 }
 
+interface PendingRequest {
+  id: string
+  studentName: string
+  requestedAt: string
+}
+
 interface ClassRow {
   id: string
   name: string
   joinCode: string | null
   school?: { name: string }
   _count?: { users: number }
+  pendingRequests?: PendingRequest[]
 }
 
 interface RosterResponse {
@@ -132,7 +141,11 @@ export function TeacherRoster() {
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       {/* Classes manager */}
-      <ClassManager classes={classes} onCreated={(c) => setClasses((list) => [c, ...list])} />
+      <ClassManager
+        classes={classes}
+        onCreated={(c) => setClasses((list) => [c, ...list])}
+        setClasses={setClasses}
+      />
 
       {/* Overview stat tiles */}
       {students.length > 0 && (
@@ -313,15 +326,20 @@ export function TeacherRoster() {
 function ClassManager({
   classes,
   onCreated,
+  setClasses,
 }: {
   classes: ClassRow[]
   onCreated: (c: ClassRow) => void
+  setClasses: React.Dispatch<React.SetStateAction<ClassRow[]>>
 }) {
   const [name, setName] = useState('')
   const [schoolName, setSchoolName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+  const [regenerating, setRegenerating] = useState<string | null>(null)
+  // Requests currently being decided, so their buttons disable individually.
+  const [deciding, setDeciding] = useState<Set<string>>(new Set())
 
   async function create() {
     if (!name.trim() || busy) return
@@ -351,6 +369,62 @@ function ClassManager({
     })
   }
 
+  // Regenerate a class's join code — instantly revokes the old (leaked) code.
+  async function regenerate(classId: string) {
+    if (regenerating) return
+    setRegenerating(classId)
+    setError(null)
+    try {
+      const res = await fetch(`/api/teacher/class/${classId}/code`, { method: 'POST' })
+      const out = await res.json()
+      if (!res.ok) throw new Error(out.error ?? 'Could not regenerate code')
+      setClasses((list) => list.map((c) => (c.id === classId ? { ...c, joinCode: out.joinCode } : c)))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not regenerate code')
+    } finally {
+      setRegenerating(null)
+    }
+  }
+
+  // Approve or deny a pending join request. On approve the student count bumps
+  // and the row is removed; on deny the row is just removed.
+  async function decide(classId: string, requestId: string, decision: 'approve' | 'deny') {
+    if (deciding.has(requestId)) return
+    setDeciding((s) => new Set(s).add(requestId))
+    setError(null)
+    try {
+      const res = await fetch(`/api/teacher/class/requests/${requestId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision }),
+      })
+      const out = await res.json()
+      if (!res.ok) throw new Error(out.error ?? 'Could not update request')
+      setClasses((list) =>
+        list.map((c) =>
+          c.id === classId
+            ? {
+                ...c,
+                pendingRequests: (c.pendingRequests ?? []).filter((r) => r.id !== requestId),
+                _count:
+                  decision === 'approve'
+                    ? { users: (c._count?.users ?? 0) + 1 }
+                    : c._count,
+              }
+            : c,
+        ),
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update request')
+    } finally {
+      setDeciding((s) => {
+        const next = new Set(s)
+        next.delete(requestId)
+        return next
+      })
+    }
+  }
+
   return (
     <section className="space-y-3">
       <h2 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
@@ -362,29 +436,76 @@ function ClassManager({
           {classes.map((c) => (
             <div
               key={c.id}
-              className="flex items-center justify-between border border-white/10 bg-[#0a1628] rounded-lg px-4 py-3"
+              className="flex flex-col gap-3 border border-white/10 bg-[#0a1628] rounded-lg px-4 py-3"
             >
-              <div>
-                <span className="text-sm font-medium text-white block">{c.name}</span>
-                <span className="text-xs text-white/35">
-                  {c._count?.users ?? 0} students
-                  {c.school?.name ? ` · ${c.school.name}` : ''}
-                </span>
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-medium text-white block">{c.name}</span>
+                  <span className="text-xs text-white/35">
+                    {c._count?.users ?? 0} students
+                    {c.school?.name ? ` · ${c.school.name}` : ''}
+                  </span>
+                </div>
+                {c.joinCode && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => copy(c.joinCode!)}
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-[#F5C518] tracking-widest hover:brightness-110 transition-all cursor-pointer"
+                      title="Copy class code"
+                    >
+                      {c.joinCode}
+                      {copied === c.joinCode ? (
+                        <Check size={13} className="text-emerald-400" />
+                      ) : (
+                        <Copy size={13} />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => regenerate(c.id)}
+                      disabled={regenerating === c.id}
+                      className="text-white/40 hover:text-[#F5C518] disabled:opacity-40 transition-colors cursor-pointer"
+                      title="Regenerate code (revokes the current one)"
+                    >
+                      <RefreshCw size={13} className={regenerating === c.id ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+                )}
               </div>
-              {c.joinCode && (
-                <button
-                  type="button"
-                  onClick={() => copy(c.joinCode!)}
-                  className="inline-flex items-center gap-1.5 text-sm font-medium text-[#F5C518] tracking-widest hover:brightness-110 transition-all cursor-pointer"
-                  title="Copy class code"
-                >
-                  {c.joinCode}
-                  {copied === c.joinCode ? (
-                    <Check size={13} className="text-emerald-400" />
-                  ) : (
-                    <Copy size={13} />
-                  )}
-                </button>
+
+              {/* Pending join requests — the teacher-approval gate. */}
+              {(c.pendingRequests?.length ?? 0) > 0 && (
+                <div className="border-t border-white/10 pt-2 space-y-1.5">
+                  <span className="text-[11px] font-medium text-amber-300/80 flex items-center gap-1.5">
+                    <Clock size={11} /> {c.pendingRequests!.length} awaiting approval
+                  </span>
+                  {c.pendingRequests!.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-white/80 truncate">{r.studentName}</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => decide(c.id, r.id, 'approve')}
+                          disabled={deciding.has(r.id)}
+                          className="inline-flex items-center gap-1 text-xs text-emerald-300 border border-emerald-400/30 rounded px-2 py-1 hover:bg-emerald-400/10 disabled:opacity-40 transition-colors cursor-pointer"
+                          title="Approve"
+                        >
+                          <Check size={12} /> Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => decide(c.id, r.id, 'deny')}
+                          disabled={deciding.has(r.id)}
+                          className="inline-flex items-center gap-1 text-xs text-white/50 border border-white/15 rounded px-2 py-1 hover:bg-white/5 disabled:opacity-40 transition-colors cursor-pointer"
+                          title="Deny"
+                        >
+                          <X size={12} /> Deny
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           ))}

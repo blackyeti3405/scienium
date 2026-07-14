@@ -5,6 +5,35 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.7] — 2026-07-14
+
+Teacher-approval gate for class enrollment, closing the "non-expiring, non-revocable class
+code" gap surfaced after the Phase 2 security pass. A class join code no longer enrolls a
+student on entry — it files a request the teacher must approve — and teachers can now
+regenerate a code to revoke a leaked one.
+
+### Added
+- **Class-join requires teacher approval.** Entering a class code anywhere — the explicit
+  join, student onboarding, or team-join — now files a `pending` `ClassJoinRequest` instead
+  of enrolling directly. A leaked code can no longer silently populate a roster. Approving
+  enrolls the student (and, for a lab lead, the whole lab, since a lab can't straddle
+  classes) and auto-resolves any teammates' pending requests for that class; denying leaves
+  them unenrolled and free to re-request.
+- **Regenerate class code** (`POST /api/teacher/class/[id]/code`) — a teacher can mint a
+  fresh code, instantly invalidating a shared/leaked one. Enrolled students are unaffected;
+  only new join attempts with the old code fail.
+- Teacher endpoints: pending requests are included in `GET /api/teacher/class`, and
+  `POST /api/teacher/class/requests/[id]` approves/denies them (strictly scoped to classes
+  the teacher owns).
+- **UI:** the teacher's class manager lists pending requests with Approve/Deny buttons and a
+  regenerate-code button; the student's lab panel shows "waiting for your teacher to approve"
+  after requesting.
+- New `ClassJoinRequest` model + `ClassJoinRequestStatus` enum (migration
+  `20260714120000_class_join_requests`, applied locally). Verified end-to-end against the dev
+  DB: request → pending → approve enrolls the whole lab and clears the queue.
+
+---
+
 ## [0.23.6] — 2026-07-14
 
 Refactor Phase 4 (of [docs/REFACTOR.md](REFACTOR.md)): the performance and cleanup long

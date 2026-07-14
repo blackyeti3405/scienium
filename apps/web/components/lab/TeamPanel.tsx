@@ -38,6 +38,8 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
   const [classCode, setClassCode] = useState('')
   const [joining, setJoining] = useState(false)
   const [classError, setClassError] = useState<string | null>(null)
+  // Set after a successful request that's awaiting the teacher's approval.
+  const [classPending, setClassPending] = useState<string | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -93,6 +95,7 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
     if (!code) return
     setJoining(true)
     setClassError(null)
+    setClassPending(null)
     try {
       const res = await fetch('/api/class/join', {
         method: 'POST',
@@ -101,7 +104,13 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error ?? 'Could not join that class')
-      setData((prev) => (prev ? { ...prev, myClass: { id: d.classId, name: d.className } } : prev))
+      if (d.status === 'approved') {
+        // Already enrolled in this class — reflect it immediately.
+        setData((prev) => (prev ? { ...prev, myClass: { id: d.classId, name: d.className } } : prev))
+      } else {
+        // Pending teacher approval — not yet on the roster.
+        setClassPending(d.className ?? 'that class')
+      }
       setClassCode('')
     } catch (err) {
       setClassError(err instanceof Error ? err.message : 'Could not join that class')
@@ -197,10 +206,15 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                     Connected to <span className="text-[#F5C518]">{data.myClass.name}</span> — your
                     teacher can see this lab&apos;s progress.
                   </p>
+                ) : classPending ? (
+                  <p className="font-pixel text-[7px] text-amber-300/80 leading-loose">
+                    Request sent to <span className="text-[#F5C518]">{classPending}</span> — waiting
+                    for your teacher to approve you before your lab is linked.
+                  </p>
                 ) : (
                   <p className="font-pixel text-[7px] text-white/35 leading-loose">
-                    Not linked to a teacher yet. Enter the class code from your teacher so they can
-                    follow your lab.
+                    Not linked to a teacher yet. Enter the class code from your teacher — they&apos;ll
+                    approve your request so they can follow your lab.
                   </p>
                 )}
                 <form onSubmit={joinClass} className="flex items-center gap-2 mt-3">

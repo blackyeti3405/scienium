@@ -28,6 +28,7 @@ model User {
   schoolsAdministered  School[]                @relation("schoolAdmin")
   teamsLed             Team[]                  @relation("teamLead")
   classesTeaching      Class[]                 @relation("classTeacher")
+  classJoinRequests    ClassJoinRequest[]
   teamMemberships      TeamMember[]
   projectLogEntries    ProjectLog[]
   projectLogEdits      ProjectLog[]            @relation("projectLogEditor")
@@ -76,23 +77,56 @@ model School {
   @@map("schools")
 }
 
-// A teacher's classroom. Students join with the reusable `joinCode` (unlike the
-// single-use team invite, a classroom code is long-lived so a whole class can
-// redeem it). The teacher owns it via `teacherId`.
+// A teacher's classroom. Students REQUEST to join with the reusable `joinCode`
+// (long-lived so a whole class can use one code); the teacher must approve each
+// request before the student is enrolled (see ClassJoinRequest). The teacher can
+// regenerate `joinCode` to revoke a leaked code. The teacher owns it via `teacherId`.
 model Class {
-  id        String   @id @default(cuid())
-  schoolId  String   @map("school_id")
-  name      String
-  teacherId String   @map("teacher_id")
-  joinCode  String?  @unique @map("join_code")
-  createdAt DateTime @default(now()) @map("created_at")
-  school    School   @relation(fields: [schoolId], references: [id])
-  teacher   User     @relation("classTeacher", fields: [teacherId], references: [id])
-  users     User[]
-  teams     Team[]
+  id           String             @id @default(cuid())
+  schoolId     String             @map("school_id")
+  name         String
+  teacherId    String             @map("teacher_id")
+  joinCode     String?            @unique @map("join_code")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  school       School             @relation(fields: [schoolId], references: [id])
+  teacher      User               @relation("classTeacher", fields: [teacherId], references: [id])
+  users        User[]
+  teams        Team[]
+  joinRequests ClassJoinRequest[]
 
   @@index([teacherId])
   @@map("classes")
+}
+
+// A student's pending/decided request to join a classroom (the teacher-approval
+// gate). Entering a class code anywhere — the explicit join, onboarding, or
+// team-join — creates a `pending` row here instead of enrolling directly; the
+// teacher approves or denies it. One row per (class, student): a re-request or a
+// decision updates it in place rather than accumulating history.
+model ClassJoinRequest {
+  id              String                 @id @default(cuid())
+  classId         String                 @map("class_id")
+  userId          String                 @map("user_id")
+  status          ClassJoinRequestStatus @default(pending)
+  createdAt       DateTime               @default(now()) @map("created_at")
+  decidedAt       DateTime?              @map("decided_at")
+  // The teacher who approved/denied it (scalar — no back-relation needed).
+  decidedByUserId String?                @map("decided_by_user_id")
+
+  class Class @relation(fields: [classId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([classId, userId])
+  @@index([classId, status])
+  @@map("class_join_requests")
+}
+
+enum ClassJoinRequestStatus {
+  pending
+  approved
+  denied
+
+  @@map("class_join_request_status")
 }
 
 // ─── Teams ───────────────────────────────────────────────────────────────────

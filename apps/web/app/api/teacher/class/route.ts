@@ -6,7 +6,10 @@ import { resolveSchool } from '@/lib/onboarding/profile'
 import { generateInviteCode } from '@/lib/team/invite'
 import { db } from '@/lib/db'
 
-/** GET /api/teacher/class — the teacher's classrooms + their reusable join codes. */
+/**
+ * GET /api/teacher/class — the teacher's classrooms, their reusable join codes,
+ * and each class's PENDING join requests (students awaiting approval).
+ */
 export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeacher(req, { tier: 'read' })
   if (error) return error
@@ -21,10 +24,28 @@ export async function GET(req: NextRequest) {
       createdAt: true,
       school: { select: { name: true } },
       _count: { select: { users: true } },
+      joinRequests: {
+        where: { status: 'pending' },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          createdAt: true,
+          user: { select: { name: true } },
+        },
+      },
     },
   })
 
-  return NextResponse.json({ classes })
+  const shaped = classes.map(({ joinRequests, ...c }) => ({
+    ...c,
+    pendingRequests: joinRequests.map((r) => ({
+      id: r.id,
+      studentName: r.user.name,
+      requestedAt: r.createdAt,
+    })),
+  }))
+
+  return NextResponse.json({ classes: shaped })
 }
 
 const CreateClassBody = z

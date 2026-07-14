@@ -44,28 +44,115 @@ export async function resolveClass(code: string | null | undefined): Promise<Cla
 }
 
 /**
- * Assign a user's school and (optionally) classroom from a typed high-school name
- * and/or a class join code. A valid class code takes precedence for the school.
- * No-ops silently when neither is provided so it's safe to call unconditionally.
- * Returns the matched class id (if any) so callers can report it.
+ * Assign a user's school from a typed high-school name and/or a class join code,
+ * and — when a class code matches — file a PENDING class-join request instead of
+ * enrolling directly (the teacher must approve; see `requestClassJoin`). A valid
+ * class code takes precedence for the school. No-ops silently when neither is
+ * provided so it's safe to call unconditionally.
+ *
+ * `classId` in the return is always null now: enrollment only happens on teacher
+ * approval, so callers that stamp a new team's class from this (onboarding) start
+ * class-less until the request is approved. `pendingClassId` reports the class a
+ * request was filed against, if any.
  */
 export async function applySchoolAndClass(
   dbUserId: string,
   opts: { highSchool?: string | null; classCode?: string | null },
-): Promise<{ classId: string | null }> {
+): Promise<{ classId: null; pendingClassId: string | null }> {
   const classMatch = await resolveClass(opts.classCode)
   const schoolId = classMatch?.schoolId ?? (await resolveSchool(opts.highSchool))
 
-  if (!schoolId && !classMatch) return { classId: null }
+  // Adopt the school immediately (harmless — the roster is class-scoped, not
+  // school-scoped, so this never surfaces the student before approval).
+  if (schoolId) {
+    await db.user.update({ where: { id: dbUserId }, data: { schoolId } })
+  }
 
-  await db.user.update({
-    where: { id: dbUserId },
-    data: {
-      ...(schoolId ? { schoolId } : {}),
-      ...(classMatch ? { classId: classMatch.classId } : {}),
-    },
+  const pendingClassId = classMatch ? await requestClassJoin(dbUserId, classMatch.classId) : null
+  return { classId: null, pendingClassId }
+}
+
+/**
+ * File (or refresh) a student's PENDING request to join a class. Returns the
+ * classId when a request is now pending, or null when no request was needed
+ * because the student is already enrolled in that class.
+ *
+ * - Already in the class → no-op (returns null).
+ * - Existing approved/denied/pending row → reset to `pending` (a re-request after
+ *   a denial, or a fresh code entry, re-opens it for the teacher).
+ */
+export async function requestClassJoin(
+  dbUserId: string,
+  classId: string,
+): Promise<string | null> {
+  const user = await db.user.findUnique({ where: { id: dbUserId }, select: { classId: true } })
+  if (user?.classId === classId) return null // already enrolled — nothing to request
+
+  await db.classJoinRequest.upsert({
+    where: { classId_userId: { classId, userId: dbUserId } },
+    create: { classId, userId: dbUserId, status: 'pending' },
+    update: { status: 'pending', decidedAt: null, decidedByUserId: null },
   })
-  return { classId: classMatch?.classId ?? null }
+  return classId
+}
+
+/**
+ * Approve a pending class-join request: enroll the student (and, if they lead any
+ * labs, the whole lab) into the class, exactly as the old direct-join did. Runs in
+ * one transaction. Any other pending requests by now-enrolled lab members for this
+ * same class are resolved to `approved` too, so the teacher's queue stays clean.
+ * Caller must have already verified the request belongs to a class this teacher owns.
+ */
+export async function approveClassJoin(
+  requestId: string,
+  decidedByUserId: string,
+): Promise<void> {
+  await db.$transaction(async (tx) => {
+    const request = await tx.classJoinRequest.findUnique({
+      where: { id: requestId },
+      select: { id: true, classId: true, userId: true, status: true },
+    })
+    if (!request || request.status !== 'pending') return
+
+    const klass = await tx.class.findUniqueOrThrow({
+      where: { id: request.classId },
+      select: { id: true, schoolId: true },
+    })
+
+    // Enroll the student themselves.
+    await tx.user.update({
+      where: { id: request.userId },
+      data: { classId: klass.id, schoolId: klass.schoolId },
+    })
+
+    // If they lead any labs, move the whole lab in (a lab can't straddle classes),
+    // collecting every member the enrollment moved so their own pending requests
+    // for this class can be resolved in one sweep.
+    const ledTeams = await tx.team.findMany({
+      where: { teamLeadId: request.userId },
+      select: { id: true },
+    })
+    const enrolledUserIds = new Set<string>([request.userId])
+    for (const team of ledTeams) {
+      await enrollTeamInClass(team.id, klass.id, klass.schoolId, tx)
+      const members = await tx.teamMember.findMany({
+        where: { teamId: team.id },
+        select: { userId: true },
+      })
+      for (const m of members) enrolledUserIds.add(m.userId)
+    }
+
+    // Approve this request plus any now-satisfied pending requests for the same
+    // class from the lab members the enrollment just moved in.
+    await tx.classJoinRequest.updateMany({
+      where: {
+        classId: klass.id,
+        status: 'pending',
+        userId: { in: [...enrolledUserIds] },
+      },
+      data: { status: 'approved', decidedAt: new Date(), decidedByUserId },
+    })
+  })
 }
 
 /**
