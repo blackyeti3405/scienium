@@ -142,15 +142,24 @@ export async function GET(req: NextRequest) {
     id: string
     name: string
     labType: LabType | null
+    trophies: number
     buildings: BuildingTarget[]
   } | null = null
 
   if (team?.classId) {
     const match = await findRandomOpponent(teamId, team.classId)
     if (match) {
+      const [buildings, oppTrophiesRow] = await Promise.all([
+        getTeamBuildings(match.id),
+        db.pvpTrophies.findUnique({
+          where: { teamId: match.id },
+          select: { currentTrophies: true },
+        }),
+      ])
       opponent = {
         ...match,
-        buildings: await getTeamBuildings(match.id),
+        buildings,
+        trophies: oppTrophiesRow?.currentTrophies ?? 0,
       }
     }
   }
@@ -215,15 +224,24 @@ export async function POST(req: NextRequest) {
       id: string
       name: string
       labType: LabType | null
+      trophies: number
       buildings: BuildingTarget[]
     } | null = null
 
     if (team?.classId) {
       const match = await findRandomOpponent(teamId, team.classId)
       if (match) {
+        const [buildings, oppTrophiesRow] = await Promise.all([
+          getTeamBuildings(match.id),
+          db.pvpTrophies.findUnique({
+            where: { teamId: match.id },
+            select: { currentTrophies: true },
+          }),
+        ])
         opponent = {
           ...match,
-          buildings: await getTeamBuildings(match.id),
+          buildings,
+          trophies: oppTrophiesRow?.currentTrophies ?? 0,
         }
       }
     }
