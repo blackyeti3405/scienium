@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useLabCurrency } from '@/lib/labCurrency'
+import { useLabCurrency } from '@/components/lab/labCurrency'
 import type { Paper, QuizQuestionView, GradeResult, QuizPhase } from './types'
 
 /**

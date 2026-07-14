@@ -29,9 +29,11 @@ export function QAPanel({
   const { phase, setPhase, hasPastResults } = quiz
 
   return (
-    <div className="flex h-full overflow-hidden">
+    // Stacks below md (UX-3): the side-by-side split leaves both panes unusably
+    // narrow under ~700px, so the PDF goes on top and the quiz/chat below.
+    <div className="flex flex-col md:flex-row h-full overflow-hidden">
       {/* PDF viewer */}
-      <div className="flex-1 min-w-0 border-r border-white/10 bg-black/20 flex flex-col">
+      <div className="flex-1 min-w-0 min-h-0 border-b md:border-b-0 md:border-r border-white/10 bg-black/20 flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2 min-w-0 pr-4">
             <p className="font-pixel text-[8px] text-white/40 truncate min-w-0">{paper.title}</p>
@@ -59,8 +61,8 @@ export function QAPanel({
         )}
       </div>
 
-      {/* Right panel */}
-      <div className="w-96 flex flex-col shrink-0">
+      {/* Right panel (below the PDF when stacked) */}
+      <div className="h-2/5 w-full md:h-auto md:w-96 flex flex-col shrink-0">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
           {/* Tabs between graded results and chat once a quiz has been graded;
               otherwise just a static label for the loading/quiz/grading phases. */}

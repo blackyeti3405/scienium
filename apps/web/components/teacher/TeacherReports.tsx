@@ -1,19 +1,21 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts'
+import dynamic from 'next/dynamic'
 import { PHASE_INFO, PHASE_ORDER, type Phase } from '@/lib/phase'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
 import { PrintButton } from '@/components/showcase/PrintButton'
+
+// Code-split (PERF-10): recharts is ~100KB and only these two bar charts use it,
+// so the chart module loads on demand instead of riding in the eager bundle.
+const ReportBarChart = dynamic(
+  () => import('./ReportBarChart').then((m) => m.ReportBarChart),
+  {
+    ssr: false,
+    loading: () => <PixelSkeleton variant="box" h="h-[220px]" w="w-full" />,
+  },
+)
 
 interface ProficiencyRow {
   teamId: string
@@ -132,20 +134,7 @@ export function TeacherReports() {
         <h2 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
           Phase distribution
         </h2>
-        <div style={{ width: '100%', height: 220 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={phaseChartData} margin={{ top: 8, right: 12, bottom: 8, left: 4 }}>
-              <CartesianGrid stroke="#ffffff12" />
-              <XAxis dataKey="label" tick={{ fill: '#ffffff70', fontSize: 10 }} />
-              <YAxis allowDecimals={false} tick={{ fill: '#ffffff70', fontSize: 10 }} />
-              <Tooltip
-                contentStyle={{ background: '#0d1b2e', border: '1px solid #ffffff20', fontSize: 12 }}
-                labelStyle={{ color: '#ffffffaa' }}
-              />
-              <Bar dataKey="count" fill={BAR_COLOR} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <ReportBarChart data={phaseChartData} xKey="label" barColor={BAR_COLOR} />
       </section>
 
       {/* Proficiency heat-map */}
@@ -198,20 +187,7 @@ export function TeacherReports() {
         <h2 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
           KP distribution
         </h2>
-        <div style={{ width: '100%', height: 220 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data.kpDistribution} margin={{ top: 8, right: 12, bottom: 8, left: 4 }}>
-              <CartesianGrid stroke="#ffffff12" />
-              <XAxis dataKey="label" tick={{ fill: '#ffffff70', fontSize: 10 }} />
-              <YAxis allowDecimals={false} tick={{ fill: '#ffffff70', fontSize: 10 }} />
-              <Tooltip
-                contentStyle={{ background: '#0d1b2e', border: '1px solid #ffffff20', fontSize: 12 }}
-                labelStyle={{ color: '#ffffffaa' }}
-              />
-              <Bar dataKey="count" fill="#4FD1C5" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <ReportBarChart data={data.kpDistribution} xKey="label" barColor="#4FD1C5" />
       </section>
 
       {/* Phase pacing */}

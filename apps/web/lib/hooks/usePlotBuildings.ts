@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PlacedItem, PlotGhost } from '@/components/lab/LabPlot'
-import { useLabCurrency } from '@/lib/labCurrency'
+import { useLabCurrency } from '@/components/lab/labCurrency'
 import { shopBuilding, type ShopBuilding } from '@/lib/shop'
 import { upgradeKpCost, upgradeLcCost, MAX_BUILDING_LEVEL } from '@/lib/economy'
 import type { IsoPos } from '@/lib/plot'

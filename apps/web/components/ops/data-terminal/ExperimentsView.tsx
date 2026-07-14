@@ -115,7 +115,7 @@ export function ExperimentsView() {
                 >
                   <span className="text-sm text-white block truncate">{exp.title}</span>
                   <span className="font-pixel text-[7px] text-white/35">
-                    {exp.measurements.length} points
+                    {exp.measurementCount} points
                   </span>
                 </button>
                 <BusyButton

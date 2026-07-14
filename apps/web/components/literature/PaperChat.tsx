@@ -78,6 +78,7 @@ export function PaperChat({
         <button
           onClick={sendMessage}
           disabled={!input.trim() || sending}
+          aria-label="Send message"
           className="shrink-0 bg-[#F5C518] text-[#0d1b2e] p-2 rounded-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
         >
           <Send size={13} />

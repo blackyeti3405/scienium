@@ -13,6 +13,7 @@ import {
   AnswersBody,
   buildGradingPayload,
   gradeAnswers,
+  paperTextContext,
   QUIZ_GRADING_PROMPT_INTRO,
 } from '@/lib/literature/grading'
 import { clampScore, computeQuizAward } from '@/lib/economy'
@@ -69,8 +70,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       instructions: GRADING_INSTRUCTIONS(rubric),
       // Untrusted, attacker-influenceable content (an uploaded PDF) — delimited
       // and explicitly marked non-instructional in GRADING_INSTRUCTIONS so a
-      // prompt-injection payload in the paper can't steer the grade.
-      contextBlock: `<paper_text>\n${(session.paper.fullText ?? '').slice(0, 120000)}\n</paper_text>`,
+      // prompt-injection payload in the paper can't steer the grade. Built via
+      // the shared helper so the cached block is byte-identical across
+      // chat/quiz/grade/retry (PERF-8).
+      contextBlock: paperTextContext(session.paper.fullText),
       payload: gradingPayload,
       promptIntro: QUIZ_GRADING_PROMPT_INTRO,
       maxTokens: 2048,

@@ -56,6 +56,7 @@ export function usePaperChat(paper: Paper) {
         // Send only the new user turn — the server owns the history.
         body: JSON.stringify({ message: text }),
       })
+      if (!res.ok) throw new Error(`chat failed (${res.status})`)
       const data = await res.json()
       setMessages((prev) => [...prev, { role: 'assistant', content: (data.reply ?? '').trim() }])
     } catch {
@@ -63,6 +64,9 @@ export function usePaperChat(paper: Paper) {
         ...prev,
         { role: 'assistant', content: 'Something went wrong. Please try again.' },
       ])
+      // Restore the draft so a failed send never eats what the student typed
+      // (UX-3) — unless they've already started composing something new.
+      setInput((cur) => (cur.trim() ? cur : text))
     } finally {
       setSending(false)
     }

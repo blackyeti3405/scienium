@@ -40,6 +40,15 @@ function isHttpUrl(u: string): boolean {
 }
 
 /**
+ * Hard bound on nodes returned by one hydrate (PERF-10). The client store
+ * hydrates the WHOLE tree in one shot (a real cursor would change its
+ * semantics), so this is a generous cap far above any plausible team tree.
+ * Ordered oldest-first: parents are always visited before their children, so a
+ * truncated result is still a consistent tree (never an orphaned child).
+ */
+const MAX_TREE_NODES = 500
+
+/**
  * Loads the team's discovery tree and maps it to the client-store node shape.
  * Derives `depth` (parent-chain length) and `explored` (has children) so the
  * client store gets the same shape it had in localStorage.
@@ -48,6 +57,7 @@ export async function hydrateTree(teamId: string) {
   const rows = await db.discoveryNode.findMany({
     where: { teamId },
     orderBy: { visitedAt: 'asc' },
+    take: MAX_TREE_NODES,
     select: {
       id: true,
       parentId: true,

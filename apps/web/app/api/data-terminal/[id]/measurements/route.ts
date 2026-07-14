@@ -9,6 +9,27 @@ async function ownedExperiment(id: string, teamId: string) {
   return db.experiment.findFirst({ where: { id, teamId }, select: { id: true } })
 }
 
+/**
+ * GET /api/data-terminal/[id]/measurements — one experiment's points, loaded
+ * lazily when it's selected (the list route returns counts only — PERF-2).
+ */
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const { ctx, error } = await requireTeamContext(req, { tier: 'read', feature: 'data_terminal' })
+  if (error) return error
+
+  if (!(await ownedExperiment(params.id, ctx.teamId))) {
+    return NextResponse.json({ error: 'Experiment not found' }, { status: 404 })
+  }
+
+  const measurements = await db.measurement.findMany({
+    where: { experimentId: params.id },
+    orderBy: { x: 'asc' },
+    select: { id: true, x: true, y: true, series: true, note: true },
+  })
+
+  return NextResponse.json({ measurements })
+}
+
 // Finite numbers only — reject NaN/Infinity so a bad client can't poison a chart.
 const finite = z.number().finite()
 

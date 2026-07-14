@@ -57,7 +57,7 @@ export function useExperiments({
     if (
       !(await confirm({
         title: 'Delete experiment',
-        message: `Delete "${exp.title}" and all ${exp.measurements.length} of its data points? This can't be undone.`,
+        message: `Delete "${exp.title}" and all ${exp.measurementCount} of its data points? This can't be undone.`,
         confirmLabel: 'Delete',
         tone: 'danger',
       }))

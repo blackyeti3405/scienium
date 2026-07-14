@@ -38,14 +38,23 @@ const logEntrySchema = savedEntrySchema.extend({
 
 const logListSchema = z.object({
   entries: z.array(logEntrySchema),
-  members: z.array(z.object({ userId: z.string(), name: z.string() })),
+  // Total progress entries for the team (drives the "N entries" header and the
+  // next entry number) and the cursor for the next OLDER page (null = no more).
+  total: z.number(),
+  nextCursor: z.string().nullable(),
+  // Members only ride on the first page; cursor pages omit them.
+  members: z.array(z.object({ userId: z.string(), name: z.string() })).optional(),
   labType: z.string().nullable().optional(),
 })
 
 const okSchema = z.object({ ok: z.literal(true) })
 
-export function fetchProjectLog() {
-  return requestJson('/api/project-log', logListSchema)
+/** First page when called bare; pass the previous page's `nextCursor` for older entries. */
+export function fetchProjectLog(cursor?: string) {
+  return requestJson(
+    cursor ? `/api/project-log?cursor=${encodeURIComponent(cursor)}` : '/api/project-log',
+    logListSchema,
+  )
 }
 
 export function saveLogEntry(

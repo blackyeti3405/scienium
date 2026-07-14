@@ -10,19 +10,28 @@ const measurementSchema = z.object({
   note: z.string().nullable(),
 })
 
+// List shape: point counts only — a selected experiment's measurements are
+// lazy-loaded via `listMeasurements` (PERF-2).
 const experimentSchema = z.object({
   id: z.string(),
   title: z.string(),
   description: z.string(),
   xLabel: z.string(),
   yLabel: z.string(),
-  measurements: z.array(measurementSchema),
+  measurementCount: z.number(),
 })
 
 const okSchema = z.object({ ok: z.literal(true) })
 
 export function listExperiments() {
   return requestJson('/api/data-terminal', z.object({ experiments: z.array(experimentSchema) }))
+}
+
+export function listMeasurements(experimentId: string) {
+  return requestJson(
+    `/api/data-terminal/${experimentId}/measurements`,
+    z.object({ measurements: z.array(measurementSchema) }),
+  )
 }
 
 export function createExperiment(body: { title: string; xLabel?: string; yLabel?: string }) {

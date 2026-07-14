@@ -38,10 +38,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(data.xLabel ? { xLabel: data.xLabel } : {}),
       ...(data.yLabel ? { yLabel: data.yLabel } : {}),
     },
-    include: { measurements: { orderBy: { x: 'asc' } } },
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      xLabel: true,
+      yLabel: true,
+      _count: { select: { measurements: true } },
+    },
   })
 
-  return NextResponse.json({ experiment })
+  // Same count-only list shape as GET /api/data-terminal (PERF-2) — points are
+  // lazy-loaded via GET /api/data-terminal/[id]/measurements.
+  const { _count, ...exp } = experiment
+  return NextResponse.json({ experiment: { ...exp, measurementCount: _count.measurements } })
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {

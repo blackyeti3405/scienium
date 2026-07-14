@@ -48,6 +48,9 @@ export function LiteratureFeature() {
     },
   })
   const [topic, setTopic] = useState<string | null | undefined>(undefined) // undefined = loading
+  // Distinct load-error sentinel (UX-3): a failed topic fetch must not render
+  // the "set your topic first" warning — the team may well have one set.
+  const [topicLoadFailed, setTopicLoadFailed] = useState(false)
   const [idea, setIdea] = useState('')
   const [ideaBusy, setIdeaBusy] = useState(false)
   const [ideaError, setIdeaError] = useState<string | null>(null)
@@ -59,9 +62,15 @@ export function LiteratureFeature() {
 
   useEffect(() => {
     fetch('/api/discovery/topic')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`topic fetch failed (${r.status})`)
+        return r.json()
+      })
       .then((d) => setTopic(d.topic ?? null))
-      .catch(() => setTopic(null))
+      .catch(() => {
+        setTopic(null)
+        setTopicLoadFailed(true)
+      })
   }, [])
 
   useEffect(() => {
@@ -240,8 +249,9 @@ export function LiteratureFeature() {
         )
       })()}
 
-      {/* No-topic warning — only shown when not yet locked */}
-      {!locked && topic === null && (
+      {/* No-topic warning — only shown when not yet locked AND the topic fetch
+          genuinely returned "no topic set" (a fetch failure must not nag) */}
+      {!locked && topic === null && !topicLoadFailed && (
         <div className="mx-6 mt-3 px-4 py-2.5 bg-[#F5C518]/8 border border-[#F5C518]/25 rounded-sm flex items-start gap-2.5">
           <span className="font-pixel text-[8px] text-[#F5C518]/60 shrink-0 mt-0.5">!</span>
           <p className="font-pixel text-[7px] text-[#F5C518]/60 leading-relaxed">

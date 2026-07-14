@@ -13,7 +13,7 @@ import {
   ChevronLeft,
   AlertTriangle,
 } from 'lucide-react'
-import { useLabCurrency } from '@/lib/labCurrency'
+import { useLabCurrency } from '@/components/lab/labCurrency'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { OpsTabSkeleton } from '@/components/ui/skeletons/OpsTabSkeleton'

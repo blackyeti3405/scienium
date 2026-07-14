@@ -5,6 +5,52 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.6] — 2026-07-14
+
+Refactor Phase 4 (of [docs/REFACTOR.md](REFACTOR.md)): the performance and cleanup long
+tail. This completes the plan — all five phases (0.23.2–0.23.6) are now landed.
+
+### Changed
+- **Query fan-outs collapsed** (PERF-1/3): team momentum went from 8 serialized
+  round-trips to ONE raw query with scalar subselects (under `connection_limit=1`,
+  `Promise.all` fan-outs run serially, so round-trips are the real cost); `/api/team`
+  dropped its redundant user fetch and parallelized the rest (4 serial → 3, no waterfall).
+- **Data Terminal loads lazily** (PERF-2): the experiments list returns measurement
+  counts only; a selected experiment's points fetch on demand via a new
+  `GET /api/data-terminal/[id]/measurements`.
+- **Project log is paginated** (PERF-4): newest 30 entries with a "Load older entries"
+  cursor; entry numbers and the header total come from one windowed ranking query that
+  also covers reference-chip targets on unloaded pages.
+- **Notifications cron is resumable** (PERF-5): bounded concurrency (5-way) for teams and
+  email sends, batched notification inserts, a data-derived resume cursor
+  (already-notified-today teams are skipped on re-run), and a 50s soft budget so the run
+  ends cleanly instead of dying mid-team at the 60s cap.
+- **Metadata extraction moved to Haiku** (PERF-6): paper title/author/abstract extraction
+  doesn't need Sonnet (~$13 saved per 30-student class of uploads).
+- **Plan review caches on content** (PERF-7): re-reviewing byte-identical plan text under
+  the same rubric replays the persisted review as identical NDJSON — zero Claude spend;
+  any edit or type change re-runs for real.
+- **Paper text is the first, route-independent cached block** (PERF-8): chat, quiz
+  generation, grading, and retry all compose the identical `<paper_text>` block first, so
+  the ~30k-token block's prompt cache hits across chat → quiz → grade → retry.
+- **Misc bounds** (PERF-9/10): notification-feed indexes on `(teamId, createdAt)` /
+  `(userId, createdAt)` (migration `20260714010000`, applied locally); citations are
+  created when a paper turns ready instead of write-on-read; the discovery-tree GET is
+  capped at 500 nodes (parents-first, never an orphaned subtree); teacher-roster activity
+  aggregates window to 14 days; TeacherReports' recharts chunk is now `next/dynamic`.
+  (The `Measurement.teamId` denormalization was skipped — momentum's single raw query
+  removed the hot path it served.)
+- **UX long tail** (UX-1/2/3): TopicSearch and add-paper-from-search surface network
+  failures (inline hint / error toast) instead of failing silently; the paper "processing"
+  poll caps at ~20 attempts then flips to an actionable error (and can't leak past
+  unmount); a failed chat send restores the typed draft; the send button gained an
+  aria-label; a failed topic fetch no longer shows a false "set topic" warning; the Q&A
+  split stacks below 768px.
+- `lib/labCurrency.tsx` moved to `components/lab/labCurrency.tsx` (CLN-3) — a
+  `'use client'` context provider doesn't belong in `lib/` root.
+
+---
+
 ## [0.23.5] — 2026-07-14
 
 Refactor Phase 3 (of [docs/REFACTOR.md](REFACTOR.md)): the structural pass — god-files

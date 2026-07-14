@@ -1,5 +1,7 @@
+import { createHash } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
+import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { loadResearchRubric } from '@/lib/research-plan/rubric'
 import { findProjectType, findSubtype } from '@/lib/research-plan/types'
@@ -14,7 +16,30 @@ import { anthropic } from '@/lib/anthropic'
  * forward it as a structured NDJSON event, so the UI's rubric rows appear graded
  * one at a time and the three columns fill in live. The assembled structured
  * review is persisted so it reloads in the same format.
+ *
+ * Unchanged-plan cache (PERF-7): the persisted review carries a sha256 of the
+ * exact reviewed input (`planHash` inside `lastReviewJson` — no new column). A
+ * re-review of byte-identical plan text under the same type/subtype replays the
+ * persisted review as the same NDJSON events instead of paying for a new
+ * Claude call; edit the plan (or re-pick the type) and it re-runs for real.
  */
+
+/**
+ * Shape guard for the persisted `lastReviewJson` before replaying it as a cache
+ * hit — legacy rows (pre-hash) or hand-edited JSON fall through to a real review.
+ */
+const StoredReview = z.object({
+  planHash: z.string(),
+  overall: z
+    .object({ readiness: z.string(), score: z.number(), summary: z.string() })
+    .nullable(),
+  sections: z.array(
+    z.object({ title: z.string(), score: z.number(), max: z.number(), assessment: z.string() }),
+  ),
+  strengths: z.array(z.string()),
+  gaps: z.array(z.string()),
+  recommendations: z.array(z.string()),
+})
 export async function POST(req: NextRequest) {
   // Strict per-user + per-IP limit: a full plan review is a large paid Claude call.
   const { ctx, error } = await requireTeamContext(req, { tier: 'ai' })
@@ -34,6 +59,32 @@ export async function POST(req: NextRequest) {
   const typeLabel = findProjectType(plan.projectType)?.label ?? plan.projectType
   const subtypeLabel = findSubtype(plan.projectType, plan.projectSubtype)?.label ?? plan.projectSubtype
 
+  // Cache key covers everything the review depends on: the (capped) plan text
+  // AND the type/subtype that pick the rubric — re-selecting the project type
+  // must re-run even on identical text.
+  const planTextForHash = plan.lastSyncedText.slice(0, 80000)
+  const planHash = createHash('sha256')
+    .update(`${plan.projectType}\n${plan.projectSubtype}\n${planTextForHash}`)
+    .digest('hex')
+
+  // Unchanged since the last paid review — replay the persisted result in the
+  // exact NDJSON event order the streaming path emits, so the client is none
+  // the wiser (PERF-7).
+  const stored = StoredReview.safeParse(plan.lastReviewJson)
+  if (stored.success && stored.data.planHash === planHash) {
+    const cached = stored.data
+    const events: unknown[] = []
+    if (cached.overall) events.push({ type: 'overall', ...cached.overall })
+    for (const s of cached.sections) events.push({ type: 'section', ...s })
+    for (const text of cached.strengths) events.push({ type: 'strength', text })
+    for (const text of cached.gaps) events.push({ type: 'gap', text })
+    for (const text of cached.recommendations) events.push({ type: 'recommendation', text })
+    events.push({ type: 'done' })
+    return new Response(events.map((e) => JSON.stringify(e) + '\n').join(''), {
+      headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' },
+    })
+  }
+
   let rubric: string
   try {
     rubric = await loadResearchRubric(plan.projectType, plan.projectSubtype)
@@ -41,7 +92,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Could not load the review rubric' }, { status: 500 })
   }
 
-  const planText = plan.lastSyncedText.slice(0, 80000)
+  const planText = planTextForHash
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({
@@ -143,9 +194,14 @@ export async function POST(req: NextRequest) {
           return
         }
 
+        // Persist the review WITH the input hash so a re-review of unchanged
+        // text replays this result instead of paying for a new call (PERF-7).
         await db.researchPlan.update({
           where: { teamId: ctx.teamId },
-          data: { lastReviewJson: review as unknown as Prisma.InputJsonValue, lastReviewedAt: new Date() },
+          data: {
+            lastReviewJson: { ...review, planHash } as unknown as Prisma.InputJsonValue,
+            lastReviewedAt: new Date(),
+          },
         })
 
         send({ type: 'done' })

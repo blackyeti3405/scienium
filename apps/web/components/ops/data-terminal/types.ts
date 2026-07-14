@@ -6,11 +6,15 @@ export interface Measurement {
   note: string | null
 }
 
+/**
+ * List-shape experiment: the list route returns point COUNTS only; a selected
+ * experiment's measurements are lazy-loaded via `listMeasurements` (PERF-2).
+ */
 export interface Experiment {
   id: string
   title: string
   description: string
   xLabel: string
   yLabel: string
-  measurements: Measurement[]
+  measurementCount: number
 }

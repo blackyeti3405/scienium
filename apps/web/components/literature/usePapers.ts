@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { CredibilityTier } from '@prisma/client'
 import type { useConfirm } from '@/components/ui/ConfirmDialog'
 import { uploadWithProgress } from '@/lib/uploadWithProgress'
@@ -8,6 +8,11 @@ import { type Paper, TOTAL_SLOTS } from './types'
 import { deletePaper, getPaper, listPapers } from './api'
 
 type ConfirmFn = ReturnType<typeof useConfirm>['confirm']
+
+/** Poll cadence + cap for a processing paper (UX-2): ~20 polls at 3s ≈ 1 min,
+ *  after which the paper flips to an actionable error instead of spinning forever. */
+const POLL_INTERVAL_MS = 3000
+const MAX_POLLS = 20
 
 /**
  * Feature-local papers hook for the Literature Review: owns the source list and
@@ -61,8 +66,37 @@ export function usePapers({
     loadPapers()
   }, [loadPapers])
 
+  // Live status polls, tracked so unmount clears every in-flight interval —
+  // a poll must never keep ticking (and setting state) past the feature (UX-2).
+  const pollIntervalsRef = useRef<Set<ReturnType<typeof setInterval>>>(new Set())
+  useEffect(() => {
+    const intervals = pollIntervalsRef.current
+    return () => {
+      intervals.forEach(clearInterval)
+      intervals.clear()
+    }
+  }, [])
+
   const pollStatus = useCallback((paperId: string) => {
+    let polls = 0
     const interval = setInterval(async () => {
+      const stop = () => {
+        clearInterval(interval)
+        pollIntervalsRef.current.delete(interval)
+      }
+      // Capped (UX-2): after MAX_POLLS the paper flips to an actionable error
+      // state instead of showing "processing" forever. The backend job keeps
+      // its own retry/terminal lifecycle; a reload re-syncs the real status.
+      if (++polls > MAX_POLLS) {
+        stop()
+        setPapers((prev) =>
+          prev.map((p) => (p.id === paperId ? { ...p, status: 'error' as const } : p)),
+        )
+        setUploadError(
+          'A source is taking too long to process — it has been marked failed here. Reload to re-check, or delete and re-upload it.',
+        )
+        return
+      }
       try {
         const data = await getPaper(paperId)
         if (data.status === 'ready' || data.status === 'error') {
@@ -78,12 +112,14 @@ export function usePapers({
                 : p,
             ),
           )
-          clearInterval(interval)
+          stop()
         }
       } catch {
-        clearInterval(interval)
+        // Transient fetch failure — count it against the cap and keep polling
+        // rather than silently abandoning the paper in "processing".
       }
-    }, 3000)
+    }, POLL_INTERVAL_MS)
+    pollIntervalsRef.current.add(interval)
   }, [])
 
   async function handleUpload(file: File) {

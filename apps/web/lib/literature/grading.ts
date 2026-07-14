@@ -11,6 +11,40 @@ import { QUIZ_PASS_THRESHOLD, extractJson } from '@/lib/literature/quiz'
  * Server-side only; the Anthropic key never reaches the browser.
  */
 
+/** Byte cap on the paper text embedded in prompts — shared by EVERY route so the
+ *  cached block is byte-identical everywhere (see paperTextContext). */
+export const PAPER_TEXT_SLICE_CHARS = 120_000
+
+/**
+ * The ONE canonical framing for a paper's full text in a prompt (PERF-8).
+ * Every paper-scoped route (chat, quiz generate, grade, retry) must build this
+ * string through here and place it as the FIRST system block with
+ * `cache_control` — the prompt cache is prefix-keyed, so a byte-identical
+ * leading block is what lets one 30k-token cache entry be reused across
+ * chat → quiz → grade → retry instead of each route paying full price.
+ *
+ * The <paper_text> delimiter doubles as the injection framing (SEC-9): each
+ * route's instructions mark the tagged content as data, not instructions.
+ */
+export function paperTextContext(fullText: string | null): string {
+  return `<paper_text>\n${(fullText ?? '').slice(0, PAPER_TEXT_SLICE_CHARS)}\n</paper_text>`
+}
+
+/** `paperTextContext` wrapped as a cached system block — the shape the routes
+ *  that call Anthropic directly (chat, quiz generate, retry-question) splice in
+ *  as their first system entry. */
+export function paperTextBlock(fullText: string | null): {
+  type: 'text'
+  text: string
+  cache_control: { type: 'ephemeral' }
+} {
+  return {
+    type: 'text',
+    text: paperTextContext(fullText),
+    cache_control: { type: 'ephemeral' },
+  }
+}
+
 /** One short free-text answer keyed to a generated question. */
 export const AnswerItem = z.object({
   questionId: z.string().trim().min(1).max(64),
@@ -81,13 +115,18 @@ export async function gradeAnswers<T>({
     response = await anthropic().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: maxTokens,
+      // The cached context block goes FIRST (PERF-8): prompt caching is
+      // prefix-keyed, so leading with the big route-independent block lets the
+      // same cache entry serve every route that shares it (chat → quiz →
+      // grade → retry all lead with the identical paperTextContext block);
+      // route-specific instructions follow, outside the cached prefix.
       system: [
-        { type: 'text', text: instructions },
         {
           type: 'text',
           text: contextBlock,
           cache_control: { type: 'ephemeral' },
         },
+        { type: 'text', text: instructions },
       ],
       messages: [
         {

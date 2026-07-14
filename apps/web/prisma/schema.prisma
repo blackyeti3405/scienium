@@ -1023,6 +1023,10 @@ model Notification {
 
   @@index([teamId, readAt, createdAt])
   @@index([userId, readAt, createdAt])
+  // The feed lists by recency alone (ORDER BY createdAt), which the
+  // readAt-leading indexes above can't serve (PERF-9).
+  @@index([teamId, createdAt])
+  @@index([userId, createdAt])
   @@map("notifications")
 }
 

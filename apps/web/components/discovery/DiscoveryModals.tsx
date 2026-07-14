@@ -11,6 +11,7 @@ import { LabeledLoader } from '@/components/ui/LabeledLoader'
  */
 export function DiscoveryModals({
   kpPill,
+  sourceAddError,
   topicConfirm,
   savingTopic,
   onCancelTopicChange,
@@ -24,6 +25,7 @@ export function DiscoveryModals({
   onDismissInterestConnect,
 }: {
   kpPill: { amount: number; nonce: number } | null
+  sourceAddError: { nonce: number } | null
   topicConfirm: { newTopic: string; paperCount: number } | null
   savingTopic: boolean
   onCancelTopicChange: () => void
@@ -42,6 +44,12 @@ export function DiscoveryModals({
       {kpPill && (
         <Toast tone="kp" position="top" nonce={kpPill.nonce}>
           +{kpPill.amount} KP
+        </Toast>
+      )}
+      {/* Add-paper-from-search failure (UX-1) — never fail silently on wifi blips */}
+      {sourceAddError && (
+        <Toast tone="error" position="top" nonce={sourceAddError.nonce}>
+          Couldn&apos;t add that paper — check your connection and try again
         </Toast>
       )}
       {/* Topic-change confirmation — the confirmed path is a batch LLM sweep

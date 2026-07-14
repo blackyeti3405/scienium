@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
@@ -37,40 +38,81 @@ const referenceLogSelect = {
   },
 } as const
 
+/** Entries per page — newest N first, older pages via `?cursor=<last id>` (PERF-4). */
+const PAGE_SIZE = 30
+
 export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 
-  const [rows, members] = await Promise.all([
-    db.projectLog.findMany({
-      where: { teamId: ctx.teamId, entryType: 'progress' },
-      orderBy: { createdAt: 'asc' },
-      select: {
-        id: true,
-        body: true,
-        nextSteps: true,
-        stage: true,
-        attendeeIds: true,
-        attachmentUrls: true,
-        createdAt: true,
-        lastEditedAt: true,
-        createdBy: { select: { id: true, name: true } },
-        lastEditedBy: { select: { id: true, name: true } },
-        references: { select: { to: referenceLogSelect } },
-        referencedBy: { select: { from: referenceLogSelect } },
-      },
-    }),
-    db.teamMember.findMany({
-      where: { teamId: ctx.teamId },
-      orderBy: { joinedAt: 'asc' },
-      select: { userId: true, user: { select: { name: true } } },
-    }),
-  ])
+  // Cursor pagination instead of the old "full team history in one response":
+  // newest PAGE_SIZE entries, then older pages on demand. `cursor` is the id of
+  // the oldest entry the client already has.
+  const cursor = req.nextUrl.searchParams.get('cursor')
 
-  // Number entries 1-based (oldest first, which is the query order) before
-  // reversing, so the id -> entryNumber map below matches every chip target.
-  const numbered = rows.map((r, i) => ({ ...r, entryNumber: i + 1 }))
-  const numberById = new Map(numbered.map((r) => [r.id, r.entryNumber]))
+  const rows = await db.projectLog.findMany({
+    where: { teamId: ctx.teamId, entryType: 'progress' },
+    // Tie-break on id so pagination and the numbering window below agree on
+    // one total order even for identical createdAt values.
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: PAGE_SIZE + 1, // +1 = "is there an older page?" probe
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    select: {
+      id: true,
+      body: true,
+      nextSteps: true,
+      stage: true,
+      attendeeIds: true,
+      attachmentUrls: true,
+      createdAt: true,
+      lastEditedAt: true,
+      createdBy: { select: { id: true, name: true } },
+      lastEditedBy: { select: { id: true, name: true } },
+      references: { select: { to: referenceLogSelect } },
+      referencedBy: { select: { from: referenceLogSelect } },
+    },
+  })
+  const hasMore = rows.length > PAGE_SIZE
+  const page = hasMore ? rows.slice(0, PAGE_SIZE) : rows
+
+  // Entry numbers are 1-based oldest-first over the WHOLE log, but we no longer
+  // load the whole log — derive them (plus the total for the "N entries" header
+  // and next entry number) from one windowed ranking query, covering both the
+  // page's own rows and every chip target they reference (which may live on a
+  // page the client hasn't loaded).
+  const chipTargetIds = page.flatMap((r) => [
+    ...r.references.map((ref) => ref.to.id),
+    ...r.referencedBy.map((ref) => ref.from.id),
+  ])
+  const neededIds = Array.from(new Set([...page.map((r) => r.id), ...chipTargetIds]))
+
+  let total = 0
+  const numberById = new Map<string, number>()
+  if (neededIds.length > 0) {
+    const ranked = await db.$queryRaw<{ id: string; entry_number: number; total: number }[]>(Prisma.sql`
+      SELECT id, entry_number, total FROM (
+        SELECT id,
+               (ROW_NUMBER() OVER (ORDER BY created_at ASC, id ASC))::int AS entry_number,
+               (COUNT(*) OVER ())::int AS total
+        FROM "project_logs"
+        WHERE team_id = ${ctx.teamId} AND entry_type = 'progress'
+      ) numbered
+      WHERE id IN (${Prisma.join(neededIds)})
+    `)
+    for (const r of ranked) numberById.set(r.id, r.entry_number)
+    total = ranked[0]?.total ?? 0
+  } else {
+    total = await db.projectLog.count({ where: { teamId: ctx.teamId, entryType: 'progress' } })
+  }
+
+  // Members only ride on the first page — the client keeps them across pages.
+  const members = cursor
+    ? null
+    : await db.teamMember.findMany({
+        where: { teamId: ctx.teamId },
+        orderBy: { joinedAt: 'asc' },
+        select: { userId: true, user: { select: { name: true } } },
+      })
 
   function toChip(log: { id: string; stage: string | null; createdAt: Date; createdBy: { name: string } }) {
     const entryNumber = numberById.get(log.id)
@@ -85,18 +127,24 @@ export async function GET(req: NextRequest) {
   }
 
   // Project references/referencedBy into chip-ready arrays and drop the raw
-  // relation fields so the wire shape stays clean.
-  const entries = numbered
-    .map(({ references, referencedBy, ...rest }) => ({
-      ...rest,
-      links: references.map((r) => toChip(r.to)).filter((c): c is NonNullable<typeof c> => c !== null),
-      backlinks: referencedBy.map((r) => toChip(r.from)).filter((c): c is NonNullable<typeof c> => c !== null),
-    }))
-    .reverse()
+  // relation fields so the wire shape stays clean. Rows are already newest-first.
+  const entries = page.map(({ references, referencedBy, ...rest }) => ({
+    ...rest,
+    entryNumber: numberById.get(rest.id) ?? 0,
+    links: references.map((r) => toChip(r.to)).filter((c): c is NonNullable<typeof c> => c !== null),
+    backlinks: referencedBy.map((r) => toChip(r.from)).filter((c): c is NonNullable<typeof c> => c !== null),
+  }))
 
-  const memberList = members.map((m) => ({ userId: m.userId, name: m.user.name }))
+  const memberList = members?.map((m) => ({ userId: m.userId, name: m.user.name }))
 
-  return NextResponse.json({ entries, members: memberList, labType: ctx.labType, currentUserId: ctx.dbUserId })
+  return NextResponse.json({
+    entries,
+    total,
+    nextCursor: hasMore ? page[page.length - 1].id : null,
+    ...(memberList ? { members: memberList } : {}),
+    labType: ctx.labType,
+    currentUserId: ctx.dbUserId,
+  })
 }
 
 export async function POST(req: NextRequest) {

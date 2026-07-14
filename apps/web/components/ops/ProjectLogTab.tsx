@@ -19,6 +19,10 @@ export function ProjectLogTab() {
     labType,
     loading,
     loadError,
+    total,
+    hasOlder,
+    loadingOlder,
+    loadOlder,
     editingId,
     setEditingId,
     deletingId,
@@ -54,7 +58,7 @@ export function ProjectLogTab() {
       <ProjectLogForm
         members={members}
         labType={labType}
-        headerNumber={entries.length + 1}
+        headerNumber={total + 1}
         onSaved={handleSaved}
       />
 
@@ -70,7 +74,7 @@ export function ProjectLogTab() {
         <>
           <div className="ops-timeline-header">
             <span className="font-pixel text-[7px] text-white/30 uppercase tracking-widest">
-              {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+              {total} {total === 1 ? 'entry' : 'entries'}
             </span>
             <div className="ops-timeline-header__line" />
           </div>
@@ -174,6 +178,21 @@ export function ProjectLogTab() {
               )
             })}
           </div>
+
+          {/* Older entries load on demand — the first page carries the newest 30 (PERF-4). */}
+          {hasOlder && (
+            <div className="flex justify-center py-3">
+              <BusyButton
+                busy={loadingOlder}
+                busyLabel="Loading…"
+                onClick={loadOlder}
+                className="font-pixel text-[8px] border border-white/20 text-white/50 px-4 py-2 hover:border-[#F5C518]/60 hover:text-[#F5C518] transition-all"
+                data-testid="log-load-older"
+              >
+                Load older entries
+              </BusyButton>
+            </div>
+          )}
         </>
       )}
     </div>

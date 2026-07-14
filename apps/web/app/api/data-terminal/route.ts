@@ -15,18 +15,27 @@ export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'read', feature: 'data_terminal' })
   if (error) return error
 
+  // The list only needs point COUNTS — the selected experiment's measurements
+  // are lazy-loaded via GET /api/data-terminal/[id]/measurements (PERF-2).
   const experiments = await db.experiment.findMany({
     where: { teamId: ctx.teamId },
     orderBy: { createdAt: 'desc' },
-    include: {
-      measurements: {
-        orderBy: { x: 'asc' },
-        select: { id: true, x: true, y: true, series: true, note: true },
-      },
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      xLabel: true,
+      yLabel: true,
+      _count: { select: { measurements: true } },
     },
   })
 
-  return NextResponse.json({ experiments })
+  return NextResponse.json({
+    experiments: experiments.map(({ _count, ...exp }) => ({
+      ...exp,
+      measurementCount: _count.measurements,
+    })),
+  })
 }
 
 const CreateBody = z
@@ -54,8 +63,9 @@ export async function POST(req: NextRequest) {
       xLabel: data.xLabel || 'x',
       yLabel: data.yLabel || 'y',
     },
-    include: { measurements: true },
+    select: { id: true, title: true, description: true, xLabel: true, yLabel: true },
   })
 
-  return NextResponse.json({ experiment })
+  // A fresh experiment has no points yet — same list shape as GET.
+  return NextResponse.json({ experiment: { ...experiment, measurementCount: 0 } })
 }

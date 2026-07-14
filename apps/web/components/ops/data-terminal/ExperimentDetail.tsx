@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   LineChart,
   Line,
@@ -16,8 +16,8 @@ import { parsePastedPoints, toCsv } from '@/lib/data-terminal/csv'
 import { downloadBlob, downloadChartPng, slugify } from '@/lib/data-terminal/export'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
-import type { Experiment } from './types'
-import { addMeasurements, deleteMeasurement } from './api'
+import type { Experiment, Measurement } from './types'
+import { addMeasurements, deleteMeasurement, listMeasurements } from './api'
 
 const SERIES_COLORS = ['#F5C518', '#4FD1C5', '#F687B3', '#90CDF4', '#A0AEC0', '#9AE6B4']
 
@@ -37,6 +37,32 @@ export function ExperimentDetail({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Points are lazy-loaded on selection (the list route only carries counts —
+  // PERF-2). `null` = still fetching; the component is keyed by experiment.id,
+  // so each selection remounts and refetches.
+  const [measurements, setMeasurements] = useState<Measurement[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    listMeasurements(experiment.id)
+      .then((d) => {
+        if (!cancelled) setMeasurements(d.measurements)
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError('Could not load the data points. Please try again.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [experiment.id])
+
+  // Keep the list's point count honest whenever the loaded set changes.
+  function syncMeasurements(next: Measurement[]) {
+    setMeasurements(next)
+    onChange({ ...experiment, measurementCount: next.length })
+  }
+
   // Bulk paste state
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
@@ -49,11 +75,10 @@ export function ExperimentDetail({
   const chartRef = useRef<HTMLDivElement>(null)
 
   const { chartData, seriesNames } = useMemo(() => {
-    const names = Array.from(
-      new Set(experiment.measurements.map((m) => m.series || 'series')),
-    )
+    const points = measurements ?? []
+    const names = Array.from(new Set(points.map((m) => m.series || 'series')))
     const byX = new Map<number, Record<string, number>>()
-    for (const m of experiment.measurements) {
+    for (const m of points) {
       const row = byX.get(m.x) ?? { x: m.x }
       row[m.series || 'series'] = m.y
       byX.set(m.x, row)
@@ -62,7 +87,7 @@ export function ExperimentDetail({
       chartData: Array.from(byX.values()).sort((a, b) => a.x - b.x),
       seriesNames: names,
     }
-  }, [experiment.measurements])
+  }, [measurements])
 
   async function addPoint() {
     const xn = Number(x)
@@ -82,7 +107,7 @@ export function ExperimentDetail({
           note: note.trim() || undefined,
         },
       ])
-      onChange({ ...experiment, measurements: out.measurements })
+      syncMeasurements(out.measurements)
       setX('')
       setY('')
       setSeries('')
@@ -107,7 +132,7 @@ export function ExperimentDetail({
     setPasteSkipped(null)
     try {
       const out = await addMeasurements(experiment.id, points)
-      onChange({ ...experiment, measurements: out.measurements })
+      syncMeasurements(out.measurements)
       setPasteText('')
       setPasteOpen(false)
       if (skipped > 0) setPasteSkipped(skipped)
@@ -119,7 +144,7 @@ export function ExperimentDetail({
   }
 
   function exportCsv() {
-    const csv = toCsv(experiment)
+    const csv = toCsv({ xLabel: experiment.xLabel, yLabel: experiment.yLabel, measurements: measurements ?? [] })
     const blob = new Blob([csv], { type: 'text/csv' })
     downloadBlob(blob, `${slugify(experiment.title)}.csv`)
   }
@@ -143,15 +168,38 @@ export function ExperimentDetail({
     setDeletingPointId(id)
     try {
       await deleteMeasurement(experiment.id, id)
-      onChange({
-        ...experiment,
-        measurements: experiment.measurements.filter((m) => m.id !== id),
-      })
+      syncMeasurements((measurements ?? []).filter((m) => m.id !== id))
     } catch {
       setError('Could not delete the point. Please try again.')
     } finally {
       setDeletingPointId(null)
     }
+  }
+
+  // Points still fetching (or failed) — keep the header so Back always works,
+  // with a loading affordance where the chart/table will appear.
+  if (measurements === null) {
+    return (
+      <div className="ops-tab-body">
+        <div className="max-w-2xl mx-auto w-full space-y-3 py-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-1 font-pixel text-[8px] text-white/40 hover:text-white/70"
+          >
+            <ChevronLeft size={12} /> All experiments
+          </button>
+
+          <h3 className="text-base text-white font-medium">{experiment.title}</h3>
+
+          {loadError ? (
+            <p className="font-pixel text-[8px] text-red-400">{loadError}</p>
+          ) : (
+            <LabeledLoader fill="inline" label="Loading data points…" className="items-start py-6" />
+          )}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -215,7 +263,7 @@ export function ExperimentDetail({
           <button
             type="button"
             onClick={exportCsv}
-            disabled={experiment.measurements.length === 0}
+            disabled={measurements.length === 0}
             className="inline-flex items-center gap-1.5 font-pixel text-[8px] border border-white/20 text-white/60 px-3 py-2 hover:border-[#F5C518]/60 hover:text-[#F5C518] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
             <Download size={11} /> Export CSV
@@ -328,7 +376,7 @@ export function ExperimentDetail({
         </div>
 
         {/* Points table */}
-        {experiment.measurements.length > 0 && (
+        {measurements.length > 0 && (
           <table className="w-full text-xs text-white/80 border-collapse">
             <thead>
               <tr className="font-pixel text-[7px] text-white/35 uppercase">
@@ -340,7 +388,7 @@ export function ExperimentDetail({
               </tr>
             </thead>
             <tbody>
-              {experiment.measurements.map((m) => (
+              {measurements.map((m) => (
                 <tr key={m.id} className="border-t border-white/5">
                   <td className="py-1">{m.x}</td>
                   <td className="py-1">{m.y}</td>

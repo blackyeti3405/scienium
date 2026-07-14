@@ -7,6 +7,14 @@ import { db } from '@/lib/db'
 const STALE_LOG_DAYS = 5
 
 /**
+ * How far back the last-log/last-activity aggregates look (PERF-10). The UI only
+ * distinguishes ages up to STALE_LOG_DAYS — anything older is just "stale" — so
+ * scanning a term's full history per load is wasted work. 14d comfortably covers
+ * every displayed distinction while keeping the groupBys bounded.
+ */
+const ACTIVITY_WINDOW_DAYS = 14
+
+/**
  * GET /api/teacher/roster — the class-wide overview (spec §15.3). One row per
  * student (teachers think in individuals), with phase, last activity, and
  * attention flags. Built from a handful of `groupBy` aggregates rather than
@@ -52,15 +60,19 @@ export async function GET(req: NextRequest) {
     ),
   ]
 
+  // Bounded to the activity window (PERF-10): the status flag only distinguishes
+  // ages up to STALE_LOG_DAYS, and `lastActivityAt` isn't rendered beyond that —
+  // an unbounded scan of the term's full log/activity history buys nothing.
+  const activitySince = new Date(Date.now() - ACTIVITY_WINDOW_DAYS * 24 * 60 * 60 * 1000)
   const [lastLogs, lastActivity, readyPapers] = await Promise.all([
     db.projectLog.groupBy({
       by: ['teamId'],
-      where: { teamId: { in: teamIds }, entryType: 'progress' },
+      where: { teamId: { in: teamIds }, entryType: 'progress', createdAt: { gte: activitySince } },
       _max: { createdAt: true },
     }),
     db.activityFeed.groupBy({
       by: ['teamId'],
-      where: { teamId: { in: teamIds } },
+      where: { teamId: { in: teamIds }, createdAt: { gte: activitySince } },
       _max: { createdAt: true },
     }),
     db.paper.groupBy({

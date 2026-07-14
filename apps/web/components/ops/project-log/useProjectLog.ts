@@ -21,6 +21,11 @@ export function useProjectLog({ confirm, alert }: { confirm: ConfirmFn; alert: A
   const [labType, setLabType] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Pagination (PERF-4): total entries on the server (the loaded list may be a
+  // prefix) + the cursor for the next OLDER page (null = fully loaded).
+  const [total, setTotal] = useState(0)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [loadingOlder, setLoadingOlder] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [removingRefId, setRemovingRefId] = useState<string | null>(null)
@@ -31,21 +36,45 @@ export function useProjectLog({ confirm, alert }: { confirm: ConfirmFn; alert: A
         // Default links/backlinks to [] — defensive against older/partial
         // responses (safety per plan step 1).
         setEntries(d.entries.map((e) => ({ ...e, links: e.links ?? [], backlinks: e.backlinks ?? [] })))
-        setMembers(d.members)
+        setMembers(d.members ?? [])
+        setTotal(d.total)
+        setNextCursor(d.nextCursor)
         if (d.labType !== undefined) setLabType(d.labType)
       })
       .catch(() => setLoadError('Could not load the project log. Please refresh.'))
       .finally(() => setLoading(false))
   }, [])
 
+  // "Load older" — fetch the next page below the oldest loaded entry and append.
+  async function loadOlder() {
+    if (!nextCursor || loadingOlder) return
+    setLoadingOlder(true)
+    try {
+      const d = await fetchProjectLog(nextCursor)
+      setEntries((prev) => {
+        const seen = new Set(prev.map((e) => e.id))
+        const older = d.entries
+          .filter((e) => !seen.has(e.id)) // defensive against a shifted page boundary
+          .map((e) => ({ ...e, links: e.links ?? [], backlinks: e.backlinks ?? [] }))
+        return [...prev, ...older]
+      })
+      setNextCursor(d.nextCursor)
+    } catch {
+      await alert({ title: 'Load failed', message: 'Could not load older entries. Please try again.' })
+    } finally {
+      setLoadingOlder(false)
+    }
+  }
+
   function handleSaved(entry: SavedLogEntry, mode: 'create' | 'edit') {
     // POST/PATCH don't return links/backlinks (a freshly created entry has
     // none; an edited entry's existing links are preserved below).
     if (mode === 'create') {
       setEntries((prev) => [
-        { ...entry, entryNumber: entry.entryNumber ?? prev.length + 1, links: [], backlinks: [] },
+        { ...entry, entryNumber: entry.entryNumber ?? total + 1, links: [], backlinks: [] },
         ...prev,
       ])
+      setTotal((t) => t + 1)
     } else {
       setEntries((prev) =>
         prev.map((e) =>
@@ -92,6 +121,7 @@ export function useProjectLog({ confirm, alert }: { confirm: ConfirmFn; alert: A
           .filter((e) => e.id !== target.id)
           .map((e) => (e.entryNumber > target.entryNumber ? { ...e, entryNumber: e.entryNumber - 1 } : e)),
       )
+      setTotal((t) => Math.max(0, t - 1))
     } catch {
       await alert({ title: 'Delete failed', message: 'Could not delete the entry. Please try again.' })
     } finally {
@@ -105,6 +135,10 @@ export function useProjectLog({ confirm, alert }: { confirm: ConfirmFn; alert: A
     labType,
     loading,
     loadError,
+    total,
+    hasOlder: nextCursor !== null,
+    loadingOlder,
+    loadOlder,
     editingId,
     setEditingId,
     deletingId,

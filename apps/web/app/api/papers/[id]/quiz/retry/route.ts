@@ -20,6 +20,8 @@ import {
   AnswersBody,
   buildGradingPayload,
   gradeAnswers,
+  paperTextBlock,
+  paperTextContext,
   QUIZ_GRADING_PROMPT_INTRO,
 } from '@/lib/literature/grading'
 import { clampScore, computeQuizAward, computeRetryAggregate } from '@/lib/economy'
@@ -97,13 +99,11 @@ async function generateNewQuestion(
   const genResponse = await anthropic().messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 512,
+    // Cached paper block FIRST (PERF-8) — byte-identical to the chat/quiz/
+    // grade routes so the same prefix cache entry serves them all.
     system: [
+      paperTextBlock(paper.fullText),
       { type: 'text', text: NEW_QUESTION_INSTRUCTIONS(rubric) },
-      {
-        type: 'text',
-        text: `<paper_text>\n${(paper.fullText ?? '').slice(0, 120000)}\n</paper_text>`,
-        cache_control: { type: 'ephemeral' },
-      },
     ],
     messages: [
       {
@@ -259,7 +259,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const rubric = await loadRubric()
     const result = await gradeAnswers<GradedAnswer>({
       instructions: RETRY_GRADING_INSTRUCTIONS(rubric),
-      contextBlock: `<paper_text>\n${(session.paper.fullText ?? '').slice(0, 120000)}\n</paper_text>`,
+      contextBlock: paperTextContext(session.paper.fullText),
       payload: gradingPayload,
       promptIntro: QUIZ_GRADING_PROMPT_INTRO,
       maxTokens: 1024,

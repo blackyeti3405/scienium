@@ -2,6 +2,7 @@ import 'server-only'
 import { z } from 'zod'
 import { anthropic } from '@/lib/anthropic'
 import { db } from '@/lib/db'
+import { buildCitations, parseYear } from '@/lib/literature/citation'
 
 const Metadata = z.object({
   title: z.string().trim().min(1).max(500).optional(),
@@ -71,14 +72,16 @@ export async function processPaperJob(paperId: string): Promise<void> {
     db.paperProcessingJob.findUnique({ where: { paperId }, select: { attempts: true } }),
     db.paper.findUnique({
       where: { id: paperId },
-      select: { id: true, title: true, fullText: true },
+      select: { id: true, teamId: true, title: true, fullText: true, fileUrl: true },
     }),
   ])
   if (!paper) return
 
   try {
     const response = await anthropic().messages.create({
-      model: 'claude-sonnet-4-6',
+      // Haiku suffices for simple metadata extraction (PERF-6) — same model id
+      // as the relevance/classify calls (lib/literature/relevance.ts).
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 512,
       system: EXTRACTION_SYSTEM_PROMPT,
       messages: [
@@ -94,6 +97,17 @@ export async function processPaperJob(paperId: string): Promise<void> {
     const match = raw.match(/\{[\s\S]*\}/)
     const metadata = Metadata.parse(JSON.parse(match?.[0] ?? '{}'))
 
+    // Citation rows are created at the moment a paper becomes ready (PERF-10a)
+    // — built locally (no LLM) — so the citations GET never needs a
+    // write-on-read backfill for new papers. `skipDuplicates` keeps re-claimed
+    // jobs idempotent (paperId is unique on Citation).
+    const citation = buildCitations({
+      title: metadata.title ?? paper.title,
+      authors: metadata.authors,
+      // Uploaded papers have no published date; leave the year null.
+      year: parseYear(null),
+      url: paper.fileUrl ?? null,
+    })
     await db.$transaction([
       db.paper.update({
         where: { id: paper.id },
@@ -103,6 +117,19 @@ export async function processPaperJob(paperId: string): Promise<void> {
           abstract: metadata.abstract ?? null,
           status: 'ready',
         },
+      }),
+      db.citation.createMany({
+        data: [
+          {
+            paperId: paper.id,
+            teamId: paper.teamId,
+            year: citation.year,
+            apa: citation.apa,
+            mla: citation.mla,
+            ieee: citation.ieee,
+          },
+        ],
+        skipDuplicates: true,
       }),
       db.paperProcessingJob.update({
         where: { paperId },

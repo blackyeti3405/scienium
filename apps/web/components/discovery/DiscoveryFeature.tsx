@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useDiscoveryStore } from '@/stores/discoveryStore'
-import { useLabCurrency } from '@/lib/labCurrency'
+import { useLabCurrency } from '@/components/lab/labCurrency'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { DiscoveryTree } from '@/components/discovery/DiscoveryTree'
 import { DiscoveryTopicList } from '@/components/discovery/DiscoveryTopicList'
@@ -112,12 +112,21 @@ export function DiscoveryFeature() {
     }
   }
 
+  // Transient error pill (Toast primitive) for the add-paper-from-search path —
+  // a wifi blip must never fail silently (UX-1).
+  const [sourceAddError, setSourceAddError] = useState<{ nonce: number } | null>(null)
+  useAutoDismiss(sourceAddError, () => setSourceAddError(null), 4000)
+
   // Papers search → resolve the picked work (server-authoritative host/tier) →
   // add it as a new source node (root, or a child of the current node).
-  // Failure is non-fatal — the student can retry.
+  // Failure is non-fatal — surfaced as an error toast so the student retries.
   async function addSourceFromSearch(platform: SourcePlatform, externalId: string): Promise<void> {
     const resolved = await resolveSource(platform, externalId)
-    if (resolved) addSourceNode(resolved)
+    if (resolved) {
+      addSourceNode(resolved)
+    } else {
+      setSourceAddError({ nonce: Date.now() })
+    }
   }
 
   // Persist the one-line reflection; update the local cache on success. The
@@ -292,6 +301,7 @@ export function DiscoveryFeature() {
       {dialog}
       <DiscoveryModals
         kpPill={kpPill}
+        sourceAddError={sourceAddError}
         topicConfirm={topicConfirm}
         savingTopic={savingTopic}
         onCancelTopicChange={() => setTopicConfirm(null)}

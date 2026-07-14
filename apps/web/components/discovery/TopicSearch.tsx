@@ -14,6 +14,9 @@ export function TopicSearch({ onSelect, placeholder = 'Search a Wikipedia topicâ
   const [results, setResults] = useState<string[]>([])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  // A network failure must not look like "no results" (UX-1) â€” surface an
+  // inline hint under the box so the student knows to retry.
+  const [searchError, setSearchError] = useState(false)
   const [highlighted, setHighlighted] = useState(-1)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -23,6 +26,7 @@ export function TopicSearch({ onSelect, placeholder = 'Search a Wikipedia topicâ
     if (q.length < 2) { setResults([]); setOpen(false); return }
     debounceRef.current = setTimeout(async () => {
       setLoading(true)
+      setSearchError(false)
       try {
         const res = await fetch(`/api/discovery/search?q=${encodeURIComponent(q)}`)
         const raw: unknown = await res.json()
@@ -35,6 +39,7 @@ export function TopicSearch({ onSelect, placeholder = 'Search a Wikipedia topicâ
       } catch {
         setResults([])
         setOpen(false)
+        setSearchError(true)
       } finally {
         setLoading(false)
       }
@@ -85,6 +90,12 @@ export function TopicSearch({ onSelect, placeholder = 'Search a Wikipedia topicâ
         />
         {loading && <PixelSpinner size="sm" className="absolute right-3" />}
       </div>
+
+      {searchError && (
+        <p className="mt-1 font-pixel text-[7px] text-red-400" role="alert">
+          Couldn&apos;t search â€” check your connection and keep typing to retry.
+        </p>
+      )}
 
       {open && results.length > 0 && (
         <ul className="absolute z-20 mt-1 w-full rounded-sm border border-white/15 bg-[#0f1320] shadow-lg overflow-hidden">
