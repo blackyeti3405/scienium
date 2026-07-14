@@ -3,8 +3,12 @@ import { requireTeacher, teacherOwnsTeam } from '@/lib/teacher/auth'
 import { db } from '@/lib/db'
 import { getLiteratureAdvanceProgress } from '@/lib/team/advance'
 import { describeActivity } from '@/lib/activity/log'
-import { CODEX_TRACKS, loadTrack } from '@/lib/ops/codex'
-import { shopBuilding } from '@/lib/shop'
+import {
+  buildMemberNameMap,
+  enrichShopBuildings,
+  enrichTeamBuildings,
+  enrichCodexRecent,
+} from '@/lib/teacher/analytics'
 
 /**
  * GET /api/teacher/student/[id]/overview — comprehensive student drill-down.
@@ -286,64 +290,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   ])
 
   // Build a member name lookup map from already-fetched team data.
-  const memberNameMap = new Map<string, string>(
-    (team?.members ?? []).map((m) => [m.user.id, m.user.name]),
-  )
+  const memberNameMap = buildMemberNameMap(team?.members ?? [])
 
   // Compute student KP contribution
   const studentKp =
     (kpPapers._sum.kpAwarded ?? 0) +
     (kpCodex._sum.kpAwarded ?? 0)
 
-  // Enrich shop buildings with display name/description and purchaser name
-  const shopBuildingsEnriched = shopBuildings.map((sb) => {
-    const catalog = shopBuilding(sb.buildingKey)
-    return {
-      buildingKey: sb.buildingKey,
-      name: catalog?.name ?? sb.buildingKey,
-      description: catalog?.description ?? '',
-      purchasedByName: memberNameMap.get(sb.purchasedByUserId) ?? null,
-      purchasedAt: sb.purchasedAt,
-    }
-  })
-
-  // Enrich gateway buildings with upgrader name
-  const teamBuildingsEnriched = teamBuildings.map((tb) => ({
-    name: tb.building.name,
-    currentLevel: tb.currentLevel,
-    lastUpgradedAt: tb.lastUpgradedAt,
-    lastUpgradedByName: tb.lastUpgradedByUserId
-      ? (memberNameMap.get(tb.lastUpgradedByUserId) ?? null)
-      : null,
-  }))
-
-  // Resolve lesson/track labels for the recent Codex completions. Track
-  // modules are code-split; loading here only touches the (≤3) tracks in the
-  // student's recent rows, and Node's module cache makes repeats free.
-  const trackLabelBySlug = new Map(CODEX_TRACKS.map((t) => [t.slug, t.label]))
-  const recentTrackSlugs = [...new Set(codexRecent.map((r) => r.trackSlug))]
-  const lessonLabelById = new Map<string, string>()
-  await Promise.all(
-    recentTrackSlugs.map(async (slug) => {
-      try {
-        const track = await loadTrack(slug)
-        for (const segment of [track.core, ...track.branches]) {
-          for (const unit of segment.units) {
-            for (const lesson of unit.lessons) lessonLabelById.set(lesson.id, lesson.label)
-          }
-        }
-      } catch {
-        // Unknown/retired slug — fall back to the raw lesson id below.
-      }
-    }),
-  )
-  const codexRecentEnriched = codexRecent.map((r) => ({
-    trackLabel: trackLabelBySlug.get(r.trackSlug) ?? r.trackSlug,
-    lessonLabel: lessonLabelById.get(r.lessonId) ?? r.lessonId,
-    bestScore: r.bestScore,
-    kpAwarded: r.kpAwarded,
-    completedAt: r.completedAt,
-  }))
+  const shopBuildingsEnriched = enrichShopBuildings(shopBuildings, memberNameMap)
+  const teamBuildingsEnriched = enrichTeamBuildings(teamBuildings, memberNameMap)
+  const codexRecentEnriched = await enrichCodexRecent(codexRecent)
 
   // Compute server-side activity descriptions
   const activityWithDescriptions = activityFeed.map((a) => ({

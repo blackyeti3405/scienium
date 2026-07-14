@@ -1,23 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { differenceInCalendarDays } from 'date-fns'
 import { requireTeacher } from '@/lib/teacher/auth'
 import { db } from '@/lib/db'
-import type { Phase } from '@/lib/phase'
-
-/** KP distribution bucket boundaries — first cut, tuned for early-game economy scale. */
-const KP_BUCKETS: { label: string; min: number; max: number }[] = [
-  { label: '0', min: 0, max: 0 },
-  { label: '1-100', min: 1, max: 100 },
-  { label: '101-300', min: 101, max: 300 },
-  { label: '301-600', min: 301, max: 600 },
-  { label: '601-1000', min: 601, max: 1000 },
-  { label: '1000+', min: 1001, max: Infinity },
-]
-
-function bucketFor(kp: number): string {
-  const bucket = KP_BUCKETS.find((b) => kp >= b.min && kp <= b.max)
-  return bucket?.label ?? KP_BUCKETS[KP_BUCKETS.length - 1].label
-}
+import {
+  dedupeScopedTeams,
+  computePhaseCounts,
+  computeKpDistribution,
+  computeTeamProficiency,
+  computePhasePacing,
+} from '@/lib/teacher/analytics'
 
 /**
  * GET /api/teacher/reports — class-wide analytics (phase distribution,
@@ -45,7 +35,7 @@ export async function GET(req: NextRequest) {
       studentCount: 0,
       teamCount: 0,
       phaseCounts: {},
-      kpDistribution: KP_BUCKETS.map((b) => ({ label: b.label, count: 0 })),
+      kpDistribution: computeKpDistribution([]),
       proficiency: [],
       pacing: [],
       generatedAt: new Date().toISOString(),
@@ -72,19 +62,7 @@ export async function GET(req: NextRequest) {
   })
 
   // De-duped teams from the scoped student set — the ONLY teams any aggregate below may touch.
-  const teamMap = new Map<string, { id: string; name: string; phase: Phase; createdAt: Date }>()
-  for (const s of students) {
-    const team = s.activeTeam ?? s.teamMemberships[0]?.team
-    if (team?.classId && ctx.classIds.includes(team.classId)) {
-      teamMap.set(team.id, {
-        id: team.id,
-        name: team.name,
-        phase: team.phase as Phase,
-        createdAt: team.createdAt,
-      })
-    }
-  }
-  const teams = [...teamMap.values()]
+  const teams = dedupeScopedTeams(students, ctx.classIds)
   const teamIds = teams.map((t) => t.id)
 
   const [kpRows, proficiencyRows] = await Promise.all([
@@ -103,75 +81,10 @@ export async function GET(req: NextRequest) {
     }),
   ])
 
-  // ── Phase distribution ──────────────────────────────────────────────────
-  const phaseCounts: Record<string, number> = {}
-  for (const t of teams) {
-    phaseCounts[t.phase] = (phaseCounts[t.phase] ?? 0) + 1
-  }
-
-  // ── KP distribution (bucketed histogram) ────────────────────────────────
-  const kpBucketCounts = new Map<string, number>(KP_BUCKETS.map((b) => [b.label, 0]))
-  for (const row of kpRows) {
-    const label = bucketFor(row.kp)
-    kpBucketCounts.set(label, (kpBucketCounts.get(label) ?? 0) + 1)
-  }
-  const kpDistribution = KP_BUCKETS.map((b) => ({ label: b.label, count: kpBucketCounts.get(b.label) ?? 0 }))
-
-  // ── Per-team proficiency heat-map summary ───────────────────────────────
-  // PaperProficiency has one row per (paper, student) — @@id([paperId, userId]) —
-  // so counting rows directly would inflate papersMastered/papersInProgress by
-  // team size. Instead, first roll every member's row up to one entry PER
-  // DISTINCT PAPER per team (demonstrated = true if ANY member demonstrated it;
-  // bestScore = the max across members), then bucket that per-paper rollup into
-  // mastered / in-progress. avgBestScore stays a per-row mean (unaffected).
-  const paperRollupByTeam = new Map<string, Map<string, { demonstrated: boolean; bestScore: number }>>()
-  const scoreStatsByTeam = new Map<string, { scoreSum: number; scoreCount: number }>()
-  for (const row of proficiencyRows) {
-    const teamId = row.paper.teamId
-
-    const papers = paperRollupByTeam.get(teamId) ?? new Map<string, { demonstrated: boolean; bestScore: number }>()
-    const paper = papers.get(row.paperId) ?? { demonstrated: false, bestScore: 0 }
-    paper.demonstrated = paper.demonstrated || row.demonstrated
-    paper.bestScore = Math.max(paper.bestScore, row.bestScore)
-    papers.set(row.paperId, paper)
-    paperRollupByTeam.set(teamId, papers)
-
-    if (row.bestScore > 0) {
-      const stats = scoreStatsByTeam.get(teamId) ?? { scoreSum: 0, scoreCount: 0 }
-      stats.scoreSum += row.bestScore
-      stats.scoreCount += 1
-      scoreStatsByTeam.set(teamId, stats)
-    }
-  }
-  const proficiency = teams.map((t) => {
-    const papers = [...(paperRollupByTeam.get(t.id)?.values() ?? [])]
-    const papersMastered = papers.filter((p) => p.demonstrated).length
-    const papersInProgress = papers.filter((p) => !p.demonstrated && p.bestScore > 0).length
-    const stats = scoreStatsByTeam.get(t.id)
-    return {
-      teamId: t.id,
-      teamName: t.name,
-      papersMastered,
-      papersInProgress,
-      avgBestScore: stats && stats.scoreCount > 0 ? Math.round(stats.scoreSum / stats.scoreCount) : 0,
-    }
-  })
-
-  // ── Phase pacing: days since the team was created. (Per-phase pacing used to
-  // key off approved teacher advances; with self-paced advancement removed, the
-  // team's age is the available proxy for "how long has this team been going".) ──
-  const now = new Date()
-  const pacing = teams
-    .map((t) => {
-      const since = t.createdAt
-      return {
-        teamId: t.id,
-        teamName: t.name,
-        phase: t.phase,
-        daysInPhase: differenceInCalendarDays(now, since),
-      }
-    })
-    .sort((a, b) => b.daysInPhase - a.daysInPhase)
+  const phaseCounts = computePhaseCounts(teams)
+  const kpDistribution = computeKpDistribution(kpRows)
+  const proficiency = computeTeamProficiency(teams, proficiencyRows)
+  const pacing = computePhasePacing(teams)
 
   return NextResponse.json({
     hasClasses: true,

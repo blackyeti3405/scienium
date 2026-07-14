@@ -5,6 +5,52 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.5] — 2026-07-14
+
+Refactor Phase 3 (of [docs/REFACTOR.md](REFACTOR.md)): the structural pass — god-files
+split into feature folders + hooks, orchestration moved into service modules, and bulk
+authored data moved out of TypeScript. All pure refactors: rendered markup, testids, and
+network semantics preserved. (SVC-1, the quiz-currency extraction, is deliberately
+deferred until after the concurrent PvP window, per the plan's own sequencing.)
+
+### Changed
+- **Service layer** — `lib/literature/grading.ts` (SVC-2) unifies the grading call +
+  JSON extraction + 502 branch that quiz grade/retry and the expertise exam copied 3×
+  (prompt framing, cache breakpoints, and award logic untouched); `lib/teacher/analytics.ts`
+  (SVC-3) holds the pure bucketing/roll-up/pacing math the teacher reports & student
+  overview routes inlined; `lib/discovery/tree-service.ts` (SVC-4) owns tree hydration +
+  node creation, leaving the route as guard + parse + response.
+- **God-files split** (each a container + feature folder + `use<Feature>` hook, modeled
+  on `components/literature/`):
+  - `OperationsHubFeature` 1218 → 64 lines (`ProjectLogTab`/`FailureLogTab` + hooks) (CMP-2)
+  - `DataTerminalTab` 809 → 97 lines (`data-terminal/` views + `lib/data-terminal/export.ts`) (CMP-7)
+  - `DiscoveryFeature` 1080 → 453 lines (4 hooks incl. generic `useResizablePanel`, deduped
+    `BranchSelectionPanel`, header/side-panel/reader/modals subcomponents) (CMP-3)
+  - `discoveryStore` 608 → 516 lines — network I/O moved to `lib/discovery/treeApi.ts`,
+    optimistic-rollback unified in `commitOptimistic()` (CMP-5)
+  - `StudentDetail` 1581 → 235 lines (`student-detail/` types/header/7 section files +
+    `useStudentOverview`) (CMP-1)
+  - `ResearchPlanFeature` 797 → 295 lines (`useResearchPlan`, shared `lib/ndjson.ts`) —
+    and the teacher's drift-duplicated review/idea-check renderings now consume the SAME
+    `PlanReviewView`/`IdeaCheckView` components via a `variant` prop (CMP-8)
+  - `LabScene` 742 → 370 lines (`usePlotBuildings` optimistic state machine +
+    `BuildingMenu`/`UpgradeBurst`/`DevFillButton`) (CMP-4)
+  - `ShowcaseEditor` 837 → 314 lines (`useShowcaseEditor` + 10 `editor/` subcomponents) (CMP-6)
+  - ~16 extracted plain-JSON call sites now route through `lib/api/client.ts requestJson`
+    (CMP-9); calls with special contracts (FormData, NDJSON, keepalive, tolerant errors)
+    deliberately stay raw.
+- **Authored data → JSON** (DAT-1/2): the four Data-Terminal guides + the research
+  glossary (~8,500 lines / 1.3 MB of literals, `plot-guide.ts` alone 748 KB of SVGs) and
+  the 3,753-line ISEF fairs dataset are now co-located `.json` files behind thin typed
+  wrappers — out of tsc's parse path; the existing shape tests still gate the content.
+  `scripts/scrape-isef-fairs.mjs` emits `dataset.json` directly.
+
+### Removed
+- Dead `packages/shared-types/src/paper.ts` (6 interfaces, zero consumers) and its
+  re-export (DAT-3/CLN-2).
+
+---
+
 ## [0.23.4] — 2026-07-13
 
 Refactor Phase 2 (of [docs/REFACTOR.md](REFACTOR.md)): code-level security hardening.

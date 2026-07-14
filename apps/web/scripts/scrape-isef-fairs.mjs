@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
  * Scrapes the Society for Science affiliated-fair directory and outputs a
- * replacement dataset.ts with real names, real 2026 dates, and geocoded
- * coordinates.
+ * replacement dataset.json with real names, real 2026 dates, and geocoded
+ * coordinates. (content/fairs/dataset.ts is a thin typed wrapper over it.)
  *
  * Usage:
  *   node apps/web/scripts/scrape-isef-fairs.mjs
  *
- * Outputs to stdout — redirect to dataset.ts or review first:
- *   node apps/web/scripts/scrape-isef-fairs.mjs > /tmp/dataset-new.ts
+ * Outputs JSON to stdout — review first, then replace the dataset:
+ *   node apps/web/scripts/scrape-isef-fairs.mjs > apps/web/content/fairs/dataset.json
  *
  * Rate limits:
  *   - Nominatim geocoding: 1 req/s (enforced below; OSM ToS requirement)
@@ -268,53 +268,23 @@ async function main() {
     return f.code.toLowerCase().replace(/^us/, '')
   }
 
-  // ── Output ───────────────────────────────────────────────────────────────────
-  const lines = []
-  lines.push(`/**`)
-  lines.push(` * ISEF affiliated-fair dataset — auto-generated ${new Date().toISOString().slice(0, 10)}`)
-  lines.push(` * by scripts/scrape-isef-fairs.mjs from findafair.societyforscience.org.`)
-  lines.push(` *`)
-  lines.push(` * ${allFairs.length} fairs scraped. Dates are confirmed from the Society directory`)
-  lines.push(` * (not estimated). Coordinates geocoded from fair city via Nominatim.`)
-  lines.push(` *`)
-  lines.push(` * Re-run this script each fall when fairs complete annual affiliation.`)
-  lines.push(` */`)
-  lines.push(``)
-  lines.push(`export type SeedFairLevel = 'international' | 'state' | 'regional'`)
-  lines.push(``)
-  lines.push(`export interface SeedFair {`)
-  lines.push(`  key: string`)
-  lines.push(`  name: string`)
-  lines.push(`  level: SeedFairLevel`)
-  lines.push(`  state: string | null`)
-  lines.push(`  websiteUrl: string`)
-  lines.push(`  latitude: number`)
-  lines.push(`  longitude: number`)
-  lines.push(`  parentKey?: string`)
-  lines.push(`  year: number`)
-  lines.push(`  eventDate?: string`)
-  lines.push(`  registrationDeadline?: string`)
-  lines.push(`  abstractDeadline?: string`)
-  lines.push(`  status: 'confirmed' | 'estimated'`)
-  lines.push(`}`)
-  lines.push(``)
-  lines.push(`export const FAIRS: SeedFair[] = [`)
+  // ── Output (DAT-2: emit dataset.json — content/fairs/dataset.ts is a thin
+  //    typed wrapper over it, so tsc never re-parses thousands of literals) ────
+  const out = []
 
   // ISEF first
-  lines.push(`  // ── International ────────────────────────────────────────────────────`)
-  lines.push(`  {`)
-  lines.push(`    key: 'isef',`)
-  lines.push(`    name: ${JSON.stringify(ISEF.name)},`)
-  lines.push(`    level: 'international',`)
-  lines.push(`    state: null,`)
-  lines.push(`    websiteUrl: ${JSON.stringify(ISEF.websiteUrl)},`)
-  lines.push(`    latitude: ${ISEF.coords[0]},`)
-  lines.push(`    longitude: ${ISEF.coords[1]},`)
-  lines.push(`    year: 2026,`)
-  lines.push(`    eventDate: '2026-05-09',`)
-  lines.push(`    status: 'estimated',`)
-  lines.push(`  },`)
-  lines.push(``)
+  out.push({
+    key: 'isef',
+    name: ISEF.name,
+    level: 'international',
+    state: null,
+    websiteUrl: ISEF.websiteUrl,
+    latitude: ISEF.coords[0],
+    longitude: ISEF.coords[1],
+    year: 2026,
+    eventDate: '2026-05-09',
+    status: 'estimated',
+  })
 
   // Group by state
   const byState = {}
@@ -329,23 +299,17 @@ async function main() {
     const stateFairs = fairs.filter(f => f.level === 'state')
     const regionals = fairs.filter(f => f.level === 'regional')
 
-    lines.push(`  // ── ${state} ─────────────────────────────────────────────────────────────`)
-
-    // State fair first
+    // State fair first, then regionals under it
     for (const f of stateFairs) {
-      lines.push(emitFair(f, 'isef', f))
+      out.push(emitFair(f, 'isef', f))
     }
-    // Then regionals
     const parentKey = stateFairs[0] ? fairKey(stateFairs[0]) : 'isef'
     for (const f of regionals) {
-      lines.push(emitFair(f, parentKey, f))
+      out.push(emitFair(f, parentKey, f))
     }
-    lines.push(``)
   }
 
-  lines.push(`]`)
-
-  console.log(lines.join('\n'))
+  console.log(JSON.stringify(out, null, 2))
 
   function coords(f) {
     if (f.coords) return f.coords
@@ -354,22 +318,20 @@ async function main() {
 
   function emitFair(f, parentKey, origF) {
     const [lat, lng] = coords(origF)
-    const key = fairKey(f)
-    const out = [`  {`]
-    out.push(`    key: ${JSON.stringify(key)},`)
-    out.push(`    name: ${JSON.stringify(f.name)},`)
-    out.push(`    level: ${JSON.stringify(f.level)},`)
-    out.push(`    state: ${JSON.stringify(f.state)},`)
-    out.push(`    websiteUrl: ${JSON.stringify(f.websiteUrl ?? 'https://www.societyforscience.org/isef/affiliated-fairs/')},`)
-    out.push(`    latitude: ${lat},`)
-    out.push(`    longitude: ${lng},`)
-    out.push(`    parentKey: ${JSON.stringify(parentKey)},`)
-    out.push(`    year: 2026,`)
-    if (f.eventDate) out.push(`    eventDate: ${JSON.stringify(f.eventDate)},`)
-    if (f.registrationDeadline) out.push(`    registrationDeadline: ${JSON.stringify(f.registrationDeadline)},`)
-    out.push(`    status: 'confirmed',`)
-    out.push(`  },`)
-    return out.join('\n')
+    return {
+      key: fairKey(f),
+      name: f.name,
+      level: f.level,
+      state: f.state,
+      websiteUrl: f.websiteUrl ?? 'https://www.societyforscience.org/isef/affiliated-fairs/',
+      latitude: lat,
+      longitude: lng,
+      parentKey,
+      year: 2026,
+      ...(f.eventDate ? { eventDate: f.eventDate } : {}),
+      ...(f.registrationDeadline ? { registrationDeadline: f.registrationDeadline } : {}),
+      status: 'confirmed',
+    }
   }
 }
 
