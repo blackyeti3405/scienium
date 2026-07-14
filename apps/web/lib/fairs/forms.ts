@@ -1,13 +1,13 @@
 /**
  * ISEF required-forms catalog (Feature 3c).
  *
- * Twelve standard ISEF forms, seeded lazily into `FormsCatalog` on first API
- * call. `requiredForLevelsJson` stores the condition tags that trigger this
- * form; the UI filters/annotates by them. DB rows are keyed on `formCode`
- * (unique), so re-seeding is idempotent.
+ * Twelve standard ISEF forms. `requiredFor` stores the condition tags that
+ * trigger each form; the UI filters/annotates by them. This module is pure
+ * authored data — CLIENT-SAFE by design (the fair checklist imports
+ * `getFormGuide` directly). The DB seeder lives in `forms-server.ts` so the
+ * Prisma client can never ride into a browser bundle from here.
  */
 
-import { db } from '@/lib/db'
 import type { HazardClassKey } from '@/lib/fairs/safety'
 
 export interface IsefFormDef {
@@ -18,7 +18,7 @@ export interface IsefFormDef {
   requiredFor: string[]
 }
 
-const FORMS_PAGE = 'https://www.societyforscience.org/isef/forms/'
+export const FORMS_PAGE = 'https://www.societyforscience.org/isef/forms/'
 
 export const ISEF_FORMS: IsefFormDef[] = [
   {
@@ -303,24 +303,4 @@ export const ISEF_FORM_GUIDES: IsefFormGuide[] = [
 
 export function getFormGuide(code: string): IsefFormGuide | undefined {
   return ISEF_FORM_GUIDES.find((g) => g.code === code)
-}
-
-export async function ensureFormsSeeded(): Promise<void> {
-  const count = await db.formsCatalog.count()
-  if (count >= ISEF_FORMS.length) return
-
-  for (const f of ISEF_FORMS) {
-    const existing = await db.formsCatalog.findFirst({ where: { formCode: f.code } })
-    if (!existing) {
-      await db.formsCatalog.create({
-        data: {
-          formCode: f.code,
-          name: f.name,
-          description: f.description,
-          templateUrl: FORMS_PAGE,
-          requiredForLevelsJson: f.requiredFor,
-        },
-      })
-    }
-  }
 }

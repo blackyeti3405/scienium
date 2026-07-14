@@ -1,3 +1,4 @@
+import 'server-only'
 /**
  * Optional notification email — a thin Resend REST call (no SDK dependency, same
  * fetch-based approach as the Upstash rate-limit store). Email is strictly

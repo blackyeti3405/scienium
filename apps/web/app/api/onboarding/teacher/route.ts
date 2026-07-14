@@ -1,7 +1,7 @@
-import { auth, currentUser, clerkClient } from '@clerk/nextjs/server'
+import { currentUser, clerkClient } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireUserContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { resolveSchool, syncClerkDisplayName } from '@/lib/onboarding/profile'
@@ -16,11 +16,9 @@ const TeacherOnboardingBody = z
   .strict()
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = await enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
+  const { ctx, error: guardError } = await requireUserContext(req, { tier: 'mutate' })
+  if (guardError) return guardError
+  const { userId } = ctx
 
   const clerkUser = await currentUser()
   if (!clerkUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

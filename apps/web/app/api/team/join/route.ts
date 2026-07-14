@@ -1,7 +1,7 @@
-import { auth, currentUser } from '@clerk/nextjs/server'
+import { currentUser } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireUserContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { normalizeInviteCode } from '@/lib/team/invite'
 import { applySchoolAndClass, syncClerkDisplayName, teamLeadClass } from '@/lib/onboarding/profile'
@@ -25,13 +25,11 @@ const JoinBody = z
  * validity before adding the membership and burning the code.
  */
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   // Tight per-user + per-IP limit: join codes are short, so cap redemption
   // attempts to make brute-forcing an active code impractical.
-  const limited = await enforceRateLimit(req, 'join', userId)
-  if (limited) return limited
+  const { ctx, error: guardError } = await requireUserContext(req, { tier: 'join' })
+  if (guardError) return guardError
+  const { userId } = ctx
 
   const clerkUser = await currentUser()
   if (!clerkUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

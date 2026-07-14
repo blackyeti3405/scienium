@@ -1,3 +1,4 @@
+import 'server-only'
 import type { LabType, ProjectPhase } from '@scienium/shared-types'
 import { db } from '@/lib/db'
 import { pickActiveTeam } from '@/lib/team/active-team'

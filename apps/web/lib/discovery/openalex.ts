@@ -1,3 +1,4 @@
+import 'server-only'
 import { LruCache } from '@/lib/lru'
 import { normalizeArxivId } from '@/lib/discovery/arxiv'
 import { sanitizeAbstract } from '@/lib/discovery/sanitize'

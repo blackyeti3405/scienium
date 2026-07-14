@@ -1,3 +1,4 @@
+import 'server-only'
 import { db } from '@/lib/db'
 import { FAIRS, type SeedFairLevel } from '@/content/fairs/dataset'
 import { STATE_CENTROIDS, zipToApproxCoords, haversineMiles } from '@/lib/fairs/zip'

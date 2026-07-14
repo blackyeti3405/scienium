@@ -1,7 +1,6 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import sanitizeHtml from 'sanitize-html'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireUserContext } from '@/lib/api/route-context'
 import { LruCache } from '@/lib/lru'
 // Shared XSS allowlist (also used by the Discovery v2 source path for abstracts).
 // See lib/discovery/sanitize.ts — do NOT fork a looser allowlist.
@@ -59,11 +58,10 @@ async function wikiFetch(url: string, attempt = 0): Promise<Response> {
 }
 
 export async function GET(req: NextRequest) {
-  // Auth-gated by middleware; resolve the user so this Wikipedia proxy is limited
-  // per-user (shared-NAT classrooms aren't punished) and isn't a free hop.
-  const { userId } = await auth()
-  const limited = await enforceRateLimit(req, 'read', userId)
-  if (limited) return limited
+  // Rate-limited per-user (shared-NAT classrooms aren't punished) so this
+  // Wikipedia proxy isn't a free hop.
+  const { error } = await requireUserContext(req, { tier: 'read' })
+  if (error) return error
 
   const title = req.nextUrl.searchParams.get('title')
   if (!title) return NextResponse.json({ error: 'title required' }, { status: 400 })

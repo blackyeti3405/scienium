@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeamContext } from '@/lib/api/route-context'
-import { ensureFormsSeeded } from '@/lib/fairs/forms'
+import { ensureFormsSeeded } from '@/lib/fairs/forms-server'
 import { db } from '@/lib/db'
 
 /**

@@ -1,3 +1,4 @@
+import 'server-only'
 /**
  * Plot economy orchestration — the place / move / sell / upgrade business rules,
  * lifted out of the route handlers so the routes are thin (parse → context → call

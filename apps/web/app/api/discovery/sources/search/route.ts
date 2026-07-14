@@ -1,6 +1,5 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireUserContext } from '@/lib/api/route-context'
 import { searchWorks } from '@/lib/discovery/openalex'
 import { db } from '@/lib/db'
 import type { SourceSearchResult } from '@/lib/discovery/sources'
@@ -16,9 +15,8 @@ import type { SourceSearchResult } from '@/lib/discovery/sources'
 // OPENING a paper (resolve) and re-searching are instant DB reads, and the app
 // stays resilient when OpenAlex has a blip. Still keyword-relevance only — NO LLM.
 export async function GET(req: NextRequest) {
-  const { userId } = await auth()
-  const limited = await enforceRateLimit(req, 'read', userId)
-  if (limited) return limited
+  const { error } = await requireUserContext(req, { tier: 'read' })
+  if (error) return error
 
   const params = req.nextUrl.searchParams
   const q = (params.get('q') ?? '').trim()

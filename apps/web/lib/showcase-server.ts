@@ -1,3 +1,4 @@
+import 'server-only'
 import { createHash, randomUUID } from 'crypto'
 import { slugify } from '@/lib/showcase'
 import { viewFingerprintSalt } from '@/lib/env'

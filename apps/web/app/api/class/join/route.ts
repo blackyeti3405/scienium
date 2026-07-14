@@ -1,7 +1,6 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireUserContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { resolveClass, enrollTeamInClass } from '@/lib/onboarding/profile'
 import { db } from '@/lib/db'
@@ -17,11 +16,9 @@ const JoinClassBody = z
  * consistent. Tight `join` rate-limit to blunt code guessing.
  */
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = await enforceRateLimit(req, 'join', userId)
-  if (limited) return limited
+  const { ctx, error: guardError } = await requireUserContext(req, { tier: 'join' })
+  if (guardError) return guardError
+  const { userId } = ctx
 
   const { data, error } = await parseJson(req, JoinClassBody)
   if (error) return error

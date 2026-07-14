@@ -47,3 +47,26 @@ export const zipString = z
   .string()
   .trim()
   .regex(/^\d{5}(-\d{4})?$/, 'Enter a valid US ZIP code')
+
+/** Required free text, trimmed, 1..max chars. Use for every user-typed string. */
+export const boundedText = (max: number) => z.string().trim().min(1).max(max)
+
+/** Optional free text, trimmed, 0..max chars. */
+export const optionalBoundedText = (max: number) => z.string().trim().max(max).optional()
+
+/** A Prisma cuid id — the only shape our row ids take. Rejects raw SQL/UUID noise. */
+export const cuid = z.string().cuid()
+
+/** An http(s) URL, bounded. Blocks javascript:/data:/file: and other schemes. */
+export const httpUrl = z
+  .string()
+  .trim()
+  .max(2000)
+  .refine((value) => {
+    try {
+      const url = new URL(value)
+      return url.protocol === 'http:' || url.protocol === 'https:'
+    } catch {
+      return false
+    }
+  }, 'Enter a valid http(s) URL')

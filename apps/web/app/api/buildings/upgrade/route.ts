@@ -1,7 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireTeamContext } from '@/lib/api/route-context'
-import { parseJson } from '@/lib/validation'
+import { withTeamRoute } from '@/lib/api/with-route'
 import { upgradeBuilding } from '@/lib/buildings/service'
 
 /**
@@ -10,26 +9,20 @@ import { upgradeBuilding } from '@/lib/buildings/service'
  */
 const UpgradeBody = z.object({ key: z.string().trim().min(1).max(64) }).strict()
 
-export async function POST(req: NextRequest) {
-  const { ctx, error: guardError } = await requireTeamContext(req, {
-    tier: 'mutate',
-    feature: 'buildings',
-  })
-  if (guardError) return guardError
+export const POST = withTeamRoute(
+  { tier: 'mutate', feature: 'buildings', body: UpgradeBody },
+  async ({ ctx, data }) => {
+    const result = await upgradeBuilding(ctx.teamId, ctx.dbUserId, data.key)
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
 
-  const { data, error } = await parseJson(req, UpgradeBody)
-  if (error) return error
-
-  const result = await upgradeBuilding(ctx.teamId, ctx.dbUserId, data.key)
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
-
-  return NextResponse.json({
-    ok: true,
-    level: result.level,
-    kpCost: result.kpCost,
-    lcCost: result.lcCost,
-    kp: result.kp,
-    lc: result.lc,
-    costPaid: result.costPaid,
-  })
-}
+    return NextResponse.json({
+      ok: true,
+      level: result.level,
+      kpCost: result.kpCost,
+      lcCost: result.lcCost,
+      kp: result.kp,
+      lc: result.lc,
+      costPaid: result.costPaid,
+    })
+  },
+)

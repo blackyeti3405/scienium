@@ -1,6 +1,5 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireUserContext } from '@/lib/api/route-context'
 
 // Must match Wikimedia's User-Agent policy (descriptive UA + contact) to avoid
 // throttling / IP blocks that would also break article loading.
@@ -8,11 +7,9 @@ const UA =
   'scienium/1.0 (https://scienium.app; contact: hello@scienium.app) node-fetch'
 
 export async function GET(req: NextRequest) {
-  // Auth-gated by middleware; resolve the user so this Wikipedia proxy is limited
-  // per-user (not just per shared-NAT IP) and can't be a free amplification hop.
-  const { userId } = await auth()
-  const limited = await enforceRateLimit(req, 'read', userId)
-  if (limited) return limited
+  // Rate-limited per-user so this Wikipedia proxy can't be a free amplification hop.
+  const { error } = await requireUserContext(req, { tier: 'read' })
+  if (error) return error
 
   const q = req.nextUrl.searchParams.get('q') ?? ''
   if (q.length < 2) return NextResponse.json([])

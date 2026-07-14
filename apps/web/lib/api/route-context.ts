@@ -1,3 +1,4 @@
+import 'server-only'
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -103,4 +104,40 @@ export async function requireTeamContext(
     },
     error: null,
   }
+}
+
+/**
+ * Sibling guard for routes that legitimately run *before* a team exists
+ * (onboarding, join flows) or only need a rate-limited identity (the discovery
+ * proxies). Mirrors `requireTeamContext`'s `{ ctx, error }` contract:
+ *
+ *   const { ctx, error } = await requireUserContext(req, { tier: 'read' })
+ *   if (error) return error
+ *   // ctx.userId is the Clerk user id
+ *
+ * Deliberately does NOT resolve the internal User row — several consumers
+ * (onboarding) create it themselves, and the proxies never need it.
+ */
+export interface UserRouteContext {
+  /** Clerk user id (the external identity). */
+  userId: string
+}
+
+export type UserRouteGuard =
+  | { ctx: UserRouteContext; error: null }
+  | { ctx: null; error: NextResponse }
+
+export async function requireUserContext(
+  req: NextRequest,
+  opts: { tier: TierName },
+): Promise<UserRouteGuard> {
+  const { userId } = await auth()
+  if (!userId) {
+    return { ctx: null, error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
+  }
+
+  const limited = await enforceRateLimit(req, opts.tier, userId)
+  if (limited) return { ctx: null, error: limited }
+
+  return { ctx: { userId }, error: null }
 }

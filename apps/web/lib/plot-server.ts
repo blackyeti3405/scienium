@@ -1,3 +1,4 @@
+import 'server-only'
 /**
  * Server-side plot state — loads a team's placed buildings and computes cell
  * occupancy for the placement/move routes and the lab page SSR. Pairs with the

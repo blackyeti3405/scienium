@@ -1,7 +1,6 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireUserContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 
 const ResolveBody = z.object({ url: z.string().trim().min(1).max(2000) }).strict()
@@ -28,12 +27,9 @@ function extractVideoId(input: string): string | null {
 // Resolves a pasted YouTube URL → { videoId, title } using the public oEmbed
 // endpoint (no API key, no quota). Done server-side to avoid CORS.
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   // Mutating + triggers an external oEmbed fetch — moderate per-user + per-IP limit.
-  const limited = await enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
+  const { error: guardError } = await requireUserContext(req, { tier: 'mutate' })
+  if (guardError) return guardError
 
   const { data, error } = await parseJson(req, ResolveBody)
   if (error) return error

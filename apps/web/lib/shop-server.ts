@@ -1,3 +1,4 @@
+import 'server-only'
 /**
  * Server-side shop state — owned keys, currency, clearance, and the team-size
  * cost multiplier. Shared by the buildings GET/POST and placement routes so the

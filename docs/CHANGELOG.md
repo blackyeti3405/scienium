@@ -5,6 +5,41 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.2] — 2026-07-13
+
+Refactor Phase 0 (of [docs/REFACTOR.md](REFACTOR.md)): the foundational seams the
+concurrent PvP/landing branches build on. All additive — no existing signatures changed.
+
+### Added
+- **Compiler-enforced server/client boundary** (FND-1): the `server-only` package is now
+  installed and imported by every server module (`lib/db.ts`, `lib/env.ts`, `lib/storage.ts`,
+  `lib/anthropic.ts`, the `*-server.ts` modules, and all ~26 modules that reach the Prisma
+  client or secrets). A client-component import of any of them now fails `next build`
+  instead of silently bundling secrets. Vitest aliases the package to an inert stub
+  (`test/stubs/server-only.ts`) so unit tests can still exercise pure branches.
+- `withTeamRoute()` handler wrapper (FND-3, `lib/api/with-route.ts`): composes
+  `requireTeamContext` + `parseJson` + `ApiError`-to-response mapping so mutating routes
+  stop copying the 4-line guard prelude. The four `buildings/*` routes are converted as
+  the exemplar; remaining routes adopt it incrementally.
+- `requireUserContext()` (FND-4, `lib/api/route-context.ts`): sibling guard for routes
+  that legitimately run before a team exists (onboarding, join) or only need a
+  rate-limited identity (discovery proxies). Nine hand-rolled `auth()` + rate-limit
+  preludes converted.
+- Shared zod field schemas (FND-5, `lib/validation.ts`): `boundedText`,
+  `optionalBoundedText`, `cuid`, `httpUrl` — the single source for length/ID/URL caps.
+- Shared UI primitives (FND-6): `components/ui/Toast.tsx` (pixel notice pill, four tones),
+  `components/ui/EmptyState.tsx` (the dashed-border placeholder), and
+  `lib/hooks/useAutoDismiss.ts` (leak-free timed dismissal) — replacing the hand-rolled
+  copies as features are split.
+- `docs/REFACTOR.md` — the consolidated refactor & hardening plan this phase executes.
+
+### Changed
+- `lib/fairs/forms.ts` split (FND-2): the ISEF catalog/guides stay client-safe; the DB
+  seeder moved to `lib/fairs/forms-server.ts` behind `server-only`, closing the concrete
+  Prisma-into-browser-bundle leak via `FormsChecklist`.
+
+---
+
 ## [0.23.1] — 2026-07-13
 
 A Volt Lab visual pass: the lab now reads as electric-yellow machinery rather than grey

@@ -1,3 +1,4 @@
+import 'server-only'
 import { z } from 'zod'
 import { anthropic } from '@/lib/anthropic'
 import { db } from '@/lib/db'

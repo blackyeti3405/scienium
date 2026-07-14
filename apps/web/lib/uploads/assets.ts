@@ -1,3 +1,4 @@
+import 'server-only'
 import { db } from '@/lib/db'
 import { deleteObject } from '@/lib/storage'
 import type { Prisma } from '@prisma/client'

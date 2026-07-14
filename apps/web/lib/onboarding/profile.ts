@@ -1,3 +1,4 @@
+import 'server-only'
 import { clerkClient } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
 import { normalizeInviteCode } from '@/lib/team/invite'

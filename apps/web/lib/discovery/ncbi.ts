@@ -1,3 +1,4 @@
+import 'server-only'
 import { XMLParser } from 'fast-xml-parser'
 import { LruCache } from '@/lib/lru'
 import { sanitizeAbstract } from '@/lib/discovery/sanitize'
