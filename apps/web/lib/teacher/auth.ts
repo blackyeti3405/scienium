@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { resolveAuthoritativeRole } from '@/lib/teacher/role'
 import { enforceRateLimit, type TierName } from '@/lib/rate-limit'
+import { assertSameOrigin } from '@/lib/api/route-context'
 
 // Re-exported so the role decision has one public home on the teacher guard; the
 // implementation lives in the import-free role module so it stays unit-testable.
@@ -56,6 +57,10 @@ export async function requireTeacher(
 
   const limited = await enforceRateLimit(req, opts.tier, userId)
   if (limited) return { ctx: null, error: limited }
+
+  // CSRF: mutating teacher routes are cookie-authenticated too (SEC-11).
+  const crossOrigin = assertSameOrigin(req)
+  if (crossOrigin) return { ctx: null, error: crossOrigin }
 
   // Role: the DB is the source of truth. For an existing row we ignore the claim
   // entirely, so a downgraded teacher whose token still says "teacher" is denied.

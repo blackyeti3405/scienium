@@ -1,16 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { getObjectStream } from '@/lib/storage'
+import { db } from '@/lib/db'
 
 // Streams a project-log image attachment from private R2 through this
-// authenticated, team-scoped route. The object key embeds the team id
-// (`log-attachments/<teamId>/<uuid>.<ext>`), so we verify the caller belongs
-// to that team before streaming — never a public or signed URL.
+// authenticated, team-scoped route — never a public or signed URL.
+//
+// Canonical reference is `?id=<assetId>` (SEC-6): the id resolves through the
+// team-scoped UploadedAsset ledger row, so the ROW authorizes the read — no
+// client-supplied object key is trusted. `?key=` remains for legacy log rows
+// saved before id-URLs; it is validated against the team's own upload prefix.
 export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 
-  const key = req.nextUrl.searchParams.get('key')
+  let key: string | null = null
+  const assetId = req.nextUrl.searchParams.get('id')
+  if (assetId) {
+    const asset = await db.uploadedAsset.findFirst({
+      where: { id: assetId, teamId: ctx.teamId, status: { not: 'deleted' } },
+      select: { objectKey: true },
+    })
+    if (!asset) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    key = asset.objectKey
+  } else {
+    key = req.nextUrl.searchParams.get('key')
+  }
+
   if (!key || key.includes('..') || !key.startsWith(`log-attachments/${ctx.teamId}/`)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }

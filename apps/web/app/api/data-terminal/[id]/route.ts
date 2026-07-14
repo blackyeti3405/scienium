@@ -4,11 +4,10 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 
-/** Confirm the experiment exists AND belongs to the caller's team (IDOR guard). */
+/** Confirm the experiment exists AND belongs to the caller's team (IDOR guard).
+ * Scoped single query (SEC-1's standard shape) — never fetch-by-id-then-check. */
 async function ownedExperiment(id: string, teamId: string) {
-  const exp = await db.experiment.findUnique({ where: { id }, select: { id: true, teamId: true } })
-  if (!exp || exp.teamId !== teamId) return null
-  return exp
+  return db.experiment.findFirst({ where: { id, teamId }, select: { id: true } })
 }
 
 const PatchBody = z

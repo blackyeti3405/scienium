@@ -337,7 +337,9 @@ async function elink(pmid: string, linkname: string): Promise<string[]> {
     }
     const linkset = data.linksets?.[0]
     const match = linkset?.linksetdbs?.find((d) => d.linkname === linkname)
-    const ids = match?.links ?? []
+    // Result cap (SEC-8): a highly-cited PMID can return tens of thousands of
+    // ids — bound before caching so one hot paper can't bloat memory/downstream.
+    const ids = (match?.links ?? []).slice(0, 50)
     linkCache.set(cacheKey, ids)
     return ids
   } catch (err) {

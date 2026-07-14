@@ -5,6 +5,49 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.4] — 2026-07-13
+
+Refactor Phase 2 (of [docs/REFACTOR.md](REFACTOR.md)): code-level security hardening.
+An adversarial sweep confirmed no live IDOR, no authority accepted from request bodies,
+every XSS sink sanitized, and every KP/score-affecting AI output server-clamped — the
+items below close the remaining gaps and standardize the patterns.
+
+### Added
+- **CSRF discipline** (SEC-11): `assertSameOrigin` — mutating requests with a
+  cross-site `Origin` are rejected 403 — now runs inside all three shared guards
+  (`requireTeamContext`, `requireUserContext`, `requireTeacher`), with unit tests.
+- **PDF safety inspection** (SEC-7): new `lib/pdf/sanitize.ts` rejects uploads carrying
+  JavaScript, launch/open actions, embedded files, XFA, encryption, or page bombs
+  before anything is stored; the paper file route now serves with `nosniff`.
+- **Cron guard tests** (SEC-10): a static sweep asserts every `app/api/cron/**` route
+  calls `assertCron`.
+- **DB invariant** (SEC-DB): unique plot cell per team
+  (`team_shop_buildings (team_id, pos_x, pos_y)`) — the durable backstop behind the
+  buildings service's advisory lock (migration `20260713100000_plot_cell_unique`,
+  applied to the local dev DB).
+
+### Changed
+- **Attachment references are now asset ids** (SEC-6): project-log photo URLs embed the
+  `UploadedAsset` id and the view route authorizes through the team-scoped ledger row —
+  string-parsed object keys are no longer the authority (legacy `?key=` URLs still
+  resolve, validated against the team prefix as before).
+- **Constant-time cron auth** (SEC-10): `assertCron` compares via
+  `crypto.timingSafeEqual` and refuses sub-32-char secrets in production.
+- **Prompt-injection framing** (SEC-9): paper metadata extraction, the idea check, and
+  the plan review now wrap untrusted student/PDF text in explicit
+  "data, not instructions" delimiters (the quiz/grade routes already had them).
+- **IDOR pattern standardized** (SEC-1): the two data-terminal routes using
+  fetch-by-id-then-check now use the scoped `findFirst({ id, teamId })` single-query form.
+- **External fetch bounds** (SEC-8): NCBI `elink` results are capped (a highly-cited
+  PMID could return tens of thousands of ids); OpenAlex/NCBI timeouts were already in
+  place.
+
+### Removed
+- Dead `lib/wikipedia.ts` (zero importers — the live Wikipedia path is the discovery
+  article route), resolving SECURITY.md's "harden wikipedia.ts" item by deletion (CLN-1).
+
+---
+
 ## [0.23.3] — 2026-07-13
 
 Refactor Phase 1 (of [docs/REFACTOR.md](REFACTOR.md)): the pilot blockers — core-loop

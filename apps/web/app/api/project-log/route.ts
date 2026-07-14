@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { logActivity } from '@/lib/activity/log'
-import { attachAssetsByKey, attachmentKeysUnderTeam } from '@/lib/uploads/assets'
+import { attachAssetsByKey, resolveAttachmentKeys } from '@/lib/uploads/assets'
 import { db } from '@/lib/db'
 
 const Body = z.object({
@@ -118,11 +118,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Select who was present' }, { status: 400 })
   }
 
-  // Resolve + team-scope the referenced uploads before we write anything.
-  const keys = attachmentKeysUnderTeam(ctx.teamId, data.attachmentUrls)
-  if (keys === null) {
+  // Resolve + team-scope the referenced uploads before we write anything —
+  // id-URLs authorize through the team-scoped ledger row (SEC-6).
+  const keyByUrl = await resolveAttachmentKeys(ctx.teamId, data.attachmentUrls)
+  if (keyByUrl === null) {
     return NextResponse.json({ error: 'Invalid attachment reference' }, { status: 400 })
   }
+  const keys = Array.from(new Set(keyByUrl.values()))
 
   // Count existing entries to compute the entry number for this new one
   const existingCount = await db.projectLog.count({

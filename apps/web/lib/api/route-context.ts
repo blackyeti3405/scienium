@@ -52,6 +52,28 @@ export interface RequireTeamOptions {
   feature?: Feature
 }
 
+/**
+ * CSRF discipline (SEC-11): Clerk sessions ride on cookies, so "the browser has
+ * a session" is not "the user intended this write" — a cross-site form/fetch
+ * carries the cookie automatically. For mutating methods, a present `Origin`
+ * header must match the request host. A missing Origin is allowed (non-browser
+ * clients — tests, curl — don't send one and don't carry ambient cookies).
+ * GET/HEAD/OPTIONS pass untouched; GET routes must not mutate.
+ */
+export function assertSameOrigin(req: NextRequest): NextResponse | null {
+  const method = req.method.toUpperCase()
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null
+  const origin = req.headers.get('origin')
+  if (!origin) return null
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host')
+  try {
+    if (host && new URL(origin).host === host) return null
+  } catch {
+    // Malformed Origin — treat as cross-site.
+  }
+  return NextResponse.json({ error: 'Cross-origin request rejected' }, { status: 403 })
+}
+
 export async function requireTeamContext(
   req: NextRequest,
   opts: RequireTeamOptions,
@@ -63,6 +85,9 @@ export async function requireTeamContext(
 
   const limited = await enforceRateLimit(req, opts.tier, userId)
   if (limited) return { ctx: null, error: limited }
+
+  const crossOrigin = assertSameOrigin(req)
+  if (crossOrigin) return { ctx: null, error: crossOrigin }
 
   // Resolve the active team through membership so a stored activeTeamId is only
   // trusted when a TeamMember row still backs it.
@@ -138,6 +163,9 @@ export async function requireUserContext(
 
   const limited = await enforceRateLimit(req, opts.tier, userId)
   if (limited) return { ctx: null, error: limited }
+
+  const crossOrigin = assertSameOrigin(req)
+  if (crossOrigin) return { ctx: null, error: crossOrigin }
 
   return { ctx: { userId }, error: null }
 }

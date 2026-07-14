@@ -759,6 +759,10 @@ model TeamShopBuilding {
   purchasedBy User @relation(fields: [purchasedByUserId], references: [id])
 
   @@unique([teamId, buildingKey])
+  // One building per plot cell (SEC-DB): the durable backstop behind the
+  // service-layer advisory lock. NULL pos (owned-but-unplaced) rows are exempt
+  // — Postgres treats NULLs as distinct in unique indexes.
+  @@unique([teamId, posX, posY])
   @@map("team_shop_buildings")
 }
 

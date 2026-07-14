@@ -9,6 +9,7 @@ import { logActivity } from '@/lib/activity/log'
 import { extractDoi, tierFromDoi } from '@/lib/discovery/credibility'
 import { Prisma, type CredibilityTier } from '@prisma/client'
 import { processPaperJob } from '@/lib/literature/process-paper'
+import { inspectPdf } from '@/lib/pdf/sanitize'
 
 // Server-side only; the Anthropic key is never bundled for the browser.
 
@@ -67,6 +68,14 @@ export async function POST(req: NextRequest) {
   let title = file.name.replace(/\.pdf$/i, '')
   try {
     const pdf = await getDocumentProxy(new Uint8Array(buffer))
+
+    // Active-content inspection (SEC-7): reject JS / launch actions / embedded
+    // files / XFA / encryption / page bombs before we store or serve the file.
+    const inspection = inspectPdf(buffer, pdf.numPages)
+    if (!inspection.ok) {
+      return NextResponse.json({ error: inspection.reason }, { status: 422 })
+    }
+
     const { text } = await extractText(pdf, { mergePages: true })
     fullText = (text ?? '').trim()
 

@@ -3,6 +3,7 @@ import sharp from 'sharp'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { putObject } from '@/lib/storage'
 import { recordTemporaryAsset } from '@/lib/uploads/assets'
+import { db } from '@/lib/db'
 import { randomUUID } from 'crypto'
 
 const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
@@ -58,9 +59,6 @@ export async function POST(req: NextRequest) {
   const key = `log-attachments/${ctx.teamId}/${randomUUID()}.${mapped.ext}`
   await putObject(key, buffer, mapped.contentType)
 
-  // Served through the authenticated streaming route (R2 bucket is private).
-  const url = `/api/project-log/attachment/view?key=${encodeURIComponent(key)}`
-
   // Record a durable `temporary` row so an upload the user never attaches to a
   // log is discoverable and cleanable (see lib/uploads + the cron sweep) rather
   // than an orphaned object.
@@ -68,11 +66,17 @@ export async function POST(req: NextRequest) {
     teamId: ctx.teamId,
     userId: ctx.dbUserId,
     objectKey: key,
-    url,
+    url: '', // filled below — the canonical URL embeds this row's own id
     contentType: mapped.contentType,
     sizeBytes: buffer.length,
     purpose: 'project_log_attachment',
   })
+
+  // Served through the authenticated streaming route (R2 bucket is private).
+  // The reference is the ASSET ID (SEC-6): the view route authorizes through
+  // the team-scoped ledger row, never by parsing a client-supplied object key.
+  const url = `/api/project-log/attachment/view?id=${encodeURIComponent(asset.id)}`
+  await db.uploadedAsset.update({ where: { id: asset.id }, data: { url } })
 
   return NextResponse.json({ url, key, assetId: asset.id }, { status: 201 })
 }

@@ -1,4 +1,5 @@
 import 'server-only'
+import { timingSafeEqual } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { serverEnv } from '@/lib/env'
 
@@ -19,8 +20,19 @@ export function assertCron(req: NextRequest): NextResponse | null {
   if (!secret) {
     return NextResponse.json({ error: 'Cron not configured' }, { status: 503 })
   }
-  const header = req.headers.get('authorization')
-  if (header !== `Bearer ${secret}`) {
+  // Weak secrets defeat the whole guard — refuse them in production rather
+  // than let a 6-char value ship (SEC-10).
+  if (process.env.NODE_ENV === 'production' && secret.length < 32) {
+    console.error('[cron] CRON_SECRET is shorter than 32 bytes — refusing to run.')
+    return NextResponse.json({ error: 'Cron not configured' }, { status: 503 })
+  }
+  // Constant-time compare (SEC-10): `!==` short-circuits on the first differing
+  // byte, which leaks how much of the guess matched. timingSafeEqual requires
+  // equal lengths, so guard that first — the length itself is not secret.
+  const expected = Buffer.from(`Bearer ${secret}`)
+  const provided = Buffer.from(req.headers.get('authorization') ?? '')
+  const ok = provided.length === expected.length && timingSafeEqual(provided, expected)
+  if (!ok) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return null

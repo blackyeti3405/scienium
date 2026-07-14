@@ -36,24 +36,60 @@ export async function recordTemporaryAsset(input: {
   })
 }
 
-/** Extract the R2 object key from a project-log attachment view URL, or null. */
+/** Extract the R2 object key from a legacy key-based attachment URL, or null. */
 export function keyFromAttachmentUrl(url: string): string | null {
   const m = url.match(/[?&]key=([^&]+)/)
   return m ? decodeURIComponent(m[1]) : null
 }
 
+/** Extract the asset id from an id-based attachment view URL, or null. */
+export function assetIdFromAttachmentUrl(url: string): string | null {
+  const m = url.match(/[?&]id=([^&]+)/)
+  return m ? decodeURIComponent(m[1]) : null
+}
+
 /**
- * Resolve attachment view-URLs to deduped object keys, asserting every one lives
- * under the caller team's upload prefix (`log-attachments/<teamId>/`). Returns null
- * if any URL is malformed or points outside the team's namespace — the caller turns
- * that into a 400. Enforced at write time, this closes the cross-team delete/attach
- * vector (a crafted URL can't name another team's object).
+ * Resolve attachment view-URLs to a per-URL object key, asserting team ownership
+ * of every reference (SEC-6). Two accepted forms:
+ *
+ *   ?id=<assetId>  — canonical since the ledger became the authority: the id is
+ *                    resolved through the team-scoped `UploadedAsset` row, so the
+ *                    row (not string parsing) proves ownership.
+ *   ?key=<objectKey> — legacy rows from before id-URLs; validated against the
+ *                    team's upload prefix (`log-attachments/<teamId>/`).
+ *
+ * Returns a url → objectKey map, or null if ANY reference is malformed, another
+ * team's, or already deleted — the caller turns that into a 400.
  */
-export function attachmentKeysUnderTeam(teamId: string, urls: string[]): string[] | null {
+export async function resolveAttachmentKeys(
+  teamId: string,
+  urls: string[],
+): Promise<Map<string, string> | null> {
   const prefix = `log-attachments/${teamId}/`
-  const keys = urls.map(keyFromAttachmentUrl)
-  if (keys.some((k) => k === null || !k.startsWith(prefix))) return null
-  return Array.from(new Set(keys as string[]))
+  const out = new Map<string, string>()
+
+  const idUrls = new Map<string, string>() // assetId -> url
+  for (const url of urls) {
+    const assetId = assetIdFromAttachmentUrl(url)
+    if (assetId) {
+      idUrls.set(assetId, url)
+      continue
+    }
+    const key = keyFromAttachmentUrl(url)
+    if (!key || key.includes('..') || !key.startsWith(prefix)) return null
+    out.set(url, key)
+  }
+
+  if (idUrls.size > 0) {
+    const assets = await db.uploadedAsset.findMany({
+      where: { id: { in: [...idUrls.keys()] }, teamId, status: { not: 'deleted' } },
+      select: { id: true, objectKey: true },
+    })
+    if (assets.length !== idUrls.size) return null
+    for (const a of assets) out.set(idUrls.get(a.id)!, a.objectKey)
+  }
+
+  return out
 }
 
 /**

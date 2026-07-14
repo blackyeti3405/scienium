@@ -24,6 +24,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     'Content-Type': 'application/pdf',
     'Content-Disposition': `inline; filename="${safeName}.pdf"`,
     'Cache-Control': 'private, max-age=3600',
+    // SEC-7: never let a browser re-interpret the stored bytes as HTML/JS.
+    // (No CSP `sandbox` here — Chrome refuses to render sandboxed PDFs, which
+    // would break the in-panel viewer; upload-time inspection rejects active
+    // content instead.)
+    'X-Content-Type-Options': 'nosniff',
   }
 
   // Preferred path: stream the object straight from R2.

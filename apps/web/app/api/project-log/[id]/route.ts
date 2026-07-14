@@ -6,8 +6,7 @@ import { logActivity } from '@/lib/activity/log'
 import {
   attachAssetsByKey,
   markAssetsOrphanedByKey,
-  attachmentKeysUnderTeam,
-  keyFromAttachmentUrl,
+  resolveAttachmentKeys,
 } from '@/lib/uploads/assets'
 import { db } from '@/lib/db'
 
@@ -53,22 +52,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Select who was present' }, { status: 400 })
   }
 
-  // Resolve + team-scope the submitted attachments. Only keys not already on this
-  // entry are "new" and must resolve to a fresh temporary upload; keys carried over
-  // (including legacy ones that predate the ledger) are left as-is. Dropped keys are
+  // Resolve + team-scope the submitted attachments (id-URLs authorize through
+  // the ledger row — SEC-6). Only keys not already on this entry are "new" and
+  // must resolve to a fresh temporary upload; keys carried over (including
+  // legacy ones that predate the ledger) are left as-is. Dropped keys are
   // marked `orphaned` for the reclaim sweep — no object is deleted here.
-  const submittedKeys = attachmentKeysUnderTeam(ctx.teamId, data.attachmentUrls)
-  if (submittedKeys === null) {
+  const submittedKeyByUrl = await resolveAttachmentKeys(ctx.teamId, data.attachmentUrls)
+  if (submittedKeyByUrl === null) {
     return NextResponse.json({ error: 'Invalid attachment reference' }, { status: 400 })
   }
-  const existingKeys = new Set(
-    existing.attachmentUrls.map(keyFromAttachmentUrl).filter((k): k is string => k !== null),
+  const existingKeyByUrl = await resolveAttachmentKeys(ctx.teamId, existing.attachmentUrls)
+  const existingKeys = new Set(existingKeyByUrl ? existingKeyByUrl.values() : [])
+  const newlyAddedKeys = Array.from(new Set(submittedKeyByUrl.values())).filter(
+    (k) => !existingKeys.has(k),
   )
-  const newlyAddedKeys = submittedKeys.filter((k) => !existingKeys.has(k))
-  const removedKeys = existing.attachmentUrls
-    .filter((u) => !data.attachmentUrls.includes(u))
-    .map(keyFromAttachmentUrl)
-    .filter((k): k is string => k !== null)
+  const removedKeys = existingKeyByUrl
+    ? existing.attachmentUrls
+        .filter((u) => !data.attachmentUrls.includes(u))
+        .map((u) => existingKeyByUrl.get(u))
+        .filter((k): k is string => k !== undefined)
+    : []
 
   let entry
   try {
@@ -134,9 +137,10 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   })
   if (!existing) return NextResponse.json({ error: 'Entry not found' }, { status: 404 })
 
-  const removedKeys = existing.attachmentUrls
-    .map(keyFromAttachmentUrl)
-    .filter((k): k is string => k !== null)
+  // Best-effort resolution: a reference whose ledger row was already swept
+  // resolves to nothing and simply isn't re-orphaned.
+  const removedKeyByUrl = await resolveAttachmentKeys(ctx.teamId, existing.attachmentUrls)
+  const removedKeys = removedKeyByUrl ? Array.from(new Set(removedKeyByUrl.values())) : []
 
   // One transaction so the log, its references, and the ledger stay consistent: a
   // crash can't leave the log gone with its assets still `attached` (which the
