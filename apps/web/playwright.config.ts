@@ -12,6 +12,14 @@ loadTestEnv(__dirname)
 // managed dev server (which gets it via webServer.env below) runs in stub mode.
 process.env.E2E_SKIP_LLM = '1'
 
+// Serve deterministic fixtures for the Discovery external-source adapters
+// (OpenAlex resolve/references/cited-by, Semantic Scholar, article feeds) instead
+// of hitting the live third-party APIs. Same mechanism as E2E_SKIP_LLM above: the
+// spawned dev server inherits it, so a normal `pnpm dev` still uses the real APIs.
+// Without this the discovery mock-seam specs silently run against live networks
+// (meaningless for the fake seed ids), so it belongs here, not in .env.local.
+process.env.E2E_MOCK_SOURCES = '1'
+
 const PORT = Number(process.env.E2E_PORT ?? 3000)
 const baseURL = `http://localhost:${PORT}`
 

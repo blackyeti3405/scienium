@@ -9,6 +9,8 @@ import { logActivity } from '@/lib/activity/log'
 // Bounded batch of client-generated nodes; `.strict()` rejects extra fields.
 // `source` nodes (Discovery v2 Papers tab) carry external metadata fields that the
 // server re-derives (host + tier) before persisting — see createTreeNodes.
+// `article` nodes (The Conversation / journalism RSS) carry their own metadata
+// fields; `html` is re-sanitized server-side on this write path too.
 const TreeBody = z
   .object({
     nodes: z
@@ -18,7 +20,7 @@ const TreeBody = z
             id: z.string().trim().min(1).max(64),
             title: z.string().max(500),
             parentId: z.string().trim().max(64).nullable(),
-            source: z.enum(['wikipedia', 'youtube', 'source']).optional(),
+            source: z.enum(['wikipedia', 'youtube', 'source', 'article']).optional(),
             videoId: z.string().trim().max(32).optional(),
             // ── source-node fields (only read when source === 'source') ──
             platform: z.enum(['arxiv', 'pubmed', 'pmc']).optional(),
@@ -28,6 +30,14 @@ const TreeBody = z
             authors: z.array(z.string().max(300)).max(50).optional(),
             abstract: z.string().max(20000).optional(),
             publishedAt: z.string().trim().max(64).optional(),
+            // ── article-node fields (only read when source === 'article') ──
+            provider: z.enum(['the_conversation', 'journalism']).optional(),
+            renderMode: z.enum(['full', 'linkout']).optional(),
+            sourceName: z.string().trim().max(120).optional(),
+            articleUrl: z.string().trim().max(2000).optional(),
+            excerpt: z.string().max(2000).optional(),
+            html: z.string().max(200000).optional(),
+            articleAuthor: z.string().trim().max(300).optional(),
           })
           .strict(),
       )

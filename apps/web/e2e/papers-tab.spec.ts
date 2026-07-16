@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Locator } from '@playwright/test'
+import { test, expect, request as playwrightRequest, type Page, type Locator } from '@playwright/test'
 import { api } from './api'
 
 /**
@@ -22,7 +22,7 @@ import { api } from './api'
  *
  * Mock seam: the external arXiv/NCBI/OpenAlex clients are network calls made
  * SERVER-SIDE (lib/discovery/{arxiv,ncbi,openalex}.ts), so Playwright's browser-level
- * route interception can't stub them. E2E_MOCK_SOURCES=1 (set in apps/web/.env.local,
+ * route interception can't stub them. E2E_MOCK_SOURCES=1 (set in playwright.config.ts,
  * read directly via process.env — same pattern as the existing E2E_SKIP_LLM flag,
  * picked up automatically by the `next dev` the Playwright webServer boots) makes
  * those libs return small deterministic fixtures instead of hitting the live APIs.
@@ -135,7 +135,11 @@ function resultRows(page: Page): Locator {
  * shrink-0` wrappers. Each chip carries the ＋ / ✓ add glyph.
  */
 function laneChips(page: Page): Locator {
-  return page.locator('div.bg-\\[\\#0a1628\\]\\/50 button')
+  // Scope to the lane CHIP GRID only. The broader `div.bg-[#0a1628]/50 button`
+  // also matches the citations panel's ▼ hide / ▲ show collapse toggle (rendered
+  // before the grid), so selecting `.nth(0)` grabbed the toggle and collapsed the
+  // lanes. Same grid selector the disco-pubmed `citationChips` helper uses.
+  return page.locator('div.grid.grid-cols-1.sm\\:grid-cols-2 button')
 }
 
 /**
@@ -149,14 +153,14 @@ async function waitForLaneChips(page: Page) {
 }
 
 /** Poll the tree GET until the seed source node is persisted server-side. */
-async function waitForSeedPersisted(page: Page) {
+async function waitForSeedPersisted(page: Page, seedId: string = ARXIV_SEED_ID) {
   await expect
-    .poll(() => treeHasSeed(page), { timeout: 20000, intervals: [250, 500, 1000] })
+    .poll(() => treeHasSeed(page, seedId), { timeout: 20000, intervals: [250, 500, 1000] })
     .toBe(true)
 }
 
 /** True when the tree GET (as JSON) contains the seed node; false on non-JSON/miss. */
-async function treeHasSeed(page: Page): Promise<boolean> {
+async function treeHasSeed(page: Page, seedId: string = ARXIV_SEED_ID): Promise<boolean> {
   try {
     const res = await api.get(page, '/api/discovery/tree')
     if (!res.ok()) return false
@@ -164,11 +168,20 @@ async function treeHasSeed(page: Page): Promise<boolean> {
     const body = await res.json()
     return (
       Array.isArray(body.nodes) &&
-      body.nodes.some((n: { externalId?: string }) => n.externalId === ARXIV_SEED_ID)
+      body.nodes.some((n: { externalId?: string }) => n.externalId === seedId)
     )
   } catch {
     return false
   }
+}
+
+/** The `id` of the seeded node with the given `externalId` in this team's tree (server-confirmed). */
+async function findNodeId(page: Page, externalId: string): Promise<string> {
+  const res = await api.get(page, '/api/discovery/tree')
+  const body = await res.json()
+  const node = body.nodes.find((n: { externalId?: string; id: string }) => n.externalId === externalId)
+  if (!node) throw new Error(`Seed node ${externalId} not found in tree`)
+  return node.id
 }
 
 /**
@@ -182,9 +195,9 @@ async function treeHasSeed(page: Page): Promise<boolean> {
  * click legitimately navigates WITHOUT re-POSTing. Either way the invariant we
  * need — the seed node exists in this team's tree — is what we assert on.
  */
-async function pickFirstResultAndSettle(page: Page) {
+async function pickFirstResultAndSettle(page: Page, seedId: string = ARXIV_SEED_ID) {
   await resultRows(page).first().click()
-  await waitForSeedPersisted(page)
+  await waitForSeedPersisted(page, seedId)
   await page.reload()
   await dismissHome(page)
   await openPapersTab(page)
@@ -278,8 +291,9 @@ test.describe('Feature A — Papers tab', () => {
       page.getByText('This is a deterministic E2E fixture abstract standing in for a real arXiv paper.'),
     ).toBeVisible()
 
-    // "open original ↗" — target=_blank rel=noopener, pointing at the resolved URL.
-    const openOriginal = page.getByRole('link', { name: /open original/ })
+    // "open ↗" — target=_blank rel=noopener, pointing at the resolved URL. (The
+    // reader renders "open ↗", not "open original ↗" — SourceReader.tsx.)
+    const openOriginal = page.getByRole('link', { name: /open ↗/ })
     await expect(openOriginal).toBeVisible()
     await expect(openOriginal).toHaveAttribute('target', '_blank')
     const rel = await openOriginal.getAttribute('rel')
@@ -523,6 +537,299 @@ test.describe('Feature A — Papers tab', () => {
       'AC10 is a static/code-review criterion (grep for @anthropic-ai/sdk, related_works/concepts, ' +
         'and banned NCBI linknames in lib/discovery/* + app/api/discovery/sources/*) — not observable ' +
         'via a browser session. Verified out-of-band: no matches found (see final report).',
+    )
+  })
+})
+
+/**
+ * Feature — disco-pubmed-citations (.claude/pipeline/plan-disco-pubmed-citations.md).
+ * Extends the Papers-tab spec above rather than duplicating its setup: reuses the
+ * same discovery fixtures/helpers (resetTree, dismissHome, openDiscovery,
+ * waitForSeedPersisted, findNodeId, laneChips, waitForLaneChips) and the SAME
+ * seeded E2E leader team.
+ *
+ * The regression this feature fixes: opening a PubMed source node's Cites/Cited-by
+ * lanes used to route through NCBI `elink` and come back EMPTY under
+ * E2E_MOCK_SOURCES=1. The fix resolves those lanes via OpenAlex
+ * (`resolvePubmedWork` + `getReferences`/`getCitedBy`), mirroring the arXiv path.
+ * `PUBMED_SEED_ID` ('pmid:99900001') is the ncbi.ts `MOCK_SEED_PMID`, which
+ * `resolvePubmedWork`'s MOCK branch keys off (lib/discovery/openalex.ts
+ * `MOCK_PUBMED_WORK`); `MOCK_REFERENCES`/`MOCK_CITED_BY` now also carry `pmid`
+ * values, so opening that node should surface `pmid:`-scheme chips.
+ *
+ * Seeding strategy (deviates from Feature A's search-driven flow above):
+ * `/api/discovery/sources/search` (Papers-tab search box) calls `searchWorks` in
+ * lib/discovery/openalex.ts unconditionally for BOTH platforms — that function has
+ * NO E2E_MOCK_SOURCES branch, so it always hits the live OpenAlex network and
+ * returns real, non-deterministic results (confirmed live: searching "fixture"
+ * under the PubMed filter surfaced a real 1991 dental paper, not the mocked
+ * pmid:99900001 seed). Only the CITATIONS route (this feature's surface) is
+ * mock-gated. So these tests skip the search UI and seed the known mock-seed
+ * source node directly via `POST /api/discovery/tree` (same pattern AC8 above
+ * already uses for its dedup check) — deterministic, and exercises the exact same
+ * citations route the search-driven flow would have reached. Discovery's own
+ * hydrate() defaults `currentNodeId` to the tree's last node on load
+ * (stores/discoveryStore.ts), and DiscoveryFeature's `[currentNodeId]` effect
+ * then auto-opens the reader for it — so no extra "open" interaction is needed
+ * beyond a reload.
+ *
+ * Criterion → test mapping (plan's "Acceptance criteria" list):
+ *  PM1 — Opening the known PubMed source node renders non-empty Cites/Cited-by
+ *        lanes (chip visible) — no longer a dead end.
+ *  PM2 — Every chip in those two pubmed lanes is a valid `pmid:` chip
+ *        (platform: 'pubmed', externalId matches /^pmid:\d+$/) and is clickable
+ *        (selecting it moves the branch-selection counter).
+ *  PM3 — GET .../citations for the pubmed node returns 200 with a `lanes` object
+ *        carrying all four keys; it never 500s.
+ *  PM4 — byAuthor / byCategory fallback lanes remain populated for a PubMed node.
+ *  PM5 — Regression guard: the arXiv path is unaffected — its Cites/Cited-by
+ *        chips still use the `arxiv:` scheme.
+ *  PM6 — Team-scoped IDOR guard on this same route: already exercised by AC7
+ *        above (platform-agnostic — the guard checks `teamId`, not platform) —
+ *        documented here, not re-tested, to avoid a redundant duplicate.
+ *  PM7 — An unauthenticated request to the citations route 307-redirects to
+ *        /sign-in (not 401), with no lane data in the body.
+ *  PM8 — static/code-review: the route no longer imports from
+ *        `@/lib/discovery/ncbi` (verified in changes-disco-pubmed-citations.md).
+ *  PM9 — static/code-review: no LLM/Anthropic call added to this route.
+ */
+
+/**
+ * Seed a single `source` node directly via the tree POST (bypassing the live,
+ * non-deterministic Papers search UI — see file-header note above) and confirm
+ * it is persisted server-side.
+ */
+async function seedSourceNode(
+  page: Page,
+  opts: {
+    seedId: string
+    platform: 'arxiv' | 'pubmed'
+    title: string
+    sourceUrl: string
+    sourceHost: string
+    authors: string[]
+  },
+): Promise<void> {
+  const res = await api.post(page, '/api/discovery/tree', {
+    data: {
+      nodes: [
+        {
+          id: crypto.randomUUID(),
+          title: opts.title,
+          parentId: null,
+          source: 'source',
+          platform: opts.platform,
+          externalId: opts.seedId,
+          sourceUrl: opts.sourceUrl,
+          sourceHost: opts.sourceHost,
+          authors: opts.authors,
+          abstract: 'Deterministic E2E fixture abstract for disco-pubmed-citations.',
+          publishedAt: '2024-01-01',
+        },
+      ],
+    },
+  })
+  expect(res.status()).toBe(200)
+  await waitForSeedPersisted(page, opts.seedId)
+}
+
+// Title/author use common, real-corpus-findable terms (not fixture-only text) —
+// `cites`/`citedBy` are deterministic via the MOCK seam keyed off `externalId`
+// (pmid:99900001), but the `byAuthor`/`byCategory` FALLBACK lanes (PM4) are an
+// out-of-scope, unchanged keyword search against the LIVE OpenAlex network (no
+// MOCK branch on `searchWorks` — see the file-header seeding-strategy note), so
+// they need title/author text real papers actually exist for.
+const PUBMED_SEED_NODE = {
+  seedId: PUBMED_SEED_ID,
+  platform: 'pubmed' as const,
+  title: 'Cancer Treatment Outcomes: A Clinical Trial Analysis of Patient Survival',
+  sourceUrl: 'https://pubmed.ncbi.nlm.nih.gov/99900001/',
+  sourceHost: 'pubmed.ncbi.nlm.nih.gov',
+  authors: ['Smith'],
+}
+
+const ARXIV_SEED_NODE = {
+  seedId: ARXIV_SEED_ID,
+  platform: 'arxiv' as const,
+  title: 'E2E Fixture: Attention Mechanisms for Deterministic Testing',
+  sourceUrl: 'https://arxiv.org/abs/2401.00001',
+  sourceHost: 'arxiv.org',
+  authors: ['Ada Fixture', 'Grace Mocker'],
+}
+
+/** Seed a node, reload so the reader auto-opens it, and return its server id. */
+async function seedAndOpen(page: Page, node: typeof PUBMED_SEED_NODE | typeof ARXIV_SEED_NODE): Promise<string> {
+  await seedSourceNode(page, node)
+  await page.reload()
+  await dismissHome(page)
+  return findNodeId(page, node.seedId)
+}
+
+/**
+ * Selectable citation chips ONLY — scoped to the two-column lanes grid
+ * (`grid grid-cols-1 sm:grid-cols-2`), narrower than the shared `laneChips`
+ * helper above. `laneChips` matches every button inside the citations panel's
+ * outer wrapper, which ALSO contains the "▼ hide / ▲ show" collapse-toggle
+ * button (same `bg-[#0a1628]/50` ancestor, rendered before the lanes grid) —
+ * `laneChips(page).first()` grabs that toggle, not a chip. This locator can't.
+ */
+function citationChips(page: Page): Locator {
+  return page.locator('div.grid.grid-cols-1.sm\\:grid-cols-2 button')
+}
+
+test.describe('Feature — disco-pubmed-citations (PubMed cites/cited-by via OpenAlex)', () => {
+  test.describe.configure({ mode: 'serial' })
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/discovery')
+    await resetTree(page)
+  })
+
+  // ── PM1 + PM2 ────────────────────────────────────────────────────────────────
+  test('PM1+PM2: opening a known PubMed source renders non-empty Cites/Cited-by lanes of valid, clickable pmid: chips', async ({
+    page,
+  }) => {
+    await openDiscovery(page)
+    const nodeId = await seedAndOpen(page, PUBMED_SEED_NODE)
+
+    // Server-side: cites/citedBy are NON-EMPTY (the regression this feature fixes —
+    // the old NCBI path returned [] here) and every chip is a valid pmid: chip.
+    const citationsRes = await api.get(page, `/api/discovery/sources/${nodeId}/citations`)
+    expect(citationsRes.status()).toBe(200)
+    const { lanes } = await citationsRes.json()
+    expect(lanes.cites.length).toBeGreaterThanOrEqual(1)
+    expect(lanes.citedBy.length).toBeGreaterThanOrEqual(1)
+    for (const chip of [...lanes.cites, ...lanes.citedBy]) {
+      expect(chip.platform).toBe('pubmed')
+      expect(chip.externalId).toMatch(/^pmid:\d+$/)
+    }
+
+    // UI: the lanes finish loading with real chips (not the "loading…" placeholder).
+    await expect(page.getByText('Cites', { exact: true })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText('Cited by', { exact: true })).toBeVisible()
+    await waitForLaneChips(page)
+    expect(await laneChips(page).count()).toBeGreaterThanOrEqual(1)
+
+    // Clickable/branchable: selecting the first real chip (not the collapse
+    // toggle — see citationChips' doc comment) moves the branch-selection
+    // counter (BranchSelectionPanel) from 0 -> 1.
+    await citationChips(page).first().click()
+    await expect(page.getByText('1 / 2')).toBeVisible()
+  })
+
+  // ── PM3 ──────────────────────────────────────────────────────────────────────
+  test('PM3: GET citations for a PubMed node returns 200 with a lanes object carrying all four keys', async ({
+    page,
+  }) => {
+    await openDiscovery(page)
+    const nodeId = await seedAndOpen(page, PUBMED_SEED_NODE)
+
+    const citationsRes = await api.get(page, `/api/discovery/sources/${nodeId}/citations`)
+    expect(citationsRes.status()).toBe(200)
+    const { lanes } = await citationsRes.json()
+    expect(lanes).toHaveProperty('cites')
+    expect(lanes).toHaveProperty('citedBy')
+    expect(lanes).toHaveProperty('byAuthor')
+    expect(lanes).toHaveProperty('byCategory')
+  })
+
+  // ── PM4 ──────────────────────────────────────────────────────────────────────
+  test('PM4: byAuthor/byCategory fallback lanes remain populated for a PubMed node (unchanged behavior)', async ({
+    page,
+  }) => {
+    await openDiscovery(page)
+    const nodeId = await seedAndOpen(page, PUBMED_SEED_NODE)
+
+    const citationsRes = await api.get(page, `/api/discovery/sources/${nodeId}/citations`)
+    expect(citationsRes.status()).toBe(200)
+    const { lanes } = await citationsRes.json()
+    expect(lanes.byAuthor.length).toBeGreaterThanOrEqual(1)
+    expect(lanes.byCategory.length).toBeGreaterThanOrEqual(1)
+
+    await expect(page.getByText('More by author', { exact: true })).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText('More in topic', { exact: true })).toBeVisible()
+  })
+
+  // ── PM5 ──────────────────────────────────────────────────────────────────────
+  test('PM5: regression guard — the arXiv path is unaffected, its Cites/Cited-by chips still use the arxiv: scheme', async ({
+    page,
+  }) => {
+    await openDiscovery(page)
+    const nodeId = await seedAndOpen(page, ARXIV_SEED_NODE)
+
+    const citationsRes = await api.get(page, `/api/discovery/sources/${nodeId}/citations`)
+    expect(citationsRes.status()).toBe(200)
+    const { lanes } = await citationsRes.json()
+    expect(lanes.cites.length).toBeGreaterThanOrEqual(1)
+    expect(lanes.citedBy.length).toBeGreaterThanOrEqual(1)
+    for (const chip of [...lanes.cites, ...lanes.citedBy]) {
+      expect(chip.platform).toBe('arxiv')
+      expect(chip.externalId).toMatch(/^arxiv:/)
+    }
+
+    await waitForLaneChips(page)
+    expect(await laneChips(page).count()).toBeGreaterThanOrEqual(1)
+  })
+
+  // ── PM6 ──────────────────────────────────────────────────────────────────────
+  test('PM6: team-scoped IDOR guard on the citations route (documented — already exercised by AC7 above)', async () => {
+    test.skip(
+      true,
+      "PM6 (team-scoped: a foreign/fake node id -> 404) is exercised by Feature A's AC7 test above, " +
+        "against this exact route. The guard (`db.discoveryNode.findFirst({ teamId: ctx.teamId })`) is " +
+        'platform-agnostic and untouched by this feature (plan step 3f keeps it exactly as-is) — a ' +
+        'duplicate pubmed-flavoured 404 check would assert nothing new.',
+    )
+  })
+
+  // ── PM7 ──────────────────────────────────────────────────────────────────────
+  test('PM7: an unauthenticated request to the citations route 307-redirects to /sign-in, no lane data in body', async ({
+    page,
+  }) => {
+    // Need a real node id to hit the actual route (not a 404 from a bogus id) —
+    // seed the PubMed node first via an authenticated page, THEN probe with an
+    // explicitly anonymous request context.
+    await openDiscovery(page)
+    const nodeId = await seedAndOpen(page, PUBMED_SEED_NODE)
+
+    const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
+    // storageState MUST be explicitly cleared: newContext otherwise inherits the
+    // chromium project's default storageState (the leader session), which would
+    // make this "unauthenticated" request actually authenticated.
+    const anonCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: undefined })
+    try {
+      const res = await anonCtx.get(`/api/discovery/sources/${nodeId}/citations`, { maxRedirects: 0 })
+      expect(res.status()).toBe(307)
+      expect(res.headers()['location']).toContain('/sign-in')
+
+      const text = await res.text()
+      expect(text).not.toContain('"cites"')
+      expect(text).not.toContain('"citedBy"')
+      expect(text).not.toContain('pmid:')
+    } finally {
+      await anonCtx.dispose()
+    }
+  })
+
+  // ── PM8 ──────────────────────────────────────────────────────────────────────
+  test('PM8: no new external backend beyond OpenAlex (static check — documented, not a browser assertion)', async () => {
+    test.skip(
+      true,
+      'PM8 (the citations route no longer imports from @/lib/discovery/ncbi) is a static/code-review ' +
+        'criterion, not observable via a browser session. Verified out-of-band per ' +
+        'changes-disco-pubmed-citations.md: the ncbi import was removed from ' +
+        'app/api/discovery/sources/[id]/citations/route.ts (grep confirms citations/route.ts was the only ' +
+        'importer of lib/discovery/ncbi.ts in the tree; it now imports none of its exports).',
+    )
+  })
+
+  // ── PM9 ──────────────────────────────────────────────────────────────────────
+  test('PM9: no LLM/Anthropic call added (static check — documented, not a browser assertion)', async () => {
+    test.skip(
+      true,
+      'PM9 (this route remains non-LLM; no rate-cap needed) is a static/code-review criterion. The plan ' +
+        'introduces zero new dependencies beyond the existing @/lib/discovery/openalex client (no ' +
+        '@anthropic-ai/sdk import added) — verified out-of-band, not observable via a browser session.',
     )
   })
 })

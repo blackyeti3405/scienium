@@ -79,6 +79,7 @@ export const serverEnv = {
   OPENALEX_API_KEY: lazyOptionalEnv('OPENALEX_API_KEY'),
   NCBI_EMAIL: lazyOptionalEnv('NCBI_EMAIL', z.string().email()),
   NCBI_API_KEY: lazyOptionalEnv('NCBI_API_KEY'),
+  S2_API_KEY: lazyOptionalEnv('S2_API_KEY'),
 }
 
 /**

@@ -41,6 +41,7 @@ model User {
   teamRubricScores     TeamRubricScore[]
   activityFeedEntries  ActivityFeed[]
   paperProficiencies   PaperProficiency[]
+  paperExplanations    PaperExplanation[]
   teacherFeedbackGiven TeacherFeedback[]       @relation("teacherFeedbackAuthor")
   notifications        Notification[]
   notificationPref     NotificationPref?
@@ -49,6 +50,9 @@ model User {
   codexKpDays          CodexKpDay[]
   vegaStudyMessages    VegaStudyMessage[]
   uploadedAssets       UploadedAsset[]
+  synthesisMatrices    SynthesisMatrix[]
+  vocabCards           VocabCard[]
+  vocabKpDays          VocabKpDay[]
 
   @@index([activeTeamId])
   @@index([classId])
@@ -190,6 +194,9 @@ model Team {
   studyPlan       TeamStudyPlan?
   vegaStudyMessages VegaStudyMessage[]
   uploadedAssets  UploadedAsset[]
+  synthesisMatrices SynthesisMatrix[]
+  vocabCards      VocabCard[]
+  vocabKpDays     VocabKpDay[]
 
   @@index([classId])
   @@map("teams")
@@ -294,6 +301,9 @@ model DiscoveryNode {
   children       DiscoveryNode[] @relation("tree")
   // 1:1 side-row for `source` nodes (arXiv / PubMed metadata). Null for wiki/youtube.
   externalSource ExternalSource?
+  // 1:1 side-row for `article` nodes (The Conversation / journalism RSS). Null
+  // for every other source type.
+  articleSource  ArticleSource?
   // #13 wires the reserved `paperId` column: a promoted source node points at its
   // real Paper. SetNull so deleting the Paper doesn't cascade-delete the node.
   paper          Paper?          @relation("promotedFrom", fields: [paperId], references: [id], onDelete: SetNull)
@@ -310,6 +320,7 @@ enum DiscoverySource {
   youtube
   paper
   source
+  article
 
   @@map("discovery_source")
 }
@@ -353,6 +364,34 @@ model ExternalSource {
   discoveryNode DiscoveryNode @relation(fields: [discoveryNodeId], references: [id], onDelete: Cascade)
 
   @@map("external_sources")
+}
+
+// Metadata side-row for `article` nodes — The Conversation (CC BY-ND, full
+// in-app render) and science-journalism RSS (link-out card). A dedicated
+// table (not a generalized ExternalSource) — articles fit neither
+// `ExternalPlatform` nor `CredibilityTier`, and isolating the table keeps this
+// feature from touching the paper/citation path. `provider`/`renderMode` are
+// plain Strings validated by zod in-route (interestLevel-style — no enum
+// churn). `html` is re-sanitized server-side on every write path (resolve AND
+// tree POST) with the shared `ARTICLE_SANITIZE_OPTS` allowlist before it is
+// ever stored. Deleted with the node.
+model ArticleSource {
+  id              String    @id @default(cuid())
+  discoveryNodeId String    @unique @map("discovery_node_id")
+  provider        String    // 'the_conversation' | 'journalism'
+  renderMode      String    @map("render_mode") // 'full' | 'linkout'
+  sourceName      String    @map("source_name") // attribution label: "The Conversation", "Quanta Magazine"
+  title           String
+  author          String?
+  url             String    // canonical outbound (http(s), validated)
+  excerpt         String?   // linkout card summary (sanitized/stripped)
+  html            String?   // full sanitized article HTML (renderMode 'full' only)
+  publishedAt     DateTime? @map("published_at")
+  resolvedAt      DateTime  @default(now()) @map("resolved_at")
+
+  discoveryNode DiscoveryNode @relation(fields: [discoveryNodeId], references: [id], onDelete: Cascade)
+
+  @@map("article_sources")
 }
 
 // Shared, team-agnostic cache of works fetched from OpenAlex (Phase B). Populated by
@@ -474,10 +513,13 @@ model Paper {
   relevanceNotes PaperRelevanceNote[]
   chatMessages   PaperChatMessage[]
   proficiencies  PaperProficiency[]
+  explanations   PaperExplanation[]
+  explanationAttempts PaperExplanationAttempt[]
   processingJob PaperProcessingJob?
   // #13: the source node this Paper was promoted from (if any) + its formatted citation.
   promotedFromNode DiscoveryNode?     @relation("promotedFrom")
   citation       Citation?
+  vocabCards     VocabCard[]
 
   // DB-level duplicate-upload guard. Postgres treats NULL content hashes as
   // distinct, so non-PDF/legacy papers (null hash) are unaffected; two uploads of
@@ -539,6 +581,96 @@ model PaperProficiency {
 
   @@id([paperId, userId])
   @@map("paper_proficiency")
+}
+
+// Feynman-mode "explain it back": the student's own-words explanation of a source,
+// graded by Vega AGAINST the paper for accuracy + completeness. Per-STUDENT (like
+// PaperProficiency), not per-team. This row is also the once-ever KP claim: its
+// composite PK is the unique constraint the WHERE-gated ON CONFLICT claim needs.
+model PaperExplanation {
+  paperId           String   @map("paper_id")
+  userId            String   @map("user_id")
+  attemptCount      Int      @default(0) @map("attempt_count")
+  // Best `overall` (mean of clamped accuracy+completeness) achieved, 0-100.
+  bestScore         Int      @default(0) @map("best_score")
+  passed            Boolean  @default(false)
+  // High-water of KP already claimed from this source's explanation (0 or EXPLAIN_KP_AWARD).
+  kpAwarded         Int      @default(0) @map("kp_awarded")
+  // The most recent submission + verdict — what the panel reloads into the revise form.
+  latestText        String   @map("latest_text")
+  latestVerdictJson Json     @map("latest_verdict_json")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  paper Paper @relation(fields: [paperId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@id([paperId, userId])
+  @@map("paper_explanations")
+}
+
+// One row per submission — the revise-loop history. Carries no KP.
+model PaperExplanationAttempt {
+  id           String   @id @default(cuid())
+  paperId      String   @map("paper_id")
+  userId       String   @map("user_id")
+  attemptNo    Int      @map("attempt_no")
+  text         String
+  accuracy     Int      @default(0)
+  completeness Int      @default(0)
+  overall      Int      @default(0)
+  passed       Boolean  @default(false)
+  verdictJson  Json     @map("verdict_json")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  paper Paper @relation(fields: [paperId], references: [id])
+
+  @@index([paperId, userId, createdAt])
+  @@map("paper_explanation_attempts")
+}
+
+// Synthesis Matrix (Literature Review): a team-shared comparison grid across
+// 2-4 of the team's ready papers, with discipline-adaptive columns seeded
+// from a static per-labType template (content/literature/synthesis-templates)
+// and fully student-editable thereafter. `lastCheckJson` carries a PERF-7-style
+// replay cache (`{ inputHash, verdict }`) so re-checking an unedited grid never
+// pays for another Anthropic call. `kpAwarded` is flat and server-set — the
+// model never emits a number that reaches the economy.
+model SynthesisMatrix {
+  id              String    @id @default(cuid())
+  teamId          String    @map("team_id")
+  title           String    @default("Synthesis Matrix")
+  templateId      String    @map("template_id")
+  columnsJson     Json      @map("columns_json")
+  paperIds        String[]  @map("paper_ids")
+  lastCheckJson   Json?     @map("last_check_json")
+  lastCheckedAt   DateTime? @map("last_checked_at")
+  kpAwarded       Int       @default(0) @map("kp_awarded")
+  createdByUserId String    @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  team      Team            @relation(fields: [teamId], references: [id])
+  createdBy User            @relation(fields: [createdByUserId], references: [id])
+  cells     SynthesisCell[]
+
+  @@index([teamId, updatedAt])
+  @@map("synthesis_matrices")
+}
+
+// One grid cell, its own row (NOT a `cellsJson` blob) so two teammates editing
+// different cells never clobber each other — a single JSON blob would be
+// last-write-wins across the whole grid.
+model SynthesisCell {
+  matrixId  String   @map("matrix_id")
+  paperId   String   @map("paper_id")
+  columnId  String   @map("column_id")
+  text      String   @default("")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  matrix SynthesisMatrix @relation(fields: [matrixId], references: [id], onDelete: Cascade)
+
+  @@id([matrixId, paperId, columnId])
+  @@map("synthesis_cells")
 }
 
 model PaperChatMessage {
@@ -1511,6 +1643,80 @@ model CodexKpDay {
 
   @@unique([userId, teamId, day])
   @@map("codex_kp_days")
+}
+
+// ─── Vocabulary builder ───────────────────────────────────────────────────
+// Per-student spaced-repetition deck of terms EXTRACTED from the team's own
+// Paper.fullText/abstract (Schwartz-Hearst acronym pairing, repeated
+// technical n-grams, and authored-dictionary hits — see lib/literature/
+// vocab.ts). Zero LLM: nothing here is ever model-generated.
+
+enum VocabSource {
+  research_glossary
+  stats_guide
+  methods_guide
+  data_quality_guide
+  paper_definition     // the paper itself defines it (validated acronym expansion)
+  paper_context        // no grounded definition exists — show the paper's own sentence
+
+  @@map("vocab_source")
+}
+
+// Per-STUDENT deck card (like PaperProficiency, each member builds their own),
+// lifted from a team-scoped Paper. `definition` is ALWAYS grounded: either an
+// authored dictionary entry (`sourceEntryId`) or verbatim paper text (`quote`).
+// Nothing here is ever model-generated.
+//
+// `onDelete: Cascade` on `paperId` is intentional: deleting a paper drops the
+// cards lifted from it. If the term also appears in a surviving paper, the
+// next "Build deck" re-adds it — self-healing.
+model VocabCard {
+  id             String      @id @default(cuid())
+  userId         String      @map("user_id")
+  teamId         String      @map("team_id")
+  paperId        String      @map("paper_id")
+  termKey        String      @map("term_key")     // canonicalKey() — the dedupe key
+  term           String
+  aliases        String[]    @default([])
+  definition     String
+  source         VocabSource
+  sourceEntryId  String?     @map("source_entry_id")
+  quote          String?                          // VERBATIM sentence from the paper
+  box            Int         @default(1)
+  dueAt          DateTime    @map("due_at")
+  lastReviewedAt DateTime?   @map("last_reviewed_at")
+  reviewCount    Int         @default(0) @map("review_count")
+  lapses         Int         @default(0)
+  kpAwarded      Int         @default(0) @map("kp_awarded")   // once-ever high-water (0 → VOCAB_KP_PER_TERM)
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  user  User  @relation(fields: [userId], references: [id])
+  team  Team  @relation(fields: [teamId], references: [id])
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, termKey])          // one card per term per student
+  @@index([userId, teamId, dueAt])     // "today's due cards"
+  @@index([paperId])
+  @@map("vocab_cards")
+}
+
+// Daily KP cap ledger, PER STUDENT — a direct copy of CodexKpDay's shape and
+// its atomic WHERE-gated increment. Counts KP (not cards) so the cap is a
+// money cap.
+model VocabKpDay {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  teamId    String   @map("team_id")
+  day       DateTime @db.Date
+  kpAwarded Int      @default(0) @map("kp_awarded")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([userId, teamId, day])
+  @@map("vocab_kp_days")
 }
 
 // Cached "Study Plan" — one Haiku classification of the team's topic/research

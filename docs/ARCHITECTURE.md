@@ -1,6 +1,6 @@
 # scienium Technical Architecture
 
-> Last fact-checked against the repository: 2026-07-09
+> Last fact-checked against the repository: 2026-07-15
 > Product behavior: [`SPEC.md`](SPEC.md)
 > Setup and operations: [`SETUP.md`](SETUP.md)
 > Security launch checklist: [`SECURITY.md`](SECURITY.md)
@@ -99,9 +99,12 @@ scienium/
 `packages/shared-types/src/` contains:
 
 - `enums.ts`: canonical lab types, project phase order, and shared enums.
-- `paper.ts`: paper-processing contracts.
 - `pvp.ts`: raid/spell contracts.
 - `index.ts`: package exports.
+
+(The dead `paper.ts` contract module, which had zero consumers, was removed —
+paper-processing shapes are validated by a local Zod schema in
+`lib/literature/process-paper.ts`.)
 
 `packages/shared-types` must build before the web typecheck because the web app
 imports its generated declarations.
@@ -126,8 +129,8 @@ apps/web/
 |   |-- teacher/                  roster, student detail, reports, queues
 |   `-- ui/                       shared pixel primitives and skeletons
 |-- content/
-|   |-- data-terminal/            authored stats/methods/quality/plot guides
-|   `-- fairs/dataset.ts          affiliated-fair dataset
+|   |-- data-terminal/            authored guides as *.json + thin typed wrappers
+|   `-- fairs/                    affiliated-fair dataset.json + typed wrapper
 |-- lib/                          domain, server, integration, and utility modules
 |-- prisma/
 |   |-- schema.prisma             database schema
@@ -147,34 +150,56 @@ apps/web/
 
 ### 3.3 Component inventory
 
-The component folders are feature-owned:
+The component folders are feature-owned. Phase 3 of the refactor (changelog
+`0.23.5`) split the large feature shells into a thin container plus a feature
+folder of subcomponents and a `use<Feature>` hook, following the
+`components/literature/` model. Network calls route through
+`lib/api/client.ts` (`requestJson`) except where a call needs FormData,
+streaming, `keepalive`, or tolerant error handling.
 
-- `components/discovery/`: `DiscoveryFeature`, `DiscoveryHome`,
-  `DiscoveryTopicList`, `DiscoveryTree`, `InterestSeeds`, `PapersSearch`,
-  `SourceReader`, `TopicSearch`, `WikiReader`, and `YouTubeViewer`.
+- `components/discovery/`: thin `DiscoveryFeature` container plus
+  `DiscoveryHeader`, `FinalTopicBar`, `ExplorerSidePanel`, `ExplorerReaderPane`,
+  `DiscoveryHomeScreen`, `DiscoveryModals`, deduped `BranchSelectionPanel`,
+  `DiscoveryHome`, `DiscoveryTopicList`, `DiscoveryTree`, `InterestSeeds`,
+  `PapersSearch`, `SourceReader`, `ArticlesBrowse`, `ArticleReader`,
+  `TopicSearch`, `WikiReader`, `YouTubeViewer`, and `hooks/` (`useFinalTopic`,
+  `useTeamInterests`, `useSourceLanes`).
 - `components/fair/`: `ScienceFairFeature`, `CategoryBrowser`,
   `FormsChecklist`, and `RubricSelfCheck`.
-- `components/lab/`: `LabScene`, `LabPlot`, `ShopPanel`, `StatusStrip`,
-  `Sprite`, `TileBackground`, `DecorationLayer`, `FeaturePanel`, `TeamPanel`, `SettingsPanel`
-  integration, `ActivityPanel`, `FeedbackPanel`, `NotificationBell`,
-  `MomentumCard`, `PhaseAdvance`, `RequestAdvance`, and the intentional PvP
-  `StubFeature`.
-- `components/literature/`: `LiteratureFeature`, `PaperSlot`,
-  `UploadSourceButton`, `QAPanel`, `QuizPanel`, `PaperChat`,
-  `CitationsPanel`, `CredibilityBadge`, `VettingChecklist`,
-  `ResearchGuidePanel`, feature hooks, types, and API contracts.
-- `components/ops/`: `OperationsHubFeature`, `CodexTab`, `ExpertisePanel`,
-  `DataTerminalTab`, `VegaStudyTab`, `RichEditor`, five guide panels, and
-  shared guide chrome.
-- `components/research-plan/`: `ResearchPlanFeature`.
+- `components/lab/`: `LabScene` (composition), `LabPlot`, `ShopPanel`,
+  `StatusStrip`, `Sprite`, `TileBackground`, `DecorationLayer`, `FeaturePanel`,
+  `TeamPanel`, `SettingsPanel` integration, `ActivityPanel`, `FeedbackPanel`,
+  `NotificationBell`, `MomentumCard`, `PhaseAdvance`, `RequestAdvance`,
+  `BuildingMenu`, `UpgradeBurst`, `DevFillButton`, the `labCurrency.tsx`
+  client currency provider (moved here from `lib/`), and the intentional PvP
+  `StubFeature`. The plot place/move/sell/upgrade optimistic state machine lives
+  in `lib/hooks/usePlotBuildings.ts`.
+- `components/literature/`: thin `LiteratureFeature` plus `PaperSlot`,
+  `UploadSourceButton`, `QAPanel`, `QuizPanel`, `PaperChat`, `CitationsPanel`,
+  `CredibilityBadge`, `VettingChecklist`, `ResearchGuidePanel`, the three new
+  learning-tool panels `ExplainPanel`, `SynthesisPanel` (+ `SynthesisMatrixEditor`),
+  and `VocabPanel`, feature hooks (`usePapers`, `usePaperChat`, `usePaperQuiz`,
+  `useExplainBack`, `useSynthesisMatrix`, `useVocabDeck`), types, and API
+  contracts (`api.ts`, `synthesisApi.ts`, `vocab-api.ts`).
+- `components/ops/`: thin `OperationsHubFeature` tab switch plus `ProjectLogTab`
+  (+ `project-log/` subcomponents and `useProjectLog`), `FailureLogTab`
+  (+ `failure-log/` and `useFailureLog`), `DataTerminalTab` (+ `data-terminal/`
+  views and `useExperiments`), `CodexTab`, `ExpertisePanel`, `VegaStudyTab`,
+  `RichEditor`, `log-shared`, five guide panels, and shared guide chrome.
+- `components/research-plan/`: thin `ResearchPlanFeature` plus `useResearchPlan`
+  and the shared `PlanReviewView`/`IdeaCheckView` (consumed by both the student
+  feature and the teacher student-detail sections).
 - `components/settings/`: `SettingsPanel` and `LabProfileSettings`.
-- `components/showcase/`: `ShowcaseEditor`, `PrintButton`, and
-  `AbstractGuidePanel`.
-- `components/teacher/`: `TeacherRoster`, `StudentDetail`,
-  `student-detail/PaperQAPanel`, `TeacherReports`, `TeacherRubricScoring`,
-  `ShowcaseModerationQueue`, and `DecisionControls`.
+- `components/showcase/`: thin `ShowcaseEditor` plus `useShowcaseEditor`,
+  `editor/` subcomponents, `PrintButton`, and `AbstractGuidePanel`.
+- `components/teacher/`: `TeacherRoster`, thin `StudentDetail` plus
+  `student-detail/` (`StudentHeader`, `sections/*`, `types`, `shared`,
+  `useStudentOverview`, `PaperQAPanel`), `TeacherReports` (+ `next/dynamic`
+  `ReportBarChart`), `TeacherRubricScoring`, `ShowcaseModerationQueue`, and
+  `DecisionControls`.
 - `components/ui/`: `BusyButton`, `Card`, `ConfirmDialog`, `LabeledLoader`,
-  `PixelProgressBar`, `PixelSkeleton`, `PixelSpinner`, `SectionTabs`, and
+  `PixelProgressBar`, `PixelSkeleton`, `PixelSpinner`, `SectionTabs`, the shared
+  `Toast`, `EmptyState`, and `RouteError` primitives (Phase 0), and
   feature/route skeletons.
 
 ## 4. App Router
@@ -186,8 +211,9 @@ public entry page.
 
 `app/(auth)/` contains Clerk sign-in and sign-up pages.
 
-`app/(onboarding)/onboarding/page.tsx` creates or joins a lab and optionally
-links the student to a school/class.
+`app/(onboarding)/onboarding/page.tsx` creates or joins a lab, records the
+student's school, and — when a class code is entered — files a pending
+class-join request the teacher must approve (it does not enrol directly).
 
 `app/game/page.tsx` is the authenticated role router: teachers go to `/teacher`
 and students go to `/lab`. The legacy `/dashboard` page redirects to `/lab`.
@@ -245,8 +271,11 @@ Every authored App Router file belongs to one of these surfaces:
 - Public: `(public)/layout.tsx`; showcase gallery and showcase-by-slug.
 
 Loading behavior is centralized in the shared skeleton components rather than
-duplicated route-local loading files. There are no server actions; writes use
-route handlers.
+duplicated route-local loading files. Each route group has an `error.tsx`
+boundary (`(dashboard)`, `(teacher)`, `(onboarding)`, `(public)`, `(auth)`)
+rendering the shared `components/ui/RouteError` reset UI, so one bad payload
+can't dead-end a student on Next's blank error screen. There are no server
+actions; writes use route handlers.
 
 ## 5. API Architecture
 
@@ -267,63 +296,123 @@ team is resolved through membership by `pickActiveTeam` (`lib/team/active-team.t
 a stored `User.activeTeamId` is honored only when a `TeamMember` row still backs
 it, so a stale or forged `activeTeamId` can never surface another team's data.
 `getTeamContext` (dashboard layout) and the server-rendered lab page use the same
-helper. (Phase 1 of the refactor plan.)
+helper.
 
-`lib/teacher/auth.ts` is the teacher guard. It validates teacher/admin role,
-loads classes owned by the teacher, and scopes team access through
-`Team.classId`. The DB `User.role` is authoritative whenever a row exists
-(`resolveAuthoritativeRole`, `lib/teacher/role.ts`), so a stale Clerk claim can
-never override a DB downgrade; the claim only bootstraps an account with no row.
-`teacherOwnsTeam` scopes purely by `Team.classId` — the old `teamLead.classId`
-fallback was removed after migration `20260709000000_phase1_ownership_indexes`
-backfilled every team's class from its lead.
+For mutating methods (`POST`/`PATCH`/`DELETE`), all three guards also call
+`assertSameOrigin` (CSRF discipline): a present `Origin` header must match the
+request host, since Clerk sessions ride on cookies and "the browser has a
+session" is not "the user intended this write." Origin-less non-browser clients
+and reads pass through.
 
-`lib/cron/auth.ts` validates `Authorization: Bearer <CRON_SECRET>`.
+`lib/api/with-route.ts` provides `withTeamRoute({ tier, feature, body }, handler)` —
+a wrapper that composes `requireTeamContext` + `parseJson` and maps a thrown
+`ApiError` to a response, so a mutating route becomes
+`export const POST = withTeamRoute(..., async ({ ctx, data }) => …)` instead of
+copying the four-line guard prelude. It is additive (`requireTeamContext` is
+unchanged); the `buildings/*` routes are the adopted exemplar and other routes
+migrate incrementally.
 
-`lib/validation.ts` parses bounded JSON bodies using strict Zod schemas.
+`requireUserContext(req, { tier })` (also in `route-context.ts`) is the sibling
+guard for routes that legitimately run *before* a team exists (onboarding, join
+flows) or only need a rate-limited identity (the discovery proxies). It returns
+`{ userId }` and applies the same CSRF check.
+
+`lib/teacher/auth.ts` is the teacher guard. It validates teacher/admin role and
+loads the classes the teacher owns. The DB `User.role` is authoritative whenever
+a row exists (`resolveAuthoritativeRole`, `lib/teacher/role.ts`), so a stale
+Clerk claim can never override a DB downgrade; the claim only bootstraps an
+account with no row. `teacherOwnsTeam(classIds, teamId)` is **membership-based**:
+a teacher owns a team when at least one of its members is in one of the teacher's
+classes (`members: { some: { user: { classId: { in } } } }`). This is what lets
+both teachers of a cross-school lab see its shared artifacts; a single
+`Team.classId` is no longer read for ownership (it is vestigial — see §6).
+Individual-student privacy is preserved separately: the `student/[id]…` routes
+gate on the target student's own `classId ∈ classIds`, so a teammate's teacher
+cannot open another teacher's student's personal page.
+
+`lib/cron/auth.ts` validates `Authorization: Bearer <CRON_SECRET>` with a
+constant-time `crypto.timingSafeEqual` compare and refuses sub-32-char secrets
+in production. A static test asserts every `app/api/cron/**` route calls it.
+
+`lib/validation.ts` parses bounded JSON bodies using strict Zod schemas and
+exports the shared field helpers `boundedText`, `optionalBoundedText`, `cuid`,
+and `httpUrl` so length/ID/URL caps stay consistent across routes.
 `lib/api/client.ts` provides consistent client-side JSON errors and runtime
 response validation where a feature contract has been defined.
+
+A compiler-enforced server/client boundary backs all of this: the `server-only`
+package is imported by every module that reaches Prisma or a secret, so a client
+import fails `next build` instead of silently bundling secrets. Unit tests alias
+`server-only` to an inert stub (`test/stubs/server-only.ts`).
 
 ### 5.2 Caching and rate limiting
 
 `lib/rate-limit.ts` defines `read`, `mutate`, `join`, `upload`, and `ai` tiers.
 Each authenticated request is counted per user and against a larger shared-IP
 backstop. The default store is process memory. When both Upstash variables are
-configured, counters use Redis REST and work across server instances. Redis
-failure currently fails open and is logged.
+configured, counters use Redis REST and work across server instances. A Redis
+outage fails open (logged). The **paid** tiers (`ai`, `upload`) instead fail
+**closed** (503) in production when no shared store is configured, rather than
+silently letting the per-student LLM cost cap become `limit × instances`;
+`RATE_LIMIT_ALLOW_MEMORY=1` opts out on a single long-lived Node server.
 
 `lib/lru.ts` provides bounded in-process TTL/LRU caching for cheap read-through
 caches such as the Wikipedia article proxy. These caches are intentionally
 best-effort and per-instance. Durable data and user-visible state live in
 PostgreSQL; Redis is not currently a general application state store.
 
+Anthropic prompt caching is used deliberately on the paper-backed routes: the
+paper text is composed as the **first**, byte-identical system block (via the
+shared `paperTextBlock` helper) so its cache prefix is reused across
+chat → quiz → grade → retry, and paper/Vega chat mark the newest history turns
+with an ephemeral `cache_control` breakpoint to avoid re-billing prior turns.
+This is the PERF-8 invariant, and it now extends to Explain-it-back
+(`api/papers/[id]/explain`): its grading call composes the SAME
+`paperTextBlock(paper.fullText)` as the first system block, so it lands on the
+identical ~30k-token cache prefix rather than opening a new one. The Synthesis
+Matrix check (`api/literature/synthesis/[id]/check`) deliberately does the
+opposite: it reads paper *abstracts* (or a short `fullText` head), never
+imports `paperTextBlock`/`paperTextContext`, and caches its `<sources>` block
+on its own, separate prefix — keeping the single-paper PERF-8 prefix clean and
+the multi-paper comparison cheap instead of mixing the two.
+
 ### 5.3 API route inventory
 
-- `api/buildings/`: read plot/shop state; place/purchase, move, sell, upgrade.
+- `api/buildings/`: read plot/shop state; place/purchase, move, sell, upgrade
+  (the mutating routes are the `withTeamRoute` exemplar).
 - `api/citations/`: list citations and export formatted bibliographies.
-- `api/class/join`: join or move a lab into a teacher class.
+- `api/class/join`: file a pending request to join the caller's teacher class
+  (per-student — approval is a teacher action; see `api/teacher/class`).
 - `api/cron/notifications`: daily deadline/urgency notifications.
 - `api/cron/papers`: retry pending, failed, or stale paper jobs.
-- `api/data-terminal/`: experiment CRUD and measurement writes.
+- `api/data-terminal/`: experiment CRUD; the list returns measurement counts and
+  `[id]/measurements` GET lazy-loads one experiment's points on selection.
 - `api/dev/`: development-only backfill and paper-fill helpers.
 - `api/discovery/`: Wikipedia search/article, interests, topic, tree CRUD,
-  YouTube resolution, scholarly search/resolve/citations/reflection, and source
-  promotion.
+  YouTube resolution, scholarly search/resolve/citations/reflection, article
+  feed browse/resolve, and source promotion.
 - `api/expertise/`: create and grade Proof of Expertise exams.
 - `api/failure-log/`: failure CRUD and AI follow-up.
 - `api/fairs/`: fair matching, forms, form status, and deadline synchronization.
+- `api/literature/synthesis/`: Synthesis Matrix create/read/cell-edit and the
+  Vega comparison check.
+- `api/literature/vocab/`: build a student's deck from their team's ready
+  papers, list the deck, and grade one due review (zero LLM).
 - `api/notifications/`: notification list/read state and preferences.
 - `api/onboarding/`: student/team onboarding and teacher onboarding.
 - `api/ops/codex/`: progress, completion, and study-plan generation.
 - `api/ops/vega-study`: persistent project-grounded team chat.
-- `api/papers/`: upload/list/delete/file, chat, quiz, grade, and targeted retry.
+- `api/papers/`: upload/list/delete/file, chat, quiz, grade, targeted retry, and
+  Explain-it-back grading.
 - `api/project-log/`: log CRUD, references, attachment upload and viewing.
 - `api/pvp`: guarded 501 placeholder for the unbuilt raid system.
-- `api/research-plan/`: source synchronization, originality check, and review.
+- `api/research-plan/`: source synchronization, originality check, and review
+  (a review of unchanged plan text replays the persisted result — no LLM spend).
 - `api/rubric/self-assessment`: team rubric read/write.
 - `api/settings`: team/profile settings.
 - `api/showcase/`: showcase CRUD, asset upload/link/delete, public streaming.
-- `api/teacher/`: class, roster, reports, feedback, nudge, rubric,
+- `api/teacher/`: class create + `class/requests/[id]` approve/deny +
+  `class/[id]/code` regeneration; roster, reports, feedback, nudge, rubric,
   moderation, student overview, and teacher paper/Q&A access.
 - `api/team/`: active team, activity, feedback, invite/join, location, momentum,
   and phase advancement.
@@ -338,18 +427,21 @@ Top-level infrastructure and policy files:
 
 - `activity/log.ts`: durable activity feed writes.
 - `anthropic.ts`, `env.ts`: lazy AI client and environment access.
-- `api/client.ts`, `api/route-context.ts`: browser response decoding and
-  authenticated team route context.
+- `api/client.ts`, `api/route-context.ts`, `api/with-route.ts`: browser response
+  decoding, the authenticated team/user route context + CSRF guard, and the
+  `withTeamRoute` handler wrapper.
 - `db.ts`, `db-lock.ts`: Prisma singleton and PostgreSQL advisory locks.
 - `economy.ts`, `shop.ts`, `plot.ts`, `phase.ts`, `showcase.ts`: pure domain
   policy.
 - `shop-server.ts`, `plot-server.ts`, `showcase-server.ts`: database-backed
   loaders.
-- `featureRegistry.tsx`, `gateways.ts`, `labCurrency.tsx`: lab feature wiring and
-  client currency context.
+- `featureRegistry.tsx`, `gateways.ts`: lab feature wiring. (The client currency
+  provider moved to `components/lab/labCurrency.tsx`.)
 - `lru.ts`, `rate-limit.ts`, `storage.ts`, `uploadWithProgress.ts`,
-  `validation.ts`, and `wikipedia.ts`: bounded cache, throttling, R2, upload,
-  request parsing, and Wikipedia integration.
+  `validation.ts`, `ndjson.ts`, and `format.ts`: bounded cache, throttling, R2,
+  upload, request parsing + shared field schemas, NDJSON stream reading, and date
+  formatting. (Dead `wikipedia.ts` was deleted — the live Wikipedia path is the
+  discovery article route.)
 
 Feature-owned library folders:
 
@@ -363,38 +455,69 @@ Feature-owned library folders:
   durable `UploadedAsset` ledger row and moves it through temporary → attached →
   orphaned → deleted, with a single claim-then-delete reclaim sweep as the only
   physical-delete site.
-- `data-terminal/`: CSV utilities, chart-guide index, tests, and one chart module
-  per scientific field under `charts/`.
-- `discovery/`: arXiv, NCBI, OpenAlex, credibility, sanitization, source
-  normalization, interest matching, and KP award policy.
-- `fairs/`: abstract guidance, categories, forms, rubric anchors/scoring, safety,
-  ZIP lookup, and matching.
-- `guides/` and `hooks/`: guide filtering and the reusable toggle-set hook.
+- `data-terminal/`: CSV utilities, chart-guide index, pure PNG/CSV `export.ts`,
+  tests, and one chart module per scientific field under `charts/`.
+- `discovery/`: arXiv, NCBI, OpenAlex, Semantic Scholar (`semanticscholar.ts` —
+  keyless TL;DR + influential-citation ordering, cache+timeout+degrade, optional
+  `S2_API_KEY`), credibility, sanitization, source normalization, interest
+  matching, KP award policy, the route-side `tree-service.ts` (node creation +
+  tree hydration), and the client-safe `treeApi.ts` persistence wrappers used by
+  the Discovery store. `articles.ts` is a parallel, unified RSS/Atom adapter for
+  the `article` source type (The Conversation + science-journalism feeds); see
+  §8.1.
+- `fairs/`: abstract guidance, categories, forms (client-safe catalog in
+  `forms.ts`, DB seeder split into `server-only` `forms-server.ts`), rubric
+  anchors/scoring, safety, ZIP lookup, and matching.
+- `guides/` and `hooks/`: guide filtering; reusable client hooks
+  (`useToggleSet`, `useAutoDismiss`, `useResizablePanel`, `usePlotBuildings`).
+- `lab/`: `decoration.ts` — pure, unit-tested slot→sprite placement math for the
+  lab's nature-scatter layer, extracted from `DecorationLayer` (see §7).
 - `lab-type/`: Anthropic-backed lab classification.
-- `literature/`: citation, quiz, relevance, research-guide, and durable paper
-  processing.
+- `literature/`: citation, quiz, relevance, research-guide, the shared
+  `grading.ts` (the grading Anthropic call + JSON extraction + `paperTextBlock`
+  helper reused by quiz grade/retry, expertise grade, and Explain-it-back), and
+  durable paper processing (metadata extraction on Haiku). Three newer, feature-
+  owned modules: `explain.ts` (Explain-it-back verdict schema/prompt, graded
+  against the paper on the PERF-8 cache prefix); `synthesis.ts` (Synthesis
+  Matrix column templates, verdict schema, and its own separate cache-prefix
+  builder — deliberately not sharing `paperTextBlock`); and the zero-LLM pair
+  `vocab.ts` (extractive term detection — Schwartz-Hearst acronym pairing,
+  authored-dictionary hits, repeated-ngram fallback — every definition grounded
+  in either the dictionary or a verbatim paper quote, enforced by a unit test)
+  and `srs.ts` (pure Leitner scheduling; no Anthropic dependency in either
+  module).
 - `notifications/`: notification computation and optional Resend delivery.
-- `onboarding/`: Clerk-profile normalization.
+- `onboarding/`: Clerk-profile normalization and per-student class-join request
+  filing/approval (`applySchoolAndClass`, `requestClassJoin`, `approveClassJoin`).
 - `ops/`: failure follow-up and Vega context, plus the Codex engine, schemas,
   source corpus, generated wrappers, checksums, build script, and tests.
+- `pdf/`: `sanitize.ts` — active-content inspection (rejects JS/launch/embedded/
+  XFA/encrypted/page-bomb PDFs) run before an upload is stored or parsed.
 - `research-plan/`: Google Doc extraction, review/idea-check logic, types, and
   authored science/engineering rubrics.
 - `sprites/`: runtime manifest, generated anchors, and manifest test.
-- `teacher/`: role and class/team authorization. Teacher role is read from the
-  DB (`role.ts`), not inferred from owning a class.
+- `teacher/`: role and membership-based class/team authorization
+  (`auth.ts`), plus pure report analytics (`analytics.ts`, no DB). Teacher role
+  is read from the DB (`role.ts`), not inferred from owning a class.
 - `team/`: self-serve phase advancement, membership-verified active-team resolution
   (`active-team.ts` confirms the caller is a member of the requested `activeTeamId`
   before trusting it), and invites.
 
 ## 6. Identity, Schools, Classes, and Teams
 
-The ownership chain is:
+Class membership is **per-student**: a student belongs to one class
+(`User.classId`), and a lab is simply the set of its members — it may span
+multiple classes and schools, each member in their own teacher's class. The
+ownership chain is:
 
 ```text
 School
   `-- Class (teacherId)
-       `-- Team (classId)
-            `-- TeamMember (userId, role)
+       `-- User (classId)          <- membership is per-student
+       `-- ClassJoinRequest (pending | approved | denied)
+
+Team
+  `-- TeamMember (userId, role)    <- a lab spans its members' classes
 ```
 
 Important invariants:
@@ -404,10 +527,19 @@ Important invariants:
   `activeTeamId` is trusted only after `lib/team/active-team.ts` confirms the caller
   actually belongs to that team — an unverified team id never widens access.
 - Teacher authority is read from `User.role` in the DB (`lib/teacher/role.ts`); it is
-  no longer inferred from owning a class. `Team.classId` remains the data boundary a
-  teacher's reads/writes are scoped to.
-- A lab may not straddle classes. A non-lead cannot move individually to a
-  different class; a lead class move updates the team and all members.
+  no longer inferred from owning a class. A teacher's scope over a **team's shared
+  work** is membership-based (`teacherOwnsTeam`): they own a team if they own ≥1
+  member, so both teachers of a cross-school lab see its papers/plan/rubric/
+  showcase. A student's **individual** pages are gated separately on that student's
+  own `classId`, so a teammate's teacher can't open them.
+- **Joining a class is a request, not an enrolment.** Entering a class code files
+  a `ClassJoinRequest`; the owning teacher approves or denies it. Approval enrols
+  **only that student** (sets their `classId` + school) — it never pulls their lab
+  in or overwrites teammates. Class codes are teacher-**regenerable**
+  (`api/teacher/class/[id]/code`), which revokes a leaked code.
+- `Team.classId` is **vestigial** under per-student membership — new teams leave it
+  null and nothing authorises on it. The column remains only to avoid a destructive
+  migration; roster and report aggregates resolve a student's team via membership.
 - `Team.teamLeadId` is a real user foreign key and is mirrored by a lead
   `TeamMember`.
 - Team queries and mutations are scoped by the guarded `teamId`.
@@ -441,12 +573,18 @@ economy buildings, gateway overrides, phase progress, and the requested panel.
 - shop, settings, team, activity, feedback, and momentum panels;
 - placed economy and gateway mirrors;
 - arrange mode, cursor ghost, selected building, and busy states;
-- live currency reconciliation through `lib/labCurrency.tsx`.
+- live currency reconciliation through `components/lab/labCurrency.tsx`.
 
 `LabPlot` owns isometric input and rendering. Grid math is shared with the server
 through `lib/plot.ts`. Sprite lookup is centralized in
 `lib/sprites/manifest.ts`; generated anchors live in
-`lib/sprites/anchors.generated.ts`.
+`lib/sprites/anchors.generated.ts`. The nature-scatter background layer
+(`DecorationLayer`) follows the same shape: its slot→sprite placement math
+(seeded hash → weighted sprite pick → jittered anchor) was extracted into the
+pure, React/DB-free `lib/lab/decoration.ts` and unit-tested — a regression guard
+for a signed-shift bug where `>>` on hashes ≥2³¹ went negative and crashed the
+lab page for ~37% of slots; `hash()`'s bit-extractions now use unsigned `>>>`
+throughout.
 
 Building pickup is local and begins on pointer-down. Placement, movement, and
 upgrades use optimistic rendering:
@@ -476,8 +614,9 @@ cost, reward, retry-score, refund, and purchase policy. `lib/shop-server.ts` and
 
 ### 8.1 Discovery
 
-Discovery supports Wikipedia, YouTube, arXiv/PubMed/PMC sources, interest seeds,
-multiple trees, citations, reflections, starring, and topic locking.
+Discovery supports Wikipedia, YouTube, arXiv/PubMed/PMC sources, science-article
+RSS feeds, interest seeds, multiple trees, citations, reflections, starring, and
+topic locking.
 
 `stores/discoveryStore.ts` owns cursor/tree interaction but the database remains
 authoritative. Mutations update optimistically; failed HTTP responses trigger a
@@ -486,22 +625,63 @@ is fetched through the OpenAlex, NCBI, and arXiv adapters, sanitized, and cached
 in `ExternalWork`. Citation traversal uses factual edges, not algorithmic
 related-work recommendations.
 
+The citations route (`api/discovery/sources/[id]/citations`) is now
+backend-uniform: PubMed sources resolve through a new OpenAlex adapter path
+(`resolvePubmedWork`, `works/pmid:<id>`) and traverse the SAME
+`getReferences`/`getCitedBy` neighbour functions arXiv sources use, replacing a
+separate NCBI ELink/ESummary path. Both platforms are then enriched by the
+keyless Semantic Scholar adapter (`lib/discovery/semanticscholar.ts`): a TL;DR
+(S2's own extractive summary — no LLM call on our side) and an
+influential-citation reorder that stably pulls `isInfluential` citing papers to
+the front of the Cited-by lane. S2 enrichment runs independently of the
+OpenAlex/NCBI lane fetch (its own `try`/degrade path) so an S2 outage never
+blocks or is blocked by the rest of the route, and it hard-caches with no
+retry/backoff — a throttled shared pool must never stall the reader.
+
+Discovery also has a second, parallel source type: `article` (The Conversation
++ science-journalism RSS/Atom feeds), added alongside the existing
+`wikipedia`/`youtube`/`source` types on the `DiscoverySource` enum. One unified
+adapter (`lib/discovery/articles.ts`) fetches/parses/caches both providers (RSS
+and Atom share the same shape); only the render mode differs per feed —
+`full` for The Conversation (CC BY-ND permits verbatim republication with
+attribution) versus `linkout` for journalism feeds (no republication rights, so
+only an excerpt + outbound link is stored). Article metadata is NOT folded into
+`ExternalSource` — it gets its own 1:1 side-row table, `ArticleSource`, because
+articles fit neither `ExternalPlatform` nor `CredibilityTier` and a dedicated
+table keeps this feature from touching the paper/citation path. Untrusted
+article HTML crosses ONE sanitization boundary, the shared
+`ARTICLE_SANITIZE_OPTS` allowlist (also used for wiki-article sanitization) —
+and it is re-applied on BOTH write paths: the resolve route AND the tree-POST
+create path (`tree-service.ts`), since the POST endpoint is independently
+reachable and a resolve-only sanitize would leave a hole for crafted HTML sent
+straight to tree creation. Article nodes are deliberately non-promotable: the
+source-promotion route only accepts `sourceType === 'source'` nodes with an
+`externalSource` row, so an article node has no path into `Paper`.
+
 Discovery KP uses an idempotent visit ledger, a per-team daily rollup, and a
-one-time topic bonus.
+one-time topic bonus. Article nodes award their one-time visit KP at CREATE
+time (like wiki/youtube reading units), not deferred to reflection like
+`source` nodes — an article is read in place, not held for later citation.
 
 ### 8.2 Literature Review
 
 PDF upload workflow:
 
 1. Authenticate and apply the upload tier.
-2. Validate MIME, size, PDF magic bytes, and content hash.
+2. Validate MIME, size, PDF magic bytes, and content hash, then run
+   `lib/pdf/sanitize.ts` active-content inspection (reject JS/launch actions/
+   embedded files/XFA/encryption/page bombs before storing or parsing).
 3. Extract text with `unpdf`.
 4. Optionally run the topic relevance check.
 5. Create the `Paper`, upload the private PDF to R2, and create one
    `PaperProcessingJob`.
-6. Return `processing` to the client.
+6. `await` metadata ingestion before responding (`maxDuration: 60`) so the paper
+   comes back ready rather than stuck `pending` — on serverless a detached
+   promise is frozen once the response flushes. The papers cron drains a full
+   classroom's backlog (batch of 30) as the recovery path.
 7. `lib/literature/process-paper.ts` atomically claims the job, extracts metadata
-   through Anthropic, and marks the paper ready or failed.
+   through Anthropic (on Haiku — sufficient for title/author/abstract), and marks
+   the paper ready or failed; citation rows are created at ready-time.
 8. Status polling may process a claim; `/api/cron/papers` recovers jobs that
    outlive the original request.
 
@@ -515,22 +695,76 @@ attempt that crashed mid-run. Paper **list** reads are metadata-only — `Paper`
 `(teamId, contentHash)` unique makes a duplicate upload a 409 at the database.
 
 The Literature client is decomposed into feature components and hooks. Paper
-list/get/delete responses are decoded by `components/literature/api.ts`. Paper and
+list/get/delete responses are decoded by `components/literature/api.ts`; a failed
+list load renders a retry banner rather than the empty first-run state. Paper and
 Vega chat are server-owned: the client posts only the new user message (`{ message }`)
 and the server rebuilds bounded history from committed `complete` rows, so a client
 can't inject assistant turns into the model context or the persisted thread.
 
 Quiz questions and answer keys stay server-side in JSON. Grading and targeted
-retry are Anthropic-backed, team/user scoped, and rate-limited. KP uses
-per-student high-water marks. Advisory locks serialize reward calculation so
-concurrent submissions cannot pay twice.
+retry are Anthropic-backed, team/user scoped, and rate-limited; the shared
+`lib/literature/grading.ts` owns the grading call, JSON extraction, and the
+common `<paper_text>` prompt-injection framing. Untrusted paper/plan text is
+delimited as data, not instructions, and any AI output touching KP/score/
+clearance is Zod-parsed and server-clamped. KP uses per-student high-water marks.
+Advisory locks serialize reward calculation so concurrent submissions cannot pay
+twice.
+
+Three newer per-student/per-team learning tools extend Literature Review, and
+each contributes a variant of the same money-shaped-claim pattern used
+elsewhere in the app (§10):
+
+- **Explain-it-back** (`api/papers/[id]/explain`, `lib/literature/explain.ts`):
+  the student writes their own-words explanation of a paper; Vega grades it
+  against the SAME `paperTextBlock` cache prefix chat/quiz/grade/retry use
+  (PERF-8, above). `PaperExplanation` is per-student, and its composite
+  `(paperId, userId)` primary key doubles as the once-ever KP claim target: a
+  raw `UPDATE ... WHERE kp_awarded = 0 RETURNING` inside the transaction (never
+  a caught unique-violation — a caught constraint error inside a Prisma
+  `$transaction` still aborts the whole transaction). `PaperExplanationAttempt`
+  is the unpaid revise-loop history.
+- **Synthesis Matrix** (`api/literature/synthesis/`, `lib/literature/synthesis.ts`):
+  a team-shared comparison grid across 2-4 ready papers, `SynthesisCell` rows
+  keyed by `(matrixId, paperId, columnId)` so two teammates editing different
+  cells never clobber each other (a single JSON blob would be last-write-wins
+  across the whole grid). The KP claim is flat, once-per-matrix, AND
+  team-capped at `MAX_KP_AWARDED_MATRICES` paid matrices — the cap is a
+  correlated `COUNT` across every matrix on the team, so it needs a
+  **team-scoped**, not matrix-scoped, advisory lock: locking per-matrix can't
+  stop two concurrent checks on two *different* unpaid matrices of the same
+  team from each reading `count < cap` and both minting. A re-check of an
+  unchanged grid (hash of columns/paperIds/cell text) replays the persisted
+  verdict instead of paying for a new call (mirrors the Research Plan review
+  replay in §8.3).
+- **Vocabulary Builder** (`api/literature/vocab/`, `lib/literature/vocab.ts` +
+  `srs.ts`): zero-LLM end to end. Terms are extracted mechanically (Schwartz-
+  Hearst acronym pairing → authored-dictionary hits → repeated-ngram fallback,
+  in precedence order) with every definition grounded in either the dictionary
+  or a verbatim paper quote — never invented — a unit test pins this invariant.
+  Review scheduling is pure Leitner (5 integer boxes, no SM-2 ease factor);
+  the due-date IS the anti-farm mechanism — `POST /review` 409s a card whose
+  `dueAt > now`, so a deck cannot be grinded in one sitting no matter what the
+  client sends. Mastery KP (3/card) is claimed once-ever per card the same
+  WHERE-gated way as Explain-it-back, but is paid in a SEPARATE transaction
+  from the schedule update: the review itself (box/dueAt/lapses) is persisted
+  unconditionally first, and only the KP payout can be rolled back by the
+  `VocabKpDay` daily-cap ledger (an atomic insert-or-increment gated by
+  `... <= cap`, same RETURNING-emptiness pattern, never a caught constraint
+  error).
+
+All three add per-student or team-scoped models consistent with the app's
+existing scoping (§6, §9); the paper-DELETE cascade (`api/papers/[id]`) was
+extended to also delete `PaperExplanationAttempt`/`PaperExplanation` rows for
+the deleted paper.
 
 ### 8.3 Research Plan
 
 Teams synchronize either a public Google Doc URL or pasted plan text. Project
 type/subtype selects authored rubrics under `lib/research-plan/rubrics/`.
 Idea-check and review outputs are validated, persisted as the latest JSON result,
-and displayed by `ResearchPlanFeature`.
+and displayed by `ResearchPlanFeature`. A review of unchanged plan text (matched
+by a sha256 of the plan + type/subtype stored alongside the result) replays the
+persisted review as identical NDJSON events instead of paying for a new call.
 
 Google OAuth is not implemented; the public-link/paste workflow is the current
 behavior.
@@ -547,11 +781,17 @@ behavior.
 - Study with Vega.
 
 Project logs are team-shared, attributed, rich-text entries with attendees,
-attachments, links, and backlinks. Failure logs support an AI-generated
-follow-up question and persisted response.
+attachments, links, and backlinks; the GET is cursor-paginated (newest 30, "load
+older") with entry numbers derived from one windowed ranking query. Attachments
+are referenced by `UploadedAsset` id — the view route authorises through the
+team-scoped ledger row, not a client-supplied object key (legacy `?key=` URLs
+still resolve). Failure logs support an AI-generated follow-up question and
+persisted response.
 
-Data Terminal stores experiments and measurements in PostgreSQL. CSV parsing and
-export are local. Authored reference content is under `content/data-terminal/`;
+Data Terminal stores experiments and measurements in PostgreSQL; the list returns
+measurement counts and a selected experiment lazy-loads its points. CSV parsing
+and PNG/CSV export are local (`lib/data-terminal/export.ts`). Authored reference
+content is under `content/data-terminal/` as `*.json` behind thin typed wrappers;
 field-specific chart modules remain under `lib/data-terminal/charts/` and are
 loaded by field.
 
@@ -565,12 +805,21 @@ uses Anthropic.
 Progress keys include user, team, track, and lesson. First completion awards KP
 once, and an atomic user/team/day counter enforces the daily cap.
 
+Content growth is a `.claude/codex-pipeline/` authoring process (one Workflow
+per segment), not an architectural change to the engine above. As of this
+writing the library stands at 6/29 fields (36/174 segments); the
+`clinical-medicine-pharmacology` field is now complete (Core + 5 subfield
+branches, 275 lessons).
+
 ### 8.6 Science Fair Hub
 
-The fair dataset lives in `content/fairs/dataset.ts`. Matching uses team
-state/coordinates and returns regional, state, and ISEF candidates. The feature
-also includes categories, forms and safety guidance, rubric self-assessment,
-teacher rubric scoring, and Firecrawl deadline synchronization.
+The fair dataset lives in `content/fairs/dataset.json` behind a thin typed
+wrapper (`dataset.ts`); `scripts/scrape-isef-fairs.mjs` emits the JSON directly.
+Matching uses team state/coordinates and returns regional, state, and ISEF
+candidates. The feature also includes categories, forms and safety guidance,
+rubric self-assessment, teacher rubric scoring, and Firecrawl deadline
+synchronization — the latter restricted to fairs the team is matched with (ISEF
+or the team's own state) and refusing to overwrite a `confirmed` event.
 
 ### 8.7 Showcase
 
@@ -582,12 +831,20 @@ through privacy-checked application routes.
 ### 8.8 Teacher tools
 
 Teacher routes begin with `requireTeacher`, which reads the caller's role from the
-DB (`lib/teacher/role.ts`). Student lookup is class-scoped and team data is
-authorized through `Team.classId`.
+DB (`lib/teacher/role.ts`). Individual-student lookups are gated on the student's
+own `classId ∈ classIds`; team data is authorised through membership
+(`teacherOwnsTeam` — a teacher owns any team with ≥1 member in their classes),
+so a cross-school lab's shared work is visible to both owning teachers while
+personal pages stay private to each student's own teacher.
 
 The dashboard provides:
 
 - roster and attention flags;
+- a **class-join request queue**: students who enter a class code appear as
+  pending requests the teacher approves or denies (`api/teacher/class/requests/[id]`);
+  approval enrols only that student;
+- **class-code regeneration** (`api/teacher/class/[id]/code`) to revoke a leaked,
+  non-expiring class code;
 - full student/team drill-down;
 - read-only paper, quiz, and chat inspection;
 - feedback and nudges;
@@ -598,6 +855,7 @@ The dashboard provides:
 - class-wide reports.
 
 Teachers do **not** gate phase progression — advancement is self-paced (see §6).
+They **do** gate class enrolment (approval queue above).
 
 ### 8.9 Notifications
 
@@ -605,8 +863,11 @@ Notifications are persisted in-app. The daily cron computes fair deadlines and
 project urgency, uses dedupe keys for idempotency, and optionally sends email to
 opted-in users through Resend. Teacher feedback and review decisions also create
 notifications. The cron streams teams in id-ordered keyset pages (not one
-unbounded `findMany`) with a per-run cap, so its cost stays flat as classes are
-added; a capped run reports `stoppedEarly` rather than silently skipping teams.
+unbounded `findMany`), processes teams and email sends with bounded concurrency,
+batches notification inserts, and skips teams already notified today so a
+re-run resumes rather than restarts; a 50s soft budget stops it cleanly
+(`stoppedEarly`) before the 60s cap rather than being killed mid-team. The
+in-app feed is served by `(teamId, createdAt)` / `(userId, createdAt)` indexes.
 
 ### 8.10 PvP
 
@@ -621,11 +882,11 @@ lab opens a `StubFeature`.
 
 | Domain | Models and enums |
 |---|---|
-| Identity/org | `User`, `School`, `Class`, `UserRole` |
+| Identity/org | `User`, `School`, `Class`, `ClassJoinRequest`, `UserRole`, `ClassJoinRequestStatus` |
 | Teams | `Team`, `TeamMember`, `TeamInvite`, `MemberRole`, `LabType`, `ProjectPhase` |
 | Economy/buildings | `TeamCurrency`, `Building`, `TeamBuilding`, `TeamShopBuilding`, `TeamGatewayPlacement`, `LabCreditClaim`, `BuildingRole`, `SpellType` |
-| Discovery | `DiscoveryNode`, `ExternalSource`, `ExternalWork`, `TopicInterest`, `DiscoverySourceVisit`, `DiscoveryKpDay`, `DiscoveryTopicBonus`, source/platform/credibility enums |
-| Literature | `Paper`, `PaperProcessingJob`, `PaperProficiency`, `PaperChatMessage`, `PaperQuizSession`, `PaperQuizAttempt`, `PaperRelevanceNote`, `Citation`, paper/job/message enums |
+| Discovery | `DiscoveryNode`, `ExternalSource`, `ArticleSource`, `ExternalWork`, `TopicInterest`, `DiscoverySourceVisit`, `DiscoveryKpDay`, `DiscoveryTopicBonus`, source/platform/credibility enums (`DiscoverySource` now includes `article`) |
+| Literature | `Paper`, `PaperProcessingJob`, `PaperProficiency`, `PaperExplanation`, `PaperExplanationAttempt`, `PaperChatMessage`, `PaperQuizSession`, `PaperQuizAttempt`, `PaperRelevanceNote`, `Citation`, `SynthesisMatrix`, `SynthesisCell`, `VocabCard`, `VocabKpDay`, paper/job/message/`VocabSource` enums |
 | Research plan | `ResearchPlan`, `IdeaCheck` |
 | Expertise/logs | `ExpertiseExam`, `ExpertiseAttempt`, `ProjectLog`, `ProjectLogFollowup`, `ProjectLogReference`, `ProjectLogEntry` |
 | Teacher workflow | `TeacherFeedback`, `FeedbackTarget` |
@@ -689,9 +950,32 @@ The migration chain is append-only:
   classroom-scale list/dashboard access paths.
 - `20260709180000_uploaded_asset_lifecycle`: adds the `UploadedAsset` ledger +
   `UploadedAssetStatus` enum for the uploaded-object lifecycle.
+- `20260713100000_plot_cell_unique`: unique `(teamId, posX, posY)` on
+  `TeamShopBuilding` — the durable backstop behind the plot advisory lock
+  (refactor Phase 2, changelog `0.23.4`).
+- `20260714010000_notification_feed_indexes`: `(teamId, createdAt)` /
+  `(userId, createdAt)` indexes for the recency-ordered notification feed
+  (Phase 4, `0.23.6`).
+- `20260714120000_class_join_requests`: adds the `ClassJoinRequest` table +
+  `ClassJoinRequestStatus` enum for the teacher class-join approval gate
+  (`0.23.7`).
+- `20260714150000_add_article_source`: adds the `article` value to
+  `DiscoverySource` and the `ArticleSource` 1:1 side-row table (`0.24.0`).
+- `20260714170000_paper_explanation`: adds `PaperExplanation` +
+  `PaperExplanationAttempt` for Explain-it-back (`0.24.0`).
+- `20260714225544_synthesis_matrix`: adds `SynthesisMatrix` + `SynthesisCell`
+  for the team-shared comparison grid (`0.24.0`).
+- `20260714230500_vocab_builder`: adds `VocabCard`, `VocabKpDay`, and the
+  `VocabSource` enum for the zero-LLM vocabulary/SRS deck (`0.24.0`).
 
-These `2026070913xxxx`–`2026070918xxxx` migrations correspond to refactor Phases 3–8
-(changelog `0.21.2`–`0.21.7`); Phases 9–11 are code/docs only and add no migration.
+The `2026070913xxxx`–`2026070918xxxx` migrations correspond to the earlier
+refactor Phases 3–8 (changelog `0.21.2`–`0.21.7`). The
+`docs/REFACTOR.md` hardening pass (changelog `0.23.2`–`0.23.8`) added the three
+migrations before the class-join-requests entry above; its per-student
+class-membership change (`0.23.8`) reworked authorization in code and left
+`Team.classId` vestigial without a migration. The four `20260714*` migrations
+above (`0.24.0`) are unrelated new-feature schema, not part of that hardening
+pass.
 
 ## 10. Persistence and Consistency
 
@@ -710,7 +994,21 @@ These `2026070913xxxx`–`2026070918xxxx` migrations correspond to refactor Phas
   debits/level-bumps are guarded conditional `updateMany`s in `lib/buildings/service.ts`.
 - Advisory locks (`lib/db-lock.ts`) serialize aggregates that span multiple tables.
   Every plot mutation — place, move, sell, upgrade — takes the per-team
-  `team-plot:<teamId>` lock and re-checks committed occupancy inside it (see §7).
+  `team-plot:<teamId>` lock and re-checks committed occupancy inside it (see §7),
+  backed by the `(teamId, posX, posY)` unique constraint. Discovery source
+  promotion locks the node and re-reads `paperId` in-transaction, and the Codex
+  once-ever KP claim is a WHERE-gated `kp_awarded = 0` transition, so a
+  double-click can't mint a duplicate paper or double-award KP. The same
+  WHERE-gated-RETURNING shape (never a caught unique-violation — that still
+  aborts the surrounding `$transaction`) now also backs Explain-it-back's
+  once-per-paper claim and Vocab's once-per-card mastery claim; Synthesis Matrix
+  adds a **team**-scoped advisory lock around a correlated `COUNT`-gated claim,
+  since its cap is per-team across matrices, not per-row (§8.2).
+- CSRF: mutating requests are same-origin-checked in the shared guards, since
+  Clerk sessions are cookie-borne (`assertSameOrigin`).
+- Uploaded attachments are referenced by `UploadedAsset` id, not raw URL; the
+  view route authorises through the team-scoped ledger row (`?id=`), so a
+  client-supplied object key is never the capability.
 - Uploaded objects have a durable lifecycle rather than leaking: each R2 object is
   tracked by an `UploadedAsset` ledger row (temporary → attached → orphaned →
   deleted), with a single claim-then-delete reclaim sweep on the papers cron as the
@@ -740,9 +1038,13 @@ Required by the corresponding deployed features:
 
 Optional:
 
-- Upstash Redis REST URL/token for shared rate-limit counters.
+- Upstash Redis REST URL/token for shared rate-limit counters — **required on
+  serverless/multi-instance production**, where the paid `ai`/`upload` tiers fail
+  closed without it (or `RATE_LIMIT_ALLOW_MEMORY=1` on a single-instance host).
 - trusted rate-limit IP header.
-- OpenAlex and NCBI identity/API keys.
+- OpenAlex and NCBI identity/API keys, and an optional Semantic Scholar
+  `S2_API_KEY` (raises the anonymous shared-pool rate limit; the adapter works
+  keyless without it).
 - Resend API key and sender.
 - E2E credentials and test-mode flags.
 
@@ -792,10 +1094,14 @@ safe write-test parallelism.
 
 ### 13.1 Test and tool file index
 
-- `test/`: cross-feature credibility, phase, and showcase policy tests.
+- `test/`: cross-feature credibility, phase, and showcase policy tests, the
+  static cron-guard sweep (`cron-guard.test.ts`, asserts every cron route calls
+  `assertCron`), and the same-origin/CSRF unit test (`same-origin.test.ts`).
 - Co-located `*.test.ts`: economy, shop, LRU, rate-limit, Discovery economy,
   Data Terminal content/CSV, fair guidance/forms/rubric, Literature
-  citation/research guide, notification computation, sprites, and Codex.
+  citation/research guide, notification computation, sprites, and Codex. The
+  guide/glossary/fairs shape tests validate the authored content through its new
+  JSON wrappers.
 - `e2e/auth.setup.ts`, `e2e/env.ts`, `e2e/roles.ts`, `e2e/db.ts`: shared
   authenticated setup and environment-aware fixture database access. The
   remaining `e2e/*.spec.ts` files cover literature, discovery,
@@ -812,8 +1118,11 @@ safe write-test parallelism.
 
 ### 13.2 Content and asset ownership
 
-- `content/data-terminal/*.ts`: the four large authored guide catalogs.
-- `content/fairs/dataset.ts`: checked-in fair records consumed by matching.
+- `content/data-terminal/*.json` + `*.ts` wrappers: the four authored guide
+  catalogs (data moved to JSON so tsc/bundles don't carry ~1.3 MB of literals;
+  `research-glossary.json` under `lib/literature/` is the same pattern).
+- `content/fairs/dataset.json` + `dataset.ts` wrapper: checked-in fair records
+  consumed by matching, emitted by `scripts/scrape-isef-fairs.mjs`.
 - `lib/ops/codex/content/*.json`: canonical authored Codex source.
 - `lib/ops/codex/tracks/*.ts`: generated typed Codex wrappers.
 - `lib/research-plan/rubrics/*.md`, `lib/clearance/expertise-rubric.md`, and
@@ -836,10 +1145,14 @@ content ownership boundaries are all listed above.
 - Google Drive OAuth is deferred; Research Plan uses public links or pasted text.
 - Legacy `Paper.pdfData` remains as a read fallback until production backfill is
   verified; new PDFs use R2.
-- Several mature feature shells remain large (`StudentDetail`,
-  `OperationsHubFeature`, `DiscoveryFeature`, `ShowcaseEditor`,
-  `ResearchPlanFeature`, `DataTerminalTab`, and `CodexTab`). Their internal
-  boundaries should continue moving into feature folders without changing API
-  contracts.
+- The former large feature shells (`StudentDetail`, `OperationsHubFeature`,
+  `DiscoveryFeature`, `ShowcaseEditor`, `ResearchPlanFeature`, `DataTerminalTab`,
+  `LabScene`) were decomposed into thin containers + feature folders + hooks in
+  refactor Phase 3 (`0.23.5`); `CodexTab` remains the one larger shell.
+- `Team.classId` is vestigial after the per-student membership change (`0.23.8`)
+  — retained to avoid a destructive migration; a later cleanup could drop it.
+- `SVC-1` (extracting the duplicated quiz/exam currency-minting into a service) is
+  the one `docs/REFACTOR.md` item deliberately deferred until after the concurrent
+  PvP window, since it churns hot routes.
 - Broader privacy, monitoring, CSP, backup, and incident-response work is tracked
   in `SECURITY.md` for the classroom pilot.

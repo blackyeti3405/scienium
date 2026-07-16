@@ -4,6 +4,8 @@ import { WikiReader } from '@/components/discovery/WikiReader'
 import { YouTubeViewer } from '@/components/discovery/YouTubeViewer'
 import { SourceReader } from '@/components/discovery/SourceReader'
 import { PapersSearch } from '@/components/discovery/PapersSearch'
+import { ArticlesBrowse } from '@/components/discovery/ArticlesBrowse'
+import { ArticleReader } from '@/components/discovery/ArticleReader'
 import type { DiscoveryNode, DiscoverySource } from '@/stores/discoveryStore'
 import type { SourceLanes, SourcePlatform } from '@/lib/discovery/sources'
 
@@ -15,34 +17,46 @@ import type { SourceLanes, SourcePlatform } from '@/lib/discovery/sources'
 export function ExplorerReaderPane({
   discoverySource,
   papersView,
+  articlesView,
   currentNode,
   currentIsSource,
+  currentIsArticle,
   pendingSourceSearch,
   finalTopic,
   sourceLanes,
   lanesLoading,
+  tldr,
   pendingLinks,
   onPickSource,
+  onPickArticle,
   onChipToggle,
   onStarCurrent,
   onSaveReflection,
   onBackToResults,
+  onBackToArticleResults,
   onAddVideoUrl,
 }: {
   discoverySource: DiscoverySource
   papersView: 'search' | 'reader'
+  articlesView: 'search' | 'reader'
   currentNode: DiscoveryNode | null
   currentIsSource: boolean
+  currentIsArticle: boolean
   pendingSourceSearch: string | null
   finalTopic: string | null
   sourceLanes: SourceLanes | null
   lanesLoading: boolean
+  /** Semantic Scholar TL;DR for the open source node, or null while loading /
+   *  when none is available. */
+  tldr: { text: string } | null
   pendingLinks: string[]
   onPickSource: (platform: SourcePlatform, externalId: string) => Promise<void>
+  onPickArticle: (feed: string, externalId: string) => Promise<void>
   onChipToggle: (link: string) => void
   onStarCurrent: () => void
   onSaveReflection: (nodeId: string, text: string) => Promise<boolean>
   onBackToResults: () => void
+  onBackToArticleResults: () => void
   onAddVideoUrl: (url: string) => Promise<string | null>
 }) {
   return (
@@ -64,12 +78,24 @@ export function ExplorerReaderPane({
               node={currentNode}
               lanes={sourceLanes}
               lanesLoading={lanesLoading}
+              tldr={tldr}
               pendingLinks={pendingLinks}
               onChipToggle={onChipToggle}
               onStar={onStarCurrent}
               onSaveReflection={onSaveReflection}
               onBack={onBackToResults}
             />
+          )}
+        </div>
+      ) : discoverySource === 'article' ? (
+        <div className="h-full">
+          {/* Browse list stays mounted (hidden beneath the reader) so returning
+              via "← Results" preserves the feed/query the student browsed. */}
+          <div className={articlesView === 'reader' && currentIsArticle ? 'hidden' : 'h-full'}>
+            <ArticlesBrowse onPickArticle={onPickArticle} />
+          </div>
+          {articlesView === 'reader' && currentIsArticle && (
+            <ArticleReader node={currentNode} onStar={onStarCurrent} onBack={onBackToArticleResults} />
           )}
         </div>
       ) : discoverySource === 'youtube' ? (

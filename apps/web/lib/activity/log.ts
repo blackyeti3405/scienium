@@ -25,6 +25,9 @@ export type ActivityAction =
   | 'log_edited'
   | 'log_deleted'
   | 'codex_lesson_completed'
+  | 'explanation_passed'
+  | 'synthesis_checked'
+  | 'vocab_term_mastered'
 
 /**
  * Appends a team activity entry. Fire-and-forget safe: awaiting is optional;
@@ -99,6 +102,12 @@ export function describeActivity(action: string, payload: Record<string, unknown
       return `deleted a ${payload.kind === 'failure' ? 'failure' : 'project'} log entry`
     case 'codex_lesson_completed':
       return `completed a Field Codex lesson${payload.trackSlug ? ` (${payload.trackSlug})` : ''}`
+    case 'explanation_passed':
+      return `explained "${payload.paperTitle ?? 'a paper'}" back to Vega (${payload.score ?? '?'}%)`
+    case 'synthesis_checked':
+      return `ran a synthesis check (${payload.missed ?? 0} missed)`
+    case 'vocab_term_mastered':
+      return `mastered the term "${payload.term ?? 'a key term'}"`
     default:
       return action.replace(/_/g, ' ')
   }

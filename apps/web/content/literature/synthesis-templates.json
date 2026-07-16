@@ -1,0 +1,135 @@
+[
+  {
+    "id": "experimental-bio",
+    "label": "Experimental Biology",
+    "description": "For lab experiments on living organisms or biological systems — cell cultures, plants, animals, microbes.",
+    "labTypes": ["biocore"],
+    "columns": [
+      { "id": "organism", "label": "Organism / model system", "hint": "What was studied — species, cell line, or system." },
+      { "id": "sample-size", "label": "Sample size (n)", "hint": "How many replicates, subjects, or trials." },
+      { "id": "manipulation", "label": "Manipulation (IV)", "hint": "What the researchers changed or controlled." },
+      { "id": "outcome-measure", "label": "Outcome measure (DV)", "hint": "What was actually measured." },
+      { "id": "key-result", "label": "Key result", "hint": "The paper's headline finding, in your own words." },
+      { "id": "limitation", "label": "Limitation", "hint": "A weakness the authors admit or you notice." }
+    ],
+    "optionalColumns": [
+      { "id": "control-condition", "label": "Control condition", "hint": "What the manipulation was compared against." },
+      { "id": "duration", "label": "Duration", "hint": "How long the experiment ran." },
+      { "id": "replicates", "label": "Replicates", "hint": "Biological or technical replicates used." },
+      { "id": "statistical-test", "label": "Statistical test", "hint": "The test used to judge significance." }
+    ]
+  },
+  {
+    "id": "chem-materials",
+    "label": "Chemistry & Materials",
+    "description": "For synthesis, characterization, and materials-science papers — compounds, coatings, composites.",
+    "labTypes": ["chemworks"],
+    "columns": [
+      { "id": "material", "label": "Material / compound", "hint": "What substance or material is the focus." },
+      { "id": "synthesis-method", "label": "Synthesis or prep method", "hint": "How the material was made or prepared." },
+      { "id": "conditions", "label": "Conditions (temp / pH / conc.)", "hint": "The reaction or process conditions used." },
+      { "id": "characterization", "label": "Characterization method", "hint": "How the material's properties were confirmed (e.g. XRD, spectroscopy)." },
+      { "id": "key-result", "label": "Key result", "hint": "The paper's headline finding, in your own words." },
+      { "id": "limitation", "label": "Limitation", "hint": "A weakness the authors admit or you notice." }
+    ],
+    "optionalColumns": [
+      { "id": "yield-purity", "label": "Yield / purity", "hint": "Reported yield percentage or purity level." },
+      { "id": "instrument", "label": "Instrument", "hint": "Specific equipment used for measurement." },
+      { "id": "control-sample", "label": "Control sample", "hint": "What the material was compared against." }
+    ]
+  },
+  {
+    "id": "engineering-physical",
+    "label": "Engineering & Physical Systems",
+    "description": "For built devices, circuits, and physical-systems papers — design, testing, and performance.",
+    "labTypes": ["volt_lab"],
+    "columns": [
+      { "id": "device", "label": "Device / system", "hint": "What was designed or built." },
+      { "id": "design-approach", "label": "Design approach", "hint": "The core design decisions or architecture." },
+      { "id": "test-setup", "label": "Test setup", "hint": "How the device was tested." },
+      { "id": "performance-metric", "label": "Performance metric", "hint": "What was measured to judge success." },
+      { "id": "reported-value", "label": "Reported value", "hint": "The actual measured number(s)." },
+      { "id": "limitation", "label": "Limitation", "hint": "A weakness the authors admit or you notice." }
+    ],
+    "optionalColumns": [
+      { "id": "baseline", "label": "Baseline / prior art", "hint": "What this was compared against." },
+      { "id": "cost", "label": "Cost", "hint": "Reported cost of materials or build." },
+      { "id": "failure-mode", "label": "Failure mode", "hint": "How or when the device fails." }
+    ]
+  },
+  {
+    "id": "environmental-field",
+    "label": "Environmental & Field Studies",
+    "description": "For field studies and environmental-science papers — sites, sampling, and ecological measurements.",
+    "labTypes": ["terrabase"],
+    "columns": [
+      { "id": "site", "label": "Site / system", "hint": "Where the study took place, or which system was studied." },
+      { "id": "sampling-design", "label": "Sampling design", "hint": "How samples or observations were collected." },
+      { "id": "variables-measured", "label": "Variables measured", "hint": "What was recorded in the field." },
+      { "id": "analysis-method", "label": "Analysis method", "hint": "How the collected data was analyzed." },
+      { "id": "key-finding", "label": "Key finding", "hint": "The paper's headline finding, in your own words." },
+      { "id": "limitation", "label": "Limitation", "hint": "A weakness the authors admit or you notice." }
+    ],
+    "optionalColumns": [
+      { "id": "time-span", "label": "Time span", "hint": "How long the field study covered." },
+      { "id": "sample-size", "label": "Sample size (n)", "hint": "Number of sites, plots, or observations." },
+      { "id": "confounds", "label": "Confounds", "hint": "Uncontrolled variables that could explain the result." }
+    ]
+  },
+  {
+    "id": "human-behavioral",
+    "label": "Human & Behavioral Studies",
+    "description": "For studies with human participants — psychology, behavior, surveys, and clinical measures.",
+    "labTypes": ["mindframe"],
+    "columns": [
+      { "id": "population", "label": "Population / participants", "hint": "Who the participants were." },
+      { "id": "sample-size", "label": "Sample size (n)", "hint": "Number of participants." },
+      { "id": "study-design", "label": "Study design", "hint": "Between-subjects, within-subjects, longitudinal, etc." },
+      { "id": "measure", "label": "Measure / instrument", "hint": "The survey, test, or instrument used." },
+      { "id": "key-finding", "label": "Key finding", "hint": "The paper's headline finding, in your own words." },
+      { "id": "limitation", "label": "Limitation", "hint": "A weakness the authors admit or you notice." }
+    ],
+    "optionalColumns": [
+      { "id": "control-group", "label": "Control group", "hint": "What the treatment group was compared against." },
+      { "id": "blinding", "label": "Blinding", "hint": "Whether participants or researchers were blinded." },
+      { "id": "effect-size", "label": "Effect size", "hint": "The reported magnitude of the effect, not just significance." }
+    ]
+  },
+  {
+    "id": "computational-cs",
+    "label": "Computational & CS",
+    "description": "For algorithms, models, and data-driven papers — datasets, methods, and benchmark results.",
+    "labTypes": ["axiom"],
+    "columns": [
+      { "id": "dataset", "label": "Dataset", "hint": "What data the method was trained or tested on." },
+      { "id": "model-method", "label": "Model / method", "hint": "The core algorithm or approach." },
+      { "id": "baseline-compared", "label": "Baseline compared", "hint": "What prior method(s) it was measured against." },
+      { "id": "metric", "label": "Metric", "hint": "What was used to score performance." },
+      { "id": "reported-score", "label": "Reported score", "hint": "The actual measured performance number." },
+      { "id": "limitation", "label": "Limitation", "hint": "A weakness the authors admit or you notice." }
+    ],
+    "optionalColumns": [
+      { "id": "compute-runtime", "label": "Compute / runtime", "hint": "Hardware used or time/complexity reported." },
+      { "id": "ablation", "label": "Ablation", "hint": "What component was removed to test its contribution." },
+      { "id": "code-available", "label": "Code available", "hint": "Whether the authors released code or data." }
+    ]
+  },
+  {
+    "id": "general",
+    "label": "General / Cross-Disciplinary",
+    "description": "A discipline-neutral starting grid — use this when no lab-specific template fits, or switch templates any time.",
+    "labTypes": [],
+    "columns": [
+      { "id": "research-question", "label": "Research question", "hint": "What the paper set out to answer." },
+      { "id": "method", "label": "Method", "hint": "How the researchers approached the question." },
+      { "id": "sample-data", "label": "Sample / data", "hint": "What subjects, specimens, or dataset were used." },
+      { "id": "key-finding", "label": "Key finding", "hint": "The paper's headline finding, in your own words." },
+      { "id": "limitation", "label": "Limitation", "hint": "A weakness the authors admit or you notice." }
+    ],
+    "optionalColumns": [
+      { "id": "year", "label": "Year", "hint": "Publication year — useful for spotting dated findings." },
+      { "id": "population", "label": "Population", "hint": "Who or what the finding applies to." },
+      { "id": "contradicts", "label": "Contradicts", "hint": "Note when this source disagrees with another in your set." }
+    ]
+  }
+]

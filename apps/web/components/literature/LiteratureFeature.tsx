@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, FlaskConical, Lock, Quote, BookOpen } from 'lucide-react'
+import { X, FlaskConical, Lock, Quote, BookOpen, Grid3x3, Brain } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
@@ -23,6 +23,20 @@ export type { Paper } from './types'
 const ResearchGuidePanel = dynamic(
   () => import('./ResearchGuidePanel').then((m) => m.ResearchGuidePanel),
   { loading: () => <LabeledLoader label="Loading guide…" fill="panel" /> },
+)
+
+// Code-split for the same reason as ResearchGuidePanel — only loads once the
+// student toggles it open.
+const SynthesisPanel = dynamic(
+  () => import('./SynthesisPanel').then((m) => m.SynthesisPanel),
+  { loading: () => <LabeledLoader label="Loading synthesis matrix…" fill="panel" /> },
+)
+
+// Code-split for the same reason as ResearchGuidePanel — only loads once the
+// student toggles it open.
+const VocabPanel = dynamic(
+  () => import('./VocabPanel').then((m) => m.VocabPanel),
+  { loading: () => <LabeledLoader label="Loading your vocabulary deck…" fill="panel" /> },
 )
 
 export function LiteratureFeature() {
@@ -59,6 +73,8 @@ export function LiteratureFeature() {
   const [labType, setLabType] = useState<LabType | null>(null)
   const [showCitations, setShowCitations] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
+  const [showSynthesis, setShowSynthesis] = useState(false)
+  const [showVocab, setShowVocab] = useState(false)
 
   useEffect(() => {
     fetch('/api/discovery/topic')
@@ -123,6 +139,26 @@ export function LiteratureFeature() {
     )
   }
 
+  // Synthesis Matrix — discipline-adaptive comparison grid across 2-4 sources,
+  // full-screen sub-view.
+  if (showSynthesis) {
+    return (
+      <div className="h-full bg-[#0d1b2e] text-white">
+        <SynthesisPanel onClose={() => setShowSynthesis(false)} labType={labType} />
+      </div>
+    )
+  }
+
+  // Vocabulary Builder — spaced-repetition deck of terms extracted from the
+  // team's own sources, full-screen sub-view. ZERO LLM.
+  if (showVocab) {
+    return (
+      <div className="h-full bg-[#0d1b2e] text-white">
+        <VocabPanel onClose={() => setShowVocab(false)} />
+      </div>
+    )
+  }
+
   // If a paper is open in Q&A mode, show the split view
   if (activePaper) {
     return (
@@ -175,6 +211,22 @@ export function LiteratureFeature() {
             className="flex items-center gap-1.5 font-pixel text-[7px] border border-white/20 text-white/50 px-2.5 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
           >
             <Quote size={10} /> Citations
+          </button>
+          <button
+            data-testid="synthesis-open"
+            onClick={() => setShowSynthesis(true)}
+            title="Compare 2-4 sources in a discipline-adaptive synthesis matrix"
+            className="flex items-center gap-1.5 font-pixel text-[7px] border border-white/20 text-white/50 px-2.5 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+          >
+            <Grid3x3 size={10} /> Synthesis
+          </button>
+          <button
+            data-testid="vocab-open"
+            onClick={() => setShowVocab(true)}
+            title="Spaced-repetition deck of key terms from your own sources"
+            className="flex items-center gap-1.5 font-pixel text-[7px] border border-white/20 text-white/50 px-2.5 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+          >
+            <Brain size={10} /> Vocabulary
           </button>
           <div className="text-right">
             <span className="font-pixel text-[18px] text-[#F5C518]">

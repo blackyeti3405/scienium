@@ -21,6 +21,7 @@ import acousticsSound from '../tracks/acoustics-sound'
 import astronomyAstrophysics from '../tracks/astronomy-astrophysics'
 import chemistry from '../tracks/chemistry'
 import classicalMechanicsPhysics from '../tracks/classical-mechanics-physics'
+import clinicalMedicinePharmacology from '../tracks/clinical-medicine-pharmacology'
 import gaitBiomechanics from '../tracks/gait-biomechanics'
 
 const WRAPPERS: Record<string, CodexTrack> = {
@@ -28,6 +29,7 @@ const WRAPPERS: Record<string, CodexTrack> = {
   'astronomy-astrophysics': astronomyAstrophysics,
   'chemistry': chemistry,
   'classical-mechanics-physics': classicalMechanicsPhysics,
+  'clinical-medicine-pharmacology': clinicalMedicinePharmacology,
   'gait-biomechanics': gaitBiomechanics,
 }
 

@@ -51,6 +51,7 @@ export interface OpenAlexNeighbour {
   title: string | null
   publicationYear: number | null
   arxivId: string | null
+  pmid: string | null
   authors: string[]
 }
 
@@ -72,6 +73,7 @@ const MOCK_REFERENCES: OpenAlexNeighbour[] = [
     title: 'E2E Fixture: A Reference This Paper Cites',
     publicationYear: 2020,
     arxivId: '2001.00011',
+    pmid: '99900002',
     authors: ['Ref One Author'],
   },
   {
@@ -79,6 +81,7 @@ const MOCK_REFERENCES: OpenAlexNeighbour[] = [
     title: 'E2E Fixture: A Second Reference This Paper Cites',
     publicationYear: 2021,
     arxivId: '2101.00012',
+    pmid: '90000012',
     authors: ['Ref Two Author'],
   },
 ]
@@ -89,6 +92,7 @@ const MOCK_CITED_BY: OpenAlexNeighbour[] = [
     title: 'E2E Fixture: A Paper That Cites This One',
     publicationYear: 2024,
     arxivId: '2402.00021',
+    pmid: '99900003',
     authors: ['CitedBy One Author'],
   },
   {
@@ -96,6 +100,7 @@ const MOCK_CITED_BY: OpenAlexNeighbour[] = [
     title: 'E2E Fixture: A Second Paper That Cites This One',
     publicationYear: 2024,
     arxivId: '2402.00022',
+    pmid: '90000022',
     authors: ['CitedBy Two Author'],
   },
 ]
@@ -109,6 +114,23 @@ const MOCK_WORK: OpenAlexWork = {
   authors: ['Ada Fixture', 'Grace Mocker'],
   referencedWorks: MOCK_REFERENCES.map((r) => r.openAlexId),
   citedByApiUrl: 'https://api.openalex.org/works?filter=cites:W-e2e-seed',
+  citedByCount: MOCK_CITED_BY.length,
+}
+
+// Mirrors MOCK_WORK but keyed to the ncbi.ts MOCK_SEED_PMID ('99900001') so the
+// pubmed citations branch (resolvePubmedWork) has a deterministic seed too. The
+// MOCK getReferences/getCitedBy branches below return the mock arrays regardless
+// of work contents — referencedWorks/citedByApiUrl/citedByCount just need to be
+// non-empty/non-zero so the route's `if (oaWork)` gate fires.
+const MOCK_PUBMED_WORK: OpenAlexWork = {
+  id: 'https://openalex.org/W-e2e-pubmed-seed',
+  title: 'E2E Fixture: A Deterministic PubMed Paper for Testing',
+  publicationYear: 2024,
+  arxivId: null,
+  doi: null,
+  authors: ['Beatrix Fixture', 'Carl Mocker'],
+  referencedWorks: MOCK_REFERENCES.map((r) => r.openAlexId),
+  citedByApiUrl: 'https://api.openalex.org/works?filter=cites:W-e2e-pubmed-seed',
   citedByCount: MOCK_CITED_BY.length,
 }
 
@@ -196,7 +218,7 @@ function toWork(raw: Record<string, unknown>): OpenAlexWork {
 // no-ML constraint explicit in the request itself.
 const WORK_SELECT =
   'id,title,publication_year,doi,authorships,referenced_works,cited_by_api_url,cited_by_count,locations'
-const NEIGHBOUR_SELECT = 'id,title,publication_year,doi,authorships,locations'
+const NEIGHBOUR_SELECT = 'id,title,publication_year,doi,authorships,locations,ids'
 
 /** Resolve an arXiv id → its OpenAlex Work (via the arXiv DOI). Null if not found. */
 export async function resolveArxivWork(rawArxivId: string): Promise<OpenAlexWork | null> {
@@ -224,6 +246,33 @@ export async function resolveArxivWork(rawArxivId: string): Promise<OpenAlexWork
     return null
   } catch (err) {
     console.error('[discovery/openalex] resolveArxivWork failed:', err)
+    return null
+  }
+}
+
+/** Resolve a PubMed id → its OpenAlex Work (via `works/pmid:<id>`). Null if not found. */
+export async function resolvePubmedWork(rawPmid: string): Promise<OpenAlexWork | null> {
+  const pmid = rawPmid.trim()
+  if (!pmid) return null
+  if (MOCK) return pmid === '99900001' ? MOCK_PUBMED_WORK : null
+  const cacheKey = `pmid:${pmid}`
+  const cached = workCache.get(cacheKey)
+  if (cached !== undefined) return cached
+
+  const url = withMailto(new URL(`${OPENALEX_API}/works/pmid:${pmid}`))
+  url.searchParams.set('select', WORK_SELECT)
+
+  try {
+    const res = await oaFetch(url.toString())
+    if (res.ok) {
+      const work = toWork((await res.json()) as Record<string, unknown>)
+      workCache.set(cacheKey, work)
+      return work
+    }
+    workCache.set(cacheKey, null)
+    return null
+  } catch (err) {
+    console.error('[discovery/openalex] resolvePubmedWork failed:', err)
     return null
   }
 }
@@ -304,6 +353,7 @@ function toNeighbour(raw: Record<string, unknown>): OpenAlexNeighbour {
     title: typeof raw.title === 'string' ? raw.title : null,
     publicationYear: typeof raw.publication_year === 'number' ? raw.publication_year : null,
     arxivId: arxivIdFromWork(raw),
+    pmid: pmidFromWork(raw),
     authors,
   }
 }
@@ -417,9 +467,132 @@ export interface SearchWorksParams {
   limit?: number
 }
 
+// ── TEST-ONLY search fixtures (E2E) ─────────────────────────────────────────────
+// The Papers search box (GET /api/discovery/sources/search) hits OpenAlex live,
+// so under E2E it returned non-deterministic rows and flaked the platform/tier
+// assertion. These fixtures make the whole Papers loop hermetic, keyed to the
+// SAME seed queries ('attention' / 'fixture') and resolve-seed externalIds
+// (arxiv:2401.00001 / pmid:99900001) the papers-tab spec asserts on. The seed
+// query returns the seed work first (so opening result[0] resolves into the
+// getWorkByExternalId seed below); any OTHER query returns a small deterministic
+// RELATED list so the citations route's byAuthor/byCategory fallback lanes are
+// never empty. All values must match apps/web/e2e/papers-tab.spec.ts.
+const MOCK_SEARCH_ARXIV_QUERY = 'attention'
+const MOCK_SEARCH_PUBMED_QUERY = 'fixture'
+
+const MOCK_ARXIV_SEED: NormalizedWork = {
+  platform: 'arxiv',
+  externalId: 'arxiv:2401.00001',
+  title: 'E2E Fixture: Attention Mechanisms for Deterministic Testing',
+  authors: ['Ada Fixture', 'Grace Mocker'],
+  abstract: 'This is a deterministic E2E fixture abstract standing in for a real arXiv paper.',
+  publishedAt: '2024-01-01',
+  host: 'arxiv.org',
+  tier: 'preprint',
+  arxivId: '2401.00001',
+  pmid: null,
+  doi: '10.48550/arxiv.2401.00001',
+  openAlexId: 'https://openalex.org/W-e2e-seed',
+}
+
+const MOCK_PUBMED_SEED: NormalizedWork = {
+  platform: 'pubmed',
+  externalId: 'pmid:99900001',
+  title: 'E2E Fixture: A Deterministic PubMed Paper for Testing',
+  authors: ['Beatrix Fixture', 'Carl Mocker'],
+  abstract: 'This is a deterministic E2E fixture abstract standing in for a real PubMed paper.',
+  publishedAt: '2024',
+  host: 'pubmed.ncbi.nlm.nih.gov',
+  tier: 'peer_reviewed',
+  arxivId: null,
+  pmid: '99900001',
+  doi: null,
+  openAlexId: 'https://openalex.org/W-e2e-pubmed-seed',
+}
+
+// Distinct non-seed works — the 2nd arXiv search result AND the always-populated
+// byAuthor/byCategory fallback lanes (their externalIds differ from the open
+// source's, so they survive the citations route's self-filter).
+const MOCK_ARXIV_RELATED: NormalizedWork[] = [
+  {
+    platform: 'arxiv', externalId: 'arxiv:2402.00021',
+    title: 'E2E Fixture: A Related arXiv Paper', authors: ['Related Arxiv Author'],
+    abstract: null, publishedAt: '2024', host: 'arxiv.org', tier: 'preprint',
+    arxivId: '2402.00021', pmid: null, doi: null, openAlexId: 'https://openalex.org/W-e2e-rel-a1',
+  },
+  {
+    platform: 'arxiv', externalId: 'arxiv:2402.00022',
+    title: 'E2E Fixture: Another Related arXiv Paper', authors: ['Related Arxiv Author Two'],
+    abstract: null, publishedAt: '2024', host: 'arxiv.org', tier: 'preprint',
+    arxivId: '2402.00022', pmid: null, doi: null, openAlexId: 'https://openalex.org/W-e2e-rel-a2',
+  },
+]
+
+const MOCK_PUBMED_RELATED: NormalizedWork[] = [
+  {
+    platform: 'pubmed', externalId: 'pmid:90000022',
+    title: 'E2E Fixture: A Related PubMed Paper', authors: ['Related Pubmed Author'],
+    abstract: null, publishedAt: '2024', host: 'pubmed.ncbi.nlm.nih.gov', tier: 'peer_reviewed',
+    arxivId: null, pmid: '90000022', doi: null, openAlexId: 'https://openalex.org/W-e2e-rel-p1',
+  },
+  {
+    platform: 'pubmed', externalId: 'pmid:99900003',
+    title: 'E2E Fixture: Another Related PubMed Paper', authors: ['Related Pubmed Author Two'],
+    abstract: null, publishedAt: '2024', host: 'pubmed.ncbi.nlm.nih.gov', tier: 'peer_reviewed',
+    arxivId: null, pmid: '99900003', doi: null, openAlexId: 'https://openalex.org/W-e2e-rel-p2',
+  },
+]
+
+/** A citation-graph neighbour fixture → a resolvable arXiv NormalizedWork. */
+function mockNeighbourToWork(n: OpenAlexNeighbour): NormalizedWork | null {
+  if (!n.arxivId) return null
+  return {
+    platform: 'arxiv',
+    externalId: `arxiv:${n.arxivId}`,
+    title: n.title ?? n.arxivId,
+    authors: n.authors,
+    abstract: null,
+    publishedAt: n.publicationYear ? String(n.publicationYear) : null,
+    host: 'arxiv.org',
+    tier: 'preprint',
+    arxivId: n.arxivId,
+    pmid: n.pmid ?? null,
+    doi: null,
+    openAlexId: n.openAlexId,
+  }
+}
+
+// Every resolvable fixture work, keyed by externalId: the seeds, the search
+// related works, and the cites/citedBy neighbours (so branching any chip — AC5 —
+// resolves). Later entries win on a duplicate id, which is fine (same fixture).
+const MOCK_WORK_BY_EXTID = new Map<string, NormalizedWork>(
+  [
+    MOCK_ARXIV_SEED,
+    MOCK_PUBMED_SEED,
+    ...MOCK_ARXIV_RELATED,
+    ...MOCK_PUBMED_RELATED,
+    ...[...MOCK_REFERENCES, ...MOCK_CITED_BY]
+      .map(mockNeighbourToWork)
+      .filter((w): w is NormalizedWork => w !== null),
+  ].map((w) => [w.externalId, w]),
+)
+
 /** Keyword search via OpenAlex, restricted to the platform (arXiv source / has pmid). */
 export async function searchWorks({ query, platform, limit = 12 }: SearchWorksParams): Promise<NormalizedWork[]> {
   if (!query.trim()) return []
+  if (MOCK) {
+    const q = query.trim().toLowerCase()
+    if (platform === 'arxiv') {
+      // Seed query → seed first + one related (spec: "attention → 2 results");
+      // any other query (byAuthor/byCategory fallback) → the related list only.
+      const list = q.includes(MOCK_SEARCH_ARXIV_QUERY)
+        ? [MOCK_ARXIV_SEED, MOCK_ARXIV_RELATED[0]]
+        : MOCK_ARXIV_RELATED
+      return list.slice(0, limit)
+    }
+    const list = q.includes(MOCK_SEARCH_PUBMED_QUERY) ? [MOCK_PUBMED_SEED] : MOCK_PUBMED_RELATED
+    return list.slice(0, limit)
+  }
   const cacheKey = `searchWorks:${platform}:${query}:${limit}`
   const cached = searchWorksCache.get(cacheKey)
   if (cached) return cached
@@ -456,6 +629,14 @@ export async function getWorkByExternalId(
   bareId: string,
 ): Promise<NormalizedWork | null> {
   if (!bareId) return null
+  if (MOCK) {
+    // Resolve any fixture work deterministically (opening a search result, a
+    // direct resolve — AC8 — or BRANCHING a cites/citedBy chip — AC5 — all route
+    // here). The map covers the seeds, the search-related works, AND the
+    // citation-graph neighbours, so no branch/open ever hits the live API.
+    const extId = platform === 'arxiv' ? `arxiv:${bareId}` : `pmid:${bareId}`
+    return MOCK_WORK_BY_EXTID.get(extId) ?? null
+  }
   const cacheKey = `workByExt:${platform}:${bareId}`
   const cached = workByExtCache.get(cacheKey)
   if (cached !== undefined) return cached

@@ -5,7 +5,13 @@
 // store's next hydrate reconciles).
 
 import type { DiscoveryNode, DiscoverySource } from '@/stores/discoveryStore'
-import type { ResolvedSource, SourcePlatform } from '@/lib/discovery/sources'
+import type {
+  ArticleProvider,
+  ArticleRenderMode,
+  ResolvedArticle,
+  ResolvedSource,
+  SourcePlatform,
+} from '@/lib/discovery/sources'
 
 export type NewNode = {
   id: string
@@ -21,6 +27,14 @@ export type NewNode = {
   authors?: string[]
   abstract?: string
   publishedAt?: string
+  // ── forwarded to the tree POST for `article` nodes ──
+  provider?: ArticleProvider
+  renderMode?: ArticleRenderMode
+  sourceName?: string
+  articleUrl?: string
+  excerpt?: string
+  html?: string
+  articleAuthor?: string
 }
 
 /** GET the persisted tree. Throws on a failed load so the store can flag
@@ -125,6 +139,23 @@ export async function resolveSource(
     return (await res.json()) as ResolvedSource
   } catch (err) {
     console.error('[discovery] resolve failed:', err)
+    return null
+  }
+}
+
+/** Resolve an article-feed pick into a fully-resolved article (server-authoritative
+ *  sanitized HTML). Returns null on any failure — non-fatal, the student can retry. */
+export async function resolveArticle(feed: string, externalId: string): Promise<ResolvedArticle | null> {
+  try {
+    const res = await fetch('/api/discovery/articles/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feed, externalId }),
+    })
+    if (!res.ok) return null
+    return (await res.json()) as ResolvedArticle
+  } catch (err) {
+    console.error('[discovery] article resolve failed:', err)
     return null
   }
 }

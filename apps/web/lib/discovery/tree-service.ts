@@ -1,7 +1,8 @@
 import 'server-only'
+import sanitizeHtml from 'sanitize-html'
 import { db } from '@/lib/db'
 import { hostToTier } from '@/lib/discovery/credibility'
-import { sanitizeAbstract } from '@/lib/discovery/sanitize'
+import { sanitizeAbstract, ARTICLE_SANITIZE_OPTS } from '@/lib/discovery/sanitize'
 import { awardDiscoveryVisit } from '@/lib/discovery/awardVisit'
 
 /**
@@ -15,7 +16,7 @@ export interface IncomingTreeNode {
   id: string
   title: string
   parentId: string | null
-  source?: 'wikipedia' | 'youtube' | 'source'
+  source?: 'wikipedia' | 'youtube' | 'source' | 'article'
   videoId?: string
   // ── source-node fields (only read when source === 'source') ──
   platform?: 'arxiv' | 'pubmed' | 'pmc'
@@ -25,6 +26,14 @@ export interface IncomingTreeNode {
   authors?: string[]
   abstract?: string
   publishedAt?: string
+  // ── article-node fields (only read when source === 'article') ──
+  provider?: 'the_conversation' | 'journalism'
+  renderMode?: 'full' | 'linkout'
+  sourceName?: string
+  articleUrl?: string
+  excerpt?: string
+  html?: string
+  articleAuthor?: string
 }
 
 // `sourceUrl` is persisted and later rendered as an <a href>. Allow only real
@@ -86,6 +95,21 @@ export async function hydrateTree(teamId: string) {
           reflection: true,
         },
       },
+      // Left-join the article side-row (parallel to externalSource, above) so
+      // article nodes hydrate without a second fetch.
+      articleSource: {
+        select: {
+          provider: true,
+          renderMode: true,
+          sourceName: true,
+          title: true,
+          author: true,
+          url: true,
+          excerpt: true,
+          html: true,
+          publishedAt: true,
+        },
+      },
     },
   })
 
@@ -104,9 +128,10 @@ export async function hydrateTree(teamId: string) {
 
   return rows.map((r) => {
     const es = r.externalSource
+    const as = r.articleSource
     return {
       id: r.id,
-      title: es?.sourceTitle ?? r.wikipediaTitle ?? r.youtubeTitle ?? '',
+      title: es?.sourceTitle ?? as?.title ?? r.wikipediaTitle ?? r.youtubeTitle ?? '',
       source: r.sourceType,
       videoId: r.youtubeVideoId ?? undefined,
       parentId: r.parentId,
@@ -118,7 +143,7 @@ export async function hydrateTree(teamId: string) {
       interestLevel: r.interestLevel ?? null,
       explored: hasChildren.has(r.id),
       addedAt: r.visitedAt.getTime(),
-      // Source-node metadata (undefined for wiki/youtube rows).
+      // Source-node metadata (undefined for wiki/youtube/article rows).
       externalId: r.externalId ?? undefined,
       platform: es?.platform ?? undefined,
       sourceUrl: es?.sourceUrl ?? undefined,
@@ -130,6 +155,15 @@ export async function hydrateTree(teamId: string) {
       reflection: es?.reflection ?? undefined,
       // #13: promotion marker (hides the Promote control once set).
       paperId: r.paperId ?? null,
+      // Article-node metadata (undefined for every other row).
+      provider: as?.provider ?? undefined,
+      renderMode: as?.renderMode ?? undefined,
+      sourceName: as?.sourceName ?? undefined,
+      articleUrl: as?.url ?? undefined,
+      excerpt: as?.excerpt ?? undefined,
+      articleHtml: as?.html ?? undefined,
+      articleAuthor: as?.author ?? undefined,
+      articlePublishedAt: as?.publishedAt ? as.publishedAt.toISOString() : undefined,
     }
   })
 }
@@ -148,10 +182,12 @@ export async function createTreeNodes({
   userId: string
   nodes: IncomingTreeNode[]
 }): Promise<{ kpAwarded: number; plainCount: number }> {
-  // wiki/youtube go through the bulk createMany path UNCHANGED. `source` nodes
-  // each need an atomic node + side-row write, so they're split out below.
-  const plain = nodes.filter((n) => (n.source ?? 'wikipedia') !== 'source')
+  // wiki/youtube go through the bulk createMany path UNCHANGED. `source` and
+  // `article` nodes each need an atomic node + side-row write, so they're
+  // split out below.
+  const plain = nodes.filter((n) => !['source', 'article'].includes(n.source ?? 'wikipedia'))
   const sources = nodes.filter((n) => n.source === 'source')
+  const articles = nodes.filter((n) => n.source === 'article')
 
   // Running total of KP credited on this request (wiki/youtube first-visits).
   // `source` nodes award later, on reflection completion — never on create.
@@ -250,5 +286,63 @@ export async function createTreeNodes({
     }
   }
 
-  return { kpAwarded, plainCount: plain.length }
+  // ── Article-node branch (atomic node + articleSource side-row) ─────────────
+  // Mirrors the source branch above (atomic transaction, dedup on
+  // @@unique([teamId, externalId])), except articles award first-visit KP at
+  // CREATE time (tier: null, ×1) like wiki/youtube reading units — an article
+  // is a reading unit, not a citable source held for later reflection.
+  for (const n of articles) {
+    // Guard required fields (zod makes them optional since they're article-only).
+    if (!n.externalId || !n.provider || !n.renderMode || !n.sourceName || !n.articleUrl) continue
+    // articleUrl is rendered as an href — drop non-http(s) schemes (XSS defense).
+    if (!isHttpUrl(n.articleUrl)) continue
+
+    const existing = await db.discoveryNode.findFirst({
+      where: { teamId, externalId: n.externalId },
+      select: { id: true },
+    })
+    if (existing) continue // dedup: skip, client already knows the existing node
+
+    const publishedAt = n.publishedAt ? new Date(n.publishedAt) : null
+
+    try {
+      const { kpAwarded: got } = await db.$transaction(async (tx) => {
+        await tx.discoveryNode.create({
+          data: {
+            id: n.id,
+            teamId,
+            parentId: n.parentId,
+            sourceType: 'article',
+            externalId: n.externalId,
+            visitedByUserId: userId,
+          },
+        })
+        await tx.articleSource.create({
+          data: {
+            discoveryNodeId: n.id,
+            provider: n.provider!,
+            renderMode: n.renderMode!,
+            sourceName: n.sourceName!,
+            title: n.title,
+            author: n.articleAuthor ?? null,
+            url: n.articleUrl!,
+            excerpt: n.excerpt ?? null,
+            // Re-sanitize on THIS write path too — the resolve route sanitizes, but
+            // the tree POST is independently reachable, so crafted HTML must be
+            // scrubbed here before it's stored + rendered via dangerouslySetInnerHTML
+            // (same defense as `abstract`, above).
+            html: n.html ? sanitizeHtml(n.html, ARTICLE_SANITIZE_OPTS) : null,
+            publishedAt: Number.isNaN(publishedAt?.getTime()) ? null : publishedAt,
+          },
+        })
+        return awardDiscoveryVisit(tx, { teamId, userId, nodeId: n.id, tier: null })
+      })
+      kpAwarded += got
+    } catch (err) {
+      // A concurrent insert can still trip the unique constraint — treat as dedup.
+      console.error('[discovery/tree] article node create skipped:', err)
+    }
+  }
+
+  return { kpAwarded, plainCount: plain.length + articles.length }
 }

@@ -10,7 +10,7 @@
 > Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
 > Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
 
-**Progress: 5 / 29 fields · 30 / 174 segments.**
+**Progress: 6 / 29 fields · 36 / 174 segments.**
 
 ---
 
@@ -54,15 +54,15 @@
 - [x] projectile-ballistics
 - [x] rotational-mechanics
 
-## clinical-medicine-pharmacology ⬜
+## clinical-medicine-pharmacology ✅
 *Clinical Medicine / Pharmacology*
 
-- [ ] Core
-- [ ] cardiovascular-pharmacology
-- [ ] clinical-pharmacokinetics-dosing
-- [ ] endocrine-metabolic-pharmacology
-- [ ] neuropsychopharmacology
-- [ ] toxicology-adverse-effects
+- [x] Core
+- [x] cardiovascular-pharmacology
+- [x] clinical-pharmacokinetics-dosing
+- [x] endocrine-metabolic-pharmacology
+- [x] neuropsychopharmacology
+- [x] toxicology-adverse-effects
 
 ## computer-science-algorithms ⬜
 *Computer Science / Algorithms*

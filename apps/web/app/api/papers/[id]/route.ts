@@ -73,6 +73,8 @@ export async function DELETE(
     db.paperQuizSession.deleteMany({ where: { paperId: paper.id } }),
     db.paperRelevanceNote.deleteMany({ where: { paperId: paper.id } }),
     db.paperProficiency.deleteMany({ where: { paperId: paper.id } }),
+    db.paperExplanationAttempt.deleteMany({ where: { paperId: paper.id } }),
+    db.paperExplanation.deleteMany({ where: { paperId: paper.id } }),
     db.paper.delete({ where: { id: paper.id } }),
   ])
 

@@ -202,12 +202,13 @@ export function DiscoveryTree({
             // Academic titles blow past the trunc — the full title lives in the
             // reader; the tree gets a platform prefix + a tier-colored dot.
             const isSource = n.source === 'source'
+            const isArticle = n.source === 'article'
             const platformPrefix =
               n.platform === 'arxiv' ? 'arXiv: ' : n.platform === 'pubmed' ? 'PubMed: ' : '📄 '
-            const maxChars = n.source === 'youtube' ? 12 : isSource ? 10 : 15
+            const maxChars = n.source === 'youtube' ? 12 : isSource || isArticle ? 10 : 15
             const truncated = n.title.length > maxChars ? n.title.slice(0, maxChars - 1) + '…' : n.title
             const label =
-              (n.source === 'youtube' ? '▶ ' : isSource ? platformPrefix : '') + truncated
+              (n.source === 'youtube' ? '▶ ' : isArticle ? '📰 ' : isSource ? platformPrefix : '') + truncated
             const tierColor = isSource && n.credibilityTier ? TIER_META[n.credibilityTier].color : null
             // #13: a starred, not-yet-promoted source node can be promoted to the
             // Literature Review. Wiki/YouTube + non-starred + already-promoted → no control.

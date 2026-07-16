@@ -17,7 +17,7 @@ import { useTeamInterests } from '@/components/discovery/hooks/useTeamInterests'
 import { useSourceLanes } from '@/components/discovery/hooks/useSourceLanes'
 import { useResizablePanel } from '@/lib/hooks/useResizablePanel'
 import { useAutoDismiss } from '@/lib/hooks/useAutoDismiss'
-import { resolveSource } from '@/lib/discovery/treeApi'
+import { resolveSource, resolveArticle } from '@/lib/discovery/treeApi'
 import type { DiscoverySource } from '@/stores/discoveryStore'
 import type { SourcePlatform, SourceChip } from '@/lib/discovery/sources'
 
@@ -45,6 +45,7 @@ export function DiscoveryFeature() {
     startExploration,
     addYouTubeVideo,
     addSourceNode,
+    addArticleNode,
     branchSources,
     navigateToNode,
     togglePendingLink,
@@ -95,6 +96,9 @@ export function DiscoveryFeature() {
   // Kept separate from currentNodeId so "← Results" returns to the list without
   // losing the tree selection (PapersSearch stays mounted → its results persist).
   const [papersView, setPapersView] = useState<'search' | 'reader'>('search')
+  // Articles tab: same split as papersView, above (ArticlesBrowse stays mounted
+  // so "← Results" preserves the browsed feed/query).
+  const [articlesView, setArticlesView] = useState<'search' | 'reader'>('search')
 
   async function addVideoFromUrl(url: string): Promise<string | null> {
     try {
@@ -124,6 +128,18 @@ export function DiscoveryFeature() {
     const resolved = await resolveSource(platform, externalId)
     if (resolved) {
       addSourceNode(resolved)
+    } else {
+      setSourceAddError({ nonce: Date.now() })
+    }
+  }
+
+  // Articles browse → resolve the picked article (server-authoritative sanitized
+  // HTML) → add it as a new article node (root, or a child of the current node).
+  // Failure is non-fatal — surfaced as the same error toast as Papers.
+  async function addArticleFromBrowse(feed: string, externalId: string): Promise<void> {
+    const resolved = await resolveArticle(feed, externalId)
+    if (resolved) {
+      addArticleNode(resolved)
     } else {
       setSourceAddError({ nonce: Date.now() })
     }
@@ -256,12 +272,14 @@ export function DiscoveryFeature() {
   useEffect(() => {
     if (currentNode) setDiscoverySource(currentNode.source)
     if (currentNode?.source === 'source') setPapersView('reader')
+    if (currentNode?.source === 'article') setArticlesView('reader')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentNodeId])
 
   // ── Source surf lanes (shared by the reader + the source branch panel) ──────
-  const { sourceLanes, lanesLoading, chipsById } = useSourceLanes(currentNode)
+  const { sourceLanes, lanesLoading, chipsById, tldr: sourceTldr } = useSourceLanes(currentNode)
   const currentIsSource = currentNode?.source === 'source'
+  const currentIsArticle = currentNode?.source === 'article'
 
   // Clear the pending Papers-tab seed once the Papers search box has mounted with
   // it (PapersSearch reads defaultQuery only on mount), so it isn't re-applied.
@@ -412,18 +430,23 @@ export function DiscoveryFeature() {
         <ExplorerReaderPane
           discoverySource={discoverySource}
           papersView={papersView}
+          articlesView={articlesView}
           currentNode={currentNode}
           currentIsSource={currentIsSource}
+          currentIsArticle={currentIsArticle}
           pendingSourceSearch={pendingSourceSearch}
           finalTopic={finalTopic}
           sourceLanes={sourceLanes}
           lanesLoading={lanesLoading}
+          tldr={sourceTldr}
           pendingLinks={pendingLinks}
           onPickSource={addSourceFromSearch}
+          onPickArticle={addArticleFromBrowse}
           onChipToggle={togglePendingLink}
           onStarCurrent={() => currentNode && toggleStar(currentNode.id)}
           onSaveReflection={saveReflection}
           onBackToResults={() => setPapersView('search')}
+          onBackToArticleResults={() => setArticlesView('search')}
           onAddVideoUrl={addVideoFromUrl}
         />
 

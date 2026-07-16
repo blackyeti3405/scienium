@@ -55,3 +55,43 @@ export interface ResolvedSource {
 export function chipId(platform: SourcePlatform, externalId: string): string {
   return `${platform}:${externalId}`
 }
+
+// ── Article-node contract (The Conversation + science-journalism RSS) ─────────
+// A parallel, isolated source type — client + server agree on these shapes the
+// same way the arXiv/PubMed contract above does.
+
+/** Which lane an article feed belongs to. */
+export type ArticleProvider = 'the_conversation' | 'journalism'
+
+/** How the reader renders the body: verbatim full HTML, or a link-out card. */
+export type ArticleRenderMode = 'full' | 'linkout'
+
+/** One browse-card row (the Articles tab results list) — no full `html`. */
+export interface ArticleSearchResult {
+  feed: string
+  externalId: string
+  provider: ArticleProvider
+  renderMode: ArticleRenderMode
+  sourceName: string
+  title: string
+  author: string | null
+  url: string
+  excerpt: string | null
+  publishedAt: string | null
+}
+
+/** A fully-resolved article (returned by the resolve route; persisted by tree POST). */
+export interface ResolvedArticle {
+  feed: string
+  externalId: string
+  provider: ArticleProvider
+  renderMode: ArticleRenderMode
+  sourceName: string
+  title: string
+  author: string | null
+  url: string
+  excerpt: string | null
+  /** Full sanitized HTML — populated only when renderMode === 'full'. */
+  html: string | null
+  publishedAt: string | null
+}

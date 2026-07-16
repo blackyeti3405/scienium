@@ -5,6 +5,64 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.24.0] — 2026-07-15
+
+Two feature waves — a **Discovery source expansion** (follow real citations, read expert
+articles in-app) and a **Literature-Review learning suite** (active-recall tools that build
+durable, judge-ready knowledge) — plus a crash fix on the main lab page and a large batch of
+authored Field Codex content.
+
+### Added — Discovery: more to browse
+- **Semantic Scholar enrichment** — an open source node now shows a TL;DR (Semantic Scholar's
+  own extractive summary, attributed) and its **Cited-by** lane is re-ranked so influential
+  citations lead. Keyless; optional `S2_API_KEY` raises the rate limit. No AI on our side.
+- **Article sources** — a new `article` Discovery source type: **The Conversation** renders the
+  full article in-app under CC BY-ND (with attribution), and a **science-journalism** RSS lane
+  (Quanta, Science News, …) renders link-out cards. New `articles/browse` + `articles/resolve`
+  routes and a sanitized `ArticleReader`; new `ArticleSource` table (migration
+  `20260714150000_add_article_source`).
+
+### Added — Literature Review: interactive learning
+- **Explain it back (Feynman mode)** — the student writes what a paper found in plain language;
+  Vega grades it *against the paper*, names what's wrong/missing, and the student revises. Flat
+  25 KP once per paper (idempotent). New `PaperExplanation`/`PaperExplanationAttempt` models
+  (migration `20260714170000_paper_explanation`).
+- **Synthesis matrix** — compare 2–4 papers in a **field-adaptive** grid (columns seeded per
+  lab type, fully editable); Vega checks the student's cells against the paper abstracts and
+  flags agreements/contradictions/gaps they missed, plus suggested columns. Flat 25 KP, capped
+  2 matrices/team (team-atomic). New `SynthesisMatrix`/`SynthesisCell` models (migration
+  `20260714225544_synthesis_matrix`).
+- **Vocabulary builder** — a **zero-LLM** spaced-repetition deck of key terms extracted from the
+  team's own papers (Schwartz-Hearst acronym pairing, authored-dictionary matches, repeated
+  n-grams); every card's definition is a verbatim quote or an authored-glossary entry (enforced
+  by a unit test — no invented definitions). Leitner review; 3 KP/card once-ever, capped
+  12/student/day, schedule persists even when KP is capped. New `VocabCard`/`VocabKpDay` models
+  (migration `20260714230500_vocab_builder`).
+
+### Added — Field Codex content
+- **`clinical-medicine-pharmacology` is now a complete field (6/6 segments, 275 lessons):**
+  authored the five subfield branches — cardiovascular-pharmacology, clinical-pharmacokinetics-
+  dosing, endocrine-metabolic-pharmacology, neuropsychopharmacology, and toxicology-adverse-
+  effects (~223 new lessons). Each ran the adversarial fact-check gate with zero open HIGH
+  findings. Library progress: 6/29 fields, 36/174 segments.
+
+### Changed
+- **PubMed citation-following fixed** — a PubMed source's Cites/Cited-by lanes now resolve
+  through OpenAlex (keyless, not IP-throttled) instead of the sparse, throttled NCBI `elink`
+  path, so following a paper's references/citations actually works. Adds `resolvePubmedWork` +
+  `pmid`-carrying neighbours to the OpenAlex adapter.
+- **Hermetic discovery E2E** — `E2E_MOCK_SOURCES` is wired into the Playwright web-server (was
+  silently hitting live APIs); the OpenAlex search/resolve paths gained seed-scoped fixtures so
+  the whole Papers-tab suite runs deterministically.
+
+### Fixed
+- **Lab page crash** — `DecorationLayer` used signed bit-shifts on an unsigned 32-bit hash, so
+  ~37% of scatter slots produced a negative array index → `TypeError` that crashed the entire
+  `/lab` React tree. Switched to unsigned shifts; extracted the placement math to
+  `lib/lab/decoration.ts` with a regression unit test that pins every index in range.
+
+---
+
 ## [0.23.8] — 2026-07-14
 
 Class membership is now **per-student**, so a lab can span multiple classes/schools with

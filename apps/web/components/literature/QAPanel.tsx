@@ -1,13 +1,15 @@
 'use client'
 
-import { ExternalLink, X, Award, MessageSquare } from 'lucide-react'
+import { ExternalLink, X, Award, MessageSquare, Brain } from 'lucide-react'
 import type { Paper } from './types'
 import { CredibilityBadge } from './CredibilityBadge'
 import { VettingChecklist } from './VettingChecklist'
 import { usePaperQuiz } from './usePaperQuiz'
 import { usePaperChat } from './usePaperChat'
+import { useExplainBack } from './useExplainBack'
 import { QuizPanel } from './QuizPanel'
 import { PaperChat } from './PaperChat'
+import { ExplainPanel } from './ExplainPanel'
 
 /**
  * Split Q&A view for one paper: the PDF (left) and, on the right, the
@@ -26,6 +28,7 @@ export function QAPanel({
 }) {
   const quiz = usePaperQuiz(paper, onProficiencyEarned)
   const chat = usePaperChat(paper)
+  const explain = useExplainBack(paper)
   const { phase, setPhase, hasPastResults } = quiz
 
   return (
@@ -65,8 +68,10 @@ export function QAPanel({
       <div className="h-2/5 w-full md:h-auto md:w-96 flex flex-col shrink-0">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
           {/* Tabs between graded results and chat once a quiz has been graded;
-              otherwise just a static label for the loading/quiz/grading phases. */}
-          {hasPastResults && (phase === 'results' || phase === 'chat') ? (
+              otherwise just a static label for the loading/quiz/grading phases.
+              "Explain it back" is reachable in BOTH branches — before and
+              after the quiz has been graded. */}
+          {hasPastResults && (phase === 'results' || phase === 'chat' || phase === 'explain') ? (
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setPhase('results')}
@@ -84,16 +89,42 @@ export function QAPanel({
               >
                 <MessageSquare size={9} /> Discuss with Vega
               </button>
+              <button
+                onClick={() => setPhase('explain')}
+                data-testid="explain-tab"
+                className={`font-pixel text-[8px] flex items-center gap-1 transition-colors ${
+                  phase === 'explain' ? 'text-[#F5C518]' : 'text-white/40 hover:text-white/70'
+                }`}
+              >
+                <Brain size={9} /> Explain it back
+              </button>
             </div>
           ) : (
-            <span className="font-pixel text-[8px] text-white/50">Comprehension Quiz</span>
+            <div className="flex items-center gap-4">
+              <span className="font-pixel text-[8px] text-white/50">Comprehension Quiz</span>
+              <button
+                onClick={() => setPhase('explain')}
+                data-testid="explain-tab"
+                className={`font-pixel text-[8px] flex items-center gap-1 transition-colors ${
+                  phase === 'explain' ? 'text-[#F5C518]' : 'text-white/40 hover:text-white/70'
+                }`}
+              >
+                <Brain size={9} /> Explain it back
+              </button>
+            </div>
           )}
           <button onClick={onClose} className="text-white/30 hover:text-white/60 transition-colors">
             <X size={13} />
           </button>
         </div>
 
-        {phase === 'chat' ? <PaperChat paper={paper} {...chat} /> : <QuizPanel {...quiz} />}
+        {phase === 'chat' ? (
+          <PaperChat paper={paper} {...chat} />
+        ) : phase === 'explain' ? (
+          <ExplainPanel {...explain} onBack={() => setPhase(hasPastResults ? 'results' : 'quiz')} />
+        ) : (
+          <QuizPanel {...quiz} />
+        )}
       </div>
     </div>
   )

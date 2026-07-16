@@ -80,6 +80,7 @@ export const CODEX_TRACKS: CodexTrackSummary[] = [
   { slug: 'astronomy-astrophysics', label: 'Astronomy / Astrophysics', home: false, branchCount: 5, lessonCount: 271 },
   { slug: 'chemistry', label: 'Chemistry', home: false, branchCount: 5, lessonCount: 258 },
   { slug: 'classical-mechanics-physics', label: 'Classical Mechanics / Physics', home: false, branchCount: 5, lessonCount: 275 },
+  { slug: 'clinical-medicine-pharmacology', label: 'Clinical Medicine / Pharmacology', home: false, branchCount: 5, lessonCount: 275 },
   { slug: 'gait-biomechanics', label: 'Gait Biomechanics', home: false, branchCount: 5, lessonCount: 274 },
 ]
 
@@ -96,6 +97,7 @@ const LOADERS: Record<CodexTrackSlug, () => Promise<{ default: CodexTrack }>> = 
   'astronomy-astrophysics': () => import('./tracks/astronomy-astrophysics'),
   'chemistry': () => import('./tracks/chemistry'),
   'classical-mechanics-physics': () => import('./tracks/classical-mechanics-physics'),
+  'clinical-medicine-pharmacology': () => import('./tracks/clinical-medicine-pharmacology'),
   'gait-biomechanics': () => import('./tracks/gait-biomechanics'),
 }
 

@@ -75,6 +75,14 @@ export function DiscoveryHeader({
           📄 Papers
         </button>
         <button
+          onClick={() => onSelectSource('article')}
+          className={`font-pixel text-[7px] px-2.5 py-1.5 transition-colors ${
+            view === 'explore' && discoverySource === 'article' ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
+          }`}
+        >
+          📰 Articles
+        </button>
+        <button
           onClick={onSelectTreeView}
           data-testid="tree-tab"
           aria-label="Discovery Tree tab"

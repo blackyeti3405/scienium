@@ -3,13 +3,14 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
 import {
   resolveArxivWork,
+  resolvePubmedWork,
   getReferences,
   getCitedBy,
   searchWorks,
   type OpenAlexNeighbour,
   type NormalizedWork,
 } from '@/lib/discovery/openalex'
-import { elinkRefs, elinkCitedIn, esummaryPubmed, type PubmedWork } from '@/lib/discovery/ncbi'
+import { getTldr, getInfluentialCitingIds, type S2Tldr } from '@/lib/discovery/semanticscholar'
 import { chipId, type SourceChip, type SourceLanes } from '@/lib/discovery/sources'
 
 // ── GET /api/discovery/sources/[id]/citations ─────────────────────────────────
@@ -36,14 +37,33 @@ function arxivNeighbourToChip(n: OpenAlexNeighbour): SourceChip | null {
   }
 }
 
-function pubmedWorkToChip(w: PubmedWork): SourceChip {
+function pubmedNeighbourToChip(n: OpenAlexNeighbour): SourceChip | null {
+  // Only pmid-locatable neighbours are branchable (we can resolve them by id).
+  if (!n.pmid) return null
+  const externalId = `pmid:${n.pmid}`
   return {
-    laneId: chipId('pubmed', w.externalId),
+    laneId: chipId('pubmed', externalId),
     platform: 'pubmed',
-    externalId: w.externalId,
-    title: w.title,
-    subtitle: [w.authors[0], w.publishedAt].filter(Boolean).join(' · ') || undefined,
+    externalId,
+    title: n.title ?? n.pmid,
+    subtitle: [n.authors[0], n.publicationYear].filter(Boolean).join(' · ') || undefined,
   }
+}
+
+/**
+ * Stable partition: chips whose externalId is in `influential` come first, all
+ * others after — each partition keeping its original relative order. Used to
+ * surface Semantic Scholar's influential citations at the top of Cited by without
+ * otherwise reshuffling the OpenAlex-ordered lane.
+ */
+function reorderByInfluence(citedBy: SourceChip[], influential: Set<string>): SourceChip[] {
+  const lead: SourceChip[] = []
+  const rest: SourceChip[] = []
+  for (const chip of citedBy) {
+    if (influential.has(chip.externalId)) lead.push(chip)
+    else rest.push(chip)
+  }
+  return [...lead, ...rest]
 }
 
 function normalizedToChip(w: NormalizedWork): SourceChip {
@@ -54,13 +74,6 @@ function normalizedToChip(w: NormalizedWork): SourceChip {
     title: w.title,
     subtitle: [w.authors[0], w.publishedAt].filter(Boolean).join(' · ') || undefined,
   }
-}
-
-async function pmidsToChips(pmids: string[]): Promise<SourceChip[]> {
-  const capped = pmids.slice(0, LANE_BUDGET)
-  if (capped.length === 0) return []
-  const works = await esummaryPubmed(capped)
-  return works.map(pubmedWorkToChip)
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -95,10 +108,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       }
     } else {
       const pmid = src.externalId.replace(/^pmid:/i, '')
-      const [refPmids, citedPmids] = await Promise.all([elinkRefs(pmid), elinkCitedIn(pmid)])
-      const [cites, citedBy] = await Promise.all([pmidsToChips(refPmids), pmidsToChips(citedPmids)])
-      lanes.cites = cites
-      lanes.citedBy = citedBy
+      const oaWork = await resolvePubmedWork(pmid)
+      if (oaWork) {
+        const [refs, citedBy] = await Promise.all([
+          getReferences(oaWork, LANE_BUDGET),
+          getCitedBy(oaWork, LANE_BUDGET),
+        ])
+        lanes.cites = refs.map(pubmedNeighbourToChip).filter((c): c is SourceChip => !!c)
+        lanes.citedBy = citedBy.map(pubmedNeighbourToChip).filter((c): c is SourceChip => !!c)
+      }
     }
 
     // ── Related papers (always-populated fallback) — "More by author" + "More in
@@ -127,5 +145,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     console.error('[discovery/sources/citations] partial failure:', err)
   }
 
-  return NextResponse.json({ lanes })
+  // ── Semantic Scholar enrichment — independent of the lane try/catch above, so
+  // an S2 outage never affects (or is affected by) the OpenAlex/NCBI lanes. Both
+  // helpers self-degrade (null / empty Set) and never throw.
+  const [tldr, influentialIds] = await Promise.all([
+    getTldr(src.externalId),
+    getInfluentialCitingIds(src.externalId),
+  ])
+  lanes.citedBy = reorderByInfluence(lanes.citedBy, influentialIds)
+
+  return NextResponse.json<{ lanes: SourceLanes; tldr: S2Tldr | null }>({ lanes, tldr })
 }

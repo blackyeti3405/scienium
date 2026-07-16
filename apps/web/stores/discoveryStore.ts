@@ -2,7 +2,14 @@
 
 import { create } from 'zustand'
 import type { CredibilityTier } from '@prisma/client'
-import type { ResolvedSource, SourceChip, SourcePlatform } from '@/lib/discovery/sources'
+import type {
+  ArticleProvider,
+  ArticleRenderMode,
+  ResolvedArticle,
+  ResolvedSource,
+  SourceChip,
+  SourcePlatform,
+} from '@/lib/discovery/sources'
 import {
   fetchTree,
   persistCreate,
@@ -15,7 +22,7 @@ import {
   type NewNode,
 } from '@/lib/discovery/treeApi'
 
-export type DiscoverySource = 'wikipedia' | 'youtube' | 'source'
+export type DiscoverySource = 'wikipedia' | 'youtube' | 'source' | 'article'
 
 export interface DiscoveryNode {
   id: string
@@ -43,6 +50,16 @@ export interface DiscoveryNode {
   paperId?: string | null
   /** #11: student-set interest tier. null/undefined = unmarked. */
   interestLevel?: 'high' | 'mid' | 'low' | null
+  // ── article-node metadata (present only when source === 'article') ──
+  provider?: ArticleProvider
+  renderMode?: ArticleRenderMode
+  sourceName?: string
+  articleUrl?: string
+  excerpt?: string
+  /** Full sanitized HTML — present only for `renderMode === 'full'`. */
+  articleHtml?: string
+  articleAuthor?: string
+  articlePublishedAt?: string
 }
 
 interface DiscoveryStore {
@@ -80,6 +97,10 @@ interface DiscoveryStore {
   /** Add a resolved source (arXiv/PubMed) as a child of the current node, or a new
    *  root when nothing is selected. Returns the created/existing node id. */
   addSourceNode: (resolved: ResolvedSource) => string
+  /** Add a resolved article (The Conversation/journalism) as a child of the
+   *  current node, or a new root when nothing is selected. Returns the
+   *  created/existing node id. */
+  addArticleNode: (resolved: ResolvedArticle) => string
   /** Resolve up to 2 selected citation/metadata chips and branch them into child
    *  source nodes under the current node (the native citation surf). */
   branchSources: (chips: SourceChip[]) => Promise<void>
@@ -290,6 +311,74 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
             sourceHost: resolved.host,
             authors: resolved.authors,
             abstract: resolved.abstract ?? undefined,
+            publishedAt: resolved.publishedAt ?? undefined,
+          },
+        ],
+      )
+      return id
+    },
+
+    // Add a resolved article (The Conversation/journalism). Attaches under the
+    // current node (a branch — and a cross-source bridge if the current node is
+    // wiki/youtube/source), or as a new root when nothing is selected. Server
+    // re-derives the sanitized `html` before persisting.
+    addArticleNode: (resolved) => {
+      const { currentNodeId, nodes, newTreePending } = get()
+      // De-dupe by externalId (the DB @@unique is team-wide; mirror it locally).
+      const existing = nodes.find((n) => n.externalId === resolved.externalId)
+      if (existing) {
+        set({ currentNodeId: existing.id, pendingLinks: [], newTreePending: false })
+        return existing.id
+      }
+      // #11: a pending "new tree" request ignores the current selection — the
+      // article becomes a fresh root (parentId: null, depth: 0).
+      const targetParentId = newTreePending ? null : currentNodeId ?? null
+      const parent = targetParentId ? nodes.find((n) => n.id === targetParentId) : null
+      const id = crypto.randomUUID()
+      const node: DiscoveryNode = {
+        id,
+        title: resolved.title,
+        source: 'article',
+        parentId: targetParentId,
+        depth: parent ? parent.depth + 1 : 0,
+        starred: false,
+        explored: false,
+        addedAt: Date.now(),
+        externalId: resolved.externalId,
+        provider: resolved.provider,
+        renderMode: resolved.renderMode,
+        sourceName: resolved.sourceName,
+        articleUrl: resolved.url,
+        excerpt: resolved.excerpt ?? undefined,
+        articleHtml: resolved.html ?? undefined,
+        articleAuthor: resolved.author ?? undefined,
+        articlePublishedAt: resolved.publishedAt ?? undefined,
+      }
+      void commitCreate(
+        () =>
+          set((state) => ({
+            nodes: [
+              ...state.nodes.map((n) => (n.id === targetParentId ? { ...n, explored: true } : n)),
+              node,
+            ],
+            currentNodeId: id,
+            pendingLinks: [],
+            newTreePending: false,
+          })),
+        [
+          {
+            id,
+            title: resolved.title,
+            parentId: targetParentId,
+            source: 'article',
+            externalId: resolved.externalId,
+            provider: resolved.provider,
+            renderMode: resolved.renderMode,
+            sourceName: resolved.sourceName,
+            articleUrl: resolved.url,
+            excerpt: resolved.excerpt ?? undefined,
+            html: resolved.html ?? undefined,
+            articleAuthor: resolved.author ?? undefined,
             publishedAt: resolved.publishedAt ?? undefined,
           },
         ],
