@@ -5,6 +5,17 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.2] — 2026-07-15
+
+### Removed
+
+- **Commits Grid** — the About page git-activity heatmap shipped in 0.23.1. Removed at the
+  founder's call (not enough value for the added surface). Deleted `CommitsGrid.tsx`,
+  `scripts/gen-commit-heatmap.mjs`, and `lib/commit-heatmap.generated.ts`, unwound the
+  `gen:commit-heatmap` wiring from `package.json`'s `dev`/`build` scripts, and removed its
+  "Building in the open" section from `/about`. The other 5 features from that release
+  (FAQ, Journey rail, Category List, 3D carousel, Flip Words) are unaffected.
+
 ## [0.23.1] — 2026-07-15
 
 Two parallel passes on the marketing site (`/` and `/about`), done via isolated subagent

@@ -5,7 +5,6 @@ import { Reveal } from '@/components/marketing/Reveal'
 import { MarketingNav, MarketingFooter } from '@/components/marketing/MarketingChrome'
 import { ContactForm } from '@/components/marketing/ContactForm'
 import { FaqAccordion } from '@/components/marketing/FaqAccordion'
-import { CommitsGrid } from '@/components/marketing/CommitsGrid'
 
 /**
  * Org/outreach page (`/about`) — who is building scienium and why. Shares the
@@ -128,19 +127,6 @@ export default async function AboutPage() {
               </ul>
             </Reveal>
           </div>
-        </div>
-      </section>
-
-      {/* ── Real build activity (real git history, static snapshot) ──────── */}
-      <section className="border-t border-[#e6e5dd] bg-[#f2f1ea]">
-        <div className="mx-auto max-w-4xl px-6 py-20 md:px-10 md:py-24">
-          <Eyebrow>BUILDING IN THE OPEN</Eyebrow>
-          <h2 className="mt-5 font-display text-2xl font-bold tracking-tight sm:text-3xl">
-            Real commits, not a claim.
-          </h2>
-          <Reveal className="mt-8">
-            <CommitsGrid />
-          </Reveal>
         </div>
       </section>
 
