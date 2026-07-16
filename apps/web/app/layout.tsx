@@ -40,7 +40,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               before paint so no-JS clients render the marketing pages fully. */}
           <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('js')" }} />
         </head>
-        <body className="font-sans antialiased">{children}</body>
+        <body className="font-sans antialiased">
+          <a
+            href="#main-content"
+            className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[300] focus:bg-[#F5C518] focus:px-4 focus:py-2 focus:text-[#0d1b2e] focus:outline-none focus:ring-2 focus:ring-[#0d1b2e]"
+            style={{ borderRadius: 6 }}
+          >
+            Skip to main content
+          </a>
+          {children}
+        </body>
       </html>
     </ClerkProvider>
   )

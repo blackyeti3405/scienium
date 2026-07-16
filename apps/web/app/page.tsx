@@ -49,11 +49,19 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 const CTA_FOCUS =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F5C518] focus-visible:ring-offset-2 focus-visible:ring-offset-[#f7f7f4]'
 
+// Chunky "pressed slab" CTA: a hard, non-blurred offset shadow (not a soft
+// glow — flat solid color, matching the game UI's own chunky-button language)
+// that visually compresses toward the label on hover/press. Pure CSS, no JS.
+const CTA_PRESS =
+  'shadow-[4px_4px_0_0_#0d1b2e] transition-[transform,box-shadow] duration-150 ' +
+  'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_0_#0d1b2e] ' +
+  'active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_0_#0d1b2e]'
+
 function PrimaryCTA({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
       href={href}
-      className={`font-pixel flex min-h-[52px] items-center bg-[#F5C518] px-8 text-[#0d1b2e] transition-transform hover:-translate-y-0.5 active:translate-y-0 ${CTA_FOCUS}`}
+      className={`font-pixel flex min-h-[52px] items-center bg-[#F5C518] px-8 text-[#0d1b2e] ${CTA_PRESS} ${CTA_FOCUS}`}
       style={{ fontSize: '0.7rem', letterSpacing: '0.04em', borderRadius: 6 }}
     >
       {children}
@@ -65,7 +73,7 @@ function GhostCTA({ href, children }: { href: string; children: React.ReactNode 
   return (
     <Link
       href={href}
-      className={`font-pixel flex min-h-[52px] items-center border border-[#c9c8bd] px-8 text-[#0d1b2e] transition-colors hover:border-[#0d1b2e] ${CTA_FOCUS}`}
+      className={`font-pixel flex min-h-[52px] items-center border border-[#0d1b2e] bg-[#f7f7f4] px-8 text-[#0d1b2e] transition-colors ${CTA_PRESS} ${CTA_FOCUS}`}
       style={{ fontSize: '0.7rem', letterSpacing: '0.04em', borderRadius: 6 }}
     >
       {children}
@@ -88,7 +96,7 @@ export default async function HomePage() {
   const primaryLabel = userId ? 'LAUNCH YOUR LAB' : 'GET STARTED'
 
   return (
-    <main className="min-h-screen bg-[#f7f7f4] text-[#0d1b2e]">
+    <main id="main-content" className="min-h-screen bg-[#f7f7f4] text-[#0d1b2e]">
       {launch && launch.preloadSprites.length > 0 && (
         <LaunchPreloader href={launch.href} sprites={launch.preloadSprites} />
       )}
@@ -237,36 +245,44 @@ export default async function HomePage() {
             </Reveal>
           </div>
 
-          {/* 04 + 05 — 2-up grid */}
-          <div className="mt-28 grid gap-10 md:grid-cols-2 md:gap-8">
-            <div data-journey-step={4}>
-              <Reveal>
-                <Shot src="/marketing/research-plan.png" title="Research Plan · /research-plan" alt="The Research Plan screen: project-type selector (Engineering or Science) with category cards, a connected Google-Doc plan source, and Review my plan and originality-check actions." ratio="16 / 11" />
-              </Reveal>
-              <span className="mt-6 block font-pixel" style={{ color: NUM, fontSize: '1.2rem' }}>04</span>
-              <h3 className="mt-2 font-display text-xl font-bold tracking-tight sm:text-2xl">Design a study that holds up.</h3>
-              <p className="mt-3 max-w-[46ch] font-display text-[16px] leading-relaxed text-[#46566b]">
+          {/* 04 Research Plan */}
+          <div className="mt-24 grid items-center gap-10 md:grid-cols-2 md:gap-14" data-journey-step={4}>
+            <div>
+              <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>04</span>
+              <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[1.8rem]">
+                Design a study that holds up.
+              </h3>
+              <p className="mt-4 max-w-[48ch] font-display text-[17px] leading-relaxed text-[#46566b]">
                 Pick your ISEF category, then write your hypothesis, methodology, and study design.
                 Vega reviews it by project type and web searches your idea for novelty before you
                 advance.
               </p>
             </div>
-            <div data-journey-step={5}>
-              <Reveal>
-                <ShotPlaceholder
-                  title="Experiment & Data"
-                  note="Experiment runs, Project and Failure logs, and the Data Terminal turning raw numbers into real charts."
-                  ratio="16 / 11"
-                  badge="Preview soon"
-                />
-              </Reveal>
-              <span className="mt-6 block font-pixel" style={{ color: NUM, fontSize: '1.2rem' }}>05</span>
-              <h3 className="mt-2 font-display text-xl font-bold tracking-tight sm:text-2xl">Run it. Log it. Chart it.</h3>
-              <p className="mt-3 max-w-[46ch] font-display text-[16px] leading-relaxed text-[#46566b]">
+            <Reveal>
+              <Shot src="/marketing/research-plan.png" title="Research Plan · /research-plan" alt="The Research Plan screen: project-type selector (Engineering or Science) with category cards, a connected Google-Doc plan source, and Review my plan and originality-check actions." ratio="16 / 11" />
+            </Reveal>
+          </div>
+
+          {/* 05 Experiment & Data */}
+          <div className="mt-24 grid items-center gap-10 md:grid-cols-2 md:gap-14" data-journey-step={5}>
+            <div className="md:order-2">
+              <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>05</span>
+              <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[1.8rem]">
+                Run it. Log it. Chart it.
+              </h3>
+              <p className="mt-4 max-w-[48ch] font-display text-[17px] leading-relaxed text-[#46566b]">
                 Keep a Project Log and a Failure Log, then turn measurements into figures in the Data
                 Terminal, with built-in Stats, Charts, and Plot guides.
               </p>
             </div>
+            <Reveal className="md:order-1">
+              <ShotPlaceholder
+                title="Experiment & Data"
+                note="Experiment runs, Project and Failure logs, and the Data Terminal turning raw numbers into real charts."
+                ratio="16 / 11"
+                badge="Preview soon"
+              />
+            </Reveal>
           </div>
 
           {/* 06 Fair & Showcase */}

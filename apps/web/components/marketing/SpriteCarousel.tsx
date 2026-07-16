@@ -106,7 +106,10 @@ export function SpriteCarousel() {
                   className="mkt-pixel pointer-events-none"
                   style={{ width: 'clamp(56px, 16vw, 96px)', height: 'clamp(56px, 16vw, 96px)' }}
                 />
-                <span className="font-pixel mt-2 block text-[#5a6b80]" style={{ fontSize: '0.55rem' }}>
+                <span
+                  className="font-pixel mt-2 inline-block bg-[#f7f7f4] px-1.5 py-0.5 text-[#0d1b2e]"
+                  style={{ fontSize: '0.55rem', borderRadius: 3 }}
+                >
                   {it.label}
                 </span>
               </div>

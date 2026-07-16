@@ -5,6 +5,50 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.24.0] — 2026-07-16
+
+A UX/UI optimization pass across `/` and `/about`: two new 3D touches, several concrete fixes
+(one a real bug from the previous release), and a broader accessibility/navigation review.
+
+### Added
+
+- **Click-to-zoom on all real screenshots** — `Shot` now opens a full-size lightbox on click
+  (Escape, click-outside, or the close button to dismiss; focus moves to the close button on
+  open and back to the trigger on close; body scroll locked while open).
+- **Chunky "3D-press" CTA buttons** — `PrimaryCTA`/`GhostCTA` on `/` now use a hard, non-blurred
+  offset shadow (solid color, not a glow) that visually compresses on hover/press, matching the
+  chunky-button language already used in the dark in-game UI. Pure CSS, no library.
+- **Cursor-tilt on real screenshots** — `Shot` now tilts subtly (max 5°) toward the cursor on
+  hover, reusing the same perspective/rotate technique as the earlier `TiltCard` work. Desktop
+  hover only; respects `prefers-reduced-motion`.
+- **Mobile navigation** — `MarketingNav`'s section links (Journey/Battle Arena/Teachers) and
+  "Sign in" were `md:flex`/`sm:inline` only, with **no mobile alternative at all** — a phone
+  visitor had no way to reach them short of scrolling the entire page. Added a hamburger toggle
+  that opens the same links in a dropdown below the header.
+- **Skip-to-main-content link** — added to the root layout for keyboard users.
+
+### Fixed
+
+- **Journey section, phases 04/05** — previously crammed into a 2-column grid (image on top,
+  text below, side by side), breaking the alternating full-width row pattern every other phase
+  uses. This also caused `JourneyRail`'s sticky progress bar to jump erratically, since both
+  `data-journey-step` markers sat at the same scroll position instead of stacked. Restructured
+  to match phases 01/02/06 exactly (also fixed their heading/numeral sizes, which were smaller
+  than the rest).
+- **Sprite Carousel label contrast** — building labels sat directly on `.mkt-iso-plate`'s grass
+  *texture* background (not a flat color), so legibility varied with the pixel art underneath
+  regardless of text color. Given each label a solid backing chip instead.
+- **Real bug from 0.23.3**: the coverflow rebuild moved the carousel's CSS transition from
+  `.mkt-carousel-track` to `.mkt-carousel-item`, but the `prefers-reduced-motion` override still
+  targeted the old class — so reduced-motion silently stopped disabling the carousel's animation.
+  Fixed.
+- **`/about`, "Why we are building it"** — had an eyebrow label framing it as a named section,
+  but its actual headline was a plain `<p>`, invisible to screen readers navigating by heading
+  list. Changed to `<h2>` (no visual change).
+- A `react-hooks/exhaustive-deps` warning in `Shot`'s lightbox effect (reading a ref's `.current`
+  inside a cleanup function, which could point to a different node by the time cleanup runs) —
+  copied the ref value into a local variable inside the effect instead.
+
 ## [0.23.3] — 2026-07-15
 
 ### Changed

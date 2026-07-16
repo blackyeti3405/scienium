@@ -1,3 +1,6 @@
+'use client'
+
+import { useState } from 'react'
 import Link from 'next/link'
 
 /**
@@ -5,6 +8,10 @@ import Link from 'next/link'
  * paper field, navy ink, gold as the single accent. Game UI stays dark; these
  * front-door surfaces are light. Nav links point at homepage anchors (prefixed
  * with `/`) so they work from any marketing page. `font-display` = Space Grotesk.
+ *
+ * The section links (Journey/Battle Arena/Teachers) are `md:flex` only — below
+ * that a hamburger toggle opens the same links in a dropdown, so mobile visitors
+ * aren't left with zero way to jump to a section short of scrolling the whole page.
  */
 
 const FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F5C518] focus-visible:ring-offset-2 focus-visible:ring-offset-[#f7f7f4]'
@@ -17,6 +24,8 @@ const NAV_LINKS = [
 ]
 
 export function MarketingNav({ userId, launchHref = '/game' }: { userId: string | null; launchHref?: string }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+
   return (
     <header className="sticky top-0 z-50 border-b border-[#e6e5dd] bg-[#f7f7f4]/90 backdrop-blur-sm">
       <div className="mx-auto flex h-[68px] max-w-6xl items-center justify-between px-6 md:px-10">
@@ -32,25 +41,72 @@ export function MarketingNav({ userId, launchHref = '/game' }: { userId: string 
             </Link>
           ))}
         </nav>
-        <div className="flex items-center gap-4 font-pixel" style={{ fontSize: '0.6rem' }}>
-          {userId ? (
-            <Link href={launchHref} className={`rounded text-[#0d1b2e] underline decoration-[#F5C518] decoration-2 underline-offset-4 hover:opacity-70 ${FOCUS}`}>
-              Launch
-            </Link>
-          ) : (
-            <>
-              <Link href="/sign-in" className={`hidden rounded text-[#5a6b80] hover:text-[#0d1b2e] sm:inline ${FOCUS}`}>Sign in</Link>
-              <Link
-                href="/sign-up"
-                className={`flex min-h-[44px] items-center bg-[#F5C518] px-4 text-[#0d1b2e] transition hover:brightness-95 ${FOCUS}`}
-                style={{ borderRadius: 6 }}
-              >
-                Get started
+        <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-4 font-pixel" style={{ fontSize: '0.6rem' }}>
+            {userId ? (
+              <Link href={launchHref} className={`rounded text-[#0d1b2e] underline decoration-[#F5C518] decoration-2 underline-offset-4 hover:opacity-70 ${FOCUS}`}>
+                Launch
               </Link>
-            </>
-          )}
+            ) : (
+              <>
+                <Link href="/sign-in" className={`hidden rounded text-[#5a6b80] hover:text-[#0d1b2e] sm:inline ${FOCUS}`}>Sign in</Link>
+                <Link
+                  href="/sign-up"
+                  className={`flex min-h-[44px] items-center bg-[#F5C518] px-4 text-[#0d1b2e] transition hover:brightness-95 ${FOCUS}`}
+                  style={{ borderRadius: 6 }}
+                >
+                  Get started
+                </Link>
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-expanded={menuOpen}
+            aria-controls="mkt-mobile-menu"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            className={`flex h-11 w-11 shrink-0 items-center justify-center text-[#0d1b2e] md:hidden ${FOCUS}`}
+            style={{ borderRadius: 4 }}
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+              {menuOpen ? (
+                <path d="M5 5L15 15M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              ) : (
+                <path d="M3 5.5H17M3 10H17M3 14.5H17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              )}
+            </svg>
+          </button>
         </div>
       </div>
+
+      {menuOpen && (
+        <nav
+          id="mkt-mobile-menu"
+          className="border-t border-[#e6e5dd] bg-[#f7f7f4] px-6 py-2 font-pixel md:hidden"
+          style={{ fontSize: '0.65rem' }}
+        >
+          {NAV_LINKS.map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              onClick={() => setMenuOpen(false)}
+              className={`block rounded py-3 text-[#5a6b80] transition-colors hover:text-[#0d1b2e] ${FOCUS}`}
+            >
+              {l.label}
+            </Link>
+          ))}
+          {!userId && (
+            <Link
+              href="/sign-in"
+              onClick={() => setMenuOpen(false)}
+              className={`block rounded py-3 text-[#5a6b80] transition-colors hover:text-[#0d1b2e] ${FOCUS}`}
+            >
+              Sign in
+            </Link>
+          )}
+        </nav>
+      )}
     </header>
   )
 }

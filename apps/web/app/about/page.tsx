@@ -54,7 +54,7 @@ export default async function AboutPage() {
   const { userId } = await auth()
 
   return (
-    <main className="min-h-screen bg-[#f7f7f4] text-[#0d1b2e]">
+    <main id="main-content" className="min-h-screen bg-[#f7f7f4] text-[#0d1b2e]">
       <MarketingNav userId={userId} />
 
       {/* ── Hero (instant) ───────────────────────────────────────────────── */}
@@ -134,11 +134,11 @@ export default async function AboutPage() {
       <section className="border-t border-[#e6e5dd]">
         <div className="mx-auto max-w-4xl px-6 py-24 md:px-10 md:py-32">
           <Eyebrow>WHY WE ARE BUILDING IT</Eyebrow>
-          <p className="mt-5 font-display text-2xl font-semibold leading-snug tracking-tight sm:text-3xl md:text-[2.15rem]">
+          <h2 className="mt-5 font-display text-2xl font-semibold leading-snug tracking-tight sm:text-3xl md:text-[2.15rem]">
             Research culture and mentorship stay locked inside well-resourced schools. So does a
             real sense of how competitive science fair is. A video game can carry all of it
             everywhere a browser reaches.
-          </p>
+          </h2>
           <p className="mt-6 max-w-[62ch] font-display text-lg leading-relaxed text-[#46566b]">
             scienium keeps the rigor of real research and supplies what is usually missing:
             structure, continuous feedback, and a reason to keep going. Progress requires
