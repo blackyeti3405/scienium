@@ -7,6 +7,10 @@ import { Reveal } from '@/components/marketing/Reveal'
 import { CountUp } from '@/components/marketing/CountUp'
 import { Shot, ShotPlaceholder } from '@/components/marketing/Shot'
 import { MarketingNav, MarketingFooter } from '@/components/marketing/MarketingChrome'
+import { JourneyRail } from '@/components/marketing/JourneyRail'
+import { CategoryList } from '@/components/marketing/CategoryList'
+import { FlipWords } from '@/components/marketing/FlipWords'
+import { SpriteCarousel } from '@/components/marketing/SpriteCarousel'
 
 /**
  * Public marketing home (`/`) — the product front door. Light theme (paper field,
@@ -71,6 +75,9 @@ function GhostCTA({ href, children }: { href: string; children: React.ReactNode 
 
 /* One idea per phase, mirrors the in-game phase order. Real shot or honest slot. */
 const NUM = '#63614f' // legible muted numeral (clears AA on the band)
+
+// The six lab types — reused by the game-layer FlipWords headline and CategoryList.
+const LAB_TYPES = ['BioCore', 'ChemWorks', 'Volt Lab', 'TerraBase', 'MindFrame', 'Axiom']
 
 export default async function HomePage() {
   const { userId, sessionClaims } = await auth()
@@ -161,8 +168,11 @@ export default async function HomePage() {
             </p>
           </div>
 
+          <div className="md:flex md:items-stretch md:gap-10">
+          <JourneyRail />
+          <div className="min-w-0 md:flex-1">
           {/* 01 Discovery */}
-          <div className="mt-20 grid items-center gap-10 md:mt-24 md:grid-cols-2 md:gap-14">
+          <div className="mt-20 grid items-center gap-10 md:mt-24 md:grid-cols-2 md:gap-14" data-journey-step={1}>
             <div>
               <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>01</span>
               <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[1.8rem]">
@@ -179,7 +189,7 @@ export default async function HomePage() {
           </div>
 
           {/* 02 Literature Review (placeholder, product voice) */}
-          <div className="mt-24 grid items-center gap-10 md:grid-cols-2 md:gap-14">
+          <div className="mt-24 grid items-center gap-10 md:grid-cols-2 md:gap-14" data-journey-step={2}>
             <div className="md:order-2">
               <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>02</span>
               <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[1.8rem]">
@@ -200,7 +210,7 @@ export default async function HomePage() {
           </div>
 
           {/* 03 Field Codex — full-width feature */}
-          <div className="mt-28">
+          <div className="mt-28" data-journey-step={3}>
             <div className="mx-auto max-w-2xl text-center">
               <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>03</span>
               <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[2rem]">
@@ -224,7 +234,7 @@ export default async function HomePage() {
 
           {/* 04 + 05 — 2-up grid */}
           <div className="mt-28 grid gap-10 md:grid-cols-2 md:gap-8">
-            <div>
+            <div data-journey-step={4}>
               <Reveal>
                 <Shot src="/marketing/research-plan.png" title="Research Plan · /research-plan" alt="The Research Plan screen: project-type selector (Engineering or Science) with category cards, a connected Google-Doc plan source, and Review my plan and originality-check actions." ratio="16 / 11" />
               </Reveal>
@@ -235,7 +245,7 @@ export default async function HomePage() {
                 and web searches your idea for novelty before you advance.
               </p>
             </div>
-            <div>
+            <div data-journey-step={5}>
               <Reveal>
                 <ShotPlaceholder
                   title="Experiment & Data"
@@ -254,7 +264,7 @@ export default async function HomePage() {
           </div>
 
           {/* 06 Fair & Showcase */}
-          <div className="mt-24 grid items-center gap-10 md:grid-cols-2 md:gap-14">
+          <div className="mt-24 grid items-center gap-10 md:grid-cols-2 md:gap-14" data-journey-step={6}>
             <div>
               <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>06</span>
               <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[1.8rem]">
@@ -268,6 +278,8 @@ export default async function HomePage() {
             <Reveal>
               <Shot src="/marketing/rubric.png" title="Science Fair · /fair-hub/rubric" alt="The official ISEF rubric self-check: a Science and Engineering toggle, a judge-readiness score out of 100, and weighted criteria rows (Research Question, Design and Methodology, Execution) each with a score input." ratio="16 / 10" />
             </Reveal>
+          </div>
+          </div>
           </div>
         </div>
       </section>
@@ -304,35 +316,13 @@ export default async function HomePage() {
           Your lab is the progress bar.
         </h2>
         <p className="mx-auto mt-5 max-w-[60ch] font-display text-lg leading-relaxed text-[#46566b]">
-          As you advance, new buildings appear on your plot and the whole lab reskins to your field,
-          one of six lab types chosen from your research idea. Each building levels up 15 times as
-          your team grows.
+          As you advance, new buildings appear on your plot and the whole lab reskins to your{' '}
+          <FlipWords words={LAB_TYPES} /> field, one of six lab types chosen from your research idea.
+          Each building levels up 15 times as your team grows.
         </p>
-        <div className="mt-8 flex flex-wrap justify-center gap-2">
-          {['BioCore', 'ChemWorks', 'Volt Lab', 'TerraBase', 'MindFrame', 'Axiom'].map((t) => (
-            <span
-              key={t}
-              className="font-pixel border border-[#d9d8cd] bg-white px-3 py-2 text-[#46566b]"
-              style={{ fontSize: '0.6rem', borderRadius: 4 }}
-            >
-              {t}
-            </span>
-          ))}
-        </div>
-        <Reveal className="mkt-iso-plate mt-12 flex items-end justify-center gap-6 border border-[#e6e5dd] p-6 md:p-10" style={{ borderRadius: 8 }}>
-          {['volt_lab/ai-incubator', 'biocore/greenhouse', 'axiom/observatory-dome', 'chemworks/distillation-tower'].map((s, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={s}
-              src={`/sprites/buildings/${s}.png`}
-              alt=""
-              aria-hidden
-              width={112}
-              height={112}
-              className="mkt-pixel mkt-float drop-shadow-[0_8px_0_rgba(13,27,46,0.18)]"
-              style={{ width: 'clamp(64px, 18vw, 112px)', height: 'clamp(64px, 18vw, 112px)', ['--float-dur' as string]: `${6 + i}s`, ['--float-delay' as string]: `${i * 0.5}s` }}
-            />
-          ))}
+        <CategoryList />
+        <Reveal className="mkt-iso-plate mt-12 border border-[#e6e5dd] p-6 md:p-10" style={{ borderRadius: 8 }}>
+          <SpriteCarousel />
         </Reveal>
       </section>
 

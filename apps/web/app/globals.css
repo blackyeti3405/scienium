@@ -3030,6 +3030,50 @@
   transition: transform 0.15s linear;
 }
 
+/* Accordion (FAQ / Category List) — CSS-only expand via grid-template-rows,
+   no JS height measuring. The row height is animated, not just opacity, so
+   .mkt-accordion-panel must itself be a grid track. */
+.mkt-accordion-panel {
+  display: grid;
+  transition: grid-template-rows 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Flip Words (game-layer headline) — short fade + rise per word swap. */
+@keyframes mkt-flip-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.mkt-flip-in {
+  animation: mkt-flip-in 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 3D Sprite Carousel (game-layer) — CSS perspective + rotateY, no library. */
+.mkt-carousel-scene {
+  perspective: 900px;
+}
+.mkt-carousel-track {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  margin: 0 auto;
+  transform-style: preserve-3d;
+  cursor: grab;
+  touch-action: pan-y;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mkt-carousel-track:active {
+  cursor: grabbing;
+}
+.mkt-carousel-item {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-reveal],
   [data-reveal='in'] {
@@ -3038,4 +3082,7 @@
     transition: none !important;
   }
   .mkt-float { animation: none !important; }
+  .mkt-accordion-panel { transition: none !important; }
+  .mkt-flip-in { animation: none !important; }
+  .mkt-carousel-track { transition: none !important; }
 }
