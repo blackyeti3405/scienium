@@ -62,7 +62,7 @@ export function ContactForm() {
       </div>
       <button
         type="submit"
-        className="font-pixel bg-[#F5C518] text-[#0d1b2e] px-6 py-3 hover:brightness-95 active:scale-95 transition-all rounded-md self-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F5C518] focus-visible:ring-offset-2 focus-visible:ring-offset-[#f2f1ea]"
+        className="font-pixel self-start bg-[#F5C518] px-6 py-3 text-[#0d1b2e] shadow-[4px_4px_0_0_#0d1b2e] transition-[transform,box-shadow] duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_0_#0d1b2e] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_0_#0d1b2e] rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F5C518] focus-visible:ring-offset-2 focus-visible:ring-offset-[#f2f1ea]"
         style={{ fontSize: '0.6rem', letterSpacing: '0.05em' }}
       >
         SEND

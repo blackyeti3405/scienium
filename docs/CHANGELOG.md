@@ -5,6 +5,16 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.24.3] — 2026-07-16
+
+### Changed
+
+- **CTA consistency** — the homepage's Primary/Ghost CTAs got the chunky 3D-press shadow
+  treatment in 0.24.0, but the About page's "SEE THE JOURNEY" link and the contact form's
+  "SEND" button were left on the old flat/scale-only styles. Both now use the same
+  `shadow-[4px_4px_0_0_#0d1b2e]` press effect (hover lifts, active presses down), so every
+  button-shaped element on the site now shares one interaction language.
+
 ## [0.24.2] — 2026-07-16
 
 Basic SEO/sharing infrastructure — none of it existed at all before this.

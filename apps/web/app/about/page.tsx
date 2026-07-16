@@ -16,6 +16,12 @@ import { FaqAccordion } from '@/components/marketing/FaqAccordion'
 const ACCENT_INK = '#7d6108'
 const CTA_FOCUS =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F5C518] focus-visible:ring-offset-2 focus-visible:ring-offset-[#f7f7f4]'
+// Same chunky 3D-press shadow as the homepage's GhostCTA (page.tsx) — one
+// interaction language for every button-shaped link across the site.
+const CTA_PRESS =
+  'shadow-[4px_4px_0_0_#0d1b2e] transition-[transform,box-shadow] duration-150 ' +
+  'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_0_#0d1b2e] ' +
+  'active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_0_#0d1b2e]'
 
 const PAGE_DESCRIPTION =
   'The student team behind scienium: who we are, why we are building it, and how to get in touch.'
@@ -168,7 +174,7 @@ export default async function AboutPage() {
           <div className="mt-9">
             <Link
               href="/#journey"
-              className={`font-pixel inline-flex min-h-[52px] items-center border border-[#c9c8bd] px-8 text-[#0d1b2e] transition-colors hover:border-[#0d1b2e] ${CTA_FOCUS}`}
+              className={`font-pixel inline-flex min-h-[52px] items-center border border-[#0d1b2e] bg-[#f7f7f4] px-8 text-[#0d1b2e] ${CTA_PRESS} ${CTA_FOCUS}`}
               style={{ fontSize: '0.7rem', letterSpacing: '0.04em', borderRadius: 6 }}
             >
               SEE THE JOURNEY
