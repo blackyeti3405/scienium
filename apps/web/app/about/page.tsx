@@ -29,6 +29,7 @@ const PAGE_DESCRIPTION =
 export const metadata: Metadata = {
   title: 'About · scienium',
   description: PAGE_DESCRIPTION,
+  alternates: { canonical: '/about' },
   openGraph: {
     title: 'About · scienium',
     description: PAGE_DESCRIPTION,

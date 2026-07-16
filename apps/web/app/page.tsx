@@ -30,6 +30,7 @@ export const metadata: Metadata = {
   title: 'scienium: the world’s first science-fair video game',
   description:
     'A browser game where student teams pick a real research question, master the methods, run experiments, raid rival labs in the Battle Arena, and present at the science fair.',
+  alternates: { canonical: '/' },
   openGraph: {
     title: 'scienium: the world’s first science-fair video game',
     description:

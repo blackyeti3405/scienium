@@ -5,6 +5,15 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.24.4] — 2026-07-16
+
+### Added
+
+- **Canonical URLs** (`alternates.canonical`) on `/` and `/about` — completes the SEO batch
+  from 0.24.2 (favicon, robots.txt, sitemap.xml, OG/Twitter images); without a canonical tag,
+  duplicate-content signals (query strings, trailing slashes) can split search ranking across
+  URLs that are really the same page.
+
 ## [0.24.3] — 2026-07-16
 
 ### Changed
