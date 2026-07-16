@@ -5,6 +5,52 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.1] — 2026-07-15
+
+Two parallel passes on the marketing site (`/` and `/about`), done via isolated subagent
+worktrees and merged back with no conflicts: 6 new UI features, and a content revision pass
+for competitive/game/PvP framing.
+
+### Added
+
+- **FAQ accordion** (`/about`) — `components/marketing/Accordion.tsx` (shared primitive) +
+  `FaqAccordion.tsx`. Cost, devices, privacy, and pilot-signup answers grounded in `docs/SPEC.md`,
+  not invented. CSS-only expand (`grid-template-rows`), full aria wiring.
+- **Journey stepper rail** (`/`) — `JourneyRail.tsx`. Sticky gold progress rail alongside the
+  existing 01–06 phase blocks, driven by one `IntersectionObserver`; the six phase blocks
+  themselves are untouched. Hidden below `md`.
+- **Commits Grid** (`/about`) — `scripts/gen-commit-heatmap.mjs` (mirrors the existing
+  `gen-sprite-versions.mjs` convention) writes a static build-time snapshot from real `git log`
+  history to `lib/commit-heatmap.generated.ts`; `CommitsGrid.tsx` renders it as a GitHub-style
+  heatmap. No live GitHub API call.
+- **Category List** (`/`) — `CategoryList.tsx`, built on `Accordion`. Replaces the static
+  six-lab-type pill row with a real interactive row-list.
+- **3D Sprite Carousel** (`/`) — `SpriteCarousel.tsx`. CSS-only `perspective`/`rotateY` staging
+  (no library) replacing the static floating-sprite row in the game-layer section; drag or
+  button-driven, same real building sprites.
+- **Flip Words** (`/`) — `FlipWords.tsx`. Auto-cycles the six real lab-type names in the
+  "reskins to your field" sentence; stops under `prefers-reduced-motion`.
+- **"World's first science-fair video game"** headline added to the homepage hero (kicker line)
+  and page title/OG metadata.
+
+### Changed
+
+- Homepage and About copy revised for stronger ISEF-competitiveness framing, clearer
+  game-forward language, and higher PvP/Battle Arena prominence — grounded in real shipped
+  features (ISEF rubric, category selector, teacher reports, showcase). Passed through the
+  stop-slop skill to remove AI-writing tells.
+
+### Fixed
+
+- Two PvP mentions (homepage hero, About page closing line) claimed the async raid layer as
+  already playable with no qualifier nearby. `docs/ARCHITECTURE.md` §8.10 confirms PvP is
+  schema-only (`/api/pvp` is a guarded 501 stub); `DESIGN.md` explicitly bans claiming unbuilt
+  features. Reframed both as "landing soon" — the Battle Arena *section* already paired its copy
+  with an existing "Coming soon" badge, so it didn't need the same fix.
+- Accordion panels lacked `aria-controls`/`id` wiring (WCAG). SpriteCarousel prev/next buttons
+  were 36px, under the 44px touch-target minimum. CommitsGrid's zero-commit cells had ~1:1
+  contrast against the section background. All three fixed.
+
 ## [0.23.0] — 2026-07-13
 
 A full pixel-art overhaul of the lab world: every gateway building redrawn in a bold
