@@ -23,7 +23,16 @@ const PAGE_DESCRIPTION =
 export const metadata: Metadata = {
   title: 'About · scienium',
   description: PAGE_DESCRIPTION,
-  openGraph: { title: 'About · scienium', description: PAGE_DESCRIPTION, type: 'website' },
+  openGraph: {
+    title: 'About · scienium',
+    description: PAGE_DESCRIPTION,
+    type: 'website',
+    images: ['/marketing/lab.png'],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/marketing/lab.png'],
+  },
 }
 
 const GROUPS = [
@@ -50,11 +59,21 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
   )
 }
 
+const ORG_JSON_LD = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'scienium',
+  url: process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
+  logo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/scienium-logo.png`,
+  description: PAGE_DESCRIPTION,
+}
+
 export default async function AboutPage() {
   const { userId } = await auth()
 
   return (
     <main id="main-content" className="min-h-screen bg-[#f7f7f4] text-[#0d1b2e]">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ORG_JSON_LD) }} />
       <MarketingNav userId={userId} />
 
       {/* ── Hero (instant) ───────────────────────────────────────────────── */}

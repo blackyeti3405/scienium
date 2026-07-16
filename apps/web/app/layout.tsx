@@ -18,6 +18,7 @@ const pixelFont = Press_Start_2P({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'),
   title: {
     default: 'scienium',
     template: '%s · scienium',
@@ -27,6 +28,11 @@ export const metadata: Metadata = {
     title: 'scienium',
     description: 'Build your virtual research lab. Advance real science.',
     type: 'website',
+    images: ['/marketing/lab.png'],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/marketing/lab.png'],
   },
 }
 

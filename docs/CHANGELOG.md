@@ -5,6 +5,35 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.24.2] — 2026-07-16
+
+Basic SEO/sharing infrastructure — none of it existed at all before this.
+
+### Added
+
+- **Favicon** — `app/icon.png`, the existing pixel-art logo. There was no icon of any kind
+  (`ls public/` had just the logo and sprites); browser tabs showed a generic default.
+- **`robots.txt`** (`app/robots.ts`) — allows the real public surfaces (`/`, `/about`,
+  `/showcase`), disallows every authenticated route (dashboard, lab, teacher, api, etc.), which
+  have no value indexed.
+- **`sitemap.xml`** (`app/sitemap.ts`) — the 3 known static public routes. Deliberately does not
+  enumerate individual `/showcase/[slug]` pages — that needs a DB query for every public+approved
+  showcase, a bigger change better done as its own reviewed piece.
+- **Open Graph + Twitter Card images** — `openGraph.images`/`twitter.images` were unset
+  everywhere, so links shared on social media/Slack/iMessage showed no preview thumbnail at all.
+  Added `metadataBase` to the root layout and a real screenshot (`lab.png`) as the share image on
+  both `/` and `/about`. (Had to add it to each page's own `openGraph` object specifically —
+  Next.js replaces, not deep-merges, `openGraph` at each layout level, so the root layout's
+  version alone would've been silently dropped on both pages that actually matter.)
+- **Organization JSON-LD** on `/about` — name/url/logo only, no fabricated social-profile links.
+
+### Fixed
+
+- **`/robots.txt` and `/sitemap.xml` were redirecting to `/sign-in`** — same root cause as the
+  earlier `/about` bug: new routes are protected by default under Clerk's middleware unless
+  explicitly listed as public. A real crawler hitting either would never have seen the actual
+  file. Added both to `isPublicRoute`.
+
 ## [0.24.1] — 2026-07-16
 
 ### Fixed

@@ -35,6 +35,11 @@ export const metadata: Metadata = {
     description:
       'Turn the science fair into a lab your class runs. Real literature review, in-depth method lessons, experiments, Battle Arena raids, and the official ISEF rubric.',
     type: 'website',
+    images: ['/marketing/lab.png'],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/marketing/lab.png'],
   },
 }
 

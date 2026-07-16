@@ -4,6 +4,8 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 const isPublicRoute = createRouteMatcher([
   '/',
   '/about(.*)', // Public outreach/landing page — no auth required
+  '/robots.txt', // Crawler directives — must be reachable unauthenticated
+  '/sitemap.xml', // Sitemap — same
   '/sign-in(.*)',
   '/sign-up(.*)',
   '/showcase/(.*)', // Public showcase pages
