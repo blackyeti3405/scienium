@@ -4,6 +4,8 @@ import { auth } from '@clerk/nextjs/server'
 import { Reveal } from '@/components/marketing/Reveal'
 import { MarketingNav, MarketingFooter } from '@/components/marketing/MarketingChrome'
 import { ContactForm } from '@/components/marketing/ContactForm'
+import { FaqAccordion } from '@/components/marketing/FaqAccordion'
+import { CommitsGrid } from '@/components/marketing/CommitsGrid'
 
 /**
  * Org/outreach page (`/about`) — who is building scienium and why. Shares the
@@ -129,8 +131,21 @@ export default async function AboutPage() {
         </div>
       </section>
 
-      {/* ── Why + what we're making (merged; CTA lives here) ─────────────── */}
+      {/* ── Real build activity (real git history, static snapshot) ──────── */}
       <section className="border-t border-[#e6e5dd] bg-[#f2f1ea]">
+        <div className="mx-auto max-w-4xl px-6 py-20 md:px-10 md:py-24">
+          <Eyebrow>BUILDING IN THE OPEN</Eyebrow>
+          <h2 className="mt-5 font-display text-2xl font-bold tracking-tight sm:text-3xl">
+            Real commits, not a claim.
+          </h2>
+          <Reveal className="mt-8">
+            <CommitsGrid />
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ── Why + what we're making (merged; CTA lives here) ─────────────── */}
+      <section className="border-t border-[#e6e5dd]">
         <div className="mx-auto max-w-4xl px-6 py-24 md:px-10 md:py-32">
           <Eyebrow>WHY WE ARE BUILDING IT</Eyebrow>
           <p className="mt-5 font-display text-2xl font-semibold leading-snug tracking-tight sm:text-3xl md:text-[2.15rem]">
@@ -152,6 +167,19 @@ export default async function AboutPage() {
               SEE THE JOURNEY
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/* ── FAQ ──────────────────────────────────────────────────────────── */}
+      <section className="border-t border-[#e6e5dd] bg-[#f2f1ea]">
+        <div className="mx-auto max-w-3xl px-6 py-24 md:px-10 md:py-28">
+          <Eyebrow>QUESTIONS</Eyebrow>
+          <h2 className="mt-5 font-display text-3xl font-bold tracking-tight sm:text-4xl">
+            Before you get in touch.
+          </h2>
+          <Reveal className="mt-10">
+            <FaqAccordion />
+          </Reveal>
         </div>
       </section>
 
