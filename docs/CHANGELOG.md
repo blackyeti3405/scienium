@@ -5,6 +5,20 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.3] — 2026-07-15
+
+### Changed
+
+- **3D Sprite Carousel** (`/`, game-layer section) rebuilt as a proper "coverflow": 5 of the 6
+  real lab buildings visible at once — center one full-size and forward-facing, one on each side
+  smaller and turned inward, one more past that smaller still (the 6th, directly opposite, is
+  hidden). Continuous drag tracks the pointer 1:1 and snaps to the nearest building on release;
+  prev/next buttons step the same way. Added two more real per-lab-type buildings (TerraBase,
+  MindFrame) so all 6 lab types are represented — with only the original 4, the two edge slots
+  would have shown the same building twice at once. Now fills the width of its container instead
+  of a small fixed 140px box. Still CSS-only (`perspective` + per-item `translateX`/`translateZ`/
+  `rotateY`/`scale`, no library), still respects `prefers-reduced-motion`.
+
 ## [0.23.2] — 2026-07-15
 
 ### Removed
