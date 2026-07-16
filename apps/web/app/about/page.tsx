@@ -68,7 +68,7 @@ export default async function AboutPage() {
         </h1>
         <p className="mx-auto mt-6 max-w-[52ch] font-display text-lg leading-relaxed text-[#46566b]">
           We competed in science fair and kept hitting the same wall: the research was real, but
-          nobody taught the method.
+          nobody warned us how brutal the competition was.
         </p>
 
         {/* decorative gateway strip; last two sprites hide on mobile so none clip */}
@@ -149,14 +149,16 @@ export default async function AboutPage() {
         <div className="mx-auto max-w-4xl px-6 py-24 md:px-10 md:py-32">
           <Eyebrow>WHY WE ARE BUILDING IT</Eyebrow>
           <p className="mt-5 font-display text-2xl font-semibold leading-snug tracking-tight sm:text-3xl md:text-[2.15rem]">
-            Research culture and mentorship stay locked inside well-resourced schools. A game can
-            carry the method everywhere a browser reaches.
+            Research culture and mentorship stay locked inside well-resourced schools. So does a
+            real sense of how competitive science fair is. A video game can carry all of it
+            everywhere a browser reaches.
           </p>
           <p className="mt-6 max-w-[62ch] font-display text-lg leading-relaxed text-[#46566b]">
             scienium keeps the rigor of real research and supplies what is usually missing:
             structure, continuous feedback, and a reason to keep going. Progress requires
             demonstrated understanding, and every team publishes a public showcase at the end. One
-            browser game walks a team from a question all the way to the fair.
+            video game walks a team from a question all the way to the fair, judging rigor
+            included — with an async PvP layer landing soon.
           </p>
           <div className="mt-9">
             <Link

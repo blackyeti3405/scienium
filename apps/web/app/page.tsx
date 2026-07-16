@@ -27,13 +27,13 @@ import { SpriteCarousel } from '@/components/marketing/SpriteCarousel'
 const ACCENT_INK = '#7d6108'
 
 export const metadata: Metadata = {
-  title: 'scienium: run a real research lab',
+  title: 'scienium: the world’s first science-fair video game',
   description:
-    'A browser game where student teams pick a real research question, master the methods, run experiments, raid rival labs, and present at the science fair.',
+    'A browser game where student teams pick a real research question, master the methods, run experiments, raid rival labs in the Battle Arena, and present at the science fair.',
   openGraph: {
-    title: 'scienium: run a real research lab',
+    title: 'scienium: the world’s first science-fair video game',
     description:
-      'Turn the science fair into a lab your class runs. Real literature review, in-depth method lessons, experiments, lab battles, and the official ISEF rubric.',
+      'Turn the science fair into a lab your class runs. Real literature review, in-depth method lessons, experiments, Battle Arena raids, and the official ISEF rubric.',
     type: 'website',
   },
 }
@@ -97,15 +97,19 @@ export default async function HomePage() {
       {/* ── Hero: copy + the real lab. Renders instantly (no mount reveal). ── */}
       <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 pb-16 pt-16 md:grid-cols-[1fr_1.05fr] md:gap-14 md:px-10 md:pb-24 md:pt-20">
         <div>
+          <p className="font-display text-sm font-bold sm:text-base" style={{ color: ACCENT_INK }}>
+            The world&apos;s first science-fair video game.
+          </p>
           <h1
-            className="font-display text-[2.5rem] font-bold leading-[1.04] tracking-tight sm:text-5xl md:text-[3.4rem]"
+            className="mt-3 font-display text-[2.5rem] font-bold leading-[1.04] tracking-tight sm:text-5xl md:text-[3.4rem]"
             style={{ textWrap: 'balance' } as React.CSSProperties}
           >
             Run the science fair as a real lab.
           </h1>
           <p className="mt-6 max-w-[48ch] font-display text-lg leading-relaxed text-[#46566b]">
-            scienium is a browser game where student teams pick a real question, master the methods,
-            run experiments, and raid rival labs on the way to the fair.
+            scienium is a browser game where student teams pick a real question, master the
+            methods, and run real experiments — with an async PvP Battle Arena landing soon to
+            raid rival labs on the way to the fair.
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-4">
             <PrimaryCTA href={primaryHref}>{primaryLabel}</PrimaryCTA>
@@ -146,11 +150,12 @@ export default async function HomePage() {
       <section className="mx-auto max-w-4xl px-6 py-24 md:px-10 md:py-32">
         <p className="font-display text-2xl font-semibold leading-snug tracking-tight sm:text-3xl md:text-[2.4rem]">
           The science fair is one of the only times school asks for real research. It almost never
-          teaches students how to do it.
+          teaches students how competitive that research really is.
         </p>
         <p className="mt-6 max-w-[62ch] font-display text-lg leading-relaxed text-[#46566b]">
-          scienium keeps the rigor and supplies what is missing: structure, feedback, and a reason
-          to keep going. You advance by proving you understand, not by clicking.
+          scienium keeps the rigor and adds what is missing: the real judging criteria, and a lab
+          full of rivals chasing the same spot at the fair. You advance by proving you understand,
+          not by clicking.
         </p>
       </section>
 
@@ -241,8 +246,9 @@ export default async function HomePage() {
               <span className="mt-6 block font-pixel" style={{ color: NUM, fontSize: '1.2rem' }}>04</span>
               <h3 className="mt-2 font-display text-xl font-bold tracking-tight sm:text-2xl">Design a study that holds up.</h3>
               <p className="mt-3 max-w-[46ch] font-display text-[16px] leading-relaxed text-[#46566b]">
-                Write your hypothesis, methodology, and study design. Vega reviews it by project type
-                and web searches your idea for novelty before you advance.
+                Pick your ISEF category, then write your hypothesis, methodology, and study design.
+                Vega reviews it by project type and web searches your idea for novelty before you
+                advance.
               </p>
             </div>
             <div data-journey-step={5}>
@@ -271,8 +277,9 @@ export default async function HomePage() {
                 Present like it counts.
               </h3>
               <p className="mt-4 max-w-[48ch] font-display text-[17px] leading-relaxed text-[#46566b]">
-                Score your project against the official ISEF rubric for a judge-readiness score out
-                of 100, then publish a public showcase. Every team ships, win or lose.
+                Score your project against the same five weighted sections real ISEF judges use for
+                a judge-readiness score out of 100, then publish it to a public showcase anyone can
+                see. Every team ships, win or lose.
               </p>
             </div>
             <Reveal>
@@ -295,7 +302,8 @@ export default async function HomePage() {
               </h2>
               <p className="mt-5 max-w-[46ch] font-display text-lg leading-relaxed text-[#b7c2d0]">
                 The work pays out. Every building you upgrade forges spells, and you spend them
-                raiding rival labs head-to-head. Reading papers has never been this competitive.
+                raiding rival labs head-to-head. This mirrors the pressure of real fair day, but
+                playable every night of the week.
               </p>
             </div>
             <Reveal>
