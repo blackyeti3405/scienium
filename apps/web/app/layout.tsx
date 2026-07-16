@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter, Press_Start_2P, Space_Grotesk } from 'next/font/google'
 import { ClerkProvider } from '@clerk/nextjs'
 import './globals.css'
@@ -34,6 +34,12 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     images: ['/marketing/lab.png'],
   },
+}
+
+// Tints the mobile browser chrome (address bar / status bar) to match the
+// marketing paper field instead of the browser's default white/black.
+export const viewport: Viewport = {
+  themeColor: '#f7f7f4',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

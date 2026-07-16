@@ -5,6 +5,14 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.24.5] — 2026-07-16
+
+### Added
+
+- **`theme-color` meta tag** (`viewport.themeColor` in the root layout) — mobile browser
+  chrome (address bar / status bar) now tints to the marketing paper field `#f7f7f4` instead
+  of the platform default white/black. Verified rendering via a production build + curl.
+
 ## [0.24.4] — 2026-07-16
 
 ### Added
