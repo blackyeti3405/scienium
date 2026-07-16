@@ -3088,6 +3088,52 @@
   animation: mkt-lightbox-in 0.2s ease-out;
 }
 
+/* CountUp 3D flip-in — same progressive-enhancement pattern as [data-reveal]
+   above: the folded "from" state applies ONLY once JS is confirmed (html.js),
+   so no-JS/SSR clients see the real stat immediately, never hidden edge-on.
+   One flip of the whole number (not a per-digit odometer — flipping through
+   every intermediate value at 60fps would be chaotic, not tasteful), timed to
+   the count-up starting. */
+.js [data-flip]:not([data-flip='in']) {
+  transform: rotateX(-90deg);
+}
+[data-flip] {
+  display: inline-block;
+  transform-origin: center bottom;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mkt-flip-scene {
+  display: inline-block;
+  perspective: 300px;
+}
+
+/* Accordion +/− indicator — a real 3D coin-flip between two faces (not just a
+   text swap), tied to an actual state change (expanded/collapsed). Same
+   mechanism as the CountUp flip, scaled down. */
+.mkt-accordion-flip-scene {
+  display: inline-block;
+  perspective: 200px;
+}
+.mkt-accordion-flip {
+  position: relative;
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  transform-style: preserve-3d;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mkt-accordion-flip__face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+}
+.mkt-accordion-flip__face--back {
+  transform: rotateX(180deg);
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-reveal],
   [data-reveal='in'] {
@@ -3098,6 +3144,8 @@
   .mkt-float { animation: none !important; }
   .mkt-accordion-panel { transition: none !important; }
   .mkt-flip-in { animation: none !important; }
+  [data-flip] { transform: none !important; transition: none !important; }
+  .mkt-accordion-flip { transition: none !important; }
   .mkt-carousel-item { transition: none !important; }
   .mkt-lightbox { animation: none !important; }
 }

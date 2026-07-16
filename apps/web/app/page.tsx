@@ -240,7 +240,7 @@ export default async function HomePage() {
                 src="/marketing/codex-lesson.png"
                 title="Field Codex · /daily/codex"
                 alt="A real Field Codex lesson, Sound as a Longitudinal Pressure Wave, showing several sections of explanatory physics prose and a gold Worked Example block."
-                ratio="16 / 11"
+                ratio="16 / 10"
               />
             </Reveal>
           </div>
@@ -259,7 +259,7 @@ export default async function HomePage() {
               </p>
             </div>
             <Reveal>
-              <Shot src="/marketing/research-plan.png" title="Research Plan · /research-plan" alt="The Research Plan screen: project-type selector (Engineering or Science) with category cards, a connected Google-Doc plan source, and Review my plan and originality-check actions." ratio="16 / 11" />
+              <Shot src="/marketing/research-plan.png" title="Research Plan · /research-plan" alt="The Research Plan screen: project-type selector (Engineering or Science) with category cards, a connected Google-Doc plan source, and Review my plan and originality-check actions." ratio="16 / 10" />
             </Reveal>
           </div>
 

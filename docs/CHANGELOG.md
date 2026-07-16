@@ -5,6 +5,27 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.24.1] — 2026-07-16
+
+### Fixed
+
+- **Image whitespace** — `codex-lesson.png` and `research-plan.png` were declared `ratio="16 / 11"`
+  in `Shot`, but every real screenshot (checked all 6) is actually captured at 3200×2000 (16:10).
+  The mismatch caused visible letterboxing on mobile (`object-contain`) and slight cropping on
+  desktop (`object-cover`). Corrected both to `ratio="16 / 10"` to match their true dimensions.
+
+### Added
+
+- **CountUp 3D flip-in** — the two real stat numbers (832 lessons, 70 terms) now do a single 3D
+  flip (like a flap dropping into place) right as the count-up starts, instead of just appearing.
+  Not a per-digit odometer simulating every intermediate value (chaotic at 60fps) — one flip of
+  the whole number. Uses the same progressive-enhancement pattern as `Reveal`'s `[data-reveal]`:
+  the folded state only applies once JS is confirmed, so no-JS/SSR clients see the real number
+  immediately.
+- **Accordion 3D flip indicator** — the FAQ/Category List `+`/`−` toggle is now a real 3D coin-flip
+  between two faces instead of an instant text swap, tied to the actual expand/collapse state
+  change. Both new effects respect `prefers-reduced-motion`.
+
 ## [0.24.0] — 2026-07-16
 
 A UX/UI optimization pass across `/` and `/about`: two new 3D touches, several concrete fixes

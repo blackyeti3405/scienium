@@ -38,12 +38,18 @@ export function Accordion({ items, className = '' }: { items: AccordionItem[]; c
               className={`flex w-full items-center justify-between gap-4 py-4 text-left transition-colors hover:text-[#0d1b2e] ${FOCUS}`}
             >
               {item.trigger}
-              <span
-                aria-hidden
-                className="font-pixel shrink-0"
-                style={{ fontSize: '0.7rem', color: isOpen ? '#F5C518' : '#c9c8bd' }}
-              >
-                {isOpen ? '−' : '+'}
+              <span aria-hidden className="mkt-accordion-flip-scene shrink-0">
+                <span
+                  className="mkt-accordion-flip"
+                  style={{ transform: isOpen ? 'rotateX(180deg)' : 'rotateX(0deg)' }}
+                >
+                  <span className="mkt-accordion-flip__face font-pixel" style={{ fontSize: '0.7rem', color: '#c9c8bd' }}>
+                    +
+                  </span>
+                  <span className="mkt-accordion-flip__face mkt-accordion-flip__face--back font-pixel" style={{ fontSize: '0.7rem', color: '#F5C518' }}>
+                    −
+                  </span>
+                </span>
               </span>
             </button>
             <div
