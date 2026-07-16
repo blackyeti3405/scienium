@@ -101,8 +101,8 @@ export default async function HomePage() {
           </h1>
           <p className="mt-6 max-w-[48ch] font-display text-lg leading-relaxed text-[#46566b]">
             scienium is a browser game where student teams pick a real question, master the
-            methods, and run real experiments. Then they raid rival labs in the Battle Arena on
-            the way to the fair.
+            methods, and run real experiments — with an async PvP Battle Arena landing soon to
+            raid rival labs on the way to the fair.
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-4">
             <PrimaryCTA href={primaryHref}>{primaryLabel}</PrimaryCTA>

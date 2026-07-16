@@ -142,8 +142,8 @@ export default async function AboutPage() {
             scienium keeps the rigor of real research and supplies what is usually missing:
             structure, continuous feedback, and a reason to keep going. Progress requires
             demonstrated understanding, and every team publishes a public showcase at the end. One
-            video game walks a team from a question all the way to the fair, judging rigor and
-            rival labs included.
+            video game walks a team from a question all the way to the fair, judging rigor
+            included — with an async PvP layer landing soon.
           </p>
           <div className="mt-9">
             <Link
