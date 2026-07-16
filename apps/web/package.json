@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "codex:build": "node lib/ops/codex/scripts/build-codex-tracks.mjs",
+    "codex:merge": "node lib/ops/codex/scripts/merge-codex-segments.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:file": "node scripts/test-e2e-file.mjs",

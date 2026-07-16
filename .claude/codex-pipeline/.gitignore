@@ -1,0 +1,5 @@
+# Transient run artifacts. `drafts/` holds in-flight lesson JSON that codex:merge
+# consumes and deletes; `plans/` names those draft paths, so it is dangling the
+# moment the merge succeeds. The durable record of a run is reviews/<field>.md.
+drafts/
+plans/

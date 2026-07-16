@@ -5,6 +5,64 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.25.0] — 2026-07-16
+
+The Field Codex authoring pipeline rebuilt around **one invocation = one whole field**, plus two
+complete fields authored with it — **Computer Science / Algorithms** and **Data Science / ML
+Metrics** (550 lessons). The library is now **8 / 29 fields · 48 / 174 segments · 2,190 lessons**.
+
+### Added — Field Codex content
+- **`computer-science-algorithms` is a complete field (6/6 segments, 275 lessons)** — Core (8 units /
+  50 lessons) plus sorting-searching-selection, graph-algorithms, data-structures-design,
+  complexity-computability, and randomized-heuristic-algorithms (7 units / 45 lessons each). Authored
+  in a single run; every unit cleared the adversarial fact-check gate with **zero open HIGH findings**
+  (16 Opus escalations). Joins CMP as a built field for the **axiom** lab type.
+- **`data-science-ml-metrics` is a complete field (6/6 segments, 275 lessons)** — Core (8 / 50) plus
+  classification-eval, regression-forecasting-eval, unsupervised-clustering-eval,
+  model-interpretability, and fairness-robustness (7 / 45 each). Zero open HIGH findings (5 Opus
+  escalations). Contested material is taught as a controversy rather than a verdict — COMPAS is split
+  into ProPublica's case and Northpointe's rebuttal, with the Kleinberg-Mullainathan-Raghavan and
+  Chouldechova impossibility results that explain why both sides can be right.
+
+### Added — authoring tooling
+- **`pnpm --filter web codex:merge`** (`lib/ops/codex/scripts/merge-codex-segments.mjs`) — assembles
+  JSON lesson drafts into `content/<field>.json` and validates every draft against the real
+  `CodexTrack` shape *and* the content-shape invariants (mis-keyed MC answers, incomplete explanation
+  maps, non-permutation `correctOrder`, uncovered `correctPairs`, checkpoint count, slug-safety, id
+  collisions against every shipped field). Writes nothing if any draft fails, naming the exact file and
+  lesson. Replaces an LLM subagent that hand-merged the multi-MB content JSON.
+
+### Changed — Field Codex registries are generated, not hand-maintained
+- `CODEX_TRACKS` + `LOADERS` (`index.ts`) and the `ALL_TRACK_MODULES` / `WRAPPERS` module maps in both
+  codex test files are now **regenerated from `content/*.json` by `codex:merge`**. Adding a field is
+  `/codex-pipeline <slug>` and nothing else — the "a new track means three registries" footgun (which
+  failed gates with `expected N to be N−1`) is gone by construction. `LABTYPE_FIELDS` stays
+  hand-maintained: it is an editorial routing choice, not derivable from content.
+
+### Changed — `/codex-pipeline` rebuilt
+- **One invocation authors a whole FIELD** (Core + 5 subfields) instead of one segment. Segment briefs
+  moved into the workflow, so the orchestrator's context no longer grows per segment — the reason
+  multi-segment runs previously cost more while producing less.
+- The fact-check loop **exits on HIGH only** (MED/LOW corrections still applied once, but no longer
+  earn another round); re-checks are **scoped to the files the fixer touched**; WebSearch is
+  **budgeted** (4 on the first pass, 2 on a re-check).
+- Authors write **one JSON file per lesson** (~10KB) rather than one ~65KB file per unit.
+- Measured across the two runs: **19.6M → 14.8M tokens** per field; the check phase fell from **53% →
+  24%** of a field's tokens (checker turns 30.4 → 18.4, searches 8.1 → 2.8).
+
+### Fixed
+- **Whole-unit writes dropped connections** — emitting a ~65KB `Write` in a single response killed ~19%
+  of author agents (`API Error: Connection closed mid-response`), losing the unit. Per-lesson writes
+  with deterministic paths plus a single retry: **zero author deaths across 43 units** on the next run,
+  and a lesson lost to a drop is now a named merge error rather than a silently short unit.
+- **`slugify` trimmed separators before truncating** — a 60-character cut landing on a hyphen left a
+  trailing `-` that failed slug-safety (3 of 275 lesson ids). Truncate first, then trim.
+
+### Removed
+- `.claude/codex-pipeline/author-segment.workflow.mjs` — superseded by `author-field.workflow.mjs`.
+
+---
+
 ## [0.24.0] — 2026-07-15
 
 Two feature waves — a **Discovery source expansion** (follow real citations, read expert

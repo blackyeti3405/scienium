@@ -18,10 +18,20 @@ keeps each `tracks/*.ts` ~10 lines and the content reviewable as data.
 ## 1. The exact `CodexTrack` shape (from `apps/web/lib/ops/codex/types.ts`)
 
 The shape below is shown as JSON — the exact format of `content/<slug>.json`.
-(It is fine to DRAFT a unit as a commented TS `export default unit` literal in
-`WORK/drafts/` while authoring; the splice step serializes the assembled track
-to JSON. JSON itself has **no comments, no trailing commas**, double-quoted keys,
-and `true`/`false`/`null` — the `//` notes here are guidance, not literal.)
+JSON has **no comments, no trailing commas**, double-quoted keys, and
+`true`/`false`/`null` — the `//` notes here are guidance, not literal.
+
+Authoring agents write ONE `Lesson` object per file (the `lessons[]` entry shape
+below) as **strict JSON** to
+`.claude/codex-pipeline/drafts/<field>-<segment>-<unit>/NN-<slug>.json`, and
+`pnpm --filter web codex:merge` parses those drafts to assemble each unit (taking
+the unit's `id`/`label` from the run's plan). One file per LESSON, not per unit:
+a whole-unit write is ~65KB in a single tool call and reliably drops the
+connection mid-response, losing the unit. Do not draft a unit as a TS literal or
+as prose-to-be-converted either: a script reads these files, and both habits
+historically dropped checkpoint answer keys — the TS variant also let a prose
+apostrophe (`Sony's`) silently terminate a single-quoted string and corrupt the
+file. Double-quoted JSON has neither failure mode.
 
 ```jsonc
 {
@@ -128,29 +138,26 @@ every paired right id must be a real right-side id:
 }
 ```
 
-## 3. Build the wrapper, then register in `index.ts`
+## 3. Merge, which builds the wrapper and registers the track
 
-After writing/updating `content/<slug>.json`, generate its wrapper module and
-checksum:
+`pnpm --filter web codex:merge -- --plan .claude/codex-pipeline/plans/<slug>.json`
+does everything downstream of the drafts: it validates them, writes
+`content/<slug>.json`, regenerates the registries, and calls `codex:build` for
+the wrapper + checksum.
 
-```
-pnpm --filter web codex:build      # writes tracks/<slug>.ts + content/.checksums.json
-```
+**The registries are generated — never hand-edit them.** `CODEX_TRACKS` (with
+exact `branchCount`/`lessonCount`) and `LOADERS` in `index.ts`, plus the
+`ALL_TRACK_MODULES` and `WRAPPERS` module maps in the two test files, are all
+derived from `content/*.json` on every merge. This is why "a new track means
+THREE registries" is no longer a footgun you can trip: there is nothing to
+forget, and drift is impossible by construction.
 
-Then register the track in `index.ts` (hand-maintained — the build cross-checks
-that every content file has both entries and fails loudly if one is missing):
+`LABTYPE_FIELDS` is the one registry that stays hand-maintained (it's an
+editorial routing decision, not derivable from content) — update it only if the
+new field is a lab-type default.
 
-```ts
-// In CODEX_TRACKS — keep branchCount/lessonCount EXACTLY accurate; the
-// content-shape test asserts these against the real module.
-{ slug: 'my-new-track', label: 'My New Track', home: false, branchCount: 0, lessonCount: 12 },
-
-// In LOADERS — a literal import() call, never a computed path (Next/webpack
-// must statically discover it to code-split).
-'my-new-track': () => import('./tracks/my-new-track'),
-```
-
-If the new track is a default for a lab type, also update `LABTYPE_FIELDS`.
+If you are editing content outside the pipeline, `pnpm --filter web codex:build`
+alone regenerates the wrapper + checksums for an already-registered track.
 
 ## 4. Validate before calling it done
 

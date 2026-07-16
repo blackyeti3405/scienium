@@ -10,7 +10,7 @@
 > Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
 > Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
 
-**Progress: 6 / 29 fields · 36 / 174 segments.**
+**Progress: 8 / 29 fields · 48 / 174 segments.**
 
 ---
 
@@ -64,25 +64,25 @@
 - [x] neuropsychopharmacology
 - [x] toxicology-adverse-effects
 
-## computer-science-algorithms ⬜
+## computer-science-algorithms ✅
 *Computer Science / Algorithms*
 
-- [ ] Core
-- [ ] complexity-computability
-- [ ] data-structures-design
-- [ ] graph-algorithms
-- [ ] randomized-heuristic-algorithms
-- [ ] sorting-searching-selection
+- [x] Core
+- [x] complexity-computability
+- [x] data-structures-design
+- [x] graph-algorithms
+- [x] randomized-heuristic-algorithms
+- [x] sorting-searching-selection
 
-## data-science-ml-metrics ⬜
+## data-science-ml-metrics ✅
 *Data Science / ML Metrics*
 
-- [ ] Core
-- [ ] classification-eval
-- [ ] fairness-robustness
-- [ ] model-interpretability
-- [ ] regression-forecasting-eval
-- [ ] unsupervised-clustering-eval
+- [x] Core
+- [x] classification-eval
+- [x] fairness-robustness
+- [x] model-interpretability
+- [x] regression-forecasting-eval
+- [x] unsupervised-clustering-eval
 
 ## ecology ⬜
 *Ecology*

@@ -39,41 +39,22 @@ export interface CodexTrackSummary {
 }
 
 /**
- * Summary metadata for every shipped track — kept in sync with the real
- * modules by `__tests__/content-shape.test.ts` (which loads every module and
- * asserts these counts match exactly). This cycle ships only the flagship
- * field, `gait-biomechanics` (full depth: an 8-unit / 48-lesson deep-authored
- * Core plus the 5 canonical TAXONOMY.md subfield branches — the complete,
- * exhaustive set of gait-biomechanics' subfields — each now deep-authored
- * (clinical-pathological-gait 7 units/42 lessons, prosthetics-orthotics-gait
- * 8 units/49 lessons, footwear-surface-biomechanics 7 units/45 lessons,
- * balance-stability-fall-risk 7 units/42 lessons, wearable-gait-sensing 8
- * units/48 lessons) — 274 lessons total; see
- * `.claude/pipeline/changes-gait-deepen.md` for the branch re-author that
- * replaced the original 5 shallow subfield branches, and the final append to
- * that same log for the removal of the off-taxonomy legacy Sports
- * Biomechanics branch (salvaged to
- * `.claude/codex-pipeline/salvage/sports-biomechanics-legacy.ts`)); plus the
- * now also fully-branched `acoustics-sound` (8-unit / 48-lesson deep-authored
- * Core plus all 5 canonical TAXONOMY.md subfield branches —
- * architectural-room-acoustics 8 units/47 lessons,
- * musical-acoustics-instruments 8 units/48 lessons,
- * noise-control-soundproofing 8 units/48 lessons, psychoacoustics-hearing 8
- * units/48 lessons, ultrasound-vibration 8 units/48 lessons — 287 lessons
- * total; see `.claude/pipeline/changes-acoustics-core.md` for Core and
- * `.claude/pipeline/changes-acoustics-subfields.md` for the branch splice);
- * plus the now also fully-branched `astronomy-astrophysics` (8-unit /
- * 48-lesson deep-authored Core — the sky and its objects, light as data,
- * telescopes, photometry, diagnostic plots, distance/inference, landmark
- * work and open debates, and applications — plus all 5 canonical
- * TAXONOMY.md subfield branches: cosmology 7 units/42 lessons, exoplanets 7
- * units/42 lessons, galactic-extragalactic 8 units/49 lessons,
- * observational-methods-timedomain 8 units/45 lessons, stellar-astrophysics
- * 8 units/45 lessons — 271 lessons total; see
- * `.claude/pipeline/changes-astronomy-core.md` for Core and
- * `.claude/pipeline/changes-astronomy-subfields.md` for the branch splice).
- * The remaining 27 fields in TAXONOMY.md are authored later via
- * `.claude/codex-pipeline/` the same way — append here + to LOADERS below.
+ * Summary metadata for every shipped track.
+ *
+ * GENERATED — do not hand-edit this array or the LOADERS map below. Both are
+ * regenerated wholesale from `./content/*.json` by
+ * `pnpm --filter web codex:merge` (`./scripts/merge-codex-segments.mjs`), which
+ * is how `/codex-pipeline` ships a field. `label`, `home`, and `labType` are read
+ * from each content file; `branchCount`/`lessonCount` are counted from the real
+ * data, so they cannot drift from it (`__tests__/content-shape.test.ts` asserts
+ * that independently, and `codex:build --check` fails on any registry drift).
+ *
+ * To add a field, run `/codex-pipeline <field-slug>` — never by editing this
+ * file. The remaining fields in `.claude/codex-pipeline/TAXONOMY.md` are authored
+ * the same way; `STATUS.md` there tracks what's built.
+ *
+ * `LABTYPE_FIELDS` further down is the exception: it is an editorial routing
+ * decision, not derivable from content, and stays hand-maintained.
  */
 export const CODEX_TRACKS: CodexTrackSummary[] = [
   { slug: 'acoustics-sound', label: 'Acoustics / Sound', home: false, branchCount: 5, lessonCount: 287 },
@@ -81,16 +62,19 @@ export const CODEX_TRACKS: CodexTrackSummary[] = [
   { slug: 'chemistry', label: 'Chemistry', home: false, branchCount: 5, lessonCount: 258 },
   { slug: 'classical-mechanics-physics', label: 'Classical Mechanics / Physics', home: false, branchCount: 5, lessonCount: 275 },
   { slug: 'clinical-medicine-pharmacology', label: 'Clinical Medicine / Pharmacology', home: false, branchCount: 5, lessonCount: 275 },
+  { slug: 'computer-science-algorithms', label: 'Computer Science / Algorithms', home: false, branchCount: 5, lessonCount: 275 },
+  { slug: 'data-science-ml-metrics', label: 'Data Science / ML Metrics', home: false, branchCount: 5, lessonCount: 275 },
   { slug: 'gait-biomechanics', label: 'Gait Biomechanics', home: false, branchCount: 5, lessonCount: 274 },
 ]
 
 type CodexTrackSlug = (typeof CODEX_TRACKS)[number]['slug']
 
 /**
- * Static per-track dynamic-import map. Each entry is a literal `import()`
- * call so Next/webpack can statically discover and code-split every track
- * module at build time — do not replace with a computed template-string
- * import (not statically analyzable).
+ * Static per-track dynamic-import map. GENERATED alongside CODEX_TRACKS above —
+ * see that comment. Each entry is a literal `import()` call so Next/webpack can
+ * statically discover and code-split every track module at build time; the
+ * generator emits literals for exactly this reason, and a computed
+ * template-string import (not statically analyzable) would break code-splitting.
  */
 const LOADERS: Record<CodexTrackSlug, () => Promise<{ default: CodexTrack }>> = {
   'acoustics-sound': () => import('./tracks/acoustics-sound'),
@@ -98,6 +82,8 @@ const LOADERS: Record<CodexTrackSlug, () => Promise<{ default: CodexTrack }>> = 
   'chemistry': () => import('./tracks/chemistry'),
   'classical-mechanics-physics': () => import('./tracks/classical-mechanics-physics'),
   'clinical-medicine-pharmacology': () => import('./tracks/clinical-medicine-pharmacology'),
+  'computer-science-algorithms': () => import('./tracks/computer-science-algorithms'),
+  'data-science-ml-metrics': () => import('./tracks/data-science-ml-metrics'),
   'gait-biomechanics': () => import('./tracks/gait-biomechanics'),
 }
 

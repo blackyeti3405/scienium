@@ -17,11 +17,16 @@ import { createHash } from 'node:crypto'
 import { TrackSchema } from './track-schema'
 import type { CodexTrack } from '../types'
 
+// GENERATED — the import run below and WRAPPERS are regenerated from
+// ../content/*.json by `pnpm --filter web codex:merge`. Don't hand-edit them;
+// `/codex-pipeline` keeps them in step with the shipped fields.
 import acousticsSound from '../tracks/acoustics-sound'
 import astronomyAstrophysics from '../tracks/astronomy-astrophysics'
 import chemistry from '../tracks/chemistry'
 import classicalMechanicsPhysics from '../tracks/classical-mechanics-physics'
 import clinicalMedicinePharmacology from '../tracks/clinical-medicine-pharmacology'
+import computerScienceAlgorithms from '../tracks/computer-science-algorithms'
+import dataScienceMlMetrics from '../tracks/data-science-ml-metrics'
 import gaitBiomechanics from '../tracks/gait-biomechanics'
 
 const WRAPPERS: Record<string, CodexTrack> = {
@@ -30,6 +35,8 @@ const WRAPPERS: Record<string, CodexTrack> = {
   'chemistry': chemistry,
   'classical-mechanics-physics': classicalMechanicsPhysics,
   'clinical-medicine-pharmacology': clinicalMedicinePharmacology,
+  'computer-science-algorithms': computerScienceAlgorithms,
+  'data-science-ml-metrics': dataScienceMlMetrics,
   'gait-biomechanics': gaitBiomechanics,
 }
 
