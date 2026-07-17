@@ -127,9 +127,9 @@ export default async function HomePage() {
 
       {/* ── Hero: real lab shot as an atmospheric backdrop, fading into the paper field. ── */}
       <section className="relative flex min-h-[86vh] items-end overflow-hidden">
-        <HeroParallaxBg src="/marketing/lab.png" />
+        <HeroParallaxBg src="/marketing/lab-hero-crop.png" />
         <div className="relative z-[2] mx-auto w-full max-w-6xl px-6 pb-16 md:px-10">
-          <div className="max-w-[40ch]">
+          <div className="max-w-[640px]">
             <p className="font-display text-base font-bold" style={{ color: ACCENT_INK }}>
               The world&apos;s first science-fair video game.
             </p>

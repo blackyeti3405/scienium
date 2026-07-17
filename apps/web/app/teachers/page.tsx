@@ -147,16 +147,14 @@ export default async function TeachersPage() {
         </div>
       </section>
 
-      {/* ── A typical class period (sticky heading over the numbered list) ── */}
+      {/* ── A typical class period ───────────────────────────────────────── */}
       <section className="border-t border-[#e6e5dd]">
         <div className="mx-auto max-w-3xl px-6 py-20 md:px-10 md:py-24">
-          <div className="sticky top-20 z-[5] bg-[#f7f7f4] pb-6 pt-1">
-            <Eyebrow>A TYPICAL CLASS PERIOD</Eyebrow>
-            <h2 className="mt-5 font-display text-3xl font-bold tracking-tight sm:text-4xl">
-              Five things, ten minutes.
-            </h2>
-          </div>
-          <ol className="mt-4 space-y-10">
+          <Eyebrow>A TYPICAL CLASS PERIOD</Eyebrow>
+          <h2 className="mt-5 font-display text-3xl font-bold tracking-tight sm:text-4xl">
+            Five things, ten minutes.
+          </h2>
+          <ol className="mt-12 space-y-10">
             {CLASS_STEPS.map((s) => (
               <li key={s.n} className="flex gap-6">
                 <span className="font-pixel shrink-0 text-[#63614f]" style={{ fontSize: '1.4rem' }}>{s.n}</span>

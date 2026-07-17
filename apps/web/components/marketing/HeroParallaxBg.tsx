@@ -3,11 +3,13 @@
 import { useEffect, useRef } from 'react'
 
 /**
- * Atmospheric hero backdrop: the real /lab screenshot, faded into the paper
- * field on the left (where the hero copy sits) and legible on the right, with
- * a subtle scroll-linked parallax drift. Purely decorative at this size and
- * fade level — the hero paragraph already describes the product in full, so
- * this stays aria-hidden rather than duplicating that description.
+ * Atmospheric hero backdrop: a real screenshot (public/marketing/lab-hero-crop.png,
+ * a straight crop of the real lab.png tight around the building cluster — not a
+ * fabricated image) faded into the paper field on the left, where the hero copy
+ * sits, and legible on the right, with a subtle scroll-linked parallax drift.
+ * Purely decorative at this size and fade level — the hero paragraph already
+ * describes the product in full, so this stays aria-hidden rather than
+ * duplicating that description.
  */
 export function HeroParallaxBg({ src }: { src: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -38,7 +40,7 @@ export function HeroParallaxBg({ src }: { src: string }) {
         src={src}
         alt=""
         className="h-full w-full object-cover"
-        style={{ objectPosition: '75% 30%' }}
+        style={{ objectPosition: 'center 42%' }}
       />
       <div
         className="absolute inset-0"

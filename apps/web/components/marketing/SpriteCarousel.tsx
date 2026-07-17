@@ -60,26 +60,45 @@ export function SpriteCarousel() {
   const [position, setPosition] = useState(0)
   const [dragging, setDragging] = useState(false)
   const [tiers, setTiers] = useState<number[]>(() => ITEMS.map(() => 0))
-  const drag = useRef<{ startX: number; startPosition: number } | null>(null)
+  const drag = useRef<{ startX: number; startPosition: number; moved: boolean; buildingIndex: number | null } | null>(
+    null,
+  )
 
   function cycleTier(i: number) {
     setTiers((prev) => prev.map((tier, j) => (j === i ? (tier + 1) % TIER_SUFFIXES.length : tier)))
   }
 
+  // setPointerCapture below is on the track (for whole-carousel dragging), which
+  // redirects pointerup/click resolution away from whatever was actually under
+  // the pointer — a native onClick on a building button never fires. So a tap
+  // vs. drag is disambiguated here instead: pointerdown records which building
+  // (if any) was pressed, pointermove flags real movement, and pointerup only
+  // cycles that building's tier if the pointer never actually dragged.
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    drag.current = { startX: e.clientX, startPosition: position }
+    const pressedBuilding = (e.target as HTMLElement).closest<HTMLElement>('[data-building-index]')
+    drag.current = {
+      startX: e.clientX,
+      startPosition: position,
+      moved: false,
+      buildingIndex: pressedBuilding ? Number(pressedBuilding.dataset.buildingIndex) : null,
+    }
     setDragging(true)
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (!drag.current) return
     const dx = e.clientX - drag.current.startX
+    if (Math.abs(dx) > 4) drag.current.moved = true
     setPosition(drag.current.startPosition - dx / DRAG_PX_PER_STEP)
   }
   function endDrag() {
+    const d = drag.current
     drag.current = null
     setDragging(false)
     setPosition((p) => Math.round(p))
+    if (d && !d.moved && d.buildingIndex !== null) {
+      cycleTier(d.buildingIndex)
+    }
   }
   function step(dir: 1 | -1) {
     setPosition((p) => Math.round(p) + dir)
@@ -111,6 +130,7 @@ export function SpriteCarousel() {
               >
                 <button
                   type="button"
+                  data-building-index={i}
                   onClick={() => cycleTier(i)}
                   aria-label={`${it.label}, ${TIER_LABELS[tier]}. Click to see the next upgrade.`}
                   className="flex flex-col items-center bg-transparent p-0 transition-transform active:scale-95"

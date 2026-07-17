@@ -5,6 +5,32 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.26.1] — 2026-07-17
+
+Fixes for issues Isaac caught after reviewing 0.26.0 in his own browser.
+
+### Fixed
+
+- **Carousel upgrade clicks did nothing** — root cause: the whole-carousel drag calls
+  `setPointerCapture` on the track element, which redirects `pointerup`/click resolution away
+  from whatever was actually under the pointer, so a plain `onClick` on a building button never
+  fired. The sprite files themselves were fine (verified: all 30 tier files hash-distinct, no
+  duplicates). Fixed by disambiguating tap-vs-drag manually inside the same pointer handlers
+  (record which building was pressed on `pointerdown`, flag real movement on `pointermove`, only
+  cycle the tier on `pointerup` if the pointer never actually dragged) instead of relying on a
+  native click that pointer capture was swallowing.
+- **Sticky section headings caused a visible gap + flicker** on `/pvp`'s raid-flow list and
+  `/teachers`' walkthrough — reverted both to the same static eyebrow+heading pattern used
+  everywhere else on the site rather than risk further blind tuning of a `position: sticky`
+  interaction neither of us could visually iterate on live.
+- **Hero background was mostly empty grass** — the crop was positioned into a sparse region of
+  the 3200×2000 screenshot. Replaced with `public/marketing/lab-hero-crop.png`, a new asset that
+  is a straight crop of the real `lab.png` (not fabricated) tight around the actual building
+  cluster, so the backdrop reads as buildings, not texture.
+- **Hero heading wrapped into 4 cramped lines** — the wrapping column was capped at `40ch`,
+  which resolves against the container's base font size (not the much larger heading font),
+  making it far narrower than intended. Widened to a fixed `640px`.
+
 ## [0.26.0] — 2026-07-17
 
 Selective import from a Claude Design mockup Isaac generated: the parts he called out as
