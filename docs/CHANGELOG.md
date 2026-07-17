@@ -5,6 +5,50 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.26.0] — 2026-07-17
+
+Selective import from a Claude Design mockup Isaac generated: the parts he called out as
+liked (hero scale, PvP button behavior) got adopted; the rest (Journey layout) was
+deliberately left untouched per his direction.
+
+### Added
+
+- **Hero rebuilt as an atmospheric backdrop** — the real `/lab` screenshot now fills the hero
+  as a parallax, fading background (scroll-linked drift, capped at 800px scroll) instead of a
+  framed screenshot card, with a much larger heading (`clamp(2.6rem, 7vw, 5rem)`, up from
+  `2.5rem–3.4rem`). New `HeroParallaxBg` client component. No new image asset — reuses the
+  existing `lab.png` with `object-position` to crop it, faded into the paper field with a
+  single-hue alpha overlay (not a decorative color gradient).
+- **`TiltCard`** — extracted the cursor-tilt technique already used on screenshots into a
+  standalone component. Applied to the three PvP type cards on both the homepage and `/pvp`.
+- **Carousel building-upgrade cycling** — clicking a building in the homepage lab-building
+  carousel now cycles through its real upgrade-tier sprites (base → `_t2` → `_t3` → `_t4` →
+  `_t5`, wrapping back to base), with a level-band label (`Lv 1–3` through `Lv 15 · Max`)
+  matching the real tier thresholds in `lib/sprites/manifest.ts`. Drag/prev/next carousel
+  navigation is unchanged.
+- **Dedicated `/teachers` page** — a deep-dive on the teacher dashboard grounded in
+  `docs/SPEC.md` §15: the attention-first Class Roster, the Validations queue (phase-advance
+  approval), the teacher Rubric tab (side-by-side scoring vs. student self-check, never
+  overwriting either), Nudge, and Class Reports/Showcase moderation, plus a numbered "a
+  typical class period" walkthrough. Every feature named is implemented, not aspirational.
+  Registered in `middleware.ts` (exact-match public route), `robots.ts`, and `sitemap.ts`, and
+  linked from the homepage's "For teachers" section via "See how teachers use it".
+- **Sticky section headings** on `/teachers`' numbered walkthrough and `/pvp`'s raid-flow list —
+  the section heading now stays visible while scrolling through the step list, instead of
+  scrolling away above the fold.
+
+### Changed
+
+- **Stat numbers downsized** (832 / 70): `1.6rem`, down from `2rem`.
+
+### Notes
+
+- The homepage's "The Journey" section was deliberately left unchanged — Isaac was explicit
+  that the current layout should stay as-is even though the Claude Design mockup redesigned it.
+- "See how PvP works" keeps linking to the real `/pvp` page (not the Claude Design mockup's
+  inline expand/collapse toggle, which also used a `border-left` accent — an explicit
+  DESIGN.md/impeccable anti-pattern).
+
 ## [0.25.0] — 2026-07-17
 
 PvP goes from a one-line mention to a fully featured pillar, plus a round of content/structure

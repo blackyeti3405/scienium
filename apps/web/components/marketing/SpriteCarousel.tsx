@@ -16,6 +16,13 @@ const N = ITEMS.length
 const VISIBLE_CUTOFF = 2.6 // hides exactly the one item directly opposite center (N is even)
 const DRAG_PX_PER_STEP = 90
 
+// Real upgrade tiers (lib/sprites/manifest.ts buildingStageSuffix): every
+// building PNG has base + _t2/_t3/_t4/_t5 art, one per level band. Clicking a
+// building steps through its own real sprite files; past the max it wraps
+// back to base.
+const TIER_SUFFIXES = ['', '_t2', '_t3', '_t4', '_t5']
+const TIER_LABELS = ['Lv 1–3', 'Lv 4–6', 'Lv 7–9', 'Lv 10–14', 'Lv 15 · Max']
+
 /** Shortest signed circular distance from `position` to slot `i`, in item-units. */
 function wrappedDelta(i: number, position: number) {
   let d = i - position
@@ -52,7 +59,12 @@ function cardStyle(delta: number): React.CSSProperties {
 export function SpriteCarousel() {
   const [position, setPosition] = useState(0)
   const [dragging, setDragging] = useState(false)
+  const [tiers, setTiers] = useState<number[]>(() => ITEMS.map(() => 0))
   const drag = useRef<{ startX: number; startPosition: number } | null>(null)
+
+  function cycleTier(i: number) {
+    setTiers((prev) => prev.map((tier, j) => (j === i ? (tier + 1) % TIER_SUFFIXES.length : tier)))
+  }
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     drag.current = { startX: e.clientX, startPosition: position }
@@ -85,33 +97,47 @@ export function SpriteCarousel() {
           onPointerUp={endDrag}
           onPointerLeave={endDrag}
           role="group"
-          aria-label={`Lab building carousel, showing ${activeLabel} — drag or use the buttons below to look around`}
+          aria-label={`Lab building carousel, showing ${activeLabel} — drag or use the buttons below to look around, or click a building to see its upgrades`}
         >
           {ITEMS.map((it, i) => {
             const delta = wrappedDelta(i, position)
             if (Math.abs(delta) > VISIBLE_CUTOFF) return null
+            const tier = tiers[i]
             return (
               <div
                 key={it.sprite}
                 className="mkt-carousel-item"
                 style={{ ...cardStyle(delta), transitionProperty: dragging ? 'none' : undefined }}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`/sprites/buildings/${it.sprite}.png`}
-                  alt={it.label}
-                  width={96}
-                  height={96}
-                  draggable={false}
-                  className="mkt-pixel pointer-events-none"
-                  style={{ width: 'clamp(56px, 16vw, 96px)', height: 'clamp(56px, 16vw, 96px)' }}
-                />
-                <span
-                  className="font-pixel mt-2 inline-block bg-[#f7f7f4] px-1.5 py-0.5 text-[#0d1b2e]"
-                  style={{ fontSize: '0.55rem', borderRadius: 3 }}
+                <button
+                  type="button"
+                  onClick={() => cycleTier(i)}
+                  aria-label={`${it.label}, ${TIER_LABELS[tier]}. Click to see the next upgrade.`}
+                  className="flex flex-col items-center bg-transparent p-0 transition-transform active:scale-95"
                 >
-                  {it.label}
-                </span>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/sprites/buildings/${it.sprite}${TIER_SUFFIXES[tier]}.png`}
+                    alt={it.label}
+                    width={96}
+                    height={96}
+                    draggable={false}
+                    className="mkt-pixel pointer-events-none"
+                    style={{ width: 'clamp(56px, 16vw, 96px)', height: 'clamp(56px, 16vw, 96px)' }}
+                  />
+                  <span
+                    className="font-pixel mt-2 inline-block bg-[#f7f7f4] px-1.5 py-0.5 text-[#0d1b2e]"
+                    style={{ fontSize: '0.55rem', borderRadius: 3 }}
+                  >
+                    {it.label}
+                  </span>
+                  <span
+                    className="font-pixel mt-1 inline-block text-[#7d6108]"
+                    style={{ fontSize: '0.5rem' }}
+                  >
+                    {TIER_LABELS[tier]}
+                  </span>
+                </button>
               </div>
             )
           })}

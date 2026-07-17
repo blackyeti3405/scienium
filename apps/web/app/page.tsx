@@ -6,6 +6,8 @@ import { LaunchPreloader } from '@/components/LaunchPreloader'
 import { Reveal } from '@/components/marketing/Reveal'
 import { CountUp } from '@/components/marketing/CountUp'
 import { Shot, ShotPlaceholder } from '@/components/marketing/Shot'
+import { HeroParallaxBg } from '@/components/marketing/HeroParallaxBg'
+import { TiltCard } from '@/components/marketing/TiltCard'
 import { MarketingNav, MarketingFooter } from '@/components/marketing/MarketingChrome'
 import { JourneyRail } from '@/components/marketing/JourneyRail'
 import { FlipWords } from '@/components/marketing/FlipWords'
@@ -123,37 +125,30 @@ export default async function HomePage() {
       )}
       <MarketingNav userId={userId} launchHref={launchHref} />
 
-      {/* ── Hero: copy + the real lab. Renders instantly (no mount reveal). ── */}
-      <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 pb-16 pt-16 md:grid-cols-[1fr_1.05fr] md:gap-14 md:px-10 md:pb-24 md:pt-20">
-        <div>
-          <p className="font-display text-sm font-bold sm:text-base" style={{ color: ACCENT_INK }}>
-            The world&apos;s first science-fair video game.
-          </p>
-          <h1
-            className="mt-3 font-display text-[2.5rem] font-bold leading-[1.04] tracking-tight sm:text-5xl md:text-[3.4rem]"
-            style={{ textWrap: 'balance' } as React.CSSProperties}
-          >
-            Run the science fair as a real lab.
-          </h1>
-          <p className="mt-6 max-w-[48ch] font-display text-lg leading-relaxed text-[#46566b]">
-            scienium is a browser game where student teams pick a real question, master the
-            methods, run real experiments, and raid rival labs head-to-head in the Battle Arena
-            on the way to the fair.
-          </p>
-          <div className="mt-9 flex flex-wrap items-center gap-4">
-            <PrimaryCTA href={primaryHref}>{primaryLabel}</PrimaryCTA>
-            <GhostCTA href="#journey">SEE THE JOURNEY</GhostCTA>
+      {/* ── Hero: real lab shot as an atmospheric backdrop, fading into the paper field. ── */}
+      <section className="relative flex min-h-[86vh] items-end overflow-hidden">
+        <HeroParallaxBg src="/marketing/lab.png" />
+        <div className="relative z-[2] mx-auto w-full max-w-6xl px-6 pb-16 md:px-10">
+          <div className="max-w-[40ch]">
+            <p className="font-display text-base font-bold" style={{ color: ACCENT_INK }}>
+              The world&apos;s first science-fair video game.
+            </p>
+            <h1
+              className="mt-4 font-display font-bold leading-[0.98] tracking-tight"
+              style={{ fontSize: 'clamp(2.6rem, 7vw, 5rem)', textWrap: 'balance' } as React.CSSProperties}
+            >
+              Run the science fair as a real lab.
+            </h1>
+            <p className="mt-6 max-w-[48ch] font-display text-lg leading-relaxed text-[#33465e]">
+              scienium is a browser game where student teams pick a real question, master the
+              methods, run real experiments, and raid rival labs head-to-head in the Battle Arena
+              on the way to the fair.
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-4">
+              <PrimaryCTA href={primaryHref}>{primaryLabel}</PrimaryCTA>
+              <GhostCTA href="#journey">SEE THE JOURNEY</GhostCTA>
+            </div>
           </div>
-        </div>
-        <div>
-          <Shot
-            src="/marketing/lab.png"
-            title="Your lab · /lab"
-            alt="A student research lab in scienium: pale isometric pixel buildings clustered on a green grass plot, with a top bar showing knowledge points and the current phase, and a weekly-progress panel listing sources reviewed and logs written."
-            ratio="16 / 10"
-            position="center"
-            priority
-          />
         </div>
       </section>
 
@@ -161,13 +156,13 @@ export default async function HomePage() {
       <section className="border-y border-[#e6e5dd] bg-[#f2f1ea]">
         <div className="mx-auto grid max-w-5xl gap-10 px-6 py-16 sm:grid-cols-2 md:px-10">
           <div className="flex items-baseline gap-4">
-            <span className="font-pixel text-[#0d1b2e]" style={{ fontSize: '2rem' }}><CountUp value={832} /></span>
+            <span className="font-pixel text-[#0d1b2e]" style={{ fontSize: '1.6rem' }}><CountUp value={832} /></span>
             <span className="font-display text-[15px] leading-snug text-[#46566b]">
               authored lessons that teach the research method in real depth
             </span>
           </div>
           <div className="flex items-baseline gap-4">
-            <span className="font-pixel text-[#0d1b2e]" style={{ fontSize: '2rem' }}>70</span>
+            <span className="font-pixel text-[#0d1b2e]" style={{ fontSize: '1.6rem' }}>70</span>
             <span className="font-display text-[15px] leading-snug text-[#46566b]">
               methodology terms, defined and always one tap away
             </span>
@@ -347,12 +342,12 @@ export default async function HomePage() {
 
           <Reveal className="mt-16 grid gap-5 sm:grid-cols-3">
             {PVP_TYPES.map((t) => (
-              <div key={t.type} className="border border-white/15 px-6 py-7 text-center" style={{ borderRadius: 8 }}>
+              <TiltCard key={t.type} className="h-full rounded-lg border border-white/15 px-6 py-7 text-center">
                 <span className="font-pixel text-[#F5C518]" style={{ fontSize: '0.65rem', letterSpacing: '0.05em' }}>
                   {t.type.toUpperCase()}
                 </span>
                 <p className="mt-3 font-display text-[15px] leading-relaxed text-[#b7c2d0]">{t.beats}</p>
-              </div>
+              </TiltCard>
             ))}
           </Reveal>
 
@@ -413,6 +408,9 @@ export default async function HomePage() {
                 validation and advance requests, and read class-wide engagement at a glance. Built
                 for a real classroom.
               </p>
+              <div className="mt-7">
+                <GhostCTA href="/teachers">SEE HOW TEACHERS USE IT</GhostCTA>
+              </div>
             </div>
           </div>
         </div>

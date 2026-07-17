@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { auth } from '@clerk/nextjs/server'
 import { Reveal } from '@/components/marketing/Reveal'
 import { MarketingNav, MarketingFooter } from '@/components/marketing/MarketingChrome'
+import { TiltCard } from '@/components/marketing/TiltCard'
 
 /**
  * Marketing deep-dive for the Battle Arena (`/pvp`, distinct from the authed
@@ -151,14 +152,14 @@ export default async function PvpPage() {
           </p>
           <Reveal className="mt-10 grid gap-5 sm:grid-cols-3">
             {TYPE_CYCLE.map((t) => (
-              <div key={t.type} className="border border-[#e4e3db] bg-white px-6 py-7" style={{ borderRadius: 8 }}>
+              <TiltCard key={t.type} className="h-full rounded-lg border border-[#e4e3db] bg-white px-6 py-7">
                 <span className="font-pixel text-[#0d1b2e]" style={{ fontSize: '0.7rem', letterSpacing: '0.05em' }}>
                   {t.type.toUpperCase()}
                 </span>
                 <p className="mt-3 font-display text-[15px] leading-relaxed text-[#5a6b80]">{t.theme}</p>
                 <p className="mt-4 font-display text-sm font-semibold text-[#0d1b2e]">{t.beats}</p>
                 <p className="mt-1 font-display text-sm leading-relaxed text-[#5a6b80]">&ldquo;{t.why}&rdquo;</p>
-              </div>
+              </TiltCard>
             ))}
           </Reveal>
         </div>
@@ -167,11 +168,13 @@ export default async function PvpPage() {
       {/* ── Raid flow ─────────────────────────────────────────────────────── */}
       <section className="border-t border-[#e6e5dd] bg-[#f2f1ea]">
         <div className="mx-auto max-w-3xl px-6 py-20 md:px-10 md:py-24">
-          <Eyebrow>HOW A RAID PLAYS OUT</Eyebrow>
-          <h2 className="mt-5 font-display text-3xl font-bold tracking-tight sm:text-4xl">
-            Fifteen seconds, start to results.
-          </h2>
-          <ol className="mt-12 space-y-10">
+          <div className="sticky top-20 z-[5] bg-[#f2f1ea] pb-6 pt-1">
+            <Eyebrow>HOW A RAID PLAYS OUT</Eyebrow>
+            <h2 className="mt-5 font-display text-3xl font-bold tracking-tight sm:text-4xl">
+              Fifteen seconds, start to results.
+            </h2>
+          </div>
+          <ol className="mt-4 space-y-10">
             {RAID_STEPS.map((s) => (
               <li key={s.n} className="flex gap-6">
                 <span className="font-pixel shrink-0 text-[#63614f]" style={{ fontSize: '1.4rem' }}>{s.n}</span>
