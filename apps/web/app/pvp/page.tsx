@@ -168,11 +168,15 @@ export default async function PvpPage() {
       {/* ── Raid flow ─────────────────────────────────────────────────────── */}
       <section className="border-t border-[#e6e5dd] bg-[#f2f1ea]">
         <div className="mx-auto max-w-3xl px-6 py-20 md:px-10 md:py-24">
-          <Eyebrow>HOW A RAID PLAYS OUT</Eyebrow>
-          <h2 className="mt-5 font-display text-3xl font-bold tracking-tight sm:text-4xl">
-            Fifteen seconds, start to results.
-          </h2>
-          <ol className="mt-12 space-y-10">
+          {/* top matches MarketingNav's exact height (h-[68px]) so the two sticky
+              bars sit flush — any gap between them lets scrolling content peek through. */}
+          <div className="sticky top-[68px] z-[5] bg-[#f2f1ea] pb-4">
+            <Eyebrow>HOW A RAID PLAYS OUT</Eyebrow>
+            <h2 className="mt-5 font-display text-3xl font-bold tracking-tight sm:text-4xl">
+              Fifteen seconds, start to results.
+            </h2>
+          </div>
+          <ol className="mt-6 space-y-10">
             {RAID_STEPS.map((s) => (
               <li key={s.n} className="flex gap-6">
                 <span className="font-pixel shrink-0 text-[#63614f]" style={{ fontSize: '1.4rem' }}>{s.n}</span>

@@ -5,6 +5,18 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.26.2] — 2026-07-17
+
+### Fixed
+
+- **Restored the sticky section headings on `/pvp` and `/teachers`** — Isaac preferred the
+  pinned-heading effect over the static fallback from 0.26.1, just without the visible gap.
+  Root cause: `MarketingNav` is itself `sticky top-0` at exactly `h-[68px]`, but the section
+  heading was pinned at `top-20` (80px) — the 12px band between the two sticky bars had no
+  opaque background, so scrolling list content peeked through it. Set the heading's `top` to
+  the nav's exact height (`top-[68px]`) so the two sticky bars sit flush with nothing exposed
+  between them.
+
 ## [0.26.1] — 2026-07-17
 
 Fixes for issues Isaac caught after reviewing 0.26.0 in his own browser.
