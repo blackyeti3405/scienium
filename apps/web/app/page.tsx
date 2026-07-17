@@ -8,7 +8,6 @@ import { CountUp } from '@/components/marketing/CountUp'
 import { Shot, ShotPlaceholder } from '@/components/marketing/Shot'
 import { MarketingNav, MarketingFooter } from '@/components/marketing/MarketingChrome'
 import { JourneyRail } from '@/components/marketing/JourneyRail'
-import { CategoryList } from '@/components/marketing/CategoryList'
 import { FlipWords } from '@/components/marketing/FlipWords'
 import { SpriteCarousel } from '@/components/marketing/SpriteCarousel'
 
@@ -62,6 +61,22 @@ const CTA_PRESS =
   'shadow-[4px_4px_0_0_#0d1b2e] transition-[transform,box-shadow] duration-150 ' +
   'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_0_#0d1b2e] ' +
   'active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_0_#0d1b2e]'
+
+// Same press effect for CTAs sitting on the dark Battle Arena section — the
+// offset shadow flips to the paper color so it still reads against navy.
+const DARK_CTA_PRESS =
+  'shadow-[4px_4px_0_0_#f7f7f4] transition-[transform,box-shadow] duration-150 ' +
+  'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_0_#f7f7f4] ' +
+  'active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_0_#f7f7f4]'
+
+// Real rock-paper-scissors type cycle every building/spell belongs to
+// (docs/SPEC.md §11.4) — condensed for the homepage; the full reasoning for
+// each matchup lives on /pvp.
+const PVP_TYPES = [
+  { type: 'Empirical', beats: 'Beats Theoretical. Real data can prove a model wrong.' },
+  { type: 'Theoretical', beats: "Beats Applied. You can't engineer it right without the theory." },
+  { type: 'Applied', beats: "Beats Empirical. The instruments you build make real observation possible." },
+]
 
 function PrimaryCTA({ href, children }: { href: string; children: React.ReactNode }) {
   return (
@@ -122,8 +137,8 @@ export default async function HomePage() {
           </h1>
           <p className="mt-6 max-w-[48ch] font-display text-lg leading-relaxed text-[#46566b]">
             scienium is a browser game where student teams pick a real question, master the
-            methods, and run real experiments — with an async PvP Battle Arena landing soon to
-            raid rival labs on the way to the fair.
+            methods, run real experiments, and raid rival labs head-to-head in the Battle Arena
+            on the way to the fair.
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-4">
             <PrimaryCTA href={primaryHref}>{primaryLabel}</PrimaryCTA>
@@ -313,29 +328,42 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Battle Arena (the gamified hook). Split, text-left. ───────────── */}
+      {/* ── Battle Arena (the gamified hook, heavily featured). ───────────── */}
       <section id="pvp" className="bg-[#0d1b2e] text-white">
-        <div className="mx-auto max-w-6xl px-6 py-24 md:px-10 md:py-32">
-          <div className="grid items-center gap-12 md:grid-cols-2 md:gap-16">
-            <div>
-              <span className="font-pixel text-[#F5C518]" style={{ fontSize: '0.6rem', letterSpacing: '0.1em' }}>BATTLE ARENA</span>
-              <h2 className="mt-5 font-display text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-[2.7rem]">
-                Everything you earn is a spell.
-              </h2>
-              <p className="mt-5 max-w-[46ch] font-display text-lg leading-relaxed text-[#b7c2d0]">
-                The work pays out. Every building you upgrade forges spells, and you spend them
-                raiding rival labs head-to-head. This mirrors the pressure of real fair day, but
-                playable every night of the week.
-              </p>
-            </div>
-            <Reveal>
-              <ShotPlaceholder
-                title="Battle Arena"
-                note="Head-to-head lab combat with spells earned from your buildings."
-                ratio="16 / 11"
-                badge="Coming soon"
-              />
-            </Reveal>
+        <div className="mx-auto max-w-5xl px-6 py-24 md:px-10 md:py-32">
+          <div className="mx-auto max-w-2xl text-center">
+            <span className="font-pixel text-[#F5C518]" style={{ fontSize: '0.6rem', letterSpacing: '0.1em' }}>BATTLE ARENA</span>
+            <h2 className="mt-5 font-display text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-[2.7rem]">
+              Every building you own is a weapon.
+            </h2>
+            <p className="mt-5 font-display text-lg leading-relaxed text-[#b7c2d0]">
+              Once a day, raid another team&apos;s lab. You&apos;re matched at random against a
+              snapshot of their base, so their real progress stays untouched, and you get 15
+              seconds to bring it down with spells your own buildings earned you. Destroy the whole
+              base and you take the maximum 10 trophies on the class leaderboard. Raid carelessly
+              and you lose trophies instead. Every raid is a real bet, not a free click.
+            </p>
+          </div>
+
+          <Reveal className="mt-16 grid gap-5 sm:grid-cols-3">
+            {PVP_TYPES.map((t) => (
+              <div key={t.type} className="border border-white/15 px-6 py-7 text-center" style={{ borderRadius: 8 }}>
+                <span className="font-pixel text-[#F5C518]" style={{ fontSize: '0.65rem', letterSpacing: '0.05em' }}>
+                  {t.type.toUpperCase()}
+                </span>
+                <p className="mt-3 font-display text-[15px] leading-relaxed text-[#b7c2d0]">{t.beats}</p>
+              </div>
+            ))}
+          </Reveal>
+
+          <div className="mt-12 flex justify-center">
+            <Link
+              href="/pvp"
+              className={`font-pixel flex min-h-[52px] items-center border border-[#F5C518] bg-[#0d1b2e] px-8 text-[#F5C518] ${DARK_CTA_PRESS} ${CTA_FOCUS}`}
+              style={{ fontSize: '0.7rem', letterSpacing: '0.04em', borderRadius: 6 }}
+            >
+              SEE HOW PVP WORKS
+            </Link>
           </div>
         </div>
       </section>
@@ -350,7 +378,21 @@ export default async function HomePage() {
           <FlipWords words={LAB_TYPES} /> field, one of six lab types chosen from your research idea.
           Each building levels up 15 times as your team grows.
         </p>
-        <CategoryList />
+        <ul
+          className="mt-8 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 font-pixel text-[#5a6b80]"
+          style={{ fontSize: '0.6rem', letterSpacing: '0.04em' }}
+        >
+          {LAB_TYPES.map((t, i) => (
+            <li key={t} className="flex items-center gap-3">
+              {t}
+              {i < LAB_TYPES.length - 1 && (
+                <span aria-hidden className="text-[#c9c8bd]">
+                  /
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
         <Reveal className="mkt-iso-plate mt-12 border border-[#e6e5dd] p-6 md:p-10" style={{ borderRadius: 8 }}>
           <SpriteCarousel />
         </Reveal>

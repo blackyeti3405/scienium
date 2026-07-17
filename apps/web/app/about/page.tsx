@@ -124,9 +124,16 @@ export default async function AboutPage() {
             <div>
               <Eyebrow>WHO IS BUILDING IT</Eyebrow>
               <h2 className="mt-5 font-display text-3xl font-bold tracking-tight sm:text-4xl">
-                Students, all the way down.
+                No adults on this team. Just students who&apos;ve done this before.
               </h2>
-              <div className="mt-6 space-y-4 font-display text-[17px] leading-relaxed text-[#3c4657]">
+              <div
+                className="mt-6 flex h-28 w-28 flex-col items-center justify-center border border-dashed border-[#c6c5ba] bg-[#eeede6] text-center"
+                style={{ borderRadius: 8 }}
+              >
+                <span className="font-pixel text-[#5a6b80]" style={{ fontSize: '0.5rem' }}>PHOTO</span>
+                <span className="mt-1 font-display text-[11px] leading-snug text-[#5a6b80]">Rig</span>
+              </div>
+              <div className="mt-5 space-y-4 font-display text-[17px] leading-relaxed text-[#3c4657]">
                 <p>
                   scienium is led by <strong className="text-[#0d1b2e]">Rig Saini</strong>, who has
                   competed in science fair for five years at every level, school to international, and
@@ -170,15 +177,23 @@ export default async function AboutPage() {
             structure, continuous feedback, and a reason to keep going. Progress requires
             demonstrated understanding, and every team publishes a public showcase at the end. One
             video game walks a team from a question all the way to the fair, judging rigor
-            included — with an async PvP layer landing soon.
+            included, with rival teams raiding each other&apos;s labs in the Battle Arena along the
+            way.
           </p>
-          <div className="mt-9">
+          <div className="mt-9 flex flex-wrap gap-4">
             <Link
               href="/#journey"
               className={`font-pixel inline-flex min-h-[52px] items-center border border-[#0d1b2e] bg-[#f7f7f4] px-8 text-[#0d1b2e] ${CTA_PRESS} ${CTA_FOCUS}`}
               style={{ fontSize: '0.7rem', letterSpacing: '0.04em', borderRadius: 6 }}
             >
               SEE THE JOURNEY
+            </Link>
+            <Link
+              href="/pvp"
+              className={`font-pixel inline-flex min-h-[52px] items-center bg-[#F5C518] px-8 text-[#0d1b2e] ${CTA_PRESS} ${CTA_FOCUS}`}
+              style={{ fontSize: '0.7rem', letterSpacing: '0.04em', borderRadius: 6 }}
+            >
+              SEE HOW PVP WORKS
             </Link>
           </div>
         </div>

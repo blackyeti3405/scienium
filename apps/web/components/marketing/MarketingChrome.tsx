@@ -21,6 +21,7 @@ const NAV_LINKS = [
   { href: '/#pvp', label: 'Battle Arena' },
   { href: '/#teachers', label: 'For teachers' },
   { href: '/about', label: 'About' },
+  { href: '/about#contact', label: 'Contact' },
 ]
 
 export function MarketingNav({ userId, launchHref = '/game' }: { userId: string | null; launchHref?: string }) {
@@ -125,6 +126,7 @@ export function MarketingFooter({ userId, launchHref = '/game' }: { userId: stri
           <Link href="/#pvp" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Battle Arena</Link>
           <Link href="/#teachers" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>For teachers</Link>
           <Link href="/about" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>About</Link>
+          <Link href="/about#contact" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Contact</Link>
           {userId ? (
             <Link href={launchHref} className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Play</Link>
           ) : (

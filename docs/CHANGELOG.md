@@ -5,6 +5,55 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.25.0] — 2026-07-17
+
+PvP goes from a one-line mention to a fully featured pillar, plus a round of content/structure
+fixes called out directly: the lab-type dropdown, the About page's missing PvP mention, an AI-sounding
+heading, and contact-form findability.
+
+### Added
+
+- **Dedicated `/pvp` page** — a full explainer of the Battle Arena raid system, grounded entirely
+  in the real design docs (`docs/SPEC.md` §11) and real contracts (`packages/shared-types/src/pvp.ts`,
+  the `Spell`/`PvpRaid`/`PvpTrophies`/`PvpRaidQuota` Prisma models): how buildings grant spells,
+  the Empirical/Theoretical/Applied type-effectiveness cycle (with the actual one-line
+  epistemology from the spec), the 15-second raid flow step by step, and the real trophy math
+  (100% destroyed = 10 trophies max, ≤30%ish destroyed loses trophies instead). Nothing on the
+  page is invented — every mechanic traces back to a real doc or schema field. Registered in
+  `middleware.ts` (exact-match public route, `/pvp/lobby` etc. stay authenticated),
+  `robots.ts` (allowed explicitly; the authed `/pvp/*` subpaths stay disallowed via `/pvp/`),
+  and `sitemap.ts`.
+- **Homepage Battle Arena section, rewritten** — now leads with the real mechanics (daily raid
+  cap, 15-second window, snapshot-based raiding, trophy math) instead of a single sentence next
+  to a "Coming soon" placeholder, plus a 3-card type-effectiveness cycle and a "See how PvP
+  works" link into the new `/pvp` page.
+- **PvP mention on the About page** — previously a single trailing clause on the closing
+  paragraph; now its own sentence plus a standalone "See how PvP works" CTA next to "See the
+  journey".
+- **Rig photo placeholder** on the About page's "Who is building it" section — a labeled slot
+  Isaac can swap a real headshot into.
+- **Contact link in the nav** (desktop, mobile menu, and footer) — the contact form was only
+  reachable by scrolling to the bottom of `/about` with no link pointing at it from anywhere.
+
+### Changed
+
+- **Lab-type list simplified** — replaced the click-to-expand accordion under "Your lab is the
+  progress bar" with a plain single-line list (`BioCore / ChemWorks / ...`). It was taking up
+  space for information that didn't need progressive disclosure.
+- **About page heading** — "Students, all the way down." (a construction that didn't actually
+  say anything) replaced with "No adults on this team. Just students who've done this before."
+- **Copy pass for AI-sounding phrasing** (stop-slop) across the new/edited PvP and About copy —
+  cut stacked em dashes, "not X, it's Y" contrast constructions, and a couple of pull-quote-y
+  fragments in favor of directly stated sentences.
+- **Homepage hero and metadata** now state the Battle Arena as a real part of the loop rather
+  than hedging it as "landing soon" — matches how heavily it's now featured everywhere else on
+  the site.
+
+### Removed
+
+- **`CategoryList.tsx`** — the accordion component backing the removed lab-type dropdown; deleted
+  outright rather than left unused.
+
 ## [0.24.5] — 2026-07-16
 
 ### Added
