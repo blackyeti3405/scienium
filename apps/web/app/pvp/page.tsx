@@ -54,19 +54,19 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 const TYPE_CYCLE = [
   {
     type: 'Empirical',
-    theme: 'Observation-based science — measuring, sampling, testing the real world.',
+    theme: 'Observation-based science: measuring, sampling, testing the real world.',
     beats: 'Strong against Theoretical.',
     why: 'Real data can prove a model wrong.',
   },
   {
     type: 'Theoretical',
-    theme: 'Reasoning-based science — models, predictions, derivations.',
+    theme: 'Reasoning-based science: models, predictions, derivations.',
     beats: 'Strong against Applied.',
     why: "You can't build it right if you don't understand why it works.",
   },
   {
     type: 'Applied',
-    theme: 'Building-based science — engineering, instruments, systems.',
+    theme: 'Building-based science: engineering, instruments, systems.',
     beats: 'Strong against Empirical.',
     why: "You can't run the experiment without the equipment.",
   },
@@ -150,18 +150,20 @@ export default async function PvpPage() {
             Every building, and the spell it grants, is Empirical, Theoretical, or Applied. The
             three beat each other in a fixed cycle. The reasoning comes straight from real science.
           </p>
-          <Reveal className="mt-10 grid gap-5 sm:grid-cols-3">
-            {TYPE_CYCLE.map((t) => (
-              <TiltCard key={t.type} className="h-full rounded-lg border border-[#e4e3db] bg-white px-6 py-7">
-                <span className="font-pixel text-[#0d1b2e]" style={{ fontSize: '0.7rem', letterSpacing: '0.05em' }}>
-                  {t.type.toUpperCase()}
-                </span>
-                <p className="mt-3 font-display text-[15px] leading-relaxed text-[#5a6b80]">{t.theme}</p>
-                <p className="mt-4 font-display text-sm font-semibold text-[#0d1b2e]">{t.beats}</p>
-                <p className="mt-1 font-display text-sm leading-relaxed text-[#5a6b80]">&ldquo;{t.why}&rdquo;</p>
-              </TiltCard>
+          <div className="mt-10 grid gap-5 sm:grid-cols-3">
+            {TYPE_CYCLE.map((t, i) => (
+              <Reveal key={t.type} delay={i * 100}>
+                <TiltCard className="h-full rounded-lg border border-[#e4e3db] bg-white px-6 py-7">
+                  <span className="font-pixel text-[#0d1b2e]" style={{ fontSize: '0.7rem', letterSpacing: '0.05em' }}>
+                    {t.type.toUpperCase()}
+                  </span>
+                  <p className="mt-3 font-display text-[15px] leading-relaxed text-[#5a6b80]">{t.theme}</p>
+                  <p className="mt-4 font-display text-sm font-semibold text-[#0d1b2e]">{t.beats}</p>
+                  <p className="mt-1 font-display text-sm leading-relaxed text-[#5a6b80]">&ldquo;{t.why}&rdquo;</p>
+                </TiltCard>
+              </Reveal>
             ))}
-          </Reveal>
+          </div>
         </div>
       </section>
 
@@ -177,14 +179,14 @@ export default async function PvpPage() {
             </h2>
           </div>
           <ol className="mt-6 space-y-10">
-            {RAID_STEPS.map((s) => (
-              <li key={s.n} className="flex gap-6">
+            {RAID_STEPS.map((s, i) => (
+              <Reveal key={s.n} as="li" delay={i * 80} className="flex gap-6">
                 <span className="font-pixel shrink-0 text-[#63614f]" style={{ fontSize: '1.4rem' }}>{s.n}</span>
                 <div>
                   <p className="font-display text-xl font-bold tracking-tight">{s.title}</p>
                   <p className="mt-2 max-w-[52ch] font-display text-[17px] leading-relaxed text-[#46566b]">{s.body}</p>
                 </div>
-              </li>
+              </Reveal>
             ))}
           </ol>
         </div>

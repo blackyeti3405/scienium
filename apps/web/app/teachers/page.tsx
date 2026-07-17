@@ -108,7 +108,7 @@ export default async function TeachersPage() {
           </h2>
           <p className="mt-5 max-w-[62ch] font-display text-lg leading-relaxed text-[#46566b]">
             Each student gets one row, even on a team, with phase and last activity already
-            showing. Rows flagged <em>unlogged</em> or <em>stale</em> stand out immediately, and a
+            showing. Rows flagged <em>unlogged</em> or <em>stale</em> stand out, and a
             one-tap nudge sends a real notification straight to that team, deduped to once per day
             so it never feels like spam.
           </p>
@@ -123,7 +123,7 @@ export default async function TeachersPage() {
             Approve without a meeting.
           </h2>
           <p className="mt-5 max-w-[62ch] font-display text-lg leading-relaxed text-[#46566b]">
-            Two moments actually need your sign-off: starting data collection, and advancing to
+            Exactly two moments need your sign-off: starting data collection, and advancing to
             the showcase. A student requests the move, you review what they logged, and approving
             bumps their phase immediately and notifies the team. Everything else, like the
             literature-review gate, clears itself on a mechanical 25-source check.
@@ -141,7 +141,7 @@ export default async function TeachersPage() {
           <p className="mt-5 max-w-[62ch] font-display text-lg leading-relaxed text-[#46566b]">
             Every student runs a self-check against the real ISEF rubric before the fair. You score
             the same criteria independently, guided by curated anchor descriptions for what a low,
-            mid, or high answer actually looks like. Your score and theirs sit side by side; neither
+            mid, or high answer looks like. Your score and theirs sit side by side; neither
             one gets overwritten.
           </p>
         </div>
@@ -159,14 +159,14 @@ export default async function TeachersPage() {
             </h2>
           </div>
           <ol className="mt-6 space-y-10">
-            {CLASS_STEPS.map((s) => (
-              <li key={s.n} className="flex gap-6">
+            {CLASS_STEPS.map((s, i) => (
+              <Reveal key={s.n} as="li" delay={i * 80} className="flex gap-6">
                 <span className="font-pixel shrink-0 text-[#63614f]" style={{ fontSize: '1.4rem' }}>{s.n}</span>
                 <div>
                   <p className="font-display text-xl font-bold tracking-tight">{s.title}</p>
                   <p className="mt-2 max-w-[52ch] font-display text-[17px] leading-relaxed text-[#46566b]">{s.body}</p>
                 </div>
-              </li>
+              </Reveal>
             ))}
           </ol>
         </div>
@@ -208,7 +208,7 @@ export default async function TeachersPage() {
           </h2>
           <p className="mx-auto mt-5 max-w-[46ch] font-display text-lg leading-relaxed text-[#b7c2d0]">
             One dashboard, the same views your students use, built around the ten minutes you
-            actually have.
+            have.
           </p>
           <div className="mt-9 flex justify-center">
             <Link

@@ -16,6 +16,13 @@ import Link from 'next/link'
 
 const FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F5C518] focus-visible:ring-offset-2 focus-visible:ring-offset-[#f7f7f4]'
 
+// Same chunky 3D-press language as the homepage CTAs, scaled down to fit the
+// compact 68px header.
+const NAV_CTA_PRESS =
+  'shadow-[3px_3px_0_0_#0d1b2e] transition-[transform,box-shadow] duration-150 ' +
+  'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[4px_4px_0_0_#0d1b2e] ' +
+  'active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_0_#0d1b2e]'
+
 const NAV_LINKS = [
   { href: '/#journey', label: 'The journey' },
   { href: '/#pvp', label: 'Battle Arena' },
@@ -50,10 +57,16 @@ export function MarketingNav({ userId, launchHref = '/game' }: { userId: string 
               </Link>
             ) : (
               <>
-                <Link href="/sign-in" className={`hidden rounded text-[#5a6b80] hover:text-[#0d1b2e] sm:inline ${FOCUS}`}>Sign in</Link>
+                <Link
+                  href="/sign-in"
+                  className={`hidden min-h-[38px] items-center border border-[#0d1b2e] bg-[#f7f7f4] px-4 text-[#0d1b2e] sm:flex ${NAV_CTA_PRESS} ${FOCUS}`}
+                  style={{ borderRadius: 6 }}
+                >
+                  Sign in
+                </Link>
                 <Link
                   href="/sign-up"
-                  className={`flex min-h-[44px] items-center bg-[#F5C518] px-4 text-[#0d1b2e] transition hover:brightness-95 ${FOCUS}`}
+                  className={`flex min-h-[38px] items-center bg-[#F5C518] px-4 text-[#0d1b2e] ${NAV_CTA_PRESS} ${FOCUS}`}
                   style={{ borderRadius: 6 }}
                 >
                   Get started

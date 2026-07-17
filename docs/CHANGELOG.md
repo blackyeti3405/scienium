@@ -5,6 +5,36 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.27.0] — 2026-07-17
+
+Pass inspired by Isaac's design references (teak.io, saaspo.com's curated gallery,
+charlesleclerc.com), applied within DESIGN.md's existing constraints rather than copying any
+of their heavier effects (WebGL, gradients, glassmorphism) wholesale.
+
+### Added
+
+- **Hero background swapped to the maxed-out lab** — `lab-hero-crop-maxed.png`, a straight crop
+  (buildings + immediate grass, no browser chrome or in-game UI) of a real maxed-out-lab
+  screenshot Isaac captured, replacing the earlier starter-lab crop. The old crop
+  (`lab-hero-crop.png`) is deleted, not left unused.
+- **3D-press nav buttons** — "Sign in" and "Get started" in the header were a plain text link
+  and a flat hover-only button; both now use the same chunky offset-shadow press style as every
+  other CTA on the site, scaled down to fit the 68px header.
+- **"Scroll to explore" hero cue** — a small pixel-font label + gently floating chevron at the
+  bottom of the hero (inspired by charlesleclerc.com's scroll affordance), linking to the
+  Journey section. Reuses the existing `.mkt-float` animation, so it's already
+  reduced-motion-safe.
+- **Staggered scroll reveals** — the homepage and `/pvp` type-cycle cards, and the `/pvp` and
+  `/teachers` numbered step lists, previously revealed all at once inside a single `Reveal`.
+  Each item now gets its own `Reveal` with an incremented delay, so they cascade in rather than
+  popping together.
+
+### Changed
+
+- **Copy pass (stop-slop)** — fixed 3 real user-facing em dashes in `/pvp`'s type-cycle
+  descriptions (colons work better there) and cut several filler adverbs ("actually",
+  "immediately") on `/teachers` that weren't carrying real meaning.
+
 ## [0.26.2] — 2026-07-17
 
 ### Fixed

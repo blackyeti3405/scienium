@@ -127,7 +127,7 @@ export default async function HomePage() {
 
       {/* ── Hero: real lab shot as an atmospheric backdrop, fading into the paper field. ── */}
       <section className="relative flex min-h-[86vh] items-end overflow-hidden">
-        <HeroParallaxBg src="/marketing/lab-hero-crop.png" />
+        <HeroParallaxBg src="/marketing/lab-hero-crop-maxed.png" />
         <div className="relative z-[2] mx-auto w-full max-w-6xl px-6 pb-16 md:px-10">
           <div className="max-w-[640px]">
             <p className="font-display text-base font-bold" style={{ color: ACCENT_INK }}>
@@ -150,6 +150,18 @@ export default async function HomePage() {
             </div>
           </div>
         </div>
+        <a
+          href="#journey"
+          aria-label="Scroll to see the journey"
+          className={`absolute bottom-6 left-1/2 z-[2] hidden -translate-x-1/2 flex-col items-center gap-2 sm:flex ${CTA_FOCUS}`}
+        >
+          <span className="font-pixel text-[#5a6b80]" style={{ fontSize: '0.55rem', letterSpacing: '0.1em' }}>
+            SCROLL
+          </span>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" className="mkt-float" aria-hidden>
+            <path d="M2 5L7 10L12 5" stroke="#5a6b80" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </a>
       </section>
 
       {/* ── Proof: two numbers, in context (not a stat wall). Instant. ─────── */}
@@ -340,16 +352,18 @@ export default async function HomePage() {
             </p>
           </div>
 
-          <Reveal className="mt-16 grid gap-5 sm:grid-cols-3">
-            {PVP_TYPES.map((t) => (
-              <TiltCard key={t.type} className="h-full rounded-lg border border-white/15 px-6 py-7 text-center">
-                <span className="font-pixel text-[#F5C518]" style={{ fontSize: '0.65rem', letterSpacing: '0.05em' }}>
-                  {t.type.toUpperCase()}
-                </span>
-                <p className="mt-3 font-display text-[15px] leading-relaxed text-[#b7c2d0]">{t.beats}</p>
-              </TiltCard>
+          <div className="mt-16 grid gap-5 sm:grid-cols-3">
+            {PVP_TYPES.map((t, i) => (
+              <Reveal key={t.type} delay={i * 100}>
+                <TiltCard className="h-full rounded-lg border border-white/15 px-6 py-7 text-center">
+                  <span className="font-pixel text-[#F5C518]" style={{ fontSize: '0.65rem', letterSpacing: '0.05em' }}>
+                    {t.type.toUpperCase()}
+                  </span>
+                  <p className="mt-3 font-display text-[15px] leading-relaxed text-[#b7c2d0]">{t.beats}</p>
+                </TiltCard>
+              </Reveal>
             ))}
-          </Reveal>
+          </div>
 
           <div className="mt-12 flex justify-center">
             <Link
