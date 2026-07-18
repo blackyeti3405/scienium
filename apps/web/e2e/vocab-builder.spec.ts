@@ -267,7 +267,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
   })
 
   // ── AC3 ──────────────────────────────────────────────────────────────────
-  test('AC3: every card in the deck has a non-empty vocab-attribution with one of the three required prefixes', async ({ page }) => {
+  test('AC3: every card in the deck has a non-empty vocab-attribution with one of the required prefixes', async ({ page }) => {
     await openVocab(page)
     await page.getByTestId('vocab-nav-deck').click()
     await expect(page.getByTestId('vocab-deck')).toBeVisible({ timeout: 10000 })
@@ -275,8 +275,14 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
     expect(attributions.length).toBeGreaterThanOrEqual(1)
     for (const text of attributions) {
       expect(text.length).toBeGreaterThan(0)
+      // One prefix per vocab_source (see VocabPanel.tsx attributionText):
+      // authored dictionaries, the paper's own definition, curated
+      // llm-definition cards, and legacy pre-curation paper_context rows.
       const startsRight =
-        text.startsWith('Definition — ') || text.startsWith('Defined in your paper:') || text.startsWith("No definition available —")
+        text.startsWith('Definition — ') ||
+        text.startsWith('Defined in your paper:') ||
+        text.startsWith('How your paper uses it:') ||
+        text.startsWith("No definition available —")
       expect(startsRight).toBe(true)
     }
   })
@@ -600,13 +606,18 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
   })
 
   // ── AC12 ─────────────────────────────────────────────────────────────────
-  test('AC12: zero LLM — no vocab file imports @anthropic-ai/sdk, references ANTHROPIC_API_KEY, or registers tier: "ai"', async ({ page }) => {
+  // The vocab pipeline was originally zero-LLM; curation (vocab-curate.ts) is
+  // now the ONE deliberate LLM touchpoint (selection + definitions), and the
+  // build route honestly registers the paid `ai` tier for it. The invariant
+  // that survives: extraction, dictionaries, scheduling, and every read/review
+  // route stay mechanical — only build+curate may touch the model.
+  test('AC12: LLM containment — only build/curate touch the model; extraction, deck, review, and SRS stay mechanical', async ({ page }) => {
     await page.goto('/literature/review')
     const fs = await import('node:fs')
     const path = await import('node:path')
     const root = path.join(__dirname, '..')
-    const files = [
-      'app/api/literature/vocab/build/route.ts',
+
+    const mechanicalFiles = [
       'app/api/literature/vocab/deck/route.ts',
       'app/api/literature/vocab/review/route.ts',
       'app/api/literature/vocab/cards/[id]/route.ts',
@@ -615,11 +626,24 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
       'lib/literature/vocab-stopwords.json',
       'lib/literature/srs.ts',
     ]
-    for (const rel of files) {
+    for (const rel of mechanicalFiles) {
       const src = fs.readFileSync(path.join(root, rel), 'utf8')
       expect(src).not.toContain('@anthropic-ai/sdk')
+      expect(src).not.toContain("from '@/lib/anthropic'")
       expect(src).not.toContain('ANTHROPIC_API_KEY')
       expect(src).not.toMatch(/tier:\s*'ai'/)
     }
+
+    // The build route reaches the model only through the curation module, and
+    // must declare the paid tier (the paid-work sweep in test/paid-work-guard
+    // .test.ts enforces the same rule repo-wide).
+    const buildSrc = fs.readFileSync(path.join(root, 'app/api/literature/vocab/build/route.ts'), 'utf8')
+    expect(buildSrc).not.toContain('@anthropic-ai/sdk')
+    expect(buildSrc).toMatch(/tier:\s*'ai'/)
+    expect(buildSrc).toContain("from '@/lib/literature/vocab-curate'")
+
+    const curateSrc = fs.readFileSync(path.join(root, 'lib/literature/vocab-curate.ts'), 'utf8')
+    expect(curateSrc).toContain("from '@/lib/anthropic'")
+    expect(curateSrc).toContain('E2E_SKIP_LLM')
   })
 })

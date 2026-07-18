@@ -19,7 +19,7 @@ export interface IncomingTreeNode {
   source?: 'wikipedia' | 'youtube' | 'source' | 'article'
   videoId?: string
   // ── source-node fields (only read when source === 'source') ──
-  platform?: 'arxiv' | 'pubmed' | 'pmc'
+  platform?: 'arxiv' | 'pubmed' | 'pmc' | 'openalex'
   externalId?: string
   sourceUrl?: string
   sourceHost?: string
@@ -27,7 +27,7 @@ export interface IncomingTreeNode {
   abstract?: string
   publishedAt?: string
   // ── article-node fields (only read when source === 'article') ──
-  provider?: 'the_conversation' | 'journalism'
+  provider?: 'the_conversation' | 'journalism' | 'explainer' | 'patents'
   renderMode?: 'full' | 'linkout'
   sourceName?: string
   articleUrl?: string

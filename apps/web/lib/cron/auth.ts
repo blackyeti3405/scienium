@@ -2,6 +2,7 @@ import 'server-only'
 import { timingSafeEqual } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { serverEnv } from '@/lib/env'
+import { logEvent, requestIdFrom } from '@/lib/observability/log'
 
 /**
  * Shared guard for scheduled (cron) routes.
@@ -33,6 +34,14 @@ export function assertCron(req: NextRequest): NextResponse | null {
   const provided = Buffer.from(req.headers.get('authorization') ?? '')
   const ok = provided.length === expected.length && timingSafeEqual(provided, expected)
   if (!ok) {
+    // An unauthorized hit on a cron route is either a probe or a scheduler
+    // misconfiguration — both are operator-relevant.
+    logEvent({
+      event: 'cron.auth_denied',
+      route: req.nextUrl.pathname,
+      requestId: requestIdFrom(req),
+      outcome: 'denied',
+    })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return null

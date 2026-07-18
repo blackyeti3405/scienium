@@ -149,8 +149,16 @@ export async function POST(req: NextRequest) {
 
   const rubric = await loadExpertiseRubric()
   const response = await anthropic().messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1600,
+    model: 'claude-sonnet-5',
+    // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
+    // and thinking shares this `max_tokens` budget. Disabled to preserve the
+    // cost, latency, and output length this route was tuned for.
+    // `max_tokens` was also raised ~1.5x: Sonnet 5's tokenizer
+    // spends ~30% more tokens on the same text, so a budget tuned against
+    // 4.6 truncates. That is not a visible error — it silently cuts the
+    // response mid-sentence (it broke idea-check's JSON verdict outright).
+    thinking: { type: 'disabled' },
+    max_tokens: 2400,
     system: [
       { type: 'text', text: GENERATION_INSTRUCTIONS(rubric) },
       {
@@ -200,7 +208,15 @@ export async function POST(req: NextRequest) {
 const ProgressBody = z
   .object({
     examId: z.string().trim().min(1).max(64),
-    answers: z.record(z.string().max(5_000)).optional(),
+    // Cap the KEY count, not just each value: `z.record(...max(5000))` bounds
+    // each answer but lets a caller PATCH arbitrarily many keys into the JSON
+    // column (a multi-MB row write). An exam has ≤21 questions (progressIndex
+    // maxes at 20), so 30 is comfortable headroom — this matches the count caps
+    // every other array/record body in the app already carries.
+    answers: z
+      .record(z.string().max(5_000))
+      .refine((a) => Object.keys(a).length <= 30, 'too many answers')
+      .optional(),
     progressIndex: z.number().int().min(0).max(20).optional(),
   })
   .strict()

@@ -72,7 +72,8 @@ Then edit `apps/web/.env.local`:
 | `ANTHROPIC_API_KEY` | Anthropic console | required for paper metadata, quizzes, chat, lab-type classification, and relevance checks |
 | `R2_*` | Cloudflare R2 | required for PDF storage **and project-log photo attachments** (uploads + viewer) |
 | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | optional — only the Science Fair "sync deadlines" feature scrapes fair sites with it (`fc-…`) |
-| `OPENALEX_API_KEY` / `NCBI_API_KEY` | [OpenAlex](https://openalex.org/rest-api) / [NCBI](https://www.ncbi.nlm.nih.gov/account/) | optional — the Discovery **Papers tab** (arXiv + PubMed search + citations). Works keyless, but the anonymous pools rate-limit (503s); a free key avoids that. No AI — keyword search + factual citation edges only |
+| `OPENALEX_API_KEY` / `NCBI_API_KEY` | [OpenAlex](https://openalex.org/rest-api) / [NCBI](https://www.ncbi.nlm.nih.gov/account/) | optional — the Discovery **Papers tab** (merged arXiv + PubMed + open-access search, citations). Works keyless, but the anonymous pools rate-limit (503s); a free key avoids that. No AI — keyword search + factual citation edges only |
+| `PATENTSVIEW_API_KEY` | [PatentsView](https://patentsview.org/apis/keyrequest) | optional — live results in the Discovery **Prior art (patents)** lane; keyless mode degrades to a Google Patents search link-out card |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | — |
 
 You need **Clerk keys + `DATABASE_URL` + `DIRECT_URL` + `ANTHROPIC_API_KEY`** to run
@@ -135,11 +136,34 @@ cd ../..
 ## 5. Run the web app
 
 ```bash
-pnpm dev            # = pnpm --filter web dev
+pnpm dev            # = pnpm --silent --filter web dev
 # open http://localhost:3000
 ```
 
 Sign in → you land on **`/lab`**, the spatial lab scene.
+
+#### Why `--silent`, and the one line it can't hide
+
+Ctrl-C kills `next dev` by signal, so pnpm's filtered runner reads a perfectly
+normal exit 130 as a failed script and prints a wall of red over it:
+
+```
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] web@0.0.1 dev: `node scripts/gen-sprite-versions.mjs && …`
+Command failed with signal "SIGTERM"
+[ELIFECYCLE] Command failed.
+```
+
+Nothing failed — that's just how Ctrl-C looks. `--silent` suppresses pnpm's own
+lifecycle chatter while passing the child's stdout **and** stderr straight
+through, so Next's banner and any genuine startup error are unaffected. It's on
+`dev` only; `build`/`lint`/`test` still want pnpm's reporting in CI.
+
+One `[ELIFECYCLE] Command failed.` survives, printed by the *outer* `pnpm dev`,
+which can't silence itself from inside its own script. For total silence:
+
+```bash
+pnpm --silent dev
+```
 
 ### Previewing any phase without DB data
 A **dev-only** URL override lets you inspect every state (it's disabled in
@@ -529,7 +553,8 @@ Then edit `apps/web/.env.local`:
 | `ANTHROPIC_API_KEY` | Anthropic console | required for paper metadata, quizzes, chat, lab-type classification, and relevance checks |
 | `R2_*` | Cloudflare R2 | required for PDF storage **and project-log photo attachments** (uploads + viewer) |
 | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | optional — only the Science Fair "sync deadlines" feature scrapes fair sites with it (`fc-…`) |
-| `OPENALEX_API_KEY` / `NCBI_API_KEY` | [OpenAlex](https://openalex.org/rest-api) / [NCBI](https://www.ncbi.nlm.nih.gov/account/) | optional — the Discovery **Papers tab** (arXiv + PubMed search + citations). Works keyless, but the anonymous pools rate-limit (503s); a free key avoids that. No AI — keyword search + factual citation edges only |
+| `OPENALEX_API_KEY` / `NCBI_API_KEY` | [OpenAlex](https://openalex.org/rest-api) / [NCBI](https://www.ncbi.nlm.nih.gov/account/) | optional — the Discovery **Papers tab** (merged arXiv + PubMed + open-access search, citations). Works keyless, but the anonymous pools rate-limit (503s); a free key avoids that. No AI — keyword search + factual citation edges only |
+| `PATENTSVIEW_API_KEY` | [PatentsView](https://patentsview.org/apis/keyrequest) | optional — live results in the Discovery **Prior art (patents)** lane; keyless mode degrades to a Google Patents search link-out card |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | — |
 
 You need **Clerk keys + `DATABASE_URL` + `DIRECT_URL` + `ANTHROPIC_API_KEY`** to run
@@ -592,11 +617,26 @@ Set-Location ..\..
 ## 5. Run the web app
 
 ```powershell
-pnpm dev            # = pnpm --filter web dev
+pnpm dev            # = pnpm --silent --filter web dev
 # open http://localhost:3000
 ```
 
 Sign in → you land on **`/lab`**, the spatial lab scene.
+
+#### Why `--silent`, and the one line it can't hide
+
+Stopping the dev server kills `next dev` by signal, so pnpm's filtered runner
+reads a perfectly normal signal exit as a failed script and prints a wall of red
+over it (`ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL` … `Command failed with signal` …
+`[ELIFECYCLE]`). Nothing failed — that's just how Ctrl-C looks. `--silent`
+suppresses pnpm's own lifecycle chatter while passing the child's stdout **and**
+stderr straight through, so Next's banner and any genuine startup error are
+unaffected. It's on `dev` only; `build`/`lint`/`test` still want pnpm's
+reporting in CI.
+
+One `[ELIFECYCLE] Command failed.` survives, printed by the *outer* `pnpm dev`,
+which can't silence itself from inside its own script. For total silence, run
+`pnpm --silent dev`.
 
 ### Previewing any phase without DB data
 A **dev-only** URL override lets you inspect every state (it's disabled in

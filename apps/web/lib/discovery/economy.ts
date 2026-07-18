@@ -35,6 +35,9 @@ export const TIER_KP_MULTIPLIER: Record<CredibilityTier, number> = {
   peer_reviewed: 3, // 15 KP
   preprint: 2, // 10 KP
   open_access: 2, // 10 KP
+  // Plain-language explainers: background reading, rewarded like wiki (×1) —
+  // the KP incentive should point at primary research.
+  reference: 1, // 5 KP
 }
 
 /** Base × tier multiplier. Null/undefined tier (wiki/youtube) → base ×1. */

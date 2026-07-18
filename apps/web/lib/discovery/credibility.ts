@@ -66,6 +66,12 @@ export const TIER_META: Record<CredibilityTier, TierMeta> = {
     caveat: 'Free full text — check whether it was peer-reviewed.',
     color: '#60A5FA', // blue
   },
+  reference: {
+    label: 'Reference',
+    caveat:
+      'Plain-language background from an authoritative source — great for understanding; cite the primary research it summarizes.',
+    color: '#C084FC', // purple
+  },
 }
 
 // ── F12: Literature Review credibility badge (read-time resolution) ──────────

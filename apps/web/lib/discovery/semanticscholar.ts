@@ -51,10 +51,14 @@ const MOCK_TLDR: S2Tldr = {
 }
 
 /**
- * Map our `arxiv:<id>` / `pmid:<id>` externalId scheme → the id prefix Semantic
- * Scholar resolves papers by keylessly. Null for anything else (nothing to look up).
+ * Map our externalId scheme → the id prefix Semantic Scholar resolves papers
+ * by keylessly: `arxiv:`/`pmid:` map directly; `openalex:` works (OA journals,
+ * non-arXiv preprint servers) carry no S2-native id in the externalId, but
+ * their persisted `sourceUrl` is the DOI link when a DOI exists — S2 accepts
+ * `DOI:<doi>`. Null for anything else (nothing to look up; enrichment
+ * degrades gracefully).
  */
-function s2IdFor(externalId: string): string | null {
+function s2IdFor(externalId: string, sourceUrl?: string | null): string | null {
   if (externalId.startsWith('arxiv:')) {
     const bare = externalId.slice('arxiv:'.length)
     return `ARXIV:${normalizeArxivId(bare)}`
@@ -62,6 +66,10 @@ function s2IdFor(externalId: string): string | null {
   if (externalId.startsWith('pmid:')) {
     const bare = externalId.slice('pmid:'.length)
     return `PMID:${bare}`
+  }
+  if (externalId.startsWith('openalex:') && sourceUrl) {
+    const m = sourceUrl.match(/^https?:\/\/(?:dx\.)?doi\.org\/(10\.\S+)$/i)
+    if (m) return `DOI:${m[1]}`
   }
   return null
 }
@@ -90,11 +98,11 @@ async function s2Fetch(url: string): Promise<Response | null> {
 }
 
 /** Semantic Scholar's own extractive TL;DR for one paper. Null when unavailable. */
-export async function getTldr(externalId: string): Promise<S2Tldr | null> {
+export async function getTldr(externalId: string, sourceUrl?: string | null): Promise<S2Tldr | null> {
   if (MOCK) {
     return externalId === 'arxiv:2401.00001' || externalId === 'pmid:99900001' ? MOCK_TLDR : null
   }
-  const id = s2IdFor(externalId)
+  const id = s2IdFor(externalId, sourceUrl)
   if (!id) return null
   const cached = tldrCache.get(id)
   if (cached !== undefined) return cached
@@ -123,13 +131,16 @@ export async function getTldr(externalId: string): Promise<S2Tldr | null> {
  * `isInfluential`. Option (i): ONE `/paper/{id}/citations` call, not one per
  * neighbour. Empty set on any failure/miss — never throws.
  */
-export async function getInfluentialCitingIds(externalId: string): Promise<Set<string>> {
+export async function getInfluentialCitingIds(
+  externalId: string,
+  sourceUrl?: string | null,
+): Promise<Set<string>> {
   if (MOCK) {
     if (externalId === 'arxiv:2401.00001') return new Set(['arxiv:2402.00022'])
     if (externalId === 'pmid:99900001') return new Set(['pmid:99900003'])
     return new Set()
   }
-  const id = s2IdFor(externalId)
+  const id = s2IdFor(externalId, sourceUrl)
   if (!id) return new Set()
   const cached = influentialCache.get(id)
   if (cached !== undefined) return new Set(cached)

@@ -9,6 +9,7 @@ import {
   SELF_ADVANCE_TRANSITIONS,
 } from '@/lib/team/advance'
 import { classifyLabType } from '@/lib/lab-type/classify'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
@@ -82,7 +83,13 @@ export async function POST(req: NextRequest) {
   }
 
   // Classify the research idea → assign lab type. Done synchronously so the
-  // user sees their lab type immediately on advance.
+  // user sees their lab type immediately on advance. This is an Anthropic call,
+  // so it must clear the paid `ai` tier (fail-closed in production without a
+  // shared limiter store) — the route-level `mutate` tier alone doesn't cover
+  // paid work. Checked only on this transition; self-advance stays free.
+  const aiLimited = await enforceRateLimit(req, 'ai', ctx.userId)
+  if (aiLimited) return aiLimited
+
   const { labType, rationale } = await classifyLabType(researchIdea)
 
   // Skip lab_selection; jump straight to research_planning with lab type set.

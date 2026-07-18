@@ -582,32 +582,42 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   })
 
   // ── AC13 ─────────────────────────────────────────────────────────────────
+  // The retry workflow lives in the application service (Track-B extraction);
+  // the route is a thin adapter. Assert the invariant where the calls now are:
+  // ONE generation call site (direct create) + ONE grading call site (via the
+  // shared gradeAnswers helper), both composing the cached paper block, and no
+  // Anthropic usage left in the route file itself.
   test('AC13 (static): retry makes at most one generation + one grading call, both paper-cached', async () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
-    const routePath = path.join(
-      __dirname,
-      '..',
-      'app',
-      'api',
-      'papers',
-      '[id]',
-      'quiz',
-      'retry',
-      'route.ts',
-    )
-    const source = fs.readFileSync(routePath, 'utf8')
+    const servicePath = path.join(__dirname, '..', 'lib', 'literature', 'quiz-retry.ts')
+    const source = fs.readFileSync(servicePath, 'utf8')
 
-    // Exactly one generation call site and one grading call site through the
-    // shared lazy Anthropic client, each with a cached paper-text system block.
+    // Exactly one generation call site through the shared lazy Anthropic
+    // client; grading goes through gradeAnswers (one call site) whose payload
+    // reuses the cached paper block.
     const messagesCreateCalls = source.match(/anthropic\(\)\.messages\.create\(/g) ?? []
-    expect(messagesCreateCalls.length).toBe(2) // one generate, one grade
+    expect(messagesCreateCalls.length).toBe(1) // the one-time new-question generation
 
-    const cacheControlOccurrences = source.match(/cache_control:\s*\{\s*type:\s*'ephemeral'\s*\}/g) ?? []
-    expect(cacheControlOccurrences.length).toBe(2)
+    const gradeCalls = source.match(/gradeAnswers</g) ?? []
+    expect(gradeCalls.length).toBe(1) // the single retry grading call
 
-    // No full 5-question regenerate helper is referenced from this route file.
+    // Both calls compose the byte-identical cached paper block (PERF-8):
+    // generation via paperTextBlock in its system array, grading via
+    // paperTextContext in its context block.
+    expect(source).toContain('paperTextBlock(paper.fullText)')
+    expect(source).toContain('paperTextContext(session.paper.fullText)')
+
+    // No full 5-question regenerate helper is referenced from the service.
     expect(source).not.toMatch(/QUIZ_QUESTION_COUNT\s*\}\s*questions/)
     expect(source).toContain('ensureNewQuestion')
+
+    // And the route file is a thin adapter: no Anthropic client usage at all.
+    const routeSource = fs.readFileSync(
+      path.join(__dirname, '..', 'app', 'api', 'papers', '[id]', 'quiz', 'retry', 'route.ts'),
+      'utf8',
+    )
+    expect(routeSource).not.toContain('anthropic')
+    expect(routeSource).not.toContain("from '@/lib/db'")
   })
 })

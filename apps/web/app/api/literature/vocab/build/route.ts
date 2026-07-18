@@ -3,10 +3,13 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson, cuid } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { extractTerms, type ExtractedTerm } from '@/lib/literature/vocab'
+import { extractCandidates, VOCAB_TEXT_SLICE_CHARS } from '@/lib/literature/vocab'
+import { curateTerms, type CuratedTerm } from '@/lib/literature/vocab-curate'
 import type { VocabSource } from '@prisma/client'
 
-export const maxDuration = 60
+// One curation call per paper, and a build may cover several papers. Adaptive
+// thinking on a 40-candidate list is not fast — give the function room.
+export const maxDuration = 120
 
 const BuildBody = z.object({ paperId: cuid.optional() }).strict()
 
@@ -14,17 +17,25 @@ const BuildBody = z.object({ paperId: cuid.optional() }).strict()
 // not an unbounded accumulation across every source they upload.
 const VOCAB_MAX_DECK = 200
 
+// Paid-call bound per build request: papers have no hard per-team cap, so an
+// uncapped all-papers build would be an unbounded Anthropic loop behind one
+// `ai`-tier tick. Uncurated papers are picked up by the next build run (curated
+// papers are skipped for free), so a bounded pass still converges.
+const MAX_CURATIONS_PER_BUILD = 8
+
 /**
  * POST /api/literature/vocab/build — extracts vocabulary terms from the
  * caller's own team papers and adds them to the CALLING STUDENT's deck.
- * `'upload'` tier (8/min): this reads up to 25 `fullText`s and runs O(n)
- * extraction over them — the repo's heavy-local-compute tier, not `'mutate'`
- * (which would let a client burn CPU repeatedly). No paid API call is made,
- * so `'ai'` would be the wrong tier — this route has ZERO Anthropic
- * dependency, matching the rest of the vocabulary builder feature.
+ *
+ * `'ai'` tier: each paper costs ONE Anthropic call (see `vocab-curate.ts`).
+ * This was `'upload'` when the pipeline was mechanical and free; a paid call
+ * per paper makes `'ai'` the honest tier.
+ *
+ * Papers already fully represented in the deck are skipped BEFORE curation, so
+ * re-running the builder is free — the per-paper spend happens once, ever.
  */
 export async function POST(req: NextRequest) {
-  const { ctx, error } = await requireTeamContext(req, { tier: 'upload', feature: 'literature' })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'ai', feature: 'literature' })
   if (error) return error
 
   const { data, error: bodyError } = await parseJson(req, BuildBody)
@@ -46,15 +57,69 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Source not found' }, { status: 404 })
   }
 
-  // Extract per paper, then merge across papers on termKey — first paper
-  // wins the attribution for a term that recurs across multiple sources.
-  const merged = new Map<string, ExtractedTerm & { paperId: string }>()
+  // Terms the student already has, plus the once-ever curation markers.
+  // Curation deliberately rejects trivial candidates, so "all candidates
+  // already carded" is never true for a curated paper — the marker row (not
+  // the cards) is what proves this student already paid this paper's curation
+  // call, keeping re-builds free AND deterministic.
+  const [existing, curationMarkers] = await Promise.all([
+    db.vocabCard.findMany({
+      where: { userId: ctx.dbUserId },
+      select: { termKey: true },
+    }),
+    db.vocabPaperCuration.findMany({
+      where: { userId: ctx.dbUserId, paperId: { in: papers.map((p) => p.id) } },
+      select: { paperId: true },
+    }),
+  ])
+  const existingKeys = new Set(existing.map((c) => c.termKey))
+  const alreadyCurated = new Set(curationMarkers.map((m) => m.paperId))
+
+  // No headroom → skip straight to the "deck is full" response without paying
+  // for curation that could never be inserted.
+  const capacityBeforeBuild = Math.max(0, VOCAB_MAX_DECK - existingKeys.size)
+
+  // Extract → curate per paper, then merge across papers on termKey — first
+  // paper wins the attribution for a term that recurs across multiple sources.
+  const merged = new Map<string, CuratedTerm & { paperId: string }>()
+  const newlyCurated: string[] = []
+  let curations = 0
   for (const paper of papers) {
-    const terms = extractTerms({ title: paper.title, abstract: paper.abstract, fullText: paper.fullText })
-    for (const term of terms) {
-      if (!merged.has(term.termKey)) {
-        merged.set(term.termKey, { ...term, paperId: paper.id })
-      }
+    if (curations >= MAX_CURATIONS_PER_BUILD || merged.size >= capacityBeforeBuild) break
+    if (alreadyCurated.has(paper.id)) continue // curation already paid for — once, ever
+    const candidates = extractCandidates({
+      title: paper.title,
+      abstract: paper.abstract,
+      fullText: paper.fullText,
+    }).filter((c) => !existingKeys.has(c.termKey) && !merged.has(c.termKey))
+    if (candidates.length === 0) continue
+
+    let curated: CuratedTerm[]
+    try {
+      curations++
+      curated = await curateTerms({
+        paperTitle: paper.title,
+        excerpt: (paper.fullText ?? paper.abstract ?? '').slice(0, VOCAB_TEXT_SLICE_CHARS),
+        candidates,
+      })
+    } catch (err) {
+      // An uncurated deck is the trivial-word deck curation exists to prevent,
+      // so fail loudly rather than falling back to raw candidates.
+      console.error('[vocab-curate] failed for paper', paper.id, err)
+      return NextResponse.json(
+        { error: 'Couldn’t build your deck just now — try again in a moment.' },
+        { status: 503 },
+      )
+    }
+
+    // Mark the paper only when curation returned terms: an empty result is
+    // ambiguous (a truncated/unparseable response also yields []), so leaving
+    // it unmarked lets the next build retry rather than permanently losing the
+    // paper's vocabulary to one bad response.
+    if (curated.length > 0) newlyCurated.push(paper.id)
+
+    for (const term of curated) {
+      if (!merged.has(term.termKey)) merged.set(term.termKey, { ...term, paperId: paper.id })
     }
   }
 
@@ -63,33 +128,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ created: 0, skipped: 0, total })
   }
 
-  const existingCount = await db.vocabCard.count({ where: { userId: ctx.dbUserId } })
-  const remainingCapacity = Math.max(0, VOCAB_MAX_DECK - existingCount)
-  const candidates = Array.from(merged.values()).slice(0, remainingCapacity)
+  const toCreate = Array.from(merged.values()).slice(0, capacityBeforeBuild)
 
-  if (candidates.length === 0) {
+  if (toCreate.length === 0) {
     const total = await db.vocabCard.count({ where: { userId: ctx.dbUserId } })
     return NextResponse.json({ created: 0, skipped: merged.size, total })
   }
 
   const now = new Date()
-  const result = await db.vocabCard.createMany({
-    data: candidates.map((c) => ({
-      userId: ctx.dbUserId,
-      teamId: ctx.teamId,
-      paperId: c.paperId,
-      termKey: c.termKey,
-      term: c.term,
-      aliases: c.aliases,
-      definition: c.definition,
-      source: c.source as VocabSource,
-      sourceEntryId: c.sourceEntryId,
-      quote: c.quote,
-      box: 1,
-      dueAt: now, // immediately due — first exposure
-    })),
-    skipDuplicates: true, // @@unique([userId, termKey]) makes this idempotent
-  })
+  // Cards + curation markers land together: the marker is what makes the
+  // per-paper curation spend once-ever, so it must not persist without its
+  // cards (or vice versa).
+  const [result] = await db.$transaction([
+    db.vocabCard.createMany({
+      data: toCreate.map((c) => ({
+        userId: ctx.dbUserId,
+        teamId: ctx.teamId,
+        paperId: c.paperId,
+        termKey: c.termKey,
+        term: c.term,
+        aliases: c.aliases,
+        definition: c.definition,
+        source: c.source as VocabSource,
+        sourceEntryId: c.sourceEntryId,
+        quote: c.quote,
+        box: 1,
+        dueAt: now, // immediately due — first exposure
+      })),
+      skipDuplicates: true, // @@unique([userId, termKey]) makes this idempotent
+    }),
+    db.vocabPaperCuration.createMany({
+      data: newlyCurated.map((paperId) => ({ userId: ctx.dbUserId, paperId })),
+      skipDuplicates: true, // @@unique([userId, paperId])
+    }),
+  ])
 
   const total = await db.vocabCard.count({ where: { userId: ctx.dbUserId } })
 

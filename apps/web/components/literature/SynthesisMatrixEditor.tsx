@@ -90,17 +90,30 @@ export function SynthesisMatrixEditor({ matrixId, onBack }: { matrixId: string; 
         </div>
       )}
 
-      {/* Grid */}
-      <div className="flex-1 overflow-auto p-6">
+      {/* Grid.
+          NO left padding on this scroll container: `position: sticky; left: 0`
+          anchors to the padding edge, so a `pl` here leaves a gap between the
+          panel edge and the sticky Source column that scrolled cells leak
+          through. The left inset lives INSIDE the sticky cells instead (pl-6),
+          where it's part of their opaque background and moves with them. Right
+          padding is safe (no sticky-right column). */}
+      <div className="styled-scroll flex-1 overflow-auto py-6 pr-6">
         <div data-testid="synthesis-grid" className="inline-block min-w-full">
-          <table className="border-collapse">
+          {/* border-separate (not collapse): position:sticky on a cell inside a
+              border-collapse table paints its background and borders out of sync
+              in Chrome/Safari, so scrolled cells bled OVER the sticky Source
+              column. border-spacing-0 keeps the single-line look. */}
+          <table className="border-separate border-spacing-0">
             <thead>
               <tr>
-                <th className="text-left p-2 sticky left-0 bg-[#0d1b2e] z-10 min-w-[160px]">
+                <th className="text-left pl-6 pr-2 py-2 sticky left-0 bg-[#0d1b2e] z-20 border-r border-white/10 min-w-[184px]">
                   <span className="font-pixel text-[7px] text-white/30 uppercase">Source</span>
                 </th>
-                {matrix.columns.map((col) => (
-                  <th key={col.id} className="text-left p-2 align-top min-w-[220px] border-l border-white/10">
+                {matrix.columns.map((col, i) => (
+                  <th
+                    key={col.id}
+                    className={`text-left p-2 align-top min-w-[220px] ${i === 0 ? '' : 'border-l border-white/10'}`}
+                  >
                     {renamingId === col.id ? (
                       <input
                         autoFocus
@@ -198,13 +211,13 @@ export function SynthesisMatrixEditor({ matrixId, onBack }: { matrixId: string; 
             <tbody>
               {matrix.papers.map((paper) => (
                 <tr key={paper.id}>
-                  <td className="p-2 align-top sticky left-0 bg-[#0d1b2e] z-10 min-w-[160px]">
+                  <td className="pl-6 pr-2 py-2 align-top sticky left-0 bg-[#0d1b2e] z-20 border-r border-white/10 min-w-[184px]">
                     <span className="font-pixel text-[8px] text-white/75 leading-relaxed">{paper.title}</span>
                   </td>
-                  {matrix.columns.map((col) => {
+                  {matrix.columns.map((col, i) => {
                     const flagged = flaggedCells.has(`${paper.id}:${col.id}`)
                     return (
-                      <td key={col.id} className="p-2 align-top border-l border-white/10">
+                      <td key={col.id} className={`p-2 align-top ${i === 0 ? '' : 'border-l border-white/10'}`}>
                         <textarea
                           data-testid={`synthesis-cell-${paper.id}-${col.id}`}
                           value={cellText(paper.id, col.id)}

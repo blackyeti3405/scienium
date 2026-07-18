@@ -80,6 +80,10 @@ export const serverEnv = {
   NCBI_EMAIL: lazyOptionalEnv('NCBI_EMAIL', z.string().email()),
   NCBI_API_KEY: lazyOptionalEnv('NCBI_API_KEY'),
   S2_API_KEY: lazyOptionalEnv('S2_API_KEY'),
+  // Optional free PatentsView Search API key — enables live prior-art results
+  // in the Discovery patents lane (keyless mode degrades to a Google Patents
+  // search link-out).
+  PATENTSVIEW_API_KEY: lazyOptionalEnv('PATENTSVIEW_API_KEY'),
 }
 
 /**

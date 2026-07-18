@@ -453,13 +453,23 @@ test.describe('F4-print — Showcase one-pager print export', () => {
       // role-gate GETs from a fresh teacher-authed page so its Clerk token can't
       // go stale mid-suite.
       await withSeedPage(browser, 'teacher', async (teacherPage) => {
-        const printRes = await api.get(teacherPage, `/showcase/${showcaseSlug}?print=1`)
-        expect(printRes.status()).toBe(404)
+        // The slug page streams behind its loading.tsx, so Next can flush a
+        // 200 shell before notFound() runs — the HTTP status is a render-speed
+        // race. Assert the rendered privacy outcome (not-found UI, zero
+        // content) instead of the status code.
+        await teacherPage.goto(`/showcase/${showcaseSlug}?print=1`)
+        await expect(teacherPage.getByText('This page could not be found.')).toBeVisible({
+          timeout: 10000,
+        })
+        await expect(teacherPage.getByText(SHORT_TITLE)).toHaveCount(0)
 
-        // Same viewer, same showcase, no ?print=1 — must 404 identically (the
+        // Same viewer, same showcase, no ?print=1 — denied identically (the
         // flag grants no extra access).
-        const normalRes = await api.get(teacherPage, `/showcase/${showcaseSlug}`)
-        expect(normalRes.status()).toBe(404)
+        await teacherPage.goto(`/showcase/${showcaseSlug}`)
+        await expect(teacherPage.getByText('This page could not be found.')).toBeVisible({
+          timeout: 10000,
+        })
+        await expect(teacherPage.getByText(SHORT_TITLE)).toHaveCount(0)
       })
     } finally {
       // Restore to link_only for the remaining tests (AC11, AC12). Re-navigate

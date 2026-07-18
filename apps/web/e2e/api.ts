@@ -1,8 +1,17 @@
 import type { APIRequestContext, APIResponse, Browser, Page } from '@playwright/test'
-import { STORAGE, type Role } from './roles'
+import { clerk, clerkSetup, setupClerkTestingToken } from '@clerk/testing/playwright'
+import { STORAGE, getAccounts, type Role } from './roles'
 
 const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 const LANDING: Record<Role, string> = { leader: '/lab', student: '/lab', teacher: '/teacher' }
+
+/**
+ * Which role a page is signed in as, so session recovery can re-authenticate
+ * with the right credentials. `withSeedPage` registers its role; the default
+ * `chromium` project's `page` fixture always carries the leader storageState
+ * (see playwright.config.ts), so 'leader' is the correct fallback.
+ */
+const PAGE_ROLE = new WeakMap<Page, Role>()
 
 /**
  * Clerk's session JWT (the `__session` cookie) is short-lived and only
@@ -37,9 +46,136 @@ async function refreshClerkSession(page: Page): Promise<void> {
   }
 }
 
-async function refreshed<T>(page: Page, run: () => Promise<T>): Promise<T> {
+/**
+ * A stale-session request doesn't fail — middleware 307s it to /sign-in and
+ * Playwright follows, so the caller sees `ok() === true` with an HTML page
+ * where JSON was expected (`Unexpected token '<'` at parse time). Two tells,
+ * either sufficient:
+ *  - the final URL landed on /sign-in (the redirect chain can also continue
+ *    PAST /sign-in to a landing page, so this alone is not enough);
+ *  - the call targeted an /api/ route but the response is text/html — no API
+ *    route in this app ever legitimately answers HTML, so an HTML body means
+ *    the request was redirected somewhere else entirely.
+ */
+function staleSessionResponse(requestedUrl: string, res: APIResponse): boolean {
+  if (res.url().includes('/sign-in')) return true
+  const requestedPath = new URL(requestedUrl, BASE_URL).pathname
+  if (!requestedPath.startsWith('/api/')) return false
+  const contentType = res.headers()['content-type'] ?? ''
+  return contentType.includes('text/html')
+}
+
+/** Bounded wait for clerk-js to boot a live session on the current document. */
+async function waitForClerkSession(page: Page, timeout: number): Promise<void> {
+  await page
+    .waitForFunction(() => Boolean((window as { Clerk?: { session?: unknown } }).Clerk?.session), null, {
+      timeout,
+    })
+    .catch(() => {})
+}
+
+/**
+ * Strongest available recovery: a real navigation reboots clerk-js, which
+ * rotates the `__session` cookie shared with `page.request`. The pre-call
+ * `refreshClerkSession` can silently no-op (clerk-js wedged or never booted on
+ * this page); a reload cannot.
+ *
+ * The reload's own document request rides the SAME stale cookie, so middleware
+ * may bounce the page to /sign-in, where clerk-js (whose client session is
+ * still valid) auto-returns to the app. Retrying before that chain settles
+ * re-sends the stale cookie and fails identically — so wait for a live Clerk
+ * session, and if the page is still parked on /sign-in, hop back to the app
+ * URL explicitly before refreshing the token.
+ */
+async function forceSessionRecovery(page: Page): Promise<void> {
+  try {
+    const target = page.url()
+    await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {})
+    await waitForClerkSession(page, 10_000)
+    if (page.url().includes('/sign-in') && !target.includes('/sign-in')) {
+      await page.goto(target, { waitUntil: 'domcontentloaded' }).catch(() => {})
+      await waitForClerkSession(page, 10_000)
+    }
+  } catch {
+    // Blank or closed page — the plain refresh below is the best remaining shot.
+  }
   await refreshClerkSession(page)
+}
+
+/**
+ * Last-resort recovery: a full programmatic re-sign-in with the page's role
+ * credentials — the same supported @clerk/testing path auth.setup.ts uses.
+ * Reached only when clerk-js could not refresh the session at all (observed on
+ * dev instances deep into long serial files: the reload's own document request
+ * bounces to /sign-in and the token refresh never lands). Navigates the page,
+ * so any DOM state is lost — acceptable, since every request from this page
+ * would otherwise fail.
+ */
+async function reauthenticate(page: Page): Promise<void> {
+  const role = PAGE_ROLE.get(page) ?? 'leader'
+  const acct = getAccounts().find((a) => a.role === role)!
+  console.warn(`[e2e/api] session unrecoverable — re-signing in programmatically as ${role}`)
+  // The Testing Token is normally minted by auth.setup.ts's clerkSetup, which
+  // runs in a different worker process — fetch one here if this worker lacks it.
+  if (!process.env.CLERK_TESTING_TOKEN) {
+    await clerkSetup({ publishableKey: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY })
+  }
+  await setupClerkTestingToken({ page })
+  await page.goto('/')
+  await clerk.signOut({ page }).catch(() => {}) // a half-dead session blocks signIn
+  await clerk.signIn({
+    page,
+    signInParams: { strategy: 'password', identifier: acct.identifier, password: acct.password },
+  })
+}
+
+async function refreshed(
+  page: Page,
+  url: string,
+  run: () => Promise<APIResponse>,
+): Promise<APIResponse> {
+  await refreshClerkSession(page)
+  let res = await run()
+  if (!staleSessionResponse(url, res)) return res
+
+  // Escalating, loudly-logged recovery. Mutations are safe to retry here — a
+  // stale-session request never reached its route (the auth middleware
+  // redirected it away). A genuinely broken account still fails loudly:
+  // clerk.signIn throws on bad credentials, and a stale response after all
+  // recovery attempts fails in the caller exactly as before.
+  console.warn(
+    `[e2e/api] stale Clerk session — ${url} answered from ${res.url()} as ${
+      res.headers()['content-type'] ?? 'unknown'
+    }; reloading page and retrying`,
+  )
+  await forceSessionRecovery(page)
+  res = await run()
+  if (!staleSessionResponse(url, res)) return res
+
+  await reauthenticate(page)
   return run()
+}
+
+/**
+ * Navigate with a verified-fresh session. A stale `__session` cookie bounces
+ * the DOCUMENT request through /sign-in, and Clerk's auto-return lands on the
+ * fallback surface (/lab) instead of the requested page — the spec then fails
+ * on a visibility assertion while sitting on the wrong URL. Refresh before
+ * navigating, verify the final path, and re-sign-in + retry once if the
+ * navigation was hijacked. Use for leader-page navigations that follow a long
+ * detour (e.g. a `withSeedPage` teacher block) in long serial files.
+ */
+export async function gotoFresh(page: Page, url: string): Promise<void> {
+  await refreshClerkSession(page)
+  await page.goto(url)
+  const targetPath = new URL(url, BASE_URL).pathname
+  if (new URL(page.url()).pathname !== targetPath) {
+    console.warn(
+      `[e2e/api] navigation to ${url} landed on ${page.url()} (stale session) — re-signing in and retrying`,
+    )
+    await reauthenticate(page)
+    await page.goto(url)
+  }
 }
 
 type GetOpts = Parameters<APIRequestContext['get']>[1]
@@ -55,15 +191,15 @@ type DeleteOpts = Parameters<APIRequestContext['delete']>[1]
  */
 export const api = {
   get: (page: Page, url: string, opts?: GetOpts): Promise<APIResponse> =>
-    refreshed(page, () => page.request.get(url, opts)),
+    refreshed(page, url, () => page.request.get(url, opts)),
   post: (page: Page, url: string, opts?: PostOpts): Promise<APIResponse> =>
-    refreshed(page, () => page.request.post(url, opts)),
+    refreshed(page, url, () => page.request.post(url, opts)),
   put: (page: Page, url: string, opts?: PutOpts): Promise<APIResponse> =>
-    refreshed(page, () => page.request.put(url, opts)),
+    refreshed(page, url, () => page.request.put(url, opts)),
   patch: (page: Page, url: string, opts?: PatchOpts): Promise<APIResponse> =>
-    refreshed(page, () => page.request.patch(url, opts)),
+    refreshed(page, url, () => page.request.patch(url, opts)),
   delete: (page: Page, url: string, opts?: DeleteOpts): Promise<APIResponse> =>
-    refreshed(page, () => page.request.delete(url, opts)),
+    refreshed(page, url, () => page.request.delete(url, opts)),
 }
 
 /**
@@ -85,6 +221,7 @@ export async function withSeedPage<T>(
 ): Promise<T> {
   const context = await browser.newContext({ storageState: STORAGE[role], baseURL: BASE_URL })
   const page = await context.newPage()
+  PAGE_ROLE.set(page, role) // so session recovery re-signs-in with the right account
   try {
     await page.goto(LANDING[role])
     return await fn(page)

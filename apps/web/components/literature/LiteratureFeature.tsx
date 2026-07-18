@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { X, FlaskConical, Lock, Quote, BookOpen, Grid3x3, Brain } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
+import { LAB_TYPE_LABELS, type LabType, type Phase } from '@/lib/phase'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
@@ -71,6 +71,9 @@ export function LiteratureFeature() {
   const [ideaResult, setIdeaResult] = useState<{ labTypeLabel: string; rationale: string } | null>(null)
   const [researchIdea, setResearchIdea] = useState<string | null>(null)
   const [labType, setLabType] = useState<LabType | null>(null)
+  // undefined = still loading; the idea gate stays hidden until we know the
+  // phase, so it can never flash for a team that cannot advance.
+  const [phase, setPhase] = useState<Phase | undefined>(undefined)
   const [showCitations, setShowCitations] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
   const [showSynthesis, setShowSynthesis] = useState(false)
@@ -92,9 +95,10 @@ export function LiteratureFeature() {
   useEffect(() => {
     fetch('/api/team')
       .then((r) => r.json())
-      .then((d: { researchIdea?: string | null; labType?: string | null }) => {
+      .then((d: { researchIdea?: string | null; labType?: string | null; phase?: string }) => {
         setResearchIdea(d.researchIdea ?? null)
         setLabType((d.labType as LabType | null) ?? null)
+        setPhase(d.phase as Phase | undefined)
       })
       .catch(() => {
         // degrade gracefully — leave both null and fall through to first-time path
@@ -237,8 +241,21 @@ export function LiteratureFeature() {
         </div>
       </div>
 
-      {/* Idea submission box — shown once all 25 sources are in */}
-      {locked && (() => {
+      {/*
+        Idea submission box — the literature_review → research_planning gate.
+
+        Gated on PHASE, not just source count. `locked` only means 25/25 sources
+        are in, which stays true forever afterwards, so on source count alone
+        this box kept offering to advance a team that was already past the gate
+        — and `POST /api/team/advance-phase` answered with the developer string
+        "No phase gate is defined for \"showcase\" yet". The server has always
+        known only literature_review has a gate (see app/api/team/route.ts); the
+        client just never asked.
+
+        The already-submitted summary still shows in later phases: it is a
+        read-only record of the assigned lab, not an offer to advance.
+      */}
+      {locked && (phase === 'literature_review' || !!researchIdea || !!ideaResult) && (() => {
         const ideaSubmitted = !!researchIdea || !!ideaResult
         // Display text: prefer the persisted value; for just-submitted-this-session fallback to `idea`
         const ideaText = researchIdea ?? idea

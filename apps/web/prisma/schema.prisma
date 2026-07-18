@@ -53,6 +53,7 @@ model User {
   synthesisMatrices    SynthesisMatrix[]
   vocabCards           VocabCard[]
   vocabKpDays          VocabKpDay[]
+  vocabPaperCurations  VocabPaperCuration[]
 
   @@index([activeTeamId])
   @@index([classId])
@@ -139,6 +140,9 @@ model Team {
   id            String       @id @default(cuid())
   name          String
   teamLeadId    String       @map("team_lead_id")
+  // VESTIGIAL (ADR-004): class membership is per-student (User.classId); labs may
+  // span classes/schools. Never read this for authorization — teacher access is
+  // membership-based (lib/teacher/auth.ts::teacherOwnsTeam). Kept for old rows only.
   classId       String?      @map("class_id")
   labType       LabType?     @map("lab_type")
   topic         String?
@@ -329,6 +333,9 @@ enum ExternalPlatform {
   arxiv
   pubmed
   pmc
+  // Works with neither an arXiv id nor a PMID (open-access journal articles,
+  // non-arXiv preprint servers) — keyed by their OpenAlex work id (W…).
+  openalex
 
   @@map("external_platform")
 }
@@ -337,6 +344,9 @@ enum CredibilityTier {
   peer_reviewed
   preprint
   open_access
+  // Plain-language background from an authoritative source (MedlinePlus/NIH
+  // explainers) — for understanding, not for citing as primary research.
+  reference
 
   @@map("credibility_tier")
 }
@@ -520,6 +530,7 @@ model Paper {
   promotedFromNode DiscoveryNode?     @relation("promotedFrom")
   citation       Citation?
   vocabCards     VocabCard[]
+  vocabPaperCurations VocabPaperCuration[]
 
   // DB-level duplicate-upload guard. Postgres treats NULL content hashes as
   // distinct, so non-PDF/legacy papers (null hash) are unaffected; two uploads of
@@ -1658,6 +1669,7 @@ enum VocabSource {
   data_quality_guide
   paper_definition     // the paper itself defines it (validated acronym expansion)
   paper_context        // no grounded definition exists — show the paper's own sentence
+  llm_definition       // written at build time by vocab-curate.ts, grounded in the paper's own sentence (kept as `quote`)
 
   @@map("vocab_source")
 }
@@ -1670,6 +1682,24 @@ enum VocabSource {
 // `onDelete: Cascade` on `paperId` is intentional: deleting a paper drops the
 // cards lifted from it. If the term also appears in a surviving paper, the
 // next "Build deck" re-adds it — self-healing.
+// Once-ever curation marker: one row = "this student's deck has already paid
+// the curation call for this paper". The build route skips marked papers, so
+// re-building never re-bills a paper — curation deliberately rejects trivial
+// candidates, so "all candidates carded" (the old skip test) is never true and
+// cannot serve as the marker. Written only after a curation call returns terms.
+model VocabPaperCuration {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  paperId   String   @map("paper_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id])
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, paperId])
+  @@map("vocab_paper_curations")
+}
+
 model VocabCard {
   id             String      @id @default(cuid())
   userId         String      @map("user_id")

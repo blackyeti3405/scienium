@@ -1,6 +1,7 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { serverEnv } from '@/lib/env'
+import { logEvent, requestIdFrom } from '@/lib/observability/log'
 
 /**
  * Rate limiter — OWASP API4:2023 (Unrestricted Resource Consumption).
@@ -249,10 +250,16 @@ export async function enforceRateLimit(
   // (see PAID_TIERS). Surfaces the misconfiguration loudly instead of quietly
   // multiplying the per-student LLM budget by the instance count.
   if (paidTierMisconfigured(tierName)) {
-    console.error(
-      `[rate-limit] '${tierName}' tier blocked: no shared rate-limit store in production. ` +
+    logEvent({
+      event: 'rate_limit.misconfigured',
+      route: req.nextUrl.pathname,
+      requestId: requestIdFrom(req),
+      tier: tierName,
+      outcome: 'error',
+      detail:
+        'paid tier blocked: no shared rate-limit store in production. ' +
         'Set UPSTASH_REDIS_REST_URL/TOKEN (or RATE_LIMIT_ALLOW_MEMORY=1 on single-instance hosts).',
-    )
+    })
     return NextResponse.json(
       { error: 'This feature is temporarily unavailable. Please tell your teacher.' },
       { status: 503 },
@@ -272,6 +279,15 @@ export async function enforceRateLimit(
 
   const blocked = checks.find((c) => !c.ok)
   if (!blocked) return null
+
+  logEvent({
+    event: 'rate_limit.denied',
+    route: req.nextUrl.pathname,
+    requestId: requestIdFrom(req),
+    tier: tierName,
+    userId: userId ?? null,
+    outcome: 'denied',
+  })
 
   return NextResponse.json(
     { error: 'Too many requests — please slow down and try again in a moment.' },

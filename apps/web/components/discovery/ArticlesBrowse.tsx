@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ArticleProvider, ArticleRenderMode, ArticleSearchResult } from '@/lib/discovery/sources'
+import { TIER_META } from '@/lib/discovery/credibility'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
 
 interface FeedMeta {
@@ -81,6 +82,12 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
 
   const conversationFeeds = feeds.filter((f) => f.provider === 'the_conversation')
   const journalismFeeds = feeds.filter((f) => f.provider === 'journalism')
+  const explainerFeeds = feeds.filter((f) => f.provider === 'explainer')
+  const patentFeeds = feeds.filter((f) => f.provider === 'patents')
+  const activeProvider = feeds.find((f) => f.id === activeFeed)?.provider
+  // Search-driven lanes send the query to a live search API; RSS lanes only
+  // keyword-filter their cached feed.
+  const activeIsSearchDriven = activeProvider === 'explainer' || activeProvider === 'patents'
 
   return (
     <div className="flex flex-col h-full bg-[#0d1b2e]">
@@ -122,12 +129,38 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
             ))}
           </div>
         </div>
+        {(explainerFeeds.length > 0 || patentFeeds.length > 0) && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-pixel text-[7px] text-white/30 uppercase tracking-widest shrink-0">
+              Look it up
+            </span>
+            <div className="flex items-center rounded-sm border border-white/15 overflow-hidden">
+              {[...explainerFeeds, ...patentFeeds].map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setActiveFeed(f.id)}
+                  className={`font-pixel text-[7px] px-2.5 py-2 transition-colors ${
+                    activeFeed === f.id ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm">🔍</span>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter this feed by keyword…"
+            placeholder={
+              activeProvider === 'explainer'
+                ? 'Search MedlinePlus health topics…'
+                : activeProvider === 'patents'
+                  ? 'Search patents for prior art…'
+                  : 'Filter this feed by keyword…'
+            }
             className="w-full rounded-sm border border-white/20 bg-[#0a1628] px-4 py-2 pl-9 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#F5C518]/60"
             autoComplete="off"
           />
@@ -143,9 +176,13 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
             <p className="font-pixel text-[8px] text-white/50 leading-loose">
               {!feedsLoaded || loading
                 ? 'Loading…'
-                : searched
-                  ? 'No articles found — try another feed or keyword'
-                  : 'Pick a feed to browse'}
+                : activeIsSearchDriven && !query.trim()
+                  ? activeProvider === 'patents'
+                    ? 'Describe your invention idea to search for prior art'
+                    : 'Type a topic to search MedlinePlus health explainers'
+                  : searched
+                    ? 'No articles found — try another feed or keyword'
+                    : 'Pick a feed to browse'}
             </p>
           </div>
         ) : (
@@ -169,6 +206,20 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
                       <span className="font-pixel text-[6px] text-white/30 uppercase">
                         {r.renderMode === 'full' ? 'full article' : 'link-out'}
                       </span>
+                      {r.provider === 'explainer' && (
+                        <span
+                          className="font-pixel text-[7px] px-1.5 py-0.5 rounded-sm"
+                          style={{
+                            color: TIER_META.reference.color,
+                            border: `1px solid ${TIER_META.reference.color}55`,
+                            background: `${TIER_META.reference.color}12`,
+                          }}
+                          data-tier="reference"
+                          title={TIER_META.reference.caveat}
+                        >
+                          {TIER_META.reference.label}
+                        </span>
+                      )}
                       {r.publishedAt && (
                         <span className="text-[10px] text-white/30">
                           {new Date(r.publishedAt).toLocaleDateString()}

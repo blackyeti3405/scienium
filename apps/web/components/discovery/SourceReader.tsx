@@ -41,7 +41,14 @@ interface Props {
   onBack?: () => void
 }
 
-const PLATFORM_LABEL: Record<string, string> = { arxiv: 'arXiv', pubmed: 'PubMed', pmc: 'PMC' }
+const PLATFORM_LABEL: Record<string, string> = {
+  arxiv: 'arXiv',
+  pubmed: 'PubMed',
+  pmc: 'PMC',
+  // Works keyed by their OpenAlex id (OA journals, non-arXiv preprint servers) —
+  // the reader's host line carries the specific venue.
+  openalex: 'Open access',
+}
 
 const LANE_LABELS: { key: keyof SourceLanes; label: string; hint: string }[] = [
   { key: 'cites', label: 'Cites', hint: 'papers this one cites' },

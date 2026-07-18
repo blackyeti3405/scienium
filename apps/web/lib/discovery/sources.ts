@@ -5,8 +5,13 @@ import type { CredibilityTier } from '@prisma/client'
 // POST branch all speak these types so nodes never silently corrupt (epic:
 // "change these in lockstep").
 
-/** The two platforms a student can search/branch in Feature A. */
-export type SourcePlatform = 'arxiv' | 'pubmed'
+/**
+ * The platforms a student can search/branch in Feature A. `openalex` is the
+ * catch-all for open-access works with neither an arXiv id nor a PMID
+ * (bioRxiv/medRxiv/PsyArXiv-style preprints, open-access journal articles),
+ * keyed by their OpenAlex work id.
+ */
+export type SourcePlatform = 'arxiv' | 'pubmed' | 'openalex'
 
 /** One search-result row (Papers search box). */
 export interface SourceSearchResult {
@@ -17,6 +22,8 @@ export interface SourceSearchResult {
   published: string | null
   host: string
   tier: CredibilityTier
+  /** Review article (a survey of a field) — badged in the search list. */
+  isReview?: boolean
 }
 
 /** A selectable citation/metadata chip in one of the four surf lanes. */
@@ -61,7 +68,11 @@ export function chipId(platform: SourcePlatform, externalId: string): string {
 // same way the arXiv/PubMed contract above does.
 
 /** Which lane an article feed belongs to. */
-export type ArticleProvider = 'the_conversation' | 'journalism'
+/**
+ * `explainer` = plain-language reference lanes (MedlinePlus health topics).
+ * `patents` = the prior-art lane (link-out cards to Google Patents).
+ */
+export type ArticleProvider = 'the_conversation' | 'journalism' | 'explainer' | 'patents'
 
 /** How the reader renders the body: verbatim full HTML, or a link-out card. */
 export type ArticleRenderMode = 'full' | 'linkout'

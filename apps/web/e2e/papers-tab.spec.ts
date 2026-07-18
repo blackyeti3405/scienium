@@ -112,13 +112,9 @@ async function openPapersTab(page: Page) {
   await page.getByRole('button', { name: /Papers/ }).click()
 }
 
-/** Search the Papers box and wait for at least one result row to render. */
-async function searchPapers(page: Page, query: string, platform: 'arXiv' | 'PubMed' = 'arXiv') {
-  if (platform === 'PubMed') {
-    await page.getByRole('button', { name: 'PubMed' }).click()
-  }
-  const placeholder = platform === 'arXiv' ? /Search arXiv papers/ : /Search PubMed papers/
-  const input = page.getByPlaceholder(placeholder)
+/** Search the merged Papers box (one list across arXiv + PubMed). */
+async function searchPapers(page: Page, query: string) {
+  const input = page.getByPlaceholder(/Search arXiv \+ PubMed papers/)
   await input.fill(query)
   return input
 }
@@ -195,8 +191,14 @@ async function findNodeId(page: Page, externalId: string): Promise<string> {
  * click legitimately navigates WITHOUT re-POSTing. Either way the invariant we
  * need — the seed node exists in this team's tree — is what we assert on.
  */
-async function pickFirstResultAndSettle(page: Page, seedId: string = ARXIV_SEED_ID) {
-  await resultRows(page).first().click()
+async function pickFirstResultAndSettle(
+  page: Page,
+  seedId: string = ARXIV_SEED_ID,
+  // Merged search interleaves peer-reviewed rows first, so "first row" is no
+  // longer deterministically the arXiv seed — pick the seed by its title.
+  title = 'E2E Fixture: Attention Mechanisms',
+) {
+  await resultRows(page).filter({ hasText: title }).first().click()
   await waitForSeedPersisted(page, seedId)
   await page.reload()
   await dismissHome(page)
@@ -227,44 +229,69 @@ test.describe('Feature A — Papers tab', () => {
 
     await papersToggle.click()
     await expect(papersToggle).toHaveClass(/bg-\[#F5C518\]/)
-    await expect(page.getByPlaceholder(/Search arXiv papers/)).toBeVisible()
+    await expect(page.getByPlaceholder(/Search arXiv \+ PubMed papers/)).toBeVisible()
   })
 
   // ── AC2 ──────────────────────────────────────────────────────────────────────
-  test('AC2: search returns platform-scoped results with a credibility tier (arXiv + PubMed)', async ({
+  test('AC2: one merged search mixes arXiv + PubMed results, tier-badged, with a preprint toggle', async ({
     page,
   }) => {
     await openDiscovery(page)
     await openPapersTab(page)
 
-    // arXiv (default filter) — API assertion.
-    const arxivRes = await api.get(page, 
+    // Merged (no platform param, the UI's mode) — both platforms in one list.
+    const mergedRes = await api.get(page,
+      `/api/discovery/sources/search?q=${encodeURIComponent(SEARCH_ARXIV_QUERY)}`,
+    )
+    expect(mergedRes.status()).toBe(200)
+    const mergedJson = (await mergedRes.json()) as Array<{
+      platform: string
+      tier: string
+      isReview?: boolean
+    }>
+    expect(Array.isArray(mergedJson)).toBe(true)
+    const platforms = new Set(mergedJson.map((r) => r.platform))
+    expect(platforms.has('arxiv')).toBe(true)
+    expect(platforms.has('pubmed')).toBe(true)
+    // The OA sweep brings works beyond arXiv/PubMed (OA journals, bioRxiv-style
+    // preprints) in on the openalex platform.
+    expect(platforms.has('openalex')).toBe(true)
+    for (const r of mergedJson) expect(r).toHaveProperty('tier')
+    // Review articles float to the top of the merged list.
+    expect(mergedJson[0]?.isReview).toBe(true)
+
+    // Platform-scoped param stays honored for API callers.
+    const arxivRes = await api.get(page,
       `/api/discovery/sources/search?q=${encodeURIComponent(SEARCH_ARXIV_QUERY)}&platform=arxiv`,
     )
     expect(arxivRes.status()).toBe(200)
-    const arxivJson = await arxivRes.json()
-    expect(Array.isArray(arxivJson)).toBe(true)
+    const arxivJson = (await arxivRes.json()) as Array<{ platform: string }>
     expect(arxivJson.length).toBeGreaterThanOrEqual(1)
-    expect(arxivJson[0]).toHaveProperty('tier')
-    expect(arxivJson[0].platform).toBe('arxiv')
+    expect(arxivJson.every((r) => r.platform === 'arxiv')).toBe(true)
 
-    // UI: result rows render with a title + credibility badge.
-    await searchPapers(page, SEARCH_ARXIV_QUERY, 'arXiv')
+    // UI: one search shows BOTH kinds, each row badge saying which it is.
+    // Filter on the badge's data-tier attribute, not text — a live paper's
+    // TITLE can legitimately contain the word "preprint".
+    const preprintRows = resultRows(page).filter({ has: page.locator('span[data-tier="preprint"]') })
+    const reviewedRows = resultRows(page).filter({
+      has: page.locator('span[data-tier="peer_reviewed"]'),
+    })
+    await searchPapers(page, SEARCH_ARXIV_QUERY)
     await expect(resultRows(page).first()).toBeVisible({ timeout: 10000 })
-    await expect(resultRows(page).first()).toContainText('Preprint')
+    await expect(preprintRows.first()).toBeVisible()
+    await expect(reviewedRows.first()).toBeVisible()
+    // The review fixture renders its Review badge.
+    await expect(
+      resultRows(page).filter({ has: page.locator('span[data-review="true"]') }).first(),
+    ).toBeVisible()
 
-    // Switch filter to PubMed — a different platform-scoped result set.
-    const pubmedRes = await api.get(page, 
-      `/api/discovery/sources/search?q=${encodeURIComponent(SEARCH_PUBMED_QUERY)}&platform=pubmed`,
-    )
-    expect(pubmedRes.status()).toBe(200)
-    const pubmedJson = await pubmedRes.json()
-    expect(pubmedJson.length).toBeGreaterThanOrEqual(1)
-    expect(pubmedJson[0].platform).toBe('pubmed')
-
-    await searchPapers(page, SEARCH_PUBMED_QUERY, 'PubMed')
-    await expect(resultRows(page).first()).toBeVisible({ timeout: 10000 })
-    await expect(resultRows(page).first()).toContainText('Peer-reviewed')
+    // Preprint toggle: off hides preprint rows (peer-reviewed stay), on restores.
+    const toggle = page.getByTestId('preprint-toggle')
+    await toggle.click()
+    await expect(preprintRows).toHaveCount(0)
+    await expect(reviewedRows.first()).toBeVisible()
+    await toggle.click()
+    await expect(preprintRows.first()).toBeVisible()
   })
 
   // ── AC3 ──────────────────────────────────────────────────────────────────────
@@ -273,7 +300,7 @@ test.describe('Feature A — Papers tab', () => {
   }) => {
     await openDiscovery(page)
     await openPapersTab(page)
-    await searchPapers(page, SEARCH_ARXIV_QUERY, 'arXiv')
+    await searchPapers(page, SEARCH_ARXIV_QUERY)
     await expect(resultRows(page).first()).toBeVisible({ timeout: 10000 })
     await pickFirstResultAndSettle(page)
 
@@ -307,7 +334,7 @@ test.describe('Feature A — Papers tab', () => {
   }) => {
     await openDiscovery(page)
     await openPapersTab(page)
-    await searchPapers(page, SEARCH_ARXIV_QUERY, 'arXiv')
+    await searchPapers(page, SEARCH_ARXIV_QUERY)
     await expect(resultRows(page).first()).toBeVisible({ timeout: 10000 })
     await pickFirstResultAndSettle(page)
 
@@ -347,7 +374,7 @@ test.describe('Feature A — Papers tab', () => {
   }) => {
     await openDiscovery(page)
     await openPapersTab(page)
-    await searchPapers(page, SEARCH_ARXIV_QUERY, 'arXiv')
+    await searchPapers(page, SEARCH_ARXIV_QUERY)
     await expect(resultRows(page).first()).toBeVisible({ timeout: 10000 })
     await pickFirstResultAndSettle(page)
 
@@ -409,7 +436,7 @@ test.describe('Feature A — Papers tab', () => {
   test('AC6: reflection persists across reload (PATCH round-trips)', async ({ page }) => {
     await openDiscovery(page)
     await openPapersTab(page)
-    await searchPapers(page, SEARCH_ARXIV_QUERY, 'arXiv')
+    await searchPapers(page, SEARCH_ARXIV_QUERY)
     await expect(resultRows(page).first()).toBeVisible({ timeout: 10000 })
     await pickFirstResultAndSettle(page)
 
@@ -452,7 +479,7 @@ test.describe('Feature A — Papers tab', () => {
   }) => {
     await openDiscovery(page)
     await openPapersTab(page)
-    await searchPapers(page, SEARCH_ARXIV_QUERY, 'arXiv')
+    await searchPapers(page, SEARCH_ARXIV_QUERY)
     await expect(resultRows(page).first()).toBeVisible({ timeout: 10000 })
     await pickFirstResultAndSettle(page)
 
@@ -500,7 +527,7 @@ test.describe('Feature A — Papers tab', () => {
   }) => {
     await openDiscovery(page)
     await openPapersTab(page)
-    await searchPapers(page, SEARCH_ARXIV_QUERY, 'arXiv')
+    await searchPapers(page, SEARCH_ARXIV_QUERY)
     await expect(resultRows(page).first()).toBeVisible({ timeout: 10000 })
     await pickFirstResultAndSettle(page)
 

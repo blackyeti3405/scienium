@@ -87,11 +87,18 @@ export function ArticleReader({ node, onStar, onBack }: Props) {
               BY-ND): author + source name + the CC BY-ND notice, always visible. */}
           <p className="text-[13px] text-white/50 mt-0.5">
             {node.articleAuthor ? `${node.articleAuthor} — ${sourceName}` : sourceName}
-            {isFull && (
+            {/* License notice is PROVIDER-specific: CC BY-ND applies to The
+                Conversation; explainer content (MedlinePlus/NIH) is a US-
+                government public-domain work and must not carry a CC notice. */}
+            {isFull && node.provider === 'explainer' ? (
+              <span className="block text-[11px] text-white/35 mt-0.5">
+                Source: {sourceName} — content in the public domain
+              </span>
+            ) : isFull ? (
               <span className="block text-[11px] text-white/35 mt-0.5">
                 Republished from {sourceName} under CC BY-ND
               </span>
-            )}
+            ) : null}
           </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">

@@ -356,6 +356,16 @@ outage fails open (logged). The **paid** tiers (`ai`, `upload`) instead fail
 silently letting the per-student LLM cost cap become `limit × instances`;
 `RATE_LIMIT_ALLOW_MEMORY=1` opts out on a single long-lived Node server.
 
+**Paid-work invariant**: every route that can reach an Anthropic call —
+directly or through a lib importing `lib/anthropic.ts` — must clear a paid tier
+(`ai`/`upload`), an explicit `enforceRateLimit(req, 'ai', …)` before the paid
+call (used where a `mutate` route has one paid branch, e.g. phase advance,
+discovery promote, topic wipe), or `assertCron`. The static sweep
+`test/paid-work-guard.test.ts` enforces this in CI, and the shared client in
+`lib/anthropic.ts` logs every call/stream as a structured `llm.call`/
+`llm.stream` event (model, duration, token usage — never prompt content; see
+`lib/observability/log.ts` and `docs/runbooks/llm-cost.md`).
+
 `lib/lru.ts` provides bounded in-process TTL/LRU caching for cheap read-through
 caches such as the Wikipedia article proxy. These caches are intentionally
 best-effort and per-instance. Durable data and user-visible state live in
@@ -967,6 +977,16 @@ The migration chain is append-only:
   for the team-shared comparison grid (`0.24.0`).
 - `20260714230500_vocab_builder`: adds `VocabCard`, `VocabKpDay`, and the
   `VocabSource` enum for the zero-LLM vocabulary/SRS deck (`0.24.0`).
+- `20260716000000_vocab_llm_definition`: adds the `llm_definition` value to
+  `VocabSource` for the LLM-curated vocabulary step (`0.26.0`).
+- `20260717000000_vocab_paper_curation`: adds `VocabPaperCuration` — the
+  once-ever "this student already paid this paper's curation call" marker
+  (`0.26.0`).
+- `20260717120000_openalex_platform`: adds the `openalex` value to
+  `ExternalPlatform` for works with neither an arXiv id nor a PMID — OA
+  journal articles and non-arXiv preprint servers (`0.26.0`).
+- `20260717130000_reference_tier`: adds the `reference` value to
+  `CredibilityTier` for the plain-language explainer lane (`0.26.0`).
 
 The `2026070913xxxx`–`2026070918xxxx` migrations correspond to the earlier
 refactor Phases 3–8 (changelog `0.21.2`–`0.21.7`). The

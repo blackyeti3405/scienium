@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, gotoFresh, withSeedPage } from './api'
 
 /**
  * F4 — Teacher moderation gate for public showcases.
@@ -189,7 +189,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
   // State going out: unchanged (pending_review).
   test('AC1: public publish shows "Pending teacher review" pill in the editor', async ({ page }) => {
     // The default session IS the lab leader (team member) — they see their own editor.
-    await page.goto('/showcase/edit')
+    await gotoFresh(page, '/showcase/edit')
 
     // ShowcaseEditor renders a second sc-pill when published + public.
     // For pending_review: text "Pending teacher review".
@@ -202,7 +202,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
   // State going in: pending_review.
   // State going out: unchanged.
   test('AC2: pending public showcase is absent from /showcase/gallery', async ({ page }) => {
-    await page.goto('/showcase/gallery')
+    await gotoFresh(page, '/showcase/gallery')
 
     // The gallery query filters moderationStatus === 'approved'. A pending showcase must NOT appear.
     await expect(page.getByText(SHORT_TITLE)).toHaveCount(0)
@@ -228,11 +228,19 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       return showcase.slug as string
     })
 
-    // Teacher is NOT a team member (isOwner=false); pending ≠ live → notFound() → 404.
-    // Separate (non-nested) session so the teacher context is fully isolated.
+    // Teacher is NOT a team member (isOwner=false); pending ≠ live → the
+    // not-found boundary renders and the showcase content must not.
+    // NOTE on the assertion shape: the slug page streams behind its
+    // loading.tsx, so Next can flush a 200 shell before notFound() runs — the
+    // HTTP status is a render-speed race, but the rendered outcome is not.
+    // Assert the real privacy property (not-found UI, zero content) instead of
+    // the status code. Separate session so the teacher context is isolated.
     await withSeedPage(browser, 'teacher', async (teacherPage) => {
-      const res = await api.get(teacherPage, `/showcase/${slug}`)
-      expect(res.status()).toBe(404)
+      await teacherPage.goto(`/showcase/${slug}`)
+      await expect(teacherPage.getByText('This page could not be found.')).toBeVisible({
+        timeout: 10000,
+      })
+      await expect(teacherPage.getByText(SHORT_TITLE)).toHaveCount(0)
     })
   })
 
@@ -438,7 +446,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
 
     // /showcase/gallery must now list the showcase (gallery filters approved only).
     // The leader's page is fine here: the gallery is public, the leader can see it.
-    await page.goto('/showcase/gallery')
+    await gotoFresh(page, '/showcase/gallery')
     await expect(page.getByText(SHORT_TITLE)).toBeVisible({ timeout: 8000 })
 
     // /showcase/{slug} returns 200 for the teacher (non-team viewer) after approval.
@@ -515,7 +523,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
     })
 
     // Student opens the editor: "Changes requested" pill must be visible.
-    await page.goto('/showcase/edit')
+    await gotoFresh(page, '/showcase/edit')
     await expect(
       page.locator('.sc-pill').filter({ hasText: 'Changes requested' }),
     ).toBeVisible({ timeout: 8000 })
@@ -524,7 +532,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
     await expect(page.getByText(REJECTION_NOTE)).toBeVisible({ timeout: 5000 })
 
     // Rejected showcase must NOT appear in gallery.
-    await page.goto('/showcase/gallery')
+    await gotoFresh(page, '/showcase/gallery')
     await expect(page.getByText(SHORT_TITLE)).toHaveCount(0)
   })
 
@@ -560,7 +568,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
     })
 
     // Editor: "Pending teacher review" pill is back; rejection banner gone.
-    await page.goto('/showcase/edit')
+    await gotoFresh(page, '/showcase/edit')
     await expect(
       page.locator('.sc-pill').filter({ hasText: 'Pending teacher review' }),
     ).toBeVisible({ timeout: 8000 })
@@ -581,7 +589,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
     })
 
     // Open the editor as the student.
-    await page.goto('/showcase/edit')
+    await gotoFresh(page, '/showcase/edit')
 
     // "Changes requested" pill confirms we're in rejected state.
     await expect(

@@ -210,12 +210,18 @@ function CreateMatrixForm({
   onCancel: () => void
 }) {
   const canCreate = selectedPaperIds.length >= MIN_PAPERS && selectedPaperIds.length <= MAX_PAPERS
+  const selectedTemplate = SYNTHESIS_TEMPLATES.find((t) => t.id === templateId) ?? null
 
   return (
     <div className="flex flex-col gap-4" data-testid="synthesis-create-form">
       <div className="flex items-center justify-between">
         <span className="font-pixel text-[8px] text-white/70">
           Pick {MIN_PAPERS}–{MAX_PAPERS} ready sources to compare
+          {readyPapers && readyPapers.length >= MIN_PAPERS && (
+            <span className="text-white/40">
+              {'  '}· {selectedPaperIds.length}/{MAX_PAPERS} chosen · {readyPapers.length} available
+            </span>
+          )}
         </span>
         <button onClick={onCancel} className="font-pixel text-[7px] text-white/40 hover:text-white/70">
           Cancel
@@ -227,14 +233,14 @@ function CreateMatrixForm({
       ) : readyPapers.length < MIN_PAPERS ? (
         <EmptyState message="You need at least 2 ready sources to build a matrix." />
       ) : (
-        <ul className="flex flex-col gap-1.5 max-h-[260px] overflow-y-auto">
+        <ul className="styled-scroll flex flex-col gap-1.5 max-h-[54vh] overflow-y-auto pr-1">
           {readyPapers.map((p) => {
             const checked = selectedPaperIds.includes(p.id)
             const disabled = !checked && selectedPaperIds.length >= MAX_PAPERS
             return (
               <li key={p.id}>
                 <label
-                  className={`flex items-center gap-2.5 px-3 py-2 border rounded-sm cursor-pointer transition-colors ${
+                  className={`flex items-center gap-3 px-3.5 py-2.5 border rounded-sm cursor-pointer transition-colors ${
                     checked
                       ? 'border-[#F5C518]/50 bg-[#F5C518]/[0.06]'
                       : 'border-white/10 hover:border-white/25'
@@ -246,9 +252,9 @@ function CreateMatrixForm({
                     checked={checked}
                     disabled={disabled}
                     onChange={() => togglePaper(p.id)}
-                    className="shrink-0"
+                    className="shrink-0 h-4 w-4 accent-[#F5C518]"
                   />
-                  <span className="text-[12px] text-white/75 truncate">{p.title}</span>
+                  <span className="text-[15px] text-white/85 truncate">{p.title}</span>
                 </label>
               </li>
             )
@@ -258,6 +264,10 @@ function CreateMatrixForm({
 
       <div className="flex flex-col gap-1.5">
         <span className="font-pixel text-[7px] text-white/50 uppercase tracking-widest">Column template</span>
+        <p className="text-[13px] text-white/45 leading-relaxed">
+          A starting set of comparison columns for the grid — pick the one closest to your field. You can rename,
+          add, or remove columns on the matrix afterwards.
+        </p>
         <select
           data-testid="synthesis-template-select"
           value={templateId}
@@ -270,6 +280,19 @@ function CreateMatrixForm({
             </option>
           ))}
         </select>
+        {selectedTemplate && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+            <span className="text-[12px] text-white/40">Columns:</span>
+            {selectedTemplate.columns.map((c) => (
+              <span
+                key={c.id}
+                className="text-[12px] text-white/70 bg-white/[0.06] border border-white/10 rounded-sm px-2 py-0.5"
+              >
+                {c.label}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {createError && <span className="font-pixel text-[7px] text-red-400">{createError}</span>}

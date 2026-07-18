@@ -95,8 +95,16 @@ export async function POST(req: NextRequest) {
     try {
       const context = await buildStudyContext(ctx.teamId)
       const response = await anthropic().messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
+        model: 'claude-sonnet-5',
+        // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
+        // and thinking shares this `max_tokens` budget. Disabled to preserve the
+        // cost, latency, and output length this route was tuned for.
+        // `max_tokens` was also raised ~1.5x: Sonnet 5's tokenizer
+        // spends ~30% more tokens on the same text, so a budget tuned against
+        // 4.6 truncates. That is not a visible error — it silently cuts the
+        // response mid-sentence (it broke idea-check's JSON verdict outright).
+        thinking: { type: 'disabled' },
+        max_tokens: 1536,
         system: [
           { type: 'text', text: STUDY_INSTRUCTIONS },
           { type: 'text', text: context, cache_control: { type: 'ephemeral' } },

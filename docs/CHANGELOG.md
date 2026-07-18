@@ -5,7 +5,72 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
-## [0.25.0] — 2026-07-16
+## [0.26.0] — 2026-07-17
+
+Three waves in one release: the **pilot-hardening pass** from the REFACTOR2 audit (every paid
+Anthropic call behind a fail-closed guard, bounded reads, structured observability, runbooks,
+targeted policy tests), a **Discovery source expansion** (one merged papers search across all
+open literature, plain-language explainers, prior-art patents), and the **LLM-curated
+Vocabulary Builder** (mechanical extraction + one bounded curation call per paper).
+
+### Added — Discovery: one search, more literature
+- **Merged Papers search** — the arXiv/PubMed platform toggle is gone: one box searches arXiv,
+  PubMed, and the broader open-access literature concurrently via OpenAlex, interleaved with
+  peer-reviewed rows leading. **Review articles** are badged and floated to the top; a
+  **Preprints ✓/✗** toggle filters preprints client-side.
+- **`openalex` platform** (migration `20260717120000`) — works with neither an arXiv id nor a
+  PMID (OA journal articles, bioRxiv/medRxiv/PsyArXiv-style preprints) are now searchable,
+  openable, tree-persistable, and **branchable in citation lanes** (no neighbour is dropped);
+  tier derived from venue metadata (repository → preprint, DOAJ journal → peer-reviewed, else
+  open access). Semantic Scholar enrichment (TL;DR, influence re-ranking) reaches these nodes
+  via their **DOI**.
+- **"Look it up" lanes in the Articles tab** — **Health topics (MedlinePlus)**: NIH's
+  plain-language encyclopedia, searched live (keyless), full summaries rendered in-app as
+  public-domain content with the new **`reference` credibility tier** (migration
+  `20260717130000`, KP ×1). **Prior art (patents)**: PatentsView-backed when
+  `PATENTSVIEW_API_KEY` is set, Google Patents link-out fallback keyless; link-out cards only.
+- **Vocabulary curation** (migrations `20260716000000`, `20260717000000`) — extraction stays
+  mechanical; ONE Sonnet call per paper selects ≤12 terms worth learning and writes
+  paper-grounded definitions for candidates without authored ones (authored dictionary entries
+  stay byte-identical). Runs on the paid `ai` tier, ≤8 curations per build, and a once-ever
+  `VocabPaperCuration` marker guarantees a paper is never re-billed.
+
+### Added — Pilot hardening (REFACTOR2 Track A)
+- **Paid-work guard sweep** — every route that can reach Anthropic now clears the fail-closed
+  paid `ai`/`upload` tier or `assertCron`; closed five bypasses (paper GET-side processing,
+  phase classification, discovery promote/topic-wipe relevance, unbounded vocab build) and a
+  static CI test (`test/paid-work-guard.test.ts`) keeps the class of regression out.
+- **Structured observability** — `lib/observability/log.ts` (JSON events, redaction by design,
+  `x-vercel-id` request ids) wired into the shared Anthropic client (every call/stream logs
+  model + token usage), rate-limit denials/misconfiguration, paper-job lifecycle, and cron.
+- **Bounded reads + provider timeouts** — measurements capped at 2,000/experiment, experiments
+  list capped, every server-side external fetch has an explicit abort timeout.
+- **Targeted policy/concurrency tests** — 60 new unit tests: paid-tier fail-closed behavior,
+  paper-job claim idempotency, teacher scope, team-join races, upload-asset ownership +
+  reclaim races, public-showcase asset privacy.
+- **Runbooks** (`docs/runbooks/`) — incident response, DB restore/forward-fix, student data
+  export/delete inventory, LLM cost + AI data-sharing summary (with the verified Anthropic
+  call-site inventory).
+- **Text-integrity gate** — `check:integrity` (gate 2 of the pipeline, also in CI) rejects
+  control bytes in authored source; removed two NUL bytes it was built to catch.
+- **ADR-004** — per-student class membership recorded as the authoritative tenancy model,
+  superseding ADR-001; `Team.classId` documented as vestigial.
+
+### Changed
+- **Quiz retry extracted to a service** (`lib/literature/quiz-retry.ts`) — the Track-B template
+  for thinning paid routes; the route is a thin adapter, behavior E2E-verified unchanged.
+- **One active-team resolver** — `resolveActiveTeam()` in `lib/team/context.ts` now backs both
+  the API guard and server components (duplicate membership query removed).
+- **E2E session resilience** — `e2e/api.ts` detects stale-Clerk-session responses and recovers
+  (reload → re-sign-in via `@clerk/testing`), plus `gotoFresh()` for navigations; the
+  long-standing mid-suite `Unexpected token '<'` flake is fixed (F4 verified 3× green).
+
+### Fixed
+- Paper detail GET no longer performs paid processing on read (cron owns retries).
+- Vocabulary builds are idempotent and deterministic under E2E (curation stub + marker); three
+  stale spec assertions corrected (quiz-retry AC13, vocab attribution prefixes, vocab zero-LLM).
+- Public-showcase specs now assert the rendered privacy outcome (the slug page's `loading.tsx`
+  makes the HTTP status a streaming race; the content boundary itself holds).
 
 The Field Codex authoring pipeline rebuilt around **one invocation = one whole field**, plus two
 complete fields authored with it — **Computer Science / Algorithms** and **Data Science / ML

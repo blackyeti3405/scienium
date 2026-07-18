@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import {
   resolveArxivWork,
   resolvePubmedWork,
+  resolveOpenalexWork,
   getReferences,
   getCitedBy,
   searchWorks,
@@ -51,6 +52,35 @@ function pubmedNeighbourToChip(n: OpenAlexNeighbour): SourceChip | null {
 }
 
 /**
+ * Universal chip mapper: try the OPEN NODE's own platform scheme first (an
+ * arXiv paper's lanes keep arxiv: chips, a PubMed paper's keep pmid: — the
+ * long-standing behavior), then the other native scheme, then fall back to the
+ * neighbour's own OpenAlex id — so EVERY neighbour is branchable and citation
+ * lanes no longer silently drop works that live outside arXiv/PubMed
+ * (OA journals, bioRxiv-style preprints).
+ */
+function neighbourToChip(
+  n: OpenAlexNeighbour,
+  prefer: 'arxiv' | 'pubmed' | 'openalex',
+): SourceChip | null {
+  const native =
+    prefer === 'pubmed'
+      ? (pubmedNeighbourToChip(n) ?? arxivNeighbourToChip(n))
+      : (arxivNeighbourToChip(n) ?? pubmedNeighbourToChip(n))
+  if (native) return native
+  const oaId = n.openAlexId.match(/(W\d+)\s*$/)?.[1]
+  if (!oaId) return null
+  const externalId = `openalex:${oaId}`
+  return {
+    laneId: chipId('openalex', externalId),
+    platform: 'openalex',
+    externalId,
+    title: n.title ?? oaId,
+    subtitle: [n.authors[0], n.publicationYear].filter(Boolean).join(' · ') || undefined,
+  }
+}
+
+/**
  * Stable partition: chips whose externalId is in `influential` come first, all
  * others after — each partition keeping its original relative order. Used to
  * surface Semantic Scholar's influential citations at the top of Cited by without
@@ -90,33 +120,29 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   const src = node.externalSource
-  const platform: 'arxiv' | 'pubmed' = src.platform === 'pubmed' ? 'pubmed' : 'arxiv'
+  const platform: 'arxiv' | 'pubmed' | 'openalex' =
+    src.platform === 'pubmed' ? 'pubmed' : src.platform === 'openalex' ? 'openalex' : 'arxiv'
   const lanes: SourceLanes = { cites: [], citedBy: [], byAuthor: [], byCategory: [] }
 
   try {
-    // ── Cites / Cited by — factual citation edges. ──
-    if (platform === 'arxiv') {
-      const arxivId = src.externalId.replace(/^arxiv:/i, '')
-      const oaWork = await resolveArxivWork(arxivId)
-      if (oaWork) {
-        const [refs, citedBy] = await Promise.all([
-          getReferences(oaWork, LANE_BUDGET),
-          getCitedBy(oaWork, LANE_BUDGET),
-        ])
-        lanes.cites = refs.map(arxivNeighbourToChip).filter((c): c is SourceChip => !!c)
-        lanes.citedBy = citedBy.map(arxivNeighbourToChip).filter((c): c is SourceChip => !!c)
-      }
-    } else {
-      const pmid = src.externalId.replace(/^pmid:/i, '')
-      const oaWork = await resolvePubmedWork(pmid)
-      if (oaWork) {
-        const [refs, citedBy] = await Promise.all([
-          getReferences(oaWork, LANE_BUDGET),
-          getCitedBy(oaWork, LANE_BUDGET),
-        ])
-        lanes.cites = refs.map(pubmedNeighbourToChip).filter((c): c is SourceChip => !!c)
-        lanes.citedBy = citedBy.map(pubmedNeighbourToChip).filter((c): c is SourceChip => !!c)
-      }
+    // ── Cites / Cited by — factual citation edges. Chips are mapped platform-
+    // agnostically (native arxiv:/pmid: schemes first, openalex: fallback), so
+    // no neighbour is dropped for living outside arXiv/PubMed. ──
+    const oaWork =
+      platform === 'arxiv'
+        ? await resolveArxivWork(src.externalId.replace(/^arxiv:/i, ''))
+        : platform === 'pubmed'
+          ? await resolvePubmedWork(src.externalId.replace(/^pmid:/i, ''))
+          : await resolveOpenalexWork(src.externalId)
+    if (oaWork) {
+      const [refs, citedBy] = await Promise.all([
+        getReferences(oaWork, LANE_BUDGET),
+        getCitedBy(oaWork, LANE_BUDGET),
+      ])
+      lanes.cites = refs.map((n) => neighbourToChip(n, platform)).filter((c): c is SourceChip => !!c)
+      lanes.citedBy = citedBy
+        .map((n) => neighbourToChip(n, platform))
+        .filter((c): c is SourceChip => !!c)
     }
 
     // ── Related papers (always-populated fallback) — "More by author" + "More in
@@ -124,12 +150,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     //    even when a paper has zero citation edges. Factual metadata search, not AI.
     const firstAuthor = src.sourceAuthors[0]
     const topicTerms = src.sourceTitle.split(/\s+/).filter(Boolean).slice(0, 8).join(' ')
+    // Related lanes for an openalex node use the OA sweep (its own "platform").
+    const searchPlatform = platform === 'openalex' ? ('oa' as const) : platform
     const [byAuthor, byTopic] = await Promise.all([
       firstAuthor
-        ? searchWorks({ query: firstAuthor, platform, limit: LANE_BUDGET + 1 })
+        ? searchWorks({ query: firstAuthor, platform: searchPlatform, limit: LANE_BUDGET + 1 })
         : Promise.resolve<NormalizedWork[]>([]),
       topicTerms
-        ? searchWorks({ query: topicTerms, platform, limit: LANE_BUDGET + 1 })
+        ? searchWorks({ query: topicTerms, platform: searchPlatform, limit: LANE_BUDGET + 1 })
         : Promise.resolve<NormalizedWork[]>([]),
     ])
     lanes.byAuthor = byAuthor
@@ -148,9 +176,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // ── Semantic Scholar enrichment — independent of the lane try/catch above, so
   // an S2 outage never affects (or is affected by) the OpenAlex/NCBI lanes. Both
   // helpers self-degrade (null / empty Set) and never throw.
+  // `sourceUrl` lets openalex-platform nodes enrich via their DOI (S2 has no
+  // native OpenAlex-id lookup); arxiv/pmid nodes ignore it.
   const [tldr, influentialIds] = await Promise.all([
-    getTldr(src.externalId),
-    getInfluentialCitingIds(src.externalId),
+    getTldr(src.externalId, src.sourceUrl),
+    getInfluentialCitingIds(src.externalId, src.sourceUrl),
   ])
   lanes.citedBy = reorderByInfluence(lanes.citedBy, influentialIds)
 

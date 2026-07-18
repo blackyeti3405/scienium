@@ -1,5 +1,12 @@
 # ADR-001: Team and Classroom Ownership
 
+> **SUPERSEDED** by [ADR-004](adr-004-per-student-class-membership.md) as of
+> v0.23.8: class membership is now per-student (`User.classId`), labs may span
+> classes/schools, and teacher access to team-shared data is membership-based
+> (`teacherOwnsTeam`). `Team.classId` is vestigial and no longer an
+> authorization boundary. The `activeTeamId` and DB-authoritative-role rules
+> below remain true and are restated in ADR-004/ARCHITECTURE.md.
+
 ## Decision
 
 `Team.classId` is the authorization boundary for teacher access. A student's

@@ -10,6 +10,23 @@ async function ownedExperiment(id: string, teamId: string) {
 }
 
 /**
+ * Hard cap on points per experiment: enforced at write time and used as a
+ * read backstop, so payloads stay bounded as a class accumulates a year of
+ * data. Far above any real classroom dataset (charts get unreadable long
+ * before this), so no pagination UI is needed for the pilot.
+ */
+const MAX_POINTS_PER_EXPERIMENT = 2_000
+
+function listMeasurements(experimentId: string) {
+  return db.measurement.findMany({
+    where: { experimentId },
+    orderBy: { x: 'asc' },
+    select: { id: true, x: true, y: true, series: true, note: true },
+    take: MAX_POINTS_PER_EXPERIMENT,
+  })
+}
+
+/**
  * GET /api/data-terminal/[id]/measurements — one experiment's points, loaded
  * lazily when it's selected (the list route returns counts only — PERF-2).
  */
@@ -21,13 +38,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: 'Experiment not found' }, { status: 404 })
   }
 
-  const measurements = await db.measurement.findMany({
-    where: { experimentId: params.id },
-    orderBy: { x: 'asc' },
-    select: { id: true, x: true, y: true, series: true, note: true },
-  })
-
-  return NextResponse.json({ measurements })
+  return NextResponse.json({ measurements: await listMeasurements(params.id) })
 }
 
 // Finite numbers only — reject NaN/Infinity so a bad client can't poison a chart.
@@ -62,6 +73,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { data, error: bodyError } = await parseJson(req, AddBody)
   if (bodyError) return bodyError
 
+  const existing = await db.measurement.count({ where: { experimentId: params.id } })
+  if (existing + data.points.length > MAX_POINTS_PER_EXPERIMENT) {
+    return NextResponse.json(
+      {
+        error: `An experiment holds at most ${MAX_POINTS_PER_EXPERIMENT} points (${existing} recorded). Start a new experiment or delete old points.`,
+      },
+      { status: 409 },
+    )
+  }
+
   await db.measurement.createMany({
     data: data.points.map((p) => ({
       experimentId: params.id,
@@ -72,13 +93,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     })),
   })
 
-  const measurements = await db.measurement.findMany({
-    where: { experimentId: params.id },
-    orderBy: { x: 'asc' },
-    select: { id: true, x: true, y: true, series: true, note: true },
-  })
-
-  return NextResponse.json({ measurements })
+  return NextResponse.json({ measurements: await listMeasurements(params.id) })
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {

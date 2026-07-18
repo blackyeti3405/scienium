@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
+import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { checkPaperRelevance } from '@/lib/literature/relevance'
@@ -52,6 +53,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     select: { topic: true },
   })
   if (team?.topic) {
+    // Anthropic-backed gate → must clear the paid `ai` tier (fail-closed in
+    // production), not just the route's `mutate` tier.
+    const aiLimited = await enforceRateLimit(req, 'ai', ctx.userId)
+    if (aiLimited) return aiLimited
+
     const { relevant, reason } = await checkPaperRelevance(
       team.topic,
       es.sourceTitle,

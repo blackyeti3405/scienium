@@ -2,7 +2,7 @@
   "name": "scienium",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter web dev",
+    "dev": "pnpm --silent --filter web dev",
     "build": "pnpm --filter web build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",

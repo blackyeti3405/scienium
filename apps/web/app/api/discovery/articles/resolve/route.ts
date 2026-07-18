@@ -3,12 +3,17 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { resolveArticle, FEEDS } from '@/lib/discovery/articles'
+import { MEDLINEPLUS_FEED, resolveHealthTopic } from '@/lib/discovery/medlineplus'
+import { PATENTS_FEED, resolvePatent } from '@/lib/discovery/patents'
 
 // ── POST /api/discovery/articles/resolve ──────────────────────────────────────
 // Resolve a (feed, externalId) pick into a fully-resolved payload the client
 // then persists via the tree POST branch. Mutate-tier — team-scoped, precedes
 // the team-scoped tree write (matches sources/resolve).
-const feedKeys = Object.keys(FEEDS) as [string, ...string[]]
+const feedKeys = [...Object.keys(FEEDS), MEDLINEPLUS_FEED.id, PATENTS_FEED.id] as unknown as [
+  string,
+  ...string[],
+]
 
 const ResolveBody = z
   .object({
@@ -25,7 +30,12 @@ export async function POST(req: NextRequest) {
   if (error) return error
 
   try {
-    const resolved = await resolveArticle(data.feed, data.externalId)
+    const resolved =
+      data.feed === MEDLINEPLUS_FEED.id
+        ? await resolveHealthTopic(data.externalId)
+        : data.feed === PATENTS_FEED.id
+          ? await resolvePatent(data.externalId)
+          : await resolveArticle(data.feed, data.externalId)
     if (!resolved) {
       return NextResponse.json({ error: 'Article not found' }, { status: 404 })
     }

@@ -23,7 +23,7 @@ const TreeBody = z
             source: z.enum(['wikipedia', 'youtube', 'source', 'article']).optional(),
             videoId: z.string().trim().max(32).optional(),
             // ── source-node fields (only read when source === 'source') ──
-            platform: z.enum(['arxiv', 'pubmed', 'pmc']).optional(),
+            platform: z.enum(['arxiv', 'pubmed', 'pmc', 'openalex']).optional(),
             externalId: z.string().trim().max(64).optional(),
             sourceUrl: z.string().trim().max(2000).optional(),
             sourceHost: z.string().trim().max(255).optional(),
@@ -31,7 +31,7 @@ const TreeBody = z
             abstract: z.string().max(20000).optional(),
             publishedAt: z.string().trim().max(64).optional(),
             // ── article-node fields (only read when source === 'article') ──
-            provider: z.enum(['the_conversation', 'journalism']).optional(),
+            provider: z.enum(['the_conversation', 'journalism', 'explainer', 'patents']).optional(),
             renderMode: z.enum(['full', 'linkout']).optional(),
             sourceName: z.string().trim().max(120).optional(),
             articleUrl: z.string().trim().max(2000).optional(),

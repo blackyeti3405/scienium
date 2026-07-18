@@ -20,6 +20,8 @@ export async function GET(req: NextRequest) {
   const experiments = await db.experiment.findMany({
     where: { teamId: ctx.teamId },
     orderBy: { createdAt: 'desc' },
+    // Newest-first backstop so the list stays bounded over a school year.
+    take: 200,
     select: {
       id: true,
       title: true,

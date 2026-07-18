@@ -2,6 +2,30 @@
 
 Tracked items intentionally deferred during development. Remove an entry once done.
 
+## PatentsView API key (Discovery prior-art lane)
+- **Now:** the "Prior art (patents)" lane in Discovery's Articles tab runs keyless —
+  it degrades to a single Google Patents search link-out card instead of live
+  titled results.
+- **To do:** request a free key at https://patentsview.org/apis/keyrequest and set
+  `PATENTSVIEW_API_KEY` in `apps/web/.env.local` (dev) and the Vercel env (prod).
+  No code change needed — the lane detects the key and switches to live
+  PatentsView results automatically (`lib/discovery/patents.ts`).
+
+## Error tracker (required before the classroom pilot)
+- **Now:** production diagnostics are structured JSON log events in Vercel logs
+  (`lib/observability/log.ts`; querying documented in
+  `docs/runbooks/incident-response.md`). That satisfies the PILOT-5 minimum but
+  gives no alerting — an incident is only visible if someone is looking.
+- **Before pilot launch:** wire a real error-reporting destination (e.g. **Sentry**
+  for Next.js) so unhandled route/server errors page the operator instead of
+  sitting in logs.
+  - Keep the vendor behind `lib/observability/` (the logger stays the single seam;
+    routes never import the vendor SDK directly).
+  - Same redaction rules as the logger: opaque ids only — never prompts, paper
+    text, student submissions, or emails in error payloads/breadcrumbs.
+  - Add the DSN env var to `.env.example` + SETUP.md §8, and an alert rule for
+    error-rate spikes and `rate_limit.misconfigured` events.
+
 ## Google Drive OAuth (Research Plan building — Feature 2A)
 - **Now:** the Research Plan feature uses a **paste-a-link fallback** — the student
   pastes an "Anyone with the link" Google Doc URL and we fetch the published text on

@@ -14,11 +14,29 @@ import 'server-only'
  * This inspects the raw bytes for those active-content markers and rejects the
  * file — inspect-and-refuse, not rewrite. (Full structural normalization needs
  * a native tool like qpdf/mutool in a locked worker; on this serverless target
- * the pilot posture is: refuse anything with active content. Real research
- * papers never legitimately contain it.) Names inside compressed object
- * streams can evade a raw scan, which is why viewing responses must also set
- * `X-Content-Type-Options: nosniff` and a CSP-hardened disposition — see the
- * paper file route.
+ * the pilot posture is: refuse anything with *active* content.) Names inside
+ * compressed object streams can evade a raw scan, which is why viewing
+ * responses must also set `X-Content-Type-Options: nosniff` and a CSP-hardened
+ * disposition — see the paper file route.
+ *
+ * Scoping matters as much as the marker list. Two rules keep this from eating
+ * real papers, both learned from false rejections:
+ *
+ *  1. Only *active* content is refused. `/EmbeddedFiles` is not: publisher
+ *     toolchains routinely attach a `folder.joboptions` (Distiller settings)
+ *     or an XMP/PDF-A sidecar, so a large share of genuine papers carry one.
+ *     An attachment is inert bytes unless a reader explicitly extracts and
+ *     opens it — it cannot self-execute the way /JavaScript or /OpenAction can
+ *     — and we already serve papers with nosniff + attachment disposition.
+ *     Rejecting it cost us real uploads and bought nothing.
+ *
+ *  2. Only bytes *outside* stream data are scanned. Names live in object
+ *     dictionaries; stream payloads are compressed image/font/content blobs
+ *     whose random bytes will eventually spell any short marker by chance (a
+ *     4 MB paper has a ~0.5% chance of containing `/JS(` in noise alone). We
+ *     lose nothing by skipping them: an /ObjStm's dictionaries are compressed,
+ *     so a raw scan could never read them anyway — that is the documented
+ *     limitation above, not a new one.
  */
 
 export interface PdfInspection {
@@ -30,6 +48,21 @@ export interface PdfInspection {
 /** Hard page cap — bounds decompression/render cost downstream. */
 export const MAX_PDF_PAGES = 150
 
+/**
+ * Clean text extracted from a PDF for storage in a Postgres `text` column.
+ *
+ * PDF text layers routinely carry NUL (0x00) and other C0 control bytes;
+ * Postgres rejects a stored string containing `` with
+ * `invalid byte sequence for encoding "UTF8": 0x00`, which otherwise surfaces
+ * as a failed upload / 500 with no obvious cause. Strips every C0 control char
+ * except tab, newline, and carriage return (all legitimate in body text), then
+ * trims. Idempotent and safe to run on already-clean text.
+ */
+export function sanitizePdfText(text: string | null | undefined): string {
+  // eslint-disable-next-line no-control-regex
+  return (text ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').trim()
+}
+
 // Byte patterns for active-content markers. PDF names may hex-escape any
 // character (`/J#61vaScript`), so match both the literal and a tolerant form
 // with hex escapes for the letters attackers most commonly escape.
@@ -40,10 +73,33 @@ const FORBIDDEN_MARKERS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\/JS\s*[([</]/, reason: 'embedded JavaScript' },
   { pattern: /\/OpenAction\b/, reason: 'an auto-run open action' },
   { pattern: /\/Launch\b/, reason: 'a launch action' },
-  { pattern: /\/EmbeddedFiles?\b/, reason: 'embedded files' },
   { pattern: /\/XFA\b/, reason: 'XFA form scripting' },
   { pattern: /\/RichMedia\b/, reason: 'embedded rich media' },
 ]
+
+/**
+ * Blank out every `stream ... endstream` payload, preserving byte offsets so a
+ * marker's position still maps back to the original file. Unterminated streams
+ * (truncated/malformed file) blank to EOF — refusing to scan bytes we can't
+ * frame is the conservative read, and the parser rejects such files anyway.
+ */
+function stripStreamData(raw: string): string {
+  const out: string[] = []
+  let cursor = 0
+  const opener = /\bstream\r\n|\bstream\n|\bstream\r/g
+  let m: RegExpExecArray | null
+  while ((m = opener.exec(raw)) !== null) {
+    const bodyStart = m.index + m[0].length
+    const bodyEnd = raw.indexOf('endstream', bodyStart)
+    const stop = bodyEnd === -1 ? raw.length : bodyEnd
+    out.push(raw.slice(cursor, bodyStart), ' '.repeat(stop - bodyStart))
+    cursor = stop
+    if (bodyEnd === -1) break
+    opener.lastIndex = stop
+  }
+  out.push(raw.slice(cursor))
+  return out.join('')
+}
 
 /**
  * Inspect raw PDF bytes. Callers should already have enforced a byte-size cap
@@ -51,16 +107,16 @@ const FORBIDDEN_MARKERS: Array<{ pattern: RegExp; reason: string }> = [
  * and the caller passes the parsed page count for the bomb guard.
  */
 export function inspectPdf(buffer: Buffer, pageCount?: number): PdfInspection {
+  const structure = stripStreamData(buffer.toString('latin1'))
+
   // Encrypted PDFs: the /Encrypt key lives in the (uncompressed) trailer.
   // We can't inspect what we can't read — refuse rather than store blind.
-  const tail = buffer.subarray(Math.max(0, buffer.length - 4096)).toString('latin1')
-  if (/\/Encrypt\b/.test(tail)) {
+  if (/\/Encrypt\b/.test(structure.slice(-4096))) {
     return { ok: false, reason: 'This PDF is encrypted — upload an unprotected copy.' }
   }
 
-  const raw = buffer.toString('latin1')
   for (const { pattern, reason } of FORBIDDEN_MARKERS) {
-    if (pattern.test(raw)) {
+    if (pattern.test(structure)) {
       return {
         ok: false,
         reason: `This PDF contains ${reason}, which isn't allowed. Export a clean copy (e.g. print to PDF) and re-upload.`,

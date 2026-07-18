@@ -25,13 +25,21 @@ const SOURCE_BADGE_LABEL: Record<VocabSourceView, string> = {
   data_quality_guide: 'Data-Quality Guide',
   paper_definition: 'From your paper',
   paper_context: 'Paper context',
+  llm_definition: 'From your paper',
 }
 
-const GRADES: { grade: ReviewGrade; label: string }[] = [
-  { grade: 'again', label: 'Again' },
-  { grade: 'hard', label: 'Hard' },
-  { grade: 'good', label: 'Good' },
-  { grade: 'easy', label: 'Easy' },
+/**
+ * The four grades are the student's honest self-report of recall — the whole
+ * schedule is built on it, and an unlabelled row of buttons invites guessing.
+ * `hint` says what the grade MEANS; the `(Nd)` interval beside it says what the
+ * grade DOES. Both are needed: a student who reads only the intervals will pick
+ * the number they like rather than the truth.
+ */
+const GRADES: { grade: ReviewGrade; label: string; hint: string }[] = [
+  { grade: 'again', label: 'Again', hint: 'No idea — show me this one again tomorrow' },
+  { grade: 'hard', label: 'Hard', hint: 'I got there, but it was a struggle' },
+  { grade: 'good', label: 'Good', hint: 'I knew it' },
+  { grade: 'easy', label: 'Easy', hint: 'Instant — wait longer before asking again' },
 ]
 
 /**
@@ -44,7 +52,11 @@ function attributionText(card: VocabCardView): string {
   switch (card.source) {
     case 'paper_definition':
       return 'Defined in your paper:'
+    case 'llm_definition':
+      return 'How your paper uses it:'
     case 'paper_context':
+      // Legacy rows built before curation existed. New cards always carry a
+      // definition — see lib/literature/vocab-curate.ts.
       return "No definition available — here's how your paper uses it:"
     default:
       return `Definition — ${DICTIONARY_LABEL[card.source]} · ${card.term}`
@@ -248,6 +260,13 @@ function ReviewView({
         </span>
       </div>
 
+      {current && (
+        <p data-testid="vocab-review-intro" className="text-sm text-white/45 leading-relaxed">
+          Try to recall what the term means, then reveal the answer and rate how well you knew it.
+          Terms you find hard come back sooner; terms you know get pushed further out.
+        </p>
+      )}
+
       {justGraded && (
         <div className="flex items-center gap-3 border border-[#F5C518]/25 bg-[#F5C518]/[0.06] px-4 py-2.5 rounded-sm">
           {justGraded.kpEarned > 0 && (
@@ -303,20 +322,24 @@ function ReviewView({
                 </p>
               )}
 
-              <div className="flex flex-wrap gap-2 mt-2">
-                {GRADES.map(({ grade, label }) => (
-                  <BusyButton
-                    key={grade}
-                    data-testid={`vocab-grade-${grade}`}
-                    busy={reviewBusy}
-                    showSpinner={false}
-                    spinnerTone="vega"
-                    onClick={() => handleGrade(grade)}
-                    className="font-pixel text-[7px] border border-white/20 text-white/70 px-3 py-2 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors disabled:opacity-40"
-                  >
-                    {label} ({intervalLabel(current.box, grade)})
-                  </BusyButton>
-                ))}
+              <div className="flex flex-col gap-1.5 mt-2">
+                <span className="font-pixel text-[7px] text-white/35">How well did you know it?</span>
+                <div className="flex flex-wrap gap-2">
+                  {GRADES.map(({ grade, label, hint }) => (
+                    <BusyButton
+                      key={grade}
+                      data-testid={`vocab-grade-${grade}`}
+                      busy={reviewBusy}
+                      showSpinner={false}
+                      spinnerTone="vega"
+                      onClick={() => handleGrade(grade)}
+                      title={`${hint} — next review in ${intervalLabel(current.box, grade)}`}
+                      className="font-pixel text-[7px] border border-white/20 text-white/70 px-3 py-2 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors disabled:opacity-40"
+                    >
+                      {label} ({intervalLabel(current.box, grade)})
+                    </BusyButton>
+                  ))}
+                </div>
               </div>
             </div>
           )}

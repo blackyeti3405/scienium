@@ -9,7 +9,7 @@ import { logActivity } from '@/lib/activity/log'
 import { extractDoi, tierFromDoi } from '@/lib/discovery/credibility'
 import { Prisma, type CredibilityTier } from '@prisma/client'
 import { processPaperJob } from '@/lib/literature/process-paper'
-import { inspectPdf } from '@/lib/pdf/sanitize'
+import { inspectPdf, sanitizePdfText } from '@/lib/pdf/sanitize'
 
 // Server-side only; the Anthropic key is never bundled for the browser.
 
@@ -77,7 +77,10 @@ export async function POST(req: NextRequest) {
     }
 
     const { text } = await extractText(pdf, { mergePages: true })
-    fullText = (text ?? '').trim()
+    // Strip NUL / C0 control bytes the PDF text layer may carry — Postgres
+    // rejects them in a `text` column ("invalid byte sequence for UTF8 0x00"),
+    // which otherwise fails the upload with an opaque 500.
+    fullText = sanitizePdfText(text)
 
     const firstLine = fullText.split('\n').map((l) => l.trim()).find(Boolean)
     if (firstLine && firstLine.length < 200) title = firstLine

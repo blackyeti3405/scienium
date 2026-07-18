@@ -10,6 +10,7 @@ Video-game designed to spread STEM and improve student commitment to science fai
 - [Changelog](CHANGELOG.md)
 - [Deferred work](TODO.md)
 - [Architecture decisions and refactor plans](architecture/)
+- [Operational runbooks](runbooks/) — incident response, restore, data export/delete, LLM cost & AI data-sharing
 - [ISEF 2026 reference notes](reference/ISEF-2026.md)
 
 ## The lab is the interface

@@ -24,6 +24,8 @@ export async function GET(req: NextRequest) {
     const res = await fetch(url.toString(), {
       headers: { 'User-Agent': UA, Accept: 'application/json' },
       next: { revalidate: 300 }, // cache identical queries for 5 min
+      // Bounded wait — suggestions are cosmetic; the catch falls back to [].
+      signal: AbortSignal.timeout(5_000),
     })
     if (!res.ok) return NextResponse.json([])
     const data = (await res.json()) as [string, string[]]

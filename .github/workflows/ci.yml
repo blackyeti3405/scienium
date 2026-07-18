@@ -39,6 +39,11 @@ jobs:
         # Required: tsc + next build import @prisma/client types.
         run: pnpm --filter web exec prisma generate
 
+      - name: Text integrity
+        # Rejects control bytes (NUL etc.) hiding in authored source — tsc and
+        # eslint both tolerate them silently.
+        run: pnpm --filter web check:integrity
+
       - name: Typecheck
         run: pnpm --filter web typecheck
 

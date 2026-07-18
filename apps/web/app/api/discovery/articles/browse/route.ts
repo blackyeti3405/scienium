@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireUserContext } from '@/lib/api/route-context'
 import { browseFeed, listFeeds, FEEDS } from '@/lib/discovery/articles'
+import {
+  MEDLINEPLUS_FEED,
+  searchHealthTopics,
+  healthTopicToSearchResult,
+} from '@/lib/discovery/medlineplus'
+import { PATENTS_FEED, searchPatents, patentToSearchResult } from '@/lib/discovery/patents'
 import type { ArticleSearchResult } from '@/lib/discovery/sources'
 
 // ── GET /api/discovery/articles/browse ────────────────────────────────────────
@@ -16,14 +22,23 @@ export async function GET(req: NextRequest) {
   const feed = params.get('feed')
   const q = params.get('q')?.trim() || undefined
 
-  if (feed && !(feed in FEEDS)) {
+  const searchDriven = feed === MEDLINEPLUS_FEED.id || feed === PATENTS_FEED.id
+  if (feed && !searchDriven && !(feed in FEEDS)) {
     return NextResponse.json({ error: 'Unknown feed' }, { status: 400 })
   }
 
   let results: ArticleSearchResult[] = []
   if (feed) {
     try {
-      results = await browseFeed(feed, q)
+      if (feed === MEDLINEPLUS_FEED.id) {
+        // Search-driven lane: the query box IS the MedlinePlus search term
+        // (empty query → empty list; the UI's empty state prompts a search).
+        results = (await searchHealthTopics(q ?? '')).map(healthTopicToSearchResult)
+      } else if (feed === PATENTS_FEED.id) {
+        results = (await searchPatents(q ?? '')).map(patentToSearchResult)
+      } else {
+        results = await browseFeed(feed, q)
+      }
     } catch (err) {
       console.error('[discovery/articles/browse] failed:', err)
       // Never blow up the browse box — degrade to empty.
@@ -31,5 +46,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ feeds: listFeeds(), results })
+  return NextResponse.json({
+    feeds: [...listFeeds(), { ...MEDLINEPLUS_FEED }, { ...PATENTS_FEED }],
+    results,
+  })
 }

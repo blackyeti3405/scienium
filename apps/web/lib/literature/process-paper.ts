@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { anthropic } from '@/lib/anthropic'
 import { db } from '@/lib/db'
 import { buildCitations, parseYear } from '@/lib/literature/citation'
+import { logEvent } from '@/lib/observability/log'
 
 const Metadata = z.object({
   title: z.string().trim().min(1).max(500).optional(),
@@ -136,6 +137,13 @@ export async function processPaperJob(paperId: string): Promise<void> {
         data: { status: 'completed', completedAt: new Date(), nextRunAt: null },
       }),
     ])
+    logEvent({
+      event: 'paper_job.completed',
+      jobId: paperId,
+      teamId: paper.teamId,
+      attempts: job?.attempts,
+      outcome: 'ok',
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 1_000) : 'Unknown error'
     // A transient failure is NOT a terminal paper error: keep the paper in
@@ -159,5 +167,13 @@ export async function processPaperJob(paperId: string): Promise<void> {
             },
       }),
     ])
+    logEvent({
+      event: exhausted ? 'paper_job.terminal' : 'paper_job.retry_scheduled',
+      jobId: paperId,
+      teamId: paper.teamId,
+      attempts,
+      outcome: 'error',
+      detail: error instanceof Error ? error.constructor.name : 'unknown',
+    })
   }
 }

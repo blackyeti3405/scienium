@@ -46,7 +46,9 @@ export async function POST(req: NextRequest) {
       `https://www.youtube.com/oembed?url=${encodeURIComponent(
         `https://www.youtube.com/watch?v=${videoId}`,
       )}&format=json`,
-      { cache: 'no-store' },
+      // Bounded wait — a slow oEmbed endpoint must not hold the request open;
+      // the catch below falls back to the generic title.
+      { cache: 'no-store', signal: AbortSignal.timeout(5_000) },
     )
     if (oembed.ok) {
       const data = await oembed.json()

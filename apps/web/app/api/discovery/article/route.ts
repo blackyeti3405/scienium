@@ -42,6 +42,9 @@ async function wikiFetch(url: string, attempt = 0): Promise<Response> {
       'User-Agent': UA,
       Accept: 'application/json',
     },
+    // Bounded wait — a stalled Wikipedia response must not hold the request
+    // open for the platform default.
+    signal: AbortSignal.timeout(8_000),
   })
 
   // Retry on rate-limit / transient server errors (up to 2 retries)

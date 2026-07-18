@@ -76,7 +76,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       contextBlock: paperTextContext(session.paper.fullText),
       payload: gradingPayload,
       promptIntro: QUIZ_GRADING_PROMPT_INTRO,
-      maxTokens: 2048,
+      maxTokens: 3072,
       logLabel: '[quiz]',
     })
     if (!result.ok) {

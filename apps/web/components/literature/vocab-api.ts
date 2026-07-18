@@ -5,8 +5,11 @@ import { requestJson } from '@/lib/api/client'
  * Vocabulary Builder client API — zod response schemas + `requestJson`
  * wrappers, mirroring `components/literature/api.ts`. Runtime-validates
  * every server response so a shape drift fails loudly in dev instead of
- * silently rendering `undefined`. ZERO LLM — every call here hits a
- * deterministic, extractive route (see lib/literature/vocab.ts, srs.ts).
+ * silently rendering `undefined`.
+ *
+ * Reads and reviews are deterministic (see lib/literature/srs.ts). `build` is
+ * the one paid route: it curates each paper with a single Anthropic call (see
+ * lib/literature/vocab-curate.ts) and persists the result forever.
  */
 
 export const vocabSourceSchema = z.enum([
@@ -16,6 +19,7 @@ export const vocabSourceSchema = z.enum([
   'data_quality_guide',
   'paper_definition',
   'paper_context',
+  'llm_definition',
 ])
 export type VocabSourceView = z.infer<typeof vocabSourceSchema>
 

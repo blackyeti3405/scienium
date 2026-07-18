@@ -1,8 +1,7 @@
 import 'server-only'
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { pickActiveTeam } from '@/lib/team/context'
+import { resolveActiveTeam } from '@/lib/team/context'
 import { enforceRateLimit, type TierName } from '@/lib/rate-limit'
 import {
   assertFeatureUnlocked,
@@ -89,24 +88,14 @@ export async function requireTeamContext(
   const crossOrigin = assertSameOrigin(req)
   if (crossOrigin) return { ctx: null, error: crossOrigin }
 
-  // Resolve the active team through membership so a stored activeTeamId is only
-  // trusted when a TeamMember row still backs it.
-  const user = await db.user.findUnique({
-    where: { clerkUserId: userId },
-    select: {
-      id: true,
-      activeTeamId: true,
-      teamMemberships: {
-        orderBy: { joinedAt: 'desc' },
-        select: { teamId: true, team: { select: { id: true, phase: true, labType: true } } },
-      },
-    },
-  })
-
-  const team = user ? pickActiveTeam(user.activeTeamId, user.teamMemberships) : null
-  if (!user || !team) {
+  // Resolve the active team through membership (the ONE query for this lives in
+  // lib/team/context.ts): a stored activeTeamId is only trusted while a
+  // TeamMember row still backs it.
+  const resolved = await resolveActiveTeam(userId)
+  if (!resolved) {
     return { ctx: null, error: NextResponse.json({ error: 'No team found' }, { status: 404 }) }
   }
+  const { dbUserId, team } = resolved
 
   if (opts.feature) {
     try {
@@ -122,7 +111,7 @@ export async function requireTeamContext(
   return {
     ctx: {
       userId,
-      dbUserId: user.id,
+      dbUserId,
       teamId: team.id,
       phase: team.phase,
       labType: team.labType,

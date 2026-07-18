@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { assertCron } from '@/lib/cron/auth'
 import { db } from '@/lib/db'
 import { processPaperJob } from '@/lib/literature/process-paper'
+import { logEvent } from '@/lib/observability/log'
 import { reclaimAbandonedAssets } from '@/lib/uploads/assets'
 
 /** Reclaim uploads that were never attached to a domain row within this window. */
@@ -67,6 +68,14 @@ export async function GET(req: NextRequest) {
   // temporary assets never attached within the stale window. Physical delete of the
   // object happens here — the only site that removes stored objects. Bounded.
   const cleanedAssets = await reclaimAbandonedAssets({ olderThanMs: STALE_ASSET_MS, limit: 50 })
+
+  logEvent({
+    event: 'cron.papers',
+    route: '/api/cron/papers',
+    durationMs: Date.now() - now.getTime(),
+    outcome: 'ok',
+    detail: `processed=${jobs.length} terminalized=${stuck.length} cleanedAssets=${cleanedAssets}`,
+  })
 
   return NextResponse.json({ processed: jobs.length, terminalized: stuck.length, cleanedAssets })
 }

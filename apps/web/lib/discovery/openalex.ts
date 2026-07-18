@@ -251,6 +251,35 @@ export async function resolveArxivWork(rawArxivId: string): Promise<OpenAlexWork
 }
 
 /** Resolve a PubMed id → its OpenAlex Work (via `works/pmid:<id>`). Null if not found. */
+/** Resolve an openalex-platform node's work by its bare W… id (citation lanes). */
+export async function resolveOpenalexWork(rawId: string): Promise<OpenAlexWork | null> {
+  const oaId = rawId.trim().replace(/^openalex:/i, '')
+  if (!/^W\d+$/.test(oaId)) return null
+  // MOCK: no citation-graph fixtures for openalex nodes — lanes fall back to the
+  // always-populated related-papers search, which IS mocked.
+  if (MOCK) return null
+  const cacheKey = `openalex:${oaId}`
+  const cached = workCache.get(cacheKey)
+  if (cached !== undefined) return cached
+
+  const url = withMailto(new URL(`${OPENALEX_API}/works/${oaId}`))
+  url.searchParams.set('select', WORK_SELECT)
+
+  try {
+    const res = await oaFetch(url.toString())
+    if (!res.ok) {
+      workCache.set(cacheKey, null)
+      return null
+    }
+    const work = toWork((await res.json()) as Record<string, unknown>)
+    workCache.set(cacheKey, work)
+    return work
+  } catch (err) {
+    console.error('[discovery/openalex] resolveOpenalexWork failed:', err)
+    return null
+  }
+}
+
 export async function resolvePubmedWork(rawPmid: string): Promise<OpenAlexWork | null> {
   const pmid = rawPmid.trim()
   if (!pmid) return null
@@ -370,10 +399,10 @@ function toNeighbour(raw: Record<string, unknown>): OpenAlexNeighbour {
 const ARXIV_SOURCE_ID = 'S4306400194'
 
 const SEARCH_SELECT =
-  'id,doi,title,display_name,publication_year,publication_date,authorships,ids,abstract_inverted_index,primary_location,locations'
+  'id,doi,title,display_name,type,publication_year,publication_date,authorships,ids,abstract_inverted_index,primary_location,locations'
 
 export interface NormalizedWork {
-  platform: 'arxiv' | 'pubmed'
+  platform: 'arxiv' | 'pubmed' | 'openalex'
   externalId: string
   title: string
   authors: string[]
@@ -381,6 +410,8 @@ export interface NormalizedWork {
   publishedAt: string | null
   host: string
   tier: CredibilityTier
+  /** OpenAlex work type `review` — a survey of a field, the best novice entry point. */
+  isReview?: boolean
   arxivId: string | null
   pmid: string | null
   doi: string | null
@@ -416,26 +447,79 @@ function authorsOf(raw: Record<string, unknown>): string[] {
 }
 
 /** Map a raw OpenAlex work → NormalizedWork for the platform; null if it lacks that id. */
-function toNormalized(raw: Record<string, unknown>, platform: 'arxiv' | 'pubmed'): NormalizedWork | null {
+/** Bare OpenAlex work id (`W…`) from the raw work's id URL, or null. */
+function openalexIdOf(raw: Record<string, unknown>): string | null {
+  const id = typeof raw.id === 'string' ? raw.id : ''
+  const m = id.match(/(W\d+)\s*$/)
+  return m ? m[1]! : null
+}
+
+/**
+ * Tier + display host for a work resolved on the `openalex` platform (no arXiv
+ * id, no PMID). Tier comes from OpenAlex METADATA, not the host string:
+ * repository-hosted (bioRxiv/medRxiv/PsyArXiv/…) → `preprint`; a DOAJ-indexed
+ * journal → `peer_reviewed`; any other venue → `open_access` (the honest
+ * "check whether it was peer-reviewed" middle tier).
+ */
+function openalexTierAndHost(raw: Record<string, unknown>): { tier: CredibilityTier; host: string } {
+  const loc = raw.primary_location as Record<string, unknown> | undefined
+  const source = loc?.source as Record<string, unknown> | undefined
+  const sourceType = typeof source?.type === 'string' ? source.type : null
+  const inDoaj = source?.is_in_doaj === true
+  let host = 'openalex.org'
+  const landing = typeof loc?.landing_page_url === 'string' ? loc.landing_page_url : null
+  try {
+    if (landing) host = new URL(landing).hostname.replace(/^www\./, '')
+  } catch {
+    // Malformed landing URL — keep the openalex.org fallback.
+  }
+  const tier: CredibilityTier =
+    sourceType === 'repository' ? 'preprint' : inDoaj ? 'peer_reviewed' : 'open_access'
+  return { tier, host }
+}
+
+/**
+ * Normalize one raw OpenAlex work. With a platform preference ('arxiv' /
+ * 'pubmed'), behaves strictly as before: the platform id must exist or the row
+ * is dropped. With 'any' (the open-access sweep), the platform is derived from
+ * the ids the work actually has — pmid → pubmed, arXiv id → arxiv, otherwise
+ * the `openalex` platform keyed by the work's own OpenAlex id.
+ */
+function toNormalized(
+  raw: Record<string, unknown>,
+  platform: 'arxiv' | 'pubmed' | 'any',
+): NormalizedWork | null {
   const ids = raw.ids as Record<string, unknown> | undefined
   const doi =
     (typeof raw.doi === 'string' && raw.doi) || (typeof ids?.doi === 'string' ? ids.doi : null)
   const arxivId = arxivIdFromWork(raw)
   const pmid = pmidFromWork(raw)
 
+  let resolved: 'arxiv' | 'pubmed' | 'openalex'
+  if (platform === 'any') {
+    resolved = pmid ? 'pubmed' : arxivId ? 'arxiv' : 'openalex'
+  } else {
+    resolved = platform
+  }
+
   let externalId: string
   let host: string
   let tier: CredibilityTier
-  if (platform === 'arxiv') {
+  if (resolved === 'arxiv') {
     if (!arxivId) return null
     externalId = `arxiv:${arxivId}`
     host = 'arxiv.org'
     tier = 'preprint'
-  } else {
+  } else if (resolved === 'pubmed') {
     if (!pmid) return null
     externalId = `pmid:${pmid}`
     host = 'pubmed.ncbi.nlm.nih.gov'
     tier = 'peer_reviewed'
+  } else {
+    const oaId = openalexIdOf(raw)
+    if (!oaId) return null
+    externalId = `openalex:${oaId}`
+    ;({ tier, host } = openalexTierAndHost(raw))
   }
 
   const title =
@@ -444,7 +528,7 @@ function toNormalized(raw: Record<string, unknown>, platform: 'arxiv' | 'pubmed'
     ''
 
   return {
-    platform,
+    platform: resolved,
     externalId,
     title: title.replace(/\s+/g, ' ').trim(),
     authors: authorsOf(raw),
@@ -454,6 +538,7 @@ function toNormalized(raw: Record<string, unknown>, platform: 'arxiv' | 'pubmed'
       (typeof raw.publication_year === 'number' ? String(raw.publication_year) : null),
     host,
     tier,
+    isReview: raw.type === 'review',
     arxivId,
     pmid,
     doi: doi || null,
@@ -463,7 +548,8 @@ function toNormalized(raw: Record<string, unknown>, platform: 'arxiv' | 'pubmed'
 
 export interface SearchWorksParams {
   query: string
-  platform: 'arxiv' | 'pubmed'
+  /** 'oa': the open-access sweep — any `is_oa:true` work, platform derived per row. */
+  platform: 'arxiv' | 'pubmed' | 'oa'
   limit?: number
 }
 
@@ -543,6 +629,25 @@ const MOCK_PUBMED_RELATED: NormalizedWork[] = [
   },
 ]
 
+// The 'oa' sweep fixtures: one DOAJ-journal REVIEW article (openalex platform,
+// peer_reviewed) and one repository preprint (openalex platform, preprint) — so
+// the merged-search spec can assert the review badge and the openalex tiers.
+const MOCK_OA_RELATED: NormalizedWork[] = [
+  {
+    platform: 'openalex', externalId: 'openalex:W990000031',
+    title: 'E2E Fixture: A Review of Attention Research', authors: ['Review Author'],
+    abstract: null, publishedAt: '2023', host: 'journals.e2e-fixture.org', tier: 'peer_reviewed',
+    isReview: true,
+    arxivId: null, pmid: null, doi: 'https://doi.org/10.9999/e2e-review', openAlexId: 'https://openalex.org/W990000031',
+  },
+  {
+    platform: 'openalex', externalId: 'openalex:W990000032',
+    title: 'E2E Fixture: A bioRxiv-style Open Preprint', authors: ['Oa Preprint Author'],
+    abstract: null, publishedAt: '2024', host: 'biorxiv.e2e-fixture.org', tier: 'preprint',
+    arxivId: null, pmid: null, doi: null, openAlexId: 'https://openalex.org/W990000032',
+  },
+]
+
 /** A citation-graph neighbour fixture → a resolvable arXiv NormalizedWork. */
 function mockNeighbourToWork(n: OpenAlexNeighbour): NormalizedWork | null {
   if (!n.arxivId) return null
@@ -571,13 +676,20 @@ const MOCK_WORK_BY_EXTID = new Map<string, NormalizedWork>(
     MOCK_PUBMED_SEED,
     ...MOCK_ARXIV_RELATED,
     ...MOCK_PUBMED_RELATED,
+    ...MOCK_OA_RELATED,
     ...[...MOCK_REFERENCES, ...MOCK_CITED_BY]
       .map(mockNeighbourToWork)
       .filter((w): w is NormalizedWork => w !== null),
   ].map((w) => [w.externalId, w]),
 )
 
-/** Keyword search via OpenAlex, restricted to the platform (arXiv source / has pmid). */
+/**
+ * Keyword search via OpenAlex. 'arxiv' / 'pubmed' are the strict platform
+ * filters; 'oa' sweeps ALL open-access works (`is_oa:true`) — which is what
+ * brings bioRxiv/medRxiv/PsyArXiv/SocArXiv/ChemRxiv preprints and open-access
+ * journal articles (ecology, psychology, …) into the merged Papers search —
+ * with each row's platform derived from the ids it actually has.
+ */
 export async function searchWorks({ query, platform, limit = 12 }: SearchWorksParams): Promise<NormalizedWork[]> {
   if (!query.trim()) return []
   if (MOCK) {
@@ -590,6 +702,7 @@ export async function searchWorks({ query, platform, limit = 12 }: SearchWorksPa
         : MOCK_ARXIV_RELATED
       return list.slice(0, limit)
     }
+    if (platform === 'oa') return MOCK_OA_RELATED.slice(0, limit)
     const list = q.includes(MOCK_SEARCH_PUBMED_QUERY) ? [MOCK_PUBMED_SEED] : MOCK_PUBMED_RELATED
     return list.slice(0, limit)
   }
@@ -600,11 +713,15 @@ export async function searchWorks({ query, platform, limit = 12 }: SearchWorksPa
   const url = withMailto(new URL(`${OPENALEX_API}/works`))
   url.searchParams.set('search', query)
   url.searchParams.set('select', SEARCH_SELECT)
-  // Over-fetch: some rows are dropped for lacking the platform id (arXiv/pmid).
+  // Over-fetch: some rows are dropped for lacking a resolvable id.
   url.searchParams.set('per-page', String(Math.min(limit * 2, 50)))
   url.searchParams.set(
     'filter',
-    platform === 'arxiv' ? `primary_location.source.id:${ARXIV_SOURCE_ID}` : 'has_pmid:true',
+    platform === 'arxiv'
+      ? `primary_location.source.id:${ARXIV_SOURCE_ID}`
+      : platform === 'pubmed'
+        ? 'has_pmid:true'
+        : 'is_oa:true',
   )
 
   try {
@@ -612,7 +729,7 @@ export async function searchWorks({ query, platform, limit = 12 }: SearchWorksPa
     if (!res.ok) return []
     const data = (await res.json()) as { results?: Array<Record<string, unknown>> }
     const works = (data.results ?? [])
-      .map((r) => toNormalized(r, platform))
+      .map((r) => toNormalized(r, platform === 'oa' ? 'any' : platform))
       .filter((w): w is NormalizedWork => w !== null)
       .slice(0, limit)
     searchWorksCache.set(cacheKey, works)
@@ -623,9 +740,9 @@ export async function searchWorks({ query, platform, limit = 12 }: SearchWorksPa
   }
 }
 
-/** Resolve ONE work by its arxiv:/pmid: id via OpenAlex (never touches arXiv/NCBI). */
+/** Resolve ONE work by its arxiv:/pmid:/openalex: id via OpenAlex (never touches arXiv/NCBI). */
 export async function getWorkByExternalId(
-  platform: 'arxiv' | 'pubmed',
+  platform: 'arxiv' | 'pubmed' | 'openalex',
   bareId: string,
 ): Promise<NormalizedWork | null> {
   if (!bareId) return null
@@ -634,7 +751,8 @@ export async function getWorkByExternalId(
     // direct resolve — AC8 — or BRANCHING a cites/citedBy chip — AC5 — all route
     // here). The map covers the seeds, the search-related works, AND the
     // citation-graph neighbours, so no branch/open ever hits the live API.
-    const extId = platform === 'arxiv' ? `arxiv:${bareId}` : `pmid:${bareId}`
+    const extId =
+      platform === 'arxiv' ? `arxiv:${bareId}` : platform === 'pubmed' ? `pmid:${bareId}` : `openalex:${bareId}`
     return MOCK_WORK_BY_EXTID.get(extId) ?? null
   }
   const cacheKey = `workByExt:${platform}:${bareId}`
@@ -644,7 +762,9 @@ export async function getWorkByExternalId(
   const path =
     platform === 'arxiv'
       ? `${OPENALEX_API}/works/https://doi.org/10.48550/arXiv.${normalizeArxivId(bareId)}`
-      : `${OPENALEX_API}/works/pmid:${bareId}`
+      : platform === 'pubmed'
+        ? `${OPENALEX_API}/works/pmid:${bareId}`
+        : `${OPENALEX_API}/works/${bareId}`
   const url = withMailto(new URL(path))
   url.searchParams.set('select', SEARCH_SELECT)
 
@@ -655,7 +775,7 @@ export async function getWorkByExternalId(
       return null
     }
     const raw = (await res.json()) as Record<string, unknown>
-    const work = toNormalized(raw, platform)
+    const work = toNormalized(raw, platform === 'openalex' ? 'any' : platform)
     workByExtCache.set(cacheKey, work)
     return work
   } catch (err) {

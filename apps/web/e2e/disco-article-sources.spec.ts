@@ -352,4 +352,70 @@ test.describe('Feature — disco-article-sources (article Discovery source type)
       await anonCtx.dispose()
     }
   })
+
+  // ── Criterion 6 — Explainers lane (MedlinePlus) ────────────────────────────
+  test('AC-Article-6: the MedlinePlus explainer lane searches, badges Reference, and renders public-domain attribution (never CC BY-ND)', async ({
+    page,
+  }) => {
+    await openDiscovery(page)
+    await openArticlesTab(page)
+
+    // The Explainers feed group renders with the Health topics lane.
+    const healthChip = page.getByRole('button', { name: 'Health topics' })
+    await expect(healthChip).toBeVisible({ timeout: 15000 })
+    await healthChip.click()
+
+    // Search-driven lane: empty query prompts a search…
+    await expect(page.getByText(/Type a topic to search MedlinePlus/)).toBeVisible()
+
+    // …and a query returns the deterministic fixture topics with Reference badges.
+    await page.getByPlaceholder(/Search MedlinePlus health topics/).fill('diabetes')
+    const fixtureCard = page.getByRole('button', { name: /E2E Fixture: Diabetes Basics/ })
+    await expect(fixtureCard).toBeVisible({ timeout: 15000 })
+    await expect(
+      page.locator('ul li button').filter({ has: page.locator('span[data-tier="reference"]') }).first(),
+    ).toBeVisible()
+
+    // Picking it renders the full summary in-app with PUBLIC-DOMAIN attribution
+    // — the CC BY-ND notice (a Conversation licensing line) must NOT appear.
+    await fixtureCard.click()
+    await expect(page.getByText(/what diabetes is, in plain language/)).toBeVisible({
+      timeout: 15000,
+    })
+    await expect(
+      page.getByText('Source: MedlinePlus (NIH) — content in the public domain'),
+    ).toBeVisible()
+    await expect(page.getByText(/under CC BY-ND/)).toHaveCount(0)
+  })
+
+  // ── Criterion 7 — Prior-art lane (patents) ─────────────────────────────────
+  test('AC-Article-7: the patents lane searches prior art and renders link-out cards, never a full body', async ({
+    page,
+  }) => {
+    await openDiscovery(page)
+    await openArticlesTab(page)
+
+    const patentsChip = page.getByRole('button', { name: 'Prior art (patents)' })
+    await expect(patentsChip).toBeVisible({ timeout: 15000 })
+    await patentsChip.click()
+
+    // Search-driven empty state prompts for an invention description.
+    await expect(page.getByText(/Describe your invention idea/)).toBeVisible()
+
+    // A query returns the deterministic patent fixtures as LINK-OUT cards.
+    await page.getByPlaceholder(/Search patents for prior art/).fill('growth chamber')
+    const fixtureCard = page.getByRole('button', { name: /E2E Fixture: Adjustable Plant Growth Chamber/ })
+    await expect(fixtureCard).toBeVisible({ timeout: 15000 })
+    await expect(fixtureCard).toContainText('link-out')
+
+    // Picking it adds a link-out node: excerpt + outbound Google Patents link,
+    // no in-app body (patent text is never rendered).
+    await fixtureCard.click()
+    const outbound = page.getByRole('link', { name: /↗ Google Patents/ })
+    await expect(outbound).toBeVisible({ timeout: 15000 })
+    await expect(outbound).toHaveAttribute('href', 'https://patents.google.com/patent/US0000001A1')
+    await expect(outbound).toHaveAttribute('target', '_blank')
+    const rel = await outbound.getAttribute('rel')
+    expect(rel).toContain('noopener')
+  })
 })
