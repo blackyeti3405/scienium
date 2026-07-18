@@ -16,7 +16,8 @@ const DecideBody = z.object({ decision: z.enum(['approve', 'deny']) }).strict()
  * Deny     → marks the request denied; the student is not enrolled and can
  *            re-request later (which re-opens the row as pending).
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeacher(req, { tier: 'mutate' })
   if (error) return error
 

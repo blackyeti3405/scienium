@@ -26,7 +26,8 @@ const Body = z.object({
 class AttachmentError extends Error {}
 
 // PATCH — edit an existing progress entry. Author-only.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
 
@@ -126,7 +127,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 // DELETE — remove a progress entry and its attachments. Author-only.
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
   if (error) return error
 

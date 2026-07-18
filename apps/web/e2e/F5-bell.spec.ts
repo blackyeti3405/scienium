@@ -150,10 +150,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     // stale-token API call can come back with an HTML redirect/error page on a
     // 2xx-range status rather than a clean 401 — res.ok() alone is not a reliable
     // signal here, so the JSON parse is guarded and failure is reported loudly.
-    const context = await browser.newContext({ storageState: STORAGE.leader, baseURL: BASE_URL })
-    const page = await context.newPage()
-    try {
-      await page.goto('/lab')
+    await withSeedPage(browser, 'leader', async (page) => {
       const res = await api.post(page, '/api/notifications', {
         data: { ids: [seededNotificationId] },
       })
@@ -174,9 +171,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
       }
       // eslint-disable-next-line no-console
       console.log(`F5 afterAll cleanup: marked ${updated} seeded notification(s) read.`)
-    } finally {
-      await context.close()
-    }
+    })
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────

@@ -100,6 +100,18 @@ export const FEEDS: Record<string, FeedConfig> = {
     label: 'Scientific American',
     url: 'https://www.scientificamerican.com/platform/syndication/rss/',
   },
+  knowable: {
+    id: 'knowable',
+    provider: 'journalism',
+    renderMode: 'linkout',
+    sourceName: 'Knowable Magazine',
+    label: 'Knowable Magazine',
+    // Annual Reviews' journalism arm — articles written FROM expert-reviewed
+    // review papers, so the credibility floor is unusually high for journalism.
+    // The RSS carries teasers only (no content:encoded), so despite the site's
+    // CC BY-ND license this renders as a link-out card, not a full article.
+    url: 'https://knowablemagazine.org/rss',
+  },
 }
 
 /** Feed metadata for the client's feed picker (no article payload). */

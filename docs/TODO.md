@@ -11,20 +11,18 @@ Tracked items intentionally deferred during development. Remove an entry once do
   No code change needed — the lane detects the key and switches to live
   PatentsView results automatically (`lib/discovery/patents.ts`).
 
-## Error tracker (required before the classroom pilot)
-- **Now:** production diagnostics are structured JSON log events in Vercel logs
-  (`lib/observability/log.ts`; querying documented in
-  `docs/runbooks/incident-response.md`). That satisfies the PILOT-5 minimum but
-  gives no alerting — an incident is only visible if someone is looking.
-- **Before pilot launch:** wire a real error-reporting destination (e.g. **Sentry**
-  for Next.js) so unhandled route/server errors page the operator instead of
-  sitting in logs.
-  - Keep the vendor behind `lib/observability/` (the logger stays the single seam;
-    routes never import the vendor SDK directly).
-  - Same redaction rules as the logger: opaque ids only — never prompts, paper
-    text, student submissions, or emails in error payloads/breadcrumbs.
-  - Add the DSN env var to `.env.example` + SETUP.md §8, and an alert rule for
-    error-rate spikes and `rate_limit.misconfigured` events.
+## Error tracker — Sentry (wired + verified 2026-07-18; deploy steps remain)
+- **Done:** `@sentry/nextjs` across all three runtimes (`instrumentation.ts`
+  `onRequestError` auto-captures every unhandled server error;
+  `instrumentation-client.ts`; `app/global-error.tsx`), `withSentryConfig` with
+  the `/monitoring` tunnel (ad-blocker-proof, CSP stays `'self'`), privacy
+  posture per the observability rules (no Session Replay, conservative
+  `dataCollection` default, no local variables, DSN-gated no-op without env).
+  Verified end to end from localhost: issue 7619054534 in the `scienium` org.
+- **At production deploy:** set `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` in the
+  Vercel env; add `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` (build
+  secrets) so production stack traces get source maps; create one Sentry alert
+  rule (error-rate spike → email).
 
 ## Google Drive OAuth (Research Plan building — Feature 2A)
 - **Now:** the Research Plan feature uses a **paste-a-link fallback** — the student

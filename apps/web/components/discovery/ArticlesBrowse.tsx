@@ -24,7 +24,7 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
   const [loading, setLoading] = useState(false)
   const [adding, setAdding] = useState<string | null>(null)
   const [searched, setSearched] = useState(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // Load the feed picker's metadata once on mount (no `feed` param → results: []).
   useEffect(() => {

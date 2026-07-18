@@ -5,6 +5,72 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.27.0] — 2026-07-18
+
+Security week: the SECURITY2 audit's dependency and header gaps closed, classroom join
+codes given a lifetime, and **Sentry** wired end to end — error tracking plus an in-game
+"Report a bug" button. Two small Discovery additions ride along.
+
+### Added — Error tracking + bug reporting (Sentry)
+- **Error monitoring across all three runtimes** — `instrumentation.ts` (`onRequestError`
+  auto-captures every unhandled route / server-component / server-action error),
+  `instrumentation-client.ts` for the browser, `sentry.edge.config.ts` for middleware, and
+  `app/global-error.tsx` for root-layout render errors. Verified end to end from localhost
+  against the live project. Errors + tracing at the SDK's recommended sampling (100% dev /
+  10% prod).
+- **Privacy posture, deliberate and documented in-file**: NO Session Replay (it
+  screen-records minors), no `dataCollection` object (omitting it keeps the SDK's
+  conservative no-PII default — passing even `{}` flips categories permissive), no
+  `includeLocalVariables` (stack-frame locals could carry student text), and `enabled` only
+  when a DSN is configured, so DSN-less dev and the E2E suite are true no-ops.
+- **"Report a bug" button** (`components/ui/BugReportButton.tsx`) in both the lab
+  StatusStrip and the teacher header — Sentry User Feedback with `autoInject: false`, so
+  our button is the only entry point (no floating vendor widget). Reports are anonymous
+  (no name/email fields) and text-only (no screenshot capture). The dialog wears the game
+  chrome: `font-pixel` title/labels/buttons on the navy+gold palette, with the message
+  textarea left in the body font.
+- `/monitoring` tunnel route (`withSentryConfig`) so browser events survive ad-blockers on
+  school networks and the CSP's `connect-src` stays `'self'`; it's on the middleware
+  public-route list because errors happen pre-login too.
+
+### Added — Discovery
+- **Knowable Magazine** joins the journalism feeds (Annual Reviews' journalism arm —
+  articles written from expert-reviewed review papers). Its RSS carries teasers only, so it
+  renders as a link-out card despite the site's CC BY-ND license.
+- **Simple English Wikipedia toggle** in the wiki reader — same MediaWiki API, plainer
+  language and shorter articles for younger or ELL readers. The `lang` param is a validated
+  enum, caches are keyed per edition, and the toggle stays visible on the not-found state
+  (Simple has far fewer articles).
+
+### Changed — Security (SECURITY2 audit)
+- **SEC2-002 — dependencies: 17 advisories (7 high) → 0.** The patch floor was Next
+  15.5.16, so this is the full migration: **Next 15.5.20, React 19, Clerk 7**, plus
+  `@clerk/testing` 2.2 and a postcss override. Async request APIs migrated (params are now
+  promises), `withTeamRoute` updated for Next 15's exact `RouteContext`, `useRef` initial
+  values for React 19, and `afterSignOutUrl` moved from `UserButton` to `ClerkProvider`.
+- **SEC2-005 — security headers.** A catch-all header block: CSP (hard-locked
+  `frame-ancestors 'none'`, `object-src 'none'`, `base-uri`/`form-action 'self'`; Clerk
+  origins allowed; `unsafe-eval` dev-only), `X-Frame-Options: DENY`, nosniff,
+  Referrer-Policy, Permissions-Policy, COOP, and prod-only HSTS. A unit test fails CI if a
+  lockdown is dropped or the dev relaxation leaks into production.
+- **SEC2-003 — classroom join codes expire.** New `Class.joinCodeExpiresAt` (migration
+  `20260717150000`, 30-day default): every mint sets it, regeneration is both revoke *and*
+  renew, and `resolveClass` fails closed — an expired code is indistinguishable from an
+  invalid one, so the endpoint is no probing oracle.
+- **E2E session handling consolidated** — the remaining hand-rolled
+  `newContext({ storageState })` blocks now use `withSeedPage`; `gotoFresh` adopted in the
+  long serial specs; `registerPageRole` lets teacher-paged specs recover as the right
+  account.
+
+### Fixed
+- F9 AC12's long-standing flake root-caused: sibling specs' activity decays the shared
+  team's "stale" flag mid-batch, removing the nudge controls the test clicks. It now skips
+  explicitly with that reason instead of hanging 30s.
+- Removed vestigial `AI_SERVICE_URL` / `AI_SERVICE_API_KEY` env vars — nothing has read
+  them since the Anthropic SDK went in-process.
+
+---
+
 ## [0.26.1] — 2026-07-17
 
 Migrate-on-touch cleanup for the Discovery files the v0.26.0 work landed on (REFACTOR2

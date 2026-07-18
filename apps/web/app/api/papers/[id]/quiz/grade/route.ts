@@ -22,7 +22,8 @@ import { lockAggregate } from '@/lib/db-lock'
 
 // Server-side only; the Anthropic key never reaches the browser.
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // Strict per-user + per-IP limit: grading is a paid Claude call.
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'ai' })
   if (guardError) return guardError

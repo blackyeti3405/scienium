@@ -24,7 +24,7 @@ export function PapersSearch({ defaultQuery = '', onPick }: Props) {
   const [loading, setLoading] = useState(false)
   const [adding, setAdding] = useState<string | null>(null)
   const [searched, setSearched] = useState(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const runSearch = useCallback(async (q: string) => {
     if (q.trim().length < 2) {

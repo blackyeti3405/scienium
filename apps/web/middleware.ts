@@ -8,6 +8,7 @@ const isPublicRoute = createRouteMatcher([
   '/showcase/(.*)', // Public showcase pages
   '/api/showcase/public/(.*)', // Privacy-checked public asset streaming
   '/api/cron/(.*)', // Scheduled jobs — authenticated by CRON_SECRET, not a session
+  '/monitoring(.*)', // Sentry tunnel route — browser error reports arrive pre-auth too
 ])
 
 export default clerkMiddleware(async (auth, req) => {

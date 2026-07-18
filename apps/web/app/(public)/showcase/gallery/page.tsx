@@ -8,10 +8,11 @@ export const metadata = {
 }
 
 interface Props {
-  searchParams: { lab?: string }
+  searchParams: Promise<{ lab?: string }>
 }
 
-export default async function GalleryPage({ searchParams }: Props) {
+export default async function GalleryPage(props: Props) {
+  const searchParams = await props.searchParams;
   const labFilter =
     searchParams.lab && (LAB_TYPES as readonly string[]).includes(searchParams.lab)
       ? (searchParams.lab as LabType)

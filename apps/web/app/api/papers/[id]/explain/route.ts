@@ -33,7 +33,8 @@ const ExplainBody = z.object({ text: boundedText(EXPLAIN_MAX_CHARS) }).strict()
  * persist the revise-loop history, and (once-ever) mint flat KP on a pass.
  * Server-side only; the Anthropic key never reaches the browser.
  */
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 
@@ -77,7 +78,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   })
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // Strict per-user + per-IP limit: grading is a paid Claude call.
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'ai' })
   if (guardError) return guardError

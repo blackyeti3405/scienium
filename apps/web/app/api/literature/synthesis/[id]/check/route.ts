@@ -37,7 +37,8 @@ export const maxDuration = 60
  * MAX_KP_AWARDED_MATRICES paid matrices per team — the model never emits a
  * number that reaches the economy (see `SYNTHESIS_KP_AWARD`).
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // Strict per-user + per-IP limit: the required rate cap for an LLM-backed route.
   const { ctx, error } = await requireTeamContext(req, { tier: 'ai' })
   if (error) return error

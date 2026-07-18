@@ -15,8 +15,9 @@ import { QUIZ_PASS_THRESHOLD, type QuizQuestion } from '@/lib/literature/quiz'
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string; paperId: string } },
+  props: { params: Promise<{ id: string; paperId: string }> }
 ) {
+  const params = await props.params;
   const { ctx, error } = await requireTeacher(req, { tier: 'read' })
   if (error) return error
 

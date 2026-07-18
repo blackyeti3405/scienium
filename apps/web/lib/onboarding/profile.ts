@@ -31,15 +31,23 @@ export interface ClassMatch {
   schoolId: string
 }
 
-/** Resolve a classroom by its join code, or null if the code matches nothing. */
+/**
+ * Resolve a classroom by its join code, or null if the code matches nothing.
+ * Expired codes resolve null too (SEC2-003) — indistinguishable from an
+ * invalid code by design (generic response; no oracle for probing), and a
+ * code without an expiry fails CLOSED (every mint sets one; a null can only
+ * mean pre-migration drift).
+ */
 export async function resolveClass(code: string | null | undefined): Promise<ClassMatch | null> {
   const trimmed = code?.trim()
   if (!trimmed) return null
   const klass = await db.class.findUnique({
     where: { joinCode: normalizeInviteCode(trimmed) },
-    select: { id: true, schoolId: true },
+    select: { id: true, schoolId: true, joinCodeExpiresAt: true },
   })
-  return klass ? { classId: klass.id, schoolId: klass.schoolId } : null
+  if (!klass) return null
+  if (!klass.joinCodeExpiresAt || klass.joinCodeExpiresAt <= new Date()) return null
+  return { classId: klass.id, schoolId: klass.schoolId }
 }
 
 /**

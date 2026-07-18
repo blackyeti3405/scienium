@@ -7,6 +7,7 @@ _Pilot-minimum procedure (PILOT-6). Audience: whoever operates scienium during t
 | System | Console | What lives there |
 | --- | --- | --- |
 | App hosting + cron + logs | Vercel dashboard → scienium project | Deploys, runtime logs, cron run history, env vars |
+| Error tracking + bug reports | [Sentry](https://scienium.sentry.io) → scienium project | Grouped exceptions with stack traces (**Issues**), student/teacher bug reports (**User Feedback**) |
 | Database | Supabase dashboard | Postgres, backups/restore, connection pooling |
 | Auth | Clerk dashboard | Users, sessions, sign-in incidents |
 | LLM | Anthropic console | API usage/spend, rate limits, status |
@@ -19,6 +20,12 @@ Incident owner during the pilot: the project owner (repo owner). Escalation path
 ## First 10 minutes
 
 1. **Scope it.** One student, one class, or everyone? One feature or the whole app?
+   **Start in Sentry Issues** — it groups identical exceptions, shows how many users
+   are hit and since when, and carries the stack trace. The Vercel log queries below
+   are for correlating a specific request, or for anything Sentry doesn't capture
+   (rate-limit denials, job lifecycle, cron summaries).
+   Check **User Feedback** too: a student may have described the symptom in
+   plain language, and reports submitted right after an error are linked to it.
 2. **Check Vercel runtime logs.** Structured events are single-line JSON (`lib/observability/log.ts`). Filter by:
    - `"outcome":"error"` — failures, with `event`, `route`, `requestId`, opaque ids.
    - `rate_limit.misconfigured` — paid features 503ing because the shared limiter store is missing/broken. Fix: restore `UPSTASH_REDIS_REST_URL`/`TOKEN` env vars and redeploy.

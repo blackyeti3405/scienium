@@ -7,7 +7,8 @@ import { getObjectStream } from '@/lib/storage'
 // lives in R2 (private) and is streamed through this authenticated, team-scoped
 // route — never via a public or signed URL. Rows uploaded before the R2 migration
 // fall back to the legacy in-DB blob.
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 

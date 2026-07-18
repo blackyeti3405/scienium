@@ -20,7 +20,7 @@ Browser
   |
   | Clerk session
   v
-Next.js 14 App Router on Vercel
+Next.js 15 App Router on Vercel
   |-- React server/client components
   |-- route handlers under app/api
   |-- Prisma application services
@@ -40,8 +40,8 @@ under `art/` and `apps/web/scripts/` is build tooling only.
 | Concern | Current implementation |
 |---|---|
 | Package management | pnpm workspace |
-| Web framework | Next.js 14.2, App Router |
-| UI runtime | React 18, TypeScript, Tailwind CSS |
+| Web framework | Next.js 15.5, App Router |
+| UI runtime | React 19, TypeScript, Tailwind CSS |
 | UI style | Custom pixel-art system and generated sprite assets |
 | Authentication | Clerk middleware and server APIs |
 | Database | Supabase PostgreSQL through Prisma 5, with pooled runtime URL and direct migration URL |
@@ -370,6 +370,25 @@ discovery promote, topic wipe), or `assertCron`. The static sweep
 caches such as the Wikipedia article proxy. These caches are intentionally
 best-effort and per-instance. Durable data and user-visible state live in
 PostgreSQL; Redis is not currently a general application state store.
+
+**Error tracking (Sentry).** `@sentry/nextjs` covers all three runtimes:
+`instrumentation.ts` dispatches the node/edge init and exports
+`onRequestError`, which captures every unhandled route, server-component, and
+server-action error without per-route code; `instrumentation-client.ts` covers
+the browser; `app/global-error.tsx` catches root-layout render errors.
+`withSentryConfig` wraps `next.config.mjs` and serves browser events through a
+same-origin `/monitoring` tunnel (ad-blocker resistant; keeps CSP `connect-src`
+at `'self'`). Privacy posture is deliberate and commented in each config: no
+Session Replay, no `dataCollection` object (the SDK's conservative no-PII
+default), no `includeLocalVariables`, and the SDK is `enabled` only when a DSN
+is present, so dev-without-DSN and E2E runs are no-ops. This is the alerting
+layer *on top of* the structured logs in `lib/observability/log.ts`, not a
+replacement — the logger remains the seam application code writes through.
+
+**Security headers.** `next.config.mjs` sends a catch-all header block (CSP,
+HSTS in production, `X-Frame-Options`, nosniff, Referrer-Policy,
+Permissions-Policy, COOP). `test/security-headers.test.ts` asserts the
+lockdowns in both environments so a config refactor can't silently drop one.
 
 Anthropic prompt caching is used deliberately on the paper-backed routes: the
 paper text is composed as the **first**, byte-identical system block (via the
@@ -987,6 +1006,8 @@ The migration chain is append-only:
   journal articles and non-arXiv preprint servers (`0.26.0`).
 - `20260717130000_reference_tier`: adds the `reference` value to
   `CredibilityTier` for the plain-language explainer lane (`0.26.0`).
+- `20260717150000_class_join_code_expiry`: adds `Class.joinCodeExpiresAt` and
+  backfills existing codes with a fresh 30-day window (SEC2-003, `0.27.0`).
 
 The `2026070913xxxx`–`2026070918xxxx` migrations correspond to the earlier
 refactor Phases 3–8 (changelog `0.21.2`–`0.21.7`). The

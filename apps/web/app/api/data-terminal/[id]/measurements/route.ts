@@ -30,7 +30,8 @@ function listMeasurements(experimentId: string) {
  * GET /api/data-terminal/[id]/measurements — one experiment's points, loaded
  * lazily when it's selected (the list route returns counts only — PERF-2).
  */
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'read', feature: 'data_terminal' })
   if (error) return error
 
@@ -62,7 +63,8 @@ const AddBody = z
   })
   .strict()
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate', feature: 'data_terminal' })
   if (error) return error
 
@@ -96,7 +98,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({ measurements: await listMeasurements(params.id) })
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate', feature: 'data_terminal' })
   if (error) return error
 

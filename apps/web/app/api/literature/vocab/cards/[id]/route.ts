@@ -9,7 +9,8 @@ import { db } from '@/lib/db'
  * `teamId` in the delete's WHERE clause, so a 0-count result (another
  * student's card, or a nonexistent id) is indistinguishable from Not Found.
  */
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate', feature: 'literature' })
   if (error) return error
 

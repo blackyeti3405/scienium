@@ -14,6 +14,16 @@ const LANDING: Record<Role, string> = { leader: '/lab', student: '/lab', teacher
 const PAGE_ROLE = new WeakMap<Page, Role>()
 
 /**
+ * Register which role a page is signed in as. `withSeedPage` does this
+ * automatically; specs whose MAIN `page` fixture is not the leader (e.g. a
+ * `test.use({ storageState: STORAGE.teacher })` block) must call this in
+ * `beforeEach` so session recovery re-authenticates with the right account.
+ */
+export function registerPageRole(page: Page, role: Role): void {
+  PAGE_ROLE.set(page, role)
+}
+
+/**
  * Clerk's session JWT (the `__session` cookie) is short-lived and only
  * refreshes when clerk-js runs inside a live page. Playwright's saved
  * `storageState` is a frozen snapshot, so a `page.request.*` call made long

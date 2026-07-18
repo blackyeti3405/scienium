@@ -2990,3 +2990,19 @@
 
   @page { margin: 0.5in; }
 }
+
+/* ── Sentry User Feedback widget ("Report a bug") ─────────────────────────────
+   The widget renders in a shadow root, so only CSS custom properties set on
+   its host element reach inside (an outer-document rule on the host beats the
+   widget's own `:host` defaults). Colors live in the `themeDark` object in
+   instrumentation-client.ts; these are the bits that theme object can't carry.
+
+   The BASE font is the game's body font, deliberately: if Sentry ever renames
+   the internal classes that BugReportButton upgrades to pixel chrome, the
+   dialog degrades to readable Inter rather than something broken. */
+#sentry-feedback {
+  --font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-size: 14px;
+  --border: 1px solid rgba(255, 255, 255, 0.15);
+  --box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+}

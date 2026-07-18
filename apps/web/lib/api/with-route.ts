@@ -61,9 +61,14 @@ export function withTeamRoute<TBody = undefined>(
   opts: WithTeamRouteOptions<TBody>,
   handler: (args: TeamRouteArgs<TBody>) => Promise<Response>,
 ) {
+  // Next 15: the route context's `params` is a Promise, and the generated
+  // per-route type is exact (`Promise<{}>` for static routes, `Promise<{ id:
+  // string }>` for dynamic ones) — so the boundary accepts the widest shape
+  // (`Promise<unknown>`) and the single await below narrows for handlers,
+  // which keep receiving plain params.
   return async (
     req: NextRequest,
-    route?: { params?: Record<string, string> },
+    route: { params: Promise<unknown> },
   ): Promise<Response> => {
     const { ctx, error } = await requireTeamContext(req, {
       tier: opts.tier,
@@ -79,7 +84,8 @@ export function withTeamRoute<TBody = undefined>(
     }
 
     try {
-      return await handler({ req, ctx, data, params: route?.params ?? {} })
+      const params = ((await route.params) ?? {}) as Record<string, string>
+      return await handler({ req, ctx, data, params })
     } catch (err) {
       if (err instanceof ApiError) {
         return NextResponse.json({ error: err.message }, { status: err.status })

@@ -19,7 +19,8 @@ const PatchBody = z
   })
   .strict()
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate', feature: 'data_terminal' })
   if (error) return error
 
@@ -54,7 +55,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json({ experiment: { ...exp, measurementCount: _count.measurements } })
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate', feature: 'data_terminal' })
   if (error) return error
 

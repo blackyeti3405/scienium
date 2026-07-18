@@ -74,6 +74,8 @@ Then edit `apps/web/.env.local`:
 | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | optional — only the Science Fair "sync deadlines" feature scrapes fair sites with it (`fc-…`) |
 | `OPENALEX_API_KEY` / `NCBI_API_KEY` | [OpenAlex](https://openalex.org/rest-api) / [NCBI](https://www.ncbi.nlm.nih.gov/account/) | optional — the Discovery **Papers tab** (merged arXiv + PubMed + open-access search, citations). Works keyless, but the anonymous pools rate-limit (503s); a free key avoids that. No AI — keyword search + factual citation edges only |
 | `PATENTSVIEW_API_KEY` | [PatentsView](https://patentsview.org/apis/keyrequest) | optional — live results in the Discovery **Prior art (patents)** lane; keyless mode degrades to a Google Patents search link-out card |
+| `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` | [sentry.io](https://sentry.io) → your project → Client Keys (DSN) | optional locally — error tracking + the in-app "Report a bug" form. Same value in both vars (server + browser). Empty = the SDK is a no-op and the bug-report button hides itself. **Required in production.** Works from localhost; no deploy needed to test |
+| `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` | Sentry → Settings (org/project slugs; Auth Tokens) | build-time only — uploads source maps so production stack traces are readable. Safe to leave empty; builds just skip the upload |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | — |
 
 You need **Clerk keys + `DATABASE_URL` + `DIRECT_URL` + `ANTHROPIC_API_KEY`** to run
@@ -555,6 +557,8 @@ Then edit `apps/web/.env.local`:
 | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | optional — only the Science Fair "sync deadlines" feature scrapes fair sites with it (`fc-…`) |
 | `OPENALEX_API_KEY` / `NCBI_API_KEY` | [OpenAlex](https://openalex.org/rest-api) / [NCBI](https://www.ncbi.nlm.nih.gov/account/) | optional — the Discovery **Papers tab** (merged arXiv + PubMed + open-access search, citations). Works keyless, but the anonymous pools rate-limit (503s); a free key avoids that. No AI — keyword search + factual citation edges only |
 | `PATENTSVIEW_API_KEY` | [PatentsView](https://patentsview.org/apis/keyrequest) | optional — live results in the Discovery **Prior art (patents)** lane; keyless mode degrades to a Google Patents search link-out card |
+| `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` | [sentry.io](https://sentry.io) → your project → Client Keys (DSN) | optional locally — error tracking + the in-app "Report a bug" form. Same value in both vars (server + browser). Empty = the SDK is a no-op and the bug-report button hides itself. **Required in production.** Works from localhost; no deploy needed to test |
+| `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` | Sentry → Settings (org/project slugs; Auth Tokens) | build-time only — uploads source maps so production stack traces are readable. Safe to leave empty; builds just skip the upload |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | — |
 
 You need **Clerk keys + `DATABASE_URL` + `DIRECT_URL` + `ANTHROPIC_API_KEY`** to run

@@ -6,8 +6,13 @@ import { LruCache } from '@/lib/lru'
 // See lib/discovery/sanitize.ts — do NOT fork a looser allowlist.
 import { ARTICLE_SANITIZE_OPTS, TITLE_SANITIZE_OPTS } from '@/lib/discovery/sanitize'
 
-const WIKI_API = 'https://en.wikipedia.org/w/api.php'
-const WIKI_REST = 'https://en.wikipedia.org/api/rest_v1'
+// Reading-level toggle: English or Simple English (same MediaWiki API, a
+// different subdomain). The `lang` query param is a validated enum — never
+// interpolated from raw input.
+const WIKI_HOSTS = { en: 'en.wikipedia.org', simple: 'simple.wikipedia.org' } as const
+type WikiLang = keyof typeof WIKI_HOSTS
+const wikiApi = (lang: WikiLang) => `https://${WIKI_HOSTS[lang]}/w/api.php`
+const wikiRest = (lang: WikiLang) => `https://${WIKI_HOSTS[lang]}/api/rest_v1`
 
 // Wikimedia's User-Agent policy requires a descriptive UA with contact info for
 // server-side requests. A missing / generic UA gets throttled or IP-blocked,
@@ -68,9 +73,11 @@ export async function GET(req: NextRequest) {
 
   const title = req.nextUrl.searchParams.get('title')
   if (!title) return NextResponse.json({ error: 'title required' }, { status: 400 })
+  const lang: WikiLang = req.nextUrl.searchParams.get('lang') === 'simple' ? 'simple' : 'en'
 
-  // ── Serve from cache when fresh ──────────────────────────────────────────────
-  const cached = cache.get(title)
+  // ── Serve from cache when fresh (keyed per language edition) ────────────────
+  const cacheKey = `${lang}:${title}`
+  const cached = cache.get(cacheKey)
   if (cached) {
     return NextResponse.json(cached)
   }
@@ -87,7 +94,7 @@ export async function GET(req: NextRequest) {
       redirects: '1',
     })
 
-    const parseRes = await wikiFetch(`${WIKI_API}?${parseParams}`)
+    const parseRes = await wikiFetch(`${wikiApi(lang)}?${parseParams}`)
 
     if (!parseRes.ok) {
       // Surface the real status so rate-limits (429) are diagnosable
@@ -112,7 +119,7 @@ export async function GET(req: NextRequest) {
     let description: string | undefined
     try {
       const summaryRes = await wikiFetch(
-        `${WIKI_REST}/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`,
+        `${wikiRest(lang)}/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`,
       )
       if (summaryRes.ok) {
         const s = (await summaryRes.json()) as { description?: string }
@@ -129,10 +136,10 @@ export async function GET(req: NextRequest) {
       html:            processWikiHtml(parseData.parse.text['*']),
     }
 
-    // Cache under both the requested title and the canonical title
-    cache.set(title, payload)
+    // Cache under both the requested title and the canonical title (per edition)
+    cache.set(cacheKey, payload)
     if (payload.normalizedTitle !== title) {
-      cache.set(payload.normalizedTitle, payload)
+      cache.set(`${lang}:${payload.normalizedTitle}`, payload)
     }
 
     return NextResponse.json(payload)

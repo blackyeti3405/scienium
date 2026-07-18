@@ -15,8 +15,8 @@ import { viewFingerprint } from '@/lib/showcase-server'
 import { PrintButton } from '@/components/showcase/PrintButton'
 
 interface Props {
-  params: { slug: string }
-  searchParams: { print?: string }
+  params: Promise<{ slug: string }>
+  searchParams: Promise<{ print?: string }>
 }
 
 async function resolveViewer(): Promise<ShowcaseViewer | null> {
@@ -47,7 +47,8 @@ async function loadShowcase(slug: string) {
   })
 }
 
-export async function generateMetadata({ params }: Props) {
+export async function generateMetadata(props: Props) {
+  const params = await props.params;
   const sc = await loadShowcase(params.slug)
   const viewer = await resolveViewer()
   if (!sc || !canViewShowcase(toForView(sc), viewer)) {
@@ -86,7 +87,9 @@ function toForView(sc: {
   }
 }
 
-export default async function PublicShowcasePage({ params, searchParams }: Props) {
+export default async function PublicShowcasePage(props: Props) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const sc = await loadShowcase(params.slug)
   const viewer = await resolveViewer()
 
@@ -103,7 +106,7 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
   const isOwner = !!viewer && viewer.teamIds.includes(sc.teamId)
   if (!printMode && !isOwner) {
     try {
-      const h = headers()
+      const h = await headers()
       const ip = (h.get('x-forwarded-for')?.split(',')[0] ?? h.get('x-real-ip') ?? 'unknown').trim()
       const fp = viewFingerprint(ip, h.get('user-agent') ?? '')
       const seen = await db.showcaseView.findFirst({
@@ -181,7 +184,6 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
           </a>
         </div>
       </header>
-
       {/* Quad chart — the one-page summary, shown prominently. */}
       {quad && (
         <div className="sc-show__quad">
@@ -191,16 +193,14 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
             </div>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={assetUrl(quad.id)} alt={`${headline} quad chart`} />
+            (<img src={assetUrl(quad.id)} alt={`${headline} quad chart`} />)
           )}
         </div>
       )}
-
       <section className="sc-show__section">
         <h2 className="sc-show__h2">Abstract</h2>
         <p className="sc-show__abstract">{sc.abstract}</p>
       </section>
-
       {videoEmbed && (
         <section className="sc-show__section">
           <h2 className="sc-show__h2">Video</h2>
@@ -216,7 +216,6 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
           </div>
         </section>
       )}
-
       {board && (
         <section className="sc-show__section">
           <h2 className="sc-show__h2">Project board</h2>
@@ -235,7 +234,6 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
           </a>
         </section>
       )}
-
       {demos.length > 0 && (
         <section className="sc-show__section">
           <h2 className="sc-show__h2">Demo videos</h2>
@@ -258,7 +256,6 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
           </div>
         </section>
       )}
-
       {(repo || supplements.length > 0) && (
         <section className="sc-show__section">
           <h2 className="sc-show__h2">Resources</h2>
@@ -271,7 +268,7 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
         </section>
       )}
     </article>
-  )
+  );
 }
 
 type OnePagerAsset = { id: string; fileUrl: string | null; metadataJson: unknown }
@@ -337,7 +334,6 @@ function ShowcaseOnePager({
           Back to showcase
         </a>
       </div>
-
       <header className="sc-onepager__header">
         <h1 className="sc-onepager__title">{headline}</h1>
         {sc.shortTitle && sc.title && sc.title !== sc.shortTitle && (
@@ -348,7 +344,6 @@ function ShowcaseOnePager({
           {labType && <span className="font-pixel"> · {LAB_TYPE_LABELS[labType]}</span>}
         </p>
       </header>
-
       {quad && (
         <div className="sc-onepager__quad">
           {isPdf(quad.fileUrl) ? (
@@ -363,20 +358,18 @@ function ShowcaseOnePager({
             </a>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
+            (<img
               src={assetUrl(quad.id)}
               alt={`${headline} quad chart`}
               data-onepager-quad="img"
-            />
+            />)
           )}
         </div>
       )}
-
       <section className="sc-onepager__section">
         <h2 className="sc-onepager__h2 font-pixel">Abstract</h2>
         <p className="sc-onepager__abstract">{sc.abstract}</p>
       </section>
-
       {links.length > 0 && (
         <section className="sc-onepager__section">
           <h2 className="sc-onepager__h2 font-pixel">Links</h2>
@@ -389,7 +382,6 @@ function ShowcaseOnePager({
           </ul>
         </section>
       )}
-
       {worksCited && (
         <section className="sc-onepager__cited">
           <h2 className="sc-onepager__h2 font-pixel">Works Cited</h2>
@@ -397,7 +389,7 @@ function ShowcaseOnePager({
         </section>
       )}
     </article>
-  )
+  );
 }
 
 function ResourceLink({

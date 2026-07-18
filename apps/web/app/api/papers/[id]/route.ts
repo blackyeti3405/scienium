@@ -3,10 +3,8 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 
@@ -37,10 +35,8 @@ export async function GET(
   })
 }
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
   if (error) return error
 

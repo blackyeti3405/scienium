@@ -21,11 +21,12 @@ function seedFrom(id: string): number {
   return h || 1
 }
 
-export default async function LabPage({
-  searchParams,
-}: {
-  searchParams: { phase?: string; lab?: string; panel?: string }
-}) {
+export default async function LabPage(
+  props: {
+    searchParams: Promise<{ phase?: string; lab?: string; panel?: string }>
+  }
+) {
+  const searchParams = await props.searchParams;
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
 

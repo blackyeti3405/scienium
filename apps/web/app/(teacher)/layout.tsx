@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { UserButton } from '@clerk/nextjs'
 import { resolveTeacherRole } from '@/lib/teacher/auth'
+import { BugReportButton } from '@/components/ui/BugReportButton'
 
 export const metadata = { title: 'Teacher · scienium' }
 
@@ -28,7 +29,10 @@ export default async function TeacherLayout({ children }: { children: React.Reac
             </Link>
           </nav>
         </div>
-        <UserButton afterSignOutUrl="/" />
+        <div className="flex items-center gap-4">
+          <BugReportButton />
+          <UserButton />
+        </div>
       </header>
       <main className="p-6 max-w-5xl mx-auto">{children}</main>
     </div>

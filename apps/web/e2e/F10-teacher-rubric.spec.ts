@@ -6,7 +6,7 @@ import {
   type Page,
 } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api, withSeedPage } from './api'
+import { api, registerPageRole, withSeedPage } from './api'
 
 /**
  * F10 (this batch) — Teacher-side rubric scoring + comparison + anchor content.
@@ -108,6 +108,9 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   // the default chromium storageState (lab leader) once for the whole describe
   // block. test.use() cannot be called from inside an async test body.
   test.use({ storageState: STORAGE.teacher })
+
+  // Session recovery must re-auth these fixture pages as the teacher.
+  test.beforeEach(({ page }) => registerPageRole(page, 'teacher'))
 
   test.beforeAll(async ({ browser }) => {
     await withSeedPage(browser, 'teacher', async (page) => {

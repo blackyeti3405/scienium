@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireTeacher } from '@/lib/teacher/auth'
 import { parseJson } from '@/lib/validation'
 import { resolveSchool } from '@/lib/onboarding/profile'
-import { generateInviteCode } from '@/lib/team/invite'
+import { classJoinCodeExpiry, generateInviteCode } from '@/lib/team/invite'
 import { db } from '@/lib/db'
 
 /**
@@ -74,12 +74,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'A school name is required to create a class.' }, { status: 400 })
   }
 
-  // Mint a unique join code, retrying on the rare collision.
+  // Mint a unique join code, retrying on the rare collision. Every mint sets
+  // the expiry window (SEC2-003); regenerating the code later renews it.
   let created: { id: string; name: string; joinCode: string | null } | null = null
   for (let attempt = 0; attempt < 5 && !created; attempt++) {
     try {
       created = await db.class.create({
-        data: { name: data.name, schoolId, teacherId: ctx.dbUserId, joinCode: generateInviteCode(6) },
+        data: {
+          name: data.name,
+          schoolId,
+          teacherId: ctx.dbUserId,
+          joinCode: generateInviteCode(6),
+          joinCodeExpiresAt: classJoinCodeExpiry(),
+        },
         select: { id: true, name: true, joinCode: true },
       })
     } catch (err) {

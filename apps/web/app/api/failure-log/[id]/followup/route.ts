@@ -22,7 +22,8 @@ const PatchBody = z.object({
 // Per-entry cap: N=1 (a followup row already means no regeneration allowed).
 // Per-team daily cap: FAILURE_FOLLOWUP_DAILY_LIMIT generations/day.
 // Rate-limit tier: `ai` (12/min per-user, generous per-IP).
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'ai' })
   if (guardError) return guardError
 
@@ -138,7 +139,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
 // PATCH — store the student's answer to an existing follow-up question.
 // No LLM call here; uses `mutate` tier.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
 

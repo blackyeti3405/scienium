@@ -84,6 +84,11 @@ Discovery is a shared **forest** of source-tagged exploration trees (Wikipedia +
 - Going several levels deep exposes the student to dozens of interconnected topics
 - Nothing is rejected for being off-topic
 - All visited articles are auto-logged and visualized as a branching tree
+- **Reading-level toggle (implemented):** a **Simple English** switch in the reader swaps
+  the source to `simple.wikipedia.org` — same MediaWiki API, plainer vocabulary and shorter
+  articles for younger or ELL readers. The setting sticks across articles for the session,
+  caches are keyed per edition, and the toggle stays visible on a not-found (Simple English
+  covers far fewer topics, so returning to full English must always be one click away)
 
 ### 5.3 YouTube Exploration (implemented)
 Students can chase YouTube rabbit holes alongside Wikipedia. A **📄 Wiki / ▶ YouTube** toggle switches the left pane to a video viewer.
@@ -145,7 +150,7 @@ Reaching a node for the **first time** earns the team a small amount of KP, logg
 
 A fourth browsable source type alongside Wikipedia, YouTube, and Papers, reachable via the **📰 Articles** tab — the `article` node type (`DiscoverySource` enum), backed by its own `ArticleSource` side-row rather than `external_sources`.
 
-- **Six feeds, two render modes.** Three **The Conversation** feeds (Environment, Health, Technology) render **full articles in-app** — the sanitized article HTML is shown verbatim, with a persistent byline and a "Republished from {source} under **CC BY-ND**" attribution line, matching The Conversation's republishing terms. Three science-journalism feeds — **Quanta Magazine**, **Science News**, and **Scientific American** — are RSS-only (no full-text license), so they render as **link-out cards**: an excerpt plus a "Read the full article at {source} ↗" button pointing at the original.
+- **Seven feeds, two render modes.** Three **The Conversation** feeds (Environment, Health, Technology) render **full articles in-app** — the sanitized article HTML is shown verbatim, with a persistent byline and a "Republished from {source} under **CC BY-ND**" attribution line, matching The Conversation's republishing terms. Four science-journalism feeds — **Quanta Magazine**, **Science News**, **Scientific American**, and **Knowable Magazine** (Annual Reviews' journalism arm, written from expert-reviewed review papers) — carry teasers only in their RSS, so they render as **link-out cards**: an excerpt plus a "Read the full article at {source} ↗" button pointing at the original.
 - **"Look it up" — two search-driven lanes** alongside the RSS feeds (the query box becomes a live search instead of a keyword filter):
   - **Health topics (MedlinePlus)** — NIH's plain-language consumer-health encyclopedia, searched via its keyless XML web service (`lib/discovery/medlineplus.ts`). Summaries are NLM-authored **US-government public-domain** works, so they render full in-app with a "Source: MedlinePlus (NIH) — content in the public domain" line (the CC BY-ND notice is provider-gated and never shown here). Cards carry the new **`reference` credibility tier** (purple badge): authoritative background reading whose caveat tells students to cite the primary research it summarizes; visits earn base-rate KP (×1) so the incentive still points at papers.
   - **Prior art (patents)** — "has someone built this before?", the question engineering-fair judges ask. Backed by the PatentsView Search API when the optional `PATENTSVIEW_API_KEY` is set; keyless mode degrades to a well-formed Google Patents search link-out card. Always **link-out only** — patent text is never rendered in-app.
@@ -845,6 +850,20 @@ Comprehensive checklist of required ISEF forms (1, 1A, 1B, 2, 3, 4, 5, 6, 7) and
 - An in-app **notification bell** (implemented) surfaces the team's notifications, each rendered with a kind-specific icon, accent, and chip label. The active notification **kinds** (stored as a string on `notifications`, deduped by `dedupe_key`) are **`fair_deadline`** (deadline reminder), **`urgency`** (nudge — e.g. a teacher nudge, §15), **`teacher_feedback`**, and **`showcase_reviewed`**. (A `phase_reviewed` enum value remains but is unused since phase advancement became self-paced.)
 - Per-user notification preferences (`notification_prefs`) hold email opt-in and the days-before-deadline reminder schedule (default: 30 / 14 / 7 / 1 day prior).
 - *(Planned)* the automated engine that actually **fires** deadline reminders on a schedule and detects **smart urgency** (Project Log state vs. time remaining before a fair) — the bell and preference plumbing exist; the cron/urgency producer does not yet.
+
+### 13.8 Bug Reporting — *implemented*
+A **"Report a bug"** button sits in the lab's top strip (beside the notification bell) and in
+the teacher header, so a stuck student or teacher is never more than one click from telling us
+what broke. It opens Sentry's User Feedback form, styled to the game (pixel chrome, navy +
+gold, message textarea in the body font).
+
+- **Anonymous and text-only by design** — no name/email fields and no screenshot capture,
+  matching the project's minors-privacy posture (Session Replay is likewise never enabled).
+  A report submitted right after an error is automatically linked to that error in Sentry.
+- The button renders only when a Sentry DSN is configured, so local dev and the E2E suite
+  see clean chrome.
+- Reports land in the Sentry project's **User Feedback** view; operator triage is covered by
+  `docs/runbooks/incident-response.md`.
 - *(Planned)* optional email and push delivery.
 
 ### 13.8 Technical Implementation

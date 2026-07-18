@@ -1,6 +1,5 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api } from './api'
-import { STORAGE } from './roles'
+import { api, withSeedPage } from './api'
 
 /**
  * Feature — disco-article-sources (.claude/pipeline/plan-disco-article-sources.md).
@@ -123,14 +122,9 @@ test.describe('Feature — disco-article-sources (article Discovery source type)
 
   test.afterAll(async ({ browser }) => {
     // Self-clean: leave the team's tree empty for the next run.
-    const context = await browser.newContext({ storageState: STORAGE.leader })
-    const page = await context.newPage()
-    try {
-      await page.goto('/discovery')
+    await withSeedPage(browser, 'leader', async (page) => {
       await resetTree(page)
-    } finally {
-      await context.close()
-    }
+    })
   })
 
   // ── Criterion 1 ──────────────────────────────────────────────────────────────

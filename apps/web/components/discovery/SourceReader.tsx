@@ -76,7 +76,7 @@ export function SourceReader({
   const [reflectionDraft, setReflectionDraft] = useState('')
   const [savingReflection, setSavingReflection] = useState(false)
   const [reflectionSaved, setReflectionSaved] = useState(false)
-  const savedTimer = useRef<ReturnType<typeof setTimeout>>()
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // ── Resizable / collapsible citations panel ──
   const [citHeight, setCitHeight] = useState(CIT_DEFAULT)

@@ -16,7 +16,8 @@ const Body = z.object({
 }).strict()
 
 // POST — create a reference FROM entry [id] TO another progress entry.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
 
@@ -89,7 +90,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 }
 
 // DELETE — remove the reference FROM entry [id] TO ?targetId=<id>.
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
   if (error) return error
 

@@ -11,7 +11,8 @@ import { db } from '@/lib/db'
  * Scoped: the student must be in one of the teacher's classes, else 404 — so a
  * teacher can't probe arbitrary student ids.
  */
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeacher(req, { tier: 'read' })
   if (error) return error
 

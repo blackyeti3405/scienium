@@ -44,7 +44,8 @@ type ExtractedDates = z.infer<typeof DatesSchema>
  * to /dates, /schedule, /registration sub-pages, and returns structured JSON
  * that matches DatesSchema — no extra LLM step required.
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // Strict rate limit: each call triggers a paid Firecrawl job.
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'ai' })
   if (guardError) return guardError

@@ -86,12 +86,16 @@ model School {
 // (long-lived so a whole class can use one code); the teacher must approve each
 // request before the student is enrolled (see ClassJoinRequest). The teacher can
 // regenerate `joinCode` to revoke a leaked code. The teacher owns it via `teacherId`.
+// Codes expire (SEC2-003): `joinCodeExpiresAt` is set on every mint (default 30
+// days — see lib/team/invite.ts); resolveClass treats an expired or
+// missing-expiry code as not-found, and regeneration renews.
 model Class {
-  id           String             @id @default(cuid())
-  schoolId     String             @map("school_id")
-  name         String
-  teacherId    String             @map("teacher_id")
-  joinCode     String?            @unique @map("join_code")
+  id                String             @id @default(cuid())
+  schoolId          String             @map("school_id")
+  name              String
+  teacherId         String             @map("teacher_id")
+  joinCode          String?            @unique @map("join_code")
+  joinCodeExpiresAt DateTime?          @map("join_code_expires_at")
   createdAt    DateTime           @default(now()) @map("created_at")
   school       School             @relation(fields: [schoolId], references: [id])
   teacher      User               @relation("classTeacher", fields: [teacherId], references: [id])

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeacher } from '@/lib/teacher/auth'
-import { generateInviteCode } from '@/lib/team/invite'
+import { classJoinCodeExpiry, generateInviteCode } from '@/lib/team/invite'
 import { db } from '@/lib/db'
 
 /**
@@ -10,7 +10,8 @@ import { db } from '@/lib/db'
  * scoped to a class this teacher owns. Existing enrolled students are unaffected
  * (enrollment isn't the code); only NEW join attempts with the old code fail.
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeacher(req, { tier: 'mutate' })
   if (error) return error
 
@@ -23,11 +24,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!owned) return NextResponse.json({ error: 'Class not found' }, { status: 404 })
 
   // Mint a fresh unique code, retrying on the rare collision (mirrors create).
+  // Every mint also renews the expiry window (SEC2-003) — regeneration is both
+  // the revoke AND the renew path.
+  const joinCodeExpiresAt = classJoinCodeExpiry()
   let joinCode: string | null = null
   for (let attempt = 0; attempt < 5 && !joinCode; attempt++) {
     const candidate = generateInviteCode(6)
     try {
-      await db.class.update({ where: { id: owned.id }, data: { joinCode: candidate } })
+      await db.class.update({
+        where: { id: owned.id },
+        data: { joinCode: candidate, joinCodeExpiresAt },
+      })
       joinCode = candidate
     } catch (err) {
       if (typeof err === 'object' && err !== null && 'code' in err && (err as { code?: string }).code === 'P2002') {
@@ -40,5 +47,5 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Could not generate a unique class code, try again.' }, { status: 503 })
   }
 
-  return NextResponse.json({ joinCode })
+  return NextResponse.json({ joinCode, joinCodeExpiresAt })
 }

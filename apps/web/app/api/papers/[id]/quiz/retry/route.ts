@@ -16,7 +16,8 @@ import { prepareRetry, submitRetry } from '@/lib/literature/quiz-retry'
 // question and returns it alongside the failed questions, keys stripped, so
 // the retry FORM can show the new question with an empty textarea before the
 // student answers anything. Re-opening the retry view never regenerates.
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'ai' })
   if (guardError) return guardError
 
@@ -34,7 +35,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 // POST: targeted retry — grade the re-answered failed Qs + the already-
 // generated new Q (generated via GET, or generated in the service as a
 // fallback if the client posts without ever calling GET) in ONE grading call.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // Strict per-user + per-IP limit: retry makes at most a grading call (plus a
   // generation call only on the fallback path) — same rate cap as generate/grade.
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'ai' })

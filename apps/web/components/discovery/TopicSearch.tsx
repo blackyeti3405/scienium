@@ -18,7 +18,7 @@ export function TopicSearch({ onSelect, placeholder = 'Search a Wikipedia topicâ
   // inline hint under the box so the student knows to retry.
   const [searchError, setSearchError] = useState(false)
   const [highlighted, setHighlighted] = useState(-1)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const search = useCallback((q: string) => {

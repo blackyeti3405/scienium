@@ -4,7 +4,8 @@ import { deleteObject } from '@/lib/storage'
 import { db } from '@/lib/db'
 
 // Remove one asset from the caller's team showcase (and its R2 object, if any).
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate', feature: 'showcase' })
   if (error) return error
 

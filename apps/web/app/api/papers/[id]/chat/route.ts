@@ -16,7 +16,8 @@ const MAX_MESSAGE_CHARS = 8_000
 const ChatBody = z.object({ message: z.string().trim().min(1).max(MAX_MESSAGE_CHARS) }).strict()
 
 // GET: this user's saved chat history for the paper, capped at the last MAX_MESSAGES.
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 
@@ -37,7 +38,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   return NextResponse.json({ messages: rows.reverse() })
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // Strict per-user + per-IP limit: this handler makes a paid Claude call.
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'ai' })
   if (guardError) return guardError

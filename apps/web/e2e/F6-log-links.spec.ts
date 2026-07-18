@@ -1,5 +1,4 @@
 import { test, expect, type Page } from '@playwright/test'
-import { STORAGE } from './roles'
 import { api, withSeedPage, uploadLogAttachment } from './api'
 
 /**
@@ -141,10 +140,7 @@ test.describe('F6 — Project-Log log↔log linking', () => {
   test.afterAll(async ({ browser }) => {
     // Navigate first (Clerk JWT freshness — F4.spec.ts:518 pattern) before any
     // page.request call in this cleanup context.
-    const context = await browser.newContext({ storageState: STORAGE.leader, baseURL: BASE_URL })
-    const page = await context.newPage()
-    try {
-      await page.goto('/lab')
+    await withSeedPage(browser, 'leader', async (page) => {
 
       // Best-effort: remove any reference still dangling from A (idempotent —
       // the DELETE route no-ops on an already-removed link). entryC may already
@@ -190,9 +186,7 @@ test.describe('F6 — Project-Log log↔log linking', () => {
           console.log('F6 afterAll cleanup verified: no seeded entries remain.')
         }
       }
-    } finally {
-      await context.close()
-    }
+    })
   })
 
   // ── AC1 ───────────────────────────────────────────────────────────────────────

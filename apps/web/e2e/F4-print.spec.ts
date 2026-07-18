@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { STORAGE } from './roles'
-import { api, withSeedPage } from './api'
+import { api, gotoFresh, withSeedPage } from './api'
 
 /**
  * F4 — Showcase one-pager print export (`?print=1` on `/showcase/[slug]`).
@@ -234,10 +233,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
     // bare playwrightRequest.newContext's session to go stale, which silently
     // serves an HTML sign-in page with a 200 status instead of throwing, so
     // `.ok()` alone is not a reliable staleness check.
-    const context = await browser.newContext({ storageState: STORAGE.leader, baseURL: BASE_URL })
-    const page = await context.newPage()
-    try {
-      await page.goto('/showcase/edit')
+    await withSeedPage(browser, 'leader', async (page) => {
 
       // Best-effort cleanup: unpublish so the seeded showcase doesn't pollute the
       // gallery/queue, then remove every asset this suite created.
@@ -260,9 +256,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
             `remain and must be cleared manually before the next run.`,
         )
       }
-    } finally {
-      await context.close()
-    }
+    })
 
     // The PDF-quad-chart variant (AC7) is created and torn down inside its own
     // test body (it temporarily replaces the PNG quad chart mid-suite), so it is
@@ -271,7 +265,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
 
   // ── AC1 ───────────────────────────────────────────────────────────────────────
   test('AC1: editor top bar shows "Print one-pager" once a showcase is saved', async ({ page }) => {
-    await page.goto('/showcase/edit')
+    await gotoFresh(page, '/showcase/edit')
 
     await expect(page.getByRole('link', { name: /Print one-pager/i })).toBeVisible({ timeout: 8000 })
   })
@@ -281,7 +275,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
     page,
   }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set — beforeAll failed')
-    await page.goto('/showcase/edit')
+    await gotoFresh(page, '/showcase/edit')
 
     const link = page.getByRole('link', { name: /Print one-pager/i })
     await expect(link).toBeVisible({ timeout: 8000 })
@@ -296,7 +290,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
 
     // Navigate first (documented convention — see e2e/F4.spec.ts:518 / the batch
     // instructions) so the leader session is fresh before the owner GET below.
-    await page.goto('/showcase/edit')
+    await gotoFresh(page, '/showcase/edit')
     const res = await api.get(page, `/showcase/${showcaseSlug}?print=1`)
     expect(res.status()).toBe(200)
     const html = await res.text()
@@ -306,7 +300,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
   // ── AC4 ───────────────────────────────────────────────────────────────────────
   test('AC4: the short title text renders in the one-pager', async ({ page }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set')
-    await page.goto(`/showcase/${showcaseSlug}?print=1`)
+    await gotoFresh(page, `/showcase/${showcaseSlug}?print=1`)
 
     await expect(page.locator('[data-print-onepager]')).toBeVisible()
     await expect(page.getByRole('heading', { level: 1, name: SHORT_TITLE })).toBeVisible()
@@ -315,7 +309,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
   // ── AC5 ───────────────────────────────────────────────────────────────────────
   test('AC5: the saved abstract text renders inline', async ({ page }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set')
-    await page.goto(`/showcase/${showcaseSlug}?print=1`)
+    await gotoFresh(page, `/showcase/${showcaseSlug}?print=1`)
 
     // Abstract has an embedded newline — match on the distinctive first line, which
     // is unique to this run (RUN_ID-tagged) and avoids whitespace-normalization
@@ -328,7 +322,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
     page,
   }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set')
-    await page.goto(`/showcase/${showcaseSlug}?print=1`)
+    await gotoFresh(page, `/showcase/${showcaseSlug}?print=1`)
 
     const quadImg = page.locator('[data-onepager-quad="img"]')
     await expect(quadImg).toBeVisible()
@@ -368,7 +362,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
       })
       pdfQuadAssetId = pdfAsset.id
 
-      await page.goto(`/showcase/${showcaseSlug}?print=1`)
+      await gotoFresh(page, `/showcase/${showcaseSlug}?print=1`)
       await expect(page.locator('[data-print-onepager]')).toBeVisible()
       await expect(page.locator('[data-onepager-quad="link"]')).toBeVisible()
       await expect(page.locator('[data-onepager-quad="img"]')).toHaveCount(0)
@@ -384,7 +378,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
       // leader session rather than relying on a bare playwrightRequest context,
       // which can go stale this deep into a serial suite (documented convention;
       // see e2e/F4.spec.ts:518 / the batch instructions).
-      await page.goto('/showcase/edit')
+      await gotoFresh(page, '/showcase/edit')
       const quadRes = await api.post(page, '/api/showcase/asset', {
         multipart: {
           kind: 'quad_chart',
@@ -402,7 +396,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
   test('AC8: Works-Cited supplement renders inline (heading + bibliography text)', async ({ page }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set')
     if (!worksCitedAssetId) throw new Error('Works-Cited asset not seeded — beforeAll failed')
-    await page.goto(`/showcase/${showcaseSlug}?print=1`)
+    await gotoFresh(page, `/showcase/${showcaseSlug}?print=1`)
 
     await expect(page.getByRole('heading', { name: 'Works Cited' })).toBeVisible()
     // The bibliography text itself — not merely a link to it — must be present.
@@ -414,7 +408,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
   // ── AC9 ───────────────────────────────────────────────────────────────────────
   test('AC9: a known seeded link URL appears as visible text in the links section', async ({ page }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set')
-    await page.goto(`/showcase/${showcaseSlug}?print=1`)
+    await gotoFresh(page, `/showcase/${showcaseSlug}?print=1`)
 
     await expect(page.getByText(VIDEO_URL)).toBeVisible()
     await expect(page.getByText(REPO_URL)).toBeVisible()
@@ -440,7 +434,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
 
     // Navigate first (documented convention — see e2e/F4.spec.ts:518 / the batch
     // instructions) so the leader session is fresh before the mutate below.
-    await page.goto('/showcase/edit')
+    await gotoFresh(page, '/showcase/edit')
 
     // Switch privacy to 'private' — the teacher (not a team member) can never
     // qualify under canViewShowcase for a private showcase, print or not.
@@ -474,7 +468,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
     } finally {
       // Restore to link_only for the remaining tests (AC11, AC12). Re-navigate
       // first for the same session-freshness reason as above.
-      await page.goto('/showcase/edit')
+      await gotoFresh(page, '/showcase/edit')
       const restoreRes = await api.put(page, '/api/showcase', { data: { privacyLevel: 'link_only' } })
       expect(restoreRes.ok()).toBe(true)
     }
@@ -486,13 +480,13 @@ test.describe('F4-print — Showcase one-pager print export', () => {
 
     // Navigate first to establish session cookies before any page.request call
     // (documented convention — see e2e/F4.spec.ts:518 / the batch instructions).
-    await page.goto('/showcase/edit')
+    await gotoFresh(page, '/showcase/edit')
 
     const beforeRes = await api.get(page, '/api/showcase')
     expect(beforeRes.ok()).toBe(true)
     const beforeViews = (await beforeRes.json()).showcase.views as number
 
-    await page.goto(`/showcase/${showcaseSlug}?print=1`)
+    await gotoFresh(page, `/showcase/${showcaseSlug}?print=1`)
     await expect(page.locator('[data-print-onepager]')).toBeVisible()
 
     const afterRes = await api.get(page, '/api/showcase')
@@ -505,7 +499,7 @@ test.describe('F4-print — Showcase one-pager print export', () => {
   // ── AC12 ──────────────────────────────────────────────────────────────────────
   test('AC12: the print action bar carries data-print-hide (the @media print hook)', async ({ page }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set')
-    await page.goto(`/showcase/${showcaseSlug}?print=1`)
+    await gotoFresh(page, `/showcase/${showcaseSlug}?print=1`)
 
     const actionsBar = page.locator('[data-print-hide]')
     await expect(actionsBar).toHaveCount(1)

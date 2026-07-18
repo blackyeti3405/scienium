@@ -26,10 +26,8 @@ function e2eFixtureQuestions(): QuizQuestion[] {
 
 // GET: return the most recent GRADED quiz session for this paper (so past
 // answers + feedback stay accessible). Returns null if none has been graded.
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 
@@ -84,10 +82,8 @@ export async function GET(
 }
 
 // Generate a fresh graded quiz for a paper.
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // Strict per-user + per-IP limit: quiz generation is a paid Claude call.
   const { ctx, error } = await requireTeamContext(req, { tier: 'ai' })
   if (error) return error
