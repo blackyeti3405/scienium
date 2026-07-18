@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { TIER_META } from '@/lib/discovery/credibility'
 import type { SourcePlatform, SourceSearchResult } from '@/lib/discovery/sources'
+import { searchSources } from '@/components/discovery/api'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
 
 interface Props {
@@ -33,11 +34,10 @@ export function PapersSearch({ defaultQuery = '', onPick }: Props) {
     }
     setLoading(true)
     try {
-      const res = await fetch(`/api/discovery/sources/search?q=${encodeURIComponent(q)}`)
-      const data: SourceSearchResult[] = res.ok ? await res.json() : []
-      setResults(Array.isArray(data) ? data : [])
+      setResults(await searchSources(q))
       setSearched(true)
     } catch {
+      // Search box degrades to empty on any failure — never surfaces an error.
       setResults([])
       setSearched(true)
     } finally {

@@ -1,17 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ArticleProvider, ArticleRenderMode, ArticleSearchResult } from '@/lib/discovery/sources'
+import type { ArticleRenderMode, ArticleSearchResult } from '@/lib/discovery/sources'
 import { TIER_META } from '@/lib/discovery/credibility'
+import { browseArticles, type ArticleFeedMeta } from '@/components/discovery/api'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
-
-interface FeedMeta {
-  id: string
-  provider: ArticleProvider
-  renderMode: ArticleRenderMode
-  sourceName: string
-  label: string
-}
 
 interface Props {
   /** Resolve + add the picked article to the tree (via the store). */
@@ -23,7 +16,7 @@ const MODE_COLOR: Record<ArticleRenderMode, string> = { full: '#4ADE80', linkout
 // Articles tab: browse The Conversation (full in-app render) + science-
 // journalism (link-out) RSS feeds. Deterministic keyword filter — no LLM.
 export function ArticlesBrowse({ onPickArticle }: Props) {
-  const [feeds, setFeeds] = useState<FeedMeta[]>([])
+  const [feeds, setFeeds] = useState<ArticleFeedMeta[]>([])
   const [feedsLoaded, setFeedsLoaded] = useState(false)
   const [activeFeed, setActiveFeed] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -35,10 +28,8 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
 
   // Load the feed picker's metadata once on mount (no `feed` param → results: []).
   useEffect(() => {
-    fetch('/api/discovery/articles/browse')
-      .then((r) => r.json())
-      .then((data: { feeds?: FeedMeta[] }) => {
-        const list = Array.isArray(data.feeds) ? data.feeds : []
+    browseArticles()
+      .then(({ feeds: list }) => {
         setFeeds(list)
         setActiveFeed((cur) => cur ?? list[0]?.id ?? null)
       })
@@ -49,13 +40,11 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
   const runSearch = useCallback(async (feedId: string, q: string) => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ feed: feedId })
-      if (q.trim()) params.set('q', q.trim())
-      const res = await fetch(`/api/discovery/articles/browse?${params.toString()}`)
-      const data: { results?: ArticleSearchResult[] } = res.ok ? await res.json() : {}
-      setResults(Array.isArray(data.results) ? data.results : [])
+      const { results: list } = await browseArticles(feedId, q)
+      setResults(list)
       setSearched(true)
     } catch {
+      // Browse degrades to empty on any failure — never surfaces an error.
       setResults([])
       setSearched(true)
     } finally {

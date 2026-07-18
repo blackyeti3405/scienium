@@ -5,6 +5,21 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.26.1] — 2026-07-17
+
+Migrate-on-touch cleanup for the Discovery files the v0.26.0 work landed on (REFACTOR2
+P2-3/P2-4). No behavior change — papers-tab + article-sources E2E suites verified green.
+
+### Changed
+- `lib/discovery/openalex.ts` slimmed 784 → 601 lines: the ~200 lines of E2E mock fixtures
+  moved to `openalex.fixtures.ts` (type-only imports back — runtime dependency stays one-way).
+- New Discovery feature client `components/discovery/api.ts` (`searchSources`,
+  `browseArticles`): typed, runtime-decoded via the shared `requestJson`, with zod schemas
+  compile-checked against the source contracts. `PapersSearch` and `ArticlesBrowse` no longer
+  contain raw `fetch` — UI renders state and emits intent.
+
+---
+
 ## [0.26.0] — 2026-07-17
 
 Three waves in one release: the **pilot-hardening pass** from the REFACTOR2 audit (every paid
