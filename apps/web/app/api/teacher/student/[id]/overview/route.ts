@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeacher, teacherOwnsTeam } from '@/lib/teacher/auth'
+import { pickActiveTeam } from '@/lib/team/context'
 import { db } from '@/lib/db'
 import { getLiteratureAdvanceProgress } from '@/lib/team/advance'
 import { describeActivity } from '@/lib/activity/log'
@@ -33,11 +34,11 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
       email: true,
       createdAt: true,
       class: { select: { id: true, name: true } },
-      activeTeam: { select: { id: true } },
+      activeTeamId: true,
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
-        take: 1,
         select: {
+          teamId: true,
           role: true,
           joinedAt: true,
           team: { select: { id: true } },
@@ -54,7 +55,10 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   }
 
   const membership = student.teamMemberships[0] ?? null
-  const teamId = student.activeTeam?.id ?? membership?.team.id ?? null
+  // Resolve through membership (never a bare activeTeam), matching
+  // teacher/student/[id]/route.ts — a stale activeTeamId must not pick a team
+  // the student has since left.
+  const teamId = pickActiveTeam(student.activeTeamId, student.teamMemberships)?.id ?? null
 
   if (!teamId) {
     return NextResponse.json({

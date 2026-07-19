@@ -5,6 +5,81 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.28.0] — 2026-07-18
+
+Pre-pilot security sweep: three adversarial audits (IDOR, upload abuse, prompt injection)
+across every dynamic route, upload path, and Anthropic call site. The IDOR sweep came back
+clean; the other two did not. Highest-severity finding was an injection path that could
+mint a **clearance pass** — fixed, with the root-cause laundering channel closed behind it.
+
+### Fixed — Prompt injection
+- **Clearance-exam generation ran unfenced (critical).** `app/api/expertise/route.ts` put
+  student-authored project text (`planText`, free-form paste) into a **system block** with
+  no delimiter and no data-not-instructions label, while the sibling grading route fenced
+  the identical content. Because generation emits the `key` that grading later scores
+  against, an injected directive never had to beat the (well-defended) grading call — it
+  poisoned the key upstream and grading was then legitimately fooled. Clearance awards up
+  to 2,950 KP cumulatively and gates building purchases. Now fenced in `<project_context>`
+  with an explicit ignore-instructions clause.
+- **`gradingKey` is now advisory, not authoritative** (`lib/literature/grading.ts`,
+  `app/api/expertise/grade/route.ts`) — the root cause behind the above. The key is itself
+  model-generated from prompts containing untrusted text, so both grading paths now tell
+  the model to ignore any key that is empty, nonsensical, or instructs a score, and to
+  grade on the answer's own merits instead.
+- **Quiz-retry generation** (`lib/literature/quiz.ts`) — restored the data-not-instructions
+  line its first-pass twin already had.
+
+### Fixed — Destructive-action safety
+- **Topic-change paper wipe is now a two-phase confirmation.** The batch relevance check
+  interpolates paper text the team does not control, and its numbered scaffolding is
+  forgeable by that text, so one hostile abstract could vote a *sibling* paper off the
+  island — into a hard `deleteMany` plus permanent R2 deletion. Phase 1 (`confirmWipe`)
+  now **proposes** and deletes nothing; phase 2 (`confirmRemoveIds`) deletes exactly the
+  ids the student approved, **with no model call at all**. The model proposes, the student
+  disposes — and it costs one fewer LLM call than before. Both clients (Discovery + Lab
+  Profile settings) render the proposed titles so a student can veto what they can read.
+
+### Fixed — Upload abuse
+- **Showcase board PDFs were never inspected for active content** — `inspectPdf` had a
+  single caller. Showcase boards are served **inline by a public-allowlisted route**, so an
+  unscanned `/OpenAction` + `/JavaScript` payload reached anonymous fair visitors and
+  judges. Now inspected on the same path as paper uploads.
+- **Per-team storage quota (2 GB)** — rate limits bounded the *rate* of upload but not the
+  total; no quota existed anywhere. Enforced across all three upload routes via the
+  `UploadedAsset` ledger, which papers and showcase now write to as well.
+- **Showcase objects bypassed the ledger entirely**, so the reclaim sweep could never see
+  them and every board replacement leaked a 20 MB object permanently. Both showcase delete
+  paths now record intent instead of fire-and-forget `deleteObject(...).catch(() => {})`,
+  restoring the module's single-physical-delete-site invariant. Legacy objects with no
+  ledger row are adopted as `orphaned` rather than leaking.
+- **Log-photo uploads ran on the `mutate` tier** (40/min) rather than `upload` (8/min) —
+  ~400 MB/min per student against a sweep draining 10 objects/min. Corrected.
+- **Showcase buffered the whole request body before checking size**, so a multi-GB
+  multipart body could OOM the function before the 413. Now checks `file.size` first,
+  matching its sibling routes.
+
+### Fixed — IDOR
+- Three teacher routes resolved `student.activeTeam` directly instead of through
+  `pickActiveTeam`. Not exploitable (`teacherOwnsTeam` still gated the response), but a
+  stale-membership display bug: a student leaves a team and the teacher keeps seeing the
+  old team's papers and PDFs.
+
+### Added
+- `e2e/topic-removal-confirm.spec.ts` — 4 specs over the two-phase removal flow against a
+  live relevance call. This destructive path previously had **no** E2E coverage.
+- `recordAttachedAsset` / `orphanObjectKey` / `checkTeamStorageQuota` in
+  `lib/uploads/assets.ts`, generalizing the ledger per REFACTOR2 §3.1.
+
+### Changed — docs
+- SPEC.md no longer lists the notification engine as planned — the cron producer, urgency
+  detection, and Resend delivery have been implemented since. Showcase **video needs no
+  size cap** (it is a YouTube/Vimeo URL, never stored bytes); the real gap recorded in its
+  place is the storage quota, now closed.
+- TODO.md records the Sentry source-map build vars (`SENTRY_ORG=scienium`,
+  `SENTRY_PROJECT=javascript-nextjs`) so deploy day is copy-paste.
+
+---
+
 ## [0.27.0] — 2026-07-18
 
 Security week: the SECURITY2 audit's dependency and header gaps closed, classroom join

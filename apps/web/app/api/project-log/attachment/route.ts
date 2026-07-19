@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import sharp from 'sharp'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { putObject } from '@/lib/storage'
-import { recordTemporaryAsset } from '@/lib/uploads/assets'
+import { checkTeamStorageQuota, recordTemporaryAsset } from '@/lib/uploads/assets'
 import { db } from '@/lib/db'
 import { randomUUID } from 'crypto'
 
@@ -21,7 +21,10 @@ const FORMAT_MAP: Record<string, { ext: string; contentType: string }> = {
 }
 
 export async function POST(req: NextRequest) {
-  const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
+  // `upload`, not `mutate`: this route stores bytes, so it belongs on the same
+  // tight tier as the paper and showcase uploads. On `mutate` (40/min) a single
+  // student could push ~400 MB/min — far faster than the reclaim sweep drains.
+  const { ctx, error } = await requireTeamContext(req, { tier: 'upload' })
   if (error) return error
 
   let form: FormData
@@ -35,6 +38,16 @@ export async function POST(req: NextRequest) {
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
   if (file.size > MAX_BYTES) {
     return NextResponse.json({ error: 'File too large (max 10 MB)' }, { status: 413 })
+  }
+
+  const overQuota = await checkTeamStorageQuota(ctx.teamId, file.size)
+  if (overQuota) {
+    return NextResponse.json(
+      {
+        error: `Your team's storage is full (${Math.round(overQuota.quota / (1024 * 1024 * 1024))} GB). Delete some uploads and try again.`,
+      },
+      { status: 413 },
+    )
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())

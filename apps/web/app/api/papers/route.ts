@@ -10,6 +10,7 @@ import { extractDoi, tierFromDoi } from '@/lib/discovery/credibility'
 import { Prisma, type CredibilityTier } from '@prisma/client'
 import { processPaperJob } from '@/lib/literature/process-paper'
 import { inspectPdf, sanitizePdfText } from '@/lib/pdf/sanitize'
+import { checkTeamStorageQuota, recordAttachedAsset } from '@/lib/uploads/assets'
 
 // Server-side only; the Anthropic key is never bundled for the browser.
 
@@ -38,6 +39,16 @@ export async function POST(req: NextRequest) {
   if (file.size > MAX_PDF_BYTES) {
     return NextResponse.json(
       { error: `PDF is too large (max ${Math.round(MAX_PDF_BYTES / 1024 / 1024)} MB)` },
+      { status: 413 },
+    )
+  }
+
+  const overQuota = await checkTeamStorageQuota(ctx.teamId, file.size)
+  if (overQuota) {
+    return NextResponse.json(
+      {
+        error: `Your team's storage is full (${Math.round(overQuota.quota / (1024 * 1024 * 1024))} GB). Delete some papers and try again.`,
+      },
       { status: 413 },
     )
   }
@@ -161,6 +172,21 @@ export async function POST(req: NextRequest) {
     await db.paper.delete({ where: { id: paper.id } })
     return NextResponse.json({ error: 'Could not store the PDF' }, { status: 502 })
   }
+
+  // Ledger row so the stored PDF counts toward the team's storage quota. Recorded
+  // as `attached` to the paper: its lifecycle is the paper's, so the reclaim sweep
+  // (which only touches `temporary`/`orphaned`) must never treat it as abandoned.
+  await recordAttachedAsset({
+    teamId: ctx.teamId,
+    userId: ctx.dbUserId,
+    objectKey: pdfKey,
+    url: `/api/papers/${paper.id}/file`,
+    contentType: 'application/pdf',
+    sizeBytes: buffer.length,
+    purpose: 'paper_pdf',
+    attachedToType: 'paper',
+    attachedToId: paper.id,
+  })
 
   // fileUrl points at our authenticated streaming route (set now that we have the id)
   const fileUrl = `/api/papers/${paper.id}/file`

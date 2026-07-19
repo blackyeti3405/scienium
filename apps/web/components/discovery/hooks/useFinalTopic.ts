@@ -38,6 +38,12 @@ export function useFinalTopic({
     removedCount: number
     removedTitles: string[]
   } | null>(null)
+  // Second-phase confirmation: the specific papers the server proposes removing.
+  // The student approves this exact list; nothing is deleted until they do.
+  const [topicRemovalConfirm, setTopicRemovalConfirm] = useState<{
+    newTopic: string
+    papers: { id: string; title: string }[]
+  } | null>(null)
 
   useEffect(() => {
     requestJson('/api/discovery/topic', topicSchema)
@@ -48,13 +54,13 @@ export function useFinalTopic({
 
   // Raw fetch (not `requestJson`): the 409 response is a real flow, carrying
   // `requiresConfirmation` + `paperCount` for the confirm-wipe modal.
-  async function saveTopic(topic: string, confirmWipe = false) {
+  async function saveTopic(topic: string, confirmWipe = false, confirmRemoveIds?: string[]) {
     setSavingTopic(true)
     try {
       const res = await fetch('/api/discovery/topic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, confirmWipe }),
+        body: JSON.stringify({ topic, confirmWipe, ...(confirmRemoveIds ? { confirmRemoveIds } : {}) }),
       })
       const d = await res.json()
       if (res.status === 409 && d.requiresConfirmation) {
@@ -62,9 +68,17 @@ export function useFinalTopic({
         setTopicConfirm({ newTopic: topic, paperCount: d.paperCount })
         return
       }
+      if (res.status === 409 && d.requiresRemovalConfirmation) {
+        // Server proposed a specific removal list — surface the titles so the
+        // student can spot a paper that should NOT be going.
+        setTopicConfirm(null)
+        setTopicRemovalConfirm({ newTopic: topic, papers: d.papers ?? [] })
+        return
+      }
       setFinalTopic(d.topic ?? null)
       setEditingTopic(false)
       setTopicConfirm(null)
+      setTopicRemovalConfirm(null)
       if (d.removedCount > 0) {
         setTopicWipeResult({ removedCount: d.removedCount, removedTitles: d.removedTitles })
       }
@@ -97,6 +111,8 @@ export function useFinalTopic({
     savingTopic,
     topicConfirm,
     setTopicConfirm,
+    topicRemovalConfirm,
+    setTopicRemovalConfirm,
     topicWipeResult,
     setTopicWipeResult,
     saveTopic,

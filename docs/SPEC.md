@@ -849,7 +849,7 @@ Comprehensive checklist of required ISEF forms (1, 1A, 1B, 2, 3, 4, 5, 6, 7) and
 ### 13.7 Reminders & Notifications
 - An in-app **notification bell** (implemented) surfaces the team's notifications, each rendered with a kind-specific icon, accent, and chip label. The active notification **kinds** (stored as a string on `notifications`, deduped by `dedupe_key`) are **`fair_deadline`** (deadline reminder), **`urgency`** (nudge — e.g. a teacher nudge, §15), **`teacher_feedback`**, and **`showcase_reviewed`**. (A `phase_reviewed` enum value remains but is unused since phase advancement became self-paced.)
 - Per-user notification preferences (`notification_prefs`) hold email opt-in and the days-before-deadline reminder schedule (default: 30 / 14 / 7 / 1 day prior).
-- *(Planned)* the automated engine that actually **fires** deadline reminders on a schedule and detects **smart urgency** (Project Log state vs. time remaining before a fair) — the bell and preference plumbing exist; the cron/urgency producer does not yet.
+- *(Implemented)* the automated engine that **fires** deadline reminders on a schedule and detects **smart urgency** (Project Log state vs. time remaining before a fair) — `app/api/cron/notifications/route.ts`, registered in `vercel.json` at 07:00 daily. Reminder brackets are 30/14/7/1 days; `notifications.dedupe_key` makes re-runs and caught-up missed runs idempotent; teams are streamed in id-ordered pages with bounded concurrency and a 50s run budget. Optional email delivery goes out through Resend (`lib/notifications/email.ts`) for members who opt in — a no-op when `RESEND_API_KEY` is unset, so the in-app channel never depends on email infra.
 
 ### 13.8 Bug Reporting — *implemented*
 A **"Report a bug"** button sits in the lab's top strip (beside the notification bell) and in
@@ -1155,7 +1155,7 @@ scienium serves minors and calls paid AI APIs, so abuse prevention is a first-cl
 - [ ] Team Clearance Level: average, highest, or weighted?
 - [ ] Visual/aesthetic direction of the virtual lab
 - [ ] Discovery depth soft cap to prevent infinite branching
-- [ ] File size and length caps for uploads (PDFs now capped at 20 MB; **video caps for Showcase still open**) + virus scanning for untrusted uploads
+- [ ] File size and length caps for uploads (PDFs capped at 20 MB; **Showcase video needs no cap — it is a YouTube/Vimeo URL via `showcase/asset/link`, never stored bytes**) + virus scanning for untrusted uploads; still open: a per-team storage quota (no quota exists today, only per-minute rate limits)
 - [ ] Exact KP and LC costs — economy balancing
 - [ ] Accessibility (screen readers, color contrast, language support)
 - [ ] Team disbanding: fork policy for individual members?

@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import sharp from 'sharp'
 import { randomUUID } from 'crypto'
 import { requireTeamContext } from '@/lib/api/route-context'
-import { putObject, deleteObject } from '@/lib/storage'
+import { putObject } from '@/lib/storage'
+import { inspectPdf } from '@/lib/pdf/sanitize'
+import {
+  checkTeamStorageQuota,
+  orphanObjectKey,
+  recordAttachedAsset,
+} from '@/lib/uploads/assets'
 import { db } from '@/lib/db'
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // 10 MB
@@ -55,6 +61,23 @@ export async function POST(req: NextRequest) {
   const file = form.get('file') as File | null
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
 
+  // Reject on the declared size BEFORE materializing the body, matching the paper
+  // and project-log routes. Buffering first would let a multi-GB multipart body
+  // OOM the function before the 413 could ever be returned.
+  if (file.size > MAX_PDF_BYTES) {
+    return NextResponse.json({ error: 'File too large (max 20 MB)' }, { status: 413 })
+  }
+
+  const overQuota = await checkTeamStorageQuota(ctx.teamId, file.size)
+  if (overQuota) {
+    return NextResponse.json(
+      {
+        error: `Your team's storage is full (${Math.round(overQuota.quota / (1024 * 1024 * 1024))} GB). Delete some uploads and try again.`,
+      },
+      { status: 413 },
+    )
+  }
+
   const buffer = Buffer.from(await file.arrayBuffer())
 
   // Decide the true type by INSPECTING the bytes — never the client MIME.
@@ -63,6 +86,17 @@ export async function POST(req: NextRequest) {
   if (allows.pdf && isPdf(buffer)) {
     if (buffer.length > MAX_PDF_BYTES) {
       return NextResponse.json({ error: 'PDF too large (max 20 MB)' }, { status: 413 })
+    }
+    // Active-content inspection, same as the paper upload path. This matters MORE
+    // here, not less: the board is served inline by `showcase/public/asset`, which
+    // is on the public middleware allowlist, so an unscanned payload would reach
+    // anonymous fair visitors and judges.
+    const inspection = inspectPdf(buffer)
+    if (!inspection.ok) {
+      return NextResponse.json(
+        { error: `This PDF was rejected for safety: ${inspection.reason}` },
+        { status: 415 },
+      )
     }
     key = `showcase/${ctx.teamId}/${randomUUID()}.pdf`
     contentType = 'application/pdf'
@@ -89,7 +123,23 @@ export async function POST(req: NextRequest) {
 
   await putObject(key, buffer, contentType)
 
-  // Single-slot: replace any existing asset of this kind (and clean up its object).
+  // Ledger row so the object has a database-owned lifecycle: it counts toward the
+  // team's quota and, once replaced, becomes reclaimable by the sweep. Recorded as
+  // `attached` immediately — unlike a project-log photo, a showcase asset is bound
+  // to its domain row in the same request, so there is no temporary window.
+  await recordAttachedAsset({
+    teamId: ctx.teamId,
+    userId: ctx.dbUserId,
+    objectKey: key,
+    url: key,
+    contentType,
+    sizeBytes: buffer.length,
+    purpose: `showcase_${kind}`,
+    attachedToType: 'showcase_asset',
+    attachedToId: showcase.id,
+  })
+
+  // Single-slot: replace any existing asset of this kind (and retire its object).
   const prev = await db.showcaseAsset.findFirst({
     where: { showcaseId: showcase.id, assetType: kind },
     select: { fileUrl: true },
@@ -101,7 +151,18 @@ export async function POST(req: NextRequest) {
     select: { id: true, assetType: true },
   })
 
-  if (prev?.fileUrl) deleteObject(prev.fileUrl).catch(() => {})
+  // Record intent only — the reclaim sweep owns the physical delete. The previous
+  // fire-and-forget `deleteObject(...).catch(() => {})` swallowed failures after
+  // the row was already gone, leaking the object with nothing left pointing at it.
+  if (prev?.fileUrl) {
+    await orphanObjectKey({
+      teamId: ctx.teamId,
+      userId: ctx.dbUserId,
+      objectKey: prev.fileUrl,
+      contentType,
+      purpose: `showcase_${kind}`,
+    })
+  }
 
   return NextResponse.json(
     {

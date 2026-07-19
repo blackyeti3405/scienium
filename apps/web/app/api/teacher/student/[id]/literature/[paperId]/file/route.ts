@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeacher, teacherOwnsTeam } from '@/lib/teacher/auth'
+import { pickActiveTeam } from '@/lib/team/context'
 import { db } from '@/lib/db'
 import { getObjectStream } from '@/lib/storage'
 
@@ -25,11 +26,10 @@ export async function GET(
     where: { id: params.id, classId: { in: ctx.classIds } },
     select: {
       id: true,
-      activeTeam: { select: { id: true } },
+      activeTeamId: true,
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
-        take: 1,
-        select: { team: { select: { id: true } } },
+        select: { teamId: true, team: { select: { id: true } } },
       },
     },
   })
@@ -38,7 +38,9 @@ export async function GET(
     return NextResponse.json({ error: 'Student not found in your classes' }, { status: 404 })
   }
 
-  const teamId = student.activeTeam?.id ?? student.teamMemberships[0]?.team.id ?? null
+  // Resolve through membership (never a bare activeTeam) — a stale activeTeamId
+  // must not pick a team the student has since left.
+  const teamId = pickActiveTeam(student.activeTeamId, student.teamMemberships)?.id ?? null
   if (!teamId) {
     return NextResponse.json({ error: 'Student not found in your classes' }, { status: 404 })
   }

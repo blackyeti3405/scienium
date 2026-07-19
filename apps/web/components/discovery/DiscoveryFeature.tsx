@@ -184,6 +184,8 @@ export function DiscoveryFeature() {
     savingTopic,
     topicConfirm,
     setTopicConfirm,
+    topicRemovalConfirm,
+    setTopicRemovalConfirm,
     topicWipeResult,
     setTopicWipeResult,
     saveTopic,
@@ -321,9 +323,12 @@ export function DiscoveryFeature() {
         kpPill={kpPill}
         sourceAddError={sourceAddError}
         topicConfirm={topicConfirm}
+        topicRemovalConfirm={topicRemovalConfirm}
         savingTopic={savingTopic}
         onCancelTopicChange={() => setTopicConfirm(null)}
         onConfirmTopicChange={(newTopic) => saveTopic(newTopic, true)}
+        onCancelTopicRemoval={() => setTopicRemovalConfirm(null)}
+        onConfirmTopicRemoval={(newTopic, paperIds) => saveTopic(newTopic, true, paperIds)}
         topicWipeResult={topicWipeResult}
         onDismissWipeResult={() => setTopicWipeResult(null)}
         promoteMsg={promoteMsg}

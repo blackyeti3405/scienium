@@ -20,6 +20,42 @@ import type { Prisma } from '@prisma/client'
  * the row reclaimable for a later run instead of leaking.
  */
 
+/**
+ * Per-team storage ceiling. Rate limits alone bound the *rate* of upload, not the
+ * total: at the `upload` tier a single team can still add hundreds of GB over a
+ * term. 2 GB is roughly 100 papers at the 20 MB PDF cap — far above real pilot use,
+ * low enough that a runaway or scripted team can't run up an unbounded R2 bill.
+ */
+export const TEAM_STORAGE_QUOTA_BYTES = 2 * 1024 * 1024 * 1024
+
+/** Bytes a team currently holds in storage: everything not yet physically deleted. */
+export async function teamStorageBytes(teamId: string): Promise<number> {
+  const agg = await db.uploadedAsset.aggregate({
+    where: { teamId, status: { not: 'deleted' } },
+    _sum: { sizeBytes: true },
+  })
+  return agg._sum.sizeBytes ?? 0
+}
+
+/**
+ * Enforce the team's storage ceiling before an upload is accepted. Returns null
+ * when there is room, or a `{ used, quota }` snapshot when the incoming object
+ * would exceed it — the caller turns that into a 413.
+ *
+ * Deliberately check-then-write rather than transactional: two concurrent uploads
+ * can both observe room and both land, overshooting by at most one object. That is
+ * an acceptable slack for a ceiling this far above real use, and far cheaper than
+ * serializing every upload behind a lock.
+ */
+export async function checkTeamStorageQuota(
+  teamId: string,
+  incomingBytes: number,
+): Promise<{ used: number; quota: number } | null> {
+  const used = await teamStorageBytes(teamId)
+  if (used + incomingBytes <= TEAM_STORAGE_QUOTA_BYTES) return null
+  return { used, quota: TEAM_STORAGE_QUOTA_BYTES }
+}
+
 /** Record a freshly-uploaded object as a temporary asset. Returns its id. */
 export async function recordTemporaryAsset(input: {
   teamId: string
@@ -32,6 +68,31 @@ export async function recordTemporaryAsset(input: {
 }): Promise<{ id: string }> {
   return db.uploadedAsset.create({
     data: { ...input, status: 'temporary' },
+    select: { id: true },
+  })
+}
+
+/**
+ * Record an object that is bound to its domain row in the SAME request (a paper
+ * PDF, a showcase board) — so it is born `attached`, never `temporary`.
+ *
+ * Using `recordTemporaryAsset` for these would be a live-data bug: the reclaim
+ * sweep deletes `temporary` rows older than its window, so a perfectly live
+ * showcase board would have its object deleted a day after upload.
+ */
+export async function recordAttachedAsset(input: {
+  teamId: string
+  userId: string
+  objectKey: string
+  url: string
+  contentType: string
+  sizeBytes: number
+  purpose: string
+  attachedToType: string
+  attachedToId: string
+}): Promise<{ id: string }> {
+  return db.uploadedAsset.create({
+    data: { ...input, status: 'attached', attachedAt: new Date() },
     select: { id: true },
   })
 }
@@ -135,6 +196,49 @@ export async function markAssetsOrphanedByKey(
     },
     data: { status: 'orphaned' },
   })
+}
+
+/**
+ * Mark a single object key orphaned, adopting it into the ledger first if it has
+ * no row yet. Domain rows written before their upload path joined the ledger (e.g.
+ * pre-ledger showcase assets) have no `UploadedAsset`, so a plain `updateMany`
+ * would silently no-op and leak the object forever. Creating an already-orphaned
+ * row hands it to the sweep instead, keeping the single-physical-delete-site
+ * invariant intact rather than falling back to a direct `deleteObject`.
+ */
+export async function orphanObjectKey(input: {
+  teamId: string
+  userId: string
+  objectKey: string
+  contentType: string
+  purpose: string
+}): Promise<void> {
+  const { count } = await db.uploadedAsset.updateMany({
+    where: {
+      teamId: input.teamId,
+      objectKey: input.objectKey,
+      status: { in: ['temporary', 'attached'] },
+    },
+    data: { status: 'orphaned' },
+  })
+  if (count > 0) return
+
+  // No ledger row (legacy object) — adopt it as orphaned so the sweep reclaims it.
+  // `objectKey` is unique; a concurrent adopt losing the race is a no-op, not an error.
+  await db.uploadedAsset
+    .create({
+      data: {
+        teamId: input.teamId,
+        userId: input.userId,
+        objectKey: input.objectKey,
+        url: input.objectKey,
+        contentType: input.contentType,
+        sizeBytes: 0, // unknown for legacy objects; only affects quota accounting
+        purpose: input.purpose,
+        status: 'orphaned',
+      },
+    })
+    .catch(() => {})
 }
 
 /**

@@ -20,9 +20,20 @@ Tracked items intentionally deferred during development. Remove an entry once do
   `dataCollection` default, no local variables, DSN-gated no-op without env).
   Verified end to end from localhost: issue 7619054534 in the `scienium` org.
 - **At production deploy:** set `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` in the
-  Vercel env; add `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` (build
-  secrets) so production stack traces get source maps; create one Sentry alert
-  rule (error-rate spike → email).
+  Vercel env (same value as `.env.local`); add the three source-map build vars so
+  production stack traces resolve to real files instead of minified bundles:
+  - `SENTRY_ORG=scienium` (org slug — the `scienium.sentry.io` subdomain)
+  - `SENTRY_PROJECT=javascript-nextjs` (project slug — the last path segment of
+    the Sentry project settings URL, *not* the numeric id inside the DSN)
+  - `SENTRY_AUTH_TOKEN=` — **generate at deploy time**, Sentry → Settings →
+    Auth Tokens (org-level token; pre-scoped for source-map upload). Shown once.
+    Vercel-only by design: kept out of `.env.local` so local `next build` doesn't
+    upload maps or cut releases.
+
+  Org and project are mirrored in `.env.local` (harmless without the token —
+  `next.config.mjs` passes no explicit `org`/`project`, so the Sentry plugin
+  reads all three from the env by name). Then create one Sentry alert rule
+  (error-rate spike → email).
 
 ## Google Drive OAuth (Research Plan building — Feature 2A)
 - **Now:** the Research Plan feature uses a **paste-a-link fallback** — the student

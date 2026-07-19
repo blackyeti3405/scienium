@@ -47,6 +47,12 @@ export function LabProfileSettings() {
     newTopic: string
     paperCount: number
   } | null>(null)
+  // Second-phase confirmation: the specific papers the server proposes removing.
+  // The student approves this exact list; nothing is deleted until they do.
+  const [topicRemovalConfirm, setTopicRemovalConfirm] = useState<{
+    newTopic: string
+    papers: { id: string; title: string }[]
+  } | null>(null)
   const [topicWipeResult, setTopicWipeResult] = useState<{
     removedCount: number
     removedTitles: string[]
@@ -163,19 +169,30 @@ export function LabProfileSettings() {
   }
 
   // ── Save research topic (mirrors DiscoveryFeature.saveTopic exactly) ─────────
-  async function saveTopic(topicVal: string, confirmWipe = false) {
+  async function saveTopic(topicVal: string, confirmWipe = false, confirmRemoveIds?: string[]) {
     setSavingTopic(true)
     setTopicError(null)
     try {
       const res = await fetch('/api/discovery/topic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: topicVal, confirmWipe }),
+        body: JSON.stringify({
+          topic: topicVal,
+          confirmWipe,
+          ...(confirmRemoveIds ? { confirmRemoveIds } : {}),
+        }),
       })
       const d = await res.json()
       if (res.status === 409 && d.requiresConfirmation) {
         // Server says papers exist — ask the user to confirm before wiping
         setTopicConfirm({ newTopic: topicVal, paperCount: d.paperCount })
+        return
+      }
+      if (res.status === 409 && d.requiresRemovalConfirmation) {
+        // Server proposed a specific removal list — surface the titles so the
+        // student can spot a paper that should NOT be going.
+        setTopicConfirm(null)
+        setTopicRemovalConfirm({ newTopic: topicVal, papers: d.papers ?? [] })
         return
       }
       if (!res.ok) {
@@ -186,6 +203,7 @@ export function LabProfileSettings() {
       setTopicDraft(d.topic ?? '')
       setTopicEditing(false)
       setTopicConfirm(null)
+      setTopicRemovalConfirm(null)
       if (d.removedCount > 0) {
         setTopicWipeResult({ removedCount: d.removedCount, removedTitles: d.removedTitles })
       }
@@ -269,6 +287,65 @@ export function LabProfileSettings() {
                 className="flex-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 hover:brightness-110 disabled:opacity-50 transition-all"
               >
                 Change topic
+              </BusyButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Second phase: the exact sources proposed for removal. Listing them by
+          title is the safeguard — relevance is judged from paper text we don't
+          control, so the student is the one who authorizes each removal. */}
+      {topicRemovalConfirm && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 rounded-sm">
+          <div className="bg-[#0d1b2e] border border-white/20 rounded-sm p-6 max-w-sm w-full mx-4 flex flex-col gap-4">
+            <h3 className="font-pixel text-[9px] text-white">Remove these sources?</h3>
+            <div className="text-[13px] text-white/70 leading-relaxed flex flex-col gap-2">
+              <p>
+                These{' '}
+                <span className="text-white font-medium">
+                  {topicRemovalConfirm.papers.length} source
+                  {topicRemovalConfirm.papers.length !== 1 ? 's' : ''}
+                </span>{' '}
+                don&apos;t look relevant to{' '}
+                <span className="text-[#F5C518] font-medium">
+                  &ldquo;{topicRemovalConfirm.newTopic}&rdquo;
+                </span>{' '}
+                and will be permanently deleted:
+              </p>
+              <ul className="max-h-40 overflow-y-auto flex flex-col gap-1 border border-white/10 rounded-sm p-2">
+                {topicRemovalConfirm.papers.map((p) => (
+                  <li key={p.id} className="text-[12px] text-white/80 truncate">
+                    • {p.title}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-white/50 text-[12px]">
+                Keeping something on this list? Cancel and change your topic from the Discovery tab
+                after removing it manually.
+              </p>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setTopicRemovalConfirm(null)}
+                className="flex-1 font-pixel text-[8px] border border-white/20 text-white/60 py-2.5 hover:border-white/40 hover:text-white/80 transition-colors"
+              >
+                Cancel
+              </button>
+              <BusyButton
+                busy={savingTopic}
+                busyLabel="Removing…"
+                showSpinner={false}
+                onClick={() =>
+                  saveTopic(
+                    topicRemovalConfirm.newTopic,
+                    true,
+                    topicRemovalConfirm.papers.map((p) => p.id),
+                  )
+                }
+                className="flex-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 hover:brightness-110 disabled:opacity-50 transition-all"
+              >
+                Remove &amp; change
               </BusyButton>
             </div>
           </div>
