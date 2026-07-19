@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { TileBackground } from '@/components/lab/TileBackground'
+import { DecorationLayer } from '@/components/lab/DecorationLayer'
 import { LabPlot, type PlacedItem, type PlotGhost } from '@/components/lab/LabPlot'
 import { FeaturePanel } from '@/components/lab/FeaturePanel'
 import { ShopPanel } from '@/components/lab/ShopPanel'
@@ -463,6 +464,7 @@ function LabSceneContent({
 
       <div className="lab-scene__viewport">
         <TileBackground seed={seed} />
+        <DecorationLayer seed={seed} />
 
         {!momentumDismissed && <MomentumCard onDismiss={handleDismissMomentum} />}
 

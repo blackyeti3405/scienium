@@ -5,6 +5,107 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.23.0] — 2026-07-13
+
+A full pixel-art overhaul of the lab world: every gateway building redrawn in a bold
+style, a new nature background, and the art pipeline/toolkit extended to support it.
+
+### Added
+- Seven redesigned gateway buildings in a "clearance-5" style — each a **distinct
+  building form** (dome observatory, paneled studio, columned gallery, hexagonal
+  bunker, peaked pavilion, tiered coliseum, domed rotunda) crowned by its own glowing
+  floating hologram — reskinned across all six lab types via `recolor.py`.
+- A nature **decoration layer** (`components/lab/DecorationLayer.tsx`) that scatters
+  varied shrubs and rocks densely across the grass beneath the buildings. Placement is
+  deterministic (seeded per team), and the building plot renders over it, so a placed
+  building simply covers the vegetation in its footprint.
+- New decoration + ground-tile sprites and manifest entries, plus iso toolkit
+  primitives `poly_prism` (a single continuous solid from any footprint — L-shapes,
+  hexagons — not abutted cubes) and `dome`.
+- Pixel-art pipeline **modes** — *image-match* (reproduce a reference drawing;
+  painters and reviewers must open the reference and grade the silhouette first) and
+  *creative* (bold reinterpretation on the canonical, recolor-safe palette) — and the
+  designer's reference mockups under `art_ref/mockups/`.
+
+### Changed
+- The ground background is a refreshed 6-tile grass set with graded clutter.
+- Gateway sources are re-authored as bespoke forms instead of a shared cube; all lab
+  reskins regenerate from them.
+
+---
+
+## [0.22.2] — 2026-07-11
+
+A launch-latency pass: opening the lab now feels instant, with no change to behaviour.
+
+### Added
+- Optimistic pre-loading on the home page — a signed-in player's browser prefetches
+  the lab route and warms its sprites during idle time, so the scene paints
+  immediately on launch.
+- Content-addressed sprite URLs (a `?v=<hash>` token regenerated at build time) with
+  long-lived immutable caching: sprites load instantly on repeat visits, and a
+  redrawn sprite is fetched fresh instead of served stale.
+
+### Changed
+- "Launch" links resolve their destination on the home page and go straight to the
+  lab (or teacher dashboard), removing the intermediate `/game` redirect hop.
+- The lab page loads plot and advance-gate data in a single parallel batch instead of
+  a sequential chain, cutting server round-trips.
+
+---
+
+## [0.22.1] — 2026-07-11
+
+The Classical Mechanics / Physics field authored to full depth (Field Codex
+content only — no runtime or schema changes).
+
+### Added
+- **Classical Mechanics / Physics Field Codex — 275 lessons** across Core (52) and
+  five specializations (Projectile Motion & Ballistics 44, Oscillations & Simple
+  Harmonic Motion 44, Collisions, Impulse & Momentum 43, Rotational Dynamics &
+  Rigid Bodies 48, Gravitation & Orbital Mechanics 44), each lesson with real
+  concept prose, a worked example, judge framing, and a 3–5-question checkpoint.
+  It is the fifth fully-authored field and the first built for the Axiom and Volt
+  Lab lab types.
+
+---
+
+## [0.22.0] — 2026-07-10
+
+A Field Codex learning-experience redesign, a far cheaper content-authoring
+pipeline, and the Chemistry field authored to full depth.
+
+### Added
+- **Chemistry Field Codex — 258 lessons** across Core (48) and five
+  specializations (Analytical Chemistry, Organic Synthesis, Electrochemistry,
+  Green & Environmental Chemistry, Physical Chemistry), each lesson with real
+  concept prose, a worked example, judge framing, and a 3–5-question checkpoint.
+  Chemistry is the fourth fully-authored field.
+- A vendored Codex authoring workflow (`.claude/codex-pipeline/author-segment.workflow.mjs`)
+  that fans a segment out one lane per unit and adversarially fact-checks every
+  claim and answer key (with a confirming re-check) before it ships.
+
+### Changed
+- **The Field Codex lesson experience is redesigned around a Khan-style flow.**
+  Opening a lesson now lands on a distraction-free Reader (reformatted prose plus
+  worked-example and "why judges ask this" callouts); the checkpoint is a
+  separate, one-question-at-a-time practice with immediate per-question feedback,
+  first-try tracking, a progress pip row, and a subtle pass celebration. Reading
+  is fully decoupled from the quiz. Grading, gating, and KP remain
+  server-authoritative.
+- Codex answer inputs, results, and motion refined — rounded surfaces, softer
+  state colors, materialize/reveal transitions, and reduced-motion fallbacks.
+- The Codex content-authoring pipeline runs its draft + fact-check fan-out as one
+  Workflow with per-agent model/effort tiers (Sonnet 5 by default, Opus only on
+  escalation) and distilled prompts — roughly 3–4× fewer tokens per segment, with
+  the depth targets and the adversarial fact-check gate unchanged.
+
+### Fixed
+- Field Codex E2E coverage updated for the new read → checkpoint → results flow
+  (one-question-at-a-time interaction; prose targeted by a stable test id).
+
+---
+
 ## [0.21.11] — 2026-07-10
 
 E2E determinism — the suite stops crashing on stale auth.

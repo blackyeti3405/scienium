@@ -16,6 +16,20 @@
 
 import type { LabType } from '@/lib/phase'
 import { BUILDING_ANCHORS, GATEWAY_ANCHORS, type SpriteAnchor } from '@/lib/sprites/anchors.generated'
+import { SPRITE_VERSIONS } from '@/lib/sprites/versions.generated'
+
+/**
+ * Append the sprite's content-hash as a `?v=<hash>` cache-bust token. This makes every
+ * sprite URL content-addressed: redraw a sprite and its hash (hence URL) changes, so the
+ * browser fetches fresh art instead of a stale immutable-cached copy; unchanged sprites
+ * keep their URL and stay cached. The hash map is regenerated at build time
+ * (scripts/gen-sprite-versions.mjs). A path with no recorded hash (e.g. a sprite not yet
+ * rendered) is returned unversioned so it simply falls back to the placeholder.
+ */
+function versioned(path: string): string {
+  const v = SPRITE_VERSIONS[path]
+  return v ? `${path}?v=${v}` : path
+}
 
 export interface SpriteEntry {
   /** Path relative to /public (leading slash). */
@@ -92,7 +106,7 @@ const SKIN_PLACEHOLDER: Record<GatewaySkin, string> = {
 /** Resolve the sprite for a (gateway, skin) pair. */
 export function getGatewaySprite(key: GatewayKey, skin: GatewaySkin): SpriteEntry {
   return {
-    path: `/sprites/gateways/${key}_${skin}.png`,
+    path: versioned(`/sprites/gateways/${key}_${skin}.png`),
     srcWidth: GATEWAY_SRC,
     srcHeight: GATEWAY_SRC,
     scale: GATEWAY_SCALE,
@@ -205,7 +219,7 @@ export function getBuildingSprite(labType: LabType, slug: string, level = 1): Sp
   if (!BUILDING_SPRITES[labType]?.includes(slug)) return null
   const suffix = buildingStageSuffix(level)
   return {
-    path: `/sprites/buildings/${labType}/${slug}${suffix}.png`,
+    path: versioned(`/sprites/buildings/${labType}/${slug}${suffix}.png`),
     srcWidth: BUILDING_SRC,
     srcHeight: BUILDING_SRC,
     scale: BUILDING_SCALE,
@@ -222,13 +236,10 @@ export function getBuildingSprite(labType: LabType, slug: string, level = 1): Sp
 export const GROUND_TILE_IDS = [
   'grass_1',
   'grass_2',
-  'grass_3',
   'grass_flower',
-  'grass_shrub',
-  'grass_bush',
-  'grass_fern',
-  'grass_tree',
   'grass_pebble',
+  'grass_bush',
+  'grass_shrub',
 ] as const
 export type GroundTileId = (typeof GROUND_TILE_IDS)[number]
 
@@ -241,7 +252,7 @@ export const GROUND_TILES: Record<GroundTileId, SpriteEntry> = Object.fromEntrie
   GROUND_TILE_IDS.map((id) => [
     id,
     {
-      path: `/sprites/tiles/${id}.png`,
+      path: versioned(`/sprites/tiles/${id}.png`),
       srcWidth: TILE_SRC,
       srcHeight: TILE_SRC,
       scale: TILE_SCALE,
@@ -251,13 +262,43 @@ export const GROUND_TILES: Record<GroundTileId, SpriteEntry> = Object.fromEntrie
   ])
 ) as Record<GroundTileId, SpriteEntry>
 
+// ─── Nature decorations ───────────────────────────────────────────────────────
+// Trees / bushes / shrubs / tufts / flowers / rocks scattered on the grass by
+// components/lab/DecorationLayer.tsx to give the world Stardew-style density. Source
+// px sizes below (authored by art/build_decor.py); the layer displays them at 2×.
+
+export const DECOR_IDS = [
+  'shrub_mound', 'shrub_round', 'shrub_fern', 'shrub_berry',
+  'rock_round', 'rock_crag', 'rock_cluster', 'rock_slab',
+] as const
+export type DecorId = (typeof DECOR_IDS)[number]
+
+export interface DecorEntry {
+  path: string
+  /** Source width/height in px (displayed at DECOR_SCALE). */
+  w: number
+  h: number
+}
+export const DECOR_SCALE = 2
+
+export const DECOR: Record<DecorId, DecorEntry> = {
+  shrub_mound: { path: versioned('/sprites/decor/shrub_mound.png'), w: 30, h: 16 },
+  shrub_round: { path: versioned('/sprites/decor/shrub_round.png'), w: 22, h: 18 },
+  shrub_fern: { path: versioned('/sprites/decor/shrub_fern.png'), w: 24, h: 20 },
+  shrub_berry: { path: versioned('/sprites/decor/shrub_berry.png'), w: 26, h: 18 },
+  rock_round: { path: versioned('/sprites/decor/rock_round.png'), w: 20, h: 16 },
+  rock_crag: { path: versioned('/sprites/decor/rock_crag.png'), w: 24, h: 18 },
+  rock_cluster: { path: versioned('/sprites/decor/rock_cluster.png'), w: 28, h: 14 },
+  rock_slab: { path: versioned('/sprites/decor/rock_slab.png'), w: 26, h: 13 },
+}
+
 // ─── UI sprites ───────────────────────────────────────────────────────────────
 
 export type UiSpriteKey = 'padlock_closed'
 
 export const UI_SPRITES: Record<UiSpriteKey, SpriteEntry> = {
   padlock_closed: {
-    path: '/sprites/ui/padlock_closed.png',
+    path: versioned('/sprites/ui/padlock_closed.png'),
     srcWidth: 16,
     srcHeight: 16,
     scale: 2,

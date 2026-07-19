@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { GROUND_TILES, TILE_CELL, type GroundTileId } from '@/lib/sprites/manifest'
 
-// Most cells are plain grass; vegetation is sprinkled on top. "Heavy" clutter
-// (trees/bushes) is rarer than light clutter (flowers/ferns/pebbles) so the
-// field reads lush but not crowded.
-const PLAIN: GroundTileId[] = ['grass_1', 'grass_2', 'grass_3']
-const LIGHT: GroundTileId[] = ['grass_flower', 'grass_fern', 'grass_pebble']
-const HEAVY: GroundTileId[] = ['grass_shrub', 'grass_bush', 'grass_tree']
+// Most cells are plain grass; clutter is sprinkled on top and graded so the
+// field reads like a natural meadow. "Heavy" clutter (bush/shrub) is rarer than
+// light clutter (flowers/pebbles), which is rarer than plain grass.
+const PLAIN: GroundTileId[] = ['grass_1', 'grass_2']
+const LIGHT: GroundTileId[] = ['grass_flower', 'grass_pebble']
+const HEAVY: GroundTileId[] = ['grass_bush', 'grass_shrub']
 
 /** Stable hash of a tile coordinate — same (col,row) always yields the same value. */
 function hash(col: number, row: number, seed: number): number {
@@ -22,8 +22,8 @@ function hash(col: number, row: number, seed: number): number {
 function tileFor(col: number, row: number, seed: number): GroundTileId {
   const h = hash(col, row, seed)
   const r = h % 100
-  if (r < 10) return HEAVY[h % HEAVY.length] // ~10% trees/bushes
-  if (r < 34) return LIGHT[h % LIGHT.length] // ~24% flowers/ferns/pebbles
+  if (r < 10) return HEAVY[h % HEAVY.length] // ~10% bush/shrub
+  if (r < 34) return LIGHT[h % LIGHT.length] // ~24% flowers/pebbles
   return PLAIN[h % PLAIN.length] // ~66% plain grass
 }
 

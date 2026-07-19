@@ -1,12 +1,14 @@
 import Link from 'next/link'
 import { auth } from '@clerk/nextjs/server'
+import { getLaunchContext } from '@/lib/launch'
+import { LaunchPreloader } from '@/components/LaunchPreloader'
 
 /**
  * Public marketing home (the front door at `/`). Unlike the in-game pages it does NOT
  * redirect signed-in users into the app — it shows the marketing site to everyone and
- * adapts its calls-to-action: signed-in players get "Launch your lab" (→ /game, the
- * door that routes them on); signed-out visitors get "Get started" (→ /sign-up). The
- * game itself keeps its existing routes (/lab, /dashboard, …).
+ * adapts its calls-to-action: signed-in players get "Launch your lab" (→ their resolved
+ * destination, skipping the old /game redirect hop); signed-out visitors get "Get
+ * started" (→ /sign-up). The game itself keeps its existing routes (/lab, /dashboard, …).
  */
 
 const FEATURES = [
@@ -21,10 +23,16 @@ const FEATURES = [
 const GOLD = '#F5C518'
 
 export default async function HomePage() {
-  const { userId } = await auth()
+  const { userId, sessionClaims } = await auth()
+  // Resolve where "Launch" points (skipping the /game hop) and what to pre-warm.
+  const launch = userId ? await getLaunchContext(userId, sessionClaims) : null
+  const launchHref = launch?.href ?? '/game'
 
   return (
     <main className="min-h-screen bg-[#0d1b2e] text-white">
+      {launch && launch.preloadSprites.length > 0 && (
+        <LaunchPreloader href={launch.href} sprites={launch.preloadSprites} />
+      )}
       {/* ── Top bar ─────────────────────────────────────────────── */}
       <header className="flex items-center justify-between px-6 py-5 md:px-10">
         <div className="flex items-center gap-3">
@@ -34,7 +42,7 @@ export default async function HomePage() {
         </div>
         <nav className="flex items-center gap-4 font-pixel" style={{ fontSize: '0.6rem' }}>
           {userId ? (
-            <Link href="/game" className="text-[#F5C518] hover:brightness-110">Launch →</Link>
+            <Link href={launchHref} className="text-[#F5C518] hover:brightness-110">Launch →</Link>
           ) : (
             <>
               <Link href="/sign-in" className="text-[#8899aa] hover:text-white">Sign in</Link>
@@ -64,7 +72,7 @@ export default async function HomePage() {
         <div className="flex flex-wrap items-center justify-center gap-4 mt-10">
           {userId ? (
             <Link
-              href="/game"
+              href={launchHref}
               className="font-pixel bg-[#F5C518] text-[#0d1b2e] px-10 py-4 hover:brightness-110 active:scale-95 transition-all"
               style={{ fontSize: 'clamp(0.55rem, 1.4vw, 0.75rem)', letterSpacing: '0.05em' }}
             >
@@ -115,7 +123,7 @@ export default async function HomePage() {
           Ready to run your lab?
         </p>
         <Link
-          href={userId ? '/game' : '/sign-up'}
+          href={userId ? launchHref : '/sign-up'}
           className="font-pixel bg-[#F5C518] text-[#0d1b2e] px-10 py-4 hover:brightness-110 active:scale-95 transition-all"
           style={{ fontSize: 'clamp(0.55rem, 1.4vw, 0.75rem)', letterSpacing: '0.05em' }}
         >
@@ -129,7 +137,7 @@ export default async function HomePage() {
         <nav className="flex gap-5 font-sans text-sm text-[#8899aa]">
           <Link href="/showcase/gallery" className="hover:text-white">Showcase</Link>
           {userId ? (
-            <Link href="/game" className="hover:text-white">Play</Link>
+            <Link href={launchHref} className="hover:text-white">Play</Link>
           ) : (
             <Link href="/sign-in" className="hover:text-white">Sign in</Link>
           )}

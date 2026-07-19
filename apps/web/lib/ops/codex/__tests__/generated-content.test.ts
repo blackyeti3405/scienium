@@ -19,11 +19,15 @@ import type { CodexTrack } from '../types'
 
 import acousticsSound from '../tracks/acoustics-sound'
 import astronomyAstrophysics from '../tracks/astronomy-astrophysics'
+import chemistry from '../tracks/chemistry'
+import classicalMechanicsPhysics from '../tracks/classical-mechanics-physics'
 import gaitBiomechanics from '../tracks/gait-biomechanics'
 
 const WRAPPERS: Record<string, CodexTrack> = {
   'acoustics-sound': acousticsSound,
   'astronomy-astrophysics': astronomyAstrophysics,
+  'chemistry': chemistry,
+  'classical-mechanics-physics': classicalMechanicsPhysics,
   'gait-biomechanics': gaitBiomechanics,
 }
 

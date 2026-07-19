@@ -21,9 +21,9 @@ SCALE = 2
 DISP = GATEWAY_SRC * SCALE  # 128
 STEP_X, STEP_Y, CLUSTER_Y = 58, 40, -12
 
-PLAIN = ["grass_1", "grass_2", "grass_3"]
-LIGHT = ["grass_flower", "grass_fern", "grass_pebble"]
-HEAVY = ["grass_shrub", "grass_bush", "grass_tree"]
+PLAIN = ["grass_1", "grass_2"]
+LIGHT = ["grass_flower", "grass_pebble"]
+HEAVY = ["grass_bush", "grass_shrub"]
 
 # gateway -> (gx, gy)  (mirror of lib/gateways.ts)
 CELLS = {

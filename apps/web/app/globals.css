@@ -308,6 +308,16 @@
   image-rendering: pixelated;
 }
 
+/* Nature decoration layer — dense scatter of trees/bushes/etc on top of the grass,
+   below the building plot. Its own stacking context keeps it under the plot (z 1). */
+.decor-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 /* Building cluster layer — centred on the viewport; buildings offset from centre. */
 .lab-scene__cluster {
   position: absolute;
@@ -1010,6 +1020,105 @@
     animation: none !important;
     background-image: none;
     @apply animate-pulse;
+  }
+}
+
+/* ── Field Codex checkpoint motion (components/ops/codex/*) ───────────────── */
+/* Jakub-weighted "materialize": opacity + translateY + blur with a strong
+   ease-out-expo curve and NO bounce — the element comes into focus rather than
+   just fading. Enters are gentle, the reveal is subtler (attention is already on
+   the answer), and the pass "pop" is the single celebratory beat. transform /
+   opacity / filter only. Every one has an instant reduced-motion path below. */
+@keyframes codexEnter {
+  from { opacity: 0; transform: translateY(9px); filter: blur(5px); }
+  to   { opacity: 1; transform: translateY(0);   filter: blur(0); }
+}
+@keyframes codexReveal {
+  from { opacity: 0; transform: translateY(6px); filter: blur(3px); }
+  to   { opacity: 1; transform: translateY(0);   filter: blur(0); }
+}
+@keyframes codexPop {
+  from { opacity: 0; transform: scale(0.94); filter: blur(6px); }
+  to   { opacity: 1; transform: scale(1);    filter: blur(0); }
+}
+.codex-q-enter      { animation: codexEnter  340ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.codex-reveal-enter { animation: codexReveal 260ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.codex-pop          { animation: codexPop    420ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Answer rows/badges glide between tones (idle → selected → correct/wrong)
+   instead of snapping — the biggest "smoothness" win in the checkpoint. */
+.codex-row {
+  transition:
+    background-color 200ms cubic-bezier(0.25, 1, 0.5, 1),
+    border-color 200ms cubic-bezier(0.25, 1, 0.5, 1),
+    color 200ms cubic-bezier(0.25, 1, 0.5, 1),
+    opacity 200ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Codex primary/secondary buttons — reuse the house gold-gradient + soft glow
+   from `.ops-submit-btn` (same material as the rest of the ops surface) but keep
+   the pixel font the checkpoint uses, and add a subtle press-scale. */
+.codex-btn-gold {
+  border-radius: 6px;
+  background: linear-gradient(160deg, #ffe566, #f5c518);
+  color: #0d1b2e;
+  box-shadow: 0 2px 10px -2px rgba(245, 197, 24, 0.28);
+  transition:
+    transform 140ms cubic-bezier(0.25, 1, 0.5, 1),
+    filter 140ms cubic-bezier(0.25, 1, 0.5, 1),
+    box-shadow 140ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+.codex-btn-gold:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 5px 18px -3px rgba(245, 197, 24, 0.45);
+}
+.codex-btn-gold:active:not(:disabled) { transform: scale(0.985); }
+.codex-btn-gold:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; }
+
+.codex-btn-ghost {
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.55);
+  transition:
+    transform 140ms cubic-bezier(0.25, 1, 0.5, 1),
+    color 140ms cubic-bezier(0.25, 1, 0.5, 1),
+    border-color 140ms cubic-bezier(0.25, 1, 0.5, 1),
+    background-color 140ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+.codex-btn-ghost:hover { color: rgba(255, 255, 255, 0.9); border-color: rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.03); }
+.codex-btn-ghost:active { transform: scale(0.985); }
+
+/* Pass-only confetti — pixel squares (on-brand), single play, no loop. The
+   per-piece target (--dx/--dy/--r) is set inline; the whole layer is removed
+   under reduced-motion. */
+@keyframes codexConfetti {
+  0%   { opacity: 0; transform: translate(0, 0) scale(0.5) rotate(0deg); }
+  12%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx, 0), var(--dy, 0)) scale(1) rotate(var(--r, 0deg)); }
+}
+.codex-confetti-piece {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 1px;
+  animation: codexConfetti 1150ms cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .codex-q-enter,
+  .codex-reveal-enter,
+  .codex-pop {
+    animation: none !important;
+  }
+  .codex-row {
+    transition: none !important;
+  }
+  .codex-btn-gold:active:not(:disabled),
+  .codex-btn-ghost:active {
+    transform: none;
+  }
+  .codex-confetti {
+    display: none !important;
   }
 }
 

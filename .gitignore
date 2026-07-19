@@ -167,6 +167,17 @@ __pycache__/
 .claude/pipeline/
 .claude/tmp/
 
+# Installed Claude Code skills (machine-local; managed by the skill installer)
+.agents/skills/
+.claude/skills/
+.github/hooks/
+.github/skills/
+skills-lock.json
+
 # Python virtualenvs
 .venv/
 art/.venv/
+
+# Large / third-party art references (kept local, not versioned)
+art_ref/stardew-valley-*.png
+art_ref/images.jpeg

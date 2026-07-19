@@ -78,6 +78,8 @@ export interface CodexTrackSummary {
 export const CODEX_TRACKS: CodexTrackSummary[] = [
   { slug: 'acoustics-sound', label: 'Acoustics / Sound', home: false, branchCount: 5, lessonCount: 287 },
   { slug: 'astronomy-astrophysics', label: 'Astronomy / Astrophysics', home: false, branchCount: 5, lessonCount: 271 },
+  { slug: 'chemistry', label: 'Chemistry', home: false, branchCount: 5, lessonCount: 258 },
+  { slug: 'classical-mechanics-physics', label: 'Classical Mechanics / Physics', home: false, branchCount: 5, lessonCount: 275 },
   { slug: 'gait-biomechanics', label: 'Gait Biomechanics', home: false, branchCount: 5, lessonCount: 274 },
 ]
 
@@ -92,6 +94,8 @@ type CodexTrackSlug = (typeof CODEX_TRACKS)[number]['slug']
 const LOADERS: Record<CodexTrackSlug, () => Promise<{ default: CodexTrack }>> = {
   'acoustics-sound': () => import('./tracks/acoustics-sound'),
   'astronomy-astrophysics': () => import('./tracks/astronomy-astrophysics'),
+  'chemistry': () => import('./tracks/chemistry'),
+  'classical-mechanics-physics': () => import('./tracks/classical-mechanics-physics'),
   'gait-biomechanics': () => import('./tracks/gait-biomechanics'),
 }
 
