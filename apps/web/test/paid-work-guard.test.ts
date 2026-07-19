@@ -30,12 +30,41 @@ function collectFiles(dir: string, name: string): string[] {
   return out
 }
 
-/** `@/lib/...` specifiers of every lib module that imports the Anthropic client. */
+/**
+ * `@/lib/...` specifiers of every lib module that can reach the Anthropic client,
+ * computed as a TRANSITIVE closure: modules importing `@/lib/anthropic`, plus
+ * modules importing those, and so on to a fixed point.
+ *
+ * One hop is not enough. Extracting a route's workflow into an application service
+ * (REFACTOR2 §3.2 E) puts a new lib module between the route and the paid lib — so
+ * a one-hop sweep stops seeing the route and silently drops its assertion, exactly
+ * when the code is being moved around and most needs the net. Closing over the
+ * graph keeps the guarantee stable across those extractions.
+ */
 function paidLibSpecifiers(): string[] {
-  return collectFiles(join(WEB_ROOT, 'lib'), '*')
-    .filter((p) => !p.endsWith('.test.ts'))
-    .filter((p) => readFileSync(p, 'utf8').includes("from '@/lib/anthropic'"))
-    .map((p) => '@/' + relative(WEB_ROOT, p).replace(/\.ts$/, ''))
+  const libs = collectFiles(join(WEB_ROOT, 'lib'), '*').filter((p) => !p.endsWith('.test.ts'))
+  const specOf = (p: string) => '@/' + relative(WEB_ROOT, p).replace(/\.ts$/, '')
+  const sources = new Map(libs.map((p) => [p, readFileSync(p, 'utf8')]))
+
+  const paid = new Set(
+    libs.filter((p) => sources.get(p)!.includes("from '@/lib/anthropic'")).map(specOf),
+  )
+
+  // Fixed point: keep adding modules that import anything already known to be paid.
+  for (;;) {
+    let grew = false
+    for (const p of libs) {
+      const spec = specOf(p)
+      if (paid.has(spec)) continue
+      if ([...paid].some((s) => sources.get(p)!.includes(`from '${s}'`))) {
+        paid.add(spec)
+        grew = true
+      }
+    }
+    if (!grew) break
+  }
+
+  return [...paid]
 }
 
 const PAID_MARKERS = [

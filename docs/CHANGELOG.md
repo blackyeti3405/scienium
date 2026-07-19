@@ -5,6 +5,46 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.28.1] — 2026-07-18
+
+REFACTOR2 Track B, first vertical slice. Track B is explicitly *not* a pilot gate and is
+meant to be done "one feature at a time" — this does one feature properly rather than
+starting a repo-wide sweep.
+
+### Changed — Paper upload extracted to an application service (REFACTOR2 §3.2 E)
+- **`lib/papers/service.ts`** now owns the upload workflow (validate → quota → fingerprint
+  → parse/inspect → relevance gate → persist → store → ledger → ingest), returning a typed
+  `{ ok: true, paper } | { ok: false, error, status, code? }`. `app/api/papers/route.ts`
+  POST drops from ~180 lines to a ~20-line adapter that selects the policy, pulls the file
+  off the multipart body, calls one use case, and maps the result to HTTP — the §2.1 route
+  contract. This is the second instance of the seam `lib/buildings/service.ts` established
+  and §3.1 asks to generalize.
+
+### Fixed — the paid-work sweep could be blinded by its own refactor
+- **`test/paid-work-guard.test.ts` now computes a transitive closure.** It detected
+  Anthropic-reaching modules one hop deep, so extracting a route's workflow into a service
+  put a new module between route and paid lib — and the route silently dropped out of the
+  sweep (21 → 20 assertions) while still being paid work. Caught during this refactor:
+  `app/api/papers/route.ts` lost its guard assertion despite keeping its `upload` tier. The
+  closure walks to a fixed point, so future service extractions stay covered.
+
+### Added
+- **`e2e/paper-upload.spec.ts`** — 3 specs over `POST /api/papers`, which previously had
+  **no** E2E coverage: magic-byte rejection of a MIME-lying non-PDF, the no-extractable-text
+  path, and the success path (ingest → `attached` ledger row with the right size and purpose
+  → content-hash duplicate 409 → appears in the team list).
+
+### Notes
+- REFACTOR2 §3.2 C ("team context resolution is duplicated") is **already resolved** —
+  `lib/api/route-context.ts:94` delegates to `resolveActiveTeam`. The audit predates that fix.
+- Track B remains largely open by design: 6 of 98 routes use `withTeamRoute`, 86 import
+  `db` directly, and there are now 2 application services. Remaining extractions should
+  land one feature per commit, not as a sweep.
+- Pre-existing, unrelated to this work: `e2e/F4.spec.ts` AC10 (teacher rejection note) fails
+  on v0.27.0 too — confirmed by running it at 605cede. Not introduced by 0.28.0 or 0.28.1.
+
+---
+
 ## [0.28.0] — 2026-07-18
 
 Pre-pilot security sweep: three adversarial audits (IDOR, upload abuse, prompt injection)
