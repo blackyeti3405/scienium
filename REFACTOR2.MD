@@ -1,216 +1,141 @@
-# scienium — Adversarial Architecture Audit, Rebuild Blueprint, and Refactor Plan
+# scienium — Architecture Refactor Plan (Track B / C)
 
-_Audited against the complete working tree on 2026-07-15, including uncommitted files. This document is intentionally independent of `docs/REFACTOR.md`: prior plans and ADRs were treated as claims to verify, not as evidence._
+_Originally an adversarial architecture audit of the 2026-07-15 working tree. **Pruned
+2026-07-19**: every finding that has since shipped was removed, and statements that had gone
+stale were corrected against the current code. What remains is open work only._
+
+> **What this document is now.** Track A (the pilot-critical hardening scope) is **complete**
+> — see the appendix for what was cut and where it landed. The pilot no longer blocks on
+> anything in this file. Everything below is **Track B** (clean industrial code) and
+> **Track C** (deferred/optional): maintainability work to do one feature at a time, ideally
+> when you are already touching the file for another reason.
+
+---
 
 ## Executive verdict
 
-scienium should remain a **modular monolith** for the classroom pilot. The product does not need microservices, an event bus, or multiple databases. It needs one unambiguous tenancy model, vertical feature boundaries, thin transport adapters, durable paid/background work, bounded reads, runtime-validated contracts, and production-grade observability.
+scienium should remain a **modular monolith**. The product does not need microservices, an
+event bus, or multiple databases. It needs vertical feature boundaries, thin transport
+adapters, durable paid/background work, bounded reads, runtime-validated contracts, and
+production-grade observability.
 
-The current application has several strong foundations: PostgreSQL is the durable source of truth; team-scoped student guards re-prove membership; teacher roles are server-enforced; most mutation schemas are strict and bounded; paid routes have shared-store enforcement in production; uploads use private object storage; and economy mutations have started moving into services. The problem is **consistency**. The intended architecture exists in pockets, but most route handlers still own queries and workflows, client networking is fragmented, authorization policy has contradictory definitions, and durability/observability/testing are uneven.
+The foundations are sound: PostgreSQL is the durable source of truth; team-scoped student
+guards re-prove membership; teacher roles are server-enforced; mutation schemas are strict
+and bounded; paid routes fail closed in production; uploads use a database-owned asset
+lifecycle; and economy/upload/paper workflows have moved into application services. The
+remaining problem is **consistency** — the intended architecture exists in pockets, but most
+route handlers still own their queries and workflows, client networking is fragmented, and
+durability/observability are uneven.
 
-The most serious issue is not a clever exploit. It is a control-model split:
-
-- `docs/architecture/adr-001-team-class-ownership.md`, `Team.classId`, its migration, and schema comments say a team belongs to one class and must not straddle classes.
-- `apps/web/lib/teacher/auth.ts`, `apps/web/lib/teacher/analytics.ts`, `apps/web/app/api/team/join/route.ts`, and teacher routes say `Team.classId` is vestigial and deliberately grant each teacher of any member access to shared team artifacts.
-
-Both policies cannot be authoritative. For a real classroom pilot, the safer and simpler target is: **a team belongs to exactly one class; every student membership must be compatible with that class; the class's teacher controls the team; school administrators are a separate explicit role.** Cross-class collaboration can be designed later as an explicit sharing feature with its own grants, not inferred from member overlap.
+> **Tenancy is settled — do not re-open it from this document.** The original audit's
+> headline finding was a contradiction between `Team.classId` (ADR-001) and membership-derived
+> teacher access, and it recommended making a team belong to exactly one class. **The product
+> rejected that recommendation.** `docs/architecture/adr-004-per-student-class-membership.md`
+> supersedes ADR-001: class membership is **per student**, `Team.classId` is vestigial, and a
+> teacher of any member may see shared team artifacts. The schema, `lib/teacher/auth.ts`,
+> `docs/ARCHITECTURE.md`, and `test/teacher-scope.test.ts` all now agree. Any surviving prose
+> in older documents recommending the single-class model is obsolete.
 
 ### Implementation posture: strengthen, do not rewrite
 
-This document describes both the long-term architectural destination and the changes required to reach the pilot safely. Those are not the same scope.
+- **Do not perform a repository-wide rewrite.** Preserve the current Next.js application,
+  routes, URLs, database, components, and user flows.
+- **Do not move every file into `src/features/**`.** That tree is a direction for files
+  already being changed, not a prerequisite for quality.
+- **Do not change API contracts, persistence models, and UI behavior in the same step.**
+  Characterize behavior first, extract it unchanged, then change behavior separately.
+- **Do not create repository interfaces around trivial Prisma reads.** Extract services where
+  there is authorization, a transaction, concurrency, paid work, provider orchestration, or a
+  reusable business rule.
+- **Do not replace working state/data libraries merely for consistency.**
+- **Do not delete or merge files unless they are proven unused.** §6.1 is a cleanup list with
+  explicit preconditions.
 
-- **Do not perform a repository-wide rewrite.** Preserve the current Next.js application, routes, URLs, database, components, and user flows.
-- **Do not move every file into `src/features/**` during the pilot hardening pass.\*\* That tree is a direction for files already being changed, not a prerequisite for quality.
-- **Do not change API contracts, persistence models, and UI behavior in the same refactor step.** Characterize behavior first, extract it unchanged, then make intentional behavior changes separately.
-- **Do not create repository interfaces around trivial Prisma reads.** Extract services where there is authorization, a transaction, concurrency, paid work, provider orchestration, or a reusable business rule.
-- **Do not replace working state/data libraries merely for consistency.** Standardize new and high-risk work first; migrate existing client calls opportunistically.
-- **Do not delete or merge files during the first pass unless they are proven unused.** The delete list in §6.1 is a later cleanup list with explicit preconditions.
-
-The practical refactor is therefore a **strangler migration inside the existing modular monolith**. Most UI, pure helpers, content, art, and stable routes should remain untouched.
+The practical refactor is a **strangler migration inside the existing modular monolith**.
+Most UI, pure helpers, content, art, and stable routes should remain untouched.
 
 ### Scope calibration
 
-| Track                         | Required scope                                                                                                                                                                                   | Expected impact                                                                                  |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| **A — Before pilot**          | Resolve authorization ambiguity, close paid-work bypasses, protect external calls, add targeted policy/concurrency tests, bound confirmed growing reads, add minimum viable diagnostics/runbooks | Focused changes to high-risk infrastructure and route families; no broad UI or directory rewrite |
-| **B — Clean industrial code** | Incrementally extract complex workflows, unify feature contracts/clients, split mixed-responsibility files, standardize route adapters and durable events                                        | Meaningful changes across authored runtime code over time, one feature at a time                 |
-| **C — Deferred/optional**     | Broad `src/features/**` relocation, generalized job platform for every workflow, generated-content reorganization, deleting `shared-types`, tooling-repository cleanup                           | Do only when justified by active work or measured operational need                               |
+| Track | Required scope | Expected impact |
+| --- | --- | --- |
+| ~~A — Before pilot~~ | **COMPLETE** (shipped v0.26.0–v0.29.1) | — |
+| **B — Clean industrial code** | Incrementally extract complex workflows, unify feature contracts/clients, split mixed-responsibility files, standardize route adapters and durable events | Meaningful changes across authored runtime code over time, one feature at a time |
+| **C — Deferred/optional** | Broad `src/features/**` relocation, generalized job platform, generated-content reorganization, deleting `shared-types`, tooling-repository cleanup | Do only when justified by active work or measured operational need |
 
-### Priority summary
+### Priority summary — open items only
 
-| Priority | Finding                                                                                                    | Consequence                                                                                             |
-| -------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| P0       | Classroom/team ownership has two contradictory implementations                                             | Ambiguous privacy boundary and surprising cross-class teacher access                                    |
-| P0       | `app/api/ops/codex/study-plan/route.ts` contains two embedded NUL bytes                                    | Source-integrity defect hidden by the current compiler/linter                                           |
-| P1       | 98 route files but no route-level unit/integration tests                                                   | IDOR, status-code, validation, and concurrency invariants rely mainly on E2E/static assertions          |
-| P1       | Only six routes use the route wrapper; most handlers query Prisma directly                                 | Authorization, validation, error mapping, transactions, and telemetry remain copy-pasted                |
-| P1       | Paid-work classification is incomplete                                                                     | Some Anthropic work runs behind `read`/`mutate`, bypassing the production paid-tier configuration guard |
-| P1       | Paid/background workflows are only partly durable                                                          | Request termination can still create ambiguous outcomes or repeated spend                               |
-| P1       | No structured observability or error/cost correlation                                                      | Classroom incidents and LLM spend cannot be reconstructed reliably                                      |
-| P2       | Feature ownership is split across `app`, `components`, `lib`, `stores`, and component-local API/type files | One rule or contract change touches several unrelated directory trees                                   |
-| P2       | Several list/read paths are unbounded                                                                      | Payload and query cost grow with classroom history                                                      |
-| P2       | Client fetching has several competing patterns                                                             | Inconsistent cancellation, stale-response handling, parsing, retries, and errors                        |
-| P2       | External integration policy is inconsistent                                                                | Some calls have timeouts/fallbacks; others can wait for platform defaults                               |
-| P3       | Large generated/static domains obscure authored code                                                       | Reviewability and ownership suffer even when runtime behavior is sound                                  |
+| Priority | Finding | Consequence |
+| --- | --- | --- |
+| P1 | No route-test harness; 4 ad-hoc route-handler tests exist, but no per-route-family matrix | Status-code, validation, and provider-failure invariants for large routes rest on E2E |
+| P1 | Only 6 of 98 routes use `withTeamRoute`; most handlers query Prisma directly | Authorization, validation, error mapping, and telemetry stay copy-pasted |
+| P1 | No durable AI/job ledger — token usage is logged but not recorded, with no idempotency keys | Spend cannot be reconciled; a provider response after disconnect is ambiguous |
+| P1 | Structured logger exists but is wired into 5 modules; no request wrapper or per-route telemetry | Route-level incidents still lack correlation |
+| P1 | No transactional outbox; 17 of 31 `logActivity` sites are fire-and-forget | Teacher-visible history can silently drop |
+| P2 | Feature ownership split across `app`, `components`, `lib`, `stores`, and component-local API/type files | One contract change touches several unrelated trees |
+| P2 | Two residual unbounded reads (measurements POST echo, teacher class list) | Payload cost grows with classroom history |
+| P2 | Client fetching has competing patterns (29 components still call `fetch` directly) | Inconsistent cancellation, stale-response handling, parsing, errors |
+| P2 | No shared `fetchWithPolicy`; retry/error-taxonomy/size-cap remain per-adapter | Provider behavior is inconsistent |
+| P2 | Six god files combine materially different responsibilities | Merge pain and untestable logic |
+| P2 | Data lifecycle is documented but untested | Deletion/export behavior can regress unnoticed |
+| P2 | Reward-minting duplicated across three grade paths (SVC-1, inherited from `docs/REFACTOR.md`) | Money logic in three places will diverge |
+| P3 | Large generated/static domains obscure authored code | Reviewability and ownership suffer |
 
-## 1. Start at the end goal and work backward
+---
+
+## 1. End state and communication architecture
 
 ### 1.1 End state
 
-The pilot-ready system must support a room of students and teachers where:
+The system must support a room of students and teachers where every access decision is
+provable from one documented query, every growing list is bounded, every paid call is
+accounted for, every consequential event is durable, and every failure is diagnosable
+without logging student work.
 
-1. A student can only read or mutate their current team's data.
-2. A teacher can only read or mutate teams in classes they own.
-3. Every paid action has an enforceable budget, idempotency rule, and audit record.
-4. Every long-running action survives a request disappearing.
-5. A slow or broken external provider does not freeze unrelated product areas.
-6. Lists and jobs remain bounded as a class accumulates a school year's data.
-7. Operators can answer who did what, which dependency failed, what it cost, and whether retrying is safe.
-8. A developer can locate a feature's UI, contracts, application service, persistence, integrations, and tests without searching the entire repo.
-9. Deleting/exporting a student or class has a documented, testable data path.
+### 1.2 Communication decision table
 
-### 1.2 Architecture derived from that outcome
+| Workload | Correct mechanism |
+| --- | --- |
+| Reads for a signed-in principal | Synchronous command/query through an application service |
+| Paper upload → parse → store → AI metadata | Durable job (already: `PaperProcessingJob`) |
+| Streaming chat/tutoring | Authenticated synchronous streaming with server-owned turn state |
+| Quiz/explanation/synthesis/study-plan generation | Evaluate individually; synchronous only if bounded and idempotent, otherwise a durable job |
+| Activity/notification/email after a committed change | Transactional outbox |
+| Scheduled paper/cleanup/notification processing | Bounded cron worker claiming PostgreSQL rows |
+| OpenAlex/NCBI/arXiv/Semantic Scholar/Wikipedia search | Server-side provider call with timeout, cache, and schema validation |
 
-```text
-Browser
-  -> Next.js pages and route adapters
-       -> feature application services
-            -> authorization policies
-            -> domain rules
-            -> repository interfaces / Prisma implementations
-            -> durable job/outbox records
-       -> PostgreSQL (authoritative state and job ledger)
-       -> R2 (private blobs; database owns object metadata)
-       -> Redis/Upstash (global rate limits and short-lived cache only)
+Efficiency is judged by bounded work and failure isolation, not by minimizing modules. Avoid
+internal HTTP hops, duplicated provider clients, request-lifetime background promises,
+polling without backoff, and synchronous chains that combine upload, parsing, storage, paid
+AI, side effects, and response delivery.
 
-Scheduled worker invocation
-  -> claims bounded PostgreSQL jobs atomically
-       -> Anthropic / scholarly APIs / extraction / email
-       -> stores result, retry state, usage metadata, and terminal error
-```
+---
 
-This is still one codebase and can remain one Vercel project initially. “Worker” means a durable application boundary invoked by cron or a queue consumer; it does not require a second service on day one.
-
-### 1.3 Non-negotiable domain boundaries
-
-- **Identity and tenancy:** Clerk proves identity; the database proves role, membership, class ownership, and active-team selection.
-- **Classroom:** School, Class, enrollment/join requests, teacher grants.
-- **Team/lab:** Team membership, phase, currency, buildings, activity.
-- **Discovery:** topics, nodes, sources, scholarly-provider adapters.
-- **Literature:** papers, processing, citations, quiz/chat/explanation, synthesis, vocabulary.
-- **Research:** plan, experiments, measurements, logs.
-- **Fair/showcase:** fairs, rubrics, forms, publication, moderation, assets.
-- **Curriculum/ops:** Codex, expertise, study plan, Vega.
-- **Platform:** database, storage, rate limiting, jobs, LLM gateway, telemetry, configuration.
-
-Features may depend on platform capabilities and stable domain contracts. They must not reach into another feature's route or component implementation.
-
-### 1.4 Communication architecture
-
-scienium has many internal feature subsystems and external integrations, but it is not a collection of microservices. Discovery, Literature, Classroom, Team/Lab, Research, Fair, Showcase, Curriculum, notifications, and PvP are modules inside one Next.js deployment. Clerk, PostgreSQL/Supabase, R2, Anthropic, Firecrawl, OpenAlex, NCBI, arXiv, Semantic Scholar, Wikipedia, YouTube/Vimeo, Resend, Upstash, and Vercel Cron are external infrastructure/providers.
-
-Keep this as a modular monolith. Do not introduce network calls between internal features or split them into independently deployed services for the pilot. Choose one of the following communication patterns based on the operation's failure semantics.
-
-#### Pattern A — Synchronous command/query
-
-```text
-Browser -> route adapter -> application service -> PostgreSQL/provider -> response
-```
-
-Use for quick, bounded work whose result the current interaction needs: ordinary reads, settings, rubric updates, building mutations, and small database-backed commands. Routes resolve the principal, validate input, call one operation, serialize the result, and record diagnostics. Direct Prisma is acceptable for a trivial, correctly scoped read; authorization, transactions, provider orchestration, and business rules belong in an application service.
-
-#### Pattern B — Durable asynchronous job
-
-```text
-Browser -> route -> authorize/validate -> create job -> 202/status response
-Cron/worker -> atomically claim bounded job -> call provider -> persist result/retry/error
-Browser -> poll/refresh status
-```
-
-Use for slow, paid, retryable, or disconnect-sensitive work: PDF processing, large exports/deletions, storage reconciliation, email delivery, and selected non-streaming AI operations. PostgreSQL remains the durable job ledger; a Vercel Cron-invoked processor is sufficient initially. A second deployed worker service or message broker is not required.
-
-The existing `PaperProcessingJob` is the model to preserve. Paper upload should securely store bytes and create the job; paper GET should only return paper/job state and must never trigger paid work.
-
-#### Pattern C — Authenticated synchronous streaming
-
-```text
-Browser -> authenticated streaming route -> provider stream -> browser
-                                      \-> persist server-owned authoritative state
-```
-
-Use only when incremental output is central to the experience, such as paper chat or guided AI feedback. Streaming still requires global paid-work enforcement, product quotas, server-owned conversation turns, timeout/disconnect handling, input/output caps, idempotency where meaningful, and token/cost accounting.
-
-#### Pattern D — Transactional outbox/event
-
-```text
-Database transaction -> domain write + outbox row
-Cron/worker -> claim outbox row -> activity/notification/email -> mark delivered
-```
-
-Use when a committed change must eventually produce another consequential effect: class approval notifications, publication/moderation events, phase history, teacher-visible activity, and email. Do not use an outbox for debug logs or expendable telemetry. Internal features should call application services or write an outbox event—not call the application's own HTTP routes.
-
-#### Communication decision table
-
-| Workflow                                                     | Target pattern                                                                       |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Team/settings/rubric/building CRUD                           | Synchronous command/query                                                            |
-| Paper upload and metadata extraction                         | Upload command + durable job + status read                                           |
-| Paper status/detail GET                                      | Pure bounded query; no mutation or provider call                                     |
-| Paper chat/Vega/guided AI where incremental output matters   | Authenticated streaming + persisted turns/usage                                      |
-| Quiz/explanation/synthesis/study-plan generation             | Evaluate individually; synchronous only if bounded/idempotent, otherwise durable job |
-| Activity/teacher notification/email after a committed change | Transactional outbox                                                                 |
-| Scheduled paper/cleanup/notification processing              | Bounded Cron worker claiming PostgreSQL rows                                         |
-| OpenAlex/NCBI/arXiv/Semantic Scholar/Wikipedia search        | Normal server-side provider call with timeout/cache/schema validation                |
-
-Efficiency is judged by bounded work and failure isolation, not by minimizing the number of modules. Avoid internal HTTP hops, duplicated provider clients, request-lifetime background promises, polling without backoff, and synchronous chains that combine upload, parsing, storage, paid AI, side effects, and response delivery.
-
-## 2. Long-term repository direction — optional, not a pilot gate
+## 2. Long-term repository direction — optional, not a gate
 
 ```text
 apps/web/
   app/                              # pages/layouts and very thin route adapters only
   src/
-    features/
-      classroom/
-        contracts/                  # Zod request/response schemas; inferred TS types
-        application/                # use cases and orchestration
-        domain/                     # pure invariants and value objects
-        infrastructure/             # Prisma repositories and provider adapters
-        ui/                          # components, hooks, feature client
-        tests/                       # policy/service/route-adapter integration tests
-      team/
-      discovery/
-      literature/
-      research/
-      fair/
-      showcase/
-      curriculum/
-    platform/
-      auth/
-      db/
-      jobs/
-      llm/
-      observability/
-      rate-limit/
-      storage/
-      web/
-    shared/
-      ui/                            # genuinely cross-feature UI primitives
-      contracts/                     # only cross-feature stable contracts
-      test/
-  prisma/
-    schema.prisma
-    migrations/
-  content/                           # authored/generated static data, never business logic
-  public/
-  e2e/
+    features/<domain>/
+      contracts/                    # Zod request/response schemas; inferred TS types
+      application/                  # use cases and orchestration
+      domain/                       # pure invariants and value objects
+      infrastructure/               # Prisma repositories and provider adapters
+      ui/                           # components, hooks, feature client
+      tests/                        # policy/service/route-adapter integration tests
+    platform/                       # auth, db, jobs, llm, observability, rate-limit, storage, web
+    shared/                         # genuinely cross-feature UI + contracts
+  prisma/ content/ public/ e2e/
 
 packages/shared-types/              # delete unless a second runtime package consumes it
-packages/config/                    # retain shared tooling config
+packages/config/                    # retain
 art/                                # retain separate deterministic asset pipeline
 ```
 
-This shape is a navigation model, not a required migration. Industrial-quality code can retain the current `app/`, `components/`, and `lib/` directories if their responsibilities become consistent. Introduce this shape only for a complete feature slice already undergoing meaningful work; do not manufacture file moves to make the tree match the diagram.
+This is a navigation model, not a required migration. Industrial-quality code can retain the
+current `app/`, `components/`, and `lib/` directories if their responsibilities become
+consistent. Introduce this shape only for a complete feature slice already undergoing
+meaningful work; do not manufacture file moves to match the diagram.
 
 ### 2.1 Route contract
 
@@ -222,285 +147,289 @@ Every route adapter should do exactly five things:
 4. map the typed result to HTTP;
 5. emit request/cost/error telemetry.
 
-It must not contain raw Prisma workflows, provider calls, prompt construction, economy rules, or multi-step authorization.
+It must not contain raw Prisma workflows, provider calls, prompt construction, economy rules,
+or multi-step authorization.
+
+**Reference implementations** (copy these, don't invent a new shape):
+`lib/buildings/service.ts`, `lib/papers/service.ts`, `lib/literature/quiz-retry.ts`.
 
 ### 2.2 Application-service contract
 
-Application services accept an explicit principal and validated command/query. They own transactions, idempotency, authorization-policy calls, and orchestration. Domain functions remain pure. Prisma-specific code is isolated in repository implementations when doing so creates a real test seam; trivial single-table reads do not require ceremonial interfaces.
+Application services accept an explicit principal and a validated command/query. They own
+transactions, idempotency, authorization-policy calls, and orchestration. Domain functions
+remain pure. Prisma code is isolated in repositories only when that creates a real test seam;
+trivial single-table reads do not need ceremonial interfaces.
 
 ### 2.3 Contract ownership
 
-Use one Zod schema as the runtime and compile-time contract for each endpoint. Response parsing belongs in the feature contract/client, not handwritten independently in `components/**/types.ts`, `components/**/api.ts`, and a route. `packages/shared-types` should exist only if another workspace package or runtime truly consumes those types. Today it mostly imposes a build-order dependency on one web application.
+Use one Zod schema as the runtime and compile-time contract for each endpoint. Response
+parsing belongs in the feature contract/client, not handwritten independently in
+`components/**/types.ts`, `components/**/api.ts`, and a route. `packages/shared-types` should
+exist only if another workspace package truly consumes those types.
+
+---
 
 ## 3. Current architecture compared with the target
 
 ### 3.1 What is already correctly designed
 
-- `apps/web/lib/api/route-context.ts` resolves the active team only through actual `TeamMember` rows. A stale/forged `activeTeamId` cannot widen student access.
-- `apps/web/lib/teacher/auth.ts` makes the existing database role authoritative over stale Clerk claims.
-- `apps/web/lib/rate-limit.ts` has per-user and per-IP tiers, a shared Upstash implementation, bounded Upstash latency, and fails closed for paid tiers in production without a global store.
-- `apps/web/lib/buildings/service.ts` is a good application-service seam: the route adapters are thin, concurrency is explicit, and tests exist.
-- `apps/web/lib/uploads/assets.ts` gives object storage a database-owned lifecycle rather than treating arbitrary URLs as durable authority.
-- `PaperProcessingJob` and its migrations are the correct direction for durable paid processing.
-- Schema-level unique constraints protect several one-time/idempotent rules, including duplicate team paper content, source visits, daily awards, plot occupancy, and rubric scorer keys.
-- `art/` is correctly separate from the runtime application. Generated sprite manifests are checked in intentionally and have tests.
-- The codebase has meaningful pure unit tests and broad authenticated Playwright coverage.
+Preserve and generalize these; do not replace them.
 
-These should be preserved and generalized, not replaced.
+- `lib/api/route-context.ts` resolves the active team only through real `TeamMember` rows, and
+  delegates the single database resolver to `lib/team/context.ts`. A stale or forged
+  `activeTeamId` cannot widen student access.
+- `lib/teacher/auth.ts` makes the database role authoritative over stale Clerk claims.
+- `lib/rate-limit.ts` has per-user and per-IP tiers, a shared Upstash store, bounded latency,
+  and fails closed for paid tiers in production.
+- `lib/buildings/service.ts`, `lib/papers/service.ts`, and `lib/literature/quiz-retry.ts` are
+  the application-service template: thin route adapters, explicit concurrency, typed results.
+- `lib/uploads/assets.ts` gives object storage a database-owned lifecycle with a single
+  physical-delete site, per-team quota, and reclaim.
+- `PaperProcessingJob` is the correct direction for durable paid processing.
+- Schema-level unique constraints protect one-time/idempotent rules: duplicate team paper
+  content, source visits, daily awards, plot occupancy, rubric scorer keys.
+- `lib/observability/log.ts` is the right logger shape (JSON events, redaction by design,
+  request ids) — it simply is not wired widely enough yet (see P1-5).
+- Static sweeps prevent whole regression classes: `test/route-guard-sweep.test.ts` (every
+  route carries an auth guard), `test/paid-work-guard.test.ts` (transitive closure over
+  Anthropic reachability), `test/cron-guard.test.ts`, `test/prompt-injection-pins.test.ts`.
+- `art/` is correctly separate from the runtime application.
+- ~990 unit tests plus a full authenticated Playwright suite that runs green against a
+  production build.
 
-### 3.2 Where control overlaps
+### 3.2 Where control still overlaps
 
-#### A. Team/class authorization
-
-Authority is split across `User.classId`, `Team.classId`, membership-derived teacher access, `User.activeTeamId`, and route-specific ownership queries. `Team.classId` is present, indexed, migrated, related to `Class`, and documented as authoritative, while live teacher policy calls it vestigial. This is the highest-risk overlap.
+> Resolved and removed: **A. Team/class authorization** (settled by ADR-004) and
+> **C. Team-context resolution** (`route-context.ts` now delegates to the single resolver in
+> `lib/team/context.ts`).
 
 #### B. Route guards and wrappers
 
-`requireTeamContext`, `requireUserContext`, `requireTeacher`, cron auth, middleware protection, and `withTeamRoute` all own parts of transport policy. That separation can be valid, but adoption is incomplete: only the four building mutation routes and two synthesis routes use `withTeamRoute`; direct guard/parse/query code remains the norm.
-
-#### C. Team context resolution
-
-`lib/api/route-context.ts` and `lib/team/context.ts` both execute near-identical membership queries and both depend on `pickActiveTeam`. The pure selector is correctly centralized; the database resolver is duplicated.
+`requireTeamContext`, `requireUserContext`, `requireTeacher`, cron auth, middleware
+protection, and `withTeamRoute` each own part of transport policy. That separation can be
+valid, but adoption is incomplete: **only 6 of 98 routes use `withTeamRoute`** (four building
+mutations, two synthesis routes). Direct guard/parse/query code remains the norm.
 
 #### D. API contracts and client state
 
-Contracts and network logic live variously in:
+Contracts and network logic live variously in `components/literature/{api,types,synthesisApi,vocab-api}.ts`;
+`components/ops/{data-terminal,failure-log,project-log}/{api,types}.ts`;
+`lib/discovery/treeApi.ts` plus `stores/discoveryStore.ts`; direct `fetch` calls in **29**
+component files; and `lib/api/client.ts` for only some features. There is still no single
+answer to "where does this feature's HTTP contract live?"
 
-- `components/literature/api.ts`, `types.ts`, `synthesisApi.ts`, and `vocab-api.ts`;
-- `components/ops/*/api.ts` and `types.ts`;
-- `lib/discovery/treeApi.ts` plus `stores/discoveryStore.ts`;
-- direct `fetch` calls in many UI components and hooks;
-- `lib/api/client.ts` for only some features.
-
-There is no single answer to “where does this feature's HTTP contract live?”
+_One slice has landed_: `components/discovery/api.ts` is a Zod + `requestJson` feature client
+built to this pattern — use it as the template.
 
 #### E. Domain logic in routes
 
-Most API routes import `db` directly. Large examples include paper quiz retry, teacher overview, Codex completion/study plan, research-plan review, project logs, and paper uploads. Some routes necessarily shape data, but multi-step business logic, raw SQL, provider calls, and activity writes in transport files make tests and reuse difficult.
+**Extracted (done):** paper upload → `lib/papers/service.ts` (route is 84 lines, adapter
+only); quiz retry → `lib/literature/quiz-retry.ts` (route is 58 lines, zero `db.` calls).
+
+**Still inline**, in descending order of size and risk:
+
+| Route | Lines | Direct `db.` calls |
+| --- | --- | --- |
+| `app/api/teacher/student/[id]/overview/route.ts` | 347 | 18 |
+| `app/api/ops/codex/complete/route.ts` | 293 | 6 |
+| `app/api/research-plan/review/route.ts` | 261 | 2 |
+| `app/api/project-log/route.ts` | 247 | 8 |
+| `app/api/ops/codex/study-plan/route.ts` | 202 | 7 |
+| `app/api/research-plan/idea-check/route.ts` | — | — |
 
 #### F. Background work
 
-Paper processing has a durable job model, while other paid calls run inline. Fire-and-forget `logActivity(...).catch(...)` is widespread. Notifications use cron batching, but email sends and provider failures are not represented through a general job/outbox lifecycle. The system therefore has several incompatible durability guarantees.
+Paper processing has a durable job model; other paid calls run inline. Fire-and-forget
+`logActivity(...).catch(...)` appears at **17 of 31** call sites. Notifications use bounded
+cron batching, but email sends and provider failures are not represented through a general
+job/outbox lifecycle. The system therefore still has several incompatible durability
+guarantees.
 
-## 4. Adversarial findings
+---
 
-### P0-1 — Choose and enforce one classroom boundary
+## 4. Open findings
 
-**Validated evidence**
+### P1-1 — Establish a route-test harness
 
-- `docs/architecture/adr-001-team-class-ownership.md` says `Team.classId` is the teacher authorization boundary and teams cannot straddle classes.
-- `prisma/migrations/20260708180000_team_ownership_integrity/migration.sql` adds/backfills `teams.class_id` for that purpose.
-- `prisma/schema.prisma` retains the `Team.classId` relation and index.
-- `lib/teacher/auth.ts::teacherOwnsTeam` instead authorizes through any member whose `User.classId` is owned by the teacher.
-- `app/api/team/join/route.ts` explicitly permits cross-class and cross-school teams.
-- `lib/teacher/analytics.ts` calls `Team.classId` vestigial.
+_Corrected: the original "no route-level tests" premise is no longer true._ There are now ~70
+non-E2E test files, and four tests import route handlers directly
+(`test/advance-phase-paid-gate.test.ts`, `test/showcase-public-asset.test.ts`,
+`test/topic-removal.test.ts`, `test/team-join.test.ts`). `test/route-guard-sweep.test.ts`
+statically proves every route carries a guard.
 
-**Adversarial outcome**
-
-A team containing students from two classes exposes shared papers, plans, feedback, showcase, rubric, and related team-level data to both teachers. That may be intended collaboration, but it directly contradicts the recorded privacy invariant and is too implicit for minors' classroom data.
-
-**Decision**
-
-Make `Team.classId` required for classroom teams and authoritative for teacher access. Permit a nullable class only during onboarding/legacy transition. Reject membership that conflicts with the team's class. If cross-class teams are later required, create explicit `TeamClassGrant(teamId, classId, permission, grantedBy, expiresAt)` records and audit them.
-
-### P0-2 — Remove embedded NUL bytes
-
-`apps/web/app/api/ops/codex/study-plan/route.ts` contains two `0x00` bytes in the `sourceHashOf` template literal. TypeScript and Next lint currently pass, which makes this a repository-integrity defect rather than a current compilation failure. Replace them with an explicit printable delimiter such as `\u001f` written as source text, or length-prefix the fields. Add a repository text-file check so source corruption cannot recur.
-
-### P1-1 — Establish route-level policy tests
-
-There are 98 `route.ts` files, 34 non-E2E test files, 26 E2E specs, and no files named as route tests. E2E coverage is valuable but too slow and stateful to be the sole enforcement of every IDOR, malformed-body, 401/403/404, idempotency, and provider-failure invariant.
-
-Create route-adapter tests around injected application services or a test database. At minimum, every route family needs a matrix for signed out, wrong team/class, invalid input, rate limit, conflict/race, and provider failure. Keep a smaller E2E suite for critical user journeys.
+**What is still missing:** a reusable harness (principal / limiter / repository / provider
+fakes) and per-route-family matrices for the large handlers in §3.2 E — signed out, wrong
+team or class, invalid input, rate limit, conflict/race, provider failure. Also inherited
+from `docs/REFACTOR.md` (SEC-1): the systematic four-case IDOR matrix per route family.
+Cross-team 404 behavior is currently proven only spot-wise, in E2E (`F1` AC10, `F11` AC8,
+`papers-tab` AC7, `vocab-builder` AC13, `F18` AC4b).
 
 ### P1-2 — Migrate high-risk routes first; standardize the rest incrementally
 
-Only six routes currently use `withTeamRoute`; most routes import `db` directly. This is an industrial maintainability concern, not proof that every direct Prisma route is unsafe. Do not merely wrap all handlers and declare victory. Move high-risk workflows first, then standardize other adapters when they are touched.
+Only six routes use `withTeamRoute`; most import `db` directly. This is a maintainability
+concern, not proof that direct-Prisma routes are unsafe. Do not wrap all 98 handlers and
+declare victory — move high-risk workflows first, then standardize adapters when touched.
+The remaining queue is the §3.2 E table, in that order.
 
-Start with the highest-risk and largest handlers:
+### P1-4 — Durable AI/job ledger
 
-- `app/api/papers/[id]/quiz/retry/route.ts`
-- `app/api/teacher/student/[id]/overview/route.ts`
-- `app/api/ops/codex/complete/route.ts`
-- `app/api/ops/codex/study-plan/route.ts`
-- `app/api/research-plan/review/route.ts`
-- `app/api/research-plan/idea-check/route.ts`
-- `app/api/project-log/route.ts`
-- `app/api/papers/route.ts`
+_Narrowed._ Token accounting already exists as structured logs: `lib/anthropic.ts` emits
+`inputTokens`/`outputTokens` for every call and stream. What is missing is a **durable
+record** — there is no `Job`/`AiInvocation` model, no idempotency keys, and no spend
+reconciliation; only `PaperProcessingJob` exists.
 
-### P1-3 — Put every paid call behind a paid-work policy
+For workflows needing retryability, asynchronous execution, or spend reconciliation, create a
+general job model or feature-specific jobs sharing one worker contract. Record tenant, user,
+operation, idempotency key, model, prompt-version hash, state, attempts, next-run time,
+provider request id, token counts, and terminal error code. Evaluate each AI workflow
+individually; do not migrate for uniformity. Streaming chat may stay synchronous, but still
+needs server-owned turn state and enough usage metadata to enforce cost policy.
 
-Direct AI feature routes normally select the `ai` tier, and uploads select `upload`. Two confirmed exceptions cross that abstraction:
+### P1-5 — Widen structured observability
 
-- `app/api/team/advance-phase/route.ts` selects `mutate` and then calls `classifyLabType`, which invokes Anthropic.
-- `app/api/papers/[id]/route.ts` selects `read` and may synchronously call `processPaperJob`, which invokes Anthropic. The job's atomic claim and attempt cap prevent duplicate processing, but the call still bypasses the paid-tier production shared-store check.
+_Narrowed._ `lib/observability/log.ts` exists and is correct. It is wired into five modules:
+`lib/anthropic.ts`, `lib/rate-limit.ts`, `lib/cron/auth.ts`, `lib/literature/process-paper.ts`,
+`app/api/cron/papers/route.ts`. Sentry is configured across all three runtimes.
 
-The limiter tier must describe the consequential work, not merely the HTTP verb. Better, make the LLM gateway enforce paid-work availability and usage budgets itself so an internal caller cannot accidentally bypass the rule. The paper detail GET should only report durable job state; it should not perform paid processing on read.
+**Missing:** a request wrapper, per-route latency/outcome events, and policy-denial events on
+ordinary routes. Emit `requestId`, `route`, `operation`, opaque `userId`/`teamId`, duration,
+outcome, provider, jobId, model, and token usage — redacting payloads by default.
 
-### P1-4 — Add durable jobs and cost accounting where consequences require them
+### P1-6 — Make consequential side effects durable
 
-Anthropic construction is centralized, and most direct AI routes select the `ai` tier. As P1-3 shows, that policy is not universal. Even when the right tier is used, rate limiting is not a budget ledger: it does not record tokens/cost, guarantee idempotency, or survive a provider response after the browser disconnects.
+17 of 31 `logActivity(...)` call sites are fire-and-forget. Losing an activity entry may be
+acceptable, but the code does not distinguish optional analytics from user-visible history.
+Use a transactional outbox for activity/notification events that matter to teachers or
+progression; name and document genuinely best-effort telemetry as such.
 
-For workflows that need retryability, asynchronous execution, or spend reconciliation, create a general `Job`/`AiInvocation` model or feature-specific jobs sharing one worker contract. Record tenant, user, operation, idempotency key, model, prompt-version hash, state, attempts, next-run time, provider request id, input/output token counts, and terminal error code. Preserve paper processing by adapting its existing table only when necessary. Evaluate quiz generation/retry, explanation checking, synthesis checking, expertise generation/grading, plan review, idea check, study-plan classification, failure follow-up, and Vega chat individually; do not migrate them merely for uniformity. Streaming chat may stay synchronous, but it still needs server-owned turn state and enough usage metadata to enforce cost policy.
+### P2-1 — Bound the two residual growing reads
 
-### P1-5 — Add structured observability
+_Narrowed — the main offenders are fixed_ (`data-terminal/route.ts` caps experiments at 200;
+`measurements/route.ts` caps at 2,000 per experiment). Residual:
 
-Runtime diagnostics are currently `console.error/warn/log` strings. There is no request ID propagation, structured event schema, route latency split, tenant-safe error context, provider metrics, or exception product in the dependencies.
+- `app/api/data-terminal/[id]/measurements/route.ts` still **returns the whole list after
+  each write** — the POST should return the created row or a summary, not the history.
+- `lib/teacher/auth.ts` class lookup has no `take` (small at pilot scale, but it runs on
+  every teacher request).
 
-Create a small platform logger and request wrapper first. Emit JSON fields (`requestId`, `route`, `operation`, opaque `userId`/`teamId`, duration, outcome, provider, jobId, model, token usage) and redact payloads by default. Add an error/trace backend before pilot, but keep vendor integration behind the logger/telemetry module.
-
-### P1-6 — Make side effects transactional or durable
-
-Many routes commit domain state and then invoke `logActivity(...).catch(console.error)`. Losing an activity entry may be acceptable, but the current code does not distinguish optional analytics from user-visible history. Use a transactional outbox for activity/notification events that matter to teachers or progression. Truly best-effort telemetry should be explicitly named and documented as such.
-
-### P2-1 — Bound every growing collection
-
-Confirmed unbounded examples include:
-
-- `app/api/data-terminal/route.ts` — all experiments for a team;
-- `app/api/data-terminal/[id]/measurements/route.ts` — all measurements, returned again after writes;
-- teacher class lists in `lib/teacher/auth.ts` (small at pilot, but part of every teacher request);
-- several feature lists whose natural size grows over a school year.
-
-Not every `findMany` needs pagination: fixed vocabularies and tightly constrained rubric rows are naturally bounded. For user-generated history, add cursor pagination or explicit hard caps and return `nextCursor`/summary counts. Define limits in contracts, not ad hoc route constants.
+Not every `findMany` needs pagination — fixed vocabularies and rubric rows are naturally
+bounded. Define limits in contracts, not ad hoc route constants.
 
 ### P2-2 — Standardize external-provider behavior
 
-OpenAlex, NCBI, arXiv, article feeds, Google Docs, and Upstash have explicit timeout handling in at least some paths. Other calls—such as Resend and YouTube oEmbed—lack an explicit abort signal. Provider adapters also vary in retry, error taxonomy, caching, and logging.
+_Narrowed — the named gaps are closed_: `lib/notifications/email.ts` and
+`app/api/discovery/youtube/resolve/route.ts` both use `AbortSignal.timeout(5_000)`, and every
+server-side provider fetch now has an explicit abort.
 
-Create a shared `fetchWithPolicy` primitive for timeout, retryable statuses, maximum response bytes, user agent, and normalized errors. Each provider adapter supplies policy values; application services decide fallback behavior. Never retry non-idempotent provider writes without an idempotency key.
+**Still missing:** a shared `fetchWithPolicy` primitive for timeout, retryable statuses,
+maximum response bytes, user agent, and normalized errors. Retry, error taxonomy, caching,
+and logging remain per-adapter. Never retry non-idempotent provider writes without an
+idempotency key.
 
 ### P2-3 — Consolidate client data access
 
-Do not introduce TanStack Query solely for fashion. A small feature client layer can solve the current inconsistency: runtime response decoding, abort signals, standard errors, and request de-duplication. For screens with server-state caching/invalidation pressure, TanStack Query is justified; otherwise typed hooks over `requestJson` are enough.
+Do not adopt TanStack Query for fashion. A small feature-client layer solves the current
+inconsistency: runtime response decoding, abort signals, standard errors, request
+de-duplication. For screens with real cache/invalidation pressure, TanStack Query is
+justified; otherwise typed hooks over `requestJson` suffice.
 
-Move direct networking out of large UI components such as `TeacherRoster`, `LabProfileSettings`, `ScienceFairFeature`, `ExpertisePanel`, and discovery shells. UI components should render state and emit intent.
+17 modules use `lib/api/client`; **29 component files still call `fetch` directly**. Move
+networking out of large UI components (`TeacherRoster`, `LabProfileSettings`,
+`ScienceFairFeature`, `ExpertisePanel`, discovery shells). UI should render state and emit
+intent. Template: `components/discovery/api.ts`.
 
 ### P2-4 — Break remaining god files by responsibility
 
-Line count alone is not a defect, especially in tests or generated data. Authored files that currently combine materially different responsibilities include:
+Line count alone is not a defect. These authored files combine materially different
+responsibilities (counts refreshed 2026-07-19):
 
-- `components/settings/LabProfileSettings.tsx` (632 lines): multiple settings domains, loading, mutation, and rendering;
-- `components/ops/ExpertisePanel.tsx` (584): state machine, networking, exam UI, and result UI;
-- `components/fair/ScienceFairFeature.tsx` (568): matching, selection, deadlines, and presentation;
-- `components/teacher/TeacherRoster.tsx` (547): roster, classes, join requests, mutations, and UI;
-- `stores/discoveryStore.ts` (605): server synchronization and multiple interaction concerns;
-- `lib/discovery/openalex.ts` (664): multiple endpoint contracts, mapping, caching, and provider behavior.
+| File | Lines | Mixed responsibilities |
+| --- | --- | --- |
+| `components/settings/LabProfileSettings.tsx` | 718 | several settings domains + loading + mutation + rendering |
+| `lib/discovery/openalex.ts` | 601 | multiple endpoint contracts, mapping, caching, provider behavior |
+| `stores/discoveryStore.ts` | 605 | server synchronization + several interaction concerns |
+| `components/ops/ExpertisePanel.tsx` | 584 | state machine + networking + exam UI + result UI |
+| `components/fair/ScienceFairFeature.tsx` | 568 | matching + selection + deadlines + presentation |
+| `components/teacher/TeacherRoster.tsx` | 547 | roster + classes + join requests + mutations + UI |
 
-Split along behavior/state ownership, not arbitrary line thresholds. Keep cohesive large pure tables or tests intact.
+Split along behavior/state ownership, never a line-count quota. Keep cohesive large pure
+tables or tests intact.
 
-### P2-5 — Treat generated curriculum as a build artifact with one source
+### P2-6 — Test the data lifecycle
 
-Codex currently stores JSON content, generated TS track modules, an index, checksums, a generator, and static tests. This can be valid, but the source-of-truth rule must be explicit and enforced in CI. Prefer JSON as canonical content, generated compact modules as disposable build output, and a generated registry. Do not manually edit both. Large generated content should be excluded from ordinary lint/review metrics and validated by schema/checksum tests.
+_Reframed._ The inventory landed (`docs/runbooks/data-export-delete.md`), and the schema has
+ten `onDelete: Cascade` rules. **The tests did not.** There is no lifecycle/deletion test
+file. Add tested deletion behavior for User/Class/Team, uploaded assets, publications,
+activity, LLM history, and teacher feedback.
 
-### P2-6 — Resolve schema and lifecycle ambiguity
+Do not split `schema.prisma` (currently 1,802 lines) using unsupported conventions. Generate
+a domain-index document from it, or adopt Prisma's supported multi-file schema only after
+verifying the deployed Prisma version and migration workflow.
 
-The 1,768-line Prisma schema is not wrong merely because it is large; Prisma still expects one schema in this setup. The problem is implicit lifecycle policy. Add database comments/ADRs and tests for deletion behavior, especially User/Class/Team, uploaded assets, publications, activity, LLM history, and teacher feedback. Most relations currently rely on required foreign keys without an articulated retention/export/delete procedure.
+### SVC-1 — Consolidate reward minting _(inherited from `docs/REFACTOR.md`, now deleted)_
 
-Do not split `schema.prisma` using unsupported conventions. Generate a domain-index document from it or adopt Prisma's supported multi-file schema only after verifying the exact deployed Prisma version and migration workflow.
+Currency reward-minting is duplicated near-verbatim across **three** sites — the
+`paper-quiz:` lock tail, the award calculation, and the `teamCurrency.upsert`:
+
+- `app/api/papers/[id]/quiz/grade/route.ts` (~113-180)
+- `lib/literature/quiz-retry.ts` (~353-412)
+- `app/api/expertise/grade/route.ts` (~154, plus its own clearance raise)
+
+Money logic in three places will diverge. Create `lib/literature/quiz-service.ts` and
+`lib/clearance/exam-service.ts`; move the transaction, award, and `logActivity` in; leave the
+routes thin.
+
+> This item was originally deferred "until after the PvP concurrent window." **That window
+> has closed** — PvP has shipped, so SVC-1 is unblocked.
 
 ### P3-1 — Reduce root/tooling noise
 
-The tracked repository contains hundreds of `.claude` pipeline/agent files and hundreds of art pipeline files alongside the product. They are not runtime defects, but they enlarge review/search scope. Keep required agent instructions; move historical pipeline outputs/drafts to an archive or separate tooling package/repository if they are not active inputs. Never delete them without confirming current workflow dependencies.
+The repository tracks hundreds of `.claude` pipeline/agent files and art-pipeline files
+alongside the product. Not a runtime defect, but it enlarges review and search scope. Keep
+required agent instructions; move historical pipeline outputs to an archive or a separate
+tooling package if they are not active inputs. Never delete without confirming workflow
+dependencies.
 
-## 5. Required scope by outcome
+---
 
-### 5.1 Must be refactored before the classroom pilot
+## 5. Scope
 
-This is the mandatory safety and operability scope. “Before pilot” does not mean every route must be architecturally perfect; it means the system's trust boundaries, paid work, growing workloads, and failure diagnosis must be defensible.
+### 5.1 Clean industrial-level code (Track B)
 
-#### PILOT-1 — Resolve the team/class policy
+Apply incrementally, ideally when the work overlaps a file you are already changing:
 
-1. Confirm the product rule: one authoritative class per team, or explicitly supported cross-class teams.
-2. Audit current data for teams whose members span classes before changing code or constraints.
-3. Encode the chosen rule once in a policy/service and use it for team join and every teacher route.
-4. Update ADR-001, schema comments, architecture docs, and tests so they say the same thing.
-5. Add signed-out, same-class, wrong-class, stale-active-team, and cross-team tests.
+1. **Thin high-risk routes.** Extract multi-step authorization, transactions, raw SQL,
+   provider calls, prompt construction, and domain workflows into feature application
+   services. Simple reads do not need ceremonial services.
+2. **One runtime contract per endpoint.** Co-locate Zod request/response schemas with feature
+   clients and infer TypeScript types from them.
+3. **Consistent route adapters.** Standardize principal resolution, parsing, error mapping,
+   request IDs, and telemetry. Migrate routes when touched, not all 98 at once.
+4. **Feature-owned client networking.** Move ad hoc fetch/state orchestration out of large
+   visual components, preserving specialized streaming, upload-progress, and tolerant-error
+   paths.
+5. **Responsibility-based file splits.** Split the P2-4 hotspots by state machine or domain
+   responsibility.
+6. **Durable consequential events.** Add an outbox for events whose absence changes
+   teacher-visible or progression-relevant state; keep non-critical telemetry best-effort.
+7. **LLM usage accounting.** Record operation, prompt version, model, token usage, result, and
+   tenant-safe correlation. Generalize jobs only where durability or async execution is needed.
+8. **Provider policy.** Centralize timeout, response-size, retryability, and normalized errors.
+9. **Lifecycle correctness.** Implement tested export, deletion, and storage reconciliation
+   rather than stopping at an inventory document.
+10. **Dependency direction.** UI depends on feature contracts; routes depend on application
+    services; feature code depends on platform code, never another feature's components.
+11. **Architectural checks.** Add import-boundary, contract, and policy tests where they
+    prevent a demonstrated regression.
+12. **Explicit communication semantics.** Classify each workflow as synchronous, streaming,
+    durable job, or outbox. Prohibit internal HTTP calls between feature modules and provider
+    calls hidden inside GET reads.
 
-This is an intentional policy decision, not a behavior-preserving extraction. Do not deploy the stricter rule until existing data and the expected classroom workflow have been checked.
+### 5.2 Explicitly deferred or optional (Track C)
 
-#### PILOT-2 — Close all paid-work policy gaps
-
-1. Move paper processing out of `GET /api/papers/[id]`; the GET reports durable job state only.
-2. Put phase lab-type classification behind the paid-work guard or enforce paid policy inside the LLM gateway.
-3. Inventory every Anthropic create/stream call and trace it to authentication, global limiting, product cap/idempotency, input cap, timeout, and error handling.
-4. Preserve the existing durable `PaperProcessingJob` design and verify its claim/retry/terminal behavior.
-5. Add targeted tests for duplicate requests and limiter misconfiguration.
-
-A generic job table for every AI workflow is not required before pilot. Streaming interactions may remain synchronous when state and cost are bounded.
-
-#### PILOT-3 — Add targeted route and concurrency tests
-
-Add tests for the high-risk boundaries rather than 98 ceremonial route-test files:
-
-- student principal and active-team resolution;
-- teacher role and class/team policy;
-- team/class join and invite races;
-- paper processing claim/retry and paid-policy behavior;
-- building/economy mutations and daily/cap ledgers;
-- uploads and asset ownership;
-- public showcase privacy and asset reads;
-- cron authentication and bounded batches;
-- the largest paid routes' wrong-team and duplicate-submit behavior.
-
-Keep Playwright for end-to-end classroom flows. Move static source assertions out of Playwright when a fast unit/tooling test can prove the same invariant.
-
-#### PILOT-4 — Bound confirmed growth and provider failure
-
-- Cap or paginate experiments and measurements; do not resend all measurements after each write.
-- Review other user-generated history endpoints and add an explicit hard cap where cursor UI is unnecessary for pilot.
-- Add explicit timeouts and normalized failures to Resend and YouTube oEmbed.
-- Confirm every external provider has a maximum input/output size and no unbounded retry loop.
-- Keep cron batches bounded and make partial failure resumable.
-
-#### PILOT-5 — Add minimum viable production observability
-
-Before pilot, operators must be able to correlate a failed request or job without logging student work. Add request IDs; structured events for policy denial, paid calls, jobs, providers, uploads, and cron; duration/outcome fields; opaque user/team/job identifiers; and explicit redaction of prompts, paper text, student submissions, secrets, tokens, and email bodies. Configure one error-reporting destination or document how production logs will be queried.
-
-A full tracing platform and dashboards for every feature are industrial follow-up work, not pilot blockers.
-
-#### PILOT-6 — Establish operational and data-lifecycle minimums
-
-Document and test enough to operate the pilot:
-
-- database restore and migration forward-fix procedures;
-- incident contacts and feature-disable procedure;
-- student/class data export and deletion inventory;
-- uploaded-object reconciliation and cleanup;
-- AI/provider data-sharing and retention summary for school approval.
-
-#### PILOT-7 — Source integrity and pipeline gates
-
-- Remove the two NUL bytes and add a text-integrity check.
-- Run the existing five gates in order after every behavior-bearing slice.
-- Run targeted E2E during iteration and the full authenticated suite after pilot-critical changes integrate.
-- Do not combine tenancy, paid-work, and broad UI cleanup in one patch.
-
-### 5.2 Must be refactored for clean industrial-level code
-
-Apply this maintainability work incrementally after or alongside pilot hardening when it overlaps the same files:
-
-1. **Thin high-risk routes.** Extract multi-step authorization, transactions, raw SQL, provider calls, prompt construction, and domain workflows into feature application services. Simple reads do not need ceremonial services.
-2. **One principal and policy layer.** Remove duplicate active-team database resolution and route-specific teacher ownership derivations.
-3. **One runtime contract per endpoint.** Co-locate Zod request/response schemas with feature clients and infer TypeScript types from them.
-4. **Consistent route adapters.** Standardize principal resolution, params/query/body parsing, error mapping, request IDs, and telemetry. Migrate routes when touched instead of wrapping all 98 at once.
-5. **Feature-owned client networking.** Move ad hoc fetch/state orchestration out of large visual components while preserving specialized streaming, upload-progress, and tolerant-error paths.
-6. **Responsibility-based file splits.** Split the confirmed hotspots in P2-4 by state machine or domain responsibility, never by a line-count quota.
-7. **Durable consequential events.** Add an outbox for activity/notification events whose absence changes teacher-visible or progression-relevant state. Keep explicitly non-critical telemetry best-effort.
-8. **LLM usage accounting.** Record operation, prompt version, model, token usage, result, and tenant-safe correlation. Generalize jobs only where durability or asynchronous execution is needed.
-9. **Provider policy.** Centralize timeout, response-size, retryability, and normalized errors without forcing browser fetches through a server-only abstraction.
-10. **Lifecycle correctness.** Implement tested export, deletion, and storage reconciliation rather than stopping at an inventory document.
-11. **Dependency direction.** UI depends on feature contracts; routes depend on application services; feature code depends on platform code, not another feature's components or routes.
-12. **Architectural checks.** Add import-boundary, generated-content, text-integrity, contract, and policy tests where they prevent a demonstrated regression.
-13. **Explicit communication semantics.** Classify each provider/workflow as synchronous, streaming, durable job, or outbox. Prohibit internal HTTP calls between feature modules and provider calls hidden inside GET reads.
-
-### 5.3 Explicitly deferred or optional
-
-Do not spend the 3–4 day hardening window on these unless another required change makes them nearly free:
-
-- moving the entire application under `apps/web/src/features/**`;
+- moving the application under `apps/web/src/features/**`;
 - rewriting all 98 API routes;
-- creating repository interfaces for every Prisma model;
+- repository interfaces for every Prisma model;
 - migrating every direct client `fetch` immediately;
 - replacing Zustand or local React state wholesale;
 - adopting TanStack Query globally;
@@ -508,224 +437,142 @@ Do not spend the 3–4 day hardening window on these unless another required cha
 - deleting `packages/shared-types`;
 - untracking generated Codex modules;
 - relocating `.claude`, art, or pipeline history;
-- adding microservices, a message broker, or a second database;
-- building an all-purpose job framework before concrete workflows require it.
+- microservices, a message broker, or a second database;
+- an all-purpose job framework before concrete workflows require it.
+
+---
 
 ## 6. File-by-file disposition
-
-This section answers “what files should be deleted, merged, created, or edited?” Paths are exact current paths unless marked as a new target directory.
 
 ### 6.1 Delete — cleanup phase only
 
 Delete only after the corresponding migration is complete and references are proven absent:
 
-| File                                                          | Action and precondition                                                                                                                                                                                   |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web/lib/team/context.ts`                                | Delete after its database resolution is merged into the new platform principal resolver and all server-component imports move. Keep `active-team.ts` as a pure helper or move it with the resolver tests. |
-| `apps/web/components/literature/api.ts`                       | Delete after its schemas/client are moved to `src/features/literature/contracts` and `ui/client.ts`.                                                                                                      |
-| `apps/web/components/literature/types.ts`                     | Delete after types are inferred from canonical schemas/domain types.                                                                                                                                      |
-| `apps/web/components/literature/synthesisApi.ts`              | Delete after merge into the literature feature client.                                                                                                                                                    |
-| `apps/web/components/literature/vocab-api.ts`                 | Delete after merge into the literature feature client.                                                                                                                                                    |
-| `apps/web/components/ops/data-terminal/api.ts` and `types.ts` | Delete after merge into the research/experiments feature contracts and client.                                                                                                                            |
-| `apps/web/components/ops/failure-log/api.ts` and `types.ts`   | Delete after merge into the research/log feature contracts and client.                                                                                                                                    |
-| `apps/web/components/ops/project-log/api.ts` and `types.ts`   | Delete after merge into the research/log feature contracts and client.                                                                                                                                    |
-| `apps/web/lib/discovery/treeApi.ts`                           | Delete after its client functions move beside Discovery contracts/UI. It is browser API code despite living under general `lib`.                                                                          |
-| `apps/web/components/teacher/student-detail/types.ts`         | Delete after teacher response types are inferred from teacher contracts.                                                                                                                                  |
-| Generated `apps/web/lib/ops/codex/tracks/*.ts` and `index.ts` | Delete from version control only if the build reliably generates them before typecheck/build and deploy artifacts include them. Otherwise retain as explicitly generated files.                           |
-| `packages/shared-types`                                       | Delete only if repository import analysis after the migration proves the web app is its only consumer. Move enums into `apps/web/src/shared/contracts`; otherwise retain it.                              |
+| File | Action and precondition |
+| --- | --- |
+| `apps/web/components/literature/api.ts` | After schemas/client move to a literature feature contracts + client module. |
+| `apps/web/components/literature/types.ts` | After types are inferred from canonical schemas. |
+| `apps/web/components/literature/synthesisApi.ts` | After merge into the literature feature client. |
+| `apps/web/components/literature/vocab-api.ts` | After merge into the literature feature client. |
+| `apps/web/components/ops/data-terminal/{api,types}.ts` | After merge into the research/experiments contracts + client. |
+| `apps/web/components/ops/failure-log/{api,types}.ts` | After merge into the research/log contracts + client. |
+| `apps/web/components/ops/project-log/{api,types}.ts` | After merge into the research/log contracts + client. |
+| `apps/web/lib/discovery/treeApi.ts` | After its client functions move beside Discovery contracts/UI — it is browser API code despite living under `lib`. |
+| `apps/web/components/teacher/student-detail/types.ts` | After teacher response types are inferred from teacher contracts. |
+| Generated `apps/web/lib/ops/codex/tracks/*.ts` and `index.ts` | Only if the build reliably generates them before typecheck/build and deploy artifacts include them. Otherwise retain as explicitly generated. |
+| `packages/shared-types` | Only if import analysis proves the web app is its sole consumer. Note `src/pvp.ts` currently has **zero consumers** — PvP shipped without adopting it; decide whether to reconcile or delete it. |
 
-No existing runtime file is recommended for immediate deletion solely because it is large or currently duplicated.
+No runtime file is recommended for deletion solely because it is large or duplicated.
 
 ### 6.2 Merge/consolidate incrementally
 
-| Current files                                                                | Target                                                                                                                |
-| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `lib/api/route-context.ts`, `lib/team/context.ts`, `lib/team/active-team.ts` | `src/platform/auth/student-principal.ts` plus a pure `active-team.ts` and tests                                       |
-| `lib/teacher/auth.ts`, `lib/teacher/role.ts`                                 | `src/platform/auth/teacher-principal.ts` and `src/features/classroom/application/policies.ts`                         |
-| `lib/api/with-route.ts`, `lib/validation.ts`, HTTP error mapping             | `src/platform/web/route.ts` with policy-specific wrappers and Zod param/query/body support                            |
-| Feature `api.ts`/`types.ts` pairs                                            | One feature-owned contracts module and one UI client module                                                           |
-| `lib/anthropic.ts` plus prompt-call conventions scattered across routes/libs | `src/platform/llm/gateway.ts`, usage ledger, prompt/version registry, and test fake                                   |
-| Provider fetch/retry/timeout fragments                                       | `src/platform/web/fetch-with-policy.ts` used by provider adapters                                                     |
-| `logActivity(...).catch(...)` call patterns                                  | transactional outbox/event recorder for durable events; explicit best-effort telemetry helper for non-durable metrics |
+| Current files | Target |
+| --- | --- |
+| `lib/teacher/auth.ts`, `lib/teacher/role.ts` | one teacher-principal module + a classroom policy module |
+| `lib/api/with-route.ts`, `lib/validation.ts`, HTTP error mapping | one platform route module with policy-specific wrappers and Zod params/query/body |
+| Feature `api.ts`/`types.ts` pairs | one feature-owned contracts module and one UI client module |
+| `lib/anthropic.ts` plus prompt-call conventions scattered across routes/libs | an LLM gateway with a usage ledger, prompt/version registry, and test fake |
+| Provider fetch/retry/timeout fragments | one `fetch-with-policy` used by every provider adapter |
+| `logActivity(...).catch(...)` patterns | a transactional outbox for durable events; an explicit best-effort helper for telemetry |
 
 ### 6.3 Create when the corresponding slice is implemented
 
-The `src/platform/**` paths below are suggested industrial destinations, not pilot prerequisites. Equivalent cohesive modules under the existing `lib/**` structure are acceptable and lower-risk during the first pass. Only the text-integrity script, tenancy decision/migration, targeted tests, and minimum logging/runbooks belong to the mandatory pilot scope.
+Suggested destinations, not prerequisites. Equivalent cohesive modules under the existing
+`lib/**` structure are acceptable and lower-risk.
 
-- `apps/web/src/platform/auth/principal.ts` — discriminated student/teacher/admin/system principals.
-- `apps/web/src/platform/auth/student-principal.ts` — one membership-backed active-team query.
-- `apps/web/src/platform/auth/teacher-principal.ts` — DB-authoritative role and owned-class scope.
-- `apps/web/src/platform/web/route.ts` — request ID, policy, strict Zod params/query/body, standard errors, telemetry.
-- `apps/web/src/platform/web/fetch-with-policy.ts` — bounded external requests and normalized provider errors.
-- `apps/web/src/platform/observability/logger.ts` — structured, redacted logs.
-- `apps/web/src/platform/observability/metrics.ts` — route/provider/job/LLM measurements.
-- `apps/web/src/platform/jobs/types.ts`, `repository.ts`, `worker.ts` — bounded atomic claim/retry contract.
-- `apps/web/src/platform/events/outbox.ts` — industrial follow-up for consequential internal events that must eventually be delivered.
-- `apps/web/src/platform/llm/gateway.ts` — model policy, prompt version, token/cost recording, timeouts.
-- `apps/web/src/platform/test/route-harness.ts` — principal, limiter, repository, and provider fakes.
-- `apps/web/scripts/check-text-integrity.mjs` — reject NUL bytes and other forbidden binary content in authored text paths.
-- `apps/web/prisma/migrations/<timestamp>_authoritative_team_class/` — backfill/check/enforce the chosen team-class invariant.
-- `apps/web/prisma/migrations/<timestamp>_jobs_outbox_ai_usage/` — industrial follow-up for workflows proven to need generalized jobs/outbox/invocation records; not a blanket pilot gate.
-- `docs/architecture/adr-004-authoritative-team-class.md` — supersede contradictory prose explicitly.
+- a principal module — discriminated student/teacher/admin/system principals;
+- a platform route module — request ID, policy, strict Zod parsing, standard errors, telemetry;
+- `fetch-with-policy` — bounded external requests and normalized provider errors;
+- observability metrics — route/provider/job/LLM measurements;
+- jobs `types.ts` / `repository.ts` / `worker.ts` — bounded atomic claim/retry contract;
+- `events/outbox.ts` — consequential internal events that must eventually be delivered;
+- `llm/gateway.ts` — model policy, prompt version, token/cost recording, timeouts;
+- `test/route-harness.ts` — principal, limiter, repository, and provider fakes (see P1-1);
+- a jobs/outbox/AI-usage migration — only for workflows proven to need it;
 - `docs/architecture/adr-005-jobs-outbox-and-ai-usage.md`.
-- `docs/runbooks/incident-response.md`, `restore.md`, `data-export-delete.md`, `llm-cost.md`.
 
-After pilot-critical work, create vertical folders only as complete domains are actively migrated. Recommended order: classroom/tenancy, team/economy, literature, research/logs, discovery, curriculum, fair/showcase.
+After each slice, create vertical folders only as complete domains are actively migrated.
+Recommended order: team/economy, literature, research/logs, discovery, curriculum,
+fair/showcase.
 
-### 6.4 Edit in the pilot-critical pass
+### 6.4 Edit when touched
 
-- `apps/web/app/api/ops/codex/study-plan/route.ts`: remove NUL bytes and add cap/reservation concurrency tests during pilot hardening; move the workflow into a Codex service later unless it must change for another pilot item.
-- `apps/web/lib/teacher/auth.ts`: implement the confirmed product policy once. Under the recommended single-class model, stop member-overlap authorization and query `Team.classId in ctx.classIds`.
-- `apps/web/lib/teacher/analytics.ts`: remove whichever ownership assumption the product rejects; derive report scope from the same policy as authorization.
-- `apps/web/app/api/team/join/route.ts`: enforce the confirmed class compatibility rule inside the same locked transaction; never swallow `applySchoolAndClass` errors silently.
-- `apps/web/app/api/teacher/roster/route.ts`, `reports/route.ts`, `rubric/route.ts`, `feedback/route.ts`, `nudge/route.ts`, `showcase-moderation/route.ts`, and `student/**`: use the same classroom policy service.
-- `docs/architecture/adr-001-team-class-ownership.md`: either reaffirm it through code or mark it superseded; do not leave it contradicted.
-- `docs/ARCHITECTURE.md`: update its teacher-boundary description after migration and stop listing refactor intentions as realized architecture.
-- `AGENTS.md`: add the text-integrity check to gates after it exists; add the chosen team/class invariant in house rules.
-- `.github/workflows/*`: run text integrity, contract/schema tests, route policy tests, and generated-content checks.
-- `apps/web/lib/rate-limit.ts`: preserve paid-tier fail-closed behavior; add structured metrics and distinguish limiter-store failure from allowed requests.
-- `apps/web/lib/notifications/email.ts` and `app/api/discovery/youtube/resolve/route.ts`: add explicit timeouts and normalized provider errors.
-- `apps/web/app/api/papers/route.ts`, `apps/web/app/api/papers/[id]/route.ts`, and `apps/web/app/api/cron/papers/route.ts`: converge on upload-command/create-job, pure status-read, and bounded worker responsibilities; no paid processing on GET.
-- `apps/web/app/api/data-terminal/route.ts` and `[id]/measurements/route.ts`: add cursor/limit contracts and avoid returning the entire measurement history after every mutation.
-- `apps/web/components/settings/LabProfileSettings.tsx`, `components/ops/ExpertisePanel.tsx`, `components/fair/ScienceFairFeature.tsx`, `components/teacher/TeacherRoster.tsx`, `stores/discoveryStore.ts`, and `lib/discovery/openalex.ts`: split as described in P2-4 only when changing that feature; these splits are industrial-quality work, not pilot gates by themselves.
+- `app/api/teacher/student/[id]/overview/route.ts`, `app/api/ops/codex/{complete,study-plan}/route.ts`,
+  `app/api/research-plan/{review,idea-check}/route.ts`, `app/api/project-log/route.ts`:
+  extract the workflow into a feature service (§3.2 E), following `lib/papers/service.ts`.
+- `app/api/data-terminal/[id]/measurements/route.ts`: stop returning the full measurement
+  history after every mutation.
+- `lib/teacher/auth.ts`: add a bound to the class lookup.
+- `lib/rate-limit.ts`: add structured metrics; distinguish limiter-store failure from allowed
+  requests.
+- `components/settings/LabProfileSettings.tsx`, `components/ops/ExpertisePanel.tsx`,
+  `components/fair/ScienceFairFeature.tsx`, `components/teacher/TeacherRoster.tsx`,
+  `stores/discoveryStore.ts`, `lib/discovery/openalex.ts`: split per P2-4 **only when
+  changing that feature**.
+- `docs/ARCHITECTURE.md`: keep it describing what is implemented, never intentions.
 
 ### 6.5 Keep as-is or preserve conceptually
 
-- `apps/web/lib/buildings/service.ts` and its tests: use as the model for application services.
-- `apps/web/lib/api/client.ts`: preserve its central request/response behavior, then move/extend it under platform web code.
-- `apps/web/lib/uploads/assets.ts`: preserve database-owned asset lifecycle; integrate with jobs/outbox cleanup.
-- `apps/web/lib/rate-limit.ts`: preserve the store abstraction and production paid-tier guard.
-- `apps/web/lib/team/active-team.ts`: preserve the pure selector and tests, though its location may change.
-- `apps/web/prisma/schema.prisma`: retain one schema until a verified Prisma multi-file migration is deliberately adopted.
-- `apps/web/e2e/`: retain critical flows; reduce static source-code assertions and move those to unit/tooling tests.
-- `art/`, `art_ref/`, and generated sprite assets: preserve the deterministic art pipeline and its boundary from runtime code.
-- `packages/config/`: retain.
+- `lib/buildings/service.ts`, `lib/papers/service.ts`, `lib/literature/quiz-retry.ts` — the
+  application-service models.
+- `lib/api/client.ts` — preserve its central request/response behavior.
+- `lib/uploads/assets.ts` — preserve the database-owned asset lifecycle; integrate with
+  jobs/outbox cleanup.
+- `lib/rate-limit.ts` — preserve the store abstraction and paid-tier fail-closed guard.
+- `lib/team/{context,active-team}.ts` — the single membership resolver and its pure selector.
+- `apps/web/prisma/schema.prisma` — one schema until a verified multi-file migration is
+  deliberately adopted.
+- `apps/web/e2e/` — retain critical flows; keep static source assertions in unit tests.
+- `art/`, `art_ref/`, generated sprite assets, `packages/config/` — retain.
 
-## 7. Safe 3–4 day implementation sequence
+---
 
-Three to four days is enough for a disciplined pilot-hardening pass, not the complete industrial destination. Each day should end in a reviewable, revertible state. If the existing working tree is still carrying unrelated feature work, stabilize or isolate it before beginning this sequence.
+## 7. Definition of done — industrial quality
 
-### Day 1 — Characterize behavior and settle tenancy
-
-1. Capture a baseline: all fast gates, relevant unit tests, and current E2E status.
-2. Remove the NUL bytes and add the text-integrity check.
-3. Write policy characterization tests before changing team/class behavior.
-4. Inspect real/dev fixture data for cross-class teams.
-5. Record the product decision in ADR-001 or a superseding ADR.
-6. Implement one classroom policy seam and migrate team join plus teacher ownership checks without unrelated route cleanup.
-
-**Stop/go gate:** policy tests pass; no unreviewed data would be orphaned or newly exposed; roster, student detail, feedback, rubric, moderation, and join E2E remain behaviorally correct under the chosen rule.
-
-### Day 2 — Paid work and durable processing
-
-1. Inventory every Anthropic call site and record its guard/cap/idempotency/timeout.
-2. Remove paper processing from GET and preserve cron/job polling semantics.
-3. Close the phase-classification paid-tier gap.
-4. Add duplicate-request and paper-claim/retry tests.
-5. Add minimum structured paid-call/job logging without recording prompts or student content.
-
-**Stop/go gate:** no paid call can be reached through an ordinary `read`/`mutate` policy alone; paper upload/status flow and literature E2E pass; retry and terminal states remain recoverable.
-
-### Day 3 — Bounded work, provider failure, and diagnostics
-
-1. Cap/paginate experiments and measurements while preserving the UI contract or versioning it deliberately.
-2. Add timeouts and normalized errors to confirmed provider gaps.
-3. Add request IDs and structured summaries for sensitive routes, providers, cron, uploads, and policy denial.
-4. Write the restore, incident, data-lifecycle, and AI-data-sharing minimum runbooks.
-5. Run the first four pipeline gates and targeted E2E for every changed flow.
-
-**Stop/go gate:** external stalls are bounded; growing reads have explicit limits; a failed request/job is diagnosable without sensitive payloads.
-
-### Day 4 — Integration, regression, and one optional extraction
-
-1. Run the full five-gate pipeline in order, restoring E2E fixtures first when required.
-2. Test wrong-team/wrong-class IDs, double submits, stale tabs, provider failure, and cron resumption.
-3. Review the final diff for accidental API, copy, visual, or data-model changes.
-4. Update architecture docs to describe only what is actually implemented.
-5. If all pilot gates are already green, extract one high-risk route workflow into a service as the template for later industrial work. Do not start a broad folder migration.
-
-**Final pilot gate:** every item in §5.1 is implemented or explicitly accepted as a dated launch risk by the product owner. All five repository gates pass from a clean integration state.
-
-### Behavior-preservation protocol for every slice
-
-1. Add characterization tests for the current contract and database effects.
-2. Extract code without changing responses or schema.
-3. Run fast gates and targeted tests.
-4. Make intentional policy/schema behavior changes in a separate commit-sized patch with migration/backfill checks.
-5. Keep migrations additive and backward-compatible for at least one deployment whenever practical.
-6. Preserve route URLs and UI component interfaces.
-7. Compare before/after normalized outputs for complex queries.
-8. Run full build/E2E only after the slice is otherwise stable.
-9. Do not delete the old seam until all callers and rollback needs are verified.
-
-## 8. Claim-validation register
-
-Every material claim in this report was rechecked against the current tree as follows:
-
-| Claim                                                     | Validation method                                                                                             | Result                                                                                       |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Student active team is membership-backed                  | Read `lib/api/route-context.ts`, `lib/team/context.ts`, and `lib/team/active-team.ts`                         | Confirmed                                                                                    |
-| Existing DB teacher role overrides Clerk claim            | Read `lib/teacher/auth.ts` and `lib/teacher/role.ts`                                                          | Confirmed                                                                                    |
-| Team/class authority is contradictory                     | Compared ADR-001, schema, ownership migration, teacher policy/analytics, team join, and teacher route queries | Confirmed                                                                                    |
-| Study-plan route contains NUL bytes                       | Byte-level inspection (`xxd`) and byte count                                                                  | Confirmed: two bytes in `sourceHashOf` delimiters                                            |
-| Compiler/linter do not catch those bytes                  | Ran shared-types build, web typecheck, and web lint                                                           | All passed                                                                                   |
-| 98 route files                                            | Counted tracked/current `app/api/**/route.ts` paths                                                           | Confirmed                                                                                    |
-| Six routes use `withTeamRoute`                            | Searched imports/usages under `app/api`                                                                       | Confirmed: four building mutations and two synthesis routes                                  |
-| Most routes query Prisma directly                         | Searched `db.` usage under `app/api`; the large majority matched                                              | Confirmed                                                                                    |
-| No route-named tests                                      | Searched test/spec paths for route tests                                                                      | Confirmed; route behavior may still be exercised indirectly by E2E                           |
-| 34 non-E2E tests and 26 E2E specs                         | Counted current paths                                                                                         | Confirmed                                                                                    |
-| Paid tiers fail closed without shared store in production | Read `lib/rate-limit.ts::paidTierMisconfigured`                                                               | Confirmed, unless `RATE_LIMIT_ALLOW_MEMORY=1` is explicitly set                              |
-| All Anthropic work uses a paid tier                       | Traced helper call sites back to route guards                                                                 | Refuted: phase classification uses `mutate`; paper detail GET can process a job under `read` |
-| External timeout policy is inconsistent                   | Inspected server-side `fetch` call sites and nearby signals                                                   | Confirmed; examples include Resend and YouTube oEmbed without explicit abort signal          |
-| Data-terminal collections are unbounded                   | Read both data-terminal list/measurement handlers                                                             | Confirmed                                                                                    |
-| Activity writes are commonly fire-and-forget              | Searched `logActivity` call sites and `.catch(...)` patterns                                                  | Confirmed                                                                                    |
-| Contract/client ownership is fragmented                   | Enumerated `api.ts`, `types.ts`, `treeApi.ts`, stores, and direct UI `fetch` call sites                       | Confirmed                                                                                    |
-| Prisma schema is 1,768 lines                              | Counted current file                                                                                          | Confirmed; no claim is made that size alone is defective                                     |
-| Existing working tree was dirty during audit              | `git status --short` before writing this file                                                                 | Confirmed; this audit did not modify those files                                             |
-
-### Validation limitations
-
-- This was a static architecture/security audit plus the first three repository gates. It did not run the production build, database-backed E2E suite, penetration testing, query plans against production-scale data, or live provider failure injection.
-- Uncommitted feature work may change before implementation begins. Re-run the validation register when converting findings to tickets.
-- “No route tests” means no dedicated route-test files were found; E2E specs do exercise routes.
-- An unbounded query is a scalability risk, not proof of current classroom latency.
-- The cross-class behavior is confirmed code, but whether it is a product requirement requires an explicit product/privacy decision. This report recommends the stricter model because it matches the recorded ADR and minimizes implicit access.
-
-## 9. Definitions of done
-
-### 9.1 Pilot-ready
-
-The pilot-critical refactor is complete when:
-
-- the team/class authorization rule is explicit, consistently implemented, data-audited, and policy-tested;
-- every paid call has authentication, global production limiting, input/cost bounds, appropriate idempotency, and diagnosable failure;
-- paper processing remains durable and no GET performs paid processing;
-- confirmed growing collections and cron/provider work are bounded;
-- high-risk wrong-tenant and concurrency cases have targeted tests;
-- minimum request/job/provider diagnostics exist without sensitive content;
-- restore, incident, data lifecycle, storage cleanup, and AI-sharing procedures are documented;
-- paid/slow paper processing follows create-job/status-read/worker semantics, and no GET hides a mutation or paid provider call;
-- all five repository gates pass after integration.
-
-Broad route thinning, UI decomposition, directory migration, and generalized jobs are not pilot-readiness requirements unless a pilot-critical change makes them necessary.
-
-### 9.2 Industrial-quality destination
-
-The refactor is complete only when:
+The refactor is complete when:
 
 - one documented query proves every student and teacher access decision;
-- every complex route maps to one feature use case, and route-policy coverage is proportional to its authorization and mutation risk;
+- every complex route maps to one feature use case, with route-policy coverage proportional
+  to its authorization and mutation risk;
 - all growing lists and jobs are bounded;
-- every paid call is globally rate-limited and usage-accounted, with idempotency appropriate to the operation;
+- every paid call is globally rate-limited and usage-accounted, with appropriate idempotency;
 - every long-running non-streaming workflow has durable state;
 - external calls have explicit timeout/error/retry policies;
-- consequential user-visible events are transactional or delivered through an outbox, while explicitly non-critical telemetry remains best-effort;
+- consequential user-visible events are transactional or delivered through an outbox, while
+  explicitly non-critical telemetry remains best-effort;
 - logs are structured, correlated, redacted, and sufficient for incident/cost diagnosis;
-- student data export/deletion and storage reconciliation are documented and tested;
+- student data export/deletion and storage reconciliation are documented **and tested**;
 - feature contracts have one runtime-validated source;
-- each consequential workflow has an explicit synchronous, streaming, durable-job, or outbox communication contract;
-- internal feature modules communicate through application services or durable events, never internal HTTP callbacks;
-- obsolete files in §6.1 are actually deleted only after import and behavior verification;
-- all five repository gates pass in order, with E2E data isolated enough to avoid shared-account mutation races.
+- each consequential workflow has an explicit communication contract;
+- internal feature modules communicate through application services or durable events, never
+  internal HTTP callbacks;
+- the §6.1 files are deleted only after import and behavior verification.
 
-The architecture should be judged by invariants and failure behavior, not by whether every file is small. A cohesive 400-line pure domain table is healthier than five 80-line files that share hidden state. The goal is one owner per rule, one policy per boundary, and one durable record per consequential action.
+Judge the architecture by invariants and failure behavior, not by whether every file is small.
+A cohesive 400-line pure domain table is healthier than five 80-line files sharing hidden
+state. The goal is **one owner per rule, one policy per boundary, one durable record per
+consequential action**.
+
+---
+
+## Appendix — what was pruned on 2026-07-19
+
+Removed because the work shipped. Kept here as a pointer so the history is findable.
+
+| Original finding | Where it landed |
+| --- | --- |
+| **P0-1** Contradictory classroom boundary | `docs/architecture/adr-004-per-student-class-membership.md` supersedes ADR-001; schema comments, `lib/teacher/auth.ts`, ARCHITECTURE.md aligned; `test/teacher-scope.test.ts` pins it. **The audit's single-class recommendation was rejected by the product.** |
+| **P0-2** Embedded NUL bytes | Bytes removed; `apps/web/scripts/check-text-integrity.mjs` is gate 2 in `package.json`, CI, `CLAUDE.md`, and `AGENTS.md`. |
+| **P1-3** Paid-work classification | `advance-phase` enforces the `ai` tier before `classifyLabType`; paper detail GET no longer processes; `test/paid-work-guard.test.ts` is a transitive-closure sweep that fails CI on the whole class. |
+| **P2-5** Generated curriculum, one source | `lib/ops/codex/__tests__/generated-content.test.ts` validates JSON against the schema, deep-equals the wrapper, and locks a checksum. |
+| **§3.2 A** Team/class authorization overlap | Same as P0-1. |
+| **§3.2 C** Duplicated team-context resolution | `lib/team/context.ts` is the sole DB resolver; `lib/api/route-context.ts` delegates to it. |
+| **§5.1 PILOT-1 … PILOT-7** | Track A shipped across v0.26.0 (pilot hardening, runbooks, observability, bounded reads) and v0.28.0–v0.29.1 (security sweep, test tripwires, prod-build E2E). |
+| **§7** 3-4 day implementation sequence | Executed; it was a plan, not a standing reference. |
+| **§8** Claim-validation register | A snapshot of a tree that no longer exists — 8 of its 20 rows had become false. |
+| **§9.1** Pilot-ready definition of done | All criteria met; see the runbooks in `docs/runbooks/` and the CHANGELOG entries above. |
+
+Also corrected rather than deleted: the route-test premise (P1-1), god-file line counts
+(P2-4), schema size (P2-6), and the §6.4 instruction to authorize teachers via
+`Team.classId` — which had become the **opposite** of accepted policy and would have been a
+security regression if followed.

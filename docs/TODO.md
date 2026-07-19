@@ -65,7 +65,8 @@ Tracked items intentionally deferred during development. Remove an entry once do
   Upstash Redis, and Cloudflare R2. No Vercel project is linked yet (no `.vercel/`),
   and prod should use its **own** Supabase project — not the dev DB. The production
   domain **`scienium.app`** is registered (Cloudflare DNS).
-- **To go live (see SETUP.md §8 + the SECURITY.md §5 "Domain, email & branding" block):**
+- **To go live (see SETUP.md §8 + [`SECURITY.md`](SECURITY.md) §1.1 launch blockers and
+  §6.2 "Email, domain, DNS"):**
   - **Supabase** — create a **separate production project**; set `DATABASE_URL`
     (pooled) + `DIRECT_URL` (direct, for `prisma migrate deploy`).
   - **Vercel** — import the GitHub repo (`blackyeti3405/scienium`), set root to
@@ -78,7 +79,8 @@ Tracked items intentionally deferred during development. Remove an entry once do
 
 ## Branding — nova-lab → scienium (leftover from the original project name)
 - The repo/source is already "scienium" (no `nova-lab` anywhere in code). The leftover
-  "nova-lab" lives **only in external accounts**, tracked as a checklist in SECURITY.md §5:
+  "nova-lab" lives **only in external accounts**, tracked as a checklist in
+  [`SECURITY.md`](SECURITY.md) §6.2:
   - **Clerk** application is named "Nova-lab" → shows "as Nova-lab" in auth emails. Rename
     it in the Clerk dashboard (Configure → Settings; also check Customization → Branding).
   - **R2 bucket** is named `nova-lab-assets` — internal/invisible to users, so renaming is

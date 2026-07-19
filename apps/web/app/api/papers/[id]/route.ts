@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { logActivity } from '@/lib/activity/log'
+import { orphanObjectKey } from '@/lib/uploads/assets'
 import { db } from '@/lib/db'
 
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
@@ -42,7 +43,7 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
 
   const paper = await db.paper.findFirst({
     where: { id: params.id, teamId: ctx.teamId },
-    select: { id: true, title: true },
+    select: { id: true, title: true, pdfKey: true },
   })
   if (!paper) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -57,6 +58,21 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
     db.paperExplanation.deleteMany({ where: { paperId: paper.id } }),
     db.paper.delete({ where: { id: paper.id } }),
   ])
+
+  // Retire the stored PDF through the ledger, NOT with a direct deleteObject:
+  // the reclaim sweep is the single physical-delete site. Without this the
+  // `attached` UploadedAsset row outlives its paper, so the bytes stay charged
+  // against the team's storage quota forever and the object is never reclaimed —
+  // an ordinary student hits that just by tidying their library.
+  if (paper.pdfKey) {
+    await orphanObjectKey({
+      teamId: ctx.teamId,
+      userId: ctx.dbUserId,
+      objectKey: paper.pdfKey,
+      contentType: 'application/pdf',
+      purpose: 'paper_pdf',
+    })
+  }
 
   logActivity(ctx.teamId, ctx.dbUserId, 'paper_delete', { title: paper.title }).catch(console.error)
 

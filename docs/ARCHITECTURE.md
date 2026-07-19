@@ -1011,7 +1011,8 @@ The migration chain is append-only:
 
 The `2026070913xxxx`–`2026070918xxxx` migrations correspond to the earlier
 refactor Phases 3–8 (changelog `0.21.2`–`0.21.7`). The
-`docs/REFACTOR.md` hardening pass (changelog `0.23.2`–`0.23.8`) added the three
+`0.23.2`–`0.23.8` hardening pass (planned in the since-removed `docs/REFACTOR.md`;
+see the changelog entries for what shipped) added the three
 migrations before the class-join-requests entry above; its per-student
 class-membership change (`0.23.8`) reworked authorization in code and left
 `Team.classId` vestigial without a migration. The four `20260714*` migrations
@@ -1193,7 +1194,10 @@ content ownership boundaries are all listed above.
 - `Team.classId` is vestigial after the per-student membership change (`0.23.8`)
   — retained to avoid a destructive migration; a later cleanup could drop it.
 - `SVC-1` (extracting the duplicated quiz/exam currency-minting into a service) is
-  the one `docs/REFACTOR.md` item deliberately deferred until after the concurrent
-  PvP window, since it churns hot routes.
+  the one item from the `0.23.x` hardening pass never completed. Its original
+  deferral — until after the concurrent PvP window, since it churns hot routes —
+  has expired now that PvP has shipped. It is tracked in
+  [`REFACTOR2.MD`](../REFACTOR2.MD) §4 "SVC-1", with all three current
+  duplication sites listed.
 - Broader privacy, monitoring, CSP, backup, and incident-response work is tracked
   in `SECURITY.md` for the classroom pilot.

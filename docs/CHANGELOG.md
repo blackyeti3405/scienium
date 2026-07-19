@@ -5,7 +5,64 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
-## [0.29.1] — 2026-07-19
+## [0.29.2] — 2026-07-19
+
+Documentation consolidation, verified against the code rather than against the documents'
+own status markers — which had gone stale in both directions. Three independent audits
+(one per document) drove the pruning; one fixed a real bug they surfaced.
+
+### Removed
+- **`docs/REFACTOR.md`** — every item verified shipped. Its one genuinely open item, **SVC-1**
+  (reward-minting duplicated across three grade paths), moved to `REFACTOR2.MD` §4 with all
+  three current duplication sites listed and its now-expired PvP deferral noted. The six
+  CHANGELOG links to it were converted to plain text so no dead links remain, and
+  `docs/ARCHITECTURE.md`'s two references were rewritten.
+- **`SECURITY2.MD`** — merged into `docs/SECURITY.md` (below).
+
+### Changed — `REFACTOR2.MD` pruned 731 → 578 lines
+- Deleted everything shipped: P0-1 (tenancy), P0-2 (NUL bytes), P1-3 (paid-work), P2-5
+  (generated curriculum), §3.2 A and C, all of §5.1 (PILOT-1…7), §7 (an executed plan), §8
+  (a claim register whose tree no longer exists), and §9.1.
+- **Corrected guidance that had become actively dangerous.** The executive verdict recommended
+  "a team belongs to exactly one class" and §6.4 instructed authorizing teachers via
+  `Team.classId` — both the *opposite* of accepted policy since ADR-004, and a security
+  regression if followed. Replaced with an explicit "tenancy is settled, do not re-open it"
+  block linking the ADR.
+- Corrected stale facts: the "no route-level tests" premise (four route tests now exist),
+  god-file line counts, schema size, and the §3.2 E extraction list (paper upload and quiz
+  retry are now thin adapters).
+- Track A is marked complete; the document is now explicitly Track B/C only.
+
+### Changed — `docs/SECURITY.md` is now one document (1372 + 535 → 583 lines)
+Restructured around what a reader actually needs: launch blockers (non-code first, since
+they outnumber and outlast the code items), a severity-tagged register of **open** threats
+only, implementation recipes kept as normative guidance for new code, a test-tripwire map,
+and the non-code legal/ops track. Preserved from each source: cron protection, email/DNS,
+Google OAuth, the route-audit checklist, credential inventory and sign-off table (from the
+old SECURITY.md); the severity vocabulary, identity/enrollment/SSRF/cost/environment threats
+and the chained-attack narrative (from SECURITY2.MD).
+- Two stale cross-references fixed: `SETUP.md` and `TODO.md` both pointed at "SECURITY.md §4"
+  and "§5", section numbers the old document never had.
+- The register now states plainly what is **not** pinned by any test — runtime cross-team
+  IDOR (the guard sweep is a regex over source text), markdown render policy, CSV
+  neutralization, SSRF, cache behavior — so a green suite is not mistaken for coverage.
+
+### Fixed — paper deletion leaked its object and its storage quota
+`DELETE /api/papers/[id]` removed the paper row and its dependents but never touched R2 or
+the asset ledger. The `attached` `UploadedAsset` row outlived its paper, so those bytes stayed
+charged against the team's 2 GB quota **permanently** and the object was never reclaimed — a
+regression introduced alongside the v0.28.0 quota itself, reachable by an ordinary student
+just tidying their library. Now records intent via `orphanObjectKey` so the reclaim sweep
+retires the object; `test/paper-delete-asset.test.ts` (4 tests) pins it, mutation-verified.
+
+### Notes — new findings recorded, not yet fixed
+The security audit surfaced issues neither document knew about. The highest-value ones are
+now §3 entries with a remediation order in §9: **CSV formula injection** in the data-terminal
+export (confirmed live), **no production assertion** against `E2E_SKIP_LLM` (which disables
+*all* rate limiting and is prevented only by a comment), an unfenced **markdown render policy**
+for AI output, a missing **page-bomb cap** on the only anonymous-facing PDF path, and the
+**Firecrawl call with no timeout**.
+
 
 The deferred test slices from 0.29.0, plus an adversarial verification pass over every
 test written in the 0.28.x-0.29.x sweep — mutation testing, semantic review, and E2E-spec
@@ -663,7 +720,7 @@ regenerate a code to revoke a leaked one.
 
 ## [0.23.6] — 2026-07-14
 
-Refactor Phase 4 (of [docs/REFACTOR.md](REFACTOR.md)): the performance and cleanup long
+Refactor Phase 4 (of `docs/REFACTOR.md`, since removed — fully shipped): the performance and cleanup long
 tail. This completes the plan — all five phases (0.23.2–0.23.6) are now landed.
 
 ### Changed
@@ -709,7 +766,7 @@ tail. This completes the plan — all five phases (0.23.2–0.23.6) are now land
 
 ## [0.23.5] — 2026-07-14
 
-Refactor Phase 3 (of [docs/REFACTOR.md](REFACTOR.md)): the structural pass — god-files
+Refactor Phase 3 (of `docs/REFACTOR.md`, since removed — fully shipped): the structural pass — god-files
 split into feature folders + hooks, orchestration moved into service modules, and bulk
 authored data moved out of TypeScript. All pure refactors: rendered markup, testids, and
 network semantics preserved. (SVC-1, the quiz-currency extraction, is deliberately
@@ -755,7 +812,7 @@ deferred until after the concurrent PvP window, per the plan's own sequencing.)
 
 ## [0.23.4] — 2026-07-13
 
-Refactor Phase 2 (of [docs/REFACTOR.md](REFACTOR.md)): code-level security hardening.
+Refactor Phase 2 (of `docs/REFACTOR.md`, since removed — fully shipped): code-level security hardening.
 An adversarial sweep confirmed no live IDOR, no authority accepted from request bodies,
 every XSS sink sanitized, and every KP/score-affecting AI output server-clamped — the
 items below close the remaining gaps and standardize the patterns.
@@ -798,7 +855,7 @@ items below close the remaining gaps and standardize the patterns.
 
 ## [0.23.3] — 2026-07-13
 
-Refactor Phase 1 (of [docs/REFACTOR.md](REFACTOR.md)): the pilot blockers — core-loop
+Refactor Phase 1 (of `docs/REFACTOR.md`, since removed — fully shipped): the pilot blockers — core-loop
 stalls, currency races, the LLM cost ceiling, and unrecoverable UI dead-ends.
 
 ### Fixed
@@ -836,7 +893,7 @@ stalls, currency races, the LLM cost ceiling, and unrecoverable UI dead-ends.
 
 ## [0.23.2] — 2026-07-13
 
-Refactor Phase 0 (of [docs/REFACTOR.md](REFACTOR.md)): the foundational seams the
+Refactor Phase 0 (of `docs/REFACTOR.md`, since removed — fully shipped): the foundational seams the
 concurrent PvP/landing branches build on. All additive — no existing signatures changed.
 
 ### Added
@@ -861,6 +918,7 @@ concurrent PvP/landing branches build on. All additive — no existing signature
   `lib/hooks/useAutoDismiss.ts` (leak-free timed dismissal) — replacing the hand-rolled
   copies as features are split.
 - `docs/REFACTOR.md` — the consolidated refactor & hardening plan this phase executes.
+  (Removed 2026-07-19 once every item had shipped; its one open item, SVC-1, moved to `REFACTOR2.MD`.)
 
 ### Changed
 - `lib/fairs/forms.ts` split (FND-2): the ISEF catalog/guides stay client-safe; the DB
