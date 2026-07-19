@@ -135,10 +135,43 @@ export function toCsv(experiment: {
   return rows.join('\r\n') + '\r\n'
 }
 
-/** Wrap a field in double quotes if it contains comma, quote, or newline. */
+/**
+ * Characters that make Excel/Sheets/LibreOffice treat a cell as a FORMULA rather
+ * than text. A student's series/note text lands in a file a teacher opens, so
+ * `=cmd|'/c calc'!A1` or `=HYPERLINK("http://evil","click")` would execute (or
+ * phish) on open. Prefixing with a single quote forces text interpretation; the
+ * quote is not displayed by the spreadsheet.
+ *
+ * `\t` and `\r` are included because a leading tab/CR can slip past a naive
+ * check and still be parsed as the start of a formula by some importers.
+ */
+const FORMULA_TRIGGERS = ['=', '+', '-', '@', '\t', '\r']
+
+/**
+ * True when the whole value is a well-formed number (`-5`, `+2.5`, `1e3`).
+ *
+ * Such values must NOT be prefixed: a spreadsheet reads them as numbers, not
+ * formulas, and quoting them would turn a measurement into text — silently
+ * corrupting the teacher's copy of the data. Only a trigger character followed
+ * by something that is not purely numeric (`-5 degrees`, `=cmd|…`, `+1+1`) is
+ * dangerous.
+ */
+function isPlainNumber(value: string): boolean {
+  return value.trim() !== '' && Number.isFinite(Number(value))
+}
+
+/**
+ * Wrap a field in double quotes if it contains comma, quote, or newline
+ * (RFC-4180), and neutralize spreadsheet formula injection first.
+ *
+ * Order matters: neutralize BEFORE quoting, so the escaping applies to the
+ * value the spreadsheet will actually parse.
+ */
 function csvField(value: string): string {
-  if (value.includes('"') || value.includes(',') || value.includes('\n') || value.includes('\r')) {
-    return '"' + value.replace(/"/g, '""') + '"'
+  const needsPrefix = !isPlainNumber(value) && FORMULA_TRIGGERS.some((c) => value.startsWith(c))
+  const safe = needsPrefix ? `'${value}` : value
+  if (safe.includes('"') || safe.includes(',') || safe.includes('\n') || safe.includes('\r')) {
+    return '"' + safe.replace(/"/g, '""') + '"'
   }
-  return value
+  return safe
 }

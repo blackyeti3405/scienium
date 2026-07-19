@@ -1,8 +1,7 @@
 'use client'
 
 import { CheckCircle2, Send } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { SafeMarkdown } from '@/components/ui/SafeMarkdown'
 import type { Paper } from './types'
 import type { usePaperChat } from './usePaperChat'
 
@@ -50,7 +49,7 @@ export function PaperChat({
                 msg.content
               ) : (
                 <div className="chat-md">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                  <SafeMarkdown>{msg.content}</SafeMarkdown>
                 </div>
               )}
             </div>

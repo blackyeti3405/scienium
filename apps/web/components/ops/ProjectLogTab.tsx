@@ -1,8 +1,7 @@
 'use client'
 
 import { AlertTriangle, BookOpen, ArrowRight, Pencil, Trash2 } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { SafeMarkdown } from '@/components/ui/SafeMarkdown'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { OpsTabSkeleton } from '@/components/ui/skeletons/OpsTabSkeleton'
@@ -140,7 +139,7 @@ export function ProjectLogTab() {
                     </div>
 
                     <div className="ops-md text-sm text-white/80 leading-relaxed">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{e.body}</ReactMarkdown>
+                      <SafeMarkdown>{e.body}</SafeMarkdown>
                     </div>
 
                     {e.attachmentUrls.length > 0 && (

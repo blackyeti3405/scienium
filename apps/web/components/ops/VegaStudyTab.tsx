@@ -2,8 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Send, Brain, AlertTriangle } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { SafeMarkdown } from '@/components/ui/SafeMarkdown'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -123,7 +122,7 @@ export function VegaStudyTab() {
                 msg.content
               ) : (
                 <div className="chat-md">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                  <SafeMarkdown>{msg.content}</SafeMarkdown>
                 </div>
               )}
             </div>

@@ -7,6 +7,27 @@ import { serverEnv } from '@/lib/env'
 
 // Built lazily on first use (never at import) so a missing FIRECRAWL_API_KEY
 // can't fail `next build`; validated by serverEnv when the route actually runs.
+/**
+ * Ceiling on the Firecrawl extract. Generous because the job crawls a whole
+ * site and runs an LLM extraction, but finite: an unbounded await here is a
+ * request that never returns.
+ */
+const FIRECRAWL_TIMEOUT_MS = 60_000
+
+/**
+ * Resolve `promise`, or reject once `ms` elapses. The underlying work is not
+ * cancellable (the Firecrawl SDK exposes no abort signal) — this bounds how
+ * long WE wait, which is what the caller and the platform care about.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Firecrawl extract timed out after ${ms}ms`)), ms).unref?.(),
+    ),
+  ])
+}
+
 let cachedFirecrawl: Firecrawl | undefined
 function firecrawl(): Firecrawl {
   return (cachedFirecrawl ??= new Firecrawl({ apiKey: serverEnv.FIRECRAWL_API_KEY() }))
@@ -101,7 +122,14 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   let extracted: ExtractedDates | null = null
 
   try {
-    const res = await firecrawl().extract({
+    // Bound the call. Firecrawl crawls and LLM-extracts across a whole site, so
+    // it is the slowest external dependency here — and its SDK takes no abort
+    // signal, which left this the ONE unbounded external call in the codebase.
+    // A stalled crawl would otherwise hold the request open until the platform
+    // killed it, with the student watching a spinner. `Promise.race` cannot
+    // cancel the underlying work, but it does return control on time.
+    const res = await withTimeout(
+      firecrawl().extract({
       urls: [fair.websiteUrl, `${base}/*`],
       prompt: `Extract the next upcoming event dates for the ${fair.name} science fair.
 Today is ${today}. Find:
@@ -112,8 +140,10 @@ Today is ${today}. Find:
 
 Use YYYY-MM-DD date format. If only a month is given, use the 1st of that month.
 Return null for any date not found on the site — do not guess.`,
-      schema: DatesSchema,
-    })
+        schema: DatesSchema,
+      }),
+      FIRECRAWL_TIMEOUT_MS,
+    )
 
     if (res.success && res.data) {
       extracted = res.data as ExtractedDates

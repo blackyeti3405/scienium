@@ -5,7 +5,72 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
-## [0.29.2] — 2026-07-19
+## [0.29.3] — 2026-07-19
+
+The five findings v0.29.2 recorded but did not fix. Each ships with a pinning test, and two
+of those tests caught bugs in the fix itself before it landed.
+
+### Fixed — CSV formula injection (confirmed live)
+`lib/data-terminal/csv.ts` wrote user-controlled cell text unescaped, so a series/note value
+beginning `=`, `+`, `-`, or `@` executed on open in Excel/Sheets — a student could hand a
+**teacher** a weaponized export (`=cmd|'/c calc'!A1`, `=HYPERLINK(…)`). `csvField` now
+prefixes those with `'`.
+- **The first version of this fix was wrong**, and the test caught it: it also prefixed
+  negative *numbers*, turning `-5` into text and corrupting the teacher's copy of the data.
+  Well-formed numbers are now exempt (`isPlainNumber`), while `-5 degrees` and `-1+1+cmd`
+  are still neutralized. Both directions are pinned.
+
+### Fixed — production environment assertion
+`E2E_SKIP_LLM=1` returns `null` from `enforceRateLimit` **before** the paid-tier guard, so it
+disables **all** rate limiting including the cost cap; `RATE_LIMIT_ALLOW_MEMORY` and
+`E2E_MOCK_SOURCES` are the same class. The only thing preventing production use was a code
+comment. New `lib/env-guard.ts`, called first in `instrumentation.ts#register`, refuses to
+boot a production server carrying any of them — a loud startup failure instead of a silently
+uncapped bill. `test/env-guard.test.ts` pins the behavior **and** that the guard is actually
+wired into startup (a guard nobody calls is worth nothing).
+- **The first version refused to boot the E2E suite** — because v0.29.0 made E2E run against a
+  production build, so `NODE_ENV==='production'` is true during tests while the flags are
+  legitimately set. Caught by running the suite. Resolved without weakening the control:
+  `VERCEL_ENV` (which the platform always sets and the harness never does) makes the check
+  **unconditional on any real deploy — no bypass, including preview**, while a local
+  prod-build run may carve out via the `E2E_BUILD=1` the test script already sets. Pinned by
+  a test asserting `E2E_BUILD` cannot rescue a `VERCEL_ENV=production` environment.
+
+### Fixed — markdown render policy for untrusted text
+Four components rendered LLM output and student writing through `react-markdown` with no link
+policy — the last unguarded render sink. All now use `components/ui/SafeMarkdown.tsx`:
+`http`/`https`/`mailto` allowlist (`javascript:`, `data:`, `vbscript:`, `file:` drop to inert
+text), `noopener noreferrer nofollow` on every link, and remote images replaced by alt text
+(a model reply has no legitimate reason to load a tracking pixel). The scheme policy lives in
+`lib/markdown/safe-href.ts` so it is testable without JSX. `test/safe-markdown.test.ts` pins
+the policy and **sweeps the component tree** so a new sink cannot bypass it.
+
+### Fixed — showcase PDF page-bomb cap
+`showcase/asset/route.ts` called `inspectPdf(buffer)` without `pageCount`, silently skipping
+the bomb guard on the **only** PDF path that reaches anonymous fair visitors. It now parses
+the count and passes it; an unreadable PDF is rejected rather than served.
+
+### Fixed — Firecrawl timeout
+`extract()` was the only unbounded external call in the codebase. Now raced against a 60s
+ceiling. The SDK exposes no abort signal, so the underlying job is not cancellable — the race
+bounds how long *we* wait, which is what the request and the platform care about.
+
+### Changed — `docs/SECURITY.md` §3.1 rewritten after an authorization audit
+A full end-to-end trace of the auth layer confirmed the student-facing posture is genuinely
+solid (no team-parameterized URL exists; every dynamic id is scoped inside the WHERE clause;
+tampering yields 404). But it also found that **three separate things read as IDOR coverage
+and none of them prove tenancy**:
+1. the guard sweep is a regex over source text — it cannot see a missing
+   `if (error) return error`, or an unscoped query;
+2. the ~29 `findFirst({ id, teamId })` clauses are convention, with no Prisma middleware or
+   RLS enforcing tenancy at the data layer;
+3. **the E2E specs labelled "IDOR guard" use fabricated ids** (`'clxxxxxxxxxxxxxxxxxxxxxxx'`,
+   `'not-a-real-session-id'`) — a non-existent id 404s whether or not the scope clause is
+   present, so those tests would pass with `teamId` deleted. They exercise the not-found path,
+   never "exists but isn't yours".
+
+§3.1 now says all of this explicitly, and the route-policy harness (needing a real second team
+in the fixture) is the top remediation item.
 
 Documentation consolidation, verified against the code rather than against the documents'
 own status markers — which had gone stale in both directions. Three independent audits

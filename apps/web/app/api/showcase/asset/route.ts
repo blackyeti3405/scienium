@@ -3,6 +3,7 @@ import sharp from 'sharp'
 import { randomUUID } from 'crypto'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { putObject } from '@/lib/storage'
+import { getDocumentProxy } from 'unpdf'
 import { inspectPdf } from '@/lib/pdf/sanitize'
 import {
   checkTeamStorageQuota,
@@ -91,7 +92,21 @@ export async function POST(req: NextRequest) {
     // here, not less: the board is served inline by `showcase/public/asset`, which
     // is on the public middleware allowlist, so an unscanned payload would reach
     // anonymous fair visitors and judges.
-    const inspection = inspectPdf(buffer)
+    //
+    // The page count is parsed and passed so the page-bomb cap actually applies —
+    // omitting it silently skipped that check on the one PDF path anonymous
+    // visitors can reach. A parse failure is itself disqualifying: we will not
+    // serve bytes we could not read.
+    let numPages: number
+    try {
+      numPages = (await getDocumentProxy(new Uint8Array(buffer))).numPages
+    } catch {
+      return NextResponse.json(
+        { error: 'That PDF could not be read. Export a clean copy and try again.' },
+        { status: 415 },
+      )
+    }
+    const inspection = inspectPdf(buffer, numPages)
     if (!inspection.ok) {
       return NextResponse.json(
         { error: `This PDF was rejected for safety: ${inspection.reason}` },

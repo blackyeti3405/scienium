@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { FileText, X } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { SafeMarkdown } from '@/components/ui/SafeMarkdown'
 import { z } from 'zod'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { requestJson } from '@/lib/api/client'
@@ -150,7 +149,7 @@ export function PaperQAPanel({
                           <span className="mb-1 block text-[10px] uppercase text-white/30">
                             {message.role === 'user' ? 'student' : 'vega'}
                           </span>
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                          <SafeMarkdown>{message.content}</SafeMarkdown>
                         </div>
                       </li>
                     ))}

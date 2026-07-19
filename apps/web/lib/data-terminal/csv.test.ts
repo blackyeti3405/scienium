@@ -179,3 +179,101 @@ describe('toCsv', () => {
     expect(csv.startsWith('"time,s"')).toBe(true)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Formula injection (v0.29.3)
+// ---------------------------------------------------------------------------
+
+describe('toCsv — spreadsheet formula neutralization', () => {
+  // A student's note/series text lands in a CSV a TEACHER opens. Without a
+  // leading-quote prefix, Excel/Sheets execute these on open.
+  const TRIGGERS = ['=', '+', '-', '@', '\t', '\r']
+
+  it.each(TRIGGERS)('prefixes a note starting with %j so it is text, not a formula', (ch) => {
+    const csv = toCsv({
+      xLabel: 'x',
+      yLabel: 'y',
+      measurements: [makeMeasurement('1', 1, 2, '', `${ch}HYPERLINK("http://evil","click")`)],
+    })
+    // The dangerous character must never be the first char of the parsed field.
+    expect(csv).toContain(`'${ch}HYPERLINK`)
+  })
+
+  it('neutralizes the classic command-execution payload', () => {
+    const csv = toCsv({
+      xLabel: 'x',
+      yLabel: 'y',
+      measurements: [makeMeasurement('1', 1, 2, '', '=cmd|\'/c calc\'!A1')],
+    })
+    expect(csv).toContain("'=cmd")
+    // And it is still RFC-4180 quoted because it contains a comma-free quote char.
+    expect(csv).not.toMatch(/(^|,)=cmd/)
+  })
+
+  it('neutralizes a hostile xLabel in the HEADER row too', () => {
+    const csv = toCsv({ xLabel: '=1+1', yLabel: 'y', measurements: [] })
+    expect(csv.split('\r\n')[0]).toBe("'=1+1,y,series,note")
+  })
+
+  it('neutralizes a hostile series value', () => {
+    const csv = toCsv({
+      xLabel: 'x',
+      yLabel: 'y',
+      measurements: [makeMeasurement('1', 1, 2, '@SUM(A1:A9)', null)],
+    })
+    expect(csv).toContain("'@SUM(A1:A9)")
+  })
+
+  it('quoting still applies AFTER neutralization (comma + formula together)', () => {
+    const csv = toCsv({
+      xLabel: 'x',
+      yLabel: 'y',
+      measurements: [makeMeasurement('1', 1, 2, '', '=A1,B2')],
+    })
+    expect(csv).toContain(`"'=A1,B2"`)
+  })
+
+  it('leaves ordinary text untouched — no stray quotes for normal notes', () => {
+    const csv = toCsv({
+      xLabel: 'time',
+      yLabel: 'temp',
+      measurements: [makeMeasurement('1', 1, 2, 'trial A', 'looked fine')],
+    })
+    expect(csv).toContain('1,2,trial A,looked fine')
+    expect(csv).not.toContain("'trial")
+  })
+
+  it('NEVER corrupts a negative measurement — numbers stay numbers', () => {
+    // '-' is a formula trigger, but a well-formed number is not a formula.
+    // Prefixing it would turn the teacher's data into text. Only the non-numeric
+    // note gets neutralized.
+    const csv = toCsv({
+      xLabel: 'x',
+      yLabel: 'y',
+      measurements: [makeMeasurement('1', -5, -2.5, '', '-5 degrees')],
+    })
+    expect(csv).toContain('-5,-2.5,') // numeric columns untouched
+    expect(csv).toContain("'-5 degrees") // free text neutralized
+  })
+
+  it.each(['-5', '+2.5', '1e3', '-0.001'])(
+    'leaves the well-formed number %j unprefixed',
+    (n) => {
+      const csv = toCsv({
+        xLabel: 'x',
+        yLabel: 'y',
+        measurements: [makeMeasurement('1', 1, 2, n, null)],
+      })
+      expect(csv).toContain(`1,2,${n},`)
+    },
+  )
+
+  it('still neutralizes a formula that merely STARTS numeric-looking', () => {
+    const csv = toCsv({
+      xLabel: 'x',
+      yLabel: 'y',
+      measurements: [makeMeasurement('1', 1, 2, '', '-1+1+cmd|calc')],
+    })
+    expect(csv).toContain("'-1+1+cmd")
+  })
+})
