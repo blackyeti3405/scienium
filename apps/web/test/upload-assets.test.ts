@@ -15,17 +15,29 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   assetFindMany: vi.fn(),
   assetUpdateMany: vi.fn(),
+  assetAggregate: vi.fn(),
+  assetCreate: vi.fn(),
   deleteObject: vi.fn(),
 }))
 
 vi.mock('@/lib/db', () => ({
   db: {
-    uploadedAsset: { findMany: mocks.assetFindMany, updateMany: mocks.assetUpdateMany },
+    uploadedAsset: {
+      findMany: mocks.assetFindMany,
+      updateMany: mocks.assetUpdateMany,
+      aggregate: mocks.assetAggregate,
+      create: mocks.assetCreate,
+    },
   },
 }))
 vi.mock('@/lib/storage', () => ({ deleteObject: mocks.deleteObject }))
 
 import {
+  TEAM_STORAGE_QUOTA_BYTES,
+  checkTeamStorageQuota,
+  orphanObjectKey,
+  recordAttachedAsset,
+  recordTemporaryAsset,
   resolveAttachmentKeys,
   reclaimAbandonedAssets,
 } from '@/lib/uploads/assets'
@@ -123,5 +135,116 @@ describe('reclaimAbandonedAssets claim-then-delete', () => {
         data: { status: 'temporary', deletedAt: null },
       }),
     )
+  })
+})
+
+describe('team storage quota (v0.28.0)', () => {
+  it('allows an upload landing exactly AT the quota (<= boundary)', async () => {
+    mocks.assetAggregate.mockResolvedValue({ _sum: { sizeBytes: TEAM_STORAGE_QUOTA_BYTES - 100 } })
+    expect(await checkTeamStorageQuota('team_1', 100)).toBeNull()
+  })
+
+  it('rejects one byte over the quota with a {used, quota} snapshot', async () => {
+    mocks.assetAggregate.mockResolvedValue({ _sum: { sizeBytes: TEAM_STORAGE_QUOTA_BYTES - 100 } })
+    expect(await checkTeamStorageQuota('team_1', 101)).toEqual({
+      used: TEAM_STORAGE_QUOTA_BYTES - 100,
+      quota: TEAM_STORAGE_QUOTA_BYTES,
+    })
+  })
+
+  it('treats a team with no ledger rows (null sum) as 0 bytes used', async () => {
+    mocks.assetAggregate.mockResolvedValue({ _sum: { sizeBytes: null } })
+    expect(await checkTeamStorageQuota('team_1', 1)).toBeNull()
+  })
+
+  it('counts everything except physically-deleted rows', async () => {
+    // Counting `deleted` rows would lock a team out of storage it no longer
+    // uses; excluding `orphaned`/`temporary` would unbound the R2 bill while
+    // the sweep drains. Only `deleted` is out of the sum.
+    mocks.assetAggregate.mockResolvedValue({ _sum: { sizeBytes: 0 } })
+    await checkTeamStorageQuota('team_1', 1)
+    expect(mocks.assetAggregate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { teamId: 'team_1', status: { not: 'deleted' } },
+      }),
+    )
+  })
+})
+
+describe('recordAttachedAsset vs recordTemporaryAsset (sweep-safety semantics)', () => {
+  // The module's own docstring names the failure mode: an object bound to its
+  // domain row in the same request but recorded `temporary` gets DELETED by the
+  // sweep a day later — live-data loss. These pins keep the two creators honest.
+  it('recordAttachedAsset creates status=attached with attachedAt set', async () => {
+    mocks.assetCreate.mockResolvedValue({ id: 'a1' })
+    await recordAttachedAsset({
+      teamId: 'team_1', userId: 'u1', objectKey: 'k', url: '/f', contentType: 'application/pdf',
+      sizeBytes: 10, purpose: 'paper_pdf', attachedToType: 'paper', attachedToId: 'p1',
+    })
+    const data = mocks.assetCreate.mock.calls[0][0].data
+    expect(data.status).toBe('attached')
+    expect(data.attachedAt).toBeInstanceOf(Date)
+  })
+
+  it('recordTemporaryAsset creates status=temporary (reclaimable if abandoned)', async () => {
+    mocks.assetCreate.mockResolvedValue({ id: 'a1' })
+    await recordTemporaryAsset({
+      teamId: 'team_1', userId: 'u1', objectKey: 'k', url: '/f', contentType: 'image/png',
+      sizeBytes: 10, purpose: 'log_attachment',
+    })
+    expect(mocks.assetCreate.mock.calls[0][0].data.status).toBe('temporary')
+  })
+})
+
+describe('orphanObjectKey (single-physical-delete-site invariant)', () => {
+  it('flips a live ledger row and does NOT create a duplicate', async () => {
+    mocks.assetUpdateMany.mockResolvedValue({ count: 1 })
+    await orphanObjectKey({
+      teamId: 'team_1', userId: 'u1', objectKey: 'showcase/team_1/x.pdf',
+      contentType: 'application/pdf', purpose: 'showcase_board',
+    })
+    expect(mocks.assetUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ teamId: 'team_1', objectKey: 'showcase/team_1/x.pdf' }),
+        data: { status: 'orphaned' },
+      }),
+    )
+    expect(mocks.assetCreate).not.toHaveBeenCalled()
+  })
+
+  it('adopts a legacy object (no ledger row) as an already-orphaned row', async () => {
+    // Pre-ledger showcase objects have no row; a plain updateMany would no-op
+    // and the object would leak forever. Adoption hands it to the sweep.
+    mocks.assetUpdateMany.mockResolvedValue({ count: 0 })
+    mocks.assetCreate.mockResolvedValue({ id: 'a1' })
+    await orphanObjectKey({
+      teamId: 'team_1', userId: 'u1', objectKey: 'showcase/team_1/legacy.pdf',
+      contentType: 'application/pdf', purpose: 'showcase_board',
+    })
+    expect(mocks.assetCreate.mock.calls[0][0].data).toMatchObject({
+      teamId: 'team_1',
+      objectKey: 'showcase/team_1/legacy.pdf',
+      status: 'orphaned',
+    })
+  })
+
+  it('swallows a lost adoption race (unique objectKey) instead of throwing', async () => {
+    mocks.assetUpdateMany.mockResolvedValue({ count: 0 })
+    mocks.assetCreate.mockRejectedValue(new Error('P2002 unique constraint'))
+    await expect(
+      orphanObjectKey({
+        teamId: 'team_1', userId: 'u1', objectKey: 'k',
+        contentType: 'application/pdf', purpose: 'showcase_board',
+      }),
+    ).resolves.toBeUndefined()
+  })
+
+  it('never touches storage directly (the sweep owns physical deletes)', async () => {
+    mocks.assetUpdateMany.mockResolvedValue({ count: 1 })
+    await orphanObjectKey({
+      teamId: 'team_1', userId: 'u1', objectKey: 'k',
+      contentType: 'application/pdf', purpose: 'showcase_board',
+    })
+    expect(mocks.deleteObject).not.toHaveBeenCalled()
   })
 })

@@ -5,6 +5,106 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.29.0] — 2026-07-19
+
+Two workstreams: the flaky-E2E root-cause pass (the suite now runs against a production
+build), and a test-coverage sweep driven by three parallel audits (backend, frontend,
+security) — 899 unit tests, up from 637. Chasing the flakiness also surfaced and fixed
+two real product bugs students would have hit.
+
+### Changed — full E2E runs against a production build
+- **`test:e2e` now builds and serves the production bundle** (`E2E_BUILD=1` →
+  `next build && next start` in `playwright.config.ts`); single-spec iteration
+  (`test:e2e:file`) keeps the fast dev-server loop. A 310-test serial run against
+  `next dev` was flaky by construction: on-demand compiles blew tight assertions and
+  30s gotos, the dev server degraded over a ~30-minute run (ERR_ABORTED/ECONNRESET),
+  and aborted requests popped the `<nextjs-portal>` dev overlay which then
+  **intercepted pointer events** and failed every later click (upgrades AC12's click
+  log showed it verbatim).
+- **Measured effect:** dev-mode runs: 12-16 failures, different set each time, ~30 min.
+  Production-build runs: 1-4 failures, ~16 min. The remaining failures were NOT
+  flakiness noise — each was chased individually (below).
+- `e2e/F3.spec.ts` seeds papers **directly via `e2eDb`** with run-tagged titles. Its old
+  seeding POSTed the dev-only `/api/dev/fill-papers` route — which correctly 403s under
+  a production server — and 25 sequential HTTP creates also blew the 30s hook budget on
+  a loaded dev server (F3's chronic 0ms AC1 failure). Passes 11/11 now; it had never
+  fully run in any suite invocation this session.
+
+### Fixed — Vega study chat clobbered a fast student's first message (F18 AC3's real cause)
+- **`VegaStudyTab`'s mount-time history GET replaced local state unconditionally** when
+  it resolved. Send a message before it lands (fast typing — or an E2E spec) and the
+  stale pre-send snapshot wiped both the optimistic user turn and the reply from view.
+  The history load now applies only while the thread is pristine.
+- The F18 spec's cleanup deleted by RUN_ID content match — which only USER rows carry —
+  so every run **leaked its assistant replies** (35 orphans accumulated in the E2E
+  thread, slowing the history GET until it reliably lost the race above). Cleanup now
+  resolves marker → `requestId` and deletes both roles; the orphans were purged.
+
+### Fixed — topic-save errors rendered as "topic cleared" (frontend audit find)
+- `useFinalTopic.saveTopic` had no `!res.ok` guard: a 429/400/stale-session response
+  fell through to the success path, cleared the displayed topic, and closed the editor —
+  in the flow that authorizes deleting papers. Its Lab-Profile twin had the guard; the
+  two "mirror" copies had diverged. Both now route through ONE tested interpreter
+  (`lib/discovery/topic-save.ts`); Discovery surfaces the error inline and keeps the
+  draft.
+- `lib/fairs/zip.ts`: the leading-zero ZIP recovery branch was provably dead (checked a
+  3-char slice for `length < 3`), so a ZIP that lost its leading zero upstream ("6001"
+  for CT 06001) resolved to an **Illinois** centroid — a silently wrong-region fair
+  match. Now restored before prefixing, with a characterization test.
+- Deleted the dead `httpUrl` schema from `lib/validation.ts` (zero consumers — a dead
+  "safe URL" helper invites someone to assume it's the enforced one; `isSafeHttpUrl`
+  in `lib/showcase.ts` is the real, tested gate).
+
+### Added — test sweep (899 unit tests across 61 files, from 637/45)
+Driven by three parallel coverage audits; every control that regressed silently before
+now has a tripwire:
+- **`test/route-guard-sweep.test.ts`** — every one of 98 API routes must carry an auth
+  guard (2-entry allowlist pinned to its compensating controls); all teacher routes
+  must use `requireTeacher` specifically.
+- **`test/cron-auth.test.ts`** — `assertCron` behavior: unset-secret 503 (fail closed),
+  production short-secret refusal, wrong/missing-bearer 401 + denial logging, and a
+  source pin on `timingSafeEqual`.
+- **`test/guard-wiring.test.ts`** — the three shared guards actually INVOKE
+  `assertSameOrigin` (CSRF), in the right order, before any DB resolution.
+- **`lib/discovery/sanitize.test.ts`** — hostile-HTML fixtures against the shared
+  allowlist + option pins (sanitize-html option typos fail OPEN).
+- **`test/topic-removal.test.ts`** — the two-phase wipe protocol: phase 1 proposes and
+  deletes nothing; phase 2 deletes only caller-approved, team-scoped ids with NO model
+  call; paid tier cleared before the model.
+- **`test/prompt-injection-pins.test.ts`** — static pins on the advisory-gradingKey
+  language, the `<paper_text>`/`<project_context>` fences, and `paperTextContext`'s
+  byte-identity (it is the prompt-cache key — one char of drift multiplies spend).
+- **`lib/papers/service.test.ts`** — the upload service's cheap-rejection ladder (each
+  rejection asserts later collaborators never ran — the duplicate check firing before
+  the paid relevance call is a billing guarantee), P2002→409, R2-failure rollback.
+- **`lib/literature/relevance.test.ts`** — the default-keep contract (malformed model
+  replies can never flip a paper toward removal) and the `E2E_SKIP_LLM` stub the
+  topic-removal E2E's determinism rests on.
+- **Extended `test/upload-assets.test.ts`** — quota boundary math and `status not
+  deleted` scoping, `recordAttachedAsset` vs `recordTemporaryAsset` sweep-safety
+  semantics, `orphanObjectKey` flip/adopt/race paths.
+- **`lib/teacher/analytics.test.ts`** — the per-paper proficiency rollup (the
+  documented team-size inflation fix: 3 members mastering one paper = 1, not 3).
+- Plus: `lib/discovery/topic-save.test.ts`, `lib/validation.test.ts`, `lib/ndjson.test.ts`
+  (chunk-split and trailing-line flush), `lib/fairs/zip.test.ts`,
+  `lib/fairs/rubric-scoring.test.ts` (cross-track key forgery → null),
+  `lib/discovery/credibility.test.ts` (suffix-precedence, lookalike hosts),
+  `lib/discovery/interest-match.test.ts`, and notification compute edge cases
+  (bracket boundaries, deadlineDays hygiene, nearest-fair urgency, ISO-week cadence).
+
+### Notes — deliberately not done, with reasons
+- **No jsdom/RTL infrastructure.** The frontend audit's verdict, accepted: Playwright
+  already exercises those flows in a real browser; the high-stakes client logic is
+  reachable from node-Vitest via the existing architecture. Revisit post-pilot.
+- **Remaining known coverage gaps** (audit-ranked, next slices): `stores/discoveryStore`
+  state machine, `lib/literature/quiz-retry` service, `computeExplainOutcome`,
+  `awardVisit` idempotency, buildings-service transactional logic.
+- **Residual E2E order-dependence:** F10 (teacher rubric saves), F2 AC10 (daily cap),
+  and F3-plan-paste each failed once across the production-build runs and pass 100%
+  solo — cross-spec state, not dev-server noise. Tracked; not chased to zero here.
+
+---
+
 ## [0.28.2] — 2026-07-18
 
 Fixes the long-standing `F4.spec.ts` AC10 failure. The cause was not in the moderation

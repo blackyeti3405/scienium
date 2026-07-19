@@ -447,17 +447,17 @@ export function zipToApproxCoords(
   zip: string,
   state?: string | null,
 ): readonly [number, number] | null {
-  const digits = zip.trim().replace(/\D/g, '')
+  let digits = zip.trim().replace(/\D/g, '')
+  // A 4-digit "ZIP" is almost certainly a Northeast ZIP that lost its leading
+  // zero upstream (spreadsheets do this to "06001"). Restore it BEFORE taking
+  // the prefix — otherwise "6001" prefixes to "600" and resolves to Illinois,
+  // a silently wrong-region fair match. (The old recovery branch here checked
+  // `prefix.length < 3` after a 3-char slice — provably dead code.)
+  if (digits.length === 4) digits = `0${digits}`
   if (digits.length < 3) return state ? (STATE_CENTROIDS[state] ?? null) : null
   const prefix = digits.slice(0, 3)
   const zip3 = ZIP3_CENTROIDS[prefix]
   if (zip3) return zip3
-  // Leading-zero ZIPs (e.g. CT "06xxx" → "060") may need zero-padded lookup
-  if (prefix.startsWith('0') && prefix.length < 3) {
-    const padded = prefix.padStart(3, '0')
-    const padded3 = ZIP3_CENTROIDS[padded]
-    if (padded3) return padded3
-  }
   return state ? (STATE_CENTROIDS[state] ?? null) : null
 }
 

@@ -19,6 +19,7 @@ export function FinalTopicBar({
   onBeginEdit,
   onCancelEdit,
   chooseDraft,
+  saveError,
 }: {
   finalTopic: string | null
   topicLoaded: boolean
@@ -31,9 +32,16 @@ export function FinalTopicBar({
   onCancelEdit: () => void
   /** Draft prefill for the "Choose your final research topic" CTA (the current node's title). */
   chooseDraft: string
+  /** Save failure (rate limit / validation / stale session) — the topic did NOT change. */
+  saveError?: string | null
 }) {
   return (
     <div className="border-b border-[#F5C518]/20 bg-[#F5C518]/[0.06] px-4 py-2.5 shrink-0">
+      {editing && saveError && (
+        <p className="mb-1.5 text-[12px] text-red-400 flex items-center gap-1.5">
+          <span aria-hidden>⚠</span> {saveError}
+        </p>
+      )}
       {editing ? (
         <div className="flex items-center gap-2">
           <span className="text-sm shrink-0">🎯</span>

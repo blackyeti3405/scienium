@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { RefreshCw, Link2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { PROJECT_TYPES } from '@/lib/research-plan/types'
+import { interpretTopicSaveResponse } from '@/lib/discovery/topic-save'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
 
@@ -168,7 +169,9 @@ export function LabProfileSettings() {
     }
   }
 
-  // ── Save research topic (mirrors DiscoveryFeature.saveTopic exactly) ─────────
+  // ── Save research topic — the response protocol is interpreted by the SHARED
+  // `interpretTopicSaveResponse` (also used by Discovery's useFinalTopic), so
+  // the two clients can't diverge again.
   async function saveTopic(topicVal: string, confirmWipe = false, confirmRemoveIds?: string[]) {
     setSavingTopic(true)
     setTopicError(null)
@@ -182,30 +185,36 @@ export function LabProfileSettings() {
           ...(confirmRemoveIds ? { confirmRemoveIds } : {}),
         }),
       })
-      const d = await res.json()
-      if (res.status === 409 && d.requiresConfirmation) {
-        // Server says papers exist — ask the user to confirm before wiping
-        setTopicConfirm({ newTopic: topicVal, paperCount: d.paperCount })
-        return
-      }
-      if (res.status === 409 && d.requiresRemovalConfirmation) {
-        // Server proposed a specific removal list — surface the titles so the
-        // student can spot a paper that should NOT be going.
-        setTopicConfirm(null)
-        setTopicRemovalConfirm({ newTopic: topicVal, papers: d.papers ?? [] })
-        return
-      }
-      if (!res.ok) {
-        setTopicError(d.error ?? 'Could not save topic')
-        return
-      }
-      setTopic(d.topic ?? null)
-      setTopicDraft(d.topic ?? '')
-      setTopicEditing(false)
-      setTopicConfirm(null)
-      setTopicRemovalConfirm(null)
-      if (d.removedCount > 0) {
-        setTopicWipeResult({ removedCount: d.removedCount, removedTitles: d.removedTitles })
+      const body = await res.json().catch(() => ({}))
+      const outcome = interpretTopicSaveResponse(res.status, body, topicVal)
+
+      switch (outcome.kind) {
+        case 'needsConfirmation':
+          // Server says papers exist — ask the user to confirm before wiping
+          setTopicConfirm({ newTopic: outcome.newTopic, paperCount: outcome.paperCount })
+          return
+        case 'needsRemovalConfirmation':
+          // Server proposed a specific removal list — surface the titles so the
+          // student can spot a paper that should NOT be going.
+          setTopicConfirm(null)
+          setTopicRemovalConfirm({ newTopic: outcome.newTopic, papers: outcome.papers })
+          return
+        case 'error':
+          setTopicError(outcome.message)
+          return
+        case 'saved':
+          setTopic(outcome.topic)
+          setTopicDraft(outcome.topic ?? '')
+          setTopicEditing(false)
+          setTopicConfirm(null)
+          setTopicRemovalConfirm(null)
+          if (outcome.removedCount > 0) {
+            setTopicWipeResult({
+              removedCount: outcome.removedCount,
+              removedTitles: outcome.removedTitles,
+            })
+          }
+          return
       }
     } catch (err: unknown) {
       setTopicError(err instanceof Error ? err.message : 'Could not save topic')

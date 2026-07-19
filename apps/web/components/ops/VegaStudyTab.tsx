@@ -48,7 +48,15 @@ export function VegaStudyTab() {
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data.messages) && data.messages.length > 0) {
-          setMessages([GREETING, ...data.messages])
+          // Apply ONLY while the thread is still pristine (just the greeting).
+          // This GET fires at mount with pre-send data; a student who types
+          // fast can have sent a turn before it resolves, and replacing state
+          // unconditionally would clobber their message and its reply with the
+          // stale snapshot — the message would visibly vanish. Their turns are
+          // already persisted server-side, so the next reopen shows them.
+          setMessages((prev) =>
+            prev.length <= 1 ? [GREETING, ...data.messages] : prev,
+          )
         }
       })
       .catch(() => setLoadError('Could not load your study history. You can still chat.'))

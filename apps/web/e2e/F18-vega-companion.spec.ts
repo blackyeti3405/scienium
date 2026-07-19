@@ -90,11 +90,30 @@ test.describe('F18 — Study with Vega', () => {
     const { PrismaClient } = await import('@prisma/client')
     const db = new PrismaClient()
     try {
-      // Scoped ONLY to this run's own fixture content (via the RUN_ID marker
-      // embedded in every message this spec sends) — never a blanket delete
-      // of the team-shared thread.
-      await db.vegaStudyMessage.deleteMany({
+      // Scoped ONLY to this run's own fixture content — never a blanket delete
+      // of the team-shared thread. The RUN_ID marker lives only in USER rows;
+      // deleting by content alone left every run's ASSISTANT replies behind
+      // (35 orphans accumulated), which slowed the history GET until it lost
+      // the race the VegaStudyTab stale-clobber fix now guards. Each reply
+      // shares its user turn's requestId, so resolve marker → requestIds and
+      // delete BOTH roles.
+      const runRows = await db.vegaStudyMessage.findMany({
         where: { teamId, content: { contains: `[E2E F18 ${RUN_ID}]` } },
+        select: { requestId: true },
+      })
+      const requestIds = [
+        ...new Set(runRows.map((r) => r.requestId).filter((x): x is string => !!x)),
+      ]
+      await db.vegaStudyMessage.deleteMany({
+        where: {
+          teamId,
+          OR: [
+            { requestId: { in: requestIds } },
+            // Rows from before requestId existed (or a failed pairing) still
+            // carrying the marker — content match remains the fallback.
+            { content: { contains: `[E2E F18 ${RUN_ID}]` } },
+          ],
+        },
       })
     } finally {
       await db.$disconnect()

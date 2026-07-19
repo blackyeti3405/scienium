@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { api, withSeedPage, uploadLogAttachment } from './api'
+import { e2eDb, e2eTeamId } from './db'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -21,8 +22,9 @@ import path from 'node:path'
  *  AC10 — Grep: zero remaining native confirm()/alert() call sites in apps/web/components
  *
  * Seeding strategy:
- *  - Papers: POST /api/dev/fill-papers (dev-only endpoint) ensures ≥1 paper exists, then GET
- *    /api/papers to identify a deletable paper.
+ *  - Papers: run-tagged rows created directly via e2eDb (the dev-only
+ *    /api/dev/fill-papers route 403s under the production-build E2E server, and
+ *    seeding 25 papers over HTTP blew the 30s hook budget on a loaded dev server).
  *  - Project log: POST /api/project-log with a real uploaded attachment. For
  *    multi-member teams the currentUserId (from GET /api/project-log) is passed as attendeeId.
  *  - Failure log: POST /api/failure-log (same pattern as F2).
@@ -92,42 +94,49 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
   test.beforeAll(async ({ browser }) => {
     await withSeedPage(browser, 'leader', async (page) => {
       // 1. Ensure papers exist (dev fill endpoint creates up to 25 fake ones).
-      const fillRes = await api.post(page, '/api/dev/fill-papers')
-      if (!fillRes.ok()) {
-        throw new Error(`fill-papers failed: ${fillRes.status()} ${await fillRes.text()}`)
-      }
+      // 1. Seed ready papers DIRECTLY in the DB. This used to POST the dev-only
+      // /api/dev/fill-papers route, which (a) 403s under the production-build
+      // E2E server (the route is hard-gated on NODE_ENV, correctly), and (b) at
+      // 25 sequential HTTP creates regularly blew the 30s hook budget on a
+      // loaded dev server — F3's chronic 0ms AC1 failure in full-suite runs.
+      // Direct createMany is one query, works in both server modes, and seeds
+      // only run-tagged rows so cleanup can never touch real data.
+      const teamId = await e2eTeamId()
+      const uploader = await e2eDb.teamMember.findFirst({
+        where: { teamId },
+        select: { userId: true },
+      })
+      if (!uploader) throw new Error('E2E Test Lab has no members. Run pnpm --filter web seed:e2e.')
 
-      // 2. Fetch the paper list.
-      const papersRes = await api.get(page, '/api/papers')
-      if (!papersRes.ok()) {
-        throw new Error(`GET /api/papers failed: ${papersRes.status()}`)
-      }
-      const { papers } = await papersRes.json()
-      const readyPapers = (papers as Array<{ id: string; status: string }>).filter(
-        (p) => p.status === 'ready',
-      )
+      // Stale rows from a crashed earlier run — clear before counting.
+      await e2eDb.paper.deleteMany({ where: { teamId, title: { startsWith: '[E2E-F3-' } } })
 
-      if (readyPapers.length < 3) {
-        throw new Error(`Need ≥3 ready papers for F3 tests; got ${readyPapers.length}`)
+      const existingReady = await e2eDb.paper.count({ where: { teamId, status: 'ready' } })
+      // Delete buttons hide when the library is locked at 25/25 — stay well under,
+      // and AC4 permanently deletes one, so seed enough to keep every AC ≥3.
+      const toCreate = Math.max(0, Math.min(6, 24 - existingReady))
+      if (existingReady + toCreate < 3) {
+        throw new Error(`Need ≥3 ready papers for F3 tests; can only reach ${existingReady + toCreate}`)
       }
-
-      // If we have exactly 25 papers (locked), delete one via the API so that delete
-      // buttons become visible in the UI (the feature hides them when locked at 25/25).
-      // We track the ids we might delete during tests.
-      const TOTAL_SLOTS = 25
-      if (readyPapers.length >= TOTAL_SLOTS) {
-        // Delete the last paper to bring the count to 24, unlocking the delete buttons.
-        const toRemove = readyPapers[readyPapers.length - 1]
-        await api.delete(page, `/api/papers/${toRemove.id}`)
-        // Re-fetch to get updated list.
-        const refreshRes = await api.get(page, '/api/papers')
-        const { papers: refreshed } = await refreshRes.json()
-        seededPaperIds = (refreshed as Array<{ id: string; status: string }>)
-          .filter((p) => p.status === 'ready')
-          .map((p) => p.id)
-      } else {
-        seededPaperIds = readyPapers.map((p) => p.id)
-      }
+      await e2eDb.paper.createMany({
+        data: Array.from({ length: toCreate }, (_, i) => ({
+          teamId,
+          title: `[E2E-F3-${RUN_ID}] Fake Paper ${i + 1}`,
+          authors: ['E2E Fixture'],
+          abstract: 'Auto-generated F3 fixture paper.',
+          sourceType: 'pdf' as const,
+          status: 'ready' as const,
+          fullText: `Placeholder text for F3 confirm-dialog fixture paper ${i + 1}.`,
+          contentHash: `e2e-f3-${RUN_ID}-${i}`,
+          uploadedByUserId: uploader.userId,
+        })),
+      })
+      seededPaperIds = (
+        await e2eDb.paper.findMany({
+          where: { teamId, title: { startsWith: `[E2E-F3-${RUN_ID}]` } },
+          select: { id: true },
+        })
+      ).map((p) => p.id)
 
       // 3. Seed one project-log entry. The POST requires at least one attachmentUrl
       //    (a genuine upload — team-prefixed key + `temporary` ledger row; a fabricated
@@ -170,13 +179,15 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
   })
 
   test.afterAll(async ({ browser }) => {
-    await withSeedPage(browser, 'leader', async (page) => {
-      // Clean up any papers that weren't deleted during the tests. The dev fill
-      // creates persistent papers — we delete only the ones we noted.
-      for (const id of seededPaperIds) {
-        await api.delete(page, `/api/papers/${id}`).catch(() => {})
-      }
+    // Papers were DB-seeded with a run-tagged title, so cleanup is one tagged
+    // deleteMany (prefix, not RUN_ID — also catches strays from crashed runs)
+    // instead of N sequential HTTP deletes, which used to blow the 30s hook
+    // budget right after the beforeAll did the same.
+    await e2eDb.paper.deleteMany({
+      where: { teamId: await e2eTeamId(), title: { startsWith: '[E2E-F3-' } },
+    })
 
+    await withSeedPage(browser, 'leader', async (page) => {
       if (seededProjectLogId) {
         await api.delete(page, `/api/project-log/${seededProjectLogId}`).catch(() => {})
       }

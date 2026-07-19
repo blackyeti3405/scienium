@@ -432,6 +432,16 @@ This still runs the `setup` project first (one sign-in per role, cached to
 suite. Use it while iterating on one feature; run the full `test:e2e` before
 calling a change done.
 
+**Server modes (v0.29.0):** the full `test:e2e` builds and serves a
+**production bundle** (`E2E_BUILD=1` → `next build && next start`) — a
+310-test serial run against `next dev` was structurally flaky (on-demand
+compiles, dev-server degradation over ~30 min, and the dev error overlay
+intercepting clicks after aborted requests). `test:e2e:file` keeps the dev
+server for the fast iteration loop; prefix it with `E2E_BUILD=1` to reproduce
+a full-suite result exactly (pays the ~3-min build). Don't run `pnpm dev` on
+the same port either way — and never start a dev server while the E2E build
+is in progress (shared `.next`).
+
 ### Authenticated API calls inside a spec
 
 Clerk's session JWT is short-lived and only refreshes when clerk-js runs
@@ -914,6 +924,16 @@ This still runs the `setup` project first (one sign-in per role, cached to
 `e2e/.auth/`), then only the named spec — seconds instead of the full serial
 suite. Use it while iterating on one feature; run the full `test:e2e` before
 calling a change done.
+
+**Server modes (v0.29.0):** the full `test:e2e` builds and serves a
+**production bundle** (`E2E_BUILD=1` → `next build && next start`) — a
+310-test serial run against `next dev` was structurally flaky (on-demand
+compiles, dev-server degradation over ~30 min, and the dev error overlay
+intercepting clicks after aborted requests). `test:e2e:file` keeps the dev
+server for the fast iteration loop; prefix it with `E2E_BUILD=1` to reproduce
+a full-suite result exactly (pays the ~3-min build). Don't run `pnpm dev` on
+the same port either way — and never start a dev server while the E2E build
+is in progress (shared `.next`).
 
 ### Authenticated API calls inside a spec
 

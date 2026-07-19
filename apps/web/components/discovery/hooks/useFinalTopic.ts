@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import { requestJson } from '@/lib/api/client'
+import { interpretTopicSaveResponse } from '@/lib/discovery/topic-save'
 
 const topicSchema = z.object({ topic: z.string().nullable().optional() })
 
@@ -29,6 +30,10 @@ export function useFinalTopic({
   const [editingTopic, setEditingTopic] = useState(false)
   const [topicDraft, setTopicDraft] = useState('')
   const [savingTopic, setSavingTopic] = useState(false)
+  // Save failures (429 rate limit, stale session, validation). Previously a
+  // non-2xx fell through to the success path and rendered as "topic cleared" —
+  // now it surfaces here and the editor stays open with the draft intact.
+  const [topicSaveError, setTopicSaveError] = useState<string | null>(null)
   // Confirmation modal state
   const [topicConfirm, setTopicConfirm] = useState<{
     newTopic: string
@@ -52,50 +57,64 @@ export function useFinalTopic({
       .finally(() => setTopicLoaded(true))
   }, [])
 
-  // Raw fetch (not `requestJson`): the 409 response is a real flow, carrying
-  // `requiresConfirmation` + `paperCount` for the confirm-wipe modal.
+  // Raw fetch (not `requestJson`): the 409 responses are real flows, not
+  // errors. The response protocol is interpreted by the SHARED
+  // `interpretTopicSaveResponse` (also used by Lab Profile settings) so the
+  // two clients can't diverge again.
   async function saveTopic(topic: string, confirmWipe = false, confirmRemoveIds?: string[]) {
     setSavingTopic(true)
+    setTopicSaveError(null)
     try {
       const res = await fetch('/api/discovery/topic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic, confirmWipe, ...(confirmRemoveIds ? { confirmRemoveIds } : {}) }),
       })
-      const d = await res.json()
-      if (res.status === 409 && d.requiresConfirmation) {
-        // Server says papers exist — ask the user to confirm before wiping
-        setTopicConfirm({ newTopic: topic, paperCount: d.paperCount })
-        return
-      }
-      if (res.status === 409 && d.requiresRemovalConfirmation) {
-        // Server proposed a specific removal list — surface the titles so the
-        // student can spot a paper that should NOT be going.
-        setTopicConfirm(null)
-        setTopicRemovalConfirm({ newTopic: topic, papers: d.papers ?? [] })
-        return
-      }
-      setFinalTopic(d.topic ?? null)
-      setEditingTopic(false)
-      setTopicConfirm(null)
-      setTopicRemovalConfirm(null)
-      if (d.removedCount > 0) {
-        setTopicWipeResult({ removedCount: d.removedCount, removedTitles: d.removedTitles })
-      }
-      // One-time "Topic Locked" bonus (#1) — tick up when the server grants it.
-      if (typeof d.topicBonusKp === 'number') onKpAwarded(d.topicBonusKp)
-      // Topic ↔ interest overlap (#2): surface which seeded interests connect.
-      if (Array.isArray(d.connections)) {
-        const hits = d.connections.filter((c: { connected?: boolean }) => c.connected)
-        if (hits.length > 0) {
-          const phrases = hits.slice(0, 3).map((c: { text: string }) => c.text)
-          onInterestConnect(
-            `Connected to your ${phrases.length === 1 ? 'interest' : 'interests'}: ${phrases.join(', ')}`,
-          )
+      const body = await res.json().catch(() => ({}))
+      const outcome = interpretTopicSaveResponse(res.status, body, topic)
+
+      switch (outcome.kind) {
+        case 'needsConfirmation':
+          // Server says papers exist — ask the user to confirm before wiping
+          setTopicConfirm({ newTopic: outcome.newTopic, paperCount: outcome.paperCount })
+          return
+        case 'needsRemovalConfirmation':
+          // Server proposed a specific removal list — surface the titles so the
+          // student can spot a paper that should NOT be going.
+          setTopicConfirm(null)
+          setTopicRemovalConfirm({ newTopic: outcome.newTopic, papers: outcome.papers })
+          return
+        case 'error':
+          // Keep the editor open with the draft intact — the topic did NOT change.
+          setTopicSaveError(outcome.message)
+          return
+        case 'saved': {
+          setFinalTopic(outcome.topic)
+          setEditingTopic(false)
+          setTopicConfirm(null)
+          setTopicRemovalConfirm(null)
+          if (outcome.removedCount > 0) {
+            setTopicWipeResult({
+              removedCount: outcome.removedCount,
+              removedTitles: outcome.removedTitles,
+            })
+          }
+          // One-time "Topic Locked" bonus (#1) — tick up when the server grants it.
+          if (outcome.topicBonusKp !== null) onKpAwarded(outcome.topicBonusKp)
+          // Topic ↔ interest overlap (#2): surface which seeded interests connect.
+          const hits = outcome.connections.filter((c) => c.connected)
+          if (hits.length > 0) {
+            const phrases = hits.slice(0, 3).map((c) => c.text)
+            onInterestConnect(
+              `Connected to your ${phrases.length === 1 ? 'interest' : 'interests'}: ${phrases.join(', ')}`,
+            )
+          }
+          return
         }
       }
     } catch (err) {
       console.error('[discovery] save topic failed:', err)
+      setTopicSaveError('Could not save topic — check your connection and try again')
     } finally {
       setSavingTopic(false)
     }
@@ -109,6 +128,8 @@ export function useFinalTopic({
     topicDraft,
     setTopicDraft,
     savingTopic,
+    topicSaveError,
+    setTopicSaveError,
     topicConfirm,
     setTopicConfirm,
     topicRemovalConfirm,

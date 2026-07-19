@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "codex:build": "node lib/ops/codex/scripts/build-codex-tracks.mjs",
     "codex:merge": "node lib/ops/codex/scripts/merge-codex-segments.mjs",
-    "test:e2e": "playwright test",
+    "test:e2e": "E2E_BUILD=1 playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:file": "node scripts/test-e2e-file.mjs",
     "seed:e2e": "node --env-file=.env.local prisma/seed-e2e.mjs"

@@ -57,16 +57,10 @@ export const optionalBoundedText = (max: number) => z.string().trim().max(max).o
 /** A Prisma cuid id — the only shape our row ids take. Rejects raw SQL/UUID noise. */
 export const cuid = z.string().cuid()
 
-/** An http(s) URL, bounded. Blocks javascript:/data:/file: and other schemes. */
-export const httpUrl = z
-  .string()
-  .trim()
-  .max(2000)
-  .refine((value) => {
-    try {
-      const url = new URL(value)
-      return url.protocol === 'http:' || url.protocol === 'https:'
-    } catch {
-      return false
-    }
-  }, 'Enter a valid http(s) URL')
+// NOTE: a shared `httpUrl` schema used to live here but had ZERO consumers —
+// URL-accepting routes validate downstream against their own stricter shapes
+// (`parseVideoUrl` for showcase links, `fetchGoogleDocText` for plan docs,
+// `isSafeHttpUrl` in lib/showcase.ts for generic links). It was deleted rather
+// than kept: a dead "safe URL" helper invites someone to assume it is the one
+// being enforced. If a route ever needs a generic http(s) gate, reuse
+// `isSafeHttpUrl` — it is tested.

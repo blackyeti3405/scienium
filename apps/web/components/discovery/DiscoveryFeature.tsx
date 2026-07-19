@@ -182,6 +182,8 @@ export function DiscoveryFeature() {
     topicDraft,
     setTopicDraft,
     savingTopic,
+    topicSaveError,
+    setTopicSaveError,
     topicConfirm,
     setTopicConfirm,
     topicRemovalConfirm,
@@ -406,8 +408,9 @@ export function DiscoveryFeature() {
         saving={savingTopic}
         onSave={saveTopic}
         onBeginEdit={(initialDraft) => { setTopicDraft(initialDraft); setEditingTopic(true) }}
-        onCancelEdit={() => setEditingTopic(false)}
+        onCancelEdit={() => { setEditingTopic(false); setTopicSaveError(null) }}
         chooseDraft={currentNode?.title ?? ''}
+        saveError={topicSaveError}
       />
 
       {/* ── Body ── */}
