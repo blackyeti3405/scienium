@@ -111,7 +111,7 @@ Deferred to a future release. Tracked, not in this roadmap.
 Explicitly excluded. Documented to prevent scope creep.
 
 | Feature | Reason |
-|---------|--------|
+|---------|-------|
 | PvP prod-hardening (battle `[battleId]` IDOR sweep, AI-route Upstash rate-limit enforcement, prompt-injection on `raid_log_json`) | Folds into the app-wide launch-gate milestone (CONCERNS C-07), deliberately not selected for this milestone's bar |
 | App-wide production launch (dedicated prod Supabase/Clerk, Vercel project, `scienium.app` deploy, FERPA/COPPA + school-consent, branch protection, alerting) | Separate future milestone (CONCERNS C-05/C-07) |
 | `nova-lab` → `scienium` rebrand in Clerk app name + R2 bucket | Ops task (CONCERNS C-06), not PvP scope |
@@ -130,13 +130,54 @@ Which phases cover which requirements. Populated during roadmap creation (Step 8
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| _Populated by roadmap creation_ | — | Pending |
+| AUDIT-01 | Phase 1 | Pending |
+| AUDIT-02 | Phase 1 | Pending |
+| AUDIT-03 | Phase 1 | Pending |
+| AUDIT-04 | Phase 1 | Pending |
+| AUDIT-05 | Phase 1 | Pending |
+| RAID-01 | Phase 2 | Pending |
+| RAID-02 | Phase 2 | Pending |
+| RAID-03 | Phase 2 | Pending |
+| RAID-04 | Phase 2 | Pending |
+| RAID-05 | Phase 2 | Pending |
+| RAID-06 | Phase 2 | Pending |
+| SPELL-01 | Phase 2 | Pending |
+| SPELL-02 | Phase 2 | Pending |
+| SPELL-03 | Phase 2 | Pending |
+| SPELL-04 | Phase 2 | Pending |
+| SPELL-05 | Phase 2 | Pending |
+| TROPHY-01 | Phase 2 | Pending |
+| TROPHY-02 | Phase 2 | Pending |
+| TROPHY-03 | Phase 2 | Pending |
+| TROPHY-04 | Phase 2 | Pending |
+| TROPHY-05 | Phase 2 | Pending |
+| TROPHY-06 | Phase 2 | Pending |
+| ENGINE-01 | Phase 2 | Pending |
+| ENGINE-02 | Phase 2 | Pending |
+| ENGINE-03 | Phase 2 | Pending |
+| ENGINE-04 | Phase 2 | Pending |
+| ENGINE-05 | Phase 2 | Pending |
+| GATE-01 | Phase 2 | Pending |
+| GATE-02 | Phase 2 | Pending |
+| METER-01 | Phase 2 | Pending |
+| METER-02 | Phase 2 | Pending |
+| METER-03 | Phase 2 | Pending |
+| METER-04 | Phase 2 | Pending |
+| METER-05 | Phase 2 | Pending |
+| TEST-01 | Phase 2 | Pending |
+| TEST-02 | Phase 2 | Pending |
+| TEST-03 | Phase 2 | Pending |
+| SPEC-01 | Phase 2 | Pending |
+| TUNE-01 | Phase 3 | Pending |
+| TUNE-02 | Phase 3 | Pending |
+| TUNE-03 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 41 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 41 ⚠️ (resolved at roadmap creation)
+- Mapped to phases: 41 ✓
+- Unmapped: 0 ✓
+- Phase distribution: Phase 1 = 5 (AUDIT), Phase 2 = 33 (RAID + SPELL + TROPHY + ENGINE + GATE + METER + TEST + SPEC), Phase 3 = 3 (TUNE)
 
 ---
 *Requirements defined: 2026-07-19*
-*Last updated: 2026-07-19 after initial definition (METER + TUNE restored + defender-loss decision folded in)*
+*Last updated: 2026-07-19 after roadmap creation — traceability populated (41/41 mapped); METER + TUNE restored + defender-loss decision folded in (initial definition)*
