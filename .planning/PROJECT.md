@@ -90,6 +90,8 @@ Ship a **finished, verified, and balanced** PvP raid system students can use to 
 | PvP prod-hardening deferred | Deliberately not selected; battle IDOR + AI-rate-limit work folds into the broader launch-gate milestone (C-07) | — Pending |
 | PROJECT.md scoped to whole scienium (brownfield), milestone = Finish PvP | scienium was never GSD-initialized; Validated set inferred from the already-built F1–F18 features | — Pending |
 | Treat current code as truth; spec §11 status out of date | SPEC §11 still reads "not built" but the branch has a committed combat engine — audit contrasts code vs. spec and flags both directions | — Pending |
+| Spell Power Meter is a built §11-extension spec §11 omits | `lib/pvp/spell-power.ts` + `team_daily_task_days` are live (4 tiers: NONE×0.5 / BASE×1.0 / BOOSTED×1.5 / MAX×2.0 by task-count 0 / 1–2 / 3–4 / 5+) but §11 never documents it — audit must output the recommended §11 addition and tests protect it (TEST-03) | — Pending |
+| Defender loses equal trophyDelta for v1 | `completeRaid` already moves defender trophies symmetrically to the attacker; spec §11.6 §18 left defender loss OPEN. User is officially resolving it as symmetric gain/loss for v1; revisit in v2 if balancing data wants asymmetric | ✓ Decided |
 
 ## Evolution
 
@@ -109,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-19 after initialization*
+*Last updated: 2026-07-19 after requirements definition (logged defender-loss + Spell Power Meter decisions)*
