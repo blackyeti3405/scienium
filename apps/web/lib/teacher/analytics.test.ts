@@ -36,7 +36,7 @@ describe('computeTeamProficiency — per-paper rollup (the inflation fix)', () =
     expect(out.papersInProgress).toBe(0)
   })
 
-  it('demonstrated is OR across members; bestScore is the max', () => {
+  it('demonstrated is OR across members', () => {
     const rows = [
       { paperId: 'paper_A', demonstrated: false, bestScore: 40, paper: { teamId: 't1' } },
       { paperId: 'paper_A', demonstrated: true, bestScore: 85, paper: { teamId: 't1' } },
@@ -44,6 +44,18 @@ describe('computeTeamProficiency — per-paper rollup (the inflation fix)', () =
     const [out] = computeTeamProficiency([T1], rows)
     expect(out.papersMastered).toBe(1) // one member demonstrating is enough
     expect(out.papersInProgress).toBe(0)
+  })
+
+  it('the rollup takes the MAX score across members (not min/first)', () => {
+    // Neither member demonstrated; one has touched it (40), one has not (0).
+    // A max-rollup sees bestScore 40 > 0 → in-progress. A min/first rollup
+    // that landed on the 0 row would report the paper as untouched.
+    const rows = [
+      { paperId: 'paper_A', demonstrated: false, bestScore: 0, paper: { teamId: 't1' } },
+      { paperId: 'paper_A', demonstrated: false, bestScore: 40, paper: { teamId: 't1' } },
+    ]
+    const [out] = computeTeamProficiency([T1], rows)
+    expect(out.papersInProgress).toBe(1)
   })
 
   it('in-progress = touched (score > 0) but not demonstrated by anyone', () => {

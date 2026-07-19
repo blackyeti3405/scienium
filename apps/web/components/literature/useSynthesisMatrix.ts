@@ -12,23 +12,7 @@ import {
   type SynthesisCheckResult,
 } from './synthesisApi'
 
-function cellKey(paperId: string, columnId: string): string {
-  return `${paperId}:${columnId}`
-}
-
-function slugify(label: string, taken: Set<string>): string {
-  const base =
-    label
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 32) || 'column'
-  if (!taken.has(base)) return base
-  let n = 2
-  while (taken.has(`${base}-${n}`)) n += 1
-  return `${base}-${n}`
-}
+import { cellKey, slugifyColumnLabel as slugify } from './synthesisSlug'
 
 /**
  * Owns state for ONE open Synthesis Matrix: the loaded grid, per-cell text

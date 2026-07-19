@@ -8,8 +8,10 @@ import { criterionMaxScore, sumReadiness, totalMaxFor } from './rubric-scoring'
  */
 
 describe('criterionMaxScore', () => {
-  it('resolves a real key to its cap', () => {
-    expect(criterionMaxScore('science', 'science:I')).toBeGreaterThan(0)
+  it('resolves a real key to its exact ISEF cap', () => {
+    // Criterion I (Research Question) is 10 points on the ISEF rubric — the
+    // exact value matters because PUT validation clamps against it.
+    expect(criterionMaxScore('science', 'science:I')).toBe(10)
   })
 
   it('a cross-track key resolves to null (forged input)', () => {

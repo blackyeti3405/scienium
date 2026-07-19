@@ -114,6 +114,14 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
       const existingReady = await e2eDb.paper.count({ where: { teamId, status: 'ready' } })
       // Delete buttons hide when the library is locked at 25/25 — stay well under,
       // and AC4 permanently deletes one, so seed enough to keep every AC ≥3.
+      // Guard BOTH bounds: a crashed run elsewhere can leave the shared team at
+      // ≥25 ready papers, which locks the library and would fail AC1-AC5 on an
+      // opaque delete-button visibility timeout instead of this clear error.
+      if (existingReady >= 25) {
+        throw new Error(
+          `E2E team already has ${existingReady} ready papers (library locked at 25) — a crashed run leaked fixtures; clean them up or reseed before running F3.`,
+        )
+      }
       const toCreate = Math.max(0, Math.min(6, 24 - existingReady))
       if (existingReady + toCreate < 3) {
         throw new Error(`Need ≥3 ready papers for F3 tests; can only reach ${existingReady + toCreate}`)

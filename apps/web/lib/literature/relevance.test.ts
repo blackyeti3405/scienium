@@ -125,7 +125,7 @@ describe('batchCheckRelevance default-keep contract (live path)', () => {
       modelReply('{"results":[{"id":"p_foreign","relevant":false}]}'),
     )
     const map = await batchCheckRelevance('topic', PAPERS)
-    expect(map.has('p_foreign')).toBe(true) // documented current behavior: set(id, …) adds it
+    expect(map.has('p_foreign')).toBe(false)
     expect(map.get('p1')).toBe(true)
     expect(map.get('p2')).toBe(true)
   })
@@ -138,10 +138,11 @@ describe('checkPaperRelevance parse-failure fail-open', () => {
     expect(res).toEqual({ relevant: true, reason: '' })
   })
 
-  it('slices the excerpt at 3500 chars before sending', async () => {
+  it('slices the excerpt at exactly 3500 chars before sending', async () => {
     mockCreate.mockResolvedValue(modelReply('{"relevant":true,"reason":"ok"}'))
     await checkPaperRelevance('topic', 'title', 'y'.repeat(10_000))
     const sent = mockCreate.mock.calls[0][0].messages[0].content as string
-    expect(sent.length).toBeLessThan(4_000)
+    const excerpt = sent.split('Paper excerpt:\n')[1]
+    expect(excerpt.length).toBe(3_500)
   })
 })

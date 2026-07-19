@@ -17,7 +17,15 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['lib/**/*.test.ts', 'test/**/*.test.ts'],
+    // stores/ + components/ joined in v0.29.x: client-side logic (the Zustand
+    // store, pure helpers extracted from hooks) is node-testable because I/O
+    // lives behind lib/ modules that vi.mock replaces — no jsdom involved.
+    include: [
+      'lib/**/*.test.ts',
+      'test/**/*.test.ts',
+      'stores/**/*.test.ts',
+      'components/**/*.test.ts',
+    ],
     globals: false,
   },
 })

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useLabCurrency } from '@/components/lab/labCurrency'
+import { buildRetryAnswers, deriveFailedQuestionIds } from './quizDerive'
 import type { Paper, QuizQuestionView, GradeResult, QuizPhase } from './types'
 
 /**
@@ -105,9 +106,7 @@ export function usePaperQuiz(paper: Paper, onProficiencyEarned?: () => void) {
   }
 
   /** Ids of questions scored below the pass threshold on the latest grading. */
-  const failedQuestionIds = new Set(
-    (results?.results ?? []).filter((r) => r.score < (results?.threshold ?? 70)).map((r) => r.questionId),
-  )
+  const failedQuestionIds = deriveFailedQuestionIds(results)
 
   // Enter targeted-retry mode: fetch (idempotently — generates once, server-
   // side) the one fresh extra question so the retry form can show it with its
@@ -144,13 +143,7 @@ export function usePaperQuiz(paper: Paper, onProficiencyEarned?: () => void) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: quiz.sessionId,
-          answers: [
-            ...Array.from(failedQuestionIds).map((questionId) => ({
-              questionId,
-              response: retryAnswers[questionId] ?? '',
-            })),
-            { questionId: newQuestion.id, response: retryAnswers[newQuestion.id] ?? '' },
-          ],
+          answers: buildRetryAnswers(failedQuestionIds, newQuestion.id, retryAnswers),
         }),
       })
       const data = await res.json()

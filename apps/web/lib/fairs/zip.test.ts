@@ -28,8 +28,8 @@ describe('zipToApproxCoords', () => {
     expect(zipToApproxCoords('6001')).not.toEqual(CHICAGO_IL)
   })
 
-  it('strips punctuation/ZIP+4 before resolving', () => {
-    expect(zipToApproxCoords('06001-1234')).not.toBeNull()
+  it('strips punctuation/ZIP+4 before resolving (still lands in the right region)', () => {
+    expect(zipToApproxCoords('06001-1234')).toEqual(HARTFORD_CT)
   })
 
   it('falls back to the state centroid when the input is too short', () => {

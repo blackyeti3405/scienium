@@ -5,6 +5,79 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.29.1] — 2026-07-19
+
+The deferred test slices from 0.29.0, plus an adversarial verification pass over every
+test written in the 0.28.x-0.29.x sweep — mutation testing, semantic review, and E2E-spec
+review by independent (Sonnet/Opus) agents, findings applied. 989 unit tests across 74
+files (from 899/61).
+
+### Added — the deferred test slices
+- **`stores/discoveryStore.test.ts`** (19) — the REAL store against a mocked treeApi:
+  `deleteSubtree` cascade + reselection, failed-persist re-hydrate rollback (phantom
+  nodes come back), `newTreePending` consumed by opens but NOT by branches, dedupe
+  mirrors of the DB uniques (externalId team-wide; videoId per-parent), KP nonce bumps
+  only when the server paid, hydrate's loadError-vs-empty distinction (BLK-7).
+- **`lib/literature/quiz-retry.test.ts`** (13) — 404-not-403 session scoping, the
+  at-most-ONE-paid-generation idempotency proven on the real path (no model call, no
+  write when the extra question exists), replayed passed-ids never regraded, carried
+  scores in the aggregate, the retry cap BINDING (uncapped 97 → 95), KP high-water.
+- **`lib/buildings/service-tx.test.ts`** (17) — the transactional plot economy with
+  REAL economy math and plot geometry (only I/O mocked): conditional KP debit, in-lock
+  occupancy re-check beating a stale snapshot, free positioning of owned-unplaced
+  buildings, P2002 double-buy → 409, atomic sell refund, level-guarded upgrades, and
+  both insufficient-currency messages (KP and LC branches).
+- **`lib/literature/explain.test.ts`** (10) — the both-bars pass rule (fluent-but-wrong
+  never passes), once-ever KP eligibility, normalizeVerdict clamps/caps/rounding, and
+  the E2E fixture verdicts staying in sync with the real pass rule.
+- **`lib/discovery/awardVisit.test.ts`** (6) — P2002 → zero further writes (the sole
+  idempotency gate), non-unique errors rethrown, cap-exhausted and partial-clamp paths.
+- **`lib/api/client.test.ts`** (5) — requestJson: non-2xx always throws ApiError,
+  schema drift throws, HTML error bodies produce clean errors.
+- **Extract-and-test** (Track B "split mixed-responsibility" micro-slices, behavior
+  preserved): `components/literature/quizDerive.ts` (retry answer-set derivation — the
+  server twin reads the rubric off fs, hence the client copy), `components/literature/
+  synthesisSlug.ts` (column-id collision walk; a collision silently merges cells),
+  `components/ops/project-log/logListOps.ts` (delete renumbering, page-boundary dedupe,
+  create/edit merge) — 16 tests over the three; the hooks now call the shared modules.
+- `vitest.config.ts` now includes `stores/**` and `components/**` test files.
+
+### Changed — refactor judgments (recorded, not assumed)
+- `lib/buildings/service.ts` (REFACTOR2 §3.1 "preserve, don't replace"),
+  `lib/literature/quiz-retry.ts` (already "the Track-B template"; its route is a
+  58-line adapter), and `stores/discoveryStore.ts` (I/O already isolated in treeApi)
+  needed NO structural refactor — tests were written against the real modules.
+
+### Fixed — findings from the verification pass
+- **`batchCheckRelevance` hardened**: ids the caller never sent can no longer enter the
+  result map (a hostile abstract forging the scaffolding could make the model emit
+  foreign ids). Previously harmless only because the sole caller iterated its own list.
+- The one misleading test (asserted that foreign-id leak as "documented behavior" under
+  a name claiming the opposite) now asserts the hardened behavior; six
+  assertion-precision fixes from the semantic review (exact 3500-char excerpt slice pin,
+  a cap-actually-BINDS retry case, clampScore rounding, max-rollup discrimination in
+  teacher analytics, the LC-branch upgrade message, exact ZIP/rubric value pins).
+- `e2e/topic-removal-confirm.spec.ts`'s third test was vacuous relative to its name (it
+  re-checked API JSON, never the UI) — it now drives the REAL FinalTopicBar → confirm
+  modal → removal modal and asserts the paper titles render (and cancel deletes nothing).
+- `e2e/F3.spec.ts` seeding now fails loudly when a crashed run left the shared team at
+  the 25-paper lock (was: opaque delete-button timeouts).
+
+### Verification
+- **Mutation testing**: 36 realistic regressions introduced across the swept modules
+  (worktree agent on committed code: 28/28 meaningful mutants caught; the remainder
+  re-run on the working tree against the new tests: all caught). One mutant proved
+  semantically equivalent (the quiz-retry answerMap filter — protection actually lives
+  in toGrade construction, which IS pinned) and was replaced with a meaningful one.
+- **Semantic review** (all 25 session test files): no tautologies, no redundancy;
+  7 precision findings, all applied.
+- **E2E-spec review**: fixture stub-alignment for the topic-removal spec verified
+  against the real token-overlap rule; F18's requestId-paired cleanup verified against
+  the route's transaction; both hand-built PDF fixtures executed through the real
+  parser.
+
+---
+
 ## [0.29.0] — 2026-07-19
 
 Two workstreams: the flaky-E2E root-cause pass (the suite now runs against a production

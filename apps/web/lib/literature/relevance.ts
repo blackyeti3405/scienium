@@ -159,7 +159,12 @@ export async function batchCheckRelevance(
       const parsed = JSON.parse(match[0])
       if (Array.isArray(parsed.results)) {
         for (const r of parsed.results) {
-          if (typeof r.id === 'string' && typeof r.relevant === 'boolean') {
+          // Only ids we actually sent may enter the map — a hostile abstract
+          // that forges the scaffolding could make the model emit foreign ids,
+          // and callers iterate their own papers, so a stray key is at best
+          // noise and at worst a footgun for a future caller that iterates the
+          // MAP instead.
+          if (typeof r.id === 'string' && typeof r.relevant === 'boolean' && result.has(r.id)) {
             result.set(r.id, r.relevant)
           }
         }

@@ -182,30 +182,42 @@ test.describe('topic change — two-phase removal confirmation', () => {
     })
   })
 
-  test('the proposed removals reach the student as visible titles', async ({ browser }) => {
+  test('the proposed removals reach the student as visible TITLES in the real modal', async ({
+    browser,
+  }) => {
     test.setTimeout(120_000)
 
     await seedFixturePapers()
 
     await withSeedPage(browser, 'leader', async (page) => {
+      // AC-3, driven through the ACTUAL UI: a student cannot veto what they
+      // cannot read, so the removal-confirmation modal must render the paper
+      // TITLES (an API check alone would pass even if the modal showed ids —
+      // or never opened).
       await gotoFresh(page, '/discovery')
 
-      // Drive the same flow the UI drives, then assert the modal renders the list.
-      // (The confirm modal is state-driven, so the response shape is what gates it.)
-      const proposal = await api.post(page, '/api/discovery/topic', {
-        data: { topic: NEW_TOPIC, confirmWipe: true },
-      })
-      expect(proposal.status()).toBe(409)
-      const proposed = await proposal.json()
+      // /discovery lands on the Discovery HOME screen (not the explorer), whose
+      // inline editor drives the same saveTopic flow. Edit and save the topic.
+      await page.getByRole('button', { name: 'Edit research topic' }).click()
+      const input = page.getByPlaceholder('Type your research topic…')
+      await input.fill(NEW_TOPIC)
+      await input.press('Enter')
 
-      // AC-3 — every proposed row carries a human-readable title, not a bare id.
-      // A student cannot veto what they cannot read.
-      expect(proposed.papers.length).toBeGreaterThan(0)
-      for (const p of proposed.papers) {
-        expect(typeof p.id).toBe('string')
-        expect(typeof p.title).toBe('string')
-        expect(p.title.length).toBeGreaterThan(0)
-      }
+      // Phase 0: the generic wipe warning — proceed.
+      await expect(page.getByText('Change research topic?')).toBeVisible({ timeout: 10_000 })
+      await page.getByRole('button', { name: 'Change topic' }).click()
+
+      // Phase 1 ran (stubbed relevance): the SPECIFIC removal list must render
+      // the off-topic paper's title, and not propose the on-topic ones.
+      await expect(page.getByText('Remove these sources?')).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByText(IRRELEVANT)).toBeVisible()
+      await expect(page.getByText(RELEVANT_A)).toHaveCount(0)
+      await expect(page.getByText(RELEVANT_B)).toHaveCount(0)
+
+      // Cancel — nothing may be deleted by a look at the list.
+      await page.getByRole('button', { name: 'Cancel' }).click()
+      await expect(page.getByText('Remove these sources?')).toHaveCount(0)
+      expect(await fixtureTitlesPresent()).toEqual([RELEVANT_A, RELEVANT_B, IRRELEVANT].sort())
     })
   })
 })

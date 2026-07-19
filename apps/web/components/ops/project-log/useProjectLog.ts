@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import type { useConfirm } from '@/components/ui/ConfirmDialog'
 import type { LogEntry, LogReferenceChip, Member, SavedLogEntry } from './types'
 import { deleteLogEntry, fetchProjectLog, removeLogReference } from './api'
+import { appendOlderEntries, applySavedEntry, removeEntryAndRenumber } from './logListOps'
 
 type ConfirmFn = ReturnType<typeof useConfirm>['confirm']
 type AlertFn = ReturnType<typeof useConfirm>['alert']
@@ -51,13 +52,7 @@ export function useProjectLog({ confirm, alert }: { confirm: ConfirmFn; alert: A
     setLoadingOlder(true)
     try {
       const d = await fetchProjectLog(nextCursor)
-      setEntries((prev) => {
-        const seen = new Set(prev.map((e) => e.id))
-        const older = d.entries
-          .filter((e) => !seen.has(e.id)) // defensive against a shifted page boundary
-          .map((e) => ({ ...e, links: e.links ?? [], backlinks: e.backlinks ?? [] }))
-        return [...prev, ...older]
-      })
+      setEntries((prev) => appendOlderEntries(prev, d.entries) as LogEntry[])
       setNextCursor(d.nextCursor)
     } catch {
       await alert({ title: 'Load failed', message: 'Could not load older entries. Please try again.' })
@@ -70,19 +65,10 @@ export function useProjectLog({ confirm, alert }: { confirm: ConfirmFn; alert: A
     // POST/PATCH don't return links/backlinks (a freshly created entry has
     // none; an edited entry's existing links are preserved below).
     if (mode === 'create') {
-      setEntries((prev) => [
-        { ...entry, entryNumber: entry.entryNumber ?? total + 1, links: [], backlinks: [] },
-        ...prev,
-      ])
+      setEntries((prev) => applySavedEntry(prev, entry, 'create', total))
       setTotal((t) => t + 1)
     } else {
-      setEntries((prev) =>
-        prev.map((e) =>
-          e.id === entry.id
-            ? { ...entry, entryNumber: e.entryNumber, links: e.links, backlinks: e.backlinks }
-            : e,
-        ),
-      )
+      setEntries((prev) => applySavedEntry(prev, entry, 'edit', total))
       setEditingId(null)
     }
   }
@@ -116,11 +102,7 @@ export function useProjectLog({ confirm, alert }: { confirm: ConfirmFn; alert: A
     setDeletingId(target.id)
     try {
       await deleteLogEntry(target.id)
-      setEntries((prev) =>
-        prev
-          .filter((e) => e.id !== target.id)
-          .map((e) => (e.entryNumber > target.entryNumber ? { ...e, entryNumber: e.entryNumber - 1 } : e)),
-      )
+      setEntries((prev) => removeEntryAndRenumber(prev, target))
       setTotal((t) => Math.max(0, t - 1))
     } catch {
       await alert({ title: 'Delete failed', message: 'Could not delete the entry. Please try again.' })
