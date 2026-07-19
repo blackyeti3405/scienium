@@ -59,11 +59,23 @@ export function useShowcaseEditor() {
 
   useEffect(() => {
     fetch('/api/showcase')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.showcase) applyShowcase(d.showcase)
+      .then(async (r) => {
+        // 404 is the legitimate "no showcase yet" case — start with a blank editor.
+        // Any OTHER non-2xx must surface: the old code only checked `d.showcase`,
+        // so a 403 phase gate or a 429 parsed cleanly, produced no `showcase` key,
+        // and rendered a bare "Draft" editor. A student whose showcase was blocked
+        // saw an empty one instead of a reason.
+        if (r.status === 404) return null
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(d.error ?? 'Could not load your showcase.')
+        return d.showcase ?? null
       })
-      .catch(() => setError('Could not load your showcase.'))
+      .then((showcase) => {
+        if (showcase) applyShowcase(showcase)
+      })
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : 'Could not load your showcase.'),
+      )
       .finally(() => setLoading(false))
   }, [])
 

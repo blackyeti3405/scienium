@@ -5,6 +5,52 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.28.2] — 2026-07-18
+
+Fixes the long-standing `F4.spec.ts` AC10 failure. The cause was not in the moderation
+feature at all — the product code was correct throughout — but in the E2E harness, where
+a session-recovery ladder was silently costing ~26s of every test's 30s budget.
+
+### Fixed — E2E harness burned most of each test's budget on session recovery
+- **`e2e/api.ts` now boots the app before refreshing a Clerk token.** A `page` fixture
+  starts on `about:blank`, where clerk-js has never run — so `refreshClerkSession` could
+  only exhaust its 5s `waitForFunction` and give up, and the call then rode the frozen
+  `storageState` token. Past that token's ~60s TTL (i.e. by test #10 of a serial file) the
+  request 307s and the escalating ladder fires: ~10-15s in `forceSessionRecovery`, then
+  ~5-8s re-signing in. `ensureAppLoaded` navigates to the role's landing surface first —
+  exactly what `withSeedPage` already did, which is why only specs calling `api.*` /
+  `gotoFresh` on a bare `page` were slow.
+- **Effect on the failing test:** AC10 went from a 30s timeout to **9.6s**, AC9 from ~26s
+  to 2.3s, and F4 now passes **14/14** (AC11 and AC12 previously never ran). Diagnosis
+  confirmed via a Playwright artifact showing the timeout inside `page.goto` — the
+  `.sc-pill` assertion was never reached, so the moderation UI was never at fault.
+- Deliberately NOT fixed by raising the Playwright timeout: that would have hidden a real
+  ~26s-per-call harness cost that would resurface in every long serial spec.
+
+### Fixed — relevance had no deterministic E2E stub
+- **`lib/literature/relevance.ts` now honours `E2E_SKIP_LLM=1`** (plain token overlap),
+  matching the convention every other LLM-backed feature already follows. Without it the
+  topic-wipe path fell through to its parse-failure default of "keep everything", so the
+  app's one destructive flow could never be observed proposing a removal under the E2E
+  flag. `e2e/topic-removal-confirm.spec.ts` passed in 0.28.0 only because it happened to
+  hit a reused dev server that lacked the flag — it is now deterministic and free.
+
+### Fixed — showcase editor swallowed load errors
+- **`useShowcaseEditor` surfaces non-2xx from `GET /api/showcase`.** It previously checked
+  only for a `showcase` key, so a 403 phase gate or a 429 parsed cleanly and rendered a
+  bare "Draft" editor: a student whose showcase was blocked saw an empty one with no
+  reason. 404 still means "no showcase yet" and opens a blank editor.
+
+### Notes
+- The **full** E2E suite remains flaky for unrelated, pre-existing reasons: 12-16 failures
+  per run with a DIFFERENT failure set each time, across specs untouched here (placement,
+  upgrades, F8-reports, F5-bell, F18). Spot-checked in isolation, those pass cleanly
+  (`F8-reports` 13/13, `placement` 4/4), so the cause is cross-spec state/order dependence
+  in shared fixtures, not a regression. Worth its own pass before the pilot; not attempted
+  here.
+
+---
+
 ## [0.28.1] — 2026-07-18
 
 REFACTOR2 Track B, first vertical slice. Track B is explicitly *not* a pilot gate and is

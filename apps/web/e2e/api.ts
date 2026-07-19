@@ -34,6 +34,32 @@ export function registerPageRole(page: Page, role: Role): void {
  * navigation, no lost DOM/app state — keeps every call below fresh
  * automatically.
  */
+/**
+ * Ensure the page has actually loaded the app before we try to refresh a token
+ * from inside it.
+ *
+ * A `page` fixture starts on `about:blank`. clerk-js has never booted there, so
+ * `refreshClerkSession` can only burn its full 5s `waitForFunction` budget and
+ * give up, and the call then rides the frozen `storageState` token. Once that
+ * token's ~60s TTL has lapsed — which it has by the tenth test of a serial file —
+ * the request 307s and the escalating recovery ladder fires: ~10-15s in
+ * `forceSessionRecovery`, then another ~5-8s re-signing in. That is ~26s of a
+ * 30s default test budget spent before the spec's real work begins.
+ *
+ * `withSeedPage` never pays it because it navigates first (see below), which is
+ * why only the specs that call `api.*` / `gotoFresh` on a bare `page` are slow.
+ * Booting the app here makes those paths behave the same way: the token is minted
+ * live by clerk-js, so the ladder never runs at all.
+ */
+async function ensureAppLoaded(page: Page): Promise<void> {
+  if (page.url().startsWith(BASE_URL)) return
+  const role = PAGE_ROLE.get(page) ?? 'leader'
+  await page.goto(LANDING[role]).catch(() => {
+    // A failed boot is not fatal on its own — the caller's own request (or the
+    // recovery ladder behind it) still gets to report the real problem.
+  })
+}
+
 async function refreshClerkSession(page: Page): Promise<void> {
   try {
     // Wait (bounded) for clerk-js to boot a session on a just-navigated page. Without
@@ -144,6 +170,7 @@ async function refreshed(
   url: string,
   run: () => Promise<APIResponse>,
 ): Promise<APIResponse> {
+  await ensureAppLoaded(page)
   await refreshClerkSession(page)
   let res = await run()
   if (!staleSessionResponse(url, res)) return res
@@ -176,6 +203,7 @@ async function refreshed(
  * detour (e.g. a `withSeedPage` teacher block) in long serial files.
  */
 export async function gotoFresh(page: Page, url: string): Promise<void> {
+  await ensureAppLoaded(page)
   await refreshClerkSession(page)
   await page.goto(url)
   const targetPath = new URL(url, BASE_URL).pathname

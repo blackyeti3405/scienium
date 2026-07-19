@@ -20,6 +20,49 @@ A paper is IRRELEVANT if:
 Return only valid JSON: { "relevant": true | false, "reason": "one concise sentence" }`
 
 /**
+ * Deterministic relevance used ONLY when `E2E_SKIP_LLM=1` (never in production).
+ *
+ * Every other LLM-backed feature already has one of these; relevance did not, so
+ * the topic-wipe path silently fell back to "keep everything" under the E2E flag
+ * — the batch parse-failure default. That made the one destructive flow in the
+ * app untestable: a spec could never observe a paper being proposed for removal.
+ *
+ * The rule is plain token overlap between the topic and the paper's own text, so
+ * an obviously off-topic fixture comes out irrelevant without any model call.
+ */
+const STOPWORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'into', 'this', 'that', 'their', 'under',
+  'over', 'a', 'an', 'of', 'in', 'on', 'to', 'is', 'are', 'be', 'by', 'its',
+])
+
+function contentTokens(s: string): Set<string> {
+  return new Set(
+    s
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length > 3 && !STOPWORDS.has(t)),
+  )
+}
+
+function stubRelevance(topic: string, paperText: string): boolean {
+  const topicTokens = contentTokens(topic)
+  if (topicTokens.size === 0) return true
+  const paperTokens = contentTokens(paperText)
+  for (const t of topicTokens) {
+    if (paperTokens.has(t)) return true
+    // Cheap stem tolerance: "symbiont" vs "symbionts", "coral" vs "corals".
+    for (const p of paperTokens) {
+      if (p.startsWith(t) || t.startsWith(p)) return true
+    }
+  }
+  return false
+}
+
+function skipLlm(): boolean {
+  return process.env.E2E_SKIP_LLM === '1'
+}
+
+/**
  * Check whether a single paper is relevant to the team's research topic.
  * Called synchronously during upload so irrelevant papers can be rejected before
  * the DB row is created.
@@ -30,6 +73,14 @@ export async function checkPaperRelevance(
   textExcerpt: string,
 ): Promise<RelevanceResult> {
   const excerpt = textExcerpt.slice(0, 3500)
+
+  if (skipLlm()) {
+    const relevant = stubRelevance(topic, `${paperTitle} ${excerpt}`)
+    return {
+      relevant,
+      reason: relevant ? '' : '[E2E fixture] No overlap with the research topic.',
+    }
+  }
 
   const response = await anthropic().messages.create({
     model: 'claude-haiku-4-5-20251001',
@@ -71,6 +122,15 @@ export async function batchCheckRelevance(
   papers: Array<{ id: string; title: string; abstract: string | null }>,
 ): Promise<Map<string, boolean>> {
   if (papers.length === 0) return new Map()
+
+  if (skipLlm()) {
+    return new Map(
+      papers.map((p) => [
+        p.id,
+        stubRelevance(newTopic, `${p.title} ${p.abstract ?? ''}`),
+      ]),
+    )
+  }
 
   const paperList = papers
     .map((p, i) => `${i + 1}. ID: ${p.id}\n   Title: ${p.title}\n   Abstract: ${p.abstract ?? '(not yet extracted)'}`)

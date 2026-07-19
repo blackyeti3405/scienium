@@ -23,9 +23,12 @@ import { e2eDb, e2eTeamId } from './db'
  *  3. the removal list reaches the UI as titles, so a student can SEE a paper
  *     that shouldn't be going before approving.
  *
- * The relevance call is real (not mocked): the point is to prove the contract
- * holds against the live model. Fixture papers are chosen so the judgement is
- * unambiguous — two on-topic reef papers, one paper about medieval poetry.
+ * Relevance runs through the deterministic `E2E_SKIP_LLM=1` stub in
+ * `lib/literature/relevance.ts` (plain token overlap), like every other
+ * LLM-backed feature in the suite — so these assertions are stable and cost
+ * nothing. Fixture papers are chosen so the judgement is unambiguous under that
+ * rule: two reef papers sharing the topic's vocabulary, one about medieval
+ * poetry sharing none.
  */
 
 const START_TOPIC = 'Coral reef bleaching in warming oceans'
