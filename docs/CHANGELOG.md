@@ -5,6 +5,37 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.29.4] — 2026-07-19
+
+Route-policy harness: the authorization matrix for every dynamic API route now runs in the
+unit suite, closing the two holes the existing tests could not see — a dropped guard-error
+return (route tests stubbed the guard away, so an unauthenticated route still passed) and an
+unscoped lookup (`findUnique({ id })` vs `findFirst({ id, teamId })` — E2E IDOR probes used
+nonexistent ids, which 404 either way; only another team's *real* row tells them apart).
+
+### Added
+- `test/harness/route-policy.ts` — calls route handlers directly as Student A/B, Teacher A/B,
+  or anonymous. Mocks ONLY Clerk `auth()` + `@/lib/db` (in-memory rows genuinely filtered by
+  where-clause, incl. compound uniques and relation filters) plus no-op storage/activity
+  stubs; `requireTeamContext`/`requireUserContext`/`requireTeacher`/`withTeamRoute`, the real
+  rate limiter (`overLimit()` exhausts actual buckets), CSRF (`crossOrigin()`), phase gate,
+  and zod all run for real. Fixture ships two teams, so cross-team 404s are provable.
+- `test/harness/route-policy-selftest.test.ts` — proves the harness discriminates: a
+  deliberately unscoped handler leaks team B's row (while still 404ing a fake id — why the
+  old probes were blind) and a guard-dropping handler serves anonymous traffic. Goes red if
+  the harness machinery ever stops telling these apart.
+- Eight matrix specs (`test/*-policy.test.ts`, ~200 tests) covering all 29 dynamic routes:
+  papers, data-terminal, discovery, failure-log, literature, project-log, fairs+showcase,
+  teacher. Tailored pins where scoping is not in the first where-clause: quiz-grade's
+  post-fetch `session.paper.teamId` check, sync-deadlines' own-state gate (BLK-5) on the
+  global fair catalog, the forms upsert writing only the caller's team row, vocab cards'
+  per-student scope. Teacher matrix adds the extra axis: signed-in students 403, a teacher
+  from another class 404s (never learns the row exists). AI-backed POSTs assert the failure
+  half only — every access decision lands before the model call, so no test reaches
+  Anthropic or the network. Suite: 82 files / 1,246 tests, ~7s.
+
+---
+
 ## [0.29.3] — 2026-07-19
 
 The five findings v0.29.2 recorded but did not fix. Each ships with a pinning test, and two
