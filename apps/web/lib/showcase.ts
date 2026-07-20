@@ -114,9 +114,26 @@ export function teamSchoolIds(members: { user: { schoolId: string | null } }[]):
   return [...new Set(members.map((m) => m.user.schoolId).filter((s): s is string => !!s))]
 }
 
+/** Builds the canViewShowcase() input from a raw showcase record. */
+export function toShowcaseForView(sc: {
+  teamId: string
+  privacyLevel: string
+  publishedAt: Date | null
+  moderationStatus: string
+  team: { members: { user: { schoolId: string | null } }[] }
+}): ShowcaseForView {
+  return {
+    teamId: sc.teamId,
+    privacyLevel: sc.privacyLevel as PrivacyLevel,
+    publishedAt: sc.publishedAt,
+    moderationStatus: sc.moderationStatus,
+    teamSchoolIds: teamSchoolIds(sc.team.members),
+  }
+}
+
 // ─── Slug ───────────────────────────────────────────────────────────────────
 
-export function slugify(input: string): string {
+export function slugify(input: string, fallback = 'project'): string {
   const base = input
     .toLowerCase()
     .normalize('NFKD')
@@ -124,7 +141,7 @@ export function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60)
-  return base || 'project'
+  return base || fallback
 }
 
 // ─── Safe links ───────────────────────────────────────────────────────────────

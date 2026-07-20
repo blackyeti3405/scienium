@@ -5,6 +5,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson, boundedText } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { anthropic } from '@/lib/anthropic'
+import { logEvent } from '@/lib/observability/log'
 import { paperTextBlock } from '@/lib/literature/grading'
 import { extractJson } from '@/lib/literature/quiz'
 import { logActivity } from '@/lib/activity/log'
@@ -27,7 +28,7 @@ const ExplainBody = z.object({ text: boundedText(EXPLAIN_MAX_CHARS) }).strict()
 
 /**
  * GET /api/papers/[id]/explain — this student's current explanation state
- * (parent row + attempt history) for the panel to reload on mount/reload.
+ * (parent high-water row) for the panel to reload on mount/reload.
  *
  * POST /api/papers/[id]/explain — grade one submission against the paper,
  * persist the revise-loop history, and (once-ever) mint flat KP on a pass.
@@ -44,16 +45,9 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   })
   if (!paper) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const [explanation, attempts] = await Promise.all([
-    db.paperExplanation.findUnique({
-      where: { paperId_userId: { paperId: params.id, userId: ctx.dbUserId } },
-    }),
-    db.paperExplanationAttempt.findMany({
-      where: { paperId: params.id, userId: ctx.dbUserId },
-      orderBy: { createdAt: 'asc' },
-      take: 20,
-    }),
-  ])
+  const explanation = await db.paperExplanation.findUnique({
+    where: { paperId_userId: { paperId: params.id, userId: ctx.dbUserId } },
+  })
 
   if (!explanation) return NextResponse.json({ explanation: null })
 
@@ -65,15 +59,6 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
       latestText: explanation.latestText,
       verdict: explanation.latestVerdictJson,
       threshold: { accuracy: EXPLAIN_PASS_ACCURACY, completeness: EXPLAIN_PASS_COMPLETENESS },
-      attempts: attempts.map((a) => ({
-        attemptNo: a.attemptNo,
-        text: a.text,
-        accuracy: a.accuracy,
-        completeness: a.completeness,
-        overall: a.overall,
-        passed: a.passed,
-        verdict: a.verdictJson,
-      })),
     },
   })
 }
@@ -138,7 +123,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     const parsed = extractJson<unknown>(raw)
     const result = parsed ? ExplainVerdictSchema.safeParse(parsed) : null
     if (!result || !result.success) {
-      console.error('[explain] verdict failed to parse:', raw.slice(0, 500))
+      // Verdict can quote the student's explanation — log lengths only (A7).
+      logEvent({
+        event: 'explain.verdict_parse_failed',
+        outcome: 'error',
+        detail: `len=${raw.length}`,
+      })
       return NextResponse.json({ error: 'Failed to grade your explanation' }, { status: 502 })
     }
     verdict = normalizeVerdict(result.data)

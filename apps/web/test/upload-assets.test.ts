@@ -36,8 +36,6 @@ import {
   TEAM_STORAGE_QUOTA_BYTES,
   checkTeamStorageQuota,
   orphanObjectKey,
-  recordAttachedAsset,
-  recordTemporaryAsset,
   resolveAttachmentKeys,
   reclaimAbandonedAssets,
 } from '@/lib/uploads/assets'
@@ -171,30 +169,12 @@ describe('team storage quota (v0.28.0)', () => {
   })
 })
 
-describe('recordAttachedAsset vs recordTemporaryAsset (sweep-safety semantics)', () => {
-  // The module's own docstring names the failure mode: an object bound to its
-  // domain row in the same request but recorded `temporary` gets DELETED by the
-  // sweep a day later — live-data loss. These pins keep the two creators honest.
-  it('recordAttachedAsset creates status=attached with attachedAt set', async () => {
-    mocks.assetCreate.mockResolvedValue({ id: 'a1' })
-    await recordAttachedAsset({
-      teamId: 'team_1', userId: 'u1', objectKey: 'k', url: '/f', contentType: 'application/pdf',
-      sizeBytes: 10, purpose: 'paper_pdf', attachedToType: 'paper', attachedToId: 'p1',
-    })
-    const data = mocks.assetCreate.mock.calls[0][0].data
-    expect(data.status).toBe('attached')
-    expect(data.attachedAt).toBeInstanceOf(Date)
-  })
-
-  it('recordTemporaryAsset creates status=temporary (reclaimable if abandoned)', async () => {
-    mocks.assetCreate.mockResolvedValue({ id: 'a1' })
-    await recordTemporaryAsset({
-      teamId: 'team_1', userId: 'u1', objectKey: 'k', url: '/f', contentType: 'image/png',
-      sizeBytes: 10, purpose: 'log_attachment',
-    })
-    expect(mocks.assetCreate.mock.calls[0][0].data.status).toBe('temporary')
-  })
-})
+// The old direct-creation helpers (recordAttachedAsset / recordTemporaryAsset)
+// were replaced by the reservation-first lifecycle (A5): every upload path now
+// starts with `reserveUploadAsset` (atomic quota + `temporary` row BEFORE the
+// R2 put) and flips to `attached` inside the domain commit via
+// `attachAssetsByKey`. That contract is covered in
+// test/upload-reservation.test.ts.
 
 describe('orphanObjectKey (single-physical-delete-site invariant)', () => {
   it('flips a live ledger row and does NOT create a duplicate', async () => {
@@ -228,15 +208,32 @@ describe('orphanObjectKey (single-physical-delete-site invariant)', () => {
     })
   })
 
-  it('swallows a lost adoption race (unique objectKey) instead of throwing', async () => {
+  it('swallows a lost adoption race — a VERIFIED Prisma P2002 only (A5)', async () => {
+    const { Prisma } = await import('@prisma/client')
     mocks.assetUpdateMany.mockResolvedValue({ count: 0 })
-    mocks.assetCreate.mockRejectedValue(new Error('P2002 unique constraint'))
+    mocks.assetCreate.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('unique constraint', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    )
     await expect(
       orphanObjectKey({
         teamId: 'team_1', userId: 'u1', objectKey: 'k',
         contentType: 'application/pdf', purpose: 'showcase_board',
       }),
     ).resolves.toBeUndefined()
+  })
+
+  it('propagates any OTHER adoption failure — silence would leak the object (A5)', async () => {
+    mocks.assetUpdateMany.mockResolvedValue({ count: 0 })
+    mocks.assetCreate.mockRejectedValue(new Error('db outage'))
+    await expect(
+      orphanObjectKey({
+        teamId: 'team_1', userId: 'u1', objectKey: 'k',
+        contentType: 'application/pdf', purpose: 'showcase_board',
+      }),
+    ).rejects.toThrow('db outage')
   })
 
   it('never touches storage directly (the sweep owns physical deletes)', async () => {

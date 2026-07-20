@@ -69,58 +69,38 @@ export async function persistCreate(nodes: NewNode[]): Promise<{ ok: boolean; kp
   }
 }
 
-export async function persistStar(id: string, starred: boolean): Promise<boolean> {
+/** Best-effort fetch: log-and-swallow on failure — the next hydrate() reconciles
+ *  with the DB-authoritative value, so callers only need the ok boolean. */
+async function safeFetch(url: string, init?: RequestInit, label = 'request'): Promise<boolean> {
   try {
-    const res = await fetch(`/api/discovery/tree/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ starred }),
-    })
+    const res = await fetch(url, init)
     return res.ok
   } catch (err) {
-    console.error('[discovery] star failed:', err)
+    console.error(`[discovery] ${label} failed:`, err)
     return false
   }
 }
+
+export const persistStar = (id: string, starred: boolean) =>
+  safeFetch(
+    `/api/discovery/tree/${id}`,
+    { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ starred }) },
+    'star',
+  )
 
 // #11: persist a node's interest tier. Log-and-swallow on failure — the next
 // hydrate() reconciles with the DB-authoritative value, same as `persistStar`.
-export async function persistInterest(
-  id: string,
-  level: 'high' | 'mid' | 'low' | null,
-): Promise<boolean> {
-  try {
-    const res = await fetch(`/api/discovery/tree/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ interestLevel: level }),
-    })
-    return res.ok
-  } catch (err) {
-    console.error('[discovery] interest failed:', err)
-    return false
-  }
-}
+export const persistInterest = (id: string, level: 'high' | 'mid' | 'low' | null) =>
+  safeFetch(
+    `/api/discovery/tree/${id}`,
+    { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ interestLevel: level }) },
+    'interest',
+  )
 
-export async function persistDelete(id: string): Promise<boolean> {
-  try {
-    const res = await fetch(`/api/discovery/tree/${id}`, { method: 'DELETE' })
-    return res.ok
-  } catch (err) {
-    console.error('[discovery] delete failed:', err)
-    return false
-  }
-}
+export const persistDelete = (id: string) =>
+  safeFetch(`/api/discovery/tree/${id}`, { method: 'DELETE' }, 'delete')
 
-export async function persistReset(): Promise<boolean> {
-  try {
-    const res = await fetch('/api/discovery/tree', { method: 'DELETE' })
-    return res.ok
-  } catch (err) {
-    console.error('[discovery] reset failed:', err)
-    return false
-  }
-}
+export const persistReset = () => safeFetch('/api/discovery/tree', { method: 'DELETE' }, 'reset')
 
 /** Resolve a citation/search pick into a full source (server-authoritative
  *  host + credibility tier). Returns null on any failure — non-fatal, the

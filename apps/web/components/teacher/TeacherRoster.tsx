@@ -7,7 +7,6 @@ import {
   Copy,
   Check,
   X,
-  AlertCircle,
   Clock,
   Activity,
   Users,
@@ -20,8 +19,7 @@ import {
 import { PHASE_INFO, PHASE_ORDER, type Phase } from '@/lib/phase'
 import { StatTile } from '@/components/ui/Card'
 import { BusyButton } from '@/components/ui/BusyButton'
-import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
-import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
+import { TeacherPanelState } from './TeacherPanelState'
 
 interface RosterStudent {
   studentId: string
@@ -113,39 +111,14 @@ export function TeacherRoster() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="max-w-6xl mx-auto space-y-8">
-        <div className="space-y-3">
-          <PixelSkeleton variant="line" h="h-3" w="w-24" />
-          <PixelSkeleton variant="box" h="h-20" w="w-full" />
-        </div>
-        <div className="space-y-3">
-          <PixelSkeleton variant="line" h="h-3" w="w-20" />
-          <PanelListSkeleton rows={5} />
-        </div>
-      </div>
-    )
-  }
-
-  if (loadError) {
-    return (
-      <div className="max-w-6xl mx-auto">
-        <div className="border border-dashed border-red-400/25 rounded-lg py-12 text-center space-y-1">
-          <p className="text-sm text-red-400">{loadError}</p>
-        </div>
-      </div>
-    )
+  if (loading || loadError) {
+    return <TeacherPanelState loading={loading} error={loadError} skeletonRows={5} />
   }
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       {/* Classes manager */}
-      <ClassManager
-        classes={classes}
-        onCreated={(c) => setClasses((list) => [c, ...list])}
-        setClasses={setClasses}
-      />
+      <ClassManager classes={classes} setClasses={setClasses} />
 
       {/* Overview stat tiles */}
       {students.length > 0 && (
@@ -325,11 +298,9 @@ export function TeacherRoster() {
 
 function ClassManager({
   classes,
-  onCreated,
   setClasses,
 }: {
   classes: ClassRow[]
-  onCreated: (c: ClassRow) => void
   setClasses: React.Dispatch<React.SetStateAction<ClassRow[]>>
 }) {
   const [name, setName] = useState('')
@@ -353,7 +324,7 @@ function ClassManager({
       })
       const out = await res.json()
       if (!res.ok) throw new Error(out.error ?? 'Could not create class')
-      onCreated(out.class)
+      setClasses((list) => [out.class, ...list])
       setName('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')

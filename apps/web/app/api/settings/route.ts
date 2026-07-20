@@ -16,12 +16,9 @@ const SettingsBody = z
   })
   .strict()
 
-/** GET /api/settings — returns current user + team profile fields */
-export async function GET(req: NextRequest) {
-  const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
-  if (error) return error
-
-  const [user, team] = await Promise.all([
+/** The user + team fields GET and PATCH both fetch and shape identically. */
+function fetchProfile(ctx: { dbUserId: string; teamId: string }) {
+  return Promise.all([
     db.user.findUnique({
       where: { id: ctx.dbUserId },
       select: { name: true, school: { select: { name: true } } },
@@ -31,20 +28,34 @@ export async function GET(req: NextRequest) {
       select: { name: true, teamLeadId: true, locationZip: true, locationState: true, researchIdea: true },
     }),
   ])
+}
 
+type ProfileUser = Awaited<ReturnType<typeof fetchProfile>>[0]
+type ProfileTeam = Awaited<ReturnType<typeof fetchProfile>>[1]
+
+function shapeProfile(user: ProfileUser, team: ProfileTeam, dbUserId: string) {
+  return {
+    name: user?.name ?? null,
+    school: user?.school?.name ?? null,
+    labName: team?.name ?? null,
+    zip: team?.locationZip ?? null,
+    state: team?.locationState ?? null,
+    isLead: team?.teamLeadId === dbUserId,
+    researchIdea: team?.researchIdea ?? null,
+  }
+}
+
+/** GET /api/settings — returns current user + team profile fields */
+export async function GET(req: NextRequest) {
+  const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
+  if (error) return error
+
+  const [user, team] = await fetchProfile(ctx)
   if (!user || !team) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  return NextResponse.json({
-    name: user.name,
-    school: user.school?.name ?? null,
-    labName: team.name,
-    zip: team.locationZip ?? null,
-    state: team.locationState ?? null,
-    isLead: team.teamLeadId === ctx.dbUserId,
-    researchIdea: team.researchIdea ?? null,
-  })
+  return NextResponse.json(shapeProfile(user, team, ctx.dbUserId))
 }
 
 /** PATCH /api/settings — update user and/or team profile fields */
@@ -111,24 +122,6 @@ export async function PATCH(req: NextRequest) {
   }
 
   // Return refreshed values (same shape as GET)
-  const [updatedUser, updatedTeam] = await Promise.all([
-    db.user.findUnique({
-      where: { id: ctx.dbUserId },
-      select: { name: true, school: { select: { name: true } } },
-    }),
-    db.team.findUnique({
-      where: { id: ctx.teamId },
-      select: { name: true, teamLeadId: true, locationZip: true, locationState: true, researchIdea: true },
-    }),
-  ])
-
-  return NextResponse.json({
-    name: updatedUser?.name ?? null,
-    school: updatedUser?.school?.name ?? null,
-    labName: updatedTeam?.name ?? null,
-    zip: updatedTeam?.locationZip ?? null,
-    state: updatedTeam?.locationState ?? null,
-    isLead: updatedTeam?.teamLeadId === ctx.dbUserId,
-    researchIdea: updatedTeam?.researchIdea ?? null,
-  })
+  const [updatedUser, updatedTeam] = await fetchProfile(ctx)
+  return NextResponse.json(shapeProfile(updatedUser, updatedTeam, ctx.dbUserId))
 }

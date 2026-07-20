@@ -125,10 +125,6 @@ export interface Segment {
 export interface CodexTrack {
   slug: string
   label: string
-  /** True for the six lab-type home tracks (the default per-lab entry point). */
-  home: boolean
-  /** Set only on a home track — the lab type it is the default entry point for. */
-  labType?: string
   core: Segment
   /** 0 for Core-only tracks (this cycle's six home tracks); 3-5 for the flagship. */
   branches: Segment[]

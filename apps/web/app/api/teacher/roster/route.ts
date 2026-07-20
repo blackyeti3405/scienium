@@ -37,13 +37,13 @@ export async function GET(req: NextRequest) {
       id: true,
       name: true,
       activeTeam: {
-        select: { id: true, name: true, phase: true, labType: true, classId: true },
+        select: { id: true, name: true, phase: true, labType: true },
       },
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
         take: 1,
         select: {
-          team: { select: { id: true, name: true, phase: true, labType: true, classId: true } },
+          team: { select: { id: true, name: true, phase: true, labType: true } },
         },
       },
     },
@@ -88,9 +88,11 @@ export async function GET(req: NextRequest) {
 
   const now = new Date()
   const roster = students.map((s) => {
-    const candidate = s.activeTeam ?? s.teamMemberships[0]?.team ?? null
-    const team =
-      candidate?.classId && ctx.classIds.includes(candidate.classId) ? candidate : null
+    // ADR-004: class membership is per STUDENT; a team's own `classId` is
+    // vestigial and never read. The student is already scoped to this teacher's
+    // classes above, so their team is in scope even if it spans classes/schools
+    // or carries a null legacy classId.
+    const team = s.activeTeam ?? s.teamMemberships[0]?.team ?? null
     const teamId = team?.id ?? null
     const lastLog = teamId ? (lastLogMap.get(teamId) ?? null) : null
     const lastActivity = teamId ? (lastActivityMap.get(teamId) ?? null) : null

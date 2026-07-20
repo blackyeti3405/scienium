@@ -65,6 +65,21 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], storageState: STORAGE.leader },
       dependencies: ['setup'],
     },
+    // A9: the accessibility smoke also runs at a representative tablet
+    // viewport — classroom devices are not all desktops. Scoped to the a11y
+    // spec so the (serial, shared-account) suite doesn't double in length.
+    // Chromium with iPad dimensions + touch, so no extra browser install.
+    {
+      name: 'tablet-a11y',
+      testMatch: /a11y\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 810, height: 1080 },
+        hasTouch: true,
+        storageState: STORAGE.leader,
+      },
+      dependencies: ['setup'],
+    },
   ],
   webServer: {
     // Boot on PORT (default 3000) so a worktree / concurrent ship run can isolate

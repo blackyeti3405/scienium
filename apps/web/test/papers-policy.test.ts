@@ -132,8 +132,25 @@ describe('POST /api/papers/[id]/explain (AI)', () => {
 })
 
 describe('GET /api/papers/[id]/quiz (graded-session read)', () => {
-  it("never returns ANOTHER student's session (userId-scoped, no team join)", async () => {
-    // Session belongs to student B on team B's paper; A asks for it by paper id.
+  it('returns { session: null } for its own paper with no graded session', async () => {
+    const body = await h.asStudentA().get(quizGET, P_A).expect(200)
+    expect(body.session).toBeNull()
+  })
+  it("404s ANOTHER team's real paper even when the caller owns a session on it (A2)", async () => {
+    // Student A kept a graded session on team B's paper (e.g. from a former
+    // active team). The active-team boundary must hide the paper entirely —
+    // not return the session, and not leak its existence via a 200/null.
+    h.seed('paperQuizSession', {
+      id: 'sess_cross',
+      paperId: P_B,
+      userId: h.ids.studentA,
+      gradedAt: new Date(0),
+      questionsJson: [],
+      answersJson: [],
+    })
+    await h.asStudentA().get(quizGET, P_B).expect(404)
+  })
+  it("404s ANOTHER student's session on another team's paper", async () => {
     h.seed('paperQuizSession', {
       id: 'sess_b',
       paperId: P_B,
@@ -142,8 +159,7 @@ describe('GET /api/papers/[id]/quiz (graded-session read)', () => {
       questionsJson: [],
       answersJson: [],
     })
-    const body = await h.asStudentA().get(quizGET, P_B).expect(200)
-    expect(body.session).toBeNull()
+    await h.asStudentA().get(quizGET, P_B).expect(404)
   })
   it('401s signed out', () => h.anonymous().get(quizGET, P_A).expect(401))
   it('429s over the tier', () => h.asStudentA().overLimit().get(quizGET, P_A).expect(429))

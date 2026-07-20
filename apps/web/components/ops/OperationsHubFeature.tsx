@@ -2,19 +2,30 @@
 
 import { useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ProjectLogTab } from './ProjectLogTab'
-import { FailureLogTab } from './FailureLogTab'
-import { ExpertisePanel } from './ExpertisePanel'
-import { DataTerminalTab } from './DataTerminalTab'
-import { VegaStudyTab } from './VegaStudyTab'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
 
-// The Field Codex tab pulls the full typed curriculum content (lazily
-// per-track, but the panel shell itself still carries the engine + index),
-// so it is code-split out of the hub chunk and fetched only when the tab is
-// first opened — same pattern as the Data Terminal guide panels.
+// EVERY tab body is a dynamic boundary (A10): the hub shell is mounted by
+// /daily/log and /daily/failure as well as the lab gateway, and statically
+// importing the heavier tabs (Data Terminal → Recharts, Field Codex → the
+// curriculum engine, Expertise, Vega) made a simple daily log form pay ~580 KB
+// of first-load JavaScript. Only the tab a student actually opens is fetched.
 const CodexTab = dynamic(() => import('./CodexTab').then((m) => m.CodexTab), {
   loading: () => <LabeledLoader label="Loading Field Codex…" fill="tab" />,
+})
+const ProjectLogTab = dynamic(() => import('./ProjectLogTab').then((m) => m.ProjectLogTab), {
+  loading: () => <LabeledLoader label="Loading Project Log…" fill="tab" />,
+})
+const FailureLogTab = dynamic(() => import('./FailureLogTab').then((m) => m.FailureLogTab), {
+  loading: () => <LabeledLoader label="Loading Failure Log…" fill="tab" />,
+})
+const ExpertisePanel = dynamic(() => import('./ExpertisePanel').then((m) => m.ExpertisePanel), {
+  loading: () => <LabeledLoader label="Loading Proof of Expertise…" fill="tab" />,
+})
+const DataTerminalTab = dynamic(() => import('./DataTerminalTab').then((m) => m.DataTerminalTab), {
+  loading: () => <LabeledLoader label="Loading Data Terminal…" fill="tab" />,
+})
+const VegaStudyTab = dynamic(() => import('./VegaStudyTab').then((m) => m.VegaStudyTab), {
+  loading: () => <LabeledLoader label="Loading Study with Vega…" fill="tab" />,
 })
 
 export type OperationsTab = 'codex' | 'log' | 'failure' | 'expertise' | 'data' | 'vega'

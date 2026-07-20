@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useFinalTopic } from '@/components/discovery/hooks/useFinalTopic'
+import { TopicConfirmModals } from '@/components/discovery/TopicConfirmModals'
 import { RefreshCw, Link2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { PROJECT_TYPES } from '@/lib/research-plan/types'
-import { interpretTopicSaveResponse } from '@/lib/discovery/topic-save'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
 
@@ -38,28 +39,27 @@ export function LabProfileSettings() {
   const [zip, setZip] = useState('')
   const [researchIdea, setResearchIdea] = useState('')
 
-  // ── Research topic state ────────────────────────────────────────────────────
-  const [topic, setTopic] = useState<string | null>(null)
-  const [topicDraft, setTopicDraft] = useState('')
-  const [topicEditing, setTopicEditing] = useState(false)
-  const [topicPaperCount, setTopicPaperCount] = useState(0)
-  const [savingTopic, setSavingTopic] = useState(false)
-  const [topicConfirm, setTopicConfirm] = useState<{
-    newTopic: string
-    paperCount: number
-  } | null>(null)
-  // Second-phase confirmation: the specific papers the server proposes removing.
-  // The student approves this exact list; nothing is deleted until they do.
-  const [topicRemovalConfirm, setTopicRemovalConfirm] = useState<{
-    newTopic: string
-    papers: { id: string; title: string }[]
-  } | null>(null)
-  const [topicWipeResult, setTopicWipeResult] = useState<{
-    removedCount: number
-    removedTitles: string[]
-  } | null>(null)
-  const [topicError, setTopicError] = useState<string | null>(null)
-  const [topicLoaded, setTopicLoaded] = useState(false)
+  // ── Research topic — the SHARED load/save/confirm-wipe flow (useFinalTopic,
+  // also Discovery's). Settings ignores the KP/interest toasts, so both
+  // callbacks are no-ops; the editor-open button seeds the draft itself.
+  const {
+    finalTopic: topic,
+    topicPaperCount,
+    topicLoaded,
+    editingTopic: topicEditing,
+    setEditingTopic: setTopicEditing,
+    topicDraft,
+    setTopicDraft,
+    savingTopic,
+    topicSaveError: topicError,
+    topicConfirm,
+    setTopicConfirm,
+    topicRemovalConfirm,
+    setTopicRemovalConfirm,
+    topicWipeResult,
+    setTopicWipeResult,
+    saveTopic,
+  } = useFinalTopic({ onKpAwarded: () => {}, onInterestConnect: () => {} })
 
   // ── Research plan state ─────────────────────────────────────────────────────
   const [planDocUrl, setPlanDocUrl] = useState('')
@@ -88,19 +88,6 @@ export function LabProfileSettings() {
         setLoadError(err instanceof Error ? err.message : 'Failed to load settings')
       })
       .finally(() => setLoading(false))
-  }, [])
-
-  // ── Load research topic (independent of settings fetch) ─────────────────────
-  useEffect(() => {
-    fetch('/api/discovery/topic')
-      .then((r) => r.json())
-      .then((d: { topic?: string | null; paperCount?: number }) => {
-        setTopic(d.topic ?? null)
-        setTopicPaperCount(d.paperCount ?? 0)
-        setTopicDraft(d.topic ?? '')
-      })
-      .catch(() => {})
-      .finally(() => setTopicLoaded(true))
   }, [])
 
   // ── Load research plan (independent of settings fetch) ──────────────────────
@@ -169,60 +156,6 @@ export function LabProfileSettings() {
     }
   }
 
-  // ── Save research topic — the response protocol is interpreted by the SHARED
-  // `interpretTopicSaveResponse` (also used by Discovery's useFinalTopic), so
-  // the two clients can't diverge again.
-  async function saveTopic(topicVal: string, confirmWipe = false, confirmRemoveIds?: string[]) {
-    setSavingTopic(true)
-    setTopicError(null)
-    try {
-      const res = await fetch('/api/discovery/topic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: topicVal,
-          confirmWipe,
-          ...(confirmRemoveIds ? { confirmRemoveIds } : {}),
-        }),
-      })
-      const body = await res.json().catch(() => ({}))
-      const outcome = interpretTopicSaveResponse(res.status, body, topicVal)
-
-      switch (outcome.kind) {
-        case 'needsConfirmation':
-          // Server says papers exist — ask the user to confirm before wiping
-          setTopicConfirm({ newTopic: outcome.newTopic, paperCount: outcome.paperCount })
-          return
-        case 'needsRemovalConfirmation':
-          // Server proposed a specific removal list — surface the titles so the
-          // student can spot a paper that should NOT be going.
-          setTopicConfirm(null)
-          setTopicRemovalConfirm({ newTopic: outcome.newTopic, papers: outcome.papers })
-          return
-        case 'error':
-          setTopicError(outcome.message)
-          return
-        case 'saved':
-          setTopic(outcome.topic)
-          setTopicDraft(outcome.topic ?? '')
-          setTopicEditing(false)
-          setTopicConfirm(null)
-          setTopicRemovalConfirm(null)
-          if (outcome.removedCount > 0) {
-            setTopicWipeResult({
-              removedCount: outcome.removedCount,
-              removedTitles: outcome.removedTitles,
-            })
-          }
-          return
-      }
-    } catch (err: unknown) {
-      setTopicError(err instanceof Error ? err.message : 'Could not save topic')
-    } finally {
-      setSavingTopic(false)
-    }
-  }
-
   // ── Save research plan ───────────────────────────────────────────────────────
   async function savePlan() {
     setSavingPlan(true)
@@ -262,104 +195,18 @@ export function LabProfileSettings() {
   return (
     <div className="bg-[#0d1b2e] text-white p-5 flex flex-col gap-6 min-w-[300px] relative">
 
-      {/* ── Topic-change confirmation overlay ────────────────────────────────── */}
-      {topicConfirm && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 rounded-sm">
-          <div className="bg-[#0d1b2e] border border-white/20 rounded-sm p-6 max-w-sm w-full mx-4 flex flex-col gap-4">
-            <h3 className="font-pixel text-[9px] text-white">Change research topic?</h3>
-            <div className="text-[13px] text-white/70 leading-relaxed flex flex-col gap-2">
-              <p>
-                You&apos;re changing your topic to{' '}
-                <span className="text-[#F5C518] font-medium">&ldquo;{topicConfirm.newTopic}&rdquo;</span>.
-              </p>
-              <p>
-                You have{' '}
-                <span className="text-white font-medium">
-                  {topicConfirm.paperCount} source{topicConfirm.paperCount !== 1 ? 's' : ''}
-                </span>{' '}
-                in your literature review. Sources that aren&apos;t relevant to your new topic will
-                be removed. Sources that apply to both topics will be kept.
-              </p>
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => setTopicConfirm(null)}
-                className="flex-1 font-pixel text-[8px] border border-white/20 text-white/60 py-2.5 hover:border-white/40 hover:text-white/80 transition-colors"
-              >
-                Cancel
-              </button>
-              <BusyButton
-                busy={savingTopic}
-                busyLabel="Updating…"
-                showSpinner={false}
-                onClick={() => saveTopic(topicConfirm.newTopic, true)}
-                className="flex-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 hover:brightness-110 disabled:opacity-50 transition-all"
-              >
-                Change topic
-              </BusyButton>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Second phase: the exact sources proposed for removal. Listing them by
-          title is the safeguard — relevance is judged from paper text we don't
-          control, so the student is the one who authorizes each removal. */}
-      {topicRemovalConfirm && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 rounded-sm">
-          <div className="bg-[#0d1b2e] border border-white/20 rounded-sm p-6 max-w-sm w-full mx-4 flex flex-col gap-4">
-            <h3 className="font-pixel text-[9px] text-white">Remove these sources?</h3>
-            <div className="text-[13px] text-white/70 leading-relaxed flex flex-col gap-2">
-              <p>
-                These{' '}
-                <span className="text-white font-medium">
-                  {topicRemovalConfirm.papers.length} source
-                  {topicRemovalConfirm.papers.length !== 1 ? 's' : ''}
-                </span>{' '}
-                don&apos;t look relevant to{' '}
-                <span className="text-[#F5C518] font-medium">
-                  &ldquo;{topicRemovalConfirm.newTopic}&rdquo;
-                </span>{' '}
-                and will be permanently deleted:
-              </p>
-              <ul className="max-h-40 overflow-y-auto flex flex-col gap-1 border border-white/10 rounded-sm p-2">
-                {topicRemovalConfirm.papers.map((p) => (
-                  <li key={p.id} className="text-[12px] text-white/80 truncate">
-                    • {p.title}
-                  </li>
-                ))}
-              </ul>
-              <p className="text-white/50 text-[12px]">
-                Keeping something on this list? Cancel and change your topic from the Discovery tab
-                after removing it manually.
-              </p>
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => setTopicRemovalConfirm(null)}
-                className="flex-1 font-pixel text-[8px] border border-white/20 text-white/60 py-2.5 hover:border-white/40 hover:text-white/80 transition-colors"
-              >
-                Cancel
-              </button>
-              <BusyButton
-                busy={savingTopic}
-                busyLabel="Removing…"
-                showSpinner={false}
-                onClick={() =>
-                  saveTopic(
-                    topicRemovalConfirm.newTopic,
-                    true,
-                    topicRemovalConfirm.papers.map((p) => p.id),
-                  )
-                }
-                className="flex-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 hover:brightness-110 disabled:opacity-50 transition-all"
-              >
-                Remove &amp; change
-              </BusyButton>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Topic-change / topic-removal confirm modals — shared with Discovery
+          (both drive the useFinalTopic-shaped state). */}
+      <TopicConfirmModals
+        variant="settings"
+        topicConfirm={topicConfirm}
+        topicRemovalConfirm={topicRemovalConfirm}
+        savingTopic={savingTopic}
+        onCancelTopicChange={() => setTopicConfirm(null)}
+        onConfirmTopicChange={(newTopic) => saveTopic(newTopic, true)}
+        onCancelTopicRemoval={() => setTopicRemovalConfirm(null)}
+        onConfirmTopicRemoval={(newTopic, paperIds) => saveTopic(newTopic, true, paperIds)}
+      />
 
       {/* ── Your profile section — skeletons independently while /api/settings
           is in flight, instead of gating the whole form on one fetch. ────────── */}

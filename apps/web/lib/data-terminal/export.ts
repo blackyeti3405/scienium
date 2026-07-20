@@ -3,14 +3,11 @@
  * No React — DOM only (anchor clicks, SVG→canvas rasterizing).
  */
 
+import { slugify as showcaseSlugify } from '@/lib/showcase'
+
 /** Slugify a title to use as a download filename (no extension). */
 export function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    || 'experiment'
+  return showcaseSlugify(title, 'experiment')
 }
 
 /** Trigger a file download from a Blob. */

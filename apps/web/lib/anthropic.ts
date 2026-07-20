@@ -26,6 +26,36 @@ function errDetail(err: unknown): string {
   return err instanceof Error ? err.constructor.name : 'unknown'
 }
 
+/** Log the outcome of one LLM call/stream once it settles — never consumes or alters `settled`. */
+function logOutcome(
+  event: string,
+  model: string,
+  started: number,
+  settled: Promise<{ usage?: { input_tokens?: number; output_tokens?: number } }>,
+): void {
+  settled.then(
+    (msg) =>
+      logEvent({
+        event,
+        provider: 'anthropic',
+        model,
+        durationMs: Date.now() - started,
+        inputTokens: msg.usage?.input_tokens,
+        outputTokens: msg.usage?.output_tokens,
+        outcome: 'ok',
+      }),
+    (err) =>
+      logEvent({
+        event,
+        provider: 'anthropic',
+        model,
+        durationMs: Date.now() - started,
+        outcome: 'error',
+        detail: errDetail(err),
+      }),
+  )
+}
+
 function instrument(client: Anthropic): Anthropic {
   const messages = client.messages
   const origCreate = messages.create.bind(messages)
@@ -36,27 +66,7 @@ function instrument(client: Anthropic): Anthropic {
     const result = origCreate(params as never, opts as never)
     if (!params.stream) {
       // Observe the same promise the caller awaits — never consumes or alters it.
-      ;(result as unknown as Promise<Anthropic.Message>).then(
-        (msg) =>
-          logEvent({
-            event: 'llm.call',
-            provider: 'anthropic',
-            model: params.model,
-            durationMs: Date.now() - started,
-            inputTokens: msg.usage?.input_tokens,
-            outputTokens: msg.usage?.output_tokens,
-            outcome: 'ok',
-          }),
-        (err) =>
-          logEvent({
-            event: 'llm.call',
-            provider: 'anthropic',
-            model: params.model,
-            durationMs: Date.now() - started,
-            outcome: 'error',
-            detail: errDetail(err),
-          }),
-      )
+      logOutcome('llm.call', params.model, started, result as unknown as Promise<Anthropic.Message>)
     }
     return result
   }) as typeof messages.create
@@ -66,27 +76,7 @@ function instrument(client: Anthropic): Anthropic {
     const stream = origStream(params as never, opts as never)
     // finalMessage() resolves once the stream ends (or rejects on abort/error);
     // it only registers listeners — the caller still owns consumption.
-    stream.finalMessage().then(
-      (msg) =>
-        logEvent({
-          event: 'llm.stream',
-          provider: 'anthropic',
-          model: params.model,
-          durationMs: Date.now() - started,
-          inputTokens: msg.usage?.input_tokens,
-          outputTokens: msg.usage?.output_tokens,
-          outcome: 'ok',
-        }),
-      (err) =>
-        logEvent({
-          event: 'llm.stream',
-          provider: 'anthropic',
-          model: params.model,
-          durationMs: Date.now() - started,
-          outcome: 'error',
-          detail: errDetail(err),
-        }),
-    )
+    logOutcome('llm.stream', params.model, started, stream.finalMessage())
     return stream
   }) as typeof messages.stream
 

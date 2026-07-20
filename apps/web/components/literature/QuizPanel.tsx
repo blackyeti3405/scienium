@@ -11,6 +11,31 @@ import type { usePaperQuiz } from './usePaperQuiz'
  * retry views. Presentational: all state + actions come from `usePaperQuiz`
  * (owned by `QAPanel`). The chat phase is rendered by `PaperChat`, not here.
  */
+
+/** Vega's rationale + strong-answer teaching note — shared by the results and retry views. */
+function QAExplain({ rationale, strongAnswer }: { rationale?: string; strongAnswer?: string }) {
+  return (
+    <>
+      {rationale && (
+        <p className="text-[13px] text-white/45 leading-relaxed pl-5 italic">
+          <span className="font-pixel text-[6px] text-[#F5C518]/40 uppercase tracking-widest block mb-0.5 not-italic">
+            Vega
+          </span>
+          {rationale}
+        </p>
+      )}
+      {strongAnswer && (
+        <p className="text-[13px] text-white/60 leading-relaxed pl-5">
+          <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest block mb-0.5">
+            What a strong answer covers
+          </span>
+          {strongAnswer}
+        </p>
+      )}
+    </>
+  )
+}
+
 export function QuizPanel({
   phase,
   setPhase,
@@ -163,22 +188,7 @@ export function QuizPanel({
                       {answers[q.id]}
                     </p>
                   )}
-                  {r?.rationale && (
-                    <p className="text-[13px] text-white/45 leading-relaxed pl-5 italic">
-                      <span className="font-pixel text-[6px] text-[#F5C518]/40 uppercase tracking-widest block mb-0.5 not-italic">
-                        Vega
-                      </span>
-                      {r.rationale}
-                    </p>
-                  )}
-                  {r?.strongAnswer && (
-                    <p className="text-[13px] text-white/60 leading-relaxed pl-5">
-                      <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest block mb-0.5">
-                        What a strong answer covers
-                      </span>
-                      {r.strongAnswer}
-                    </p>
-                  )}
+                  <QAExplain rationale={r?.rationale} strongAnswer={r?.strongAnswer} />
                 </div>
               )
             })}
@@ -238,22 +248,7 @@ export function QuizPanel({
                           {answers[q.id]}
                         </p>
                       )}
-                      {r?.rationale && (
-                        <p className="text-[13px] text-white/45 leading-relaxed pl-5 italic">
-                          <span className="font-pixel text-[6px] text-[#F5C518]/40 uppercase tracking-widest block mb-0.5 not-italic">
-                            Vega
-                          </span>
-                          {r.rationale}
-                        </p>
-                      )}
-                      {r?.strongAnswer && (
-                        <p className="text-[13px] text-white/60 leading-relaxed pl-5">
-                          <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest block mb-0.5">
-                            What a strong answer covers
-                          </span>
-                          {r.strongAnswer}
-                        </p>
-                      )}
+                      <QAExplain rationale={r?.rationale} strongAnswer={r?.strongAnswer} />
                       <textarea
                         value={retryAnswers[q.id] ?? ''}
                         onChange={(e) =>

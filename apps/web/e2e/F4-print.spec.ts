@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { api, gotoFresh, withSeedPage } from './api'
+import { e2eDb } from './db'
+import { minimalPdfBytes, minimalPngBytes } from './fixtures'
 
 /**
  * F4 — Showcase one-pager print export (`?print=1` on `/showcase/[slug]`).
@@ -54,32 +56,7 @@ import { api, gotoFresh, withSeedPage } from './api'
  * as F4.spec.ts).
  */
 
-const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 const RUN_ID = Date.now().toString(36)
-
-// Minimal valid PDF: %PDF- magic bytes plus enough structure for sharp/S3.
-function minimalPdfBytes(): Uint8Array {
-  const content =
-    '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n' +
-    '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
-    '3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R>>endobj\n' +
-    'xref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n' +
-    '0000000058 00000 n \n0000000115 00000 n \n' +
-    'trailer<</Size 4/Root 1 0 R>>\nstartxref\n190\n%%EOF'
-  return new TextEncoder().encode(content)
-}
-
-// Minimal valid 1×1 transparent PNG (68-byte standard sequence).
-function minimalPngBytes(): Uint8Array {
-  const hex =
-    '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489' +
-    '0000000a49444154789c6260000000000200012766011e0000000049454e44ae426082'
-  const bytes = new Uint8Array(hex.length / 2)
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
-  }
-  return bytes
-}
 
 /** Shared across serial tests. */
 let showcaseId: string | null = null
@@ -203,27 +180,21 @@ test.describe('F4-print — Showcase one-pager print export', () => {
     // 6. Works-Cited supplement (AC8). No exposed API writes the
     // {kind: 'works_cited', text} metadata shape without real Citation rows
     // (see file header) — seed it directly, scoped to this showcase only.
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      const asset = await db.showcaseAsset.create({
-        data: {
-          showcaseId: showcaseId!,
-          assetType: 'supplement',
-          metadataJson: {
-            kind: 'works_cited',
-            style: 'apa',
-            label: 'Works Cited',
-            generatedAt: new Date().toISOString(),
-            text: WORKS_CITED_TEXT,
-          },
+    const asset = await e2eDb.showcaseAsset.create({
+      data: {
+        showcaseId: showcaseId!,
+        assetType: 'supplement',
+        metadataJson: {
+          kind: 'works_cited',
+          style: 'apa',
+          label: 'Works Cited',
+          generatedAt: new Date().toISOString(),
+          text: WORKS_CITED_TEXT,
         },
-        select: { id: true },
-      })
-      worksCitedAssetId = asset.id
-    } finally {
-      await db.$disconnect()
-    }
+      },
+      select: { id: true },
+    })
+    worksCitedAssetId = asset.id
   })
 
   test.afterAll(async ({ browser }) => {
@@ -341,18 +312,16 @@ test.describe('F4-print — Showcase one-pager print export', () => {
   }) => {
     if (!showcaseSlug || !showcaseId) throw new Error('Showcase slug/id not set')
 
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
     try {
       // Remove the PNG quad chart and replace it with a PDF-backed row using the
       // same storage-key convention the real upload route uses
       // (`showcase/<teamId>/<uuid>.pdf`), so `isPdf(fileUrl)` (an endsWith('.pdf')
       // check per the plan) resolves true.
       if (pngQuadAssetId) {
-        await db.showcaseAsset.deleteMany({ where: { id: pngQuadAssetId } })
+        await e2eDb.showcaseAsset.deleteMany({ where: { id: pngQuadAssetId } })
       }
-      const teamRow = await db.showcase.findUnique({ where: { id: showcaseId }, select: { teamId: true } })
-      const pdfAsset = await db.showcaseAsset.create({
+      const teamRow = await e2eDb.showcase.findUnique({ where: { id: showcaseId }, select: { teamId: true } })
+      const pdfAsset = await e2eDb.showcaseAsset.create({
         data: {
           showcaseId,
           assetType: 'quad_chart',
@@ -370,9 +339,8 @@ test.describe('F4-print — Showcase one-pager print export', () => {
       // Restore: remove the PDF row, recreate the PNG quad chart via the real
       // upload API so subsequent tests (AC9, AC11) see the original fixture.
       if (pdfQuadAssetId) {
-        await db.showcaseAsset.deleteMany({ where: { id: pdfQuadAssetId } })
+        await e2eDb.showcaseAsset.deleteMany({ where: { id: pdfQuadAssetId } })
       }
-      await db.$disconnect()
 
       // Navigate (real browser page) before the page.request call — refreshes the
       // leader session rather than relying on a bare playwrightRequest context,

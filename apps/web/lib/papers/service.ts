@@ -1,13 +1,18 @@
 import 'server-only'
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { extractText, getDocumentProxy } from 'unpdf'
 import { Prisma, type CredibilityTier } from '@prisma/client'
 import { db } from '@/lib/db'
 import { putObject, paperPdfKey } from '@/lib/storage'
-import { inspectPdf, sanitizePdfText } from '@/lib/pdf/sanitize'
+import { inspectPdf, isPdfMagic, sanitizePdfText } from '@/lib/pdf/sanitize'
 import { checkPaperRelevance } from '@/lib/literature/relevance'
 import { extractDoi, tierFromDoi } from '@/lib/discovery/credibility'
-import { checkTeamStorageQuota, recordAttachedAsset } from '@/lib/uploads/assets'
+import {
+  attachAssetsByKey,
+  checkTeamStorageQuota,
+  markAssetsOrphanedByKey,
+  reserveUploadAsset,
+} from '@/lib/uploads/assets'
 import { processPaperJob } from '@/lib/literature/process-paper'
 import { logActivity } from '@/lib/activity/log'
 
@@ -79,7 +84,7 @@ export async function uploadPaper(input: {
   const buffer = Buffer.from(await file.arrayBuffer())
   // Defense in depth: a genuine PDF starts with "%PDF-". Rejects a non-PDF that
   // lied about its MIME type before we hand it to the parser / store it.
-  if (buffer.length < 5 || buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+  if (!isPdfMagic(buffer)) {
     return fail('That file is not a valid PDF', 400)
   }
 
@@ -120,65 +125,90 @@ export async function uploadPaper(input: {
   const doi = extractDoi(fullText)
   const credibilityTier: CredibilityTier | null = doi ? tierFromDoi(doi) : null
 
-  let paper
-  try {
-    paper = await db.paper.create({
-      data: {
-        teamId,
-        title,
-        authors: [],
-        abstract: null,
-        sourceType: 'pdf',
-        status: 'processing',
-        uploadedByUserId: dbUserId,
-        fullText,
-        contentHash,
-        doi,
-        credibilityTier,
-      },
-    })
-  } catch (err) {
-    // A concurrent upload of the same PDF that won the race is now committed; the
-    // unique (teamId, contentHash) index rejects this one. Return the same 409 as
-    // the pre-check above rather than a 500.
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      return fail('This paper is already in your literature review.', 409)
-    }
-    throw err
+  // ── Recoverable upload state machine (A5/A12) ─────────────────────────────
+  // 1. RESERVE: quota check + `temporary` ledger row in one atomic step,
+  //    BEFORE any byte reaches R2. The key is uuid-scoped (not paper-id-
+  //    scoped) so it exists before the paper row does.
+  // 2. PUT the object. On failure, orphan the reservation — the sweep owns
+  //    the physical delete, and deleting a never-uploaded key is a no-op.
+  // 3. COMMIT paper row + ledger attach + processing job in ONE transaction.
+  //    Any failure leaves only a `temporary` row: the sweep reclaims the
+  //    object after its TTL, and no duplicate-blocking paper exists without a
+  //    job/file link.
+  const pdfKey = paperPdfKey(teamId, randomUUID())
+  const reservation = await reserveUploadAsset({
+    teamId,
+    userId: dbUserId,
+    objectKey: pdfKey,
+    url: '', // canonical URL needs the paper id — filled at the attach commit
+    contentType: 'application/pdf',
+    sizeBytes: buffer.length,
+    purpose: 'paper_pdf',
+  })
+  if (!reservation.ok) {
+    return fail(
+      `Your team's storage is full (${Math.round(reservation.quota / (1024 * 1024 * 1024))} GB). Delete some papers and try again.`,
+      413,
+    )
   }
 
-  // Upload the PDF to R2 under a team/paper-scoped key. If this fails the row is
-  // useless (no file to view), so roll it back rather than leave an orphan.
-  const pdfKey = paperPdfKey(teamId, paper.id)
   try {
     await putObject(pdfKey, buffer, 'application/pdf')
   } catch (err) {
     console.error('[r2] PDF upload failed:', err)
-    await db.paper.delete({ where: { id: paper.id } })
+    await markAssetsOrphanedByKey(db, { teamId, objectKeys: [pdfKey] }).catch(() => {})
     return fail('Could not store the PDF', 502)
   }
 
-  const fileUrl = `/api/papers/${paper.id}/file`
-
-  // Ledger row so the stored PDF counts toward the team's storage quota. Recorded
-  // as `attached` to the paper: its lifecycle is the paper's, so the reclaim sweep
-  // (which only touches `temporary`/`orphaned`) must never treat it as abandoned.
-  await recordAttachedAsset({
-    teamId,
-    userId: dbUserId,
-    objectKey: pdfKey,
-    url: fileUrl,
-    contentType: 'application/pdf',
-    sizeBytes: buffer.length,
-    purpose: 'paper_pdf',
-    attachedToType: 'paper',
-    attachedToId: paper.id,
-  })
-
-  await db.$transaction([
-    db.paper.update({ where: { id: paper.id }, data: { pdfKey, fileUrl } }),
-    db.paperProcessingJob.create({ data: { paperId: paper.id } }),
-  ])
+  let paper: { id: string; title: string; authors: string[]; status: string; createdAt: Date }
+  let fileUrl: string
+  try {
+    ;({ paper, fileUrl } = await db.$transaction(async (tx) => {
+      const created = await tx.paper.create({
+        data: {
+          teamId,
+          title,
+          authors: [],
+          abstract: null,
+          sourceType: 'pdf',
+          status: 'processing',
+          uploadedByUserId: dbUserId,
+          fullText,
+          contentHash,
+          doi,
+          credibilityTier,
+          pdfKey,
+        },
+      })
+      const url = `/api/papers/${created.id}/file`
+      await tx.paper.update({ where: { id: created.id }, data: { fileUrl: url } })
+      // Flip the reservation to `attached` in the SAME commit as the paper —
+      // an attached object without a live paper (or vice versa) is impossible.
+      const attached = await attachAssetsByKey(tx, {
+        teamId,
+        objectKeys: [pdfKey],
+        attachedToType: 'paper',
+        attachedToId: created.id,
+      })
+      if (attached !== 1) {
+        // Reservation vanished (swept mid-request) — roll everything back.
+        throw new Error('upload reservation expired')
+      }
+      await tx.uploadedAsset.updateMany({ where: { objectKey: pdfKey }, data: { url } })
+      await tx.paperProcessingJob.create({ data: { paperId: created.id } })
+      return { paper: created, fileUrl: url }
+    }))
+  } catch (err) {
+    // Nothing committed — hand the stored object back to the sweep.
+    await markAssetsOrphanedByKey(db, { teamId, objectKeys: [pdfKey] }).catch(() => {})
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      // A concurrent upload of the same PDF won the race; the unique
+      // (teamId, contentHash) index rejected this one.
+      return fail('This paper is already in your literature review.', 409)
+    }
+    console.error('[papers] upload commit failed:', err)
+    return fail('Could not save the paper', 502)
+  }
 
   // Ingest BEFORE responding. On serverless a detached promise is frozen the moment
   // the response flushes, which left papers stuck in `processing` until the cron

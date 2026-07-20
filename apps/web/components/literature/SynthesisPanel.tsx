@@ -95,7 +95,7 @@ export function SynthesisPanel({ onClose, labType }: { onClose: () => void; labT
     return (
       <div className="flex flex-col h-full bg-[#0d1b2e] text-white">
         <div className="flex items-center justify-end px-6 py-2 border-b border-white/10 shrink-0">
-          <button onClick={onClose} className="text-white/30 hover:text-white/60 transition-colors">
+          <button onClick={onClose} aria-label="Close Synthesis Matrix" className="text-white/30 hover:text-white/60 transition-colors">
             <X size={13} />
           </button>
         </div>
@@ -120,7 +120,7 @@ export function SynthesisPanel({ onClose, labType }: { onClose: () => void; labT
           <Grid3x3 size={14} className="text-[#F5C518]" />
           <h2 className="font-pixel text-[10px] text-white">Synthesis Matrix</h2>
         </div>
-        <button onClick={onClose} className="text-white/30 hover:text-white/60 transition-colors">
+        <button onClick={onClose} aria-label="Close Synthesis Matrix" className="text-white/30 hover:text-white/60 transition-colors">
           <X size={13} />
         </button>
       </div>

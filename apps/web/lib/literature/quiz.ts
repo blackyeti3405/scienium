@@ -67,6 +67,47 @@ export function extractJson<T>(raw: string): T | null {
   }
 }
 
+/** Minimal shape of a graded attempt needed to map a session for display. */
+export interface GradedQuizAttempt {
+  question: string
+  response: string
+  score: number
+  evaluation: string
+}
+
+/**
+ * Maps a graded quiz session's stored questions + attempts to the wire shape
+ * shared by the student and teacher read views: grading keys stripped,
+ * answers/results matched back to questions by prompt text. Callers layer any
+ * extra fields (e.g. the student route's `strongAnswer`/`retried`) on top.
+ */
+export function mapGradedQuizSession(
+  questionsJson: unknown,
+  attempts: GradedQuizAttempt[],
+): {
+  questions: { id: string; prompt: string; focus: string }[]
+  answers: Record<string, string>
+  results: { questionId: string; score: number; rationale: string }[]
+} {
+  const storedQuestions = questionsJson as unknown as QuizQuestion[]
+  const questions = storedQuestions.map((q, i) => ({
+    id: q.id ?? `q${i + 1}`,
+    prompt: q.prompt,
+    focus: q.focus,
+  }))
+  const byPrompt = new Map(attempts.map((a) => [a.question, a]))
+  return {
+    questions,
+    answers: Object.fromEntries(
+      questions.map((q) => [q.id, byPrompt.get(q.prompt)?.response ?? '']),
+    ),
+    results: questions.map((q) => {
+      const a = byPrompt.get(q.prompt)
+      return { questionId: q.id, score: a?.score ?? 0, rationale: a?.evaluation ?? '' }
+    }),
+  }
+}
+
 /**
  * Given the session's full question set and the latest per-question results,
  * returns the ids of questions whose latest score is below `threshold` — the

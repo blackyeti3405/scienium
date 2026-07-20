@@ -19,8 +19,10 @@ export async function GET(req: NextRequest) {
     select: { id: true, title: true, authors: true, fileUrl: true, createdAt: true },
   })
   if (missing.length > 0) {
-    await Promise.all(
-      missing.map((p) => {
+    // One bulk insert instead of a per-paper create fan-out (N+1 audit).
+    // `skipDuplicates` on the unique paperId absorbs a concurrent backfill.
+    await db.citation.createMany({
+      data: missing.map((p) => {
         const built = buildCitations({
           title: p.title,
           authors: p.authors,
@@ -28,21 +30,17 @@ export async function GET(req: NextRequest) {
           year: parseYear(null),
           url: p.fileUrl ?? null,
         })
-        return db.citation
-          .create({
-            data: {
-              paperId: p.id,
-              teamId: ctx.teamId,
-              year: built.year,
-              apa: built.apa,
-              mla: built.mla,
-              ieee: built.ieee,
-            },
-          })
-          // A concurrent request may have created it first — ignore the dupe.
-          .catch(() => undefined)
+        return {
+          paperId: p.id,
+          teamId: ctx.teamId,
+          year: built.year,
+          apa: built.apa,
+          mla: built.mla,
+          ieee: built.ieee,
+        }
       }),
-    )
+      skipDuplicates: true,
+    })
   }
 
   const rows = await db.citation.findMany({

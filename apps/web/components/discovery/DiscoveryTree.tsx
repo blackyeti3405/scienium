@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { DiscoveryNode } from '@/stores/discoveryStore'
 import { TIER_META } from '@/lib/discovery/credibility'
+import { type InterestLevel, INTEREST_META, nextInterest } from '@/lib/discovery/interest'
 
 // ── Layout constants ────────────────────────────────────────────────────────
 const NODE_W = 170
@@ -89,21 +90,6 @@ export function nodeTreeIndices(nodes: DiscoveryNode[]): Map<string, number> {
     result.set(n.id, rootIndexById.get(rid)!)
   }
   return result
-}
-
-// ── #11: interest-tier cycle + visual metadata ──────────────────────────────
-// Color + a distinct non-color shape cue per tier (accessibility req — color is
-// never the only signal). A separate visual channel from `credibilityTier`.
-type InterestLevel = 'high' | 'mid' | 'low'
-const INTEREST_CYCLE: (InterestLevel | null)[] = [null, 'high', 'mid', 'low']
-function nextInterest(current: InterestLevel | null | undefined): InterestLevel | null {
-  const idx = INTEREST_CYCLE.indexOf(current ?? null)
-  return INTEREST_CYCLE[(idx + 1) % INTEREST_CYCLE.length]
-}
-const INTEREST_META: Record<InterestLevel, { color: string; shape: string; label: string }> = {
-  high: { color: '#4ADE80', shape: 'circle', label: 'Interested' },
-  mid: { color: '#F97316', shape: 'triangle', label: 'Kind of interested' },
-  low: { color: '#EF4444', shape: 'square', label: 'Not interested' },
 }
 
 // ── Props ───────────────────────────────────────────────────────────────────

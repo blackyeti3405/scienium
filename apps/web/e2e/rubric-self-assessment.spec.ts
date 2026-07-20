@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, clickBuilding } from './api'
 
 /**
  * Rubric self-assessment (Feature F1 — Rubric self-assessment).
@@ -63,15 +63,6 @@ async function resetResearchQuestion(page: Page) {
   if (res.status() !== 200) {
     throw new Error(`resetResearchQuestion PUT failed: ${res.status()} ${await res.text()}`)
   }
-}
-
-/** Click a building-sprite button by its aria-label (canvas sprites need a JS click). */
-async function clickBuilding(page: Page, ariaLabel: string) {
-  await page.evaluate((label) => {
-    const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-    if (!btn) throw new Error(`Building button not found: ${label}`)
-    btn.click()
-  }, ariaLabel)
 }
 
 /** Open the Science Fair Hub feature panel from /lab (mirrors F3.spec.ts's openLiteratureReview). */

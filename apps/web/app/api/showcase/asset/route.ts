@@ -4,16 +4,19 @@ import { randomUUID } from 'crypto'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { putObject } from '@/lib/storage'
 import { getDocumentProxy } from 'unpdf'
-import { inspectPdf } from '@/lib/pdf/sanitize'
+import { inspectPdf, isPdfMagic } from '@/lib/pdf/sanitize'
 import {
+  attachAssetsByKey,
   checkTeamStorageQuota,
+  markAssetsOrphanedByKey,
   orphanObjectKey,
-  recordAttachedAsset,
+  reserveUploadAsset,
 } from '@/lib/uploads/assets'
+import { lockAggregate } from '@/lib/db-lock'
 import { db } from '@/lib/db'
+import { MAX_PDF_BYTES } from '@/lib/papers/service'
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // 10 MB
-const MAX_PDF_BYTES = 20 * 1024 * 1024 // 20 MB
 
 // Decoded image format (from sharp, not the client MIME) → ext + content-type.
 // SVG is excluded — it can carry script (XSS vector).
@@ -31,11 +34,6 @@ const IMAGE_FORMATS: Record<string, { ext: string; contentType: string }> = {
 const ALLOWS: Record<string, { pdf: boolean; imageFormats: string[] | null; reject: string }> = {
   board: { pdf: true, imageFormats: null, reject: 'The board must be a PDF file.' },
   quad_chart: { pdf: false, imageFormats: ['png'], reject: 'The quad chart must be a PNG image.' },
-}
-
-function isPdf(buf: Buffer): boolean {
-  // %PDF- magic bytes at the start.
-  return buf.length > 4 && buf.subarray(0, 5).toString('latin1') === '%PDF-'
 }
 
 export async function POST(req: NextRequest) {
@@ -84,7 +82,7 @@ export async function POST(req: NextRequest) {
   // Decide the true type by INSPECTING the bytes — never the client MIME.
   let key: string
   let contentType: string
-  if (allows.pdf && isPdf(buffer)) {
+  if (allows.pdf && isPdfMagic(buffer)) {
     if (buffer.length > MAX_PDF_BYTES) {
       return NextResponse.json({ error: 'PDF too large (max 20 MB)' }, { status: 413 })
     }
@@ -136,13 +134,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: allows.reject }, { status: 415 })
   }
 
-  await putObject(key, buffer, contentType)
-
-  // Ledger row so the object has a database-owned lifecycle: it counts toward the
-  // team's quota and, once replaced, becomes reclaimable by the sweep. Recorded as
-  // `attached` immediately — unlike a project-log photo, a showcase asset is bound
-  // to its domain row in the same request, so there is no temporary window.
-  await recordAttachedAsset({
+  // Reservation FIRST (A5/A12): quota + durable `temporary` ledger row commit
+  // atomically before any byte reaches R2.
+  const reservation = await reserveUploadAsset({
     teamId: ctx.teamId,
     userId: ctx.dbUserId,
     objectKey: key,
@@ -150,33 +144,69 @@ export async function POST(req: NextRequest) {
     contentType,
     sizeBytes: buffer.length,
     purpose: `showcase_${kind}`,
-    attachedToType: 'showcase_asset',
-    attachedToId: showcase.id,
   })
+  if (!reservation.ok) {
+    return NextResponse.json(
+      {
+        error: `Your team's storage is full (${Math.round(reservation.quota / (1024 * 1024 * 1024))} GB). Delete some uploads and try again.`,
+      },
+      { status: 413 },
+    )
+  }
 
-  // Single-slot: replace any existing asset of this kind (and retire its object).
-  const prev = await db.showcaseAsset.findFirst({
-    where: { showcaseId: showcase.id, assetType: kind },
-    select: { fileUrl: true },
-  })
-  if (prev) await db.showcaseAsset.deleteMany({ where: { showcaseId: showcase.id, assetType: kind } })
+  try {
+    await putObject(key, buffer, contentType)
+  } catch (err) {
+    console.error('[showcase/asset] R2 put failed:', err)
+    await markAssetsOrphanedByKey(db, { teamId: ctx.teamId, objectKeys: [key] }).catch(() => {})
+    return NextResponse.json({ error: 'Could not store the file' }, { status: 502 })
+  }
 
-  const asset = await db.showcaseAsset.create({
-    data: { showcaseId: showcase.id, assetType: kind, fileUrl: key },
-    select: { id: true, assetType: true },
-  })
-
-  // Record intent only — the reclaim sweep owns the physical delete. The previous
-  // fire-and-forget `deleteObject(...).catch(() => {})` swallowed failures after
-  // the row was already gone, leaking the object with nothing left pointing at it.
-  if (prev?.fileUrl) {
-    await orphanObjectKey({
-      teamId: ctx.teamId,
-      userId: ctx.dbUserId,
-      objectKey: prev.fileUrl,
-      contentType,
-      purpose: `showcase_${kind}`,
+  // Atomic single-slot replacement (A5/A12): old-row delete, new-row create,
+  // ledger attach, and old-object retirement commit or roll back TOGETHER,
+  // serialized per (showcase, slot) by an advisory lock so two concurrent
+  // uploads cannot duplicate the slot. On rollback the reservation stays
+  // `temporary` and the sweep reclaims the freshly-stored object.
+  let asset: { id: string; assetType: string }
+  try {
+    asset = await db.$transaction(async (tx) => {
+      await lockAggregate(tx, `showcase-slot:${showcase.id}:${kind}`)
+      const prev = await tx.showcaseAsset.findFirst({
+        where: { showcaseId: showcase.id, assetType: kind },
+        select: { fileUrl: true },
+      })
+      await tx.showcaseAsset.deleteMany({ where: { showcaseId: showcase.id, assetType: kind } })
+      const created = await tx.showcaseAsset.create({
+        data: { showcaseId: showcase.id, assetType: kind, fileUrl: key },
+        select: { id: true, assetType: true },
+      })
+      const attached = await attachAssetsByKey(tx, {
+        teamId: ctx.teamId,
+        objectKeys: [key],
+        attachedToType: 'showcase_asset',
+        attachedToId: created.id,
+      })
+      if (attached !== 1) throw new Error('upload reservation expired')
+      // Retire the replaced object in the SAME commit — the reclaim sweep owns
+      // the physical delete.
+      if (prev?.fileUrl && prev.fileUrl !== key) {
+        await orphanObjectKey(
+          {
+            teamId: ctx.teamId,
+            userId: ctx.dbUserId,
+            objectKey: prev.fileUrl,
+            contentType,
+            purpose: `showcase_${kind}`,
+          },
+          tx,
+        )
+      }
+      return created
     })
+  } catch (err) {
+    console.error('[showcase/asset] slot replacement failed:', err)
+    await markAssetsOrphanedByKey(db, { teamId: ctx.teamId, objectKeys: [key] }).catch(() => {})
+    return NextResponse.json({ error: 'Could not save the upload' }, { status: 502 })
   }
 
   return NextResponse.json(

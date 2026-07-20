@@ -15,9 +15,6 @@ import { PaperSlot } from './PaperSlot'
 import { QAPanel } from './QAPanel'
 import { usePapers } from './usePapers'
 
-// Re-exported for any consumer that imported the Paper type from this module.
-export type { Paper } from './types'
-
 // Code-split: the guide bundles a ~68KB static glossary but only renders when
 // the student toggles it open, so it loads on first open (featureRegistry pattern).
 const ResearchGuidePanel = dynamic(
@@ -335,6 +332,7 @@ export function LiteratureFeature() {
           <span className="font-pixel text-[8px] text-red-300 leading-relaxed">{uploadError}</span>
           <button
             onClick={() => setUploadError(null)}
+            aria-label="Dismiss upload error"
             className="text-red-400 hover:text-red-200 shrink-0 mt-0.5"
           >
             <X size={12} />

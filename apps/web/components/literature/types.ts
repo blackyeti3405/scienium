@@ -17,8 +17,6 @@ export interface Paper {
   /** F12: resolved at read time (promoted source's tier, or DOI-derived, or
    * `null` for "self-uploaded — verify yourself"). */
   credibilityTier?: CredibilityTier | null
-  /** DOI the tier was derived from, when found (badge tooltip context). */
-  doi?: string
 }
 
 export interface ChatMessage {
@@ -72,16 +70,6 @@ export interface ExplainVerdict {
   followUpQuestion: string
 }
 
-export interface ExplainAttempt {
-  attemptNo: number
-  text: string
-  accuracy: number
-  completeness: number
-  overall: number
-  passed: boolean
-  verdict: ExplainVerdict
-}
-
 export interface ExplainState {
   attemptCount: number
   bestScore: number
@@ -89,7 +77,6 @@ export interface ExplainState {
   latestText: string
   verdict: ExplainVerdict
   threshold: { accuracy: number; completeness: number }
-  attempts: ExplainAttempt[]
 }
 
 // ─── Synthesis Matrix ───────────────────────────────────────────────────────
@@ -101,45 +88,4 @@ export interface SynthesisMatrixListItem {
   paperCount: number
   updatedAt: string
   lastCheckedAt: string | null
-}
-
-export interface SynthesisColumnView {
-  id: string
-  label: string
-  hint?: string
-}
-
-export interface SynthesisCellView {
-  paperId: string
-  columnId: string
-  text: string
-}
-
-export interface SynthesisFindingView {
-  columnId: string
-  paperIds: string[]
-  claim: string
-  studentNoticed: boolean
-}
-
-export interface SynthesisVerdictView {
-  agreements: SynthesisFindingView[]
-  contradictions: SynthesisFindingView[]
-  gaps: { text: string; columnId?: string }[]
-  cellIssues: { paperId: string; columnId: string; note: string }[]
-  suggestedColumns: { label: string; hint: string }[]
-  summary: string
-}
-
-export interface SynthesisMatrixView {
-  id: string
-  title: string
-  templateId: string
-  columns: SynthesisColumnView[]
-  papers: { id: string; title: string; authors: string[] }[]
-  cells: SynthesisCellView[]
-  lastCheck: SynthesisVerdictView | null
-  lastCheckedAt: string | null
-  kpAwarded: number
-  updatedAt: string
 }

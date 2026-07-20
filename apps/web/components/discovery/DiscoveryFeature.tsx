@@ -298,7 +298,7 @@ export function DiscoveryFeature() {
   const [showHome, setShowHome] = useState(true)
 
   // ── Resizable panel ────────────────────────────────────────────────────────
-  const { width: panelWidth, onDividerMouseDown } = useResizablePanel({
+  const { size: panelWidth, onDividerMouseDown } = useResizablePanel({
     min: MIN_PANEL,
     max: MAX_PANEL,
     initial: DEFAULT_PANEL,
@@ -355,7 +355,12 @@ export function DiscoveryFeature() {
             starredNodes,
             hasExisting: nodes.length > 0,
             finalTopic,
-            onSetFinalTopic: saveTopic,
+            editingTopic,
+            topicDraft,
+            onDraftChange: setTopicDraft,
+            onBeginEdit: (initialDraft) => { setTopicDraft(initialDraft); setEditingTopic(true) },
+            onSave: saveTopic,
+            onCancelEdit: () => { setEditingTopic(false); setTopicSaveError(null) },
             onContinue: () => setShowHome(false),
             onOpenStarred: (nodeId) => {
               navigateToNode(nodeId)

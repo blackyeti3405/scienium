@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
 import { anthropic } from '@/lib/anthropic'
+import { logEvent } from '@/lib/observability/log'
 import { extractJson } from '@/lib/literature/quiz'
 import { lockAggregate } from '@/lib/db-lock'
 import { logActivity } from '@/lib/activity/log'
@@ -120,7 +121,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
   const parsed = verdictRaw ? VerdictSchema.safeParse(verdictRaw) : null
   if (!parsed || !parsed.success) {
-    console.error('[synthesis] verdict failed to parse:', verdictRaw)
+    // Verdict text can quote the student's synthesis — log the failure class only (A7).
+    logEvent({
+      event: 'synthesis.verdict_parse_failed',
+      outcome: 'error',
+      detail: verdictRaw ? 'schema_mismatch' : 'no_json',
+    })
     return NextResponse.json({ error: 'Vega could not check your synthesis — try again' }, { status: 502 })
   }
 

@@ -193,7 +193,6 @@ export function usePaperQuiz(paper: Paper, onProficiencyEarned?: () => void) {
     submitQuiz,
     startRetry,
     submitRetry,
-    failedQuestionIds,
     allAnswered,
     failedQuestions,
     allRetryAnswered,

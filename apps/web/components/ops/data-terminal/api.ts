@@ -46,10 +46,12 @@ export async function deleteExperiment(experimentId: string): Promise<void> {
   await requestJson(`/api/data-terminal/${experimentId}`, okSchema, { method: 'DELETE' })
 }
 
+// POST returns only the CREATED rows (P2-1) — the caller merges them into its
+// loaded set instead of receiving the whole history after every write.
 export function addMeasurements(experimentId: string, points: ParsedPoints['points']) {
   return requestJson(
     `/api/data-terminal/${experimentId}/measurements`,
-    z.object({ measurements: z.array(measurementSchema) }),
+    z.object({ created: z.array(measurementSchema), total: z.number() }),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

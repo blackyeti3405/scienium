@@ -217,6 +217,62 @@ function toView(fair: FairWithEvents, teamPoint: readonly [number, number] | nul
   }
 }
 
+/**
+ * All seeded fairs (with their latest event) loaded ONCE, keyed for in-memory
+ * matching. For bulk callers — the notification cron matches thousands of
+ * teams against the same few hundred fair rows, so per-team fair queries were
+ * a pure N+1 (audit A4). The whole table is a few hundred rows.
+ */
+export interface FairIndex {
+  isef: FairWithEvents | null
+  stateByState: Map<string, FairWithEvents>
+  regionalsByState: Map<string, FairWithEvents[]>
+}
+
+export async function loadFairIndex(): Promise<FairIndex> {
+  await ensureFairsSeeded()
+  const fairs = await db.fair.findMany({ include: fairInclude })
+  const index: FairIndex = { isef: null, stateByState: new Map(), regionalsByState: new Map() }
+  for (const f of fairs) {
+    if (f.level === 'international') {
+      index.isef = index.isef ?? f
+    } else if (f.level === 'state' && f.state) {
+      if (!index.stateByState.has(f.state)) index.stateByState.set(f.state, f)
+    } else if (f.level === 'regional' && f.state) {
+      const list = index.regionalsByState.get(f.state)
+      if (list) list.push(f)
+      else index.regionalsByState.set(f.state, [f])
+    }
+  }
+  return index
+}
+
+/**
+ * Match one team against a preloaded {@link FairIndex} — raw rows (latest
+ * event included), no queries. The nearest regional wins, mirroring
+ * `matchFairs`.
+ */
+export function matchFairRowsFromIndex(
+  index: FairIndex,
+  state: string | null,
+  coords?: readonly [number, number] | null,
+): { regional: FairWithEvents | null; stateFair: FairWithEvents | null; isef: FairWithEvents | null } {
+  if (!state) return { regional: null, stateFair: null, isef: index.isef }
+  const teamPoint = coords ?? STATE_CENTROIDS[state] ?? null
+  const regionals = [...(index.regionalsByState.get(state) ?? [])].sort((a, b) => {
+    const dist = (f: FairWithEvents) =>
+      teamPoint && f.latitude != null && f.longitude != null
+        ? haversineMiles(teamPoint, [f.latitude, f.longitude])
+        : Number.POSITIVE_INFINITY
+    return dist(a) - dist(b)
+  })
+  return {
+    regional: regionals[0] ?? null,
+    stateFair: index.stateByState.get(state) ?? null,
+    isef: index.isef,
+  }
+}
+
 /** Match a team's location to its regional fair, state fair, and ISEF. */
 export async function matchFairs(
   state: string | null,

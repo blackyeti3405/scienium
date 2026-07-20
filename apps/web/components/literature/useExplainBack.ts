@@ -65,18 +65,6 @@ export function useExplainBack(paper: Paper) {
         latestText: draft,
         verdict: result.verdict,
         threshold: result.threshold,
-        attempts: [
-          ...(prev?.attempts ?? []),
-          {
-            attemptNo: result.attemptNo,
-            text: draft,
-            accuracy: result.accuracy,
-            completeness: result.completeness,
-            overall: result.overall,
-            passed: result.passed,
-            verdict: result.verdict,
-          },
-        ],
       }))
       setLastResult({ kpEarned: result.kpEarned })
       if (result.kpEarned > 0) addCurrency({ kp: result.kpEarned })

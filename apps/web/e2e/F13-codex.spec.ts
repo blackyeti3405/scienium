@@ -1,5 +1,7 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, clickBuilding } from './api'
+import { e2eDb } from './db'
+import { findLessonLocation } from '../lib/ops/codex/engine'
 
 /**
  * F13 — Field Codex (interactive, KP-earning, project-tailored field-
@@ -122,17 +124,6 @@ interface ProgressResponse {
   studyPlan: unknown
 }
 
-/** Click a building-sprite button by its aria-label via element.click() — bypasses
- *  the isometric z-index overlap that blocks Playwright's coordinate-based clicks
- *  (established convention, e.g. F3.spec.ts's clickBuilding). */
-async function clickBuilding(page: Page, ariaLabel: string) {
-  await page.evaluate((label) => {
-    const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-    if (!btn) throw new Error(`Building button not found: ${label}`)
-    btn.click()
-  }, ariaLabel)
-}
-
 /** Open the Operations Hub feature panel from /lab (optionally at a given
  *  dev-only phase override) and switch to the Field Codex tab. */
 async function openCodex(page: Page, phase?: string) {
@@ -145,20 +136,25 @@ async function openCodex(page: Page, phase?: string) {
   await codexTab.click()
 }
 
-/** Correct-answer submission for a given real biomechanics lesson id, built
- *  from the module's OWN answer key (imported directly — never fabricated).
- *  Loaded lazily inside a test via dynamic import since this is a .ts module
- *  under lib/, not a JSON fixture. */
-async function correctSubmissionFor(lessonId: string) {
+/** Loads the given real biomechanics lesson via the same `findLessonLocation`
+ *  lookup the server route uses (`../lib/ops/codex/engine`), never a fabricated
+ *  answer key. Loaded lazily inside a test via dynamic import since the track
+ *  is a .ts module under lib/, not a JSON fixture. */
+async function loadLesson(lessonId: string) {
   const mod = await import('../lib/ops/codex/tracks/gait-biomechanics')
   // Playwright's CJS/ESM interop double-wraps the default export here
   // (`mod.default` is `{ default: <track> }`, not the track itself) —
   // unwrap defensively so this works the same locally and in CI.
   const track = (mod.default as unknown as { default?: typeof mod.default }).default ?? mod.default
-  const lesson = [track.core, ...track.branches]
-    .flatMap((s) => s.units.flatMap((u) => u.lessons))
-    .find((l) => l.id === lessonId)
+  const lesson = findLessonLocation(track, lessonId)?.lesson
   if (!lesson) throw new Error(`Lesson ${lessonId} not found in biomechanics track`)
+  return lesson
+}
+
+/** Correct-answer submission for a given real biomechanics lesson id, built
+ *  from the module's OWN answer key (imported directly — never fabricated). */
+async function correctSubmissionFor(lessonId: string) {
+  const lesson = await loadLesson(lessonId)
   const answers = lesson.checkpoint.questions.map((q) => {
     if (q.kind === 'mc') return { kind: 'mc' as const, id: q.id, selectedOptionId: q.answerId }
     if (q.kind === 'ordering') return { kind: 'ordering' as const, id: q.id, order: q.correctOrder }
@@ -168,12 +164,7 @@ async function correctSubmissionFor(lessonId: string) {
 }
 
 async function wrongSubmissionFor(lessonId: string) {
-  const mod = await import('../lib/ops/codex/tracks/gait-biomechanics')
-  const track = (mod.default as unknown as { default?: typeof mod.default }).default ?? mod.default
-  const lesson = [track.core, ...track.branches]
-    .flatMap((s) => s.units.flatMap((u) => u.lessons))
-    .find((l) => l.id === lessonId)
-  if (!lesson) throw new Error(`Lesson ${lessonId} not found in biomechanics track`)
+  const lesson = await loadLesson(lessonId)
   const answers = lesson.checkpoint.questions.map((q) => {
     if (q.kind === 'mc') {
       const wrongOption = q.options.find((o) => o.id !== q.answerId)!
@@ -217,75 +208,63 @@ let teamId: string | null = null
  *  we must restore it (not delete it) in afterAll. */
 let priorStudyPlan: { tracksJson: unknown; sourceHash: string; runsToday: number; runsDay: Date | null; manualTrackSlugs: string[] } | null = null
 
-async function cleanLessonAndCapRows(db: import('@prisma/client').PrismaClient) {
+async function cleanLessonAndCapRows() {
   if (!leaderUserId) return
-  await db.codexLessonProgress.deleteMany({
+  await e2eDb.codexLessonProgress.deleteMany({
     where: { userId: leaderUserId, lessonId: { in: [...UNIT1_LESSON_IDS, UNIT2_FIRST_LESSON_ID] } },
   })
   const today = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()))
-  await db.codexKpDay.deleteMany({ where: { userId: leaderUserId, day: today } })
+  await e2eDb.codexKpDay.deleteMany({ where: { userId: leaderUserId, day: today } })
 }
 
 test.describe('F13 — Field Codex', () => {
   test.describe.configure({ mode: 'serial', timeout: 180_000 })
 
   test.beforeAll(async () => {
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      const team = await db.team.findFirst({ where: { name: TEAM_NAME }, select: { id: true, teamLeadId: true } })
-      if (!team) throw new Error(`E2E team '${TEAM_NAME}' not found — run pnpm --filter web seed:e2e first.`)
-      teamId = team.id
-      leaderUserId = team.teamLeadId
+    const team = await e2eDb.team.findFirst({ where: { name: TEAM_NAME }, select: { id: true, teamLeadId: true } })
+    if (!team) throw new Error(`E2E team '${TEAM_NAME}' not found — run pnpm --filter web seed:e2e first.`)
+    teamId = team.id
+    leaderUserId = team.teamLeadId
 
-      // Clean any leftover state from an earlier interrupted run of THIS spec
-      // (recycled feature IDs / partial cleanup) — scoped ONLY to this
-      // leader's rows on the real biomechanics lesson ids this spec uses.
-      await cleanLessonAndCapRows(db)
+    // Clean any leftover state from an earlier interrupted run of THIS spec
+    // (recycled feature IDs / partial cleanup) — scoped ONLY to this
+    // leader's rows on the real biomechanics lesson ids this spec uses.
+    await cleanLessonAndCapRows()
 
-      // Preserve any pre-existing TeamStudyPlan row so this spec's writes to
-      // it (AC7/AC11) can be fully reverted in afterAll rather than deleting
-      // state this spec didn't create.
-      const existingPlan = await db.teamStudyPlan.findUnique({ where: { teamId: team.id } })
-      priorStudyPlan = existingPlan
-        ? {
-            tracksJson: existingPlan.tracksJson,
-            sourceHash: existingPlan.sourceHash,
-            runsToday: existingPlan.runsToday,
-            runsDay: existingPlan.runsDay,
-            manualTrackSlugs: existingPlan.manualTrackSlugs,
-          }
-        : null
-    } finally {
-      await db.$disconnect()
-    }
+    // Preserve any pre-existing TeamStudyPlan row so this spec's writes to
+    // it (AC7/AC11) can be fully reverted in afterAll rather than deleting
+    // state this spec didn't create.
+    const existingPlan = await e2eDb.teamStudyPlan.findUnique({ where: { teamId: team.id } })
+    priorStudyPlan = existingPlan
+      ? {
+          tracksJson: existingPlan.tracksJson,
+          sourceHash: existingPlan.sourceHash,
+          runsToday: existingPlan.runsToday,
+          runsDay: existingPlan.runsDay,
+          manualTrackSlugs: existingPlan.manualTrackSlugs,
+        }
+      : null
   })
 
   test.afterAll(async () => {
     if (!leaderUserId || !teamId) return
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      await cleanLessonAndCapRows(db)
+    await cleanLessonAndCapRows()
 
-      if (priorStudyPlan) {
-        // Restore exactly what was there before this spec touched it.
-        await db.teamStudyPlan.update({
-          where: { teamId },
-          data: {
-            tracksJson: priorStudyPlan.tracksJson as import('@prisma/client').Prisma.InputJsonValue,
-            sourceHash: priorStudyPlan.sourceHash,
-            runsToday: priorStudyPlan.runsToday,
-            runsDay: priorStudyPlan.runsDay,
-            manualTrackSlugs: priorStudyPlan.manualTrackSlugs,
-          },
-        })
-      } else {
-        // This spec created the row from nothing — remove it entirely.
-        await db.teamStudyPlan.deleteMany({ where: { teamId } })
-      }
-    } finally {
-      await db.$disconnect()
+    if (priorStudyPlan) {
+      // Restore exactly what was there before this spec touched it.
+      await e2eDb.teamStudyPlan.update({
+        where: { teamId },
+        data: {
+          tracksJson: priorStudyPlan.tracksJson as import('@prisma/client').Prisma.InputJsonValue,
+          sourceHash: priorStudyPlan.sourceHash,
+          runsToday: priorStudyPlan.runsToday,
+          runsDay: priorStudyPlan.runsDay,
+          manualTrackSlugs: priorStudyPlan.manualTrackSlugs,
+        },
+      })
+    } else {
+      // This spec created the row from nothing — remove it entirely.
+      await e2eDb.teamStudyPlan.deleteMany({ where: { teamId } })
     }
   })
 
@@ -328,10 +307,7 @@ test.describe('F13 — Field Codex', () => {
   test('AC2 + AC8: first-time completion pays 8 KP, marks complete, and persists across reload', async ({ page }) => {
     await page.goto('/lab')
 
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    const kpBefore = await db.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
-    await db.$disconnect()
+    const kpBefore = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
 
     const submission = await correctSubmissionFor(UNIT1_LESSON_IDS[0])
 
@@ -357,9 +333,7 @@ test.describe('F13 — Field Codex', () => {
     expect(row?.kpAwarded).toBe(CODEX_KP_PER_LESSON)
 
     // KP is shared drifting fixture state — assert the DELTA, not an absolute.
-    const db2 = new PrismaClient()
-    const kpAfter = await db2.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
-    await db2.$disconnect()
+    const kpAfter = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
     expect((kpAfter?.kp ?? 0) - (kpBefore?.kp ?? 0)).toBe(CODEX_KP_PER_LESSON)
 
     // AC8: reload and re-fetch — progress must still show completed (DB, not
@@ -376,10 +350,7 @@ test.describe('F13 — Field Codex', () => {
   test('AC3: re-passing an already-completed lesson pays 0 additional KP', async ({ page }) => {
     await page.goto('/lab')
 
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    const kpBefore = await db.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
-    await db.$disconnect()
+    const kpBefore = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
 
     const submission = await correctSubmissionFor(UNIT1_LESSON_IDS[0])
     const res = await api.post(page, '/api/ops/codex/complete', {
@@ -397,9 +368,7 @@ test.describe('F13 — Field Codex', () => {
     expect(row?.kpAwarded).toBe(CODEX_KP_PER_LESSON)
 
     // The team's KP total must be UNCHANGED from before this re-pass.
-    const db2 = new PrismaClient()
-    const kpAfter = await db2.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
-    await db2.$disconnect()
+    const kpAfter = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
     expect((kpAfter?.kp ?? 0) - (kpBefore?.kp ?? 0)).toBe(0)
   })
 
@@ -479,10 +448,7 @@ test.describe('F13 — Field Codex', () => {
   test('AC4: after 3 first-time completions today, a 4th distinct lesson reports capReached with no completion/KP', async ({ page }) => {
     await page.goto('/lab')
 
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    const kpBeforeAny = await db.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
-    await db.$disconnect()
+    const kpBeforeAny = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
 
     // Lesson 0 was already completed in the AC2/AC8 test above (1st slot
     // consumed). Complete two more distinct lessons to reach the cap of 3.
@@ -522,9 +488,7 @@ test.describe('F13 — Field Codex', () => {
 
     // KP delta across this test: exactly 2 lessons paid (lesson0 was already
     // paid in the previous test) — the capped 4th paid nothing.
-    const db2 = new PrismaClient()
-    const kpAfterAll = await db2.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
-    await db2.$disconnect()
+    const kpAfterAll = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
     expect((kpAfterAll?.kp ?? 0) - (kpBeforeAny?.kp ?? 0)).toBe(CODEX_KP_PER_LESSON * 2)
   })
 
@@ -553,10 +517,8 @@ test.describe('F13 — Field Codex', () => {
     // blocker is the gate itself — isolating exactly what this criterion
     // requires: the gate must not be enforceable only by hiding the button
     // in the UI.
-    const { PrismaClient: PrismaClientForCapReset } = await import('@prisma/client')
-    const dbCapReset = new PrismaClientForCapReset()
     const todayForReset = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()))
-    await dbCapReset.codexKpDay.upsert({
+    await e2eDb.codexKpDay.upsert({
       where: {
         userId_teamId_day: {
           userId: leaderUserId!,
@@ -567,7 +529,6 @@ test.describe('F13 — Field Codex', () => {
       create: { userId: leaderUserId!, teamId: teamId!, day: todayForReset, lessonsCompleted: 0 },
       update: { lessonsCompleted: 0 },
     })
-    await dbCapReset.$disconnect()
 
     const submissionU2 = await correctSubmissionFor(UNIT2_FIRST_LESSON_ID)
     const lockedRes = await api.post(page, '/api/ops/codex/complete', {
@@ -594,10 +555,8 @@ test.describe('F13 — Field Codex', () => {
     // fighting the cap, mirroring how a student would complete them on later
     // days; this keeps AC5 focused on the GATING rule, not the cap, which AC4
     // already covers exhaustively). ──
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
     for (const lessonId of [UNIT1_LESSON_IDS[3], ...UNIT1_REMAINING_LESSON_IDS]) {
-      await db.codexLessonProgress.upsert({
+      await e2eDb.codexLessonProgress.upsert({
         where: {
           userId_teamId_trackSlug_lessonId: {
             userId: leaderUserId!,
@@ -622,7 +581,6 @@ test.describe('F13 — Field Codex', () => {
         update: { completed: true },
       })
     }
-    await db.$disconnect()
 
     // Client-side: unit 2's first lesson is now clickable.
     await openCodex(page)
@@ -698,14 +656,11 @@ test.describe('F13 — Field Codex', () => {
     // direct Prisma (never through the route, so this costs zero extra LLM
     // calls) with a DIFFERENT sourceHash than the team's real one, so the
     // route can't cache-hit its way past the cap check.
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
     const today = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()))
-    await db.teamStudyPlan.update({
+    await e2eDb.teamStudyPlan.update({
       where: { teamId: teamId! },
       data: { runsToday: 2, runsDay: today, sourceHash: 'e2e-forced-stale-hash-for-cap-test' },
     })
-    await db.$disconnect()
 
     const cappedRes = await api.post(page, '/api/ops/codex/study-plan')
     expect(cappedRes.status()).toBe(429)

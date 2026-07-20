@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
 import { DECOR, DECOR_SCALE } from '@/lib/sprites/manifest'
 import { computeScatter } from '@/lib/lab/decoration'
+import { useElementSize } from '@/lib/hooks/useElementSize'
 
 // A dense, seeded scatter of nature objects on top of the grass — trees, bushes,
 // shrubs, tufts, flowers, rocks — so the world reads lush (Stardew-style) rather
@@ -12,19 +13,7 @@ import { computeScatter } from '@/lib/lab/decoration'
 
 export function DecorationLayer({ seed = 1 }: { seed?: number }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [dims, setDims] = useState({ w: 0, h: 0 })
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const measure = () => setDims({ w: el.clientWidth, h: el.clientHeight })
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  const { w, h } = dims
+  const { w, h } = useElementSize(ref)
   const items = computeScatter(w, h, seed)
 
   return (

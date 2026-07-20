@@ -24,23 +24,17 @@ const SPRITES_DIR = join(PUBLIC_DIR, 'sprites')
 const OUT = join(here, '..', 'lib', 'sprites', 'versions.generated.ts')
 
 /** Recursively collect every .png under a directory (empty if it doesn't exist). */
-function walk(dir) {
-  const out = []
-  let entries
+function collectPngs(dir) {
   try {
-    entries = readdirSync(dir, { withFileTypes: true })
+    return readdirSync(dir, { recursive: true, withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith('.png'))
+      .map((e) => join(e.parentPath ?? e.path, e.name))
   } catch {
-    return out
+    return []
   }
-  for (const e of entries) {
-    const full = join(dir, e.name)
-    if (e.isDirectory()) out.push(...walk(full))
-    else if (e.isFile() && e.name.endsWith('.png')) out.push(full)
-  }
-  return out
 }
 
-const files = walk(SPRITES_DIR).sort()
+const files = collectPngs(SPRITES_DIR).sort()
 const map = {}
 for (const f of files) {
   // Key by the public URL path the manifest builds, e.g. /sprites/tiles/grass_1.png

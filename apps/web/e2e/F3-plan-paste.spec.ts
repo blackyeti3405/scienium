@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api } from './api'
+import { api, clickBuilding } from './api'
 
 /**
  * F3 — Research Plan paste-text fallback.
@@ -69,15 +69,6 @@ const PUBLIC_DOC_URL =
 
 /** Snapshot of the team's plan row before this suite touches it (for restore). */
 let originalPlan: unknown = null
-
-/** Click a building-sprite button by its aria-label (canvas sprites need a JS click — see upgrades.spec.ts / rubric-self-assessment.spec.ts). */
-async function clickBuilding(page: Page, ariaLabel: string) {
-  await page.evaluate((label) => {
-    const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-    if (!btn) throw new Error(`Building button not found: ${label}`)
-    btn.click()
-  }, ariaLabel)
-}
 
 /** Open the Research Plan feature panel from /lab. */
 async function openResearchPlan(page: Page) {

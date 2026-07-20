@@ -22,6 +22,7 @@ import { BusyButton } from '@/components/ui/BusyButton'
 import { FormsChecklist } from './FormsChecklist'
 import { CategoryBrowser } from './CategoryBrowser'
 import { RubricSelfCheck } from './RubricSelfCheck'
+import { TrackToggle, ChecklistItems } from './RubricControls'
 
 type Tab = 'overview' | 'forms' | 'categories' | 'selfcheck'
 
@@ -425,21 +426,7 @@ function IsefRubric() {
         <h3 className="font-pixel text-[9px] text-white flex items-center gap-1.5">
           <Trophy size={11} className="text-[#F5C518]" /> ISEF Judging Rubric
         </h3>
-        <div className="flex items-center gap-1 border border-white/15 rounded-sm overflow-hidden">
-          {ISEF_RUBRIC.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTrack(t.key)}
-              className={`font-pixel text-[7px] px-3 py-1.5 transition-colors ${
-                track === t.key
-                  ? 'bg-[#F5C518] text-[#0d1b2e]'
-                  : 'text-white/45 hover:text-white/70'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TrackToggle value={track} onChange={setTrack} />
       </div>
 
       <div className="flex flex-col gap-2">
@@ -456,7 +443,11 @@ function IsefRubric() {
               </div>
 
               {/* Checklist subpoints judges score against */}
-              {c.items && <CriterionItems items={c.items} />}
+              {c.items && (
+                <div className="mt-1.5">
+                  <ChecklistItems items={c.items} />
+                </div>
+              )}
 
               {/* Section V: Poster + Interview sub-sections, each with its own items */}
               {c.subsections?.map((s) => (
@@ -467,7 +458,9 @@ function IsefRubric() {
                     </span>
                     <span className="font-pixel text-[7px] text-white/30">{s.points} pts</span>
                   </div>
-                  <CriterionItems items={s.items} />
+                  <div className="mt-1.5">
+                    <ChecklistItems items={s.items} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -502,19 +495,6 @@ function IsefRubric() {
         ))}
       </ul>
     </div>
-  )
-}
-
-function CriterionItems({ items }: { items: string[] }) {
-  return (
-    <ul className="flex flex-col gap-1 mt-1.5">
-      {items.map((it, i) => (
-        <li key={i} className="flex gap-1.5 text-[12px] text-white/55 leading-relaxed">
-          <span className="text-green-400/60 shrink-0 mt-[1px]">✓</span>
-          {it}
-        </li>
-      ))}
-    </ul>
   )
 }
 

@@ -1,6 +1,7 @@
 import 'server-only'
 import { z } from 'zod'
 import { anthropic } from '@/lib/anthropic'
+import { logEvent } from '@/lib/observability/log'
 import { QUIZ_PASS_THRESHOLD, extractJson } from '@/lib/literature/quiz'
 
 /**
@@ -161,7 +162,12 @@ export async function gradeAnswers<T>({
   const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
   const graded = extractJson<T[]>(raw)
   if (!graded || !Array.isArray(graded) || graded.length === 0) {
-    console.error(`${logLabel} grading failed to parse:`, raw.slice(0, 500))
+    // Model output can echo paper text or student answers — log lengths only (A7).
+    logEvent({
+      event: 'literature.grading_parse_failed',
+      outcome: 'error',
+      detail: `${logLabel} stop=${response.stop_reason} len=${raw.length}`,
+    })
     return { ok: false }
   }
   return { ok: true, graded }

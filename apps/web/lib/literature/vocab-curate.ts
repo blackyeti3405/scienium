@@ -1,6 +1,7 @@
 import 'server-only'
 import { z } from 'zod'
 import { anthropic } from '@/lib/anthropic'
+import { logEvent } from '@/lib/observability/log'
 import { VOCAB_MAX_TERMS_PER_PAPER, type ExtractedTerm, type TermSource } from './vocab'
 
 /**
@@ -197,7 +198,12 @@ export async function curateTerms(input: {
   const raw = response.content.find((b) => b.type === 'text')?.text ?? ''
   const parsedJson = CurationSchema.safeParse(safeJson(raw))
   if (!parsedJson.success) {
-    console.error('[vocab-curate] unparseable response', response.stop_reason, raw.slice(0, 200))
+    // Model output can echo paper text — log stop reason + length only (A7).
+    logEvent({
+      event: 'vocab_curate.parse_failed',
+      outcome: 'error',
+      detail: `stop=${response.stop_reason} len=${raw.length}`,
+    })
     return []
   }
   const parsed = parsedJson.data

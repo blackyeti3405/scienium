@@ -55,16 +55,6 @@ export const explainVerdictSchema = z.object({
 
 const explainThresholdSchema = z.object({ accuracy: z.number(), completeness: z.number() })
 
-const explainAttemptSchema = z.object({
-  attemptNo: z.number(),
-  text: z.string(),
-  accuracy: z.number(),
-  completeness: z.number(),
-  overall: z.number(),
-  passed: z.boolean(),
-  verdict: explainVerdictSchema,
-})
-
 const explainStateSchema = z.object({
   attemptCount: z.number(),
   bestScore: z.number(),
@@ -72,7 +62,6 @@ const explainStateSchema = z.object({
   latestText: z.string(),
   verdict: explainVerdictSchema,
   threshold: explainThresholdSchema,
-  attempts: z.array(explainAttemptSchema),
 })
 
 const getExplanationSchema = z.object({ explanation: explainStateSchema.nullable() })

@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { PHASE_INFO, PHASE_ORDER, type Phase } from '@/lib/phase'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
-import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
 import { PrintButton } from '@/components/showcase/PrintButton'
+import { TeacherPanelState } from './TeacherPanelState'
 
 // Code-split (PERF-10): recharts is ~100KB and only these two bar charts use it,
 // so the chart module loads on demand instead of riding in the eager bundle.
@@ -67,29 +67,8 @@ export function TeacherReports() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) {
-    return (
-      <div className="max-w-6xl mx-auto space-y-8">
-        <div className="space-y-3">
-          <PixelSkeleton variant="line" h="h-3" w="w-24" />
-          <PixelSkeleton variant="box" h="h-20" w="w-full" />
-        </div>
-        <div className="space-y-3">
-          <PixelSkeleton variant="line" h="h-3" w="w-20" />
-          <PanelListSkeleton rows={4} />
-        </div>
-      </div>
-    )
-  }
-
-  if (loadError) {
-    return (
-      <div className="max-w-6xl mx-auto">
-        <div className="border border-dashed border-red-400/25 rounded-lg py-12 text-center space-y-1">
-          <p className="text-sm text-red-400">{loadError}</p>
-        </div>
-      </div>
-    )
+  if (loading || loadError) {
+    return <TeacherPanelState loading={loading} error={loadError} skeletonRows={4} />
   }
 
   if (!data || data.hasClasses === false || data.studentCount === 0) {

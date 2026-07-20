@@ -63,6 +63,12 @@ export function ExperimentDetail({
     onChange({ ...experiment, measurementCount: next.length })
   }
 
+  // POST returns only the created rows (P2-1) — merge them into the loaded
+  // set, keeping the server's x-ascending order.
+  function mergePoints(current: Measurement[] | null, created: Measurement[]): Measurement[] {
+    return [...(current ?? []), ...created].sort((a, b) => a.x - b.x)
+  }
+
   // Bulk paste state
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
@@ -107,7 +113,7 @@ export function ExperimentDetail({
           note: note.trim() || undefined,
         },
       ])
-      syncMeasurements(out.measurements)
+      syncMeasurements(mergePoints(measurements, out.created))
       setX('')
       setY('')
       setSeries('')
@@ -132,7 +138,7 @@ export function ExperimentDetail({
     setPasteSkipped(null)
     try {
       const out = await addMeasurements(experiment.id, points)
-      syncMeasurements(out.measurements)
+      syncMeasurements(mergePoints(measurements, out.created))
       setPasteText('')
       setPasteOpen(false)
       if (skipped > 0) setPasteSkipped(skipped)

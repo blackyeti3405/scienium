@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireUserContext } from '@/lib/api/route-context'
 import { searchWorks } from '@/lib/discovery/openalex'
+import { logEvent } from '@/lib/observability/log'
 import { db } from '@/lib/db'
 import type { SourceSearchResult } from '@/lib/discovery/sources'
 
@@ -47,7 +48,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const t0 = Date.now()
-    console.log(`[sources/search] q="${q}" platform=${platform} → calling OpenAlex…`)
+    // Never log the query itself — it is student content (A7). Length only.
+    logEvent({ event: 'discovery.search', provider: 'openalex', detail: `platform=${platform} qLen=${q.length}` })
     let works: Work[]
     if (platform === 'all') {
       // Three concurrent sweeps: PubMed (peer-reviewed anchor), arXiv, and the

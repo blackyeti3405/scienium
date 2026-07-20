@@ -2272,7 +2272,8 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.5);
 }
-.clr-rung__theme { font-size: 6px; color: rgba(255, 255, 255, 0.4); text-align: center; }
+/* A9 readability floor: was 6px @ 40% white — unreadable classroom chrome. */
+.clr-rung__theme { font-size: 8px; color: rgba(255, 255, 255, 0.6); text-align: center; }
 .clr-rung--done { border-color: rgba(94, 240, 138, 0.4); background: rgba(94, 240, 138, 0.08); }
 .clr-rung--done .clr-rung__pip { color: #0d1b2e; background: #5ef08a; border-color: #5ef08a; }
 .clr-rung--done .clr-rung__theme { color: rgba(94, 240, 138, 0.8); }
@@ -2539,7 +2540,8 @@
 .sc-prog__bar { height: 4px; background: rgba(255, 255, 255, 0.08); border-radius: 3px; overflow: hidden; }
 .sc-prog__fill { height: 100%; background: linear-gradient(90deg, #7ff2e3, #5ef08a); transition: width 0.3s ease; }
 .sc-prog__chips { display: flex; flex-wrap: wrap; gap: 8px 14px; }
-.sc-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 6px; color: rgba(255, 255, 255, 0.4); letter-spacing: 0.4px; }
+/* A9 readability floor: was 6px @ 40% white — unreadable classroom chrome. */
+.sc-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 8px; color: rgba(255, 255, 255, 0.6); letter-spacing: 0.4px; }
 .sc-chip__dot {
   width: 14px; height: 14px; display: flex; align-items: center; justify-content: center;
   border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.2); flex-shrink: 0;
@@ -3005,4 +3007,29 @@
   --font-size: 14px;
   --border: 1px solid rgba(255, 255, 255, 0.15);
   --box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+}
+
+
+/* ── Accessibility floor (A9) ──────────────────────────────────────────────
+   1. Visible keyboard focus, app-wide. Mouse/touch interaction is unaffected
+      (`:focus-visible` only matches keyboard-driven focus), so the pixel
+      aesthetic stays intact while keyboard users can finally see where they
+      are. Gold matches the app accent.
+   2. Blanket reduced-motion fallback: the named per-animation fallbacks above
+      stay, but any animation NOT individually handled also collapses. */
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #f5c518 !important;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

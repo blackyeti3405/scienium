@@ -1,155 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createHash } from 'crypto'
 import { z } from 'zod'
-import { Prisma } from '@prisma/client'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { db } from '@/lib/db'
-import { recommendTracks } from '@/lib/ops/codex/study-plan'
-import { CODEX_TRACKS } from '@/lib/ops/codex/index'
-
-/** Re-run cap for the study-plan classifier — the LLM rate cap on top of the 'ai' tier limiter. */
-const STUDY_PLAN_DAILY_RUN_CAP = 2
-
-/** UTC-midnight Date for "today" — the stable per-day key (mirrors dispatchDate). */
-function todayUtc(): Date {
-  const now = new Date()
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-}
-
-function sourceHashOf(topic: string | null, researchIdea: string | null, planText: string | null): string {
-  return createHash('sha256')
-    .update(`${topic ?? ''}\u001f${researchIdea ?? ''}\u001f${(planText ?? '').slice(0, 8000)}`)
-    .digest('hex')
-}
+import { generateStudyPlan, setManualTrackSelection } from '@/lib/ops/codex/study-plan-service'
 
 /**
- * POST /api/ops/codex/study-plan — generate or regenerate the team's Study
- * Plan. Tier `ai` (Anthropic-backed). Computes a `sourceHash` from the
- * team's topic + researchIdea + research-plan text; if the stored plan's
- * hash is unchanged, returns the cached plan with NO LLM call (cost
- * discipline) and no cap consumed.
- *
- * RE-RUN CAP ATOMICITY: a re-run cap of 2/team/day is enforced by an atomic
- * guarded `INSERT ... ON CONFLICT DO UPDATE ... WHERE ... RETURNING`
- * executed BEFORE `recommendTracks()` (the paid Haiku call) — mirroring the
- * exact pattern already used for the lesson daily-cap in
- * `complete/route.ts`. The UPDATE's WHERE clause re-evaluates the CURRENT
- * row atomically as part of the same statement, so two concurrent POSTs can
- * never both observe "under cap" and both fire a real paid LLM call — only
- * one can ever claim the last slot; the other's `RETURNING` set is empty and
- * it 429s immediately without ever calling `recommendTracks`.
- *
- * SLOT-RESERVATION CHOICE (the cap is "spend, not refund" on an LLM
- * failure): the slot is reserved BEFORE the LLM call runs, so if
- * `recommendTracks` throws, the reserved slot is still consumed — we do NOT
- * roll the counter back on error. This is the deliberate, documented choice:
- * refunding on error would require a second write after the failure (racy
- * against a THIRD concurrent request that reserved the next slot in the
- * meantime, and reopens the same class of bug this fix closes), and
- * `recommendTracks` itself already never throws in the way that would make
- * this costly — it catches its own call/parse failures internally and
- * returns a safe default recommendation rather than throwing (see
- * `lib/ops/codex/study-plan.ts`), so in practice a reserved slot is spent
- * only when a real (successful-or-safely-defaulted) attempt was made, never
- * silently wasted on a network blip.
+ * /api/ops/codex/study-plan — thin adapter (Track B P1-2). The sourceHash
+ * cache, atomic daily re-run cap, and manual-selection rules live in
+ * `lib/ops/codex/study-plan-service.ts`.
  */
+
+/** POST — generate or regenerate the team's Study Plan. Tier `ai` (Anthropic-backed). */
 export async function POST(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'ai' })
   if (error) return error
 
-  const team = await db.team.findUnique({
-    where: { id: ctx.teamId },
-    select: { topic: true, researchIdea: true, labType: true },
-  })
-  if (!team) {
-    return NextResponse.json({ error: 'Team not found' }, { status: 404 })
+  const result = await generateStudyPlan({ teamId: ctx.teamId })
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status })
   }
-  const researchPlan = await db.researchPlan.findUnique({
-    where: { teamId: ctx.teamId },
-    select: { lastSyncedText: true },
-  })
-
-  const sourceHash = sourceHashOf(team.topic, team.researchIdea, researchPlan?.lastSyncedText ?? null)
-
-  const existing = await db.teamStudyPlan.findUnique({
-    where: { teamId: ctx.teamId },
-    select: { tracksJson: true, sourceHash: true, generatedAt: true, manualTrackSlugs: true },
-  })
-
-  // Cached hit — no LLM call, no cap consumed.
-  if (existing && existing.sourceHash === sourceHash) {
-    return NextResponse.json({
-      tracks: existing.tracksJson,
-      manualTrackSlugs: existing.manualTrackSlugs,
-      generatedAt: existing.generatedAt.toISOString(),
-      cached: true,
-    })
-  }
-
-  const today = todayUtc()
-
-  // Atomically reserve ONE re-run slot for today, BEFORE the LLM call. The
-  // day resets the counter to 1 when `runs_day` isn't today; otherwise it
-  // increments — but ONLY when the row doesn't already exist, OR the
-  // existing row's runs_day isn't today (a fresh day), OR today's count is
-  // still under the cap. A losing concurrent request's RETURNING set is
-  // empty, exactly the field-dispatch/lesson-cap safety property.
-  const reserved = await db.$queryRaw<{ runs_today: number }[]>(Prisma.sql`
-    INSERT INTO "team_study_plans" (team_id, tracks_json, source_hash, runs_today, runs_day, generated_at, updated_at)
-    VALUES (${ctx.teamId}, '[]'::jsonb, '', 1, ${today}, now(), now())
-    ON CONFLICT (team_id) DO UPDATE
-      SET runs_today = CASE
-            WHEN "team_study_plans".runs_day IS DISTINCT FROM ${today} THEN 1
-            ELSE "team_study_plans".runs_today + 1
-          END,
-          runs_day = ${today},
-          updated_at = now()
-      WHERE "team_study_plans".runs_day IS DISTINCT FROM ${today}
-         OR "team_study_plans".runs_today < ${STUDY_PLAN_DAILY_RUN_CAP}
-    RETURNING runs_today
-  `)
-
-  if (reserved.length === 0) {
-    return NextResponse.json(
-      { error: 'Study Plan can only be regenerated twice per day. Try again tomorrow.' },
-      { status: 429 },
-    )
-  }
-
-  const recommendations = await recommendTracks({
-    topic: team.topic,
-    researchIdea: team.researchIdea,
-    planText: researchPlan?.lastSyncedText ?? null,
-    labType: team.labType,
-  })
-
-  // Validate returned slugs against CODEX_TRACKS (recommendTracks already
-  // constrains this, but re-validate defensively at the persistence
-  // boundary — never trust a single layer).
-  const validSlugs = new Set(CODEX_TRACKS.map((t) => t.slug))
-  const cleanedTracks = recommendations.filter((r) => validSlugs.has(r.trackSlug))
-
-  // The slot (runsToday/runsDay) is already reserved above — this update
-  // only persists the generated content, never re-touches the cap counters
-  // (which would risk clobbering a THIRD concurrent request's own reservation
-  // made between our reserve and this write).
-  const saved = await db.teamStudyPlan.update({
-    where: { teamId: ctx.teamId },
-    data: {
-      tracksJson: cleanedTracks as unknown as Prisma.InputJsonValue,
-      sourceHash,
-      generatedAt: new Date(),
-    },
-    select: { tracksJson: true, manualTrackSlugs: true, generatedAt: true },
-  })
-
-  return NextResponse.json({
-    tracks: saved.tracksJson,
-    manualTrackSlugs: saved.manualTrackSlugs,
-    generatedAt: saved.generatedAt.toISOString(),
-    cached: false,
-  })
+  const { ok: _ok, ...body } = result
+  return NextResponse.json(body)
 }
 
 const PatchBody = z
@@ -159,11 +30,7 @@ const PatchBody = z
   })
   .strict()
 
-/**
- * PATCH /api/ops/codex/study-plan — add/remove a manual track selection.
- * Tier `mutate`. Team-scoped upsert on `manualTrackSlugs`. Validates the
- * slug against `CODEX_TRACKS`; unknown slugs 400.
- */
+/** PATCH — add/remove a manual track selection. Tier `mutate`. */
 export async function PATCH(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
   if (error) return error
@@ -171,32 +38,9 @@ export async function PATCH(req: NextRequest) {
   const { data, error: bodyError } = await parseJson(req, PatchBody)
   if (bodyError) return bodyError
 
-  const validSlugs = new Set(CODEX_TRACKS.map((t) => t.slug))
-  if (!validSlugs.has(data.trackSlug)) {
-    return NextResponse.json({ error: 'Unknown track slug' }, { status: 400 })
+  const result = await setManualTrackSelection({ teamId: ctx.teamId }, data)
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status })
   }
-
-  const existing = await db.teamStudyPlan.findUnique({
-    where: { teamId: ctx.teamId },
-    select: { manualTrackSlugs: true },
-  })
-  const current = existing?.manualTrackSlugs ?? []
-  const next =
-    data.action === 'add'
-      ? Array.from(new Set([...current, data.trackSlug]))
-      : current.filter((s) => s !== data.trackSlug)
-
-  const saved = await db.teamStudyPlan.upsert({
-    where: { teamId: ctx.teamId },
-    create: {
-      teamId: ctx.teamId,
-      tracksJson: [],
-      sourceHash: '',
-      manualTrackSlugs: next,
-    },
-    update: { manualTrackSlugs: next },
-    select: { manualTrackSlugs: true },
-  })
-
-  return NextResponse.json({ manualTrackSlugs: saved.manualTrackSlugs })
+  return NextResponse.json({ manualTrackSlugs: result.manualTrackSlugs })
 }

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { requestJson } from '@/lib/api/client'
 
-const followupSchema = z.object({
+export const followupSchema = z.object({
   id: z.string(),
   question: z.string(),
   response: z.string().nullable(),
@@ -19,11 +19,11 @@ const failureEntryBase = z.object({
   editedAt: z.coerce.string().nullable(),
 })
 
-const failureEntrySchema = failureEntryBase.extend({ followup: followupSchema.nullable() })
+export const failureEntrySchema = failureEntryBase.extend({ followup: followupSchema.nullable() })
 
 // The edit PATCH response omits `followup` — the client preserves the
 // existing value (see `useFailureLog.handleSaved`).
-const savedFailureEntrySchema = failureEntryBase.extend({
+export const savedFailureEntrySchema = failureEntryBase.extend({
   followup: followupSchema.nullable().optional(),
 })
 

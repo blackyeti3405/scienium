@@ -13,18 +13,25 @@ export async function ensureFormsSeeded(): Promise<void> {
   const count = await db.formsCatalog.count()
   if (count >= ISEF_FORMS.length) return
 
-  for (const f of ISEF_FORMS) {
-    const existing = await db.formsCatalog.findFirst({ where: { formCode: f.code } })
-    if (!existing) {
-      await db.formsCatalog.create({
-        data: {
-          formCode: f.code,
-          name: f.name,
-          description: f.description,
-          templateUrl: FORMS_PAGE,
-          requiredForLevelsJson: f.requiredFor,
-        },
-      })
-    }
-  }
+  // Batched top-up (one read + one write), mirroring lib/fairs/match.ts —
+  // never a per-form find/create loop. `skipDuplicates` on the unique
+  // `formCode` makes a concurrent seeding stampede race-safe.
+  const existing = await db.formsCatalog.findMany({
+    where: { formCode: { in: ISEF_FORMS.map((f) => f.code) } },
+    select: { formCode: true },
+  })
+  const have = new Set(existing.map((f) => f.formCode))
+  const missing = ISEF_FORMS.filter((f) => !have.has(f.code))
+  if (missing.length === 0) return
+
+  await db.formsCatalog.createMany({
+    data: missing.map((f) => ({
+      formCode: f.code,
+      name: f.name,
+      description: f.description,
+      templateUrl: FORMS_PAGE,
+      requiredForLevelsJson: f.requiredFor,
+    })),
+    skipDuplicates: true,
+  })
 }

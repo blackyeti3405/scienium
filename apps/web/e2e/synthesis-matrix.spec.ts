@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, withRateLimitRetry } from './api'
 
 /**
  * Synthesis Matrix (Literature Review) — one test per acceptance criterion
@@ -150,23 +150,6 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
   })
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-
-  /**
-   * The 'ai'-tier limit (12 req/60s per user) is shared across every spec run
-   * under the E2E leader account. Retries exactly the route's own
-   * `Retry-After` (seconds) on a 429 — the same real rate limiter, never
-   * bypassed or mocked (mirrors e2e/F11-quiz-retry.spec.ts).
-   */
-  async function withRateLimitRetry<T>(action: () => Promise<{ status: number; retryAfterSeconds: number; result: T }>): Promise<T> {
-    for (;;) {
-      const { status, retryAfterSeconds, result } = await action()
-      if (status !== 429) return result
-      const waitMs = Math.max(1000, retryAfterSeconds * 1000) + 250
-      // eslint-disable-next-line no-console
-      console.log(`[synthesis-matrix spec] hit the ai-tier rate limit; waiting ${waitMs}ms before retrying…`)
-      await new Promise((resolve) => setTimeout(resolve, waitMs))
-    }
-  }
 
   async function openSynthesisPanel(page: Page) {
     await page.goto('/literature/review')
@@ -372,7 +355,7 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
         checkBtn.click(),
       ])
       return { status: response.status(), retryAfterSeconds: Number(response.headers()['retry-after'] ?? 60), result: response }
-    })
+    }, 'synthesis-matrix spec')
 
     await expect(page.getByTestId('synthesis-verdict')).toBeVisible({ timeout: 10_000 })
     const missedCount = await page.getByTestId('synthesis-missed').count()
@@ -399,7 +382,7 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
       const status = response.status()
       const body = status === 200 ? await response.json() : null
       return { status, retryAfterSeconds: Number(response.headers()['retry-after'] ?? 60), result: body }
-    })
+    }, 'synthesis-matrix spec')
     expect(responseBody).not.toBeNull()
     expect(responseBody.cached).toBe(true)
     expect(responseBody.kpEarned).toBe(0)
@@ -451,7 +434,7 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
       const status = response.status()
       const body = status === 200 ? await response.json() : null
       return { status, retryAfterSeconds: Number(response.headers()['retry-after'] ?? 60), result: body }
-    })
+    }, 'synthesis-matrix spec')
     expect(second.cached).toBe(false)
     expect(second.kpEarned).toBe(0)
   })
@@ -474,7 +457,7 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
     const checkRes = await withRateLimitRetry(async () => {
       const res = await api.post(page, `/api/literature/synthesis/${foreignMatrixId}/check`)
       return { status: res.status(), retryAfterSeconds: Number(res.headers()['retry-after'] ?? 60), result: res }
-    })
+    }, 'synthesis-matrix spec')
     expect(checkRes.status()).toBe(404)
 
     const deleteRes = await api.delete(page, `/api/literature/synthesis/${foreignMatrixId}`)

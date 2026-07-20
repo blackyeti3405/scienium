@@ -35,7 +35,6 @@ import { api, withSeedPage, uploadLogAttachment } from './api'
  *   returns to its pre-test state.
  */
 
-const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 const RUN_ID = Date.now().toString(36)
 
 const BODY_A = `[E2E-F6-${RUN_ID}] Entry A — set up the spectrophotometer calibration curve.`

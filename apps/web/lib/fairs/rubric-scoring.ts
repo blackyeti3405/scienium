@@ -25,7 +25,6 @@ export type RubricTrackKey = 'science' | 'engineering'
  * `(teamId, criterionKey, scorerRole)` unique that no view reads.
  */
 export const SCORER_ROLES = { student: 'student', teacher: 'teacher' } as const
-export type ScorerRole = (typeof SCORER_ROLES)[keyof typeof SCORER_ROLES]
 
 export function isRubricTrack(value: string): value is RubricTrackKey {
   return value === 'science' || value === 'engineering'

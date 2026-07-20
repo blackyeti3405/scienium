@@ -4,6 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
+import { parseFailureBody, stringifyFailureBody } from '@/lib/ops/failure-followup'
 
 const Body = z.object({
   happened: z.string().min(1).max(1500),
@@ -29,7 +30,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   const entry = await db.projectLog.update({
     where: { id: existing.id },
     data: {
-      body: JSON.stringify({ happened: data.happened.trim(), learned: data.learned.trim() }),
+      body: stringifyFailureBody(data.happened, data.learned),
       lastEditedByUserId: ctx.dbUserId,
       lastEditedAt: new Date(),
     },
@@ -43,8 +44,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     },
   })
 
-  let parsed = { happened: entry.body, learned: '' }
-  try { parsed = JSON.parse(entry.body) } catch {}
+  const parsed = parseFailureBody(entry.body)
 
   logActivity(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'failure' }).catch(console.error)
 

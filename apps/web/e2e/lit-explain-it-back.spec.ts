@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, withRateLimitRetry, openLiteratureReview } from './api'
 import { e2eDb, e2eTeamId } from './db'
 
 /**
@@ -131,40 +131,7 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
     return { id: paper.id, title }
   }
 
-  // ── Rate-limit-aware retry (the 'ai' tier is 12 req/60s per user, shared by
-  // the explain + quiz routes; this spec's own call volume can legitimately
-  // outrun it — see e2e/F11-quiz-retry.spec.ts's identical helper) ──────────
-
-  async function withRateLimitRetry<T>(
-    action: () => Promise<{ status: number; retryAfterSeconds: number; result: T }>,
-  ): Promise<T> {
-    for (;;) {
-      const { status, retryAfterSeconds, result } = await action()
-      if (status !== 429) return result
-      const waitMs = Math.max(1000, retryAfterSeconds * 1000) + 250
-      // eslint-disable-next-line no-console
-      console.log(`[lit-explain-it-back] hit the ai-tier rate limit; waiting ${waitMs}ms before retrying…`)
-      await new Promise((resolve) => setTimeout(resolve, waitMs))
-    }
-  }
-
   // ── Navigation / open-panel helpers ─────────────────────────────────────
-
-  /** Click a building-sprite button by aria-label (bypasses isometric z-index overlap). */
-  async function clickBuilding(page: Page, ariaLabel: string) {
-    await page.evaluate((label) => {
-      const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-      if (!btn) throw new Error(`Building button not found: ${label}`)
-      btn.click()
-    }, ariaLabel)
-  }
-
-  async function openLiteratureReview(page: Page) {
-    await page.goto('/lab')
-    await page.getByRole('button', { name: 'Open Literature Review' }).waitFor({ state: 'attached' })
-    await clickBuilding(page, 'Open Literature Review')
-    await expect(page.getByRole('dialog', { name: 'Literature Review' })).toBeVisible({ timeout: 5000 })
-  }
 
   /**
    * Open a given fixture paper's Q&A panel and wait for it to reach a STABLE
@@ -231,7 +198,7 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
       const retryAfterSeconds = Number(res.headers()['retry-after'] ?? 60)
       const body = status === 200 ? await res.json() : null
       return { status, retryAfterSeconds, result: { status, body } }
-    })
+    }, 'lit-explain-it-back')
   }
 
   /** Seed a fresh paper, open its Explain tab, and drive one failing (attempt
@@ -543,7 +510,7 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
     const genRes = await withRateLimitRetry(async () => {
       const res = await api.post(page, `/api/papers/${paper.id}/quiz`)
       return { status: res.status(), retryAfterSeconds: Number(res.headers()['retry-after'] ?? 60), result: res }
-    })
+    }, 'lit-explain-it-back')
     expect(genRes.status()).toBe(200)
     const genBody = await genRes.json()
 
@@ -555,7 +522,7 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
         },
       })
       return { status: res.status(), retryAfterSeconds: Number(res.headers()['retry-after'] ?? 60), result: res }
-    })
+    }, 'lit-explain-it-back')
     expect(gradeRes.status()).toBe(200)
 
     const beforeRes = await api.get(page, `/api/papers/${paper.id}`)

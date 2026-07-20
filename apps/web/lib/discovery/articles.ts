@@ -1,10 +1,17 @@
 import 'server-only'
+import { fetchWithRetry } from '@/lib/fetch-retry'
 import { createHash } from 'crypto'
 import sanitizeHtml from 'sanitize-html'
 import { XMLParser } from 'fast-xml-parser'
 import { LruCache } from '@/lib/lru'
 import { ARTICLE_SANITIZE_OPTS } from '@/lib/discovery/sanitize'
-import type { ArticleProvider, ArticleRenderMode, ArticleSearchResult, ResolvedArticle } from '@/lib/discovery/sources'
+import {
+  DISCOVERY_UA,
+  type ArticleProvider,
+  type ArticleRenderMode,
+  type ArticleSearchResult,
+  type ResolvedArticle,
+} from '@/lib/discovery/sources'
 
 // ── Discovery articles (The Conversation + science-journalism RSS) ────────────
 // One unified adapter for both providers — both are RSS/Atom, so the fetch/
@@ -16,9 +23,6 @@ import type { ArticleProvider, ArticleRenderMode, ArticleSearchResult, ResolvedA
 // Science-journalism feeds (RSS, body NOT carried — `description` is a teaser
 // only) do NOT grant republication rights, so these render `renderMode:
 // 'linkout'`: an excerpt + an outbound link, never the full body.
-
-// Descriptive UA with contact (same policy the other discovery adapters follow).
-const UA = 'scienium/1.0 (https://scienium.app; contact: hello@scienium.app) node-fetch'
 
 // Hard per-request cap: Node's fetch has no default timeout, so a slow/stalled
 // feed would hang the Articles tab forever. Abort after 8s → fail fast.
@@ -134,27 +138,8 @@ const parser = new XMLParser({
 
 const feedCache = new LruCache<ParsedEntry[]>(CACHE_MAX_ENTRIES, CACHE_TTL_MS)
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-async function articlesFetch(url: string, attempt = 0): Promise<Response> {
-  let res: Response
-  try {
-    res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
-  } catch (err) {
-    if (attempt < 2) {
-      await sleep(400 * 2 ** attempt)
-      return articlesFetch(url, attempt + 1)
-    }
-    throw err
-  }
-  if ((res.status === 429 || res.status >= 500) && attempt < 2) {
-    const retryAfter = Number(res.headers.get('retry-after'))
-    const backoff = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 400 * 2 ** attempt
-    await sleep(backoff)
-    return articlesFetch(url, attempt + 1)
-  }
-  return res
-}
+const articlesFetch = (url: string) =>
+  fetchWithRetry(url, { headers: { 'User-Agent': DISCOVERY_UA }, timeoutMs: FETCH_TIMEOUT_MS, retryOnError: true })
 
 function textOf(node: unknown): string {
   if (node == null) return ''

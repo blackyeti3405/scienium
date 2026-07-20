@@ -5,7 +5,10 @@ import { z } from 'zod'
 import { requestJson } from '@/lib/api/client'
 import { interpretTopicSaveResponse } from '@/lib/discovery/topic-save'
 
-const topicSchema = z.object({ topic: z.string().nullable().optional() })
+const topicSchema = z.object({
+  topic: z.string().nullable().optional(),
+  paperCount: z.number().optional(),
+})
 
 /**
  * Final research topic (stored on the team): load on mount, plus the
@@ -23,6 +26,9 @@ export function useFinalTopic({
   onInterestConnect: (message: string) => void
 }) {
   const [finalTopic, setFinalTopic] = useState<string | null>(null)
+  // Sources currently in the literature review — the Lab Profile settings
+  // surface shows this next to the topic; Discovery ignores it.
+  const [topicPaperCount, setTopicPaperCount] = useState(0)
   // False-prompt fix: without this, the topic bar's "Choose your final research
   // topic" CTA renders for the ~1s the /api/discovery/topic fetch is in flight,
   // even for a team that already has a topic set.
@@ -52,7 +58,10 @@ export function useFinalTopic({
 
   useEffect(() => {
     requestJson('/api/discovery/topic', topicSchema)
-      .then((d) => setFinalTopic(d.topic ?? null))
+      .then((d) => {
+        setFinalTopic(d.topic ?? null)
+        setTopicPaperCount(d.paperCount ?? 0)
+      })
       .catch(() => {})
       .finally(() => setTopicLoaded(true))
   }, [])
@@ -122,6 +131,7 @@ export function useFinalTopic({
 
   return {
     finalTopic,
+    topicPaperCount,
     topicLoaded,
     editingTopic,
     setEditingTopic,

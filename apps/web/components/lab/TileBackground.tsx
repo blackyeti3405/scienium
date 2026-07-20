@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
 import { GROUND_TILES, TILE_CELL, type GroundTileId } from '@/lib/sprites/manifest'
+import { useElementSize } from '@/lib/hooks/useElementSize'
 
 // Most cells are plain grass; clutter is sprinkled on top and graded so the
 // field reads like a natural meadow. "Heavy" clutter (bush/shrub) is rarer than
@@ -35,26 +36,13 @@ function tileFor(col: number, row: number, seed: number): GroundTileId {
  */
 export function TileBackground({ seed = 1 }: { seed?: number }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [dims, setDims] = useState({ cols: 0, rows: 0 })
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const measure = () => {
-      setDims({
-        cols: Math.ceil(el.clientWidth / TILE_CELL) + 1,
-        rows: Math.ceil(el.clientHeight / TILE_CELL) + 1,
-      })
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
+  const { w, h } = useElementSize(ref)
+  const cols = Math.ceil(w / TILE_CELL) + 1
+  const rows = Math.ceil(h / TILE_CELL) + 1
 
   const cells: { id: GroundTileId; col: number; row: number }[] = []
-  for (let row = 0; row < dims.rows; row++) {
-    for (let col = 0; col < dims.cols; col++) {
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
       cells.push({ id: tileFor(col, row, seed), col, row })
     }
   }
@@ -64,8 +52,8 @@ export function TileBackground({ seed = 1 }: { seed?: number }) {
       <div
         className="tile-bg__grid"
         style={{
-          gridTemplateColumns: `repeat(${dims.cols}, ${TILE_CELL}px)`,
-          gridTemplateRows: `repeat(${dims.rows}, ${TILE_CELL}px)`,
+          gridTemplateColumns: `repeat(${cols}, ${TILE_CELL}px)`,
+          gridTemplateRows: `repeat(${rows}, ${TILE_CELL}px)`,
         }}
       >
         {cells.map(({ id, col, row }) => (

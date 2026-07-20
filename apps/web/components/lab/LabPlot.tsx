@@ -19,6 +19,7 @@ import {
 } from '@/lib/plot'
 import type { SpriteEntry } from '@/lib/sprites/manifest'
 import type { LabType } from '@/lib/phase'
+import { useElementSize } from '@/lib/hooks/useElementSize'
 
 /** Sprites render at 2× on the plot (64px source → 128px). */
 const PLOT_SCALE = 2
@@ -99,18 +100,8 @@ export function LabPlot({
 }: LabPlotProps) {
   const ref = useRef<HTMLDivElement>(null)
   const suppressClickRef = useRef(false)
-  const [dims, setDims] = useState({ w: 0, h: 0 })
+  const dims = useElementSize(ref)
   const [hover, setHover] = useState<IsoPos | null>(null)
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const measure = () => setDims({ w: el.clientWidth, h: el.clientHeight })
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
 
   // Clear the hover preview whenever the ghost goes away.
   useEffect(() => {

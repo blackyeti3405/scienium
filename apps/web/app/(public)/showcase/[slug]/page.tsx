@@ -1,17 +1,10 @@
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
-import { auth } from '@clerk/nextjs/server'
 import { Github, Paperclip, ExternalLink, Eye, Printer } from 'lucide-react'
 import { db } from '@/lib/db'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
-import {
-  canViewShowcase,
-  teamSchoolIds,
-  type ShowcaseViewer,
-  type ShowcaseForView,
-  type PrivacyLevel,
-} from '@/lib/showcase'
-import { viewFingerprint } from '@/lib/showcase-server'
+import { canViewShowcase, toShowcaseForView } from '@/lib/showcase'
+import { viewFingerprint, recordShowcaseView, resolveShowcaseViewer } from '@/lib/showcase-server'
 import { PrintButton } from '@/components/showcase/PrintButton'
 
 interface Props {
@@ -19,15 +12,9 @@ interface Props {
   searchParams: Promise<{ print?: string }>
 }
 
-async function resolveViewer(): Promise<ShowcaseViewer | null> {
-  const { userId } = await auth()
-  if (!userId) return null
-  const u = await db.user.findUnique({
-    where: { clerkUserId: userId },
-    select: { schoolId: true, teamMemberships: { select: { teamId: true } } },
-  })
-  if (!u) return { userId, schoolId: null, teamIds: [] }
-  return { userId, schoolId: u.schoolId, teamIds: u.teamMemberships.map((m) => m.teamId) }
+/** Null-safe narrowing of an asset's `metadataJson` (stored as JSON, typed loosely). */
+function readMeta<T>(a?: { metadataJson: unknown }): T | undefined {
+  return a && typeof a.metadataJson === 'object' && a.metadataJson ? (a.metadataJson as T) : undefined
 }
 
 async function loadShowcase(slug: string) {
@@ -50,8 +37,8 @@ async function loadShowcase(slug: string) {
 export async function generateMetadata(props: Props) {
   const params = await props.params;
   const sc = await loadShowcase(params.slug)
-  const viewer = await resolveViewer()
-  if (!sc || !canViewShowcase(toForView(sc), viewer)) {
+  const viewer = await resolveShowcaseViewer()
+  if (!sc || !canViewShowcase(toShowcaseForView(sc), viewer)) {
     return { title: 'Showcase' }
   }
   const headline = sc.shortTitle || sc.title
@@ -71,29 +58,13 @@ export async function generateMetadata(props: Props) {
   }
 }
 
-function toForView(sc: {
-  teamId: string
-  privacyLevel: string
-  publishedAt: Date | null
-  moderationStatus: string
-  team: { members: { user: { schoolId: string | null } }[] }
-}): ShowcaseForView {
-  return {
-    teamId: sc.teamId,
-    privacyLevel: sc.privacyLevel as PrivacyLevel,
-    publishedAt: sc.publishedAt,
-    moderationStatus: sc.moderationStatus,
-    teamSchoolIds: teamSchoolIds(sc.team.members),
-  }
-}
-
 export default async function PublicShowcasePage(props: Props) {
   const searchParams = await props.searchParams;
   const params = await props.params;
   const sc = await loadShowcase(params.slug)
-  const viewer = await resolveViewer()
+  const viewer = await resolveShowcaseViewer()
 
-  if (!sc || !canViewShowcase(toForView(sc), viewer)) notFound()
+  if (!sc || !canViewShowcase(toShowcaseForView(sc), viewer)) notFound()
 
   // `?print=1` only ever selects a layout — the authorization check above runs
   // first and identically either way, so the flag can never leak a private or
@@ -109,11 +80,9 @@ export default async function PublicShowcasePage(props: Props) {
       const h = await headers()
       const ip = (h.get('x-forwarded-for')?.split(',')[0] ?? h.get('x-real-ip') ?? 'unknown').trim()
       const fp = viewFingerprint(ip, h.get('user-agent') ?? '')
-      const seen = await db.showcaseView.findFirst({
-        where: { showcaseId: sc.id, visitorFingerprint: fp },
-        select: { id: true },
-      })
-      if (!seen) await db.showcaseView.create({ data: { showcaseId: sc.id, visitorFingerprint: fp } })
+      // One row per visitor per UTC day (A13) — duplicate-safe under
+      // concurrent first loads via the unique key inside recordShowcaseView.
+      await recordShowcaseView(sc.id, fp)
     } catch {
       // View tracking must never break the page.
     }
@@ -121,10 +90,7 @@ export default async function PublicShowcasePage(props: Props) {
 
   const assetUrl = (id: string) => `/api/showcase/public/asset?id=${id}`
   const isPdf = (fileUrl: string | null) => !!fileUrl && fileUrl.endsWith('.pdf')
-  const embedOf = (a?: { metadataJson: unknown }) =>
-    a && typeof a.metadataJson === 'object' && a.metadataJson
-      ? (a.metadataJson as { embedUrl?: string }).embedUrl
-      : undefined
+  const embedOf = (a?: { metadataJson: unknown }) => readMeta<{ embedUrl?: string }>(a)?.embedUrl
 
   const board = sc.assets.find((a) => a.assetType === 'board')
   const quad = sc.assets.find((a) => a.assetType === 'quad_chart')
@@ -140,11 +106,7 @@ export default async function PublicShowcasePage(props: Props) {
   // a `supplement` asset whose metadata carries `kind: 'works_cited'` + the full
   // text — inline that text on the one-pager rather than only linking to it.
   const worksCited = supplements
-    .map((s) =>
-      typeof s.metadataJson === 'object' && s.metadataJson
-        ? (s.metadataJson as { kind?: string; text?: string })
-        : null,
-    )
+    .map((s) => readMeta<{ kind?: string; text?: string }>(s))
     .find((m) => m?.kind === 'works_cited')?.text ?? null
 
   if (printMode) {
@@ -302,19 +264,10 @@ function ShowcaseOnePager({
   assetUrl: (id: string) => string
   isPdf: (fileUrl: string | null) => boolean
 }) {
-  const linkUrl = (a?: OnePagerAsset) =>
-    a && typeof a.metadataJson === 'object' && a.metadataJson
-      ? (a.metadataJson as { url?: string }).url
-      : undefined
-  const linkLabel = (a?: OnePagerAsset, fallback?: string) =>
-    (a && typeof a.metadataJson === 'object' && a.metadataJson
-      ? (a.metadataJson as { label?: string }).label
-      : undefined) || fallback
+  const linkUrl = (a?: OnePagerAsset) => readMeta<{ url?: string }>(a)?.url
+  const linkLabel = (a?: OnePagerAsset, fallback?: string) => readMeta<{ label?: string }>(a)?.label || fallback
 
-  const citedSupplements = supplements.filter((s) => {
-    const meta = typeof s.metadataJson === 'object' && s.metadataJson ? (s.metadataJson as { kind?: string }) : null
-    return meta?.kind !== 'works_cited'
-  })
+  const citedSupplements = supplements.filter((s) => readMeta<{ kind?: string }>(s)?.kind !== 'works_cited')
 
   const links: { label: string; url: string }[] = []
   const videoUrl = linkUrl(video)
@@ -401,9 +354,7 @@ function ResourceLink({
   icon: React.ReactNode
   fallback: string
 }) {
-  const meta = (typeof asset.metadataJson === 'object' && asset.metadataJson) as
-    | { url?: string; label?: string }
-    | null
+  const meta = readMeta<{ url?: string; label?: string }>(asset)
   const url = meta?.url
   if (!url) return null
   let host = ''

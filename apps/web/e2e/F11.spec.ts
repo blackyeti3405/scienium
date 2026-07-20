@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { deleteE2eDiscoveryNodes, deleteE2eDiscoveryNodesByTitle } from './db'
 import { api } from './api'
+import { dismissHome, openDiscovery } from './discovery-helpers'
 
 /**
  * F11 — Discovery interest color-coding + full-window Discovery Tree view +
@@ -137,16 +138,6 @@ async function seedInterest(page: Page, nodeId: string, level: 'high' | 'mid' | 
       { timeout: 15000, intervals: [200, 400, 800] },
     )
     .toBe(level)
-}
-
-/** Dismiss the Discovery home screen to reach the main explorer (mirrors papers-tab.spec.ts). */
-async function dismissHome(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /Continue Exploring|Start Exploring/ }).click()
-}
-
-async function openDiscovery(page: Page): Promise<void> {
-  await page.goto('/discovery')
-  await dismissHome(page)
 }
 
 function treeTab(page: Page) {

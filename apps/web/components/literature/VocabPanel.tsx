@@ -141,7 +141,7 @@ export function VocabPanel({ onClose }: { onClose: () => void }) {
               Deck
             </button>
           </div>
-          <button onClick={onClose} className="text-white/30 hover:text-white/60 transition-colors">
+          <button onClick={onClose} aria-label="Close Vocab Builder" className="text-white/30 hover:text-white/60 transition-colors">
             <X size={13} />
           </button>
         </div>

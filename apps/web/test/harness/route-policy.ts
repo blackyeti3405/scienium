@@ -49,8 +49,7 @@ const clerkState: ClerkState = { auth: { userId: null, sessionClaims: null }, cu
 type Row = Record<string, unknown>
 let activeStore = new Map<string, Row[]>()
 
-/** Per-module registry of auto-stubbed exports, so specs can program returns:
- *  `h.stubs('@/lib/storage').getDownloadUrl.mockResolvedValue('https://…')` */
+/** Per-module registry of auto-stubbed exports (each call gets a no-op `vi.fn`). */
 const stubRegistry = new Map<string, Record<string, ReturnType<typeof vi.fn>>>()
 
 function autoStubModule(path: string): Record<string, unknown> {
@@ -83,8 +82,7 @@ vi.mock('@clerk/nextjs/server', () => ({
 
 vi.mock('@/lib/db', () => ({ db: createDbProxy() }))
 
-// Pure side effects the policy matrix never asserts on. Programmable via
-// `h.stubs(path)` when a happy-path case needs a return value.
+// Pure side effects the policy matrix never asserts on — no-op stubbed.
 vi.mock('@/lib/activity/log', () => autoStubModule('@/lib/activity/log'))
 vi.mock('@/lib/storage', () => autoStubModule('@/lib/storage'))
 vi.mock('@/lib/uploads/assets', () => autoStubModule('@/lib/uploads/assets'))
@@ -366,6 +364,15 @@ function modelApi(model: string) {
       for (const d of list) rows().push({ ...d })
       return { count: list.length }
     },
+    createManyAndReturn: async (args: Record<string, unknown>) => {
+      const list = args.data as Row[]
+      return list.map((d) => {
+        const row = { ...d }
+        if (row.id === undefined) row.id = `${model}_gen_${createSeq++}`
+        rows().push(row)
+        return shapeRow(row, args)
+      })
+    },
     update: async (args: Record<string, unknown>) => {
       const hit = filtered(args.where as Record<string, unknown>)[0]
       if (!hit) throw notFoundError(model)
@@ -407,8 +414,45 @@ function modelApi(model: string) {
     aggregate: async () => {
       throw new HarnessQueryError(`${model}.aggregate is not supported — assert via findMany/count`)
     },
-    groupBy: async () => {
-      throw new HarnessQueryError(`${model}.groupBy is not supported`)
+    // Read-only grouping (`by` + `_max`/`_min`/`_count`/`_sum`) so routes that
+    // aggregate per-team activity (e.g. the teacher roster) stay testable.
+    // Anything fancier still belongs in the real-Postgres suite.
+    groupBy: async (args: Record<string, unknown> = {}) => {
+      const byKeys = Array.isArray(args.by) ? (args.by as string[]) : [args.by as string]
+      const groups = new Map<string, Row[]>()
+      for (const r of filtered(args.where as Record<string, unknown>)) {
+        const key = JSON.stringify(byKeys.map((k) => r[k]))
+        const bucket = groups.get(key)
+        if (bucket) bucket.push(r)
+        else groups.set(key, [r])
+      }
+      const num = (v: unknown) => (v instanceof Date ? v.getTime() : (v as number))
+      return [...groups.values()].map((bucket) => {
+        const out: Row = {}
+        for (const k of byKeys) out[k] = bucket[0]![k]
+        for (const agg of ['_max', '_min', '_count', '_sum'] as const) {
+          const spec = args[agg] as Record<string, boolean> | undefined
+          if (!spec) continue
+          const res: Row = {}
+          for (const field of Object.keys(spec)) {
+            if (!spec[field]) continue
+            if (agg === '_count') {
+              res[field] = field === '_all' ? bucket.length : bucket.filter((r) => r[field] != null).length
+            } else if (agg === '_sum') {
+              res[field] = bucket.reduce((acc, r) => acc + ((r[field] as number) ?? 0), 0)
+            } else {
+              const vals = bucket.map((r) => r[field]).filter((v) => v != null)
+              if (vals.length === 0) res[field] = null
+              else
+                res[field] = vals.reduce((best, v) =>
+                  agg === '_max' ? (num(v) > num(best) ? v : best) : num(v) < num(best) ? v : best,
+                )
+            }
+          }
+          out[agg] = res
+        }
+        return out
+      })
     },
   }
 }
@@ -590,14 +634,11 @@ export interface RoutePolicyHarness {
   /** Append a row to a model's in-memory table (model name as on `db.<model>`). */
   seed(model: string, row: Row): Row
   rows(model: string): Row[]
-  /** Programmable no-op stubs for '@/lib/storage', '@/lib/activity/log', '@/lib/uploads/assets'. */
-  stubs(modulePath: string): Record<string, ReturnType<typeof vi.fn>>
   asStudentA(): Caller
   asStudentB(): Caller
   asTeacherA(): Caller
   asTeacherB(): Caller
   anonymous(): Caller
-  as(clerkUserId: string | null, sessionClaims?: unknown): Caller
 }
 
 export interface Caller {
@@ -701,20 +742,10 @@ export function routeHarness(opts: RouteHarnessOptions = {}): RoutePolicyHarness
     rows(model) {
       return store.get(model) ?? []
     },
-    stubs(modulePath) {
-      const fns = stubRegistry.get(modulePath)
-      if (!fns) {
-        throw new HarnessQueryError(
-          `"${modulePath}" is not auto-stubbed by the harness — add a vi.mock in your spec instead`,
-        )
-      }
-      return fns
-    },
     asStudentA: () => makeCaller(ids.clerkStudentA, null),
     asStudentB: () => makeCaller(ids.clerkStudentB, null),
     asTeacherA: () => makeCaller(ids.clerkTeacherA, { metadata: { role: 'teacher' } }),
     asTeacherB: () => makeCaller(ids.clerkTeacherB, { metadata: { role: 'teacher' } }),
     anonymous: () => makeCaller(null, null),
-    as: (clerkUserId, sessionClaims = null) => makeCaller(clerkUserId, sessionClaims),
   }
 }

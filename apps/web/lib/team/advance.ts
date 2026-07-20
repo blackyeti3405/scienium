@@ -40,7 +40,7 @@ export interface AdvanceProgress {
 }
 
 /** The next phase in PHASE_ORDER, or null if already at the end. */
-export function nextPhase(phase: Phase): Phase | null {
+function nextPhase(phase: Phase): Phase | null {
   const i = PHASE_ORDER.indexOf(phase)
   return i >= 0 && i < PHASE_ORDER.length - 1 ? PHASE_ORDER[i + 1] : null
 }

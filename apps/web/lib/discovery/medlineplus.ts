@@ -3,7 +3,7 @@ import { createHash } from 'crypto'
 import sanitizeHtml from 'sanitize-html'
 import { LruCache } from '@/lib/lru'
 import { ARTICLE_SANITIZE_OPTS } from '@/lib/discovery/sanitize'
-import type { ArticleSearchResult, ResolvedArticle } from '@/lib/discovery/sources'
+import { DISCOVERY_UA, type ArticleSearchResult, type ResolvedArticle } from '@/lib/discovery/sources'
 
 // ── Discovery explainers (MedlinePlus health topics) ──────────────────────────
 // The plain-language lane: NIH's consumer-health encyclopedia, written at a
@@ -27,7 +27,6 @@ export const MEDLINEPLUS_FEED = {
 }
 
 const API = 'https://wsearch.nlm.nih.gov/ws/query'
-const UA = 'scienium/1.0 (https://scienium.app; contact: hello@scienium.app) node-fetch'
 const FETCH_TIMEOUT_MS = 8000
 const CACHE_TTL_MS = 1000 * 60 * 60
 const MAX_RESULTS = 12
@@ -109,7 +108,7 @@ export async function searchHealthTopics(query: string): Promise<HealthTopic[]> 
 
   try {
     const res = await fetch(url.toString(), {
-      headers: { 'User-Agent': UA, Accept: 'application/xml' },
+      headers: { 'User-Agent': DISCOVERY_UA, Accept: 'application/xml' },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
     if (!res.ok) return []

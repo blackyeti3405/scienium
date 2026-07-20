@@ -1,5 +1,9 @@
 import type { CredibilityTier } from '@prisma/client'
 
+// Descriptive UA with contact, sent on every outbound discovery-provider fetch
+// (same policy the Wikipedia proxy follows).
+export const DISCOVERY_UA = 'scienium/1.0 (https://scienium.app; contact: hello@scienium.app) node-fetch'
+
 // ── Shared source-node contract (client + server agree on these shapes) ───────
 // The Papers-tab search box, the four surf lanes, the resolve route, and the tree
 // POST branch all speak these types so nodes never silently corrupt (epic:

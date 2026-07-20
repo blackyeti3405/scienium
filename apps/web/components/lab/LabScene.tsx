@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { TileBackground } from '@/components/lab/TileBackground'
 import { DecorationLayer } from '@/components/lab/DecorationLayer'
 import { LabPlot } from '@/components/lab/LabPlot'
@@ -34,7 +34,6 @@ import {
 import type { AdvanceProgress } from '@/lib/team/advance'
 import { type Phase, type LabType } from '@/lib/phase'
 
-export type { PlacedEconomy, PlacedGateway }
 
 export interface LabSceneProps {
   teamName: string
@@ -102,6 +101,10 @@ function LabSceneContent({
     items: FeedbackItem[]
     unresolvedCount: number
   } | null>(null)
+  // True once ANY feedback data has been recorded (warm-up fetch or the panel
+  // itself). The mount fetch below checks it so a slow response can never
+  // clobber newer state the open panel already reported (F1 AC5 flake).
+  const feedbackSeededRef = useRef(false)
   // Momentum card (Feature F10) — default hidden until the mount effect below
   // decides, based on whether THIS ISO week's tag is already recorded as dismissed.
   const [momentumDismissed, setMomentumDismissed] = useState(true)
@@ -143,7 +146,10 @@ function LabSceneContent({
     fetch('/api/team/feedback')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (d) {
+        // Warm-start only: if the panel already reported (user opened it before
+        // this resolved), our data was requested EARLIER and must not win.
+        if (d && !feedbackSeededRef.current) {
+          feedbackSeededRef.current = true
           setUnresolvedCount(d.unresolvedCount)
           setFeedbackSnapshot({ items: d.items, unresolvedCount: d.unresolvedCount })
         }
@@ -362,7 +368,10 @@ function LabSceneContent({
           onClose={() => setFeedbackOpen(false)}
           onUnresolvedCount={setUnresolvedCount}
           initialData={feedbackSnapshot}
-          onDataChange={setFeedbackSnapshot}
+          onDataChange={(d) => {
+            feedbackSeededRef.current = true
+            setFeedbackSnapshot(d)
+          }}
         />
       )}
     </div>

@@ -12,6 +12,7 @@ import {
   VOCAB_DAILY_KP_CAP,
 } from '@/lib/literature/srs'
 import { logActivity } from '@/lib/activity/log'
+import { todayUtc } from '@/lib/date'
 
 const ReviewBody = z
   .object({
@@ -19,12 +20,6 @@ const ReviewBody = z
     grade: z.enum(['again', 'hard', 'good', 'easy']),
   })
   .strict()
-
-/** UTC-midnight Date for "today" — the stable per-day key, mirrors todayUtc() in codex/complete/route.ts. */
-function todayUtc(): Date {
-  const now = new Date()
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-}
 
 /**
  * POST /api/literature/vocab/review — grades one card (self-reported), pure-

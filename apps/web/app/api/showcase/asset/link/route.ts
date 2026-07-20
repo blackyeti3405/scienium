@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
+import { lockAggregate } from '@/lib/db-lock'
 import {
   isSafeHttpUrl,
   parseVideoUrl,
@@ -26,6 +27,13 @@ const Body = z
 const MULTI_CAP: Partial<Record<ShowcaseAssetType, number>> = {
   demo_video: MAX_DEMO_VIDEOS,
   supplement: MAX_SUPPLEMENTS,
+}
+
+/** Thrown inside the slot transaction when a multi-slot cap is full → 409. */
+class SlotCapError extends Error {
+  constructor(readonly cap: number) {
+    super('slot cap reached')
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -54,22 +62,37 @@ export async function POST(req: NextRequest) {
     metadata = { url: data.url, label: data.label ?? '' }
   }
 
-  if (SINGLE_SLOT[assetType]) {
-    // Replace any existing of this single-slot type.
-    await db.showcaseAsset.deleteMany({ where: { showcaseId: showcase.id, assetType } })
-  } else {
-    // Enforce the cap on multi-slot types.
-    const cap = MULTI_CAP[assetType] ?? 0
-    const count = await db.showcaseAsset.count({ where: { showcaseId: showcase.id, assetType } })
-    if (count >= cap) {
-      return NextResponse.json({ error: `Up to ${cap} ${assetType === 'demo_video' ? 'demo videos' : 'links'}.` }, { status: 409 })
+  // Slot invariants enforced ATOMICALLY (A12): the per-(showcase, slot)
+  // advisory lock serializes concurrent submissions, so a single slot can't be
+  // duplicated by delete-then-create races and a multi-slot cap can't be
+  // exceeded by count-then-create races.
+  let asset: { id: string; assetType: string; metadataJson: unknown }
+  try {
+    asset = await db.$transaction(async (tx) => {
+      await lockAggregate(tx, `showcase-slot:${showcase.id}:${assetType}`)
+      if (SINGLE_SLOT[assetType]) {
+        // Replace any existing of this single-slot type.
+        await tx.showcaseAsset.deleteMany({ where: { showcaseId: showcase.id, assetType } })
+      } else {
+        // Enforce the cap on multi-slot types.
+        const cap = MULTI_CAP[assetType] ?? 0
+        const count = await tx.showcaseAsset.count({ where: { showcaseId: showcase.id, assetType } })
+        if (count >= cap) throw new SlotCapError(cap)
+      }
+      return tx.showcaseAsset.create({
+        data: { showcaseId: showcase.id, assetType, metadataJson: metadata as Prisma.InputJsonValue },
+        select: { id: true, assetType: true, metadataJson: true },
+      })
+    })
+  } catch (err) {
+    if (err instanceof SlotCapError) {
+      return NextResponse.json(
+        { error: `Up to ${err.cap} ${assetType === 'demo_video' ? 'demo videos' : 'links'}.` },
+        { status: 409 },
+      )
     }
+    throw err
   }
-
-  const asset = await db.showcaseAsset.create({
-    data: { showcaseId: showcase.id, assetType, metadataJson: metadata as Prisma.InputJsonValue },
-    select: { id: true, assetType: true, metadataJson: true },
-  })
 
   return NextResponse.json(
     { asset: { id: asset.id, assetType: asset.assetType, url: null, metadata: asset.metadataJson } },

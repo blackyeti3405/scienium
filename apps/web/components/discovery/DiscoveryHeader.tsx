@@ -3,6 +3,13 @@
 import { TopicSearch } from '@/components/discovery/TopicSearch'
 import type { DiscoverySource } from '@/stores/discoveryStore'
 
+const SOURCE_TABS: [DiscoverySource, string][] = [
+  ['wikipedia', '📄 Wiki'],
+  ['youtube', '▶ YouTube'],
+  ['source', '📄 Papers'],
+  ['article', '📰 Articles'],
+]
+
 /**
  * Explorer top bar: back-to-home, the topic search box, the source toggle
  * (Wiki / YouTube / Papers / full-window tree), the starred counter, and the
@@ -50,38 +57,17 @@ export function DiscoveryHeader({
 
       {/* Source toggle: Wikipedia reader ⇄ YouTube viewer ⇄ Papers ⇄ #11 full-window tree */}
       <div className="flex items-center rounded-sm border border-white/15 overflow-hidden shrink-0">
-        <button
-          onClick={() => onSelectSource('wikipedia')}
-          className={`font-pixel text-[7px] px-2.5 py-1.5 transition-colors ${
-            view === 'explore' && discoverySource === 'wikipedia' ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
-          }`}
-        >
-          📄 Wiki
-        </button>
-        <button
-          onClick={() => onSelectSource('youtube')}
-          className={`font-pixel text-[7px] px-2.5 py-1.5 transition-colors ${
-            view === 'explore' && discoverySource === 'youtube' ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
-          }`}
-        >
-          ▶ YouTube
-        </button>
-        <button
-          onClick={() => onSelectSource('source')}
-          className={`font-pixel text-[7px] px-2.5 py-1.5 transition-colors ${
-            view === 'explore' && discoverySource === 'source' ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
-          }`}
-        >
-          📄 Papers
-        </button>
-        <button
-          onClick={() => onSelectSource('article')}
-          className={`font-pixel text-[7px] px-2.5 py-1.5 transition-colors ${
-            view === 'explore' && discoverySource === 'article' ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
-          }`}
-        >
-          📰 Articles
-        </button>
+        {SOURCE_TABS.map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => onSelectSource(key)}
+            className={`font-pixel text-[7px] px-2.5 py-1.5 transition-colors ${
+              view === 'explore' && discoverySource === key ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/50 hover:text-white/80'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
         <button
           onClick={onSelectTreeView}
           data-testid="tree-tab"

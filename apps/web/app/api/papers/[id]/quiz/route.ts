@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
 import { anthropic } from '@/lib/anthropic'
+import { logEvent } from '@/lib/observability/log'
 import { paperTextBlock } from '@/lib/literature/grading'
 import {
   QUIZ_QUESTION_COUNT,
@@ -11,6 +12,7 @@ import {
   loadRubric,
   stripKeys,
   extractJson,
+  mapGradedQuizSession,
 } from '@/lib/literature/quiz'
 
 /** Fixed deterministic quiz used only when E2E_SKIP_LLM=1 (never in production). */
@@ -31,6 +33,15 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 
+  // Active-team boundary (A2): the paper must belong to the CALLER'S CURRENT
+  // team. A user who keeps an old membership and switches activeTeamId must not
+  // be able to read a session off a non-active team's paper by id.
+  const paper = await db.paper.findFirst({
+    where: { id: params.id, teamId: ctx.teamId },
+    select: { id: true },
+  })
+  if (!paper) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
   const session = await db.paperQuizSession.findFirst({
     where: { paperId: params.id, userId: ctx.dbUserId, gradedAt: { not: null } },
     orderBy: { gradedAt: 'desc' },
@@ -40,14 +51,10 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
   if (!session) return NextResponse.json({ session: null })
 
   const storedQuestions = session.questionsJson as unknown as QuizQuestion[]
-  const questions = storedQuestions.map((q, i) => ({
-    id: q.id ?? `q${i + 1}`,
-    prompt: q.prompt,
-    focus: q.focus,
-  }))
-
-  // Match attempts back to questions by prompt text.
-  const byPrompt = new Map(session.attempts.map((a) => [a.question, a]))
+  const { questions, answers, results: baseResults } = mapGradedQuizSession(
+    session.questionsJson,
+    session.attempts,
+  )
   const strongAnswerById = new Map(storedQuestions.map((q, i) => [q.id ?? `q${i + 1}`, q.strongAnswer]))
 
   // A session that has been through the retry loop always carries one more
@@ -63,17 +70,13 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
       gradedAt: session.gradedAt,
       retried,
       questions,
-      answers: Object.fromEntries(
-        questions.map((q) => [q.id, byPrompt.get(q.prompt)?.response ?? '']),
-      ),
-      results: questions.map((q) => {
-        const a = byPrompt.get(q.prompt)
-        const score = a?.score ?? 0
-        const strongAnswer = strongAnswerById.get(q.id)
+      answers,
+      results: baseResults.map(({ questionId, score, rationale }) => {
+        const strongAnswer = strongAnswerById.get(questionId)
         return {
-          questionId: q.id,
+          questionId,
           score,
-          rationale: a?.evaluation ?? '',
+          rationale,
           ...(score < QUIZ_PASS_THRESHOLD && strongAnswer ? { strongAnswer } : {}),
         }
       }),
@@ -136,7 +139,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     const parsed = extractJson<Array<{ prompt: string; focus: string; key: string }>>(raw)
 
     if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
-      console.error('[quiz] generation failed to parse:', raw.slice(0, 500))
+      // Model output can echo paper text — log lengths only, never content (A7).
+      logEvent({
+        event: 'quiz.generation_parse_failed',
+        outcome: 'error',
+        detail: `stop=${response.stop_reason} len=${raw.length}`,
+      })
       return NextResponse.json({ error: 'Failed to generate quiz' }, { status: 502 })
     }
 

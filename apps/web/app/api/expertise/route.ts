@@ -5,6 +5,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { anthropic } from '@/lib/anthropic'
+import { logEvent } from '@/lib/observability/log'
 import {
   MAX_CLEARANCE,
   CLEARANCE_PASS_THRESHOLD,
@@ -183,7 +184,12 @@ export async function POST(req: NextRequest) {
   const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
   const parsed = extractJson<Array<{ prompt: string; focus: string; key: string }>>(raw)
   if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
-    console.error('[expertise] generation failed to parse:', raw.slice(0, 500))
+    // Model output can echo paper/team content — log lengths only (A7).
+    logEvent({
+      event: 'expertise.generation_parse_failed',
+      outcome: 'error',
+      detail: `len=${raw.length}`,
+    })
     return NextResponse.json({ error: 'Failed to generate exam' }, { status: 502 })
   }
 

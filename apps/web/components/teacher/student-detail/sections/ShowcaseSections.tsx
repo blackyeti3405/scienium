@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { ExternalLink, FileText, Trophy } from 'lucide-react'
-import { Card } from '@/components/ui/Card'
+import { Card, StatTile } from '@/components/ui/Card'
 import { Field, Empty } from '../shared'
 import type { Overview } from '../types'
 
@@ -20,20 +20,8 @@ export function ShowcaseSection({ overview }: { overview: Overview }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
-        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
-          <span className="text-white/40"><Trophy size={16} /></span>
-          <span className="text-2xl font-semibold tabular-nums text-white">
-            {showcase._count.views.toLocaleString()}
-          </span>
-          <span className="text-xs text-white/50">Views</span>
-        </div>
-        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
-          <span className="text-white/40"><FileText size={16} /></span>
-          <span className="text-2xl font-semibold tabular-nums text-white">
-            {showcase._count.assets}
-          </span>
-          <span className="text-xs text-white/50">Assets</span>
-        </div>
+        <StatTile icon={<Trophy size={16} />} value={showcase._count.views.toLocaleString()} label="Views" />
+        <StatTile icon={<FileText size={16} />} value={showcase._count.assets} label="Assets" />
       </div>
 
       <Card>

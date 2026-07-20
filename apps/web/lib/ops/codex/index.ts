@@ -32,8 +32,6 @@ export type { CodexTrack } from './types'
 export interface CodexTrackSummary {
   slug: string
   label: string
-  home: boolean
-  labType?: LabType
   branchCount: number
   lessonCount: number
 }
@@ -44,7 +42,7 @@ export interface CodexTrackSummary {
  * GENERATED — do not hand-edit this array or the LOADERS map below. Both are
  * regenerated wholesale from `./content/*.json` by
  * `pnpm --filter web codex:merge` (`./scripts/merge-codex-segments.mjs`), which
- * is how `/codex-pipeline` ships a field. `label`, `home`, and `labType` are read
+ * is how `/codex-pipeline` ships a field. `label` is read
  * from each content file; `branchCount`/`lessonCount` are counted from the real
  * data, so they cannot drift from it (`__tests__/content-shape.test.ts` asserts
  * that independently, and `codex:build --check` fails on any registry drift).
@@ -57,14 +55,14 @@ export interface CodexTrackSummary {
  * decision, not derivable from content, and stays hand-maintained.
  */
 export const CODEX_TRACKS: CodexTrackSummary[] = [
-  { slug: 'acoustics-sound', label: 'Acoustics / Sound', home: false, branchCount: 5, lessonCount: 287 },
-  { slug: 'astronomy-astrophysics', label: 'Astronomy / Astrophysics', home: false, branchCount: 5, lessonCount: 271 },
-  { slug: 'chemistry', label: 'Chemistry', home: false, branchCount: 5, lessonCount: 258 },
-  { slug: 'classical-mechanics-physics', label: 'Classical Mechanics / Physics', home: false, branchCount: 5, lessonCount: 275 },
-  { slug: 'clinical-medicine-pharmacology', label: 'Clinical Medicine / Pharmacology', home: false, branchCount: 5, lessonCount: 275 },
-  { slug: 'computer-science-algorithms', label: 'Computer Science / Algorithms', home: false, branchCount: 5, lessonCount: 275 },
-  { slug: 'data-science-ml-metrics', label: 'Data Science / ML Metrics', home: false, branchCount: 5, lessonCount: 275 },
-  { slug: 'gait-biomechanics', label: 'Gait Biomechanics', home: false, branchCount: 5, lessonCount: 274 },
+  { slug: 'acoustics-sound', label: 'Acoustics / Sound', branchCount: 5, lessonCount: 287 },
+  { slug: 'astronomy-astrophysics', label: 'Astronomy / Astrophysics', branchCount: 5, lessonCount: 271 },
+  { slug: 'chemistry', label: 'Chemistry', branchCount: 5, lessonCount: 258 },
+  { slug: 'classical-mechanics-physics', label: 'Classical Mechanics / Physics', branchCount: 5, lessonCount: 275 },
+  { slug: 'clinical-medicine-pharmacology', label: 'Clinical Medicine / Pharmacology', branchCount: 5, lessonCount: 275 },
+  { slug: 'computer-science-algorithms', label: 'Computer Science / Algorithms', branchCount: 5, lessonCount: 275 },
+  { slug: 'data-science-ml-metrics', label: 'Data Science / ML Metrics', branchCount: 5, lessonCount: 275 },
+  { slug: 'gait-biomechanics', label: 'Gait Biomechanics', branchCount: 5, lessonCount: 274 },
 ]
 
 type CodexTrackSlug = (typeof CODEX_TRACKS)[number]['slug']

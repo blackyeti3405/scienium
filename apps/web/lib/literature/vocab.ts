@@ -78,15 +78,15 @@ export const VOCAB_MAX_CANDIDATES = 60
  * Sized to admit essentially all of them; the cap only guards a pathological
  * input, since curation is what decides which are worth a card.
  */
-export const VOCAB_ACRONYM_SLOTS = 30
-export const VOCAB_MIN_UNIGRAM_FREQ = 3
+const VOCAB_ACRONYM_SLOTS = 30
+const VOCAB_MIN_UNIGRAM_FREQ = 3
 export const VOCAB_MIN_NGRAM_FREQ = 2
 /**
  * Dictionary entries shorter than this are never scanned. At one character
  * there is no mechanical difference between the statistic `n` and any stray
  * letter n in the text.
  */
-export const VOCAB_MIN_DICTIONARY_TERM_CHARS = 2
+const VOCAB_MIN_DICTIONARY_TERM_CHARS = 2
 
 /** Mirrors the `vocab_source` enum in schema.prisma — how a STORED card is attributed. */
 export type TermSource =

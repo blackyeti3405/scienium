@@ -1,6 +1,6 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api, gotoFresh, registerPageRole, withSeedPage } from './api'
+import { api, gotoFresh, registerPageRole, withSeedPage, resolveTeamId } from './api'
 
 /**
  * F9 — Teacher nudge / "check in" from the roster.
@@ -49,7 +49,6 @@ import { api, gotoFresh, registerPageRole, withSeedPage } from './api'
  */
 
 const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
-const PREFERRED_TEST_TEAM_ID = 'e2e_test_lab_01'
 
 interface RosterStudent {
   studentId: string
@@ -57,14 +56,6 @@ interface RosterStudent {
   teamId: string | null
   teamName: string | null
   flags: { status: 'on_track' | 'unlogged' | 'stale' | null }
-}
-
-function resolveTeamId(students: RosterStudent[]): string | null {
-  return (
-    students.find((s) => s.teamId === PREFERRED_TEST_TEAM_ID)?.teamId ??
-    students.find((s) => s.teamId)?.teamId ??
-    null
-  )
 }
 
 /** UTC calendar day, matching the route's own dedupeKey convention exactly. */

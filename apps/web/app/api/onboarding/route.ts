@@ -6,7 +6,7 @@ import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { pickActiveTeam } from '@/lib/team/context'
 import { isValidZip, zipToState, geocodeZip } from '@/lib/fairs/zip'
-import { applySchoolAndClass, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { applySchoolAndClass, resolvePrimaryEmail, syncClerkDisplayName } from '@/lib/onboarding/profile'
 
 // Names are capped so a client can't store unbounded text; `.strict()` rejects
 // any field other than these.
@@ -37,9 +37,7 @@ export async function POST(req: NextRequest) {
   const locationState = locationZip ? zipToState(locationZip) : null
   const locationCoords = locationZip ? await geocodeZip(locationZip) : null
 
-  const email =
-    clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
-    clerkUser.emailAddresses[0]?.emailAddress
+  const email = resolvePrimaryEmail(clerkUser)
 
   if (!email) return NextResponse.json({ error: 'No email on Clerk account' }, { status: 400 })
 
@@ -65,9 +63,7 @@ export async function POST(req: NextRequest) {
 
   // Ingest the student's high school (find-or-create) and optional classroom.
   // Non-fatal — a school lookup hiccup must not block lab creation.
-  const profile = await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => ({
-    classId: null,
-  }))
+  await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => {})
 
   // Mirror the display name into Clerk so the avatar/account match from day one.
   await syncClerkDisplayName(userId, user.name)
@@ -77,7 +73,8 @@ export async function POST(req: NextRequest) {
       data: {
         name: teamName.trim(),
         teamLeadId: user.id,
-        classId: profile.classId,
+        // ADR-004: `Team.classId` is vestigial — class membership is per
+        // student. New teams never populate it.
         phase: 'literature_review',
         locationZip,
         locationState,

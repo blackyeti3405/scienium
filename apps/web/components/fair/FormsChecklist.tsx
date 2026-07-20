@@ -300,38 +300,24 @@ export function FormsChecklist() {
                     data-testid={`hazard-row-${hazard.key}-body`}
                     className="px-3 pb-3.5 pl-9 flex flex-col gap-3 border-t border-white/5 pt-3"
                   >
-                    <div>
-                      <SectionLabel>PPE / precautions</SectionLabel>
-                      <ul className="list-disc list-outside pl-4 flex flex-col gap-1">
-                        {hazard.ppe.map((item, i) => (
-                          <li key={i} className="text-sm text-white/70 leading-relaxed">
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <div>
-                      <SectionLabel>Safe handling</SectionLabel>
-                      <ul className="list-disc list-outside pl-4 flex flex-col gap-1">
-                        {hazard.handling.map((item, i) => (
-                          <li key={i} className="text-sm text-white/70 leading-relaxed">
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <div>
-                      <SectionLabel>Disposal</SectionLabel>
-                      <ul className="list-disc list-outside pl-4 flex flex-col gap-1">
-                        {hazard.disposal.map((item, i) => (
-                          <li key={i} className="text-sm text-white/70 leading-relaxed">
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                    {(
+                      [
+                        ['PPE / precautions', hazard.ppe],
+                        ['Safe handling', hazard.handling],
+                        ['Disposal', hazard.disposal],
+                      ] as const
+                    ).map(([label, items]) => (
+                      <div key={label}>
+                        <SectionLabel>{label}</SectionLabel>
+                        <ul className="list-disc list-outside pl-4 flex flex-col gap-1">
+                          {items.map((item, i) => (
+                            <li key={i} className="text-sm text-white/70 leading-relaxed">
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

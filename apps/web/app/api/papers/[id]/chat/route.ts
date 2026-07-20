@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { anthropic } from '@/lib/anthropic'
 import { paperTextBlock } from '@/lib/literature/grading'
+import { buildChatTurns, runChatTurn } from '@/lib/chat/thread'
 
 // The server owns the conversation. A request carries ONE new user turn; the
 // history is loaded from the database, so a client can never inject fabricated
@@ -66,111 +66,84 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     take: MAX_MESSAGES,
     select: { role: true, content: true },
   })
-  // The bounded window can begin mid-exchange (on an assistant turn) when writes
-  // interleave — user rows are written before the paid call, assistant rows after.
-  // Anthropic requires the first message to be a user turn, so trim any leading
-  // assistant rows before prepending the history to the new user message.
-  const priorAsc = prior.reverse()
-  let head = 0
-  while (head < priorAsc.length && priorAsc[head].role !== 'user') head++
-  const convo: Array<{
-    role: 'user' | 'assistant'
-    content: string | Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }>
-  }> = [
-    ...priorAsc.slice(head).map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user' as const, content: message },
-  ]
-  // Cache breakpoints on the last two turns (BLK-6). The system block below
-  // caches the paper text, but without a breakpoint in `messages` every prior
-  // turn re-bills at full price each request — O(N²) spend over a long chat.
-  // Marking the newest turns caches the whole conversation prefix, so the next
-  // request re-reads it at ~10% cost; two breakpoints keep a hit even when
-  // concurrent turns interleave by one message.
-  for (const idx of [convo.length - 1, convo.length - 2]) {
-    const turn = idx >= 0 ? convo[idx] : undefined
-    if (turn && typeof turn.content === 'string') {
-      turn.content = [{ type: 'text', text: turn.content, cache_control: { type: 'ephemeral' } }]
-    }
-  }
-
-  // Persist the user turn as `pending` BEFORE the paid call, so a failed call
-  // leaves a durable record rather than silently dropping the turn.
-  const requestId = randomUUID()
-  const userRow = await db.paperChatMessage.create({
-    data: {
-      paperId: paper.id,
-      userId: ctx.dbUserId,
-      role: 'user',
-      content: message,
-      status: 'pending',
-      requestId,
-    },
-    select: { id: true },
-  })
+  const convo = buildChatTurns(prior, message)
 
   const authorLine = (paper.authors as string[]).join(', ') || 'Unknown authors'
 
-  let reply: string
-  let usageJson: { inputTokens: number; outputTokens: number } | undefined
-  try {
-    // The paper text goes in a cached system block, placed FIRST (PERF-8):
-    // prompt caching is prefix-keyed, so the byte-identical shared block
-    // (paperTextBlock) is reused across chat → quiz → grade → retry. The first
-    // request pays full price; every follow-up reuses the cache at ~10% the
-    // cost (5-minute TTL). Route instructions follow, outside the cached prefix.
-    const response = await anthropic().messages.create({
-      model: 'claude-sonnet-5',
-      // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
-      // and thinking shares this `max_tokens` budget. Disabled to preserve the
-      // cost, latency, and output length this route was tuned for.
-      // `max_tokens` was also raised ~1.5x: Sonnet 5's tokenizer
-      // spends ~30% more tokens on the same text, so a budget tuned against
-      // 4.6 truncates. That is not a visible error — it silently cuts the
-      // response mid-sentence (it broke idea-check's JSON verdict outright).
-      thinking: { type: 'disabled' },
-      max_tokens: 1536,
-      system: [
-        paperTextBlock(paper.fullText),
-        { type: 'text', text: buildInstructions(paper.title, authorLine, paper.abstract ?? '') },
-      ],
-      messages: convo,
-    })
-    reply = response.content[0].type === 'text' ? response.content[0].text : ''
-    usageJson = {
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
-    }
-  } catch (err) {
+  const result = await runChatTurn({
+    createPending: (requestId) =>
+      db.paperChatMessage.create({
+        data: {
+          paperId: paper.id,
+          userId: ctx.dbUserId,
+          role: 'user',
+          content: message,
+          status: 'pending',
+          requestId,
+        },
+        select: { id: true },
+      }),
+    callAnthropic: async () => {
+      // The paper text goes in a cached system block, placed FIRST (PERF-8):
+      // prompt caching is prefix-keyed, so the byte-identical shared block
+      // (paperTextBlock) is reused across chat → quiz → grade → retry. The first
+      // request pays full price; every follow-up reuses the cache at ~10% the
+      // cost (5-minute TTL). Route instructions follow, outside the cached prefix.
+      const response = await anthropic().messages.create({
+        model: 'claude-sonnet-5',
+        // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
+        // and thinking shares this `max_tokens` budget. Disabled to preserve the
+        // cost, latency, and output length this route was tuned for.
+        // `max_tokens` was also raised ~1.5x: Sonnet 5's tokenizer
+        // spends ~30% more tokens on the same text, so a budget tuned against
+        // 4.6 truncates. That is not a visible error — it silently cuts the
+        // response mid-sentence (it broke idea-check's JSON verdict outright).
+        thinking: { type: 'disabled' },
+        max_tokens: 1536,
+        system: [
+          paperTextBlock(paper.fullText),
+          { type: 'text', text: buildInstructions(paper.title, authorLine, paper.abstract ?? '') },
+        ],
+        messages: convo,
+      })
+      const reply = response.content[0].type === 'text' ? response.content[0].text : ''
+      return {
+        reply,
+        usageJson: {
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+        },
+      }
+    },
     // Log the real error server-side; return a generic message so internal details
     // never reach the client (OWASP API8/A09). Mark the user turn `error` so the
     // paid-call outcome and the visible history don't silently diverge.
-    console.error('[chat] error:', err)
-    await db.paperChatMessage
-      .update({ where: { id: userRow.id }, data: { status: 'error', error: 'Chat failed' } })
-      .catch(() => {})
-    return NextResponse.json({ error: 'Chat failed' }, { status: 500 })
-  }
+    onError: (err) => console.error('[chat] error:', err),
+    markError: (userRowId) =>
+      db.paperChatMessage.update({ where: { id: userRowId }, data: { status: 'error', error: 'Chat failed' } }),
+    // Complete the user turn and persist the assistant reply atomically.
+    complete: (userRowId, usageJson, reply, requestId) =>
+      db.$transaction([
+        db.paperChatMessage.update({
+          where: { id: userRowId },
+          data: { status: 'complete', tokenUsageJson: usageJson },
+        }),
+        db.paperChatMessage.create({
+          data: {
+            paperId: paper.id,
+            userId: ctx.dbUserId,
+            role: 'assistant',
+            content: reply,
+            status: 'complete',
+            requestId,
+            tokenUsageJson: usageJson,
+          },
+        }),
+      ]),
+  })
 
-  // Complete the user turn and persist the assistant reply atomically.
-  await db.$transaction([
-    db.paperChatMessage.update({
-      where: { id: userRow.id },
-      data: { status: 'complete', tokenUsageJson: usageJson },
-    }),
-    db.paperChatMessage.create({
-      data: {
-        paperId: paper.id,
-        userId: ctx.dbUserId,
-        role: 'assistant',
-        content: reply,
-        status: 'complete',
-        requestId,
-        tokenUsageJson: usageJson,
-      },
-    }),
-  ])
-
-  return NextResponse.json({ reply })
+  if (!result.ok) return NextResponse.json({ error: 'Chat failed' }, { status: 500 })
+  return NextResponse.json({ reply: result.reply })
 }
 
 function buildInstructions(title: string, authors: string, abstract: string): string {

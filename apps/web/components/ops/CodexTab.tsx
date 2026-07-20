@@ -43,10 +43,6 @@ const FLUENCY_LABEL: Record<string, string> = {
 
 // ─── Home view ──────────────────────────────────────────────────────────────
 
-function trackFluency(track: CodexTrack, completedLessonIds: Set<string>) {
-  return fluencyTier(track, completedLessonIds)
-}
-
 function trackProgressPct(track: CodexTrack, completedLessonIds: Set<string>): number {
   const lessons = [track.core, ...track.branches].flatMap((s) => s.units.flatMap((u) => u.lessons))
   if (lessons.length === 0) return 0
@@ -77,7 +73,7 @@ function TrackCard({
   rationale?: string
   onOpen: () => void
 }) {
-  const tier = trackFluency(track, completedLessonIds)
+  const tier = fluencyTier(track, completedLessonIds)
   const pct = trackProgressPct(track, completedLessonIds)
   const next = findNextLesson(track, completedLessonIds)
 

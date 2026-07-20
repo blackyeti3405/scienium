@@ -19,9 +19,7 @@ export function ShowcaseModerationQueue() {
   const [showcases, setShowcases] = useState<PendingShowcase[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const queue = useDecisionQueue('/api/teacher/showcase-moderation', 'showcaseId', (id) =>
-    setShowcases((list) => list.filter((s) => s.id !== id)),
-  )
+  const queue = useDecisionQueue((id) => setShowcases((list) => list.filter((s) => s.id !== id)))
 
   useEffect(() => {
     fetch('/api/teacher/showcase-moderation')

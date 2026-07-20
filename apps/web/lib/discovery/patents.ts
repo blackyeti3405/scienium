@@ -1,7 +1,8 @@
 import 'server-only'
 import { LruCache } from '@/lib/lru'
 import { serverEnv } from '@/lib/env'
-import type { ArticleSearchResult, ResolvedArticle } from '@/lib/discovery/sources'
+import { fetchWithRetry } from '@/lib/fetch-retry'
+import { DISCOVERY_UA, type ArticleSearchResult, type ResolvedArticle } from '@/lib/discovery/sources'
 
 // ── Discovery prior-art lane (patents) ────────────────────────────────────────
 // "Has someone built this before?" — the prior-art question every engineering-
@@ -23,7 +24,6 @@ export const PATENTS_FEED = {
 }
 
 const API = 'https://search.patentsview.org/api/v1/patent/'
-const UA = 'scienium/1.0 (https://scienium.app; contact: hello@scienium.app) node-fetch'
 const FETCH_TIMEOUT_MS = 8000
 const CACHE_TTL_MS = 1000 * 60 * 60
 const MAX_RESULTS = 10
@@ -103,9 +103,9 @@ export async function searchPatents(query: string): Promise<PatentHit[]> {
   url.searchParams.set('s', JSON.stringify([{ patent_date: 'desc' }]))
 
   try {
-    const res = await fetch(url.toString(), {
-      headers: { 'User-Agent': UA, Accept: 'application/json', 'X-Api-Key': apiKey },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    const res = await fetchWithRetry(url.toString(), {
+      headers: { 'User-Agent': DISCOVERY_UA, Accept: 'application/json', 'X-Api-Key': apiKey },
+      timeoutMs: FETCH_TIMEOUT_MS,
     })
     if (!res.ok) {
       console.error('[discovery/patents] PatentsView responded', res.status)

@@ -20,7 +20,7 @@ export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-export function Avatar({ name, size = 26 }: { name: string; size?: number }) {
+export function Avatar({ name, size }: { name: string; size: number }) {
   return (
     <span className="ops-avatar font-pixel" style={{ width: size, height: size, fontSize: size * 0.36 }}>
       {name[0]?.toUpperCase() ?? '?'}

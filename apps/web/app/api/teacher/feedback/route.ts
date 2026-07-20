@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireTeacher, teacherOwnsTeam } from '@/lib/teacher/auth'
 import { parseJson } from '@/lib/validation'
+import { truncate } from '@/lib/format'
 import { db } from '@/lib/db'
 
 const FeedbackBody = z
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
         teamId: data.teamId,
         kind: 'teacher_feedback',
         title: 'New feedback from your teacher',
-        body: data.body.length > 140 ? `${data.body.slice(0, 137)}…` : data.body,
+        body: truncate(data.body),
         linkUrl: '/lab?panel=feedback',
         dedupeKey: `teacher_feedback:${feedback.id}`,
       },

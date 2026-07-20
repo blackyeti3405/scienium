@@ -1,7 +1,7 @@
 'use client'
 
 import { Activity, Coins, Zap } from 'lucide-react'
-import { Card } from '@/components/ui/Card'
+import { Card, StatTile } from '@/components/ui/Card'
 import { fmtDate } from '@/lib/format'
 import { Empty } from '../shared'
 import type { Overview } from '../types'
@@ -21,34 +21,16 @@ export function EconomySection({ overview }: { overview: Overview }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
-          <span className="text-white/40"><Coins size={16} /></span>
-          <span className="text-2xl font-semibold tabular-nums text-[#F5C518]" data-testid="student-kp">
-            {studentKp.toLocaleString()}
-          </span>
-          <span className="text-xs text-white/50">Student KP</span>
-        </div>
-        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
-          <span className="text-white/40"><Coins size={16} /></span>
-          <span className="text-2xl font-semibold tabular-nums text-white">
-            {currency.kp.toLocaleString()}
-          </span>
-          <span className="text-xs text-white/50">Team KP</span>
-        </div>
-        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
-          <span className="text-white/40"><Zap size={16} /></span>
-          <span className="text-2xl font-semibold tabular-nums text-white">
-            {currency.clearanceLevel}
-          </span>
-          <span className="text-xs text-white/50">Clearance Level</span>
-        </div>
-        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
-          <span className="text-white/40"><Activity size={16} /></span>
-          <span className="text-2xl font-semibold tabular-nums text-white">
-            {currency.lc.toLocaleString()}
-          </span>
-          <span className="text-xs text-white/50">Lab Credits</span>
-        </div>
+        <StatTile
+          icon={<Coins size={16} />}
+          accent
+          value={studentKp.toLocaleString()}
+          label="Student KP"
+          testId="student-kp"
+        />
+        <StatTile icon={<Coins size={16} />} value={currency.kp.toLocaleString()} label="Team KP" />
+        <StatTile icon={<Zap size={16} />} value={currency.clearanceLevel} label="Clearance Level" />
+        <StatTile icon={<Activity size={16} />} value={currency.lc.toLocaleString()} label="Lab Credits" />
       </div>
     </div>
   )

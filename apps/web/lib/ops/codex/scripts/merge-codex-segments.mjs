@@ -291,8 +291,7 @@ function syncIndex(tracks) {
 
   const summaries = tracks
     .map(({ slug, track }) => {
-      const labType = track.labType ? `, labType: '${track.labType}'` : ''
-      return `  { slug: '${slug}', label: '${track.label}', home: ${track.home === true}${labType}, branchCount: ${track.branches.length}, lessonCount: ${lessonCount(track)} },`
+      return `  { slug: '${slug}', label: '${track.label}', branchCount: ${track.branches.length}, lessonCount: ${lessonCount(track)} },`
     })
     .join('\n')
   src = replaceBlock(src, 'export const CODEX_TRACKS: CodexTrackSummary[] = [', ']', summaries, 'index.ts')
@@ -412,8 +411,7 @@ function main() {
       console.error(`content/${plan.slug}.json does not exist yet, so this plan must include the core segment (a branch cannot be the first segment of a new field).`)
       process.exit(1)
     }
-    track = { slug: plan.slug, label: plan.label ?? plan.slug, home: plan.home === true, core: null, branches: [] }
-    if (plan.labType) track.labType = plan.labType
+    track = { slug: plan.slug, label: plan.label ?? plan.slug, core: null, branches: [] }
   }
 
   /** @type {string[]} */

@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, clickBuilding } from './api'
+import { e2eDb, e2eTeamId } from './db'
 
 /**
  * F18 — "Study with Vega" persistent project-scoped study companion (Ops Hub),
@@ -45,18 +46,7 @@ import { api, withSeedPage } from './api'
  */
 
 const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
-const TEAM_NAME = 'E2E Test Lab'
 const RUN_ID = Date.now()
-
-/** Click a building-sprite button by its aria-label — bypasses the isometric
- *  z-index overlap that blocks Playwright's coordinate-based clicks. */
-async function clickBuilding(page: Page, ariaLabel: string) {
-  await page.evaluate((label) => {
-    const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-    if (!btn) throw new Error(`Building button not found: ${label}`)
-    btn.click()
-  }, ariaLabel)
-}
 
 /** Open the Operations Hub feature panel from /lab and switch to the "Study
  *  with Vega" tab. */
@@ -74,50 +64,36 @@ test.describe('F18 — Study with Vega', () => {
   test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      const team = await db.team.findFirst({ where: { name: TEAM_NAME }, select: { id: true } })
-      if (!team) throw new Error(`E2E team '${TEAM_NAME}' not found — run pnpm --filter web seed:e2e first.`)
-      teamId = team.id
-    } finally {
-      await db.$disconnect()
-    }
+    teamId = await e2eTeamId()
   })
 
   test.afterAll(async () => {
     if (!teamId) return
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      // Scoped ONLY to this run's own fixture content — never a blanket delete
-      // of the team-shared thread. The RUN_ID marker lives only in USER rows;
-      // deleting by content alone left every run's ASSISTANT replies behind
-      // (35 orphans accumulated), which slowed the history GET until it lost
-      // the race the VegaStudyTab stale-clobber fix now guards. Each reply
-      // shares its user turn's requestId, so resolve marker → requestIds and
-      // delete BOTH roles.
-      const runRows = await db.vegaStudyMessage.findMany({
-        where: { teamId, content: { contains: `[E2E F18 ${RUN_ID}]` } },
-        select: { requestId: true },
-      })
-      const requestIds = [
-        ...new Set(runRows.map((r) => r.requestId).filter((x): x is string => !!x)),
-      ]
-      await db.vegaStudyMessage.deleteMany({
-        where: {
-          teamId,
-          OR: [
-            { requestId: { in: requestIds } },
-            // Rows from before requestId existed (or a failed pairing) still
-            // carrying the marker — content match remains the fallback.
-            { content: { contains: `[E2E F18 ${RUN_ID}]` } },
-          ],
-        },
-      })
-    } finally {
-      await db.$disconnect()
-    }
+    // Scoped ONLY to this run's own fixture content — never a blanket delete
+    // of the team-shared thread. The RUN_ID marker lives only in USER rows;
+    // deleting by content alone left every run's ASSISTANT replies behind
+    // (35 orphans accumulated), which slowed the history GET until it lost
+    // the race the VegaStudyTab stale-clobber fix now guards. Each reply
+    // shares its user turn's requestId, so resolve marker → requestIds and
+    // delete BOTH roles.
+    const runRows = await e2eDb.vegaStudyMessage.findMany({
+      where: { teamId, content: { contains: `[E2E F18 ${RUN_ID}]` } },
+      select: { requestId: true },
+    })
+    const requestIds = [
+      ...new Set(runRows.map((r) => r.requestId).filter((x): x is string => !!x)),
+    ]
+    await e2eDb.vegaStudyMessage.deleteMany({
+      where: {
+        teamId,
+        OR: [
+          { requestId: { in: requestIds } },
+          // Rows from before requestId existed (or a failed pairing) still
+          // carrying the marker — content match remains the fallback.
+          { content: { contains: `[E2E F18 ${RUN_ID}]` } },
+        ],
+      },
+    })
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { fetchWithRetry } from '@/lib/fetch-retry'
 import sanitizeHtml from 'sanitize-html'
 import { requireUserContext } from '@/lib/api/route-context'
 import { LruCache } from '@/lib/lru'
@@ -38,32 +39,9 @@ const CACHE_TTL_MS = 1000 * 60 * 30 // 30 minutes
 const CACHE_MAX_ENTRIES = 500
 const cache = new LruCache<ArticlePayload>(CACHE_MAX_ENTRIES, CACHE_TTL_MS)
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
 /** Fetch with a descriptive UA + retry/backoff for transient 429 / 5xx errors. */
-async function wikiFetch(url: string, attempt = 0): Promise<Response> {
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': UA,
-      Accept: 'application/json',
-    },
-    // Bounded wait — a stalled Wikipedia response must not hold the request
-    // open for the platform default.
-    signal: AbortSignal.timeout(8_000),
-  })
-
-  // Retry on rate-limit / transient server errors (up to 2 retries)
-  if ((res.status === 429 || res.status >= 500) && attempt < 2) {
-    const retryAfter = Number(res.headers.get('retry-after'))
-    const backoff = Number.isFinite(retryAfter) && retryAfter > 0
-      ? retryAfter * 1000
-      : 400 * 2 ** attempt // 400ms, 800ms
-    await sleep(backoff)
-    return wikiFetch(url, attempt + 1)
-  }
-
-  return res
-}
+const wikiFetch = (url: string) =>
+  fetchWithRetry(url, { headers: { 'User-Agent': UA, Accept: 'application/json' }, timeoutMs: 8_000 })
 
 export async function GET(req: NextRequest) {
   // Rate-limited per-user (shared-NAT classrooms aren't punished) so this

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Search, ChevronDown } from 'lucide-react'
 
 /**
@@ -12,6 +12,22 @@ import { Search, ChevronDown } from 'lucide-react'
  * rendered before extraction, so panel testids and screenshots are
  * unaffected. Each panel keeps its own layout order, copy, and filter call.
  */
+
+/** Copy-to-clipboard state for a guide box's "Copy" code button — clears the
+ *  "Copied" state after 1.5s, swallows a blocked/denied clipboard silently. */
+export function useCopyToClipboard() {
+  const [copied, setCopied] = useState(false)
+  async function copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* clipboard blocked — no-op */
+    }
+  }
+  return { copied, copy }
+}
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (

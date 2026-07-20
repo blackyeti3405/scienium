@@ -1,0 +1,192 @@
+# Browser release gates (REFACTOR2 A3).
+#
+# Two lanes:
+#   smoke — every PR: a bounded, production-build Playwright slice using real
+#           pointer input. Fast enough to keep in the merge path.
+#   full  — nightly + on demand: the whole authenticated suite (~30 min,
+#           one worker, serial DB-mutating specs) as the release lane.
+#
+# Both lanes need the E2E secrets below (a Clerk test instance + the seeded
+# test accounts). When they are not configured (e.g. a fork PR), the lane
+# reports "skipped: secrets not configured" and passes — the gate becomes
+# enforceable the moment the secrets are added to the repository:
+#
+#   E2E_CLERK_PUBLISHABLE_KEY / E2E_CLERK_SECRET_KEY
+#   E2E_LEADER_EMAIL / E2E_LEADER_PASSWORD (+ the other E2E_* creds
+#   .env.local documents — mirror that file into repo secrets)
+#   E2E_ENV_FILE — alternatively, the full .env.local contents as one secret.
+
+name: E2E
+
+on:
+  pull_request:
+  schedule:
+    - cron: '30 8 * * *' # nightly full suite (UTC)
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: scienium
+          POSTGRES_PASSWORD: scienium
+          POSTGRES_DB: scienium_e2e
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U scienium"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Detect E2E secrets
+        id: creds
+        env:
+          E2E_ENV_FILE: ${{ secrets.E2E_ENV_FILE }}
+        run: |
+          if [ -n "$E2E_ENV_FILE" ]; then
+            echo "have=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::E2E smoke skipped — E2E_ENV_FILE secret not configured."
+          fi
+
+      - name: Install
+        if: steps.creds.outputs.have == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare env
+        if: steps.creds.outputs.have == 'true'
+        env:
+          E2E_ENV_FILE: ${{ secrets.E2E_ENV_FILE }}
+        run: |
+          printf '%s\n' "$E2E_ENV_FILE" > apps/web/.env.local
+          # CI overrides: point at the service database regardless of the
+          # secret's local values.
+          {
+            echo 'DATABASE_URL="postgresql://scienium:scienium@localhost:5433/scienium_e2e"'
+            echo 'DIRECT_URL="postgresql://scienium:scienium@localhost:5433/scienium_e2e"'
+          } >> apps/web/.env.local
+
+      - name: Build packages + Prisma client
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          pnpm --filter @scienium/shared-types build
+          pnpm --filter web exec prisma generate
+
+      - name: Migrate + seed fixture
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          cd apps/web
+          pnpm exec prisma migrate deploy
+          pnpm seed:e2e
+
+      - name: Install Playwright browsers
+        if: steps.creds.outputs.have == 'true'
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      - name: Smoke suite (production build, real pointer input)
+        if: steps.creds.outputs.have == 'true'
+        run: cd apps/web && E2E_BUILD=1 pnpm exec playwright test e2e/F1.spec.ts
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
+
+  full:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: scienium
+          POSTGRES_PASSWORD: scienium
+          POSTGRES_DB: scienium_e2e
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U scienium"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Detect E2E secrets
+        id: creds
+        env:
+          E2E_ENV_FILE: ${{ secrets.E2E_ENV_FILE }}
+        run: |
+          if [ -n "$E2E_ENV_FILE" ]; then
+            echo "have=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::E2E full lane skipped — E2E_ENV_FILE secret not configured."
+          fi
+
+      - name: Install
+        if: steps.creds.outputs.have == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare env
+        if: steps.creds.outputs.have == 'true'
+        env:
+          E2E_ENV_FILE: ${{ secrets.E2E_ENV_FILE }}
+        run: |
+          printf '%s\n' "$E2E_ENV_FILE" > apps/web/.env.local
+          {
+            echo 'DATABASE_URL="postgresql://scienium:scienium@localhost:5433/scienium_e2e"'
+            echo 'DIRECT_URL="postgresql://scienium:scienium@localhost:5433/scienium_e2e"'
+          } >> apps/web/.env.local
+
+      - name: Build packages + Prisma client
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          pnpm --filter @scienium/shared-types build
+          pnpm --filter web exec prisma generate
+
+      - name: Migrate + seed fixture
+        if: steps.creds.outputs.have == 'true'
+        run: |
+          cd apps/web
+          pnpm exec prisma migrate deploy
+          pnpm seed:e2e
+
+      - name: Install Playwright browsers
+        if: steps.creds.outputs.have == 'true'
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      - name: Full suite (production build)
+        if: steps.creds.outputs.have == 'true'
+        run: cd apps/web && pnpm test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: full-playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7

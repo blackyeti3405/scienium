@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { timeAgo } from '@/components/ops/log-shared'
 import {
   Send,
   ShieldCheck,
@@ -15,7 +16,6 @@ import {
 } from 'lucide-react'
 import { useLabCurrency } from '@/components/lab/labCurrency'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
-import { BusyButton } from '@/components/ui/BusyButton'
 import { OpsTabSkeleton } from '@/components/ui/skeletons/OpsTabSkeleton'
 
 // ─── Types (mirror the /api/expertise responses) ─────────────────────────────
@@ -73,16 +73,6 @@ interface GradeResult {
 }
 
 type Mode = 'loading' | 'idle' | 'exam' | 'grading' | 'result'
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const m = Math.floor(diff / 60000)
-  if (m < 1) return 'just now'
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  return `${Math.floor(h / 24)}d ago`
-}
 
 // ─── Clearance ladder ─────────────────────────────────────────────────────────
 

@@ -11,6 +11,7 @@ import { routeHarness, type RoutePolicyHarness } from './harness/route-policy'
  * (student A's class); teacher B owns class B.
  */
 
+import { GET as rosterGET } from '@/app/api/teacher/roster/route'
 import { POST as codePOST } from '@/app/api/teacher/class/[id]/code/route'
 import { POST as requestPOST } from '@/app/api/teacher/class/requests/[id]/route'
 import { GET as studentGET } from '@/app/api/teacher/student/[id]/route'
@@ -35,6 +36,60 @@ beforeEach(() => {
     activeTeamId: null,
     teamMemberships: [],
   })
+})
+
+describe('GET /api/teacher/roster (ADR-004: per-student class membership)', () => {
+  /** A class-B student whose lab is Team A — a CROSS-CLASS team. ADR-004 says
+   *  the team is visible to any teacher of any member; `Team.classId` is
+   *  vestigial and must never be read to filter it out. */
+  const CROSS = 'student_cross_class'
+  beforeEach(() => {
+    h.seed('user', {
+      id: CROSS,
+      clerkUserId: 'clerk_cross',
+      name: 'Cross-Class Student',
+      email: 'cross@example.test',
+      role: 'student',
+      classId: h.ids.classB,
+      // Denormalized to-one relation for the route's `activeTeam` select. The
+      // team deliberately has NO classId — like every post-ADR-004 team.
+      activeTeam: { id: h.ids.teamA, name: 'Team A', phase: 'working', labType: 'volt_lab' },
+      teamMemberships: [],
+    })
+  })
+
+  it("shows teacher B their student's cross-class team (not teamless)", async () => {
+    const body = await h.asTeacherB().get(rosterGET).expect(200)
+    const row = body.students.find((s: { studentId: string }) => s.studentId === CROSS)
+    expect(row).toBeTruthy()
+    expect(row.teamId).toBe(h.ids.teamA)
+    expect(row.teamName).toBe('Team A')
+  })
+  it("shows teacher A their own student's null-class team", async () => {
+    h.seed('user', {
+      id: 'student_nullclass',
+      clerkUserId: 'clerk_nullclass',
+      name: 'Null-Class Team Student',
+      email: 'nullclass@example.test',
+      role: 'student',
+      classId: h.ids.classA,
+      activeTeam: { id: 'team_new', name: 'New Lab', phase: 'literature_review', labType: null },
+      teamMemberships: [],
+    })
+    const body = await h.asTeacherA().get(rosterGET).expect(200)
+    const row = body.students.find(
+      (s: { studentId: string }) => s.studentId === 'student_nullclass',
+    )
+    expect(row.teamId).toBe('team_new')
+  })
+  it("never includes ANOTHER teacher's students", async () => {
+    const body = await h.asTeacherA().get(rosterGET).expect(200)
+    const ids = body.students.map((s: { studentId: string }) => s.studentId)
+    expect(ids).not.toContain(CROSS)
+    expect(ids).not.toContain(h.ids.studentB)
+  })
+  it('403s a signed-in student', () => h.asStudentA().get(rosterGET).expect(403))
+  it('401s signed out', () => h.anonymous().get(rosterGET).expect(401))
 })
 
 describe('POST /api/teacher/class/[id]/code', () => {

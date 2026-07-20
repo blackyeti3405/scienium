@@ -22,6 +22,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   sessionFindFirst: vi.fn<(...args: unknown[]) => unknown>(),
   sessionUpdate: vi.fn<(...args: unknown[]) => unknown>(),
+  sessionUpdateMany: vi.fn<(...args: unknown[]) => unknown>(),
   attemptCreateMany: vi.fn<(...args: unknown[]) => unknown>(),
   proficiencyFindUnique: vi.fn<(...args: unknown[]) => unknown>(),
   proficiencyUpsert: vi.fn<(...args: unknown[]) => unknown>(),
@@ -39,7 +40,11 @@ vi.mock('@/lib/anthropic', () => ({
 }))
 vi.mock('@/lib/db', () => ({
   db: {
-    paperQuizSession: { findFirst: mocks.sessionFindFirst, update: mocks.sessionUpdate },
+    paperQuizSession: {
+      findFirst: mocks.sessionFindFirst,
+      update: mocks.sessionUpdate,
+      updateMany: mocks.sessionUpdateMany,
+    },
     $transaction: (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
         paperQuizAttempt: { createMany: mocks.attemptCreateMany },
@@ -97,6 +102,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.stubEnv('E2E_SKIP_LLM', '1')
   mocks.sessionUpdate.mockResolvedValue({})
+  // Claim + commit both go through conditional updateMany (A8); a count of 1
+  // means this caller won/held the claim.
+  mocks.sessionUpdateMany.mockResolvedValue({ count: 1 })
   mocks.attemptCreateMany.mockResolvedValue({ count: 0 })
   mocks.proficiencyFindUnique.mockResolvedValue(null)
   mocks.proficiencyUpsert.mockResolvedValue({})
@@ -145,12 +153,14 @@ describe('ensureNewQuestion idempotency (the one-paid-generation guarantee)', ()
     const res = await prepareRetry('sess_1', 'paper_1', PRINCIPAL)
 
     expect(res.ok).toBe(true)
-    // The stub path still persists — that write is the idempotency marker.
-    expect(mocks.sessionUpdate).toHaveBeenCalledTimes(1)
-    const saved = mocks.sessionUpdate.mock.calls[0][0] as {
-      data: { questionsJson: Array<{ id: string }> }
-    }
-    expect(saved.data.questionsJson).toHaveLength(QUIZ_QUESTION_COUNT + 1)
+    // The stub path still persists — that (conditional) write is the
+    // idempotency marker, and it must release the claim in the same commit.
+    const commits = mocks.sessionUpdateMany.mock.calls
+      .map((c) => c[0] as { data: { questionsJson?: Array<{ id: string }>; retryGenClaimedAt?: Date | null } })
+      .filter((c) => c.data.questionsJson !== undefined)
+    expect(commits).toHaveLength(1)
+    expect(commits[0]!.data.questionsJson).toHaveLength(QUIZ_QUESTION_COUNT + 1)
+    expect(commits[0]!.data.retryGenClaimedAt).toBeNull()
   })
 
   it('a session already carrying the extra question generates NOTHING new', async () => {
@@ -159,9 +169,10 @@ describe('ensureNewQuestion idempotency (the one-paid-generation guarantee)', ()
     const res = await prepareRetry('sess_1', 'paper_1', PRINCIPAL)
 
     expect(res.ok).toBe(true)
-    // ...and prove it was never reached: no model call, no questionsJson write.
+    // ...and prove it was never reached: no model call, no claim, no write.
     expect(mocks.anthropicCreate).not.toHaveBeenCalled()
     expect(mocks.sessionUpdate).not.toHaveBeenCalled()
+    expect(mocks.sessionUpdateMany).not.toHaveBeenCalled()
   })
 
   it('prepare returns only still-failed questions + the new one, keys stripped', async () => {

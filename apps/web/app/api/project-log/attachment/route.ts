@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import sharp from 'sharp'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { putObject } from '@/lib/storage'
-import { checkTeamStorageQuota, recordTemporaryAsset } from '@/lib/uploads/assets'
+import { markAssetsOrphanedByKey, reserveUploadAsset } from '@/lib/uploads/assets'
 import { db } from '@/lib/db'
 import { randomUUID } from 'crypto'
 
@@ -40,16 +40,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'File too large (max 10 MB)' }, { status: 413 })
   }
 
-  const overQuota = await checkTeamStorageQuota(ctx.teamId, file.size)
-  if (overQuota) {
-    return NextResponse.json(
-      {
-        error: `Your team's storage is full (${Math.round(overQuota.quota / (1024 * 1024 * 1024))} GB). Delete some uploads and try again.`,
-      },
-      { status: 413 },
-    )
-  }
-
   const buffer = Buffer.from(await file.arrayBuffer())
 
   // Validate by *decoding* the bytes — never trust the client-declared MIME type.
@@ -70,12 +60,11 @@ export async function POST(req: NextRequest) {
   }
 
   const key = `log-attachments/${ctx.teamId}/${randomUUID()}.${mapped.ext}`
-  await putObject(key, buffer, mapped.contentType)
 
-  // Record a durable `temporary` row so an upload the user never attaches to a
-  // log is discoverable and cleanable (see lib/uploads + the cron sweep) rather
-  // than an orphaned object.
-  const asset = await recordTemporaryAsset({
+  // Reservation FIRST (A5/A12): quota + durable `temporary` ledger row commit
+  // atomically before any byte reaches R2, so an upload can never land
+  // untracked and concurrent uploads can't overshoot the team ceiling.
+  const reservation = await reserveUploadAsset({
     teamId: ctx.teamId,
     userId: ctx.dbUserId,
     objectKey: key,
@@ -84,12 +73,30 @@ export async function POST(req: NextRequest) {
     sizeBytes: buffer.length,
     purpose: 'project_log_attachment',
   })
+  if (!reservation.ok) {
+    return NextResponse.json(
+      {
+        error: `Your team's storage is full (${Math.round(reservation.quota / (1024 * 1024 * 1024))} GB). Delete some uploads and try again.`,
+      },
+      { status: 413 },
+    )
+  }
+
+  try {
+    await putObject(key, buffer, mapped.contentType)
+  } catch (err) {
+    // Store failed — hand the reservation to the sweep (deleting a key that
+    // was never uploaded is a no-op) instead of leaking a phantom quota hold.
+    console.error('[project-log/attachment] R2 put failed:', err)
+    await markAssetsOrphanedByKey(db, { teamId: ctx.teamId, objectKeys: [key] }).catch(() => {})
+    return NextResponse.json({ error: 'Could not store the photo' }, { status: 502 })
+  }
 
   // Served through the authenticated streaming route (R2 bucket is private).
   // The reference is the ASSET ID (SEC-6): the view route authorizes through
   // the team-scoped ledger row, never by parsing a client-supplied object key.
-  const url = `/api/project-log/attachment/view?id=${encodeURIComponent(asset.id)}`
-  await db.uploadedAsset.update({ where: { id: asset.id }, data: { url } })
+  const url = `/api/project-log/attachment/view?id=${encodeURIComponent(reservation.id)}`
+  await db.uploadedAsset.update({ where: { id: reservation.id }, data: { url } })
 
-  return NextResponse.json({ url, key, assetId: asset.id }, { status: 201 })
+  return NextResponse.json({ url, key, assetId: reservation.id }, { status: 201 })
 }

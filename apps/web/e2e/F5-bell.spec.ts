@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, resolveTeamId } from './api'
 
 /**
  * F5 — Notification bell: all five kinds first-class.
@@ -46,23 +46,6 @@ const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 
 /** The five canonical kinds the map must cover — mirrors the schema comment at prisma/schema.prisma:917. */
 const CANONICAL_KINDS = ['fair_deadline', 'urgency', 'teacher_feedback', 'phase_reviewed', 'showcase_reviewed']
-
-/**
- * Preferred E2E test-team id by convention (matches F1.spec.ts / upgrades.spec.ts),
- * with a fallback to any team present in the roster — the roster's actual team id
- * is a DB-generated cuid (e.g. cmr1du8fs0002gn0jmvlvy8e8), not this literal, so the
- * exact-match branch is aspirational/documentary and the fallback is load-bearing.
- * Single source of truth so beforeAll and every re-seed helper resolve identically.
- */
-const PREFERRED_TEST_TEAM_ID = 'e2e_test_lab_01'
-
-function resolveTeamId(students: Array<{ teamId: string | null }>): string | null {
-  return (
-    students.find((s) => s.teamId === PREFERRED_TEST_TEAM_ID)?.teamId ??
-    students.find((s) => s.teamId)?.teamId ??
-    null
-  )
-}
 
 /** POST one extra teacher_feedback notification for the E2E team, via the teacher session. */
 async function seedExtraFeedback(page: Page, bodySuffix: string): Promise<void> {

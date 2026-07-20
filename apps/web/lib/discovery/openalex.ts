@@ -1,7 +1,9 @@
 import 'server-only'
+import { fetchWithRetry } from '@/lib/fetch-retry'
 import { LruCache } from '@/lib/lru'
 import { normalizeArxivId } from '@/lib/discovery/arxiv'
 import { sanitizeAbstract } from '@/lib/discovery/sanitize'
+import { DISCOVERY_UA } from '@/lib/discovery/sources'
 import type { CredibilityTier } from '@prisma/client'
 import { serverEnv } from '@/lib/env'
 import {
@@ -38,7 +40,6 @@ const MAILTO = serverEnv.OPENALEX_MAILTO() || 'hello@scienium.app'
 // Optional free OpenAlex API key. Set OPENALEX_API_KEY in .env.local to stop the
 // anonymous-pool 503s ("retry shortly, or use a free API key for uninterrupted access").
 const OPENALEX_API_KEY = serverEnv.OPENALEX_API_KEY()
-const UA = 'scienium/1.0 (https://scienium.app; contact: hello@scienium.app) node-fetch'
 
 const CACHE_TTL_MS = 1000 * 60 * 30
 const CACHE_MAX_ENTRIES = 500
@@ -81,42 +82,18 @@ const workByExtCache = new LruCache<NormalizedWork | null>(CACHE_MAX_ENTRIES, CA
 // each arXiv-locatable so the citations route can turn them into branchable chips.
 const MOCK = process.env.E2E_MOCK_SOURCES === '1'
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
 function withMailto(url: URL): URL {
   url.searchParams.set('mailto', MAILTO)
   if (OPENALEX_API_KEY) url.searchParams.set('api_key', OPENALEX_API_KEY)
   return url
 }
 
-// Hard per-request cap. Promise.race guarantees we give up at FETCH_TIMEOUT_MS even
-// if aborting the socket doesn't interrupt a stalled OS-level connect (which can
-// otherwise hang ~2 min). The losing fetch is left to GC — we never await it.
-const FETCH_TIMEOUT_MS = 8000
-
-async function oaFetch(url: string, attempt = 0): Promise<Response> {
-  const controller = new AbortController()
-  const res = await Promise.race([
-    fetch(url, {
-      headers: { 'User-Agent': UA, Accept: 'application/json' },
-      signal: controller.signal,
-    }),
-    new Promise<Response>((_, reject) =>
-      setTimeout(() => {
-        controller.abort()
-        reject(new Error('OpenAlex request timed out'))
-      }, FETCH_TIMEOUT_MS),
-    ),
-  ])
-  if ((res.status === 429 || res.status >= 500) && attempt < 2) {
-    const retryAfter = Number(res.headers.get('retry-after'))
-    const backoff =
-      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 400 * 2 ** attempt
-    await sleep(backoff)
-    return oaFetch(url, attempt + 1)
-  }
-  return res
-}
+const oaFetch = (url: string) =>
+  fetchWithRetry(url, {
+    headers: { 'User-Agent': DISCOVERY_UA, Accept: 'application/json' },
+    timeoutMs: 8000,
+    timeoutMessage: 'OpenAlex request timed out',
+  })
 
 /**
  * Extract the arXiv id (if any) from an OpenAlex Work. arXiv shows up either in a
@@ -197,7 +174,6 @@ export async function resolveArxivWork(rawArxivId: string): Promise<OpenAlexWork
   }
 }
 
-/** Resolve a PubMed id → its OpenAlex Work (via `works/pmid:<id>`). Null if not found. */
 /** Resolve an openalex-platform node's work by its bare W… id (citation lanes). */
 export async function resolveOpenalexWork(rawId: string): Promise<OpenAlexWork | null> {
   const oaId = rawId.trim().replace(/^openalex:/i, '')

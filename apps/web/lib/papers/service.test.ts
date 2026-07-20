@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
   paperUpdate: vi.fn(),
   jobCreate: vi.fn(),
   teamFindUnique: vi.fn(),
-  transaction: vi.fn(() => Promise.resolve([])),
+  transaction: vi.fn<(arg: unknown) => Promise<unknown>>(),
   putObject: vi.fn(),
   inspectPdf: vi.fn(),
   sanitizePdfText: vi.fn((t: string) => t),
@@ -27,7 +27,10 @@ const mocks = vi.hoisted(() => ({
   extractDoi: vi.fn(() => null),
   tierFromDoi: vi.fn(() => null),
   checkTeamStorageQuota: vi.fn(),
-  recordAttachedAsset: vi.fn(() => Promise.resolve({ id: 'asset1' })),
+  reserveUploadAsset: vi.fn(),
+  markAssetsOrphanedByKey: vi.fn(() => Promise.resolve()),
+  attachAssetsByKey: vi.fn(() => Promise.resolve(1)),
+  uploadedAssetUpdateMany: vi.fn(() => Promise.resolve({ count: 1 })),
   processPaperJob: vi.fn(() => Promise.resolve()),
   logActivity: vi.fn(() => Promise.resolve()),
   getDocumentProxy: vi.fn(),
@@ -35,8 +38,8 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('server-only', () => ({}))
-vi.mock('@/lib/db', () => ({
-  db: {
+vi.mock('@/lib/db', () => {
+  const models = {
     paper: {
       findFirst: mocks.paperFindFirst,
       findUnique: mocks.paperFindUnique,
@@ -45,10 +48,20 @@ vi.mock('@/lib/db', () => ({
       update: mocks.paperUpdate,
     },
     paperProcessingJob: { create: mocks.jobCreate },
+    uploadedAsset: { updateMany: mocks.uploadedAssetUpdateMany },
     team: { findUnique: mocks.teamFindUnique },
-    $transaction: mocks.transaction,
-  },
-}))
+  }
+  return {
+    db: {
+      ...models,
+      // Interactive transactions hand the callback a tx client with the same
+      // model mocks, so the commit's inner calls stay observable.
+      $transaction: mocks.transaction.mockImplementation(async (arg: unknown) =>
+        Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => Promise<unknown>)(models),
+      ),
+    },
+  }
+})
 vi.mock('@/lib/storage', () => ({
   putObject: mocks.putObject,
   paperPdfKey: (teamId: string, paperId: string) => `papers/${teamId}/${paperId}.pdf`,
@@ -56,6 +69,7 @@ vi.mock('@/lib/storage', () => ({
 vi.mock('@/lib/pdf/sanitize', () => ({
   inspectPdf: mocks.inspectPdf,
   sanitizePdfText: mocks.sanitizePdfText,
+  isPdfMagic: (buf: Buffer) => buf.length >= 5 && buf.subarray(0, 5).toString('latin1') === '%PDF-',
 }))
 vi.mock('@/lib/literature/relevance', () => ({ checkPaperRelevance: mocks.checkPaperRelevance }))
 vi.mock('@/lib/discovery/credibility', () => ({
@@ -64,7 +78,9 @@ vi.mock('@/lib/discovery/credibility', () => ({
 }))
 vi.mock('@/lib/uploads/assets', () => ({
   checkTeamStorageQuota: mocks.checkTeamStorageQuota,
-  recordAttachedAsset: mocks.recordAttachedAsset,
+  reserveUploadAsset: mocks.reserveUploadAsset,
+  markAssetsOrphanedByKey: mocks.markAssetsOrphanedByKey,
+  attachAssetsByKey: mocks.attachAssetsByKey,
 }))
 vi.mock('@/lib/literature/process-paper', () => ({ processPaperJob: mocks.processPaperJob }))
 vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
@@ -89,6 +105,11 @@ const VALID_PDF = pdfFile('%PDF-1.4 body')
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.checkTeamStorageQuota.mockResolvedValue(null)
+  mocks.reserveUploadAsset.mockResolvedValue({ ok: true, id: 'asset1' })
+  mocks.attachAssetsByKey.mockResolvedValue(1)
+  mocks.markAssetsOrphanedByKey.mockResolvedValue(undefined)
+  mocks.uploadedAssetUpdateMany.mockResolvedValue({ count: 1 })
+  mocks.jobCreate.mockResolvedValue({ id: 'job_1' })
   mocks.paperFindFirst.mockResolvedValue(null) // no duplicate
   mocks.teamFindUnique.mockResolvedValue({ topic: null }) // no relevance gate
   mocks.getDocumentProxy.mockResolvedValue({ numPages: 3 })
@@ -170,25 +191,48 @@ describe('relevance gate', () => {
   })
 })
 
-describe('persistence outcomes', () => {
-  it('a concurrent-duplicate P2002 on create → 409, not a 500', async () => {
+describe('persistence outcomes (A5 recoverable state machine)', () => {
+  it('a concurrent-duplicate P2002 on create → 409 and the reservation is orphaned', async () => {
     const { Prisma } = await import('@prisma/client')
     mocks.paperCreate.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }),
     )
     const res = await uploadPaper({ ...INPUT, file: VALID_PDF })
     expect(res).toMatchObject({ ok: false, status: 409 })
+    // The stored object must go back to the sweep, never leak untracked.
+    expect(mocks.markAssetsOrphanedByKey).toHaveBeenCalled()
   })
 
-  it('R2 store failure → 502 and the useless row is rolled back', async () => {
+  it('atomic quota reservation full → 413 before any byte reaches R2', async () => {
+    mocks.reserveUploadAsset.mockResolvedValue({ ok: false, used: 5, quota: 5 })
+    const res = await uploadPaper({ ...INPUT, file: VALID_PDF })
+    expect(res).toMatchObject({ ok: false, status: 413 })
+    expect(mocks.putObject).not.toHaveBeenCalled()
+    expect(mocks.paperCreate).not.toHaveBeenCalled()
+  })
+
+  it('R2 store failure → 502, reservation orphaned, no paper row ever created', async () => {
     mocks.putObject.mockRejectedValue(new Error('r2 down'))
     const res = await uploadPaper({ ...INPUT, file: VALID_PDF })
     expect(res).toMatchObject({ ok: false, status: 502 })
-    expect(mocks.paperDelete).toHaveBeenCalledWith({ where: { id: 'paper_1' } })
-    expect(mocks.recordAttachedAsset).not.toHaveBeenCalled()
+    expect(mocks.markAssetsOrphanedByKey).toHaveBeenCalled()
+    expect(mocks.paperCreate).not.toHaveBeenCalled()
   })
 
-  it('success: ledger row is attached-to-paper, ingestion awaited, fresh fields returned', async () => {
+  it('commit failure after the R2 put → 502 and the object is handed to the sweep', async () => {
+    mocks.jobCreate.mockRejectedValue(new Error('db gone'))
+    const res = await uploadPaper({ ...INPUT, file: VALID_PDF })
+    expect(res).toMatchObject({ ok: false, status: 502 })
+    expect(mocks.markAssetsOrphanedByKey).toHaveBeenCalled()
+  })
+
+  it('an expired (swept) reservation rolls the whole commit back → 502', async () => {
+    mocks.attachAssetsByKey.mockResolvedValue(0)
+    const res = await uploadPaper({ ...INPUT, file: VALID_PDF })
+    expect(res).toMatchObject({ ok: false, status: 502 })
+  })
+
+  it('success: reservation attaches to the paper in the commit, ingestion awaited, fresh fields returned', async () => {
     const res = await uploadPaper({ ...INPUT, file: VALID_PDF })
     expect(res.ok).toBe(true)
     if (res.ok) {
@@ -196,12 +240,23 @@ describe('persistence outcomes', () => {
       expect(res.paper.title).toBe('Final Title') // re-read AFTER ingestion
       expect(res.paper.status).toBe('ready')
     }
-    expect(mocks.recordAttachedAsset).toHaveBeenCalledWith(
+    expect(mocks.reserveUploadAsset).toHaveBeenCalledWith(
       expect.objectContaining({
-        purpose: 'paper_pdf', attachedToType: 'paper', attachedToId: 'paper_1',
-        objectKey: 'papers/team_1/paper_1.pdf',
+        purpose: 'paper_pdf',
+        objectKey: expect.stringMatching(/^papers\/team_1\/.+\.pdf$/),
+        sizeBytes: expect.any(Number),
       }),
     )
+    expect(mocks.attachAssetsByKey).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ attachedToType: 'paper', attachedToId: 'paper_1' }),
+    )
+    // Reservation precedes the put; the put precedes the commit.
+    const reserveOrder = mocks.reserveUploadAsset.mock.invocationCallOrder[0]!
+    const putOrder = mocks.putObject.mock.invocationCallOrder[0]!
+    const createOrder = mocks.paperCreate.mock.invocationCallOrder[0]!
+    expect(reserveOrder).toBeLessThan(putOrder)
+    expect(putOrder).toBeLessThan(createOrder)
     expect(mocks.processPaperJob).toHaveBeenCalledWith('paper_1')
   })
 

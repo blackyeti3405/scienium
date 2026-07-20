@@ -6,21 +6,22 @@ import { BusyButton } from '@/components/ui/BusyButton'
 
 export type QueueDecision = 'approve' | 'reject'
 
+// Only one teacher review queue exists today (showcase moderation) — the
+// endpoint/payload key are fixed here rather than parameterized for queues
+// that don't exist yet.
+const ENDPOINT = '/api/teacher/showcase-moderation'
+const PAYLOAD_KEY = 'showcaseId'
+
 /**
- * Shared decide flow for teacher review queues (currently ShowcaseModerationQueue):
- * POST
- * `{ [payloadKey]: id, decision, note }` to `endpoint`, remove the card on
- * success, show an inline error on failure.
+ * Shared decide flow for the showcase moderation queue: POST
+ * `{ showcaseId: id, decision, note }`, remove the card on success, show an
+ * inline error on failure.
  *
  * Busy state records WHICH decision is in flight so only the clicked button
  * relabels ("Approving…" vs "Requesting…") — never both. A single error slot
  * suffices because the whole queue locks while a decision is in flight.
  */
-export function useDecisionQueue(
-  endpoint: string,
-  payloadKey: string,
-  onDecided: (id: string) => void,
-) {
+export function useDecisionQueue(onDecided: (id: string) => void) {
   const [busy, setBusy] = useState<{ id: string; decision: QueueDecision } | null>(null)
   const [decideError, setDecideError] = useState<{ id: string; message: string } | null>(null)
   const [notes, setNotes] = useState<Record<string, string>>({})
@@ -33,10 +34,10 @@ export function useDecisionQueue(
     setBusy({ id, decision })
     setDecideError(null)
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetch(ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [payloadKey]: id, decision, note: notes[id]?.trim() || undefined }),
+        body: JSON.stringify({ [PAYLOAD_KEY]: id, decision, note: notes[id]?.trim() || undefined }),
       })
       if (res.ok) {
         onDecided(id)

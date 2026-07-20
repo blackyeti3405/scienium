@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import { TrackSchema } from './track-schema'
+import { stableStringify } from '../scripts/stable-stringify.mjs'
 import type { CodexTrack } from '../types'
 
 // GENERATED — the import run below and WRAPPERS are regenerated from
@@ -38,18 +39,6 @@ const WRAPPERS: Record<string, CodexTrack> = {
   'computer-science-algorithms': computerScienceAlgorithms,
   'data-science-ml-metrics': dataScienceMlMetrics,
   'gait-biomechanics': gaitBiomechanics,
-}
-
-/** Must match `stableStringify` in `scripts/build-codex-tracks.mjs`. */
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
-  if (value && typeof value === 'object') {
-    const keys = Object.keys(value as Record<string, unknown>).sort()
-    return `{${keys
-      .map((k) => `${JSON.stringify(k)}:${stableStringify((value as Record<string, unknown>)[k])}`)
-      .join(',')}}`
-  }
-  return JSON.stringify(value)
 }
 
 function readContent(slug: string): unknown {

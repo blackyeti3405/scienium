@@ -214,8 +214,13 @@ test.describe('topic change — two-phase removal confirmation', () => {
       await expect(page.getByText(RELEVANT_A)).toHaveCount(0)
       await expect(page.getByText(RELEVANT_B)).toHaveCount(0)
 
-      // Cancel — nothing may be deleted by a look at the list.
-      await page.getByRole('button', { name: 'Cancel' }).click()
+      // Cancel — nothing may be deleted by a look at the list. Scoped to the
+      // modal: the topic editor now stays open behind it (same as the explorer
+      // surface), so an unscoped 'Cancel' would match its inline cancel too.
+      await page
+        .getByTestId('topic-removal-modal')
+        .getByRole('button', { name: 'Cancel' })
+        .click()
       await expect(page.getByText('Remove these sources?')).toHaveCount(0)
       expect(await fixtureTitlesPresent()).toEqual([RELEVANT_A, RELEVANT_B, IRRELEVANT].sort())
     })

@@ -81,7 +81,3 @@ function buildIndex(): Map<string, GroundedEntry> {
 /** Canonical lookup key → entry, built once at module load from
  *  RESEARCH_GLOSSARY + STATS_GUIDE + METHODS + DATA_QUALITY_GUIDE. */
 export const GROUNDED_INDEX: ReadonlyMap<string, GroundedEntry> = buildIndex()
-
-export function lookupGrounded(termKey: string): GroundedEntry | null {
-  return GROUNDED_INDEX.get(normalizeKey(termKey)) ?? null
-}

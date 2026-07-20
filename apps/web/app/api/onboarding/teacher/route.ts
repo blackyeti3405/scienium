@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { requireUserContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { resolveSchool, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { resolvePrimaryEmail, resolveSchool, syncClerkDisplayName } from '@/lib/onboarding/profile'
 
 // `.strict()` rejects any field other than name + highSchool — role and userId
 // must never come from the body; the caller's identity comes from auth() only.
@@ -27,10 +27,8 @@ export async function POST(req: NextRequest) {
   if (error) return error
   const { name, highSchool } = data
 
-  // Resolve email — primary first, fallback to index 0 (mirrors /api/onboarding).
-  const email =
-    clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
-    clerkUser.emailAddresses[0]?.emailAddress
+  // Resolve email — primary first, fallback to index 0.
+  const email = resolvePrimaryEmail(clerkUser)
 
   if (!email) return NextResponse.json({ error: 'No email on Clerk account' }, { status: 400 })
 

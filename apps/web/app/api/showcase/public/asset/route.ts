@@ -1,15 +1,9 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { getObjectStream } from '@/lib/storage'
 import { db } from '@/lib/db'
-import {
-  canViewShowcase,
-  teamSchoolIds,
-  type ShowcaseViewer,
-  type ShowcaseForView,
-  type PrivacyLevel,
-} from '@/lib/showcase'
+import { canViewShowcase, toShowcaseForView } from '@/lib/showcase'
+import { resolveShowcaseViewer } from '@/lib/showcase-server'
 
 /**
  * Streams a showcase image (board/visual) from PRIVATE R2 to anyone the
@@ -54,23 +48,9 @@ export async function GET(req: NextRequest) {
   }
 
   // Resolve the viewer (may be anonymous) to evaluate privacy.
-  let viewer: ShowcaseViewer | null = null
-  const { userId } = await auth()
-  if (userId) {
-    const u = await db.user.findUnique({
-      where: { clerkUserId: userId },
-      select: { schoolId: true, teamMemberships: { select: { teamId: true } } },
-    })
-    if (u) viewer = { userId, schoolId: u.schoolId, teamIds: u.teamMemberships.map((m) => m.teamId) }
-  }
+  const viewer = await resolveShowcaseViewer()
 
-  const forView: ShowcaseForView = {
-    teamId: asset.showcase.teamId,
-    privacyLevel: asset.showcase.privacyLevel as PrivacyLevel,
-    publishedAt: asset.showcase.publishedAt,
-    moderationStatus: asset.showcase.moderationStatus,
-    teamSchoolIds: teamSchoolIds(asset.showcase.team.members),
-  }
+  const forView = toShowcaseForView(asset.showcase)
   if (!canViewShowcase(forView, viewer)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }

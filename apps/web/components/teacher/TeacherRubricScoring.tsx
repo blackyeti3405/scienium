@@ -7,6 +7,7 @@ import { totalMaxFor, type RubricTrackKey } from '@/lib/fairs/rubric-scoring'
 import { anchorFor, type RubricAnchor } from '@/lib/fairs/rubric-anchors'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
+import { TrackToggle, ChecklistItems } from '@/components/fair/RubricControls'
 
 interface CriterionRow {
   key: string
@@ -97,20 +98,7 @@ export function TeacherRubricScoring({ teamId }: { teamId: string }) {
         <h3 className="font-pixel text-[9px] text-white flex items-center gap-1.5">
           <Trophy size={11} className="text-[#F5C518]" /> Rubric Scoring
         </h3>
-        <div className="flex items-center gap-1 border border-white/15 rounded-sm overflow-hidden">
-          {ISEF_RUBRIC.map((t) => (
-            <button
-              key={t.key}
-              data-track={t.key}
-              onClick={() => setTrack(t.key)}
-              className={`font-pixel text-[7px] px-3 py-1.5 transition-colors ${
-                track === t.key ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/45 hover:text-white/70'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TrackToggle value={track} onChange={setTrack} testAttr />
       </div>
 
       {/* Teacher vs student totals */}
@@ -320,16 +308,7 @@ function TeacherCriterionCard({
           <span className="font-pixel text-[8px] text-white/40 shrink-0">{row.maxScore} pts</span>
         </div>
 
-        {items && items.length > 0 && (
-          <ul className="flex flex-col gap-1">
-            {items.map((it, i) => (
-              <li key={i} className="flex gap-1.5 text-[12px] text-white/55 leading-relaxed">
-                <span className="text-green-400/60 shrink-0 mt-[1px]">✓</span>
-                {it}
-              </li>
-            ))}
-          </ul>
-        )}
+        {items && items.length > 0 && <ChecklistItems items={items} />}
 
         {/* Side-by-side comparison: student self-check (read-only) vs teacher score */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

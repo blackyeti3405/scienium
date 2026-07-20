@@ -9,10 +9,7 @@ import { deleteE2eBuilding, setE2eKnowledgePoints } from './db'
  * survives a reload (DB persistence).
  */
 
-// Isometric transform — must match lib/plot.ts.
-const STEP_X = 68
-const STEP_Y = 34
-const CLUSTER_Y = -12
+import { STEP_X, STEP_Y, CLUSTER_Y } from '@/lib/plot'
 
 test.beforeAll(async () => {
   await deleteE2eBuilding('printing_shop')

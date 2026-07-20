@@ -51,7 +51,6 @@ export function usePapers({
               fileUrl: p.fileUrl ?? undefined,
               createdAt: p.createdAt,
               credibilityTier: (p.credibilityTier as CredibilityTier | null) ?? null,
-              doi: p.doi,
             })),
         )
       })

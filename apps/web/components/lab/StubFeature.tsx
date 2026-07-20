@@ -34,5 +34,3 @@ export function StubFeature({
     </div>
   )
 }
-
-export default StubFeature

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { BookOpen, Send } from 'lucide-react'
 import { z } from 'zod'
-import { Card } from '@/components/ui/Card'
+import { Card, StatTile } from '@/components/ui/Card'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { ApiError, requestJson } from '@/lib/api/client'
 import { fmtDate } from '@/lib/format'
@@ -42,20 +42,8 @@ export function CodexSection({ overview }: { overview: Overview }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
-        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
-          <span className="text-white/40"><BookOpen size={16} /></span>
-          <span className="text-2xl font-semibold tabular-nums text-[#F5C518]">
-            {codex.lessonsCompleted}
-          </span>
-          <span className="text-xs text-white/50">Lessons completed</span>
-        </div>
-        <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
-          <span className="text-white/40"><BookOpen size={16} /></span>
-          <span className="text-2xl font-semibold tabular-nums text-white">
-            {codex.kp.toLocaleString()}
-          </span>
-          <span className="text-xs text-white/50">KP from lessons</span>
-        </div>
+        <StatTile icon={<BookOpen size={16} />} accent value={codex.lessonsCompleted} label="Lessons completed" />
+        <StatTile icon={<BookOpen size={16} />} value={codex.kp.toLocaleString()} label="KP from lessons" />
       </div>
 
       {codex.recent.length > 0 ? (

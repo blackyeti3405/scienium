@@ -1,6 +1,7 @@
 import 'server-only'
 import { LruCache } from '@/lib/lru'
 import { normalizeArxivId } from '@/lib/discovery/arxiv'
+import { DISCOVERY_UA } from '@/lib/discovery/sources'
 import { serverEnv } from '@/lib/env'
 
 // ── Semantic Scholar (TL;DR + influential-citation ordering) ──────────────────
@@ -21,9 +22,8 @@ const S2_API = 'https://api.semanticscholar.org/graph/v1'
 // Optional free Semantic Scholar API key. Set S2_API_KEY in .env.local to raise
 // the anonymous shared-pool rate limit; sent as the `x-api-key` header.
 const API_KEY = serverEnv.S2_API_KEY()
-const UA = 'scienium/1.0 (https://scienium.app; contact: hello@scienium.app) node-fetch'
 
-const CACHE_TTL_MS = 1000 * 60 * 60 // 60 minutes — mirrors ncbi.ts's hard cache
+const CACHE_TTL_MS = 1000 * 60 * 60 // 60 minutes — a hard, aggressive cache TTL
 const CACHE_MAX_ENTRIES = 500
 
 const FETCH_TIMEOUT_MS = 8000
@@ -83,7 +83,7 @@ async function s2Fetch(url: string): Promise<Response | null> {
   try {
     const res = await fetch(url, {
       headers: {
-        'User-Agent': UA,
+        'User-Agent': DISCOVERY_UA,
         Accept: 'application/json',
         ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
       },

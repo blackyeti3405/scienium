@@ -134,16 +134,11 @@ function parseFairChunk(chunk, state) {
       /Competition Dates[\s\S]*?<span>([\d/]+)\s*&mdash;\s*([\d/]+)<\/span>/i,
     )
     const eventStart = compMatch ? parseDate(compMatch[1]) : null
-    const eventEnd = compMatch ? parseDate(compMatch[2]) : null
     const eventDate = eventStart  // use first day as the event date
 
     // Entry / registration deadline
     const entryMatch = chunk.match(/Entry Deadline[\s\S]*?<span>([\d/]+\s*)<\/span>/i)
     const registrationDeadline = entryMatch ? parseDate(entryMatch[1].trim()) : null
-
-    // Territory (used to infer level)
-    const terrMatch = chunk.match(/<b>Territory<\/b>[\s\S]*?<span>([\s\S]*?)<\/span>/i)
-    const territory = terrMatch ? stripHtml(terrMatch[1]) : null
 
     return {
       code,
@@ -154,7 +149,6 @@ function parseFairChunk(chunk, state) {
       websiteUrl,
       eventDate,
       registrationDeadline,
-      territory,
     }
   } catch {
     return null
@@ -252,7 +246,6 @@ async function main() {
     coords: [33.45, -112.07],
     eventDate: '2026-05-09',
     registrationDeadline: null,
-    territory: null,
   }
 
   // Build parent key map: for each state, state fairs link back to isef

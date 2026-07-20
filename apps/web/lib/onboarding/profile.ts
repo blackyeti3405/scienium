@@ -1,7 +1,23 @@
 import 'server-only'
-import { clerkClient } from '@clerk/nextjs/server'
+import { clerkClient, currentUser } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
 import { normalizeInviteCode } from '@/lib/team/invite'
+
+type ClerkUser = Awaited<ReturnType<typeof currentUser>>
+
+/**
+ * Resolve a Clerk user's email: their primary address, falling back to the
+ * first address on the account. Shared by every path that mints a `User` row
+ * from a Clerk identity (create-a-lab onboarding, teacher onboarding, join-a-lab,
+ * and the teacher guard's on-demand row creation), so the fallback rule lives
+ * in exactly one place.
+ */
+export function resolvePrimaryEmail(clerkUser: ClerkUser | null | undefined): string | undefined {
+  return (
+    clerkUser?.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
+    clerkUser?.emailAddresses[0]?.emailAddress
+  )
+}
 
 /**
  * School + classroom resolution shared by every path that creates a User row
@@ -132,14 +148,6 @@ export async function approveClassJoin(
     })
   })
 }
-
-/**
- * Dev-only default high school. The pilot's dev account (Santa Clara High School)
- * is pre-filled so local onboarding/teacher flows have a real school without
- * manual entry. Inert in production.
- */
-export const DEV_DEFAULT_HIGH_SCHOOL =
-  process.env.NODE_ENV !== 'production' ? 'Santa Clara High School' : ''
 
 /**
  * Mirror a user's display name into their Clerk profile (first/last name) so the

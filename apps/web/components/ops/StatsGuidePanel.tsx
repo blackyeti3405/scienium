@@ -13,6 +13,7 @@ import {
   GuideResultCount,
   GuideEmptyState,
   GuideBox,
+  useCopyToClipboard,
 } from './guide-chrome'
 
 const CATEGORY_LABEL: Record<StatCategory, string> = Object.fromEntries(
@@ -99,17 +100,11 @@ function StatBox({
   isExpanded: boolean
   onToggle: () => void
 }) {
-  const [copied, setCopied] = useState(false)
+  const { copied, copy } = useCopyToClipboard()
 
   async function copyCode(e: React.MouseEvent) {
     e.stopPropagation()
-    try {
-      await navigator.clipboard.writeText(concept.code)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      /* clipboard blocked — no-op */
-    }
+    await copy(concept.code)
   }
 
   return (

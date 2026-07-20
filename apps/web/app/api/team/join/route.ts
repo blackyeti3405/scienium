@@ -2,9 +2,10 @@ import { currentUser } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireUserContext } from '@/lib/api/route-context'
+import { ApiError } from '@/lib/api/with-route'
 import { parseJson } from '@/lib/validation'
 import { normalizeInviteCode } from '@/lib/team/invite'
-import { applySchoolAndClass, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { applySchoolAndClass, resolvePrimaryEmail, syncClerkDisplayName } from '@/lib/onboarding/profile'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
@@ -40,9 +41,7 @@ export async function POST(req: NextRequest) {
 
   const normalized = normalizeInviteCode(code)
 
-  const email =
-    clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
-    clerkUser.emailAddresses[0]?.emailAddress
+  const email = resolvePrimaryEmail(clerkUser)
   if (!email) return NextResponse.json({ error: 'No email on Clerk account' }, { status: 400 })
 
   // Ensure a User row exists for this Clerk identity.
@@ -65,9 +64,9 @@ export async function POST(req: NextRequest) {
   try {
     const teamId = await db.$transaction(async (tx) => {
       const invite = await tx.teamInvite.findUnique({ where: { code: normalized } })
-      if (!invite) throw new JoinError('That join code is not valid', 404)
-      if (invite.usedByUserId) throw new JoinError('That join code has already been used', 409)
-      if (invite.expiresAt < new Date()) throw new JoinError('That join code has expired', 410)
+      if (!invite) throw new ApiError('That join code is not valid', 404)
+      if (invite.usedByUserId) throw new ApiError('That join code has already been used', 409)
+      if (invite.expiresAt < new Date()) throw new ApiError('That join code has expired', 410)
 
       await lockAggregate(tx, `team-membership:${invite.teamId}`)
       const team = await tx.team.findUnique({
@@ -79,7 +78,7 @@ export async function POST(req: NextRequest) {
           members: { select: { userId: true } },
         },
       })
-      if (!team) throw new JoinError('That lab no longer exists', 404)
+      if (!team) throw new ApiError('That lab no longer exists', 404)
 
       // Already on this team? Treat as success (idempotent) and leave the code unused.
       if (team.members.some((m) => m.userId === user.id)) {
@@ -88,7 +87,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (team.members.length >= team.maxMembers) {
-        throw new JoinError('That lab is already full', 409)
+        throw new ApiError('That lab is already full', 409)
       }
       // No cross-class block: class membership is per-student, so a lab may hold
       // members from different classes/schools — each stays in their own class.
@@ -109,18 +108,9 @@ export async function POST(req: NextRequest) {
     logActivity(teamId, user.id, 'member_joined', { name: user.name }).catch(console.error)
     return NextResponse.json({ teamId })
   } catch (err) {
-    if (err instanceof JoinError) {
+    if (err instanceof ApiError) {
       return NextResponse.json({ error: err.message }, { status: err.status })
     }
     throw err
-  }
-}
-
-class JoinError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message)
   }
 }

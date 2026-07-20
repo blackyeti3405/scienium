@@ -18,6 +18,7 @@
  * BEFORE ever calling this function.
  */
 import { anthropic } from '@/lib/anthropic'
+import { logEvent } from '@/lib/observability/log'
 import { CODEX_TRACKS, labTypeFields, loadTrack } from './index'
 import type { LabType } from '@/lib/phase'
 
@@ -170,7 +171,13 @@ Return ONLY a JSON array of objects: [{ "trackSlug": string, "branchSlugs": stri
     if (cleaned.length === 0) return defaultRecommendation(labType)
     return cleaned.slice(0, 4)
   } catch (err) {
-    console.error('[codex/study-plan] failed to parse classification response:', raw.slice(0, 300), err)
+    // Classification output can echo the team's project description — log the
+    // error class + length only (A7).
+    logEvent({
+      event: 'codex.study_plan_parse_failed',
+      outcome: 'error',
+      detail: `${err instanceof Error ? err.constructor.name : 'UnknownError'} len=${raw.length}`,
+    })
     return defaultRecommendation(labType)
   }
 }

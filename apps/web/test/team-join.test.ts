@@ -39,6 +39,10 @@ vi.mock('@clerk/nextjs/server', () => ({ currentUser: mocks.currentUser, auth: v
 vi.mock('@/lib/onboarding/profile', () => ({
   applySchoolAndClass: mocks.applySchoolAndClass,
   syncClerkDisplayName: mocks.syncClerkDisplayName,
+  resolvePrimaryEmail: (u: { primaryEmailAddressId?: string | null; emailAddresses?: { id: string; emailAddress: string }[] } | null) =>
+    u?.emailAddresses?.find((e) => e.id === u.primaryEmailAddressId)?.emailAddress ??
+    u?.emailAddresses?.[0]?.emailAddress ??
+    null,
 }))
 vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
 vi.mock('@/lib/db-lock', () => ({ lockAggregate: mocks.lockAggregate }))

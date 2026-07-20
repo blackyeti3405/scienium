@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireTeacher, teacherOwnsTeam } from '@/lib/teacher/auth'
 import { parseJson } from '@/lib/validation'
+import { truncate } from '@/lib/format'
 import { db } from '@/lib/db'
 
 const NudgeBody = z
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
           userId: null, // whole team
           kind: 'teacher_feedback',
           title,
-          body: body.length > 140 ? `${body.slice(0, 137)}…` : body,
+          body: truncate(body),
           linkUrl: '/lab?panel=feedback',
           dedupeKey,
         },

@@ -5,6 +5,209 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.31.0] — 2026-07-20
+
+Architecture + code-quality release. Two things landed: the Track-B route/service seam was
+finished for every workflow route, and the whole authored codebase (601 files) went through
+an over-engineering audit whose every finding was adversarially verified before it was
+applied. Net effect on authored code: **−2,762 lines** with no behavior change, plus one
+real bug fixed on the way.
+
+### Fixed — teacher-feedback panel dropped its own optimistic update (F1 AC5)
+The "Mark addressed" button reverted seconds after a **successful** `PATCH 200
+{"updated":1}`, and `e2e/F1.spec.ts` AC5 had been red on a clean tree (reproduced via
+`git stash -u`), blocking AC6–AC12 from ever running.
+
+Root cause was a client stale-response race, not the route: when the panel opens before
+`LabScene`'s warm-up `GET /api/team/feedback` resolves, the panel self-loads — and React
+StrictMode's double-mount leaves a duplicate GET in flight. The user clicks, the optimistic
+`resolved: true` renders, then the *older* in-flight GET lands and unconditionally
+overwrites it. StrictMode makes it deterministic in dev; the same race exists in production
+on a slow network.
+
+- `FeedbackPanel` now carries a monotonic freshness token: every local mutation bumps it,
+  and a load captures it at request start and **drops its own response** if a mutation won
+  meanwhile. `initialData` became a mount-time seed only (it no longer re-syncs the list on
+  every parent prop change).
+- `LabScene`'s warm-up fetch is guarded by `feedbackSeededRef` — once the panel has reported
+  newer data, a late warm-up response can no longer clobber the snapshot or badge count.
+- F1 now passes 13/13 twice consecutively, including AC6–AC12 which had never executed.
+
+### Changed — Track B P1-2 complete: every workflow route is a thin adapter
+All six `§3.2 E` inline-workflow routes now follow the `lib/papers/service.ts` seam — the
+route selects the policy, parses with Zod, calls ONE application operation, and maps a typed
+result to HTTP. Workflow logic (authorization, transactions, atomic claims, provider calls,
+prompt construction) moved into services where it is testable without a `NextRequest`:
+
+| Route | Route lines | Service |
+| --- | --- | --- |
+| `ops/codex/complete` | 293 → 49 | `lib/ops/codex/complete-service.ts` |
+| `ops/codex/study-plan` | 202 → 46 | `lib/ops/codex/study-plan-service.ts` |
+| `research-plan/review` | 261 → 30 | `lib/research-plan/review-service.ts` |
+| `research-plan/idea-check` | 274 → 26 | `lib/research-plan/idea-check-service.ts` |
+| `teacher/student/[id]/overview` | 347 → 27 | `lib/teacher/student-overview.ts` |
+| `project-log` | 247 → 57 | `lib/logs/project-log-service.ts` |
+
+Streaming services return typed `replay`/`stream` variants so the adapter only wraps them in
+a `Response`; the NDJSON contracts, prompt-cache prefixes, and atomic cap/claim SQL are
+byte-identical to before. This is a code-motion release for these files — total lines rose
+slightly (services gained explicit result types); the win is one owner per rule and unit-
+testable money/authorization logic. **The remaining ~90 simple handlers are deliberately
+NOT wrapped** — migrate-on-touch only; a scoped `findFirst` behind a guard gains nothing
+from a service.
+
+### Changed — full-repo over-engineering audit (601 files → 121 verified cuts)
+Ran as an orchestrated fleet: 80 batched auditors read every authored source file
+(`apps/web` + `packages`, excluding generated Codex tracks and sprite manifests), then
+**every** finding got its own adversarial verifier that re-ran the greps, checked
+behavior-parity and tested contracts, and defaulted to *not confirmed*.
+
+- **477 of 601 files audited lean.** The large files the architecture doc flags (vocab
+  tables, ZIP centroids, rubric anchors, the route-policy harness, `discoveryStore`,
+  `quiz-retry`'s claim machinery) are big but justified — pure data or tested invariants.
+- **136 findings → 121 confirmed, ~15 rejected, 2 unverified** (verifier agents lost to an
+  API/session limit; unverified findings were **not** applied).
+- Rejections are as informative as the cuts: the bulk `requestJson` sweep (strict Zod
+  parsing would change failure behavior at ~25 call sites), the `fmtDate` swap
+  (locale-dependent vs fixed `date-fns` format), and several "identical" label maps that
+  differ on one value.
+
+**New shared primitives** (each replacing 2–6 copy-pasted implementations):
+`lib/fetch-retry.ts` (`fetchWithRetry` + `sleep` — five 429/5xx retry-after loops and six
+`sleep` definitions), `lib/chat/thread.ts` (server chat-turn: bounded history, leading-
+assistant trim, two-turn `cache_control` breakpoints, pending→complete transaction — shared
+by paper chat and Vega), `components/ui/ChatThread.tsx` (message list + composer),
+`components/ui/ModalBackdrop.tsx` (the `useModalA11y` + backdrop wrapper behind all five
+panel shells), `components/discovery/TopicConfirmModals.tsx` (settings + discovery topic
+modals, ~190 duplicated lines), `lib/date.ts` (`todayUtc` ×4), `lib/ndjson.ts`
+(`createNdjsonStream`), `lib/papers/pdf.ts` (`streamStoredPdf`),
+`lib/research-plan/require-plan-text.ts`, `lib/pdf/sanitize.ts::isPdfMagic`,
+`lib/literature/quiz.ts::mapGradedQuizSession`, `lib/discovery/interest.ts`,
+`lib/onboarding/profile.ts::resolvePrimaryEmail`, `lib/format.ts::truncate`,
+`components/auth/ClerkAuthShell.tsx`, `components/teacher/TeacherPanelState.tsx`,
+`lib/hooks/useElementSize.ts`, shared `useResizablePanel`/`useCopyToClipboard`,
+`lib/literature/citation-core.mjs`, `lib/ops/codex/scripts/stable-stringify.mjs`, and
+`e2e/fixtures.ts` + `e2e/discovery-helpers.ts` (spec-level dedup).
+
+### Removed — dead code the audit proved unreachable
+- `lib/discovery/ncbi.ts` — the standalone PubMed E-utils adapter, superseded by the merged
+  OpenAlex search; `lib/discovery/arxiv.ts` reduced to `normalizeArxivId`.
+- `packages/shared-types/src/pvp.ts` (+ `SpellType`) — zero consumers, and PvP is not built
+  (see §8.10 / A1).
+- Unused signed-URL helpers (`getUploadSignedUrl`/`getDownloadSignedUrl`), dead `lib/env.ts`
+  accessors, `DEV_DEFAULT_HIGH_SCHOOL`, `CodexTrack.home`/`labType`, `TeacherContext.role`,
+  the `Toast` tones/positions nobody rendered, and unused exports/props/types across ~30
+  files. Several `export` keywords dropped to module-private where only the file used them.
+
+### Fixed — one behavior bug surfaced by the audit
+`DiscoveryHome`'s hand-rolled topic editor closed on save regardless of outcome, silently
+swallowing a rejected/confirmation-needed save. It now shares `useFinalTopic`'s lifted edit
+state (the same state `FinalTopicBar` uses), so a failed save keeps the editor open with the
+draft intact. Native `autoFocus` replaced a `setTimeout(…, 0)` focus hack.
+
+### Added — coverage for surfaces the refactor touched
+- `e2e/settings-smoke.spec.ts` — the Lab Profile settings panel's **first** browser
+  coverage, added when its topic flow moved onto the shared hook.
+- `data-testid="topic-removal-modal"` on the shared removal modal, so its spec scopes
+  "Cancel" to the modal now that the editor stays open behind it.
+- `.eslintrc.json` bans `alert()`-style E2E anti-patterns flagged during the sweep.
+
+### Verification
+Gates 1–5 green (shared-types build, text integrity, typecheck, lint, production build) plus
+**1,286 unit tests**. Nine E2E suites re-run against the touched surfaces: `a11y` (focus
+trap through the new `ModalBackdrop`), `settings-smoke`, `topic-removal-confirm`,
+`placement`, `F1` (13/13), `F13-codex` (15/15), `F18-vega-companion` (11/11, incl.
+persistence + the prompt-cache static pins), `papers-tab` (15/15), `F11-quiz-retry` (14/14).
+Two coder-introduced breaks were caught and fixed mid-sweep: a unit-test mock missing a
+newly-imported export, and an E2E locator that went ambiguous after a modal was shared.
+
+---
+
+## [0.30.0] — 2026-07-19
+
+Track A close-out for the v0.29.4 adversarial audit (`REFACTOR2.MD` A1–A14), plus the first
+two Track B route extractions and an N+1 sweep. Suite: 89 files / 1,285 unit tests, a
+4-invariant real-Postgres suite, and a live-verified accessibility smoke.
+
+### Fixed — tenancy & classroom correctness (A2)
+- Quiz-session GET (`/api/papers/[id]/quiz`) now proves `paper.teamId === ctx.teamId` before
+  reading a session — a user retaining an old membership can no longer read a non-active
+  team's graded session by paper id. The policy test that blessed the 200/null contract now
+  expects 404, plus a real cross-team-session case.
+- ADR-004 compliance: onboarding no longer writes `Team.classId`; the teacher roster no
+  longer reads it — cross-class and null-class teams appear on the correct teachers'
+  rosters (new roster policy matrix pins both directions).
+
+### Fixed — durability & money (A5, A6, A8, A12, A13)
+- Uploads are reservation-first (`reserveUploadAsset`): atomic quota check + `temporary`
+  ledger row commit BEFORE any byte reaches R2, for all three paths (paper PDF, log
+  attachment, showcase asset); domain link + `attached` flip commit in one transaction; a
+  failure after any step converges via the sweep (no untracked objects, no zombie papers).
+  `orphanObjectKey` swallows only a verified P2002 adoption race.
+- Storage quota can no longer be overshot by concurrent uploads (per-team advisory lock);
+  showcase single slots replace atomically and multi-slot caps are enforced under a
+  per-(showcase, slot) lock — including the works-cited export.
+- Daily LC award: only Prisma `P2002` reads as "already credited"; other failures retry
+  once, emit a redacted structured event, and surface `lcAward: 'failed'` instead of
+  silently dropping the credit. Consolidated in `lib/economy/lab-credit.ts` (both log routes).
+- Quiz-retry generation is concurrently idempotent: a conditional-update claim
+  (`retryGenClaimedAt`) elects ONE generator before the paid call; followers adopt the
+  committed question; failed generations release the claim. Proven by a concurrent
+  `Promise.all` test and a real-Postgres claim race.
+- Showcase views are deduped per visitor per UTC DAY by a
+  `(showcaseId, fingerprint, day)` unique — concurrent first loads count once
+  (`recordShowcaseView`).
+
+### Changed — notifications at 10k-user scale (A4)
+- `NotificationRunTeam` run ledger: every team checked for the day gets a durable row
+  (zero-draft teams included; failed teams retry). Cron now fires every 15 minutes over a
+  morning window (`vercel.json`), so one day covers 20,000 teams, not 1,000.
+- Fair matching is bulk-loaded once per run (`loadFairIndex` + in-memory matching) and
+  last-log timestamps grouped per page — the per-team fair/event/log fan-out is gone.
+  A deterministic capacity test proves 3,500 teams complete in ≤5 runs within a
+  page-scaled query budget.
+
+### Fixed — privacy (A7)
+- All ten sites logging student queries or model-output slices to `console.*` now emit
+  redacted `logEvent`s (identifiers, stop reasons, lengths only), including the quiz-retry
+  error that embedded model text. `test/log-redaction-sweep.test.ts` statically forbids the
+  class.
+
+### Added — release gates & accessibility (A3, A9, A10, A11)
+- `.github/workflows/e2e.yml`: a bounded production-build smoke lane on PRs + the full
+  Playwright suite nightly/on-demand, gated on the `E2E_ENV_FILE` secret. (The isometric
+  JS-click bypass removal remains open — it needs the hitbox fix first; tracked in A3.)
+- Accessibility floor: shared `useModalA11y` (focus trap + restore + Escape + scroll lock)
+  wired into ConfirmDialog and all five panel shells; accessible names on eight icon-only
+  controls; a global `:focus-visible` outline; a blanket `prefers-reduced-motion` fallback;
+  the two worst 6px/40%-white styles raised. `e2e/a11y.spec.ts` (axe critical + real
+  keyboard trap/restore flow) runs on desktop AND a tablet viewport — verified green live.
+- `/daily/log` and `/daily/failure` first-load JS: **582 KB → 211 KB** (every Operations
+  Hub tab is now a dynamic boundary).
+- `test/pg/invariants.pg.test.ts`: narrow real-Postgres suite (quota lock, LC unique,
+  retry-claim election, view dedupe) against the local dev DB; self-skips without one.
+
+### Changed — architecture (Track B P1-2, N+1)
+- Extracted ALL SIX §3.2 E inline-workflow routes into application services:
+  `lib/teacher/student-overview.ts` (teacher drill-down, 347→27 route lines),
+  `lib/logs/project-log-service.ts` (project log read/write),
+  `lib/ops/codex/complete-service.ts` (progression gate + grading + atomic KP/cap claims,
+  293→49), `lib/ops/codex/study-plan-service.ts` (hash cache + atomic re-run cap, 202→46),
+  `lib/research-plan/review-service.ts` (streaming rubric critique + replay cache, 261→30),
+  and `lib/research-plan/idea-check-service.ts` (web-search novelty stream, 274→26).
+  Streaming services return typed replay/stream variants; adapters own only guard →
+  parse → call → HTTP. Remaining P1-2 work is migrate-on-touch for simple handlers.
+- N+1 fixes: forms-catalog seeding and the citations backfill are single bulk writes;
+  measurements POST returns only the created rows (`createManyAndReturn`) instead of the
+  full history; the teacher-auth class lookup is bounded.
+
+### Changed — docs & claims (A1, A14)
+- PvP is documented as NOT shipped everywhere (ARCHITECTURE.md said it had); AGENTS/CLAUDE
+  say Next.js 15 and describe the real CI lanes; SECURITY.md's harness/remediation sections
+  updated to the shipped state with the A2/A11 caveats.
+
+---
+
 ## [0.29.4] — 2026-07-19
 
 Route-policy harness: the authorization matrix for every dynamic API route now runs in the

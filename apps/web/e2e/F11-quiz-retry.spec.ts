@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, withRateLimitRetry, openLiteratureReview } from './api'
 
 /**
  * F11 — Vega quiz-miss review + targeted retry loop (Literature Review).
@@ -131,46 +131,6 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   /**
-   * The quiz generate/grade/retry routes all enforce the shared 'ai' rate-limit
-   * tier (12 requests / 60s per user — see lib/rate-limit.ts, and AC10 above).
-   * This spec's 13 tests each drive 2-5 of those calls in quick succession, which
-   * can outrun that budget well before a fixed window resets. Rather than
-   * weakening any assertion, every action that can legitimately 429 under this
-   * spec's own call volume is retried, waiting exactly the route's own
-   * `Retry-After` (seconds) before trying again — the SAME real rate limiter
-   * AC10 documents, never bypassed, mocked, or waited-around with a blind guess.
-   */
-  async function withRateLimitRetry<T>(
-    action: () => Promise<{ status: number; retryAfterSeconds: number; result: T }>,
-  ): Promise<T> {
-    for (;;) {
-      const { status, retryAfterSeconds, result } = await action()
-      if (status !== 429) return result
-      const waitMs = Math.max(1000, retryAfterSeconds * 1000) + 250
-      // eslint-disable-next-line no-console
-      console.log(`[F11 spec] hit the ai-tier rate limit; waiting ${waitMs}ms (Retry-After) before retrying…`)
-      await new Promise((resolve) => setTimeout(resolve, waitMs))
-    }
-  }
-
-  /** Click a building-sprite button by aria-label (bypasses isometric z-index overlap). */
-  async function clickBuilding(page: Page, ariaLabel: string) {
-    await page.evaluate((label) => {
-      const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-      if (!btn) throw new Error(`Building button not found: ${label}`)
-      btn.click()
-    }, ariaLabel)
-  }
-
-  /** Open the Literature Review panel from /lab. */
-  async function openLiteratureReview(page: Page) {
-    await page.goto('/lab')
-    await page.getByRole('button', { name: 'Open Literature Review' }).waitFor({ state: 'attached' })
-    await clickBuilding(page, 'Open Literature Review')
-    await expect(page.getByRole('dialog', { name: 'Literature Review' })).toBeVisible({ timeout: 5000 })
-  }
-
-  /**
    * Open a given fixture paper's Q&A panel from the paper list, by title.
    * Waits for the panel's OWN mount-time GET /api/papers/[id]/quiz to resolve
    * (React Strict Mode double-fires this, so we don't key readiness on "first
@@ -228,7 +188,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
       await page.getByRole('button', { name: 'Submit for grading' }).click()
       const res = await gradeResponse
       return { status: res.status(), retryAfterSeconds: Number(res.headers()['retry-after'] ?? 60), result: res }
-    })
+    }, 'F11 spec')
     await expect(page.getByText('Not quite — try again')).toBeVisible({ timeout: 10000 })
     return paper
   }
@@ -248,7 +208,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
       await page.getByRole('button', { name: 'Fix my misses' }).click()
       const res = await retryGetResponse
       return { status: res.status(), retryAfterSeconds: Number(res.headers()['retry-after'] ?? 60), result: res }
-    })
+    }, 'F11 spec')
     await expect(page.locator('textarea')).toHaveCount(6, { timeout: 10000 })
   }
 
@@ -280,7 +240,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
       const retryAfterSeconds = Number(res.headers()['retry-after'] ?? 60)
       const result = status === 200 ? await res.json() : null
       return { status, retryAfterSeconds, result }
-    })
+    }, 'F11 spec')
   }
 
   /**
@@ -296,7 +256,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
       const status = res.status()
       const retryAfterSeconds = Number(res.headers()['retry-after'] ?? 60)
       return { status, retryAfterSeconds, result: res }
-    })
+    }, 'F11 spec')
   }
 
   // ── AC1 ──────────────────────────────────────────────────────────────────

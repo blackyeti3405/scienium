@@ -3,65 +3,36 @@
 import { writeFileSync, mkdirSync } from 'fs'
 import { createHash } from 'crypto'
 import { extractText, getDocumentProxy } from 'unpdf'
+import { FORBIDDEN_MARKERS, stripStreamData } from '../lib/pdf/pdf-scan.mjs'
 
 const OUT_DIR = '/tmp/lit-seed'
 const TARGET = 24
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36'
 mkdirSync(OUT_DIR, { recursive: true })
 
-// ── Active-content check: a faithful port of lib/pdf/sanitize.ts, so a seeded
-// paper is one that WOULD survive the real upload route. ─────────────────────
-const FORBIDDEN = [/\/JavaScript\b/i, /\/JS\s*[([</]/, /\/OpenAction\b/, /\/Launch\b/, /\/XFA\b/, /\/RichMedia\b/]
-function stripStreamData(raw) {
-  const out = []
-  let cursor = 0
-  const opener = /\bstream\r\n|\bstream\n|\bstream\r/g
-  let m
-  while ((m = opener.exec(raw)) !== null) {
-    const bodyStart = m.index + m[0].length
-    const bodyEnd = raw.indexOf('endstream', bodyStart)
-    const stop = bodyEnd === -1 ? raw.length : bodyEnd
-    out.push(raw.slice(cursor, bodyStart), ' '.repeat(stop - bodyStart))
-    cursor = stop
-    if (bodyEnd === -1) break
-    opener.lastIndex = stop
-  }
-  out.push(raw.slice(cursor))
-  return out.join('')
-}
+// ── Active-content check, shared with lib/pdf/sanitize.ts (../lib/pdf/pdf-scan.mjs)
+// so a seeded paper is one that WOULD survive the real upload route. ─────────
 function passesInspection(buf) {
   const structure = stripStreamData(buf.toString('latin1'))
   if (/\/Encrypt\b/.test(structure.slice(-4096))) return false
-  return !FORBIDDEN.some((re) => re.test(structure))
+  return !FORBIDDEN_MARKERS.some(({ pattern }) => pattern.test(structure))
 }
 
-async function fetchBuf(url, ms = 45000) {
+async function fetchRes(url, { ms = 25000, accept, parse } = {}) {
   const ctrl = new AbortController()
   const t = setTimeout(() => ctrl.abort(), ms)
   try {
-    const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/pdf,*/*' }, redirect: 'follow', signal: ctrl.signal })
+    const headers = { 'User-Agent': UA }
+    if (accept) headers.Accept = accept
+    const r = await fetch(url, { headers, redirect: 'follow', signal: ctrl.signal })
     if (!r.ok) return null
-    return Buffer.from(await r.arrayBuffer())
+    return await parse(r)
   } catch { return null } finally { clearTimeout(t) }
 }
-async function fetchJson(url, ms = 25000) {
-  const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), ms)
-  try {
-    const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctrl.signal })
-    if (!r.ok) return null
-    return await r.json()
-  } catch { return null } finally { clearTimeout(t) }
-}
-async function fetchText(url, ms = 25000) {
-  const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), ms)
-  try {
-    const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: ctrl.signal })
-    if (!r.ok) return null
-    return await r.text()
-  } catch { return null } finally { clearTimeout(t) }
-}
+const fetchBuf = (url, ms = 45000) =>
+  fetchRes(url, { ms, accept: 'application/pdf,*/*', parse: async (r) => Buffer.from(await r.arrayBuffer()) })
+const fetchJson = (url, ms) => fetchRes(url, { ms, accept: 'application/json', parse: (r) => r.json() })
+const fetchText = (url, ms) => fetchRes(url, { ms, parse: (r) => r.text() })
 
 const norm = (s) => (s ?? '').toLowerCase().replace(/\s+/g, ' ').replace(/[^a-z0-9 ]/g, '').trim()
 const strip = (s) => (s ?? '').replace(/\s+/g, ' ').trim()

@@ -85,7 +85,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     )
   }
 
-  await db.measurement.createMany({
+  // Return ONLY the created rows (P2-1): echoing the whole history after every
+  // write made the POST payload grow with a term's data; the client merges
+  // these into its already-loaded set instead.
+  const created = await db.measurement.createManyAndReturn({
     data: data.points.map((p) => ({
       experimentId: params.id,
       x: p.x,
@@ -93,9 +96,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       series: p.series ?? '',
       note: p.note ?? null,
     })),
+    select: { id: true, x: true, y: true, series: true, note: true },
   })
 
-  return NextResponse.json({ measurements: await listMeasurements(params.id) })
+  return NextResponse.json({ created, total: existing + created.length })
 }
 
 export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {

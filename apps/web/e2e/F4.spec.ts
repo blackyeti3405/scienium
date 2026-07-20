@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { api, gotoFresh, withSeedPage } from './api'
+import { minimalPdfBytes, minimalPngBytes } from './fixtures'
 
 /**
  * F4 — Teacher moderation gate for public showcases.
@@ -39,36 +40,9 @@ import { api, gotoFresh, withSeedPage } from './api'
 const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 const RUN_ID = Date.now().toString(36)
 
-// Minimal valid PDF: starts with %PDF- magic bytes plus enough structure for sharp/S3.
-function minimalPdfBytes(): Uint8Array {
-  const content =
-    '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n' +
-    '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
-    '3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R>>endobj\n' +
-    'xref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n' +
-    '0000000058 00000 n \n0000000115 00000 n \n' +
-    'trailer<</Size 4/Root 1 0 R>>\nstartxref\n190\n%%EOF'
-  return new TextEncoder().encode(content)
-}
-
-// Minimal valid 1×1 transparent PNG (68-byte standard sequence).
-function minimalPngBytes(): Uint8Array {
-  const hex =
-    '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489' +
-    '0000000a49444154789c6260000000000200012766011e0000000049454e44ae426082'
-  const bytes = new Uint8Array(hex.length / 2)
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16)
-  }
-  return bytes
-}
-
 /** Shared across serial tests. */
 let showcaseId: string | null = null
 let showcaseSlug: string | null = null
-
-/** Whether we advanced the team's phase (needs to be restored in afterAll). */
-let phasedToShowcase = false
 
 const SHORT_TITLE = `[E2E-F4-${RUN_ID}] Microplastic Detection`
 const FULL_TITLE = `[E2E-F4-${RUN_ID}] Detecting Microplastics in Freshwater via Optical Scattering`
@@ -98,7 +72,6 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
         if (!advanceRes.ok()) {
           throw new Error(`Phase advance failed: ${advanceRes.status()} ${await advanceRes.text()}`)
         }
-        phasedToShowcase = true
       }
       // probeRes.status() === 404 means showcase not created yet (team is in showcase phase) — OK.
       // probeRes.status() === 200 means showcase exists and team is in showcase phase — OK.
@@ -464,36 +437,13 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
   }) => {
     // Check via the notifications API. The route is at /api/notifications (from the build output).
     const res = await api.get(page, '/api/notifications')
-    if (res.ok()) {
-      const json = await res.json()
-      const items = (json.items ?? json.notifications ?? []) as Array<{
-        title: string
-        linkUrl: string
-        kind?: string
-      }>
-      // The notification created by the teacher approve action.
-      const found = items.find(
-        (n) =>
-          n.title === 'Showcase approved — now public' &&
-          n.linkUrl === '/lab',
-      )
-      expect(found).toBeTruthy()
-    } else {
-      // Fallback: verify via a direct check using the leader's own page session.
-      const fallbackRes = await api.get(page, '/api/notifications')
-      expect(fallbackRes.ok()).toBe(true)
-      const json = await fallbackRes.json()
-      const items = (json.items ?? json.notifications ?? []) as Array<{
-        title: string
-        linkUrl: string
-      }>
-      const found = items.find(
-        (n) =>
-          n.title === 'Showcase approved — now public' &&
-          n.linkUrl === '/lab',
-      )
-      expect(found).toBeTruthy()
-    }
+    expect(res.ok()).toBe(true)
+    const { items } = (await res.json()) as { items: Array<{ title: string; linkUrl: string }> }
+    // The notification created by the teacher approve action.
+    const found = items.find(
+      (n) => n.title === 'Showcase approved — now public' && n.linkUrl === '/lab',
+    )
+    expect(found).toBeTruthy()
   })
 
   // ── AC10 ──────────────────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@
 import { createRequire } from 'module'
 import { readFileSync } from 'fs'
 import { createHash } from 'crypto'
+import { formatApa, formatMla, formatIeee } from '../lib/literature/citation-core.mjs'
 const require = createRequire(import.meta.url)
 const { PrismaClient } = require('@prisma/client')
 const Anthropic = (await import('@anthropic-ai/sdk')).default
@@ -30,21 +31,7 @@ const FOCUSES = ['findings', 'methodology', 'relevance', 'field knowledge']
 const db = new PrismaClient()
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-// ── Citation formatter — faithful port of lib/literature/citation.ts ─────────
-const toInitials = (given) =>
-  given.split(/\s+/).filter(Boolean)
-    .map((p) => { const c = p.replace(/[^A-Za-z]/g, '').charAt(0); return c ? `${c.toUpperCase()}.` : '' })
-    .filter(Boolean).join(' ')
-function parseName(raw) {
-  const t = (raw ?? '').trim()
-  if (!t) return { last: '', given: '', initials: '', raw }
-  if (t.includes(',')) { const [l, ...r] = t.split(','); const given = r.join(',').trim(); return { last: l.trim(), given, initials: toInitials(given), raw } }
-  const parts = t.split(/\s+/)
-  if (parts.length === 1) return { last: parts[0], given: '', initials: '', raw }
-  const given = parts.slice(0, -1).join(' ')
-  return { last: parts[parts.length - 1], given, initials: toInitials(given), raw }
-}
-const endPeriod = (s) => { const t = (s ?? '').trim(); return !t ? '' : /[.!?]$/.test(t) ? t : `${t}.` }
+// ── Citation formatter — shared with lib/literature/citation.ts via citation-core.mjs
 // PLOS titles/abstracts carry inline markup (<i>, <sub>, …) and HTML entities.
 const stripHtml = (s) =>
   (s ?? '')
@@ -52,30 +39,6 @@ const stripHtml = (s) =>
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
     .replace(/\s+/g, ' ').trim()
-function formatApa(authors, title, year, url) {
-  const n = authors.map(parseName).filter((x) => x.last || x.raw)
-  const A = (x) => (!x.last ? x.raw : x.initials ? `${x.last}, ${x.initials}` : x.last)
-  let ap = n.length === 1 ? A(n[0]) : n.length > 1 ? `${n.map(A).slice(0, -1).join(', ')}, & ${A(n[n.length - 1])}` : ''
-  const parts = [ap, year != null ? `(${year}).` : '(n.d.).', endPeriod(title)].filter(Boolean)
-  let out = parts.join(' '); if (url) out += ` ${url}`; return out.trim()
-}
-function formatMla(authors, title, year, url) {
-  const n = authors.map(parseName).filter((x) => x.last || x.raw)
-  const F = (x) => (!x.last ? x.raw : x.given ? `${x.last}, ${x.given}` : x.last)
-  let ap = ''
-  if (n.length === 1) ap = endPeriod(F(n[0]))
-  else if (n.length === 2) { const s = n[1].given ? `${n[1].given} ${n[1].last}`.trim() : n[1].last || n[1].raw; ap = endPeriod(`${F(n[0])}, and ${s}`) }
-  else if (n.length >= 3) ap = endPeriod(`${F(n[0])}, et al`)
-  const parts = [ap, `"${(title ?? '').trim().replace(/"/g, '')}."`, year != null ? `${year}.` : ''].filter(Boolean)
-  let out = parts.join(' '); if (url) out += ` ${url}`; return out.trim()
-}
-function formatIeee(authors, title, year, url) {
-  const n = authors.map(parseName).filter((x) => x.last || x.raw)
-  const I = (x) => (!x.last ? x.raw : x.initials ? `${x.initials} ${x.last}` : x.last)
-  let ap = n.length === 1 ? I(n[0]) : n.length === 2 ? `${I(n[0])} and ${I(n[1])}` : n.length >= 3 ? `${n.map(I).slice(0, -1).join(', ')}, and ${I(n[n.length - 1])}` : ''
-  const parts = [ap ? `${ap},` : '', `"${(title ?? '').trim().replace(/"/g, '')},"`, year != null ? `${year}.` : ''].filter(Boolean)
-  let out = parts.join(' '); if (url) out += ` [Online]. Available: ${url}`; return out.trim()
-}
 
 // ── Crossref year lookup (best-effort, no key) ───────────────────────────────
 async function crossrefYear(doi) {

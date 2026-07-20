@@ -88,7 +88,11 @@ export const TrackSchema = z
   .object({
     slug: z.string(),
     label: z.string(),
-    home: z.boolean(),
+    // `home`/`labType` are still present on the authored content JSON (retired
+    // concept — see lib/ops/codex/index.ts's header) but no longer part of the
+    // runtime CodexTrack type, so both are optional here purely so `.strict()`
+    // keeps accepting the field on disk without CodexTrack needing to carry it.
+    home: z.boolean().optional(),
     labType: z.string().optional(),
     core: Segment,
     branches: z.array(Segment),

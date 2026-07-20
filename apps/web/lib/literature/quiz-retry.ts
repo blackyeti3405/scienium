@@ -24,7 +24,9 @@ import {
 } from '@/lib/literature/grading'
 import { clampScore, computeQuizAward, computeRetryAggregate } from '@/lib/economy'
 import { logActivity } from '@/lib/activity/log'
+import { logEvent } from '@/lib/observability/log'
 import { lockAggregate } from '@/lib/db-lock'
+import { sleep } from '@/lib/fetch-retry'
 
 /**
  * Quiz-retry application service — the workflow behind
@@ -163,7 +165,14 @@ async function generateNewQuestion(
   const genRaw = genResponse.content[0].type === 'text' ? genResponse.content[0].text : ''
   const genParsed = extractJson<{ prompt: string; focus: string; key: string }>(genRaw)
   if (!genParsed || !genParsed.prompt) {
-    throw new Error(`Failed to parse new-question generation: ${genRaw.slice(0, 500)}`)
+    // The thrown error is console.error'd upstream — it must never carry model
+    // output, which can echo paper text (A7). Length-only diagnostics here.
+    logEvent({
+      event: 'quiz_retry.generation_parse_failed',
+      outcome: 'error',
+      detail: `stop=${genResponse.stop_reason} len=${genRaw.length}`,
+    })
+    throw new Error('Failed to parse new-question generation')
   }
   return {
     id: nextId,
@@ -173,13 +182,24 @@ async function generateNewQuestion(
   }
 }
 
+/** How long a generation claim is honored before a crashed generator's claim
+ *  may be taken over. Comfortably above the worst-case Sonnet call. */
+const RETRY_GEN_CLAIM_TTL_MS = 120_000
+/** Follower poll cadence + budget while the elected generator works. */
+const RETRY_GEN_POLL_MS = 750
+const RETRY_GEN_POLL_BUDGET_MS = 30_000
+
 /**
  * Idempotently ensures the session's questionsJson carries exactly one extra
- * question beyond the original `QUIZ_QUESTION_COUNT`. If one is already
- * persisted (from an earlier prepare on this same failed session), returns it
- * without another generation call — this is what keeps the retry loop to at
- * most ONE generation call total, no matter how many times the retry view is
- * opened before submitting.
+ * question beyond the original `QUIZ_QUESTION_COUNT` — and pays for AT MOST ONE
+ * generation call even under concurrency (A8).
+ *
+ * Election happens BEFORE the paid call: a conditional update on
+ * `retryGenClaimedAt` (null or stale → our stamp) picks exactly one generator;
+ * everyone else polls for the committed question and reuses it. The winner's
+ * commit is itself conditional on still holding the claim, so a TTL takeover
+ * can never be overwritten last-write-wins. A failed generation releases the
+ * claim so a later request retries instead of deadlocking the session.
  */
 async function ensureNewQuestion(
   session: RetryableSession,
@@ -188,14 +208,78 @@ async function ensureNewQuestion(
   if (questions.length > QUIZ_QUESTION_COUNT) {
     return { newQuestion: questions[questions.length - 1]!, questions }
   }
-  const nextId = `q${questions.length + 1}`
-  const newQuestion = await generateNewQuestion(session.paper, questions, nextId)
-  const updatedQuestions = [...questions, newQuestion]
-  await db.paperQuizSession.update({
-    where: { id: session.id },
-    data: { questionsJson: updatedQuestions as unknown as Prisma.InputJsonValue },
+
+  const deadline = Date.now() + RETRY_GEN_POLL_BUDGET_MS
+  while (true) {
+    const claimStamp = new Date()
+    const staleBefore = new Date(claimStamp.getTime() - RETRY_GEN_CLAIM_TTL_MS)
+    const claim = await db.paperQuizSession.updateMany({
+      where: {
+        id: session.id,
+        OR: [{ retryGenClaimedAt: null }, { retryGenClaimedAt: { lt: staleBefore } }],
+      },
+      data: { retryGenClaimedAt: claimStamp },
+    })
+
+    if (claim.count === 1) {
+      // Elected. Re-read AFTER claiming: a previous holder may have committed
+      // (and released) between our caller's load and this claim.
+      const fresh = await db.paperQuizSession.findFirst({
+        where: { id: session.id },
+        select: { questionsJson: true },
+      })
+      const current = (fresh?.questionsJson ?? questions) as unknown as QuizQuestion[]
+      if (current.length > QUIZ_QUESTION_COUNT) {
+        await releaseRetryGenClaim(session.id, claimStamp)
+        return { newQuestion: current[current.length - 1]!, questions: current }
+      }
+
+      let newQuestion: QuizQuestion
+      try {
+        newQuestion = await generateNewQuestion(session.paper, current, `q${current.length + 1}`)
+      } catch (err) {
+        // Release so a later request can retry — never leave the session stuck
+        // behind a dead claim for the full TTL.
+        await releaseRetryGenClaim(session.id, claimStamp).catch(() => {})
+        throw err
+      }
+      const updatedQuestions = [...current, newQuestion]
+      const commit = await db.paperQuizSession.updateMany({
+        where: { id: session.id, retryGenClaimedAt: claimStamp },
+        data: {
+          questionsJson: updatedQuestions as unknown as Prisma.InputJsonValue,
+          retryGenClaimedAt: null,
+        },
+      })
+      if (commit.count === 1) return { newQuestion, questions: updatedQuestions }
+      // We exceeded the TTL and were taken over — loop to adopt the winner's
+      // committed question rather than fight over the slot.
+      continue
+    }
+
+    // Follower: someone else is generating. Wait for their commit (or their
+    // released claim, which the next loop iteration will re-contest).
+    const row = await db.paperQuizSession.findFirst({
+      where: { id: session.id },
+      select: { questionsJson: true, retryGenClaimedAt: true },
+    })
+    const current = (row?.questionsJson ?? []) as unknown as QuizQuestion[]
+    if (current.length > QUIZ_QUESTION_COUNT) {
+      return { newQuestion: current[current.length - 1]!, questions: current }
+    }
+    if (Date.now() > deadline) {
+      throw new Error('Timed out waiting for the retry question to be generated')
+    }
+    if (row?.retryGenClaimedAt != null) await sleep(RETRY_GEN_POLL_MS)
+  }
+}
+
+/** Clear the claim only if WE still hold it (stamp equality). */
+async function releaseRetryGenClaim(sessionId: string, claimStamp: Date): Promise<void> {
+  await db.paperQuizSession.updateMany({
+    where: { id: sessionId, retryGenClaimedAt: claimStamp },
+    data: { retryGenClaimedAt: null },
   })
-  return { newQuestion, questions: updatedQuestions }
 }
 
 function currentFailedIds(session: RetryableSession, questions: QuizQuestion[]): Set<string> {

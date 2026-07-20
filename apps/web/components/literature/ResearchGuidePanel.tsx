@@ -72,7 +72,7 @@ export function ResearchGuidePanel({ onClose }: { onClose: () => void }) {
               Anatomy of a Paper
             </button>
           </div>
-          <button onClick={onClose} className="text-white/30 hover:text-white/60 transition-colors">
+          <button onClick={onClose} aria-label="Close Research Guide" className="text-white/30 hover:text-white/60 transition-colors">
             <X size={13} />
           </button>
         </div>

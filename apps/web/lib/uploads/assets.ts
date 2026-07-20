@@ -1,16 +1,18 @@
 import 'server-only'
 import { db } from '@/lib/db'
 import { deleteObject } from '@/lib/storage'
-import type { Prisma } from '@prisma/client'
+import { lockAggregate } from '@/lib/db-lock'
+import { Prisma } from '@prisma/client'
 
 /**
  * Uploaded-asset lifecycle helpers. Every object we put in R2 gets a durable
- * `UploadedAsset` row so an abandoned upload is discoverable and cleanable rather
- * than an orphaned blob:
+ * `UploadedAsset` row BEFORE the upload itself (`reserveUploadAsset`), so no
+ * object can ever exist untracked and quota is enforced atomically (A5/A12):
  *
- *   temporary  — uploaded, not yet bound to a domain row
+ *   temporary  — reserved/uploaded, not yet bound to a domain row
  *   attached   — bound to a live domain row (a saved project log)
- *   orphaned   — no longer referenced (log deleted / attachment removed); awaiting reclaim
+ *   orphaned   — no longer referenced (log deleted / attachment removed / a
+ *                failed upload step); awaiting reclaim
  *   deleted    — object removed from storage (terminal)
  *
  * There is exactly ONE physical-delete site: the reclaim sweep. Domain routes only
@@ -29,7 +31,7 @@ import type { Prisma } from '@prisma/client'
 export const TEAM_STORAGE_QUOTA_BYTES = 2 * 1024 * 1024 * 1024
 
 /** Bytes a team currently holds in storage: everything not yet physically deleted. */
-export async function teamStorageBytes(teamId: string): Promise<number> {
+async function teamStorageBytes(teamId: string): Promise<number> {
   const agg = await db.uploadedAsset.aggregate({
     where: { teamId, status: { not: 'deleted' } },
     _sum: { sizeBytes: true },
@@ -38,14 +40,11 @@ export async function teamStorageBytes(teamId: string): Promise<number> {
 }
 
 /**
- * Enforce the team's storage ceiling before an upload is accepted. Returns null
- * when there is room, or a `{ used, quota }` snapshot when the incoming object
- * would exceed it — the caller turns that into a 413.
- *
- * Deliberately check-then-write rather than transactional: two concurrent uploads
- * can both observe room and both land, overshooting by at most one object. That is
- * an acceptable slack for a ceiling this far above real use, and far cheaper than
- * serializing every upload behind a lock.
+ * CHEAP, non-authoritative quota pre-check — an early 413 before a request
+ * buffers/parses a large body. The binding check is `reserveUploadAsset`,
+ * which re-verifies the quota atomically while inserting the ledger row; this
+ * one is unsynchronized and may pass concurrently for several uploads (A12:
+ * that race no longer matters because the reservation is what enforces).
  */
 export async function checkTeamStorageQuota(
   teamId: string,
@@ -56,31 +55,23 @@ export async function checkTeamStorageQuota(
   return { used, quota: TEAM_STORAGE_QUOTA_BYTES }
 }
 
-/** Record a freshly-uploaded object as a temporary asset. Returns its id. */
-export async function recordTemporaryAsset(input: {
-  teamId: string
-  userId: string
-  objectKey: string
-  url: string
-  contentType: string
-  sizeBytes: number
-  purpose: string
-}): Promise<{ id: string }> {
-  return db.uploadedAsset.create({
-    data: { ...input, status: 'temporary' },
-    select: { id: true },
-  })
-}
+type UploadReservation =
+  | { ok: true; id: string }
+  | { ok: false; used: number; quota: number }
 
 /**
- * Record an object that is bound to its domain row in the SAME request (a paper
- * PDF, a showcase board) — so it is born `attached`, never `temporary`.
+ * Reserve quota + create the durable `temporary` ledger row for an upload,
+ * BEFORE any byte reaches R2 (A5/A12). One transaction under a per-team
+ * advisory lock, so N concurrent uploaders serialize on the quota check and
+ * the ceiling can no longer be overshot by `(N-1) × size`.
  *
- * Using `recordTemporaryAsset` for these would be a live-data bug: the reclaim
- * sweep deletes `temporary` rows older than its window, so a perfectly live
- * showcase board would have its object deleted a day after upload.
+ * The reservation IS the recovery contract: if the R2 put (or anything after
+ * it) fails, the row is either flipped to `orphaned` by the caller or aged out
+ * of `temporary` by the reclaim sweep — `deleteObject` on a key that was never
+ * uploaded is a no-op, so both paths converge with no untracked object and no
+ * stranded quota.
  */
-export async function recordAttachedAsset(input: {
+export async function reserveUploadAsset(input: {
   teamId: string
   userId: string
   objectKey: string
@@ -88,23 +79,33 @@ export async function recordAttachedAsset(input: {
   contentType: string
   sizeBytes: number
   purpose: string
-  attachedToType: string
-  attachedToId: string
-}): Promise<{ id: string }> {
-  return db.uploadedAsset.create({
-    data: { ...input, status: 'attached', attachedAt: new Date() },
-    select: { id: true },
+}): Promise<UploadReservation> {
+  return db.$transaction(async (tx) => {
+    await lockAggregate(tx, `team-storage:${input.teamId}`)
+    const agg = await tx.uploadedAsset.aggregate({
+      where: { teamId: input.teamId, status: { not: 'deleted' } },
+      _sum: { sizeBytes: true },
+    })
+    const used = agg._sum.sizeBytes ?? 0
+    if (used + input.sizeBytes > TEAM_STORAGE_QUOTA_BYTES) {
+      return { ok: false as const, used, quota: TEAM_STORAGE_QUOTA_BYTES }
+    }
+    const row = await tx.uploadedAsset.create({
+      data: { ...input, status: 'temporary' },
+      select: { id: true },
+    })
+    return { ok: true as const, id: row.id }
   })
 }
 
 /** Extract the R2 object key from a legacy key-based attachment URL, or null. */
-export function keyFromAttachmentUrl(url: string): string | null {
+function keyFromAttachmentUrl(url: string): string | null {
   const m = url.match(/[?&]key=([^&]+)/)
   return m ? decodeURIComponent(m[1]) : null
 }
 
 /** Extract the asset id from an id-based attachment view URL, or null. */
-export function assetIdFromAttachmentUrl(url: string): string | null {
+function assetIdFromAttachmentUrl(url: string): string | null {
   const m = url.match(/[?&]id=([^&]+)/)
   return m ? decodeURIComponent(m[1]) : null
 }
@@ -205,15 +206,25 @@ export async function markAssetsOrphanedByKey(
  * would silently no-op and leak the object forever. Creating an already-orphaned
  * row hands it to the sweep instead, keeping the single-physical-delete-site
  * invariant intact rather than falling back to a direct `deleteObject`.
+ *
+ * Accepts a transaction client so callers can make "retire the old object" part
+ * of the same atomic step that installs its replacement (A5).
+ *
+ * Only a lost adoption RACE (`P2002` on the unique objectKey) is swallowed —
+ * any other failure (e.g. a DB outage) propagates, because silently continuing
+ * would leak the legacy object forever (A5).
  */
-export async function orphanObjectKey(input: {
-  teamId: string
-  userId: string
-  objectKey: string
-  contentType: string
-  purpose: string
-}): Promise<void> {
-  const { count } = await db.uploadedAsset.updateMany({
+export async function orphanObjectKey(
+  input: {
+    teamId: string
+    userId: string
+    objectKey: string
+    contentType: string
+    purpose: string
+  },
+  client: Prisma.TransactionClient = db,
+): Promise<void> {
+  const { count } = await client.uploadedAsset.updateMany({
     where: {
       teamId: input.teamId,
       objectKey: input.objectKey,
@@ -224,9 +235,8 @@ export async function orphanObjectKey(input: {
   if (count > 0) return
 
   // No ledger row (legacy object) — adopt it as orphaned so the sweep reclaims it.
-  // `objectKey` is unique; a concurrent adopt losing the race is a no-op, not an error.
-  await db.uploadedAsset
-    .create({
+  try {
+    await client.uploadedAsset.create({
       data: {
         teamId: input.teamId,
         userId: input.userId,
@@ -238,7 +248,12 @@ export async function orphanObjectKey(input: {
         status: 'orphaned',
       },
     })
-    .catch(() => {})
+  } catch (err) {
+    // A concurrent adopt winning the unique-objectKey race is a no-op…
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return
+    // …anything else means the object is NOT in the ledger — surface it.
+    throw err
+  }
 }
 
 /**

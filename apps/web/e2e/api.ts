@@ -1,9 +1,28 @@
 import type { APIRequestContext, APIResponse, Browser, Page } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { clerk, clerkSetup, setupClerkTestingToken } from '@clerk/testing/playwright'
 import { STORAGE, getAccounts, type Role } from './roles'
 
 const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 const LANDING: Record<Role, string> = { leader: '/lab', student: '/lab', teacher: '/teacher' }
+
+/**
+ * Preferred E2E test-team id by convention (matches F1.spec.ts / upgrades.spec.ts),
+ * with a fallback to any team present in the roster — the roster's actual team id
+ * is a DB-generated cuid (e.g. cmr1du8fs0002gn0jmvlvy8e8), not this literal, so the
+ * exact-match branch is aspirational/documentary and the fallback is load-bearing.
+ * Single source of truth so every spec's seed helpers resolve identically.
+ */
+export const PREFERRED_TEST_TEAM_ID = 'e2e_test_lab_01'
+
+/** Resolve the E2E team id from a teacher-roster `students` list: preferred id, else first team with any id, else null. */
+export function resolveTeamId(students: Array<{ teamId: string | null }>): string | null {
+  return (
+    students.find((s) => s.teamId === PREFERRED_TEST_TEAM_ID)?.teamId ??
+    students.find((s) => s.teamId)?.teamId ??
+    null
+  )
+}
 
 /**
  * Which role a page is signed in as, so session recovery can re-authenticate
@@ -266,6 +285,47 @@ export async function withSeedPage<T>(
   } finally {
     await context.close()
   }
+}
+
+/** Click a building-sprite button by its aria-label (canvas sprites need a JS click — see upgrades.spec.ts / rubric-self-assessment.spec.ts). */
+export async function clickBuilding(page: Page, ariaLabel: string): Promise<void> {
+  await page.evaluate((label) => {
+    const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+    if (!btn) throw new Error(`Building button not found: ${label}`)
+    btn.click()
+  }, ariaLabel)
+}
+
+/**
+ * The quiz/explain/synthesis routes all enforce the shared 'ai' rate-limit
+ * tier (12 requests / 60s per user — see lib/rate-limit.ts). Several specs'
+ * own call volume can legitimately outrun that budget, so every action that
+ * can 429 under a spec's own load is retried, waiting exactly the route's
+ * own `Retry-After` (seconds) before trying again — the SAME real rate
+ * limiter, never bypassed, mocked, or waited-around with a blind guess.
+ * `tag` prefixes the console.log line so retries are traceable to the spec
+ * that triggered them.
+ */
+export async function withRateLimitRetry<T>(
+  action: () => Promise<{ status: number; retryAfterSeconds: number; result: T }>,
+  tag: string,
+): Promise<T> {
+  for (;;) {
+    const { status, retryAfterSeconds, result } = await action()
+    if (status !== 429) return result
+    const waitMs = Math.max(1000, retryAfterSeconds * 1000) + 250
+    // eslint-disable-next-line no-console
+    console.log(`[${tag}] hit the ai-tier rate limit; waiting ${waitMs}ms before retrying…`)
+    await new Promise((resolve) => setTimeout(resolve, waitMs))
+  }
+}
+
+/** Open the Literature Review feature panel from /lab. */
+export async function openLiteratureReview(page: Page): Promise<void> {
+  await page.goto('/lab')
+  await page.getByRole('button', { name: 'Open Literature Review' }).waitFor({ state: 'attached' })
+  await clickBuilding(page, 'Open Literature Review')
+  await expect(page.getByRole('dialog', { name: 'Literature Review' })).toBeVisible({ timeout: 5000 })
 }
 
 // Smallest valid PNG (1×1, transparent). sharp decodes it, so the attachment

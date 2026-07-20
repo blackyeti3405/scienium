@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { resolveAuthoritativeRole } from '@/lib/teacher/role'
 import { enforceRateLimit, type TierName } from '@/lib/rate-limit'
 import { assertSameOrigin } from '@/lib/api/route-context'
+import { resolvePrimaryEmail } from '@/lib/onboarding/profile'
 
 // Re-exported so the role decision has one public home on the teacher guard; the
 // implementation lives in the import-free role module so it stays unit-testable.
@@ -35,7 +36,6 @@ export interface TeacherContext {
   dbUserId: string
   /** Class ids this teacher owns; the scope for every roster/validation query. */
   classIds: string[]
-  role: 'teacher' | 'admin'
 }
 
 export type TeacherGuard =
@@ -78,9 +78,7 @@ export async function requireTeacher(
   // Ensure a User row backs this teacher (a claim-only teacher may have no row yet).
   if (!user) {
     const clerkUser = await currentUser()
-    const email =
-      clerkUser?.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
-      clerkUser?.emailAddresses[0]?.emailAddress
+    const email = resolvePrimaryEmail(clerkUser)
     if (!email) {
       return { ctx: null, error: NextResponse.json({ error: 'No email on account' }, { status: 400 }) }
     }
@@ -95,10 +93,17 @@ export async function requireTeacher(
     })
   }
 
-  const classes = await db.class.findMany({ where: { teacherId: user.id }, select: { id: true } })
+  // Bounded (P2-1): this runs on EVERY teacher request. No real teacher owns
+  // anywhere near this many classes; the cap just keeps the read from growing
+  // unboundedly with data-entry mistakes or imports.
+  const classes = await db.class.findMany({
+    where: { teacherId: user.id },
+    select: { id: true },
+    take: 200,
+  })
 
   return {
-    ctx: { userId, dbUserId: user.id, classIds: classes.map((c) => c.id), role },
+    ctx: { userId, dbUserId: user.id, classIds: classes.map((c) => c.id) },
     error: null,
   }
 }

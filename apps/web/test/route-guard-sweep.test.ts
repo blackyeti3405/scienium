@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, it, expect } from 'vitest'
 
@@ -27,15 +27,10 @@ const PUBLIC_ALLOWLIST: Record<string, RegExp> = {
   'app/api/showcase/public/asset/route.ts': /canViewShowcase/,
 }
 
-function collectRoutes(dir: string): string[] {
-  const out: string[] = []
-  for (const entry of readdirSync(dir)) {
-    const p = join(dir, entry)
-    if (statSync(p).isDirectory()) out.push(...collectRoutes(p))
-    else if (entry === 'route.ts') out.push(p)
-  }
-  return out
-}
+const collectRoutes = (dir: string): string[] =>
+  readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((e) => e.isFile() && e.name === 'route.ts')
+    .map((e) => join(e.parentPath, e.name))
 
 describe('route guard sweep', () => {
   const routes = collectRoutes(join(WEB_ROOT, 'app', 'api')).map((p) => relative(WEB_ROOT, p))

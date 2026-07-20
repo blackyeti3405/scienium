@@ -17,7 +17,6 @@ export interface OverviewTeam {
   phase: string
   labType: string | null
   topic: string | null
-  researchIdea: string | null
   currency: { kp: number; clearanceLevel: number; lc: number } | null
   members: { user: { id: string; name: string }; role: string }[]
 }
@@ -40,8 +39,6 @@ export interface ShopBuilding {
 export interface LitProgress {
   sourceCount: number
   sourceTarget: number
-  members: { userId: string; name: string; demonstratedCount: number; ready: boolean }[]
-  canAdvance: boolean
 }
 
 export interface StudentProficiency {

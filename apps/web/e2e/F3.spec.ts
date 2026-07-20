@@ -1,8 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage, uploadLogAttachment } from './api'
+import { api, withSeedPage, uploadLogAttachment, clickBuilding, openLiteratureReview } from './api'
 import { e2eDb, e2eTeamId } from './db'
-import fs from 'node:fs'
-import path from 'node:path'
 
 /**
  * F3 — Pixel-native confirm/alert dialogs.
@@ -19,7 +17,8 @@ import path from 'node:path'
  *  AC7  — Ops Hub failure-log delete shows in-app confirm dialog; confirming removes entry
  *  AC8  — Discovery "Start over" shows in-app confirm dialog; cancel leaves tree; confirm clears
  *  AC9  — Delete failure shows alert-variant dialog (single OK button) instead of native alert
- *  AC10 — Grep: zero remaining native confirm()/alert() call sites in apps/web/components
+ *  AC10 — Enforced by ESLint's `no-alert` rule (.eslintrc.json) at gate 4, not
+ *         re-tested here — see apps/web/.eslintrc.json.
  *
  * Seeding strategy:
  *  - Papers: run-tagged rows created directly via e2eDb (the dev-only
@@ -38,29 +37,6 @@ let seededProjectLogId: string | null = null
 let seededFailureId: string | null = null
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Click a building-sprite button by its aria-label using JavaScript's
- * element.click() — bypasses the isometric z-index overlap that prevents
- * Playwright's coordinate-based pointer events from reaching the correct button.
- */
-async function clickBuilding(page: Page, ariaLabel: string) {
-  await page.evaluate((label) => {
-    const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-    if (!btn) throw new Error(`Building button not found: ${label}`)
-    btn.click()
-  }, ariaLabel)
-}
-
-/** Open the Literature Review feature panel from /lab. */
-async function openLiteratureReview(page: Page) {
-  await page.goto('/lab')
-  // Wait for the building sprites to render before trying to open.
-  await page.getByRole('button', { name: 'Open Literature Review' }).waitFor({ state: 'attached' })
-  await clickBuilding(page, 'Open Literature Review')
-  // Wait for the Literature Review panel (FeaturePanel) to actually open.
-  await expect(page.getByRole('dialog', { name: 'Literature Review' })).toBeVisible({ timeout: 5000 })
-}
 
 /** Open the Operations Hub feature panel from /lab and switch to a given tab. */
 async function openOpsHub(page: Page, tab: 'Project Log' | 'Failure Log') {
@@ -535,71 +511,4 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
     await api.delete(page, `/api/failure-log/${ac9Entry.id}`).catch(() => {})
   })
 
-  // ── AC10 ──────────────────────────────────────────────────────────────────────
-  // A static grep over apps/web/components finds zero NATIVE confirm()/alert()
-  // call sites (test files excluded). The native calls use string arguments:
-  //   confirm("Delete ...")   alert('Could not delete...')
-  // The custom useConfirm hook calls use object arguments:
-  //   await confirm({ title: '...', ... })   await alert({ title: '...', ... })
-  // So we detect the native pattern by checking for confirm/alert followed by
-  // an opening quote or template literal (the old before-F3 form), excluding
-  // comment lines, the ConfirmDialog implementation itself, and test files.
-  test('AC10: no native confirm() or alert() call sites remain in apps/web/components', async () => {
-    const componentsDir = path.resolve(__dirname, '../components')
-
-    // Recursively collect all .tsx and .ts files under components/.
-    function collectFiles(dir: string): string[] {
-      const results: string[] = []
-      for (const name of fs.readdirSync(dir)) {
-        const full = path.join(dir, name)
-        const stat = fs.statSync(full)
-        if (stat.isDirectory()) {
-          results.push(...collectFiles(full))
-        } else if (/\.(tsx?|jsx?)$/.test(name) && !/\.test\.\w+$/.test(name)) {
-          results.push(full)
-        }
-      }
-      return results
-    }
-
-    const files = collectFiles(componentsDir)
-    const violations: string[] = []
-
-    // Native confirm/alert pattern: the call takes a string literal or template literal
-    // as its first argument — e.g. confirm("Delete?") or alert(`Error`).
-    // The custom hook version always takes an object: confirm({ ... }) or alert({ ... }).
-    // We flag lines that have confirm( or alert( followed by a quote/backtick (native form).
-    // We also exclude: comment lines, JSDoc (lines starting with * ), import lines,
-    // and the javascript:alert() URL-safety string (per plan out-of-scope).
-    const nativePattern = /\b(?:confirm|alert)\s*\(\s*[`'"]/
-
-    for (const file of files) {
-      const content = fs.readFileSync(file, 'utf-8')
-      const lines = content.split('\n')
-      lines.forEach((line, i) => {
-        if (!nativePattern.test(line)) return
-
-        // Exclude javascript:alert(1) URL-safety test strings (out of scope per plan).
-        if (line.includes('javascript:alert(')) return
-
-        const trimmed = line.trimStart()
-        // Skip comment lines and JSDoc lines.
-        if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return
-        // Skip import declarations.
-        if (trimmed.startsWith('import')) return
-
-        violations.push(`${file}:${i + 1}: ${line.trim()}`)
-      })
-    }
-
-    if (violations.length > 0) {
-      throw new Error(
-        `Found ${violations.length} native confirm()/alert() call site(s) in apps/web/components:\n` +
-          violations.join('\n'),
-      )
-    }
-
-    // All native call sites have been replaced — pass.
-    expect(violations).toHaveLength(0)
-  })
 })

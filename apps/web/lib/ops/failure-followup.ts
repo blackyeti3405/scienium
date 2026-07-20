@@ -59,3 +59,15 @@ export function mapFollowup(row: {
     answeredAt: row.answeredAt ? row.answeredAt.toISOString() : null,
   }
 }
+
+/** Decode a failure entry's stored JSON body, falling back to the raw body as `happened` on parse failure. */
+export function parseFailureBody(body: string): { happened: string; learned: string } {
+  let parsed = { happened: body, learned: '' }
+  try { parsed = JSON.parse(body) } catch {}
+  return parsed
+}
+
+/** Encode a failure entry's `{ happened, learned }` fields for storage. */
+export function stringifyFailureBody(happened: string, learned: string): string {
+  return JSON.stringify({ happened: happened.trim(), learned: learned.trim() })
+}

@@ -1,26 +1,6 @@
-export interface FailureFollowupData {
-  id: string
-  question: string
-  response: string | null
-  answeredAt: string | null
-}
+import type { z } from 'zod'
+import type { followupSchema, failureEntrySchema, savedFailureEntrySchema } from './api'
 
-/**
- * The wire shape of a saved entry: the edit PATCH response omits `followup`
- * (the client preserves the existing value — see `useFailureLog.handleSaved`).
- */
-export type SavedFailureEntry = Omit<FailureEntry, 'followup'> & {
-  followup?: FailureFollowupData | null
-}
-
-export interface FailureEntry {
-  id: string
-  happened: string
-  learned: string
-  author: string
-  authorId: string
-  createdAt: string
-  editedBy: string | null
-  editedAt: string | null
-  followup: FailureFollowupData | null
-}
+export type FailureFollowupData = z.infer<typeof followupSchema>
+export type FailureEntry = z.infer<typeof failureEntrySchema>
+export type SavedFailureEntry = z.infer<typeof savedFailureEntrySchema>

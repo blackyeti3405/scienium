@@ -238,8 +238,6 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
     // Clicking each tab switches the panel — verify that the content area changes.
     // Logs tab: clicking renders log content (or empty state).
     await logsTab.click()
-    // Content panel shows either logs or "No project logs yet."
-    const logsContent = page.getByText(/No project logs yet\.|progress|failure/i)
     // We just need the panel to be active with some content; at minimum the tab is active.
     // The tab strip uses border-[#F5C518] on active. Check the clicked tab has gold border.
     await expect(logsTab).toHaveClass(/border-\[#F5C518\]/)
@@ -257,9 +255,6 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
     // Activity tab.
     await activityTab.click()
     await expect(activityTab).toHaveClass(/border-\[#F5C518\]/)
-
-    // Suppress the unused variable lint warning.
-    void logsContent
   })
 
   // ── AC7 ──────────────────────────────────────────────────────────────────────

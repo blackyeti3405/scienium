@@ -1,13 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { TIER_META } from '@/lib/discovery/credibility'
 import type { CredibilityTier } from '@prisma/client'
 import type { SourceChip, SourceLanes, SourcePlatform } from '@/lib/discovery/sources'
-import { chipId } from '@/lib/discovery/sources'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
 import { BusyButton } from '@/components/ui/BusyButton'
+import { useResizablePanel } from '@/lib/hooks/useResizablePanel'
 
 interface Props {
   /** The open source node, or null while nothing is selected. */
@@ -79,40 +79,13 @@ export function SourceReader({
   const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // ── Resizable / collapsible citations panel ──
-  const [citHeight, setCitHeight] = useState(CIT_DEFAULT)
+  const { size: citHeight, onDividerMouseDown: onHandleMouseDown } = useResizablePanel({
+    min: CIT_MIN,
+    max: CIT_MAX,
+    initial: CIT_DEFAULT,
+    axis: 'y',
+  })
   const [citCollapsed, setCitCollapsed] = useState(false)
-  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
-
-  const onHandleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault()
-      dragRef.current = { startY: e.clientY, startHeight: citHeight }
-      document.body.style.cursor = 'row-resize'
-      document.body.style.userSelect = 'none'
-    },
-    [citHeight],
-  )
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!dragRef.current) return
-      // Drag UP (clientY decreases) → taller citations, shorter abstract.
-      const dy = dragRef.current.startY - e.clientY
-      setCitHeight(Math.min(CIT_MAX, Math.max(CIT_MIN, dragRef.current.startHeight + dy)))
-    }
-    const onUp = () => {
-      if (!dragRef.current) return
-      dragRef.current = null
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
-    return () => {
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-    }
-  }, [])
 
   const nodeId = node?.id ?? null
 
@@ -369,5 +342,3 @@ export function SourceReader({
   )
 }
 
-/** Re-export the chip-id helper so callers can map a chip → its store key. */
-export { chipId }

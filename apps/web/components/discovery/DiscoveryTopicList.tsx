@@ -3,20 +3,17 @@
 import { useMemo } from 'react'
 import type { DiscoveryNode } from '@/stores/discoveryStore'
 import { nodeTreeIndices } from '@/components/discovery/DiscoveryTree'
+import { type InterestLevel, INTEREST_META } from '@/lib/discovery/interest'
 
-// #11: same tier palette + shape cue as the tree's swatch (kept in sync by hand
-// — DiscoveryTree.tsx owns the canonical INTEREST_META, but it isn't exported
-// since it's paired with SVG-only shape rendering there; this list only needs
-// the glyph + color + label, which are cheap to mirror).
-type InterestLevel = 'high' | 'mid' | 'low'
+// #11: same tier palette + shape cue as the tree's swatch — shared with
+// DiscoveryTree.tsx via lib/discovery/interest.ts. This list only needs the
+// glyph + color + label, plus the unmarked ('none') case the tree doesn't have.
 type TierKey = InterestLevel | 'none'
 
 const TIER_ORDER: TierKey[] = ['high', 'mid', 'low', 'none']
 
 const TIER_DISPLAY: Record<TierKey, { glyph: string; color: string; label: string }> = {
-  high: { glyph: '●', color: '#4ADE80', label: 'Interested' },
-  mid: { glyph: '▲', color: '#F97316', label: 'Kind of interested' },
-  low: { glyph: '■', color: '#EF4444', label: 'Not interested' },
+  ...INTEREST_META,
   none: { glyph: '○', color: 'rgba(255,255,255,0.4)', label: 'Unmarked' },
 }
 
@@ -119,5 +116,3 @@ export function DiscoveryTopicList({ nodes, currentNodeId, onNavigate }: Props) 
     </div>
   )
 }
-
-export default DiscoveryTopicList

@@ -24,14 +24,3 @@ export const PHASE_ORDER = [
 ] as const
 
 export type ProjectPhase = (typeof PHASE_ORDER)[number]
-
-// PvP-raid spell type; cycle: empirical > theoretical > applied > empirical (spec §11.4)
-export type SpellType = 'empirical' | 'theoretical' | 'applied'
-
-export type BuildingRole = 'starter' | 'standard' | 'premium'
-
-export type UserRole = 'student' | 'teacher' | 'admin'
-
-export type ProjectLogEntryType = 'progress' | 'failure'
-
-export type PrivacyLevel = 'public' | 'school_only' | 'link_only' | 'private'

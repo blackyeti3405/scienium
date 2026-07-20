@@ -97,8 +97,7 @@ describe('CODEX_TRACKS index', () => {
     }
   })
 
-  it('the flagship (gait-biomechanics) track is not a home track and has at least 1 branch', () => {
-    expect(gaitBiomechanics.home).toBe(false)
+  it('the flagship (gait-biomechanics) track has at least 1 branch', () => {
     expect(gaitBiomechanics.branches.length).toBeGreaterThanOrEqual(1)
   })
 })

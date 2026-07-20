@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
 import { api, withSeedPage } from './api'
+import { dismissHome, openDiscovery, resetTree, treeHasExternalId } from './discovery-helpers'
 
 /**
  * Feature — disco-article-sources (.claude/pipeline/plan-disco-article-sources.md).
@@ -53,36 +54,6 @@ const JOURNALISM_EXCERPT =
   'A deterministic fixture excerpt standing in for a real Quanta Magazine article.'
 const JOURNALISM_URL = 'https://www.quantamagazine.org/e2e-fixture-article'
 
-/** Reset this team's discovery tree to empty and CONFIRM it (mirrors papers-tab.spec.ts). */
-async function resetTree(page: Page) {
-  await api.delete(page, '/api/discovery/tree')
-  await expect
-    .poll(() => treeNodeCount(page), { timeout: 15000, intervals: [200, 400, 800] })
-    .toBe(0)
-}
-
-async function treeNodeCount(page: Page): Promise<number> {
-  try {
-    const res = await api.get(page, '/api/discovery/tree')
-    if (!res.ok()) return -1
-    if (!(res.headers()['content-type'] ?? '').includes('application/json')) return -1
-    const body = await res.json()
-    return Array.isArray(body.nodes) ? body.nodes.length : -1
-  } catch {
-    return -1
-  }
-}
-
-/** Dismiss the Discovery home screen — resets to true on every fresh mount/reload. */
-async function dismissHome(page: Page) {
-  await page.getByRole('button', { name: /Continue Exploring|Start Exploring/ }).click()
-}
-
-async function openDiscovery(page: Page) {
-  await page.goto('/discovery')
-  await dismissHome(page)
-}
-
 /** Switch the left pane to the Articles browse lane. */
 async function openArticlesTab(page: Page) {
   await page.getByRole('button', { name: /Articles/ }).click()
@@ -93,20 +64,6 @@ async function waitForArticlePersisted(page: Page, externalId: string) {
   await expect
     .poll(() => treeHasExternalId(page, externalId), { timeout: 20000, intervals: [250, 500, 1000] })
     .toBe(true)
-}
-
-async function treeHasExternalId(page: Page, externalId: string): Promise<boolean> {
-  try {
-    const res = await api.get(page, '/api/discovery/tree')
-    if (!res.ok()) return false
-    if (!(res.headers()['content-type'] ?? '').includes('application/json')) return false
-    const body = await res.json()
-    return (
-      Array.isArray(body.nodes) && body.nodes.some((n: { externalId?: string }) => n.externalId === externalId)
-    )
-  } catch {
-    return false
-  }
 }
 
 test.describe('Feature — disco-article-sources (article Discovery source type)', () => {

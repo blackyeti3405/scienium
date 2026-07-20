@@ -22,9 +22,7 @@ export interface PlanData {
   activeSource: 'google_doc' | 'paste' | null
   planTextFull: string | null
   lastReview: PlanReview | null
-  lastReviewedAt: string | null
   lastIdeaCheck: IdeaCheckResult | null
-  lastIdeaCheckAt: string | null
 }
 
 /**
@@ -35,7 +33,7 @@ export interface PlanData {
 export function useResearchPlan() {
   const [loading, setLoading] = useState(true)
   const [plan, setPlan] = useState<PlanData | null>(null)
-  const [quota, setQuota] = useState({ usedToday: 0, limit: 3, remaining: 3 })
+  const [quota, setQuota] = useState({ limit: 3, remaining: 3 })
 
   const [type, setType] = useState<string | null>(null)
   const [subtype, setSubtype] = useState<string | null>(null)
@@ -191,7 +189,7 @@ export function useResearchPlan() {
           setActivity((a) => ({ ...a, sources: [...a.sources, ...e.items] }))
         else if (e.type === 'done') {
           setIdea({ verdict: e.verdict, findings: e.findings })
-          setQuota({ usedToday: e.usedToday, limit: e.limit, remaining: e.remaining })
+          setQuota({ limit: e.limit, remaining: e.remaining })
         } else if (e.type === 'error') setIdeaError(e.error)
       })
     } catch (err) {

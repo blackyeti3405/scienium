@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { ModalBackdrop } from '@/components/ui/ModalBackdrop'
 import { Users, Crown, Copy, Check, X, UserPlus, GraduationCap } from 'lucide-react'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
@@ -40,20 +41,6 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
   const [classError, setClassError] = useState<string | null>(null)
   // Set after a successful request that's awaiting the teacher's approval.
   const [classPending, setClassPending] = useState<string | null>(null)
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    closeRef.current?.focus()
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prevOverflow
-    }
-  }, [onClose])
 
   useEffect(() => {
     fetch('/api/team')
@@ -122,15 +109,7 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
   const full = data ? data.memberCount >= data.maxMembers : false
 
   return (
-    <div
-      className="feature-panel__backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Team"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
+    <ModalBackdrop label="Team" onClose={onClose} initialFocusRef={closeRef}>
       <div className="flex flex-col w-[min(440px,94vw)] max-h-[80vh] bg-[#0d1b2e] text-white border-[3px] border-[#2a3048] rounded-[4px] overflow-hidden shadow-[0_0_0_3px_#10131f,0_18px_60px_rgba(0,0,0,0.6)]">
         <header className="flex items-center justify-between px-4 py-3 border-b-[3px] border-[#2a3048] bg-[#0f1320] shrink-0">
           <span className="font-pixel text-[10px] text-[#e8ecfb] flex items-center gap-2">
@@ -296,6 +275,6 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
           ) : null}
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }

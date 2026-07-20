@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { anthropic } from '@/lib/anthropic'
+import { logEvent } from '@/lib/observability/log'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { logActivity } from '@/lib/activity/log'
@@ -118,7 +119,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       .slice(0, 300)
 
     if (!question) {
-      console.error('[failure-followup] Empty question from model:', raw.slice(0, 200))
+      // Model output can quote the student's failure log — log lengths only (A7).
+      logEvent({
+        event: 'failure_followup.empty_question',
+        outcome: 'error',
+        detail: `len=${raw.length}`,
+      })
       return NextResponse.json({ error: 'Failed to generate follow-up question' }, { status: 502 })
     }
   }

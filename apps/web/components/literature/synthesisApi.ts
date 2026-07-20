@@ -106,12 +106,6 @@ export function patchMatrix(id: string, patch: MatrixPatch) {
   })
 }
 
-export async function deleteMatrix(id: string): Promise<void> {
-  await requestJson(`/api/literature/synthesis/${id}`, z.object({ ok: z.literal(true) }), {
-    method: 'DELETE',
-  })
-}
-
 export function checkMatrix(id: string) {
   return requestJson(`/api/literature/synthesis/${id}/check`, checkResultSchema, {
     method: 'POST',

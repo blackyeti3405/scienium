@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ABSTRACT_WORD_MAX, wordCount, type PrivacyLevel } from '@/lib/showcase'
+import { ABSTRACT_WORD_MAX, SINGLE_SLOT, wordCount, type PrivacyLevel, type ShowcaseAssetType } from '@/lib/showcase'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -156,7 +156,7 @@ export function useShowcaseEditor() {
   function onAssetAdded(asset: Asset) {
     setSc((prev) => {
       if (!prev) return prev
-      const single = asset.assetType !== 'demo_video' && asset.assetType !== 'supplement'
+      const single = SINGLE_SLOT[asset.assetType as ShowcaseAssetType]
       const base = single ? prev.assets.filter((a) => a.assetType !== asset.assetType) : prev.assets
       return { ...prev, assets: [...base, asset] }
     })

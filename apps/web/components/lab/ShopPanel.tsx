@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { ModalBackdrop } from '@/components/ui/ModalBackdrop'
 import { Lock } from 'lucide-react'
 import { shopBuildingsForLabType, type ShopBuilding } from '@/lib/shop'
 import { clearanceTitle } from '@/lib/clearance/expertise'
@@ -52,29 +53,12 @@ export function ShopPanel({
   const buildings = shopBuildingsForLabType(labType)
   const skin: GatewaySkin = (labType ?? 'generic') as GatewaySkin
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    closeRef.current?.focus()
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prevOverflow
-    }
-  }, [onClose])
-
   return (
-    <div
+    <ModalBackdrop
+      label="Buildings shop"
+      onClose={onClose}
+      initialFocusRef={closeRef}
       className="shop-panel__backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Buildings shop"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
     >
       <div className="shop-panel">
         <header className="shop-panel__bar">
@@ -133,7 +117,7 @@ export function ShopPanel({
           <CurrencyChip label="LC" value={currency.lc} title="Lab Credits" color="#ffb24d" />
         </footer>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 

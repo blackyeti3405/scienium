@@ -1,4 +1,5 @@
 import { anthropic } from '@/lib/anthropic'
+import { extractJson } from '@/lib/literature/quiz'
 
 export interface RelevanceResult {
   relevant: boolean
@@ -94,19 +95,13 @@ export async function checkPaperRelevance(
     ],
   })
 
-  try {
-    const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-    const match = raw.match(/\{[\s\S]*\}/)
-    if (match) {
-      const parsed = JSON.parse(match[0])
-      if (typeof parsed.relevant === 'boolean') {
-        return { relevant: parsed.relevant, reason: parsed.reason ?? '' }
-      }
-    }
-  } catch {
-    // If parsing fails, default to allowing the upload
+  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+  const parsed = extractJson<{ relevant: boolean; reason?: string }>(raw)
+  if (parsed && typeof parsed.relevant === 'boolean') {
+    return { relevant: parsed.relevant, reason: parsed.reason ?? '' }
   }
 
+  // If parsing fails, default to allowing the upload
   return { relevant: true, reason: '' }
 }
 
@@ -152,26 +147,19 @@ export async function batchCheckRelevance(
   // Default to keeping all papers if parsing fails
   for (const p of papers) result.set(p.id, true)
 
-  try {
-    const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-    const match = raw.match(/\{[\s\S]*\}/)
-    if (match) {
-      const parsed = JSON.parse(match[0])
-      if (Array.isArray(parsed.results)) {
-        for (const r of parsed.results) {
-          // Only ids we actually sent may enter the map — a hostile abstract
-          // that forges the scaffolding could make the model emit foreign ids,
-          // and callers iterate their own papers, so a stray key is at best
-          // noise and at worst a footgun for a future caller that iterates the
-          // MAP instead.
-          if (typeof r.id === 'string' && typeof r.relevant === 'boolean' && result.has(r.id)) {
-            result.set(r.id, r.relevant)
-          }
-        }
+  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+  const parsed = extractJson<{ results?: Array<{ id: string; relevant: boolean }> }>(raw)
+  if (Array.isArray(parsed?.results)) {
+    for (const r of parsed.results) {
+      // Only ids we actually sent may enter the map — a hostile abstract
+      // that forges the scaffolding could make the model emit foreign ids,
+      // and callers iterate their own papers, so a stray key is at best
+      // noise and at worst a footgun for a future caller that iterates the
+      // MAP instead.
+      if (typeof r.id === 'string' && typeof r.relevant === 'boolean' && result.has(r.id)) {
+        result.set(r.id, r.relevant)
       }
     }
-  } catch {
-    // Default to keeping all on parse failure
   }
 
   return result
