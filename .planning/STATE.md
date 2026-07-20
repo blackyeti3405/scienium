@@ -56,7 +56,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ### Pending Todos
 
-None yet.
+- [PvP audit finding: apps/web @/packages/* alias resolution broken (tsc --noEmit fails)](todos/pending/2026-07-20-pvp-audit-finding-apps-web-packages-alias-broken.md) — **verified pre-merge, pre-existing on `matthew/pvp-system`**; report-only in Phase 1; recommended fix option (b) flagged as first Phase 2 action item (02-01).
 
 ### Blockers/Concerns
 
