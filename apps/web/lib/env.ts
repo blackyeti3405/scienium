@@ -74,8 +74,6 @@ export const serverEnv = {
   NOTIFICATION_EMAIL_FROM: lazyOptionalEnv('NOTIFICATION_EMAIL_FROM'),
   OPENALEX_MAILTO: lazyOptionalEnv('OPENALEX_MAILTO', z.string().email()),
   OPENALEX_API_KEY: lazyOptionalEnv('OPENALEX_API_KEY'),
-  NCBI_EMAIL: lazyOptionalEnv('NCBI_EMAIL', z.string().email()),
-  NCBI_API_KEY: lazyOptionalEnv('NCBI_API_KEY'),
   S2_API_KEY: lazyOptionalEnv('S2_API_KEY'),
   // Optional free PatentsView Search API key — enables live prior-art results
   // in the Discovery patents lane (keyless mode degrades to a Google Patents

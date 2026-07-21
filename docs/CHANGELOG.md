@@ -5,6 +5,34 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.32.1] — 2026-07-21
+
+Cleanup release, no behavior change. Finishes removing NCBI from the repo and collapses the
+duplicated setup guide.
+
+### Removed — the last NCBI/E-utilities references
+`lib/discovery/ncbi.ts` itself was deleted in v0.31.0 when OpenAlex became Discovery's sole
+live scholarly-search/citation adapter, but its configuration outlived it. `NCBI_API_KEY` and
+`NCBI_EMAIL` are gone from `lib/env.ts` and `.env.example`; nothing in the codebase read
+either (verified by grep before removal), so this is dead config, not a capability change.
+Remaining `ncbi` strings in source are historical comments and `pubmed.ncbi.nlm.nih.gov`
+permalinks, both of which are correct as-is.
+
+### Changed — SETUP.md is one guide instead of two
+The setup doc carried a full macOS guide and a full Windows guide as parallel top-level
+sections, duplicating steps 0–8 (clone, env vars, install, database, run, pixel-art pipeline,
+Claude Code, production deploy) with only a handful of per-OS command differences between
+them. Merged into a single OS-agnostic walkthrough with the differences noted inline:
+**596 → 91 lines net (−505).** Two copies of an install guide is two copies to drift.
+
+### Added — how S2 enrichment reaches the student (ARCHITECTURE.md)
+Documented what the Semantic Scholar adapter actually surfaces in the UI: a TL;DR card above
+the abstract and the Cited-by lane's influential-first ordering, both in
+`components/discovery/SourceReader.tsx` inside `ExplorerReaderPane`. Both degrade to
+absent/unsorted rather than erroring when S2 is unavailable, so the reader never depends on it.
+
+---
+
 ## [0.32.0] — 2026-07-21
 
 Field Codex content release plus the first honest measurement of the authoring pipeline's

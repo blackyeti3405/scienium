@@ -754,6 +754,12 @@ OpenAlex lane fetch (its own `try`/degrade path) so an S2 outage never blocks
 or is blocked by the rest of the route, and it hard-caches with no
 retry/backoff — a throttled shared pool must never stall the reader.
 
+Student-facing, that enrichment is two things in `components/discovery/SourceReader.tsx`
+(rendered inside `ExplorerReaderPane`): a TL;DR card above the abstract when S2
+returns one, and the Cited-by lane's influential-first ordering. Both degrade to
+absent/unsorted rather than erroring when S2 is unavailable, so the reader never
+depends on it.
+
 OpenAlex is now Discovery's sole live scholarly-search/citation adapter: the
 standalone `lib/discovery/ncbi.ts` E-utilities adapter is deleted entirely,
 and `lib/discovery/arxiv.ts` is reduced to `normalizeArxivId`, the
