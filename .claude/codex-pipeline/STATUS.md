@@ -10,7 +10,7 @@
 > Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
 > Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
 
-**Progress: 8 / 29 fields · 48 / 174 segments.**
+**Progress: 10 / 29 fields · 60 / 174 segments.**
 
 ---
 
@@ -84,25 +84,25 @@
 - [x] regression-forecasting-eval
 - [x] unsupervised-clustering-eval
 
-## ecology ⬜
+## ecology ✅
 *Ecology*
 
-- [ ] Core
-- [ ] behavioral-ecology
-- [ ] community-ecology
-- [ ] conservation-restoration-ecology
-- [ ] population-ecology
-- [ ] urban-human-impact-ecology
+- [x] Core
+- [x] behavioral-ecology
+- [x] community-ecology
+- [x] conservation-restoration-ecology
+- [x] population-ecology
+- [x] urban-human-impact-ecology
 
-## electronics-electrical-engineering ⬜
+## electronics-electrical-engineering ✅
 *Electronics / Electrical Engineering*
 
-- [ ] Core
-- [ ] analog-circuit-design
-- [ ] digital-logic-embedded
-- [ ] power-electronics
-- [ ] rf-antennas
-- [ ] sensors-instrumentation
+- [x] Core
+- [x] analog-circuit-design
+- [x] digital-logic-embedded
+- [x] power-electronics
+- [x] rf-antennas
+- [x] sensors-instrumentation
 
 ## environmental-earth-science ⬜
 *Environmental / Earth Science*

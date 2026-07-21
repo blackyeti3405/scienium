@@ -157,7 +157,76 @@ function validateQuestion(q, where, problems) {
 }
 
 /** @param {any} lesson @param {string} where @param {string[]} problems */
-function validateLesson(lesson, where, problems) {
+/**
+ * Non-blocking scan for a checkpoint premise the lesson never established: a
+ * number in a question STEM that appears nowhere in the lesson's own prose.
+ *
+ * This is the deterministic signature of a half-applied fact-check correction —
+ * the checker hedges an unverifiable figure out of the prose, the fixer patches
+ * only the cited location, and the checkpoint is left asking about a number the
+ * student was never given. One shipped ecology lesson did exactly this, asking
+ * what happened "when dot-pattern coverage increased from 20% to 40%" after the
+ * body had been softened to "sparse to denser patterns".
+ *
+ * Deliberately a WARNING, not a failure. Self-contained computational stems
+ * ("a 0.5 m^2 quadrat holds 9 individuals — what is the density?") invent their
+ * own numbers legitimately, so this only fires when the stem also carries a
+ * named-claim signal (a year, "et al.", or a mid-sentence proper noun), which
+ * makes the number a factual assertion rather than a hypothetical. Wrong-answer
+ * options are never scanned: distractors invent values on purpose.
+ * @param {any} lesson @param {string} at @param {string[]} warnings
+ */
+function scanOrphanPremises(lesson, at, warnings) {
+  const NUM = /\b\d+(?:[.,]\d+)?\s*%|\b\d+\.\d+\b|\b\d{2,}\b/g
+  const norm = (/** @type {any} */ s) => String(s ?? '').replace(/[   ]/g, ' ')
+  const nums = (/** @type {any} */ s) =>
+    new Set((norm(s).match(NUM) || []).map((x) => x.replace(/\s+/g, '').replace(/,/g, '')))
+
+  const sections = Array.isArray(lesson.sections) ? lesson.sections : []
+  const prose = norm(
+    sections.map((/** @type {any} */ s) => `${s?.heading ?? ''} ${s?.body ?? ''}`).join(' ') + ' ' + lesson.workedExample,
+  )
+  const proseNums = nums(prose)
+  const questions = lesson.checkpoint?.questions
+  if (!Array.isArray(questions)) return
+
+  for (const q of questions) {
+    const stem = norm(q?.prompt)
+    const namedClaim =
+      /\b(?:1[89]\d{2}|20[0-2]\d)\b/.test(stem) ||
+      /et al\.?/i.test(stem) ||
+      /[a-z,]\s+[A-Z][a-zà-ÿ]{2,}/.test(stem.replace(/\.\s+[A-Z]/g, '. '))
+    if (!namedClaim) continue
+    for (const n of nums(stem)) {
+      if (!proseNums.has(n)) {
+        warnings.push(`${at} ${q?.id ?? '?'}: stem cites "${n}" but no section or workedExample states it — verify the prose was not hedged out from under this question`)
+      }
+    }
+  }
+
+  // Same failure, citation-shaped: an authority named in the ANSWER KEY (the stem
+  // or the correct option's explanation) that the lesson never actually taught.
+  // A shipped lesson keyed its answer to "Nardone et al." while introducing only
+  // Hope et al. and Locke et al. — the student is told to cite a source they were
+  // never given. Wrong-option text is excluded; distractors may name anything.
+  // The bare "Name and Name" form matches ordinary prose — the first live run
+  // flagged "United **States and Europe**" as a citation. Require a year on that
+  // variant; "et al." is distinctive enough to stand alone.
+  const CITE = /\b([A-Z][a-zà-ÿ][a-zà-ÿ'’-]+)\s+(?:et al\.?|and\s+[A-Z][a-zà-ÿ][a-zà-ÿ'’-]+\s*\(?\s*(?:1[89]\d{2}|20[0-2]\d))/g
+  const proseCites = new Set((prose.match(CITE) || []).map((c) => c.split(/\s+/)[0]))
+  for (const q of questions) {
+    const key = q?.answerId
+    const keyText = `${norm(q?.prompt)} ${key && q?.explanations ? norm(q.explanations[key]) : ''}`
+    for (const c of keyText.match(CITE) || []) {
+      const surname = c.split(/\s+/)[0]
+      if (!proseCites.has(surname) && !prose.includes(surname)) {
+        warnings.push(`${at} ${q?.id ?? '?'}: answer key cites "${c}" but the lesson never introduces ${surname} — teach the source or drop it from the key`)
+      }
+    }
+  }
+}
+
+function validateLesson(lesson, where, problems, warnings) {
   if (!lesson || typeof lesson !== 'object') {
     problems.push(`${where}: lesson is not an object`)
     return
@@ -208,9 +277,9 @@ function validateLesson(lesson, where, problems) {
  * authoring agents write one file per lesson — a whole-unit write is ~65KB in a
  * single tool call and drops the connection mid-response). The unit's `id` and
  * `label` come from the plan, not from any draft.
- * @param {any} planUnit @param {string} segId @param {string[]} problems @param {string[]} consumed
+ * @param {any} planUnit @param {string} segId @param {string[]} problems @param {string[]} consumed @param {string[]} warnings
  */
-function readUnit(planUnit, segId, problems, consumed) {
+function readUnit(planUnit, segId, problems, consumed, warnings) {
   const at = `segment "${segId}" unit "${planUnit.id}"`
   if (typeof planUnit.id !== 'string' || !SLUG_RE.test(planUnit.id)) problems.push(`${at}: unit id must be slug-safe`)
   if (typeof planUnit.label !== 'string' || !planUnit.label.trim()) problems.push(`${at}: unit needs a non-empty label`)
@@ -237,7 +306,8 @@ function readUnit(planUnit, segId, problems, consumed) {
       problems.push(`${pl.path}: invalid JSON — ${err.message}`)
       continue
     }
-    validateLesson(lesson, pl.path, problems)
+    validateLesson(lesson, pl.path, problems, warnings)
+    scanOrphanPremises(lesson, `lesson "${lesson?.id ?? '?'}"`, warnings)
     if (lesson?.id && pl.id && lesson.id !== pl.id) {
       problems.push(`${pl.path}: lesson id "${lesson.id}" does not match the plan's "${pl.id}"`)
     }
@@ -343,6 +413,8 @@ function main() {
 
   /** @type {string[]} */
   const problems = []
+  /** Non-blocking advisories — printed after a successful merge. */
+  const warnings = []
   /** @type {string[]} */
   const consumed = []
   /** @type {any[]} */
@@ -356,7 +428,7 @@ function main() {
     /** @type {any[]} */
     const units = []
     for (const u of seg.units ?? []) {
-      const unit = readUnit(u, seg.id, problems, consumed)
+      const unit = readUnit(u, seg.id, problems, consumed, warnings)
       if (unit) units.push(unit)
     }
     if (units.length === 0) problems.push(`segment "${seg.id}": no usable unit drafts`)
@@ -396,6 +468,14 @@ function main() {
     for (const p of problems) console.error(`  - ${p}`)
     console.error('\nNo content was written. Re-author the named unit draft(s) and re-run.')
     process.exit(1)
+  }
+
+  // Advisory only — these are heuristics, not invariants, so they never block a
+  // merge. A real hit means a checkpoint outlived the prose it was testing.
+  if (warnings.length) {
+    console.warn(`\ncodex:merge — ${warnings.length} advisory warning(s) (not blocking):`)
+    for (const w of warnings) console.warn(`  ! ${w}`)
+    console.warn('')
   }
 
   // Upsert into the track: core replaces core, branches upsert by id.

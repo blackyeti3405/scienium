@@ -62,6 +62,8 @@ export const CODEX_TRACKS: CodexTrackSummary[] = [
   { slug: 'clinical-medicine-pharmacology', label: 'Clinical Medicine / Pharmacology', branchCount: 5, lessonCount: 275 },
   { slug: 'computer-science-algorithms', label: 'Computer Science / Algorithms', branchCount: 5, lessonCount: 275 },
   { slug: 'data-science-ml-metrics', label: 'Data Science / ML Metrics', branchCount: 5, lessonCount: 275 },
+  { slug: 'ecology', label: 'Ecology', branchCount: 5, lessonCount: 275 },
+  { slug: 'electronics-electrical-engineering', label: 'Electronics / Electrical Engineering', branchCount: 5, lessonCount: 275 },
   { slug: 'gait-biomechanics', label: 'Gait Biomechanics', branchCount: 5, lessonCount: 274 },
 ]
 
@@ -82,6 +84,8 @@ const LOADERS: Record<CodexTrackSlug, () => Promise<{ default: CodexTrack }>> = 
   'clinical-medicine-pharmacology': () => import('./tracks/clinical-medicine-pharmacology'),
   'computer-science-algorithms': () => import('./tracks/computer-science-algorithms'),
   'data-science-ml-metrics': () => import('./tracks/data-science-ml-metrics'),
+  'ecology': () => import('./tracks/ecology'),
+  'electronics-electrical-engineering': () => import('./tracks/electronics-electrical-engineering'),
   'gait-biomechanics': () => import('./tracks/gait-biomechanics'),
 }
 

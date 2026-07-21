@@ -5,6 +5,92 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.32.0] — 2026-07-21
+
+Field Codex content release plus the first honest measurement of the authoring pipeline's
+accuracy. Two whole fields shipped (**550 lessons**), 105 defects were found and repaired in
+already-shipped content, and the harness gained an audit/repair loop — but the calibration
+run at the end shows the authoring improvements **did not move the defect rate**, which is
+the most important thing in this entry.
+
+### Added — ecology and electronics-electrical-engineering (550 lessons)
+Both authored whole-field in one `/codex-pipeline` invocation each, to depth target.
+
+| Field | Units | Lessons | Run |
+| --- | --- | --- | --- |
+| `ecology` | 43 | 275 | 278 agents / 16.5M tokens |
+| `electronics-electrical-engineering` | 43 | 275 | 208 agents / 13.6M tokens |
+
+STATUS: **10 / 29 fields · 60 / 174 segments.**
+
+### Added — post-ship audit loop for shipped content
+Shipped content had never been checked after the fact. It is now, by two new workflows plus
+a validated merge-back:
+
+- `.claude/codex-pipeline/audit-field.workflow.mjs` — batched fact-check of shipped lessons,
+  tiered search budget, hunting entity-binding defects.
+- `.claude/codex-pipeline/repair-findings.workflow.mjs` — applies findings to extracted
+  working copies, propagating each correction across the whole lesson; rejects findings it
+  judges wrong (2 of 62 were rejected with reasons, both correctly).
+- `.claude/codex-pipeline/reviews/AUDIT.md` — cross-field audit log.
+
+### Added — whole-field Consistency phase in the authoring workflow
+The only phase that can see ACROSS lessons; every other agent sees one unit, so two lessons
+could teach the same landmark two different ways and nothing noticed. Shipped astronomy
+dated Hubble's proof that galaxies lie outside the Milky Way to 1929 in one lesson and 1923
+in another. On its first live run it caught 2 real contradictions in electronics (Moore's
+law start year; Little Box Challenge inverter spec) and reconciled both before merge.
+
+Costs ~0.6% of a field run: the agent reads only sentences carrying a date (~560 per field),
+never the lessons. It cannot be done deterministically — a script flagging "surname with
+multiple years" was built and measured at 48 candidates in astronomy, essentially all false
+(prolific researchers legitimately publish repeatedly).
+
+### Fixed — 105 defects in shipped content
+Found by auditing 858 lessons across four fields and repaired in place; gates green after
+each pass.
+
+| Field | Audited | Defects | HIGH |
+| --- | --- | --- | --- |
+| ecology | 186 | 22 | 11 |
+| astronomy-astrophysics | 167 | 27 | 11 |
+| data-science-ml-metrics | 210 | 20 | 12 |
+| computer-science-algorithms | 145 | 14 | 11 |
+| electronics-electrical-engineering | 150 | 19 (unrepaired) | 13 |
+
+The dominant family was **entity binding** — a true fact attached to the wrong thing, not an
+invented fact. Nine confabulated given names on real citations (surname and year correct
+every time): "A.J." Zippin (Calvin), "Michael" Connor (Edward F.), "Ardie" Peet (Margriet),
+"David" Goldsmith (Donald W.), "Robert" Kron (Richard G.). Plus wrong-work-by-right-author,
+wrong-side-of-a-debate, and two different quantities framed as one.
+
+### Changed — authoring harness, from defects observed
+- Author: cite surname + year, **never invent a given name**; a checkpoint may only test what
+  its own lesson taught.
+- Checker: explicit entity-binding section, and **recompute every number by hand** (added
+  after the calibration run — arithmetic was 58% of surviving defects).
+- Fixer: propagates each correction across the whole lesson; effort `low` → `medium`. Measured
+  worth: a repair pass applied 60 findings but changed **98 text sites**.
+- Search budget tiered on a new `claimHeavy` brief flag (8 for claim-heavy units, 3 otherwise).
+- `codex:merge` gained two non-blocking advisories: orphan numeric premise and orphan citation
+  in an answer key.
+
+### Changed — calibration says the pipeline still produces ~12% defective lessons
+Electronics was authored on the improved harness and then audited on a 150-lesson stratified
+sample. **12.0% of lessons carried at least one defect, against 11.8% for ecology on the old
+harness.** The improvements did not measurably reduce the rate.
+
+Two further results worth recording, both against prior assumptions:
+- **Low-signal lessons are not clean.** The never-before-audited tail cohort (no citation or
+  claim-density signal) came back at 11.8%, and the citation-rich cohort was the *cleanest*
+  at 5.9%. Targeting audits by structural signal was backwards.
+- **Two structural defect predictors failed and should not be rebuilt** — claim density
+  (within a field) and citation exposure (across fields; astronomy had the lowest exposure
+  and the highest defect rate). Measured against known defects, the deterministic scanner
+  scored 8% precision and 5% recall. It is a merge-time regression guard, not triage.
+
+---
+
 ## [0.31.0] — 2026-07-20
 
 Architecture + code-quality release. Two things landed: the Track-B route/service seam was

@@ -61,6 +61,19 @@
  *      which is the same work at ~1/7 the price. Expect the band to be
  *      approximately, not exactly, right — that is the trade, and it is a good one.
  *
+ *   7. THE FIXER PROPAGATES; IT DOES NOT PATCH THE CITED LINE. A finding names ONE
+ *      location, but the fact it corrects usually appears two or three times in the
+ *      lesson (body, workedExample, judgeFraming, checkpoint prompt/options/
+ *      explanations, answer key). The fixer used to be told to make "the minimal
+ *      correct change per finding" at `low` effort, and did exactly that: on the
+ *      ecology run it fixed the body and left the checkpoint asserting the old
+ *      claim, which is what sent 8 units to an Opus re-author — and in one lane the
+ *      round-2 fix contradicted an adjacent section outright. It is now told to
+ *      sweep the whole lesson per correction and re-check answer keys against the
+ *      edited prose, at `medium`. The cost case is weak (escalations are ~3% of
+ *      spend); the CORRECTNESS case is the point — a lane that clears in one round
+ *      never gets a second check, so a half-applied correction there ships silently.
+ *
  * NOT worth optimizing, measured: the briefs are 1% of spend and Opus escalations
  * 3%. Escalation rate tracks CLAIM DENSITY, not model weakness — computer-science
  * -algorithms (3.0 dated claims + 14.4 named entities per lesson) took 16
@@ -84,8 +97,18 @@
  * script enforces.
  *
  * returns:
- *   { plan, results, allClean } — `plan` is ready to write to
+ *   { plan, results, contradictions, allClean } — `plan` is ready to write to
  *   `.claude/codex-pipeline/plans/<field>.json` and hand to codex:merge.
+ *   `allClean` requires every lane clean AND no unresolved cross-lesson
+ *   contradiction, so a field that disagrees with itself does not read as green.
+ *
+ * WHY A CONSISTENCY PHASE EXISTS AT ALL: every other agent here sees exactly one
+ * unit, so nothing in the pipeline could ever notice two lessons teaching the
+ * same landmark differently. Shipped astronomy dated Hubble's proof that
+ * galaxies lie outside the Milky Way to 1929 in one lesson and 1923 in another;
+ * both passed every gate. This is also the phase that most justifies the
+ * whole-field-per-invocation design — it is only possible because one run owns
+ * all ~275 lessons at once.
  */
 
 export const meta = {
@@ -97,6 +120,7 @@ export const meta = {
     { title: 'Check', detail: 'per-unit error hunt — Sonnet 5, high effort' },
     { title: 'Verify', detail: 'batched adversarial verify of HIGH findings — Sonnet 5, medium' },
     { title: 'Fix', detail: 'apply survivors — Sonnet 5, low; Opus re-author on escalation' },
+    { title: 'Consistency', detail: 'whole-field cross-lesson claim check — Sonnet 5, high' },
   ],
 }
 
@@ -119,13 +143,18 @@ const BRIEF_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        required: ['unitId', 'unitShort', 'unitLabel', 'isLandmark', 'lessons'],
+        required: ['unitId', 'unitShort', 'unitLabel', 'isLandmark', 'claimHeavy', 'lessons'],
         additionalProperties: false,
         properties: {
           unitId: { type: 'string' },
           unitShort: { type: 'string' },
           unitLabel: { type: 'string' },
           isLandmark: { type: 'boolean' },
+          // Drives the checker's WebSearch budget. `isLandmark` alone under-covers:
+          // in the ecology audit the single worst lesson (a fabricated "20% to 40%"
+          // premise attributed to a named researcher) sat in an APPLICATIONS unit,
+          // not the landmark unit, but was the 4th claim-densest lesson in the field.
+          claimHeavy: { type: 'boolean' },
           lessons: {
             type: 'array',
             items: {
@@ -224,6 +253,7 @@ For each unit give:
 - unitShort: a short slug-safe handle for the unit, unique within this segment (e.g. "sampling")
 - unitLabel: the human label
 - isLandmark: true for the one landmark unit, false otherwise
+- claimHeavy: true if this unit's lessons will be dense with EXTERNALLY CHECKABLE claims — named researchers, dated studies, specific published figures, historical sequences, or who-argued-what disputes. False for units that are mostly mechanism, method, and interpretation, where the content is reasoned rather than cited. Judge the unit you are planning, not the field: a typical segment has 2-3 claim-heavy units. This sets how much fact-checking budget the unit gets, so an honest false is as useful as an honest true — marking everything true wastes the budget it is meant to target.
 - lessons: 5-7 entries, each { title, coverage } — coverage is 1-2 sentences naming the SPECIFIC mechanisms, numbers, studies, or debates that lesson must actually teach. Be concrete; the author agent has only your coverage line to work from.
 
 Do not duplicate another segment's territory: Core owns the shared foundation, each branch owns its own subfield as scoped in the taxonomy entry above.`
@@ -254,6 +284,8 @@ RULES:
 - **Do NOT measure your own word count.** Do not shell out to \`wc\`, and do not write-then-trim-then-recount. Estimate by eye and move on; a lesson that lands at 520 is fine and a later pass will tighten it. (This is not a style note — an earlier run told authors to count their words and they built a write → count → edit → recount loop per lesson, tripling this phase's cost for a handful of words. Your job is to write it well once.)
 - Every MC option (INCLUDING the correct one) needs an explanation; ordering needs a correctOrder that is a permutation of every item id; matching needs correctPairs covering every left id exactly once.
 - Get the SCIENCE RIGHT: correct numbers, units, and correctly-keyed answers. A mis-keyed checkpoint teaches something false. Use WebSearch to confirm any named study / researcher / date / figure you are not certain of.
+- **Cite surname + year. Never invent a first name or an initial.** Write "Zippin (1958)" or "Paine's 1966 experiment", not "A.J. Zippin" or "Clark Lynch" — both of those shipped, and both were confabulated given names bolted onto a real, correctly-remembered citation. If you are certain of the given name, it adds nothing; if you are not, it manufactures a fake person. The same applies to institutions and journals you cannot place.
+- **A checkpoint may only test what its own lesson taught.** If a question's premise names a figure or a study result, that figure must appear in this lesson's sections or workedExample. Never put a precise number in a question stem that the prose states only qualitatively — a student cannot answer it, and it is the signature of an invented statistic. (Wrong-answer options may of course carry invented distractor values.)
 - Strict JSON only: double-quoted keys and strings, no comments, no trailing commas, no \`export\`, no JS. Escape any interior double quote. Each file must parse with JSON.parse — a build script reads it directly, and prose apostrophes ("Sony's", "Békésy's") are safe inside double quotes.
 
 When all ${unit.lessons.length} files are written, return { unitId: "${unit.unitId}", wrote: true, lessonCount }.`
@@ -278,7 +310,15 @@ function checkPrompt(unit, scope) {
   // Searches are the checker's dominant cost: each result stays in context and is
   // re-sent on every later turn, and the run averaged 8.1 of them per checker.
   // Budget them, and spend them where claims are actually wrong when wrong.
-  const budget = isRecheck ? 2 : 4
+  // Tiered on the brief's own claim-density call rather than flat. The ecology
+  // audit found defects concentrate hard in claim-dense units (landmark/history/
+  // debate lessons averaged ~63% more checkable assertions per 500 words than the
+  // rest, and 4 of 5 HIGH defects sat there), while low-claim mechanism lessons
+  // came back nearly clean. Flat-4 therefore over-searched the safe majority and
+  // under-searched the risky quarter. Mean budget is ~4.2 — essentially flat on
+  // cost, but pointed at where the errors actually are.
+  const heavy = unit.isLandmark || unit.claimHeavy
+  const budget = isRecheck ? 2 : heavy ? 8 : 3
 
   return `Adversarially fact-check the Field Codex unit "${unit.unitLabel}". Its lessons are one JSON \`Lesson\` object per file:
 ${fileList(lessons)}
@@ -289,6 +329,18 @@ Read EVERY file listed above. Your ONLY job is to find errors — do NOT edit th
 - HIGH — any answer key (answerId / correctOrder / correctPairs) inconsistent with its explanation or the science (a wrong key is auto-HIGH); any named study / researcher / date / figure that is misattributed, wrong, or FABRICATED (a fabricated citation is HIGH).
 - MED — a scientifically overstated or imprecise claim in prose or workedExample; a judgeFraming that is generic filler not tied to its concept; a lesson whose section prose falls outside the **400-500 word band**: under ~370 is under-written (\`correction\` names the specific mechanism, study, or number it should have taught instead of summarizing), over ~540 is padded (\`correction\` names what to CUT — restatement, throat-clearing, a redundant third example — and must never propose cutting a named study, date, or figure).
 - LOW — minor phrasing / typos.
+
+**RECOMPUTE EVERY NUMBER BY HAND — do not read arithmetic, redo it.** On the first field authored under this checker, arithmetic was **58% of all defects that still shipped** (11 of 19), far ahead of every other class, and it is the cheapest thing here to catch: it needs no search, only care. Redo every calculation in the prose, the workedExample, and the checkpoint — ratios, tolerances, gains, decibels, time constants, percentages, unit conversions, elapsed-time claims ("six years after…" against the lesson's own dates). Three failure shapes, all shipped:
+- **The stated result is simply wrong** (a squared value reported as 0.0149 when 0.12² = 0.0144).
+- **The number contradicts the lesson's own worked example** — a sentence claiming a 1% tolerance shifts Q by ~10% while the worked example below it derives ~23% by the same method. When prose and worked example disagree, that is HIGH, not a rounding quibble.
+- **The scenario does not produce the stated conclusion** — a case built on a 6.0-8.4V input "straddling" a 6.0V rail, where the input never actually falls below the rail, so the keyed answer does not follow from the numbers given.
+
+**CHECK THE BINDINGS, NOT JUST THE FACTS.** Every HIGH defect that survived this pipeline into shipped content was a true statement attached to the WRONG THING — not an invented fact. The claim checked out; what was wrong was what it was bound to. So for each named person, study, figure, or dataset, ask specifically:
+- **Right work by this author?** A prolific researcher has several famous results, and the lesson may have attached the correct author to the wrong one of them. (Shipped example: a retraction over fabricated data was pinned to the author's famous — and entirely legitimate — other subfield.)
+- **Right side of the dispute?** When a lesson lists who argued what, verify each name's actual position, including whether they changed it later. (Shipped example: a scientist was listed among his opponents' defenders; he had in fact co-authored the rebuttal with them.)
+- **Same quantity being compared?** Two numbers about one topic are often different measurements, not a rigorous and a sloppy estimate of one thing. (Shipped example: a share-of-land figure and a share-of-biodiversity figure were framed as rigorous vs. loose versions of the same statistic.)
+- **Is a first name or initial invented?** Surname + year is usually right while the given name is confabulated. Treat any initial or first name you cannot place as HIGH.
+- **Can the student derive the question's premise from THIS lesson?** If a checkpoint prompt asserts a specific figure or study result that appears nowhere in the lesson's own prose, that is HIGH — either the prose was hedged and the checkpoint was left behind, or the number is invented.
 
 **WebSearch budget: at most ${budget} calls.** Do not spend them confirming textbook facts you already know cold, and do not verify one claim per search when a single search settles several. Spend them on what is actually wrong when it is wrong: **specific dates, attributions of a result to a person or paper, and precise numeric figures** — especially any that look confidently specific but unfamiliar. Reason from your own knowledge for everything else; if you are genuinely unsure about a claim and have no budget left, flag it MED and say so in \`problem\` rather than burning a search.
 
@@ -318,7 +370,9 @@ function fixPrompt(unit, toApply) {
   return `Apply these fact-check corrections to the Field Codex unit "${unit.unitLabel}". Its lessons are one JSON \`Lesson\` per file:
 ${fileList(unit.lessons)}
 
-Each finding names the file it belongs to in its \`file\` field. Edit only the files with findings. Make the minimal correct change per finding — fix the claim, number, unit, answer key, or judgeFraming — and preserve each file's \`Lesson\` shape and its lesson id exactly. Where an auditorNote says the proposed correction is wrong, derive the correct fix yourself (verify with WebSearch).
+Each finding names the file it belongs to in its \`file\` field. Edit only the files with findings, and preserve each file's \`Lesson\` shape and its lesson id exactly. Where an auditorNote says the proposed correction is wrong, derive the correct fix yourself (verify with WebSearch).
+
+PROPAGATE EVERY CORRECTION ACROSS THE WHOLE LESSON. A finding cites ONE location; the fact it corrects usually lives in two or three. After applying each correction, search the same lesson file for every other place the old claim appears — section bodies, workedExample, judgeFraming, checkpoint prompts, option text, explanations, and the answerId/correctOrder/correctPairs answer key — and correct all of them. Before you finish a file, re-read its checkpoint against the corrected prose and confirm every answer key still follows from it, and that no section now contradicts another. A half-applied correction is worse than none: it leaves the lesson stating the right fact in one place and the wrong one in another, and it is the single most common reason a unit fails its next check.
 Every file you touch must still parse with JSON.parse: double-quoted keys and strings, no comments, no trailing commas. Prefer Edit over Write so you never rewrite a whole file for a one-line fix.
 Findings to apply:
 ${JSON.stringify(toApply, null, 2)}
@@ -423,7 +477,12 @@ async function authorAndVerifyUnit(seg, unit) {
       return a && a.correctionAccurate === false ? { ...f, auditorNote: a.note } : f
     })
     await agent(fixPrompt(unit, enriched), {
-      agentType: AGENT, model: 'sonnet', effort: 'low', phase: 'Fix',
+      // effort: medium, not low — the fixer must sweep the whole lesson for other
+      // copies of a corrected fact and re-check the answer key against the edited
+      // prose. At low it only patched the cited `where`, which produced 8 of the
+      // ecology run's escalations (body fixed, checkpoint left stating the old
+      // claim) and one fix that contradicted an adjacent section outright.
+      agentType: AGENT, model: 'sonnet', effort: 'medium', phase: 'Fix',
       label: `fix:${seg.short}/${unit.unitShort}#${round}`,
     })
 
@@ -529,6 +588,92 @@ log(`Plan: ${planned.length} segments, ${lanes.length} units, ${totalLessons} le
 
 const results = (await parallel(lanes.map(({ seg, unit }) => () => authorAndVerifyUnit(seg, unit)))).filter(Boolean)
 
+// ─── whole-field consistency ─────────────────────────────────────────────────
+// The ONLY phase that can see across lessons, and the reason it lives here: every
+// other agent in this pipeline sees one unit. Two lessons can therefore teach the
+// same landmark two different ways and nothing notices — shipped astronomy dated
+// Hubble's proof that galaxies lie outside the Milky Way to 1929 in one lesson
+// and 1923 in another, and the post-hoc audit only caught it because the two
+// happened to land in the same batch.
+//
+// This CANNOT be done deterministically. The obvious script — flag a surname
+// bound to different years — was built and measured: 48 candidates in astronomy,
+// essentially all false (Hubble legitimately published in 1923, 1925 AND 1929;
+// half the "names" were "January", "Telescope", "Andromeda"). The contradiction
+// is semantic — two sentences dating the SAME EVENT differently — so a model has
+// to read them. It is cheap anyway because the agent reads only the sentences
+// carrying a date, not the lessons: ~560 sentences / ~31K tokens for a whole
+// field, well under one context, against ~10M for the field's authoring.
+const CONSISTENCY_SCHEMA = {
+  type: 'object',
+  required: ['contradictions'],
+  additionalProperties: false,
+  properties: {
+    contradictions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['claim', 'files', 'problem', 'resolution'],
+        additionalProperties: false,
+        properties: {
+          claim: { type: 'string', description: 'the shared event/fact the lessons disagree about' },
+          files: { type: 'array', items: { type: 'string' }, description: 'draft file paths that disagree' },
+          problem: { type: 'string', description: 'what each side says, quoting both' },
+          resolution: { type: 'string', description: 'which is right and why' },
+        },
+      },
+    },
+  },
+}
+
+let contradictions = []
+if (results.length) {
+  const found = await agent(
+    `Find CROSS-LESSON contradictions in the "${A.label}" Field Codex draft set — places where two different lessons state incompatible versions of the same fact.
+
+The drafts are one JSON \`Lesson\` per file under \`${DRAFT_DIR}/${A.field}-*/\`.
+
+Do NOT read the lessons — there are ~275 of them and you do not need the prose. Extract only the sentences that carry a date, with their file paths. For example:
+
+  grep -rEo --include='*.json' '[^."]*\\b(1[89][0-9][0-9]|20[0-2][0-9])\\b[^."]*' ${DRAFT_DIR}/${A.field}-*/
+
+(quote the --include glob — unquoted it is expanded by the shell and grep fails; keep filenames in the output so you know which lesson each sentence came from.)
+
+Use whatever extraction gets you every dated sentence WITH the file it came from (grep -r without -h keeps filenames; adjust as needed). Read that output, not the lessons.
+
+Then find pairs that DISAGREE ABOUT THE SAME EVENT. You are looking for one thing only: the same discovery, experiment, publication, or result given different dates, different discoverers, different magnitudes, or different outcomes in different lessons.
+
+**A person appearing with several years is NORMAL and is not a finding.** Prolific researchers legitimately publish repeatedly — a name attached to 1923, 1925 and 1929 is almost always three real papers. Only flag it when the surrounding text shows both sentences are describing THE SAME event.
+
+Open the specific draft files only for pairs you are about to flag, to confirm the contradiction is real and quote it exactly.
+
+Return the contradictions with the exact draft file paths involved. Return an empty array if the field is internally consistent — that is the expected result, and inventing findings here is worse than finding none.`,
+    { agentType: AGENT, model: 'sonnet', effort: 'high', phase: 'Consistency', label: `consistency:${A.field}`, schema: CONSISTENCY_SCHEMA },
+  )
+  contradictions = found?.contradictions ?? []
+
+  if (contradictions.length) {
+    log(`⚠ ${contradictions.length} cross-lesson contradiction(s) — reconciling`)
+    await agent(
+      `Reconcile cross-lesson contradictions in the "${A.label}" Field Codex drafts. Each entry names the draft files that disagree about one shared fact, and which version is correct.
+
+For each: edit the WRONG file(s) so every lesson tells the same story. Verify with WebSearch if the resolution looks uncertain (budget: 4 calls total) — do not propagate an error by making the correct lesson match the wrong one.
+
+Apply each correction across the WHOLE lesson you edit: the same fact usually appears in the section body AND the workedExample, judgeFraming, or checkpoint. Fixing only the sentence quoted below leaves the lesson contradicting itself instead of contradicting its neighbour.
+
+Keep each file's \`Lesson\` shape and its \`id\` exactly, and keep it parseable by JSON.parse (double quotes, no trailing commas, straight apostrophes).
+
+Contradictions:
+${JSON.stringify(contradictions, null, 2)}
+
+Return a one-line summary per file changed.`,
+      { agentType: AGENT, model: 'sonnet', effort: 'medium', phase: 'Consistency', label: `reconcile:${A.field}` },
+    )
+  } else {
+    log('Consistency: no cross-lesson contradictions found')
+  }
+}
+
 // The plan codex:merge consumes. Only units whose lane came back CLEAN get in: a
 // dead or still-dirty lane must never become a missing/known-bad unit at merge.
 const shipped = new Set(results.filter((r) => r.clean).map((r) => r.unitId))
@@ -555,4 +700,4 @@ const dirty = results.filter((r) => !r.clean)
 const lost = lanes.length - results.length
 log(`Done: ${results.length}/${lanes.length} units authored, ${results.filter((r) => r.clean).length} clean${dirty.length ? `, ${dirty.length} with open HIGH findings: ${dirty.map((r) => r.unitId).join(', ')}` : ''}${lost ? `, ${lost} lane(s) died` : ''}.`)
 
-return { plan, results, allClean: dirty.length === 0 && lost === 0 }
+return { plan, results, contradictions, allClean: dirty.length === 0 && lost === 0 && contradictions.length === 0 }

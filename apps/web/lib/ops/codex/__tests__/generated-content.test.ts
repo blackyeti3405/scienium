@@ -28,6 +28,8 @@ import classicalMechanicsPhysics from '../tracks/classical-mechanics-physics'
 import clinicalMedicinePharmacology from '../tracks/clinical-medicine-pharmacology'
 import computerScienceAlgorithms from '../tracks/computer-science-algorithms'
 import dataScienceMlMetrics from '../tracks/data-science-ml-metrics'
+import ecology from '../tracks/ecology'
+import electronicsElectricalEngineering from '../tracks/electronics-electrical-engineering'
 import gaitBiomechanics from '../tracks/gait-biomechanics'
 
 const WRAPPERS: Record<string, CodexTrack> = {
@@ -38,6 +40,8 @@ const WRAPPERS: Record<string, CodexTrack> = {
   'clinical-medicine-pharmacology': clinicalMedicinePharmacology,
   'computer-science-algorithms': computerScienceAlgorithms,
   'data-science-ml-metrics': dataScienceMlMetrics,
+  'ecology': ecology,
+  'electronics-electrical-engineering': electronicsElectricalEngineering,
   'gait-biomechanics': gaitBiomechanics,
 }
 
