@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-07-21T18:12:20.944Z"
-last_activity: 2026-07-21 -- Phase 01 execution started
+stopped_at: "Phase 1 complete; review-gate sign-off received 2026-07-22 (Phase 2 un-gated)"
+last_updated: "2026-07-22T04:23:58.938Z"
+last_activity: 2026-07-22 -- Phase 01 marked complete; user sign-off un-gated Phase 2
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 1
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 17
 ---
 
 # Project State
@@ -22,42 +22,42 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 See: .planning/ROADMAP.md (created 2026-07-19)
 
 **Core value:** Ship a finished, verified, and balanced PvP raid system students can use to raid each other — grounded truth of what's actually built, completed to spec §11, proven by tests, tuned so losing trophies feels fair instead of arbitrary.
-**Current focus:** Phase 01 — verify-state-audit-report-only
+**Current focus:** Phase 02 — close-spec-gaps-tests (UN-GATED 2026-07-22)
 
 ## Current Position
 
-Phase: 01 (verify-state-audit-report-only) — EXECUTING
-Plan: 1 of 1
-Status: Executing Phase 01
-Last activity: 2026-07-21 -- Phase 01 execution started
+Phase: 01 — COMPLETE (report-only audit delivered + signed off)
+Plan: 1 of 1 in Phase 1 — DONE (report committed `7c6e9e2`; AUDIT-05 held)
+Status: Phase 01 complete; Phase 2 review gate passed 2026-07-22 — Phase 02 un-gated, ready for `/gsd-execute-phase 2`
+Last activity: 2026-07-22 -- Phase 01 marked complete; user sign-off un-gated Phase 2
 
-Progress: [░░░░░░░░░░] 0% (0/6 plans across phases)
+Progress: [██░░░░░░░░] 17% (1 of 6 plans across phases)
 
 ## Phase Status
 
 | Phase | Plans | Status |
 |-------|-------|--------|
-| 1. Verify-State Audit (Report Only) | 0/1 | Not started |
-| 2. Close Spec Gaps + Tests | 0/3 | Not started — BLOCKED on Phase 1 review gate |
-| 3. Balance Tuning | 0/2 | Not started |
+| 1. Verify-State Audit (Report Only) | 1/1 | **Complete** — audit report committed (`7c6e9e2`); user (Matthew) signed off 2026-07-22; AUDIT-05 no-mutation gate held |
+| 2. Close Spec Gaps + Tests | 0/3 | **Un-gated** — Phase 1 review gate passed 2026-07-22; ready for execution (first action `02-01`: repoint `@/packages` → `@scienium/shared-types` barrel → `tsc` green) |
+| 3. Balance Tuning | 0/2 | Not started (blocked on Phase 2) |
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
-- Average duration: — (no plans executed)
-- Total execution time: 0h
+- Total plans completed: 1
+- Average duration: — (Phase 1 plan executed inline across a context compaction; not reliably timed)
+- Total execution time: —
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Verify-State Audit | 0/1 | — | — |
+| 1. Verify-State Audit | 1/1 | — (inline) | — |
 | 2. Close Spec Gaps + Tests | 0/3 | — | — |
 | 3. Balance Tuning | 0/2 | — | — |
 
-**Recent Trend:** N/A (no plans executed yet)
+**Recent Trend:** Phase 1 (report-only) delivered in 1 plan; zero source mutated (AUDIT-05). The milestone's first real code work begins with Phase 2's `02-01`.
 
 *Updated after each plan completion.*
 
@@ -70,15 +70,16 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - **(Phase 1 gate):** Audit produces a report first; user reviews reality and directs fix scope *before* any fixes land (no premature committing). Phase 2 is hard-blocked on this sign-off.
 - **(Phase 2 scope):** Treat current committed code as the source of truth; spec §11 "not yet built" status block is stale. Spell Power Meter (`lib/pvp/spell-power.ts` + `team_daily_task_days`) is a built §11-extension — audit must output the recommended §11 addition; tests protect it (TEST-03). Defender loses the same trophyDelta the attacker gains (symmetric gain/loss) for v1 — §18 open question resolved.
 - **(Phase 3 scope):** Finish bar = spec + tests + tuning. C-01 (no E2E), C-02 (`TROPHY_LOSS_TODO` stub on live currency), C-03 (inline constants) are all HIGH; C-04 (derived names) folds in.
+- **(Phase 1 review-gate sign-off, 2026-07-22):** User approved the Phase 2 Fix Scope table as-is with two adjustments: row #10 → **Remove** the stale 6v6-vestige stub (not repurpose — v1 loadout is bring-any-spell, no picker to build yet; loadout-size is the v2 extension tracked separately); §2 `METER-01..UT-5` typo → `METER-01..05`. §7.1 pixel-art prerequisite stands (`02-02` `BattleScreen` #4 + leaderboard #9 must match the teammate's v0.23.0 overhaul commit `18aae5d` / merge `7f67a12`: `apps/web/components/lab/{LabScene,DecorationLayer,TileBackground}.tsx` + `apps/web/public/sprites/gateways/*.png`; #17 lobby visual-pass assessed in `02-02`). All 17 fix-scope rows Approved=Y. Phase 2 un-gated.
 
 ### Pending Todos
 
-- [PvP audit finding: apps/web @/packages/* alias resolution broken (tsc --noEmit fails)](todos/pending/2026-07-20-pvp-audit-finding-apps-web-packages-alias-broken.md) — **verified pre-merge, pre-existing on `matthew/pvp-system`**; report-only in Phase 1; recommended fix option (b) flagged as first Phase 2 action item (02-01).
+- [PvP audit finding: apps/web @/packages/* alias resolution broken (tsc --noEmit fails)](todos/pending/2026-07-20-pvp-audit-finding-apps-web-packages-alias-broken.md) — **verified pre-merge, pre-existing on `matthew/pvp-system`**; folded as the TOP row of the Phase 1 audit's "Phase 2 Fix Scope" table; signed off 2026-07-22; scheduled to resolve as the first `02-01` action (option (b): repoint to `@scienium/shared-types` barrel). The todo stays PENDING until Phase 2's `02-01` actually applies the repoint.
 
 ### Blockers/Concerns
 
-- **P1 review gate:** Phase 2 cannot start until the user signs off on Phase 1's audit report and directs fix scope — not just Phase 1 "completing".
-- **Phase 1 applies NO code changes** — report only. Committed branch `matthew/pvp-system` is the baseline the audit contrasts against spec §11.
+- **P1 review gate: RESOLVED 2026-07-22** — user (Matthew) signed off the audit report (`.planning/phases/01-verify-state-audit-report-only/01-AUDIT-REPORT.md`, commit `7c6e9e2`) and directed Phase 2 fix scope. Phase 2 is un-gated; no longer blocked.
+- **Phase 1 applied NO code changes** — report only. Committed branch `matthew/pvp-system` baseline is unchanged (AUDIT-05: at phase close `git status --porcelain apps/web packages docs/SPEC.md` = empty, and `cd apps/web && npx tsc --noEmit` is still exit 1 / 16 errors — the audited baseline, not regressions introduced by this phase).
 - CONCERNS C-01..C-04 (PvP: no E2E, trophy-loss TODO, inline constants, derived names) are the risks this milestone closes; C-05..C-07 (prod env, branding, P0 security sweeps) are explicitly out of scope.
 
 ## Deferred Items
@@ -94,6 +95,6 @@ Items acknowledged and carried forward (from milestone PROJECT.md Out of Scope; 
 
 ## Session Continuity
 
-Last session: 2026-07-20T13:03:38.777Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-verify-state-audit-report-only/01-CONTEXT.md
+Last session: 2026-07-22 -- Phase 1 audit executed inline (report-only); review-gate sign-off received
+Stopped at: Phase 1 complete; Phase 2 un-gated — ready for `/gsd-execute-phase 2`
+Resume file: .planning/phases/01-verify-state-audit-report-only/01-AUDIT-REPORT.md (signed off, §7 fix-scope table + §8 sign-off) → next: .planning/phases/02-close-spec-gaps-tests/02-01-PLAN.md (first Phase 2 action: repoint @/packages → barrel, tsc green)

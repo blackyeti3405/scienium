@@ -12,8 +12,8 @@ This roadmap finishes the §11 PvP Raid System mid-built on branch `matthew/pvp-
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Verify-State Audit (Report Only)** - A written PvP inventory + deviation report mapped against spec §11, with a hard user-review gate before any fix lands; no code changes.
-- [ ] **Phase 2: Close Spec Gaps + Tests** - Spec-complete, server-authoritative, phase-gated, non-destructive PvP proven by E2E + unit tests, with §11 updated to match shipped reality; hard-blocked on Phase 1's user sign-off.
+- [x] **Phase 1: Verify-State Audit (Report Only)** - A written PvP inventory + deviation report mapped against spec §11, with a hard user-review gate before any fix lands; no code changes. **COMPLETE 2026-07-22** — audit report committed `7c6e9e2`, user signed off (all 17 fix-scope rows Approved=Y), AUDIT-05 no-mutation gate held.
+- [ ] **Phase 2: Close Spec Gaps + Tests** - Spec-complete, server-authoritative, phase-gated, non-destructive PvP proven by E2E + unit tests, with §11 updated to match shipped reality; ~~hard-blocked on Phase 1's user sign-off~~ **UN-GATED 2026-07-22** (review-gate sign-off received).
 - [ ] **Phase 3: Balance Tuning** - Decided, tuned trophy-loss curve (`TROPHY_LOSS_TODO=false`) and all PvP tuning constants externalized to one `lib/pvp` block, tunable without a deploy.
 
 ## Phase Details
@@ -35,7 +35,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Handoff (hard review gate):** Phase 1 is "done" when the report exists AND the user has reviewed it and directed fix scope. Phase 2 is hard-blocked on this sign-off — not merely on Phase 1 "completing".
 
 Plans:
-- [ ] 01-01: Build the written PvP inventory + deviation report — every committed PvP file/route/component mapped to a §11 point (built/broken/partial/duplicated; canonical impl identified where duplicates exist), deviations both directions (incl. Spell Power Meter + symmetric defender loss), spec-staleness + Spell-Power-Meter-absent flags, and proposed-but-unapplied fixes; no code changes.
+- [x] 01-01: Build the written PvP inventory + deviation report — every committed PvP file/route/component mapped to a §11 point (built/broken/partial/duplicated; canonical impl identified where duplicates exist), deviations both directions (incl. Spell Power Meter + symmetric defender loss), spec-staleness + Spell-Power-Meter-absent flags, and proposed-but-unapplied fixes; no code changes. **DONE 2026-07-22** — `01-AUDIT-REPORT.md` committed (`3bee795` initial, `9948342` §7.1 prereq added, `7c6e9e2` sign-off recorded); user signed off.
 
 ### Phase 2: Close Spec Gaps + Tests
 **Goal**: A reviewer can run a `working`-phase raid end-to-end against a server-authoritative, phase-gated, non-destructive engine that honors the Spell Power Meter, see green E2E + combat-engine unit tests covering every §11 acceptance criterion, and read an updated spec §11 that matches the shipped code.
@@ -81,9 +81,9 @@ Phases execute in numeric order: 1 → 2 → 3. Phase 2 is hard-gated on the use
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Verify-State Audit (Report Only) | 0/1 | Not started | - |
-| 2. Close Spec Gaps + Tests | 0/3 | Not started (blocked on Phase 1 review gate) | - |
-| 3. Balance Tuning | 0/2 | Not started | - |
+| 1. Verify-State Audit (Report Only) | 1/1 | **Complete** | 2026-07-22 |
+| 2. Close Spec Gaps + Tests | 0/3 | **Un-gated** (Phase 1 review-gate sign-off received 2026-07-22) | - |
+| 3. Balance Tuning | 0/2 | Not started (blocked on Phase 2) | - |
 
 ---
 *Milestone: Finish PvP Raid System. Roadmap created 2026-07-19. 41/41 v1 requirements mapped across 3 phases (5 + 33 + 3).*
