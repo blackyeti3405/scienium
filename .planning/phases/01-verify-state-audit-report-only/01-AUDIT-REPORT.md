@@ -155,12 +155,12 @@ This phase wrote **only** `.planning/phases/01-verify-state-audit-report-only/01
 | 1 | `@/packages` alias `TS2307` across `combat-engine.ts`, `spell-power.ts`, `app/api/pvp/route.ts`, `action/route.ts` (+10 downstream `TS7006`) | broken | HIGH | Repoint the 4 files' deep imports to `@scienium/shared-types` barrel (option **b**); barrel already exports the needed `enums`/`pvp` symbols; then `cd apps/web && npx tsc --noEmit` → green | `02-01` |  |
 | 2 | `TROPHY_LOSS_TODO = true` — live trophy loss from an untuned stub (combat-engine.ts L26, L322–325) | broken | HIGH | Land the loss **mechanism** (low-destruction → scaled loss) + TEST-02 unit test; decide values + flip `TROPHY_LOSS_TODO=false` + loss-curve test | `02-01`/`02-02` (mechanism) → `03-01` (tune+flip) |  |
 | 3 | Absent `apps/web/e2e/pvp.spec.ts` — no PvP E2E (C-01) | broken | HIGH | Write `pvp.spec.ts` mapping every §11 AC → a test (F1–F18 parity, `F11.spec.ts` convention) | `02-03` (TEST-01) |  |
-| 4 | `battle/[id]/page.tsx` blank stub — **no playable raid** (§11.5) | partial (blocker) | HIGH | Build `BattleScreen` (defender grid + spell bar + cast→`/api/pvp/{id}/action` + results) | `02-02` |  |
+| 4 | `battle/[id]/page.tsx` blank stub — **no playable raid** (§11.5) | partial (blocker) | HIGH | Build `BattleScreen` (defender grid + spell bar + cast→`/api/pvp/{id}/action` + results) **matching the v0.23.0 pixel-art style — see §7.1 prerequisite** | `02-02` |  |
 | 5 | `spell-power/route.ts` omits `feature:'pvp'` — skips `working` phase gate (§14.1) | partial | MED | Add `feature: 'pvp'` to the `requireTeamContext` call | `02-01` |  |
 | 6 | Inline `MAX_RAIDS_PER_DAY` / `MAX_REFINDS_PER_DAY = 3` (C-03) | partial | MED | Externalize into the `lib/pvp` constants block beside the existing `SPELL_*` constants | `03-02` |  |
 | 7 | `formatBuildingName` key-casing, no catalog `name` (C-04 / RAID-06) | partial | MED | Pull display names from the catalog (`db.spell` / `Building` seed `name`), as `getTeamSpells` already pulls spell records | `02-01` |  |
 | 8 | Matchmaking missing `working`+ phase gate, placed-base requirement, refind-exclude-shown (§11.7) | partial | MED | Add eligibility filters to `findRandomOpponent` + track shown bases across the refind session | `02-01` |  |
-| 9 | `leaderboard/page.tsx` stub — §11.6 class leaderboard missing | partial | MED | Build the class leaderboard from `PvpTrophies` | `02-02` |  |
+| 9 | `leaderboard/page.tsx` stub — §11.6 class leaderboard missing | partial | MED | Build the class leaderboard from `PvpTrophies` **matching the v0.23.0 pixel-art style — see §7.1 prerequisite** | `02-02` |  |
 | 10 | `team-builder/page.tsx` stub — superseded 6v6 vestige (§11.3) | partial | LOW | Repurpose to a v1 loadout (≥1 spell selection) **or** remove | `02-02` |  |
 | 11 | Symmetric defender loss — §11.6/§18 open → closed symmetric v1 (resolved deviation) | partial (resolved) | LOW | Record the resolution in §11.6/§18 | `02-03` (SPEC-01) |  |
 | 12 | Spell Power Meter — built + wired but **absent from §11** | built (deviation) | LOW | Add a new §11 subsection (tiers + multipliers + reset + no-drain) | `02-03` (SPEC-01) |  |
@@ -168,8 +168,19 @@ This phase wrote **only** `.planning/phases/01-verify-state-audit-report-only/01
 | 14 | AUDIT-02 — orphaned `createRaidSession` + `resolveSpellPowerMultiplier` (canonical = inline/direct) | duplicated | LOW | Remove the dead exports (canonical already live) | `02-01` |  |
 | 15 | Raid snapshot omits gateway placements (§11.8 "plus gateway placements for layout") | partial | LOW | Optionally fold gateway placements into the start-raid snapshot | `02-01` |  |
 | 16 | §11 status block stale + SPM absent (AUDIT-04) | spec-stale | LOW | Correct §11 + add SPM subsection + record symmetric-loss resolution | `02-03` (SPEC-01) |  |
+| 17 | Lobby visual-pass — `lobby/page.tsx` predates the v0.23.0 pixel-art overhaul (flat Tailwind; imports no `LabScene`/`DecorationLayer`/`TileBackground`/sprites) | visual-pass | LOW | `02-02` assesses whether the lobby needs a visual pass to stay stylistically consistent with the post-overhaul lab world (see §7.1) | `02-02` |  |
 
 **Out of this milestone's scope (recorded, NOT a Phase 2/3 plan):** UTC-vs-local daily reset, C-18 / BAL-02 — `§11.2 "midnight local time"` vs the code's `todayUtc()` UTC slice — deferred to v2 (logged in `.planning/STATE.md` Deferred Items). The lobby meter-bar linear-fill (§2 row `lobby`) is a minor optional polish.
+
+### 7.1 Visual-consistency prerequisite (user-directed 2026-07-22)
+
+Before `02-02` builds the `BattleScreen` (**#4**) and the §11.6 leaderboard (**#9**), the implementer MUST read the teammate's pixel-art overhaul and match its visual style. This is a Phase-2 **plan prerequisite**, recorded here so the review-gate artifact self-contains it (D-04); it is not a §11 deviation (no `broken`/`partial` label is warranted — nothing in §11 mandates a pixel-art render).
+
+- **Overhaul provenance (verified against the `38ebc2f` baseline):** commit `18aae5d` — *"feat: v0.23.0 — pixel-art overhaul of the lab world (#24)"* (teammate PR, 2026-07-13) — entered `matthew/pvp-system` via merge `7f67a12` (2026-07-19). The merge stat **created `apps/web/components/lab/DecorationLayer.tsx` (+98 rows)**, **modified `apps/web/components/lab/LabScene.tsx` and `apps/web/components/lab/TileBackground.tsx`**, and **added** `apps/web/public/sprites/gateways/*.png` + `apps/web/public/sprites/decor/*.png` sprites. All present on the audited commit.
+- **Components to read before `02-02` UI work:** `apps/web/components/lab/LabScene.tsx`, `apps/web/components/lab/DecorationLayer.tsx`, `apps/web/components/lab/TileBackground.tsx`.
+- **Gateway sprites to reference:** `apps/web/public/sprites/gateways/*.png` (e.g. `discovery_*.png`, `literature_review_*.png`).
+- **`#4` BattleScreen** and **`#9` leaderboard** — the new screens built in `02-02` **must** match this style.
+- **Lobby visual-pass check (`#17`):** `app/(dashboard)/pvp/lobby/page.tsx` was committed `70f82db` (2026-07-14), **before** `7f67a12` merged the v0.23.0 overhaul into this branch; it imports **none** of `LabScene`/`DecorationLayer`/`TileBackground` and uses flat Tailwind only. `02-02` must assess whether the lobby needs a visual pass to stay consistent with the post-overhaul lab world. Recorded as **#17** (a LOW visual-pass check, approvable/skippable), not an audit-finding defect.
 
 ---
 
