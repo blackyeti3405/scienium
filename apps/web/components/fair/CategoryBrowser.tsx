@@ -20,7 +20,7 @@ export function CategoryBrowser() {
   return (
     <div className="p-6 flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <p className="font-pixel text-[7px] text-white/35 leading-loose">
+        <p className="font-pixel text-[7px] text-white/40 leading-loose">
           Regeneron ISEF 2026 has 22 competition categories. Find the one that best
           fits your project — judges are assigned per category.
         </p>
@@ -28,12 +28,12 @@ export function CategoryBrowser() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search categories or topics…"
-          className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 mt-1"
+          className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 mt-1"
         />
       </div>
 
       {filtered.length === 0 ? (
-        <p className="font-pixel text-[8px] text-white/35 text-center py-6">No categories match.</p>
+        <p className="font-pixel text-[8px] text-white/40 text-center py-6">No categories match.</p>
       ) : (
         <div className="flex flex-col gap-1.5">
           {filtered.map((cat) => (
@@ -69,12 +69,12 @@ function CategoryRow({
         onClick={onToggle}
         className="w-full flex items-center gap-3 px-3 py-2.5 text-left"
       >
-        <span className="font-pixel text-[6px] text-white/30 w-10 shrink-0">{cat.code}</span>
+        <span className="font-pixel text-[6px] text-white/40 w-10 shrink-0">{cat.code}</span>
         <span className="flex-1 text-sm text-white/80 leading-snug">{cat.name}</span>
         {isOpen ? (
-          <ChevronDown size={12} className="text-white/30 shrink-0" />
+          <ChevronDown size={12} className="text-white/40 shrink-0" />
         ) : (
-          <ChevronRight size={12} className="text-white/30 shrink-0" />
+          <ChevronRight size={12} className="text-white/40 shrink-0" />
         )}
       </button>
 
@@ -82,7 +82,7 @@ function CategoryRow({
         <div className="px-3 pb-3 flex flex-col gap-2 border-t border-white/8 pt-2.5">
           <p className="text-[12px] text-white/55 leading-relaxed">{cat.description}</p>
           <div>
-            <span className="font-pixel text-[7px] text-white/35 uppercase tracking-widest block mb-1.5">
+            <span className="font-pixel text-[7px] text-white/40 uppercase tracking-widest block mb-1.5">
               Example topics
             </span>
             <ul className="flex flex-col gap-1">

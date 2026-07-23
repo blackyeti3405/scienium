@@ -94,7 +94,7 @@ export function CitationsPanel({ onClose }: { onClose: () => void }) {
           <Quote size={14} className="text-[#F5C518]" />
           <h2 className="font-pixel text-[10px] text-white">Citations</h2>
           {sorted && (
-            <span className="font-pixel text-[7px] text-white/30 ml-1">{sorted.length}</span>
+            <span className="font-pixel text-[7px] text-white/40 ml-1">{sorted.length}</span>
           )}
         </div>
         <div className="flex items-center gap-4">
@@ -114,7 +114,7 @@ export function CitationsPanel({ onClose }: { onClose: () => void }) {
               </button>
             ))}
           </div>
-          <button onClick={onClose} aria-label="Close Citations" className="text-white/30 hover:text-white/60 transition-colors">
+          <button onClick={onClose} aria-label="Close Citations" className="text-white/40 hover:text-white/60 transition-colors">
             <X size={13} />
           </button>
         </div>
@@ -128,7 +128,7 @@ export function CitationsPanel({ onClose }: { onClose: () => void }) {
           </div>
         ) : sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-8">
-            <Quote size={20} className="text-white/20" />
+            <Quote size={20} className="text-white/40" />
             <p className="font-pixel text-[8px] text-white/40 leading-loose">
               No citations yet. Upload sources here, or star and promote a paper from the Papers
               tab in Discovery — each one is cited automatically.

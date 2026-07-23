@@ -41,7 +41,7 @@ export function ExperimentsView() {
   if (locked) {
     return (
       <div className="ops-tab-body items-center justify-center text-center px-8">
-        <BarChart3 className="text-white/20 mb-3" size={28} />
+        <BarChart3 className="text-white/40 mb-3" size={28} />
         <span className="font-pixel text-[9px] text-white/40 leading-relaxed">
           The Data Terminal unlocks at the Working phase,
           <br />
@@ -97,7 +97,7 @@ export function ExperimentsView() {
           // Kept local over <EmptyState>: this block predates the primitive and
           // its type scale/tint (8px, white/30) differ — visual parity wins.
           <div className="border border-dashed border-white/15 py-10 text-center">
-            <span className="font-pixel text-[8px] text-white/30">
+            <span className="font-pixel text-[8px] text-white/40">
               No experiments yet — start one to chart your data.
             </span>
           </div>
@@ -114,7 +114,7 @@ export function ExperimentsView() {
                   className="text-left flex-1"
                 >
                   <span className="text-sm text-white block truncate">{exp.title}</span>
-                  <span className="font-pixel text-[7px] text-white/35">
+                  <span className="font-pixel text-[7px] text-white/40">
                     {exp.measurementCount} points
                   </span>
                 </button>
@@ -122,7 +122,7 @@ export function ExperimentsView() {
                   busy={deletingId === exp.id}
                   icon={<Trash2 size={14} />}
                   onClick={() => removeExperiment(exp)}
-                  className="text-white/30 hover:text-red-400 transition-colors p-1 disabled:opacity-100"
+                  className="text-white/40 hover:text-red-400 transition-colors p-1 disabled:opacity-100"
                   aria-label="Delete experiment"
                 />
               </li>

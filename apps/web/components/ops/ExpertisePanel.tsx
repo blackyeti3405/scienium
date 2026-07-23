@@ -387,7 +387,7 @@ export function ExpertisePanel() {
     return (
       <div className="ops-tab-body items-center justify-center">
         <div className="clr-thinking">
-          <AlertTriangle size={20} className="text-white/30" />
+          <AlertTriangle size={20} className="text-white/40" />
           <span className="font-pixel text-[8px] text-white/45 text-center max-w-[280px]">
             {error ?? 'Could not load clearance status.'}
           </span>
@@ -466,7 +466,7 @@ export function ExpertisePanel() {
               </span>
             </div>
             <p className="text-[11px] text-white/55 leading-relaxed mt-2">{s.nextLevel.blurb}</p>
-            <p className="font-pixel text-[6px] text-white/35 mt-2">
+            <p className="font-pixel text-[6px] text-white/40 mt-2">
               Pass mark {s.threshold}% · a conversational exam about your own project
             </p>
             <button onClick={beginExam} className="ops-submit-btn clr-begin">
@@ -497,7 +497,7 @@ export function ExpertisePanel() {
                   </span>
                   <span className="font-pixel text-[7px] text-white/70">Level {h.targetLevel}</span>
                   <span className="font-pixel text-[7px] text-white/40">{h.score}%</span>
-                  <span className="text-[10px] text-white/35 truncate ml-auto">
+                  <span className="text-[10px] text-white/40 truncate ml-auto">
                     {h.by} · {timeAgo(h.gradedAt)}
                   </span>
                 </div>

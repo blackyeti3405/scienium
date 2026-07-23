@@ -154,7 +154,7 @@ function StatBox({
           <button
             type="button"
             onClick={copyCode}
-            className="inline-flex items-center gap-1 font-pixel text-[6px] text-white/35 hover:text-[#F5C518] transition-colors"
+            className="inline-flex items-center gap-1 font-pixel text-[6px] text-white/40 hover:text-[#F5C518] transition-colors"
           >
             {copied ? <Check size={10} /> : <Copy size={10} />}
             {copied ? 'Copied' : 'Copy'}
@@ -174,7 +174,7 @@ function StatBox({
           <code>{concept.output}</code>
         </pre>
         <p className="text-sm text-white/60 leading-relaxed mt-2">
-          <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest mr-1.5">Caveat</span>
+          <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest mr-1.5">Caveat</span>
           {concept.caveat}
         </p>
       </div>

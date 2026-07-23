@@ -141,7 +141,7 @@ export function VocabPanel({ onClose }: { onClose: () => void }) {
               Deck
             </button>
           </div>
-          <button onClick={onClose} aria-label="Close Vocab Builder" className="text-white/30 hover:text-white/60 transition-colors">
+          <button onClick={onClose} aria-label="Close Vocab Builder" className="text-white/40 hover:text-white/60 transition-colors">
             <X size={13} />
           </button>
         </div>
@@ -323,7 +323,7 @@ function ReviewView({
               )}
 
               <div className="flex flex-col gap-1.5 mt-2">
-                <span className="font-pixel text-[7px] text-white/35">How well did you know it?</span>
+                <span className="font-pixel text-[7px] text-white/40">How well did you know it?</span>
                 <div className="flex flex-wrap gap-2">
                   {GRADES.map(({ grade, label, hint }) => (
                     <BusyButton
@@ -455,7 +455,7 @@ function DeckRow({ card, onRemove }: { card: VocabCardView; onRemove: (cardId: s
             data-testid="vocab-card-remove"
             onClick={() => onRemove(card.id)}
             title="Remove this card"
-            className="text-white/30 hover:text-red-400 transition-colors"
+            className="text-white/40 hover:text-red-400 transition-colors"
           >
             <Trash2 size={12} />
           </button>

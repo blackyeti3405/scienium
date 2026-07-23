@@ -50,7 +50,7 @@ export function PaperSlot({
 
         {/* Content row */}
         <div className="flex items-center gap-3 px-4 py-3">
-          <FileText size={14} className="text-white/30 shrink-0" />
+          <FileText size={14} className="text-white/40 shrink-0" />
 
           <div className="flex-1 min-w-0">
             {paper.status === 'uploading' ? (
@@ -80,7 +80,7 @@ export function PaperSlot({
               </div>
             )}
             {paper.authors.length > 0 && (
-              <p className="font-pixel text-[7px] text-white/30 truncate mt-0.5">
+              <p className="font-pixel text-[7px] text-white/40 truncate mt-0.5">
                 {paper.authors.slice(0, 2).join(', ')}
                 {paper.authors.length > 2 ? ' et al.' : ''}
               </p>
@@ -117,7 +117,7 @@ export function PaperSlot({
               <button
                 onClick={() => onDelete(paper)}
                 title="Delete source"
-                className="flex items-center justify-center font-pixel text-[7px] border border-white/15 text-white/30 p-1.5 hover:border-red-500/50 hover:text-red-400 transition-colors"
+                className="flex items-center justify-center font-pixel text-[7px] border border-white/15 text-white/40 p-1.5 hover:border-red-500/50 hover:text-red-400 transition-colors"
               >
                 <Trash2 size={10} />
               </button>

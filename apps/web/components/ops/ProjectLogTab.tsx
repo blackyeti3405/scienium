@@ -45,7 +45,7 @@ export function ProjectLogTab() {
     return (
       <div className="ops-tab-body items-center justify-center text-center">
         {dialog}
-        <AlertTriangle size={20} className="text-white/25 mb-2" />
+        <AlertTriangle size={20} className="text-white/40 mb-2" />
         <span className="font-pixel text-[8px] text-white/40">{loadError}</span>
       </div>
     )
@@ -66,13 +66,13 @@ export function ProjectLogTab() {
         // flex centering) predates the primitive and styles differently —
         // visual parity wins.
         <div className="ops-empty">
-          <BookOpen size={22} className="text-white/15 mb-2" />
-          <span className="font-pixel text-[8px] text-white/30">No entries yet — log your first session above.</span>
+          <BookOpen size={22} className="text-white/40 mb-2" />
+          <span className="font-pixel text-[8px] text-white/40">No entries yet — log your first session above.</span>
         </div>
       ) : (
         <>
           <div className="ops-timeline-header">
-            <span className="font-pixel text-[7px] text-white/30 uppercase tracking-widest">
+            <span className="font-pixel text-[7px] text-white/40 uppercase tracking-widest">
               {total} {total === 1 ? 'entry' : 'entries'}
             </span>
             <div className="ops-timeline-header__line" />
@@ -113,13 +113,13 @@ export function ProjectLogTab() {
                         <span className="font-pixel text-[7px] text-white/70">
                           {e.createdBy.name}
                           {attendeeNames.length > 0 && (
-                            <span className="text-white/30"> + {attendeeNames.join(', ')}</span>
+                            <span className="text-white/40"> + {attendeeNames.join(', ')}</span>
                           )}
                         </span>
-                        <span className="font-pixel text-[6px] text-white/30 mt-0.5">
+                        <span className="font-pixel text-[6px] text-white/40 mt-0.5">
                           {formatDate(e.createdAt)} · {timeAgo(e.createdAt)}
                           {e.lastEditedBy && (
-                            <span className="text-white/25"> · edited by {e.lastEditedBy.name}</span>
+                            <span className="text-white/40"> · edited by {e.lastEditedBy.name}</span>
                           )}
                         </span>
                       </div>

@@ -96,7 +96,7 @@ export function ScienceFairSection({ overview }: { overview: Overview }) {
                       ? 'bg-emerald-400/10 text-emerald-400'
                       : fs.status === 'in_progress'
                       ? 'bg-amber-400/10 text-amber-400'
-                      : 'bg-white/5 text-white/30'
+                      : 'bg-white/5 text-white/40'
                   }`}
                 >
                   {fs.status.replace(/_/g, ' ')}

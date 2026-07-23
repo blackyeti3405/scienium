@@ -34,8 +34,8 @@ export function LogsSection({ overview }: { overview: Overview }) {
               {log.stage && (
                 <span className="text-xs text-white/40">{log.stage}</span>
               )}
-              <span className="text-xs text-white/35">{fmtDate(log.createdAt)}</span>
-              <span className="text-xs text-white/35">by {log.createdBy.name}</span>
+              <span className="text-xs text-white/40">{fmtDate(log.createdAt)}</span>
+              <span className="text-xs text-white/40">by {log.createdBy.name}</span>
             </div>
             <p className="text-sm text-white/75">{log.body}</p>
 
@@ -47,7 +47,7 @@ export function LogsSection({ overview }: { overview: Overview }) {
                     {fu.response ? (
                       <p className="text-sm text-white/70">{fu.response}</p>
                     ) : (
-                      <p className="text-xs text-white/25">Awaiting response…</p>
+                      <p className="text-xs text-white/40">Awaiting response…</p>
                     )}
                   </li>
                 ))}

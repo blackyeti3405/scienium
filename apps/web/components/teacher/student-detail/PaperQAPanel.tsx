@@ -110,7 +110,7 @@ export function PaperQAPanel({
                       <span className={data.quiz.passed ? 'text-xs text-emerald-400' : 'text-xs text-red-400'}>
                         {data.quiz.passed ? 'Passed' : 'Not passed'}
                       </span>
-                      <span className="text-xs text-white/30">threshold {data.quiz.threshold}%</span>
+                      <span className="text-xs text-white/40">threshold {data.quiz.threshold}%</span>
                     </div>
                     <ul className="space-y-3">
                       {data.quiz.questions.map((question) => {
@@ -135,7 +135,7 @@ export function PaperQAPanel({
                     </ul>
                   </>
                 ) : (
-                  <p className="text-sm text-white/30">No quiz taken yet.</p>
+                  <p className="text-sm text-white/40">No quiz taken yet.</p>
                 )}
               </section>
 
@@ -146,7 +146,7 @@ export function PaperQAPanel({
                     {data.chat.map((message, index) => (
                       <li key={index} className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
                         <div className="max-w-[85%] rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/75">
-                          <span className="mb-1 block text-[10px] uppercase text-white/30">
+                          <span className="mb-1 block text-[10px] uppercase text-white/40">
                             {message.role === 'user' ? 'student' : 'vega'}
                           </span>
                           <SafeMarkdown>{message.content}</SafeMarkdown>
@@ -155,7 +155,7 @@ export function PaperQAPanel({
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-white/30">No discussion yet.</p>
+                  <p className="text-sm text-white/40">No discussion yet.</p>
                 )}
               </section>
             </>

@@ -341,7 +341,7 @@ function TeacherCriterionCard({
                 onBlur={saveIfDirty}
                 className="w-16 bg-[#0a1628] border border-white/20 text-white text-sm px-2 py-1.5 outline-none focus:border-[#F5C518]/60 rounded-sm"
               />
-              <span className="font-pixel text-[7px] text-white/30">/ {row.maxScore}</span>
+              <span className="font-pixel text-[7px] text-white/40">/ {row.maxScore}</span>
 
               <BusyButton
                 busy={saving}
@@ -370,13 +370,13 @@ function TeacherCriterionCard({
           rows={2}
           maxLength={1000}
           placeholder="Teacher notes — feedback for this criterion…"
-          className="w-full bg-[#0a1628] border border-white/15 text-white text-[13px] px-3 py-2 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/25 resize-none rounded-sm"
+          className="w-full bg-[#0a1628] border border-white/15 text-white text-[13px] px-3 py-2 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40 resize-none rounded-sm"
         />
 
         {saveError && <p className="font-pixel text-[7px] text-red-400 leading-loose">{saveError}</p>}
 
         {row.updatedByName && !saveError && (
-          <p className="font-pixel text-[6px] text-white/25">Last scored by {row.updatedByName}</p>
+          <p className="font-pixel text-[6px] text-white/40">Last scored by {row.updatedByName}</p>
         )}
 
         {/* Anchor content + talking points — regular font, curated static content */}
@@ -393,7 +393,7 @@ function TeacherCriterionCard({
                 >
                   <span className="text-xs font-medium text-white/70">
                     {TIER_LABEL[a.tier]}{' '}
-                    <span className="text-white/35 font-normal">({a.scoreBand})</span>
+                    <span className="text-white/40 font-normal">({a.scoreBand})</span>
                   </span>
                   <p className="text-[12px] text-white/55 leading-relaxed">{a.description}</p>
                 </div>

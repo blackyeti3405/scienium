@@ -77,7 +77,7 @@ export function PapersSearch({ defaultQuery = '', onPick }: Props) {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && runSearch(query)}
               placeholder="Search arXiv + PubMed papers…"
-              className="w-full rounded-sm border border-white/20 bg-[#0a1628] px-4 py-2 pl-9 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#F5C518]/60"
+              className="w-full rounded-sm border border-white/20 bg-[#0a1628] px-4 py-2 pl-9 text-sm text-white placeholder:text-white/40 focus:outline-none focus:border-[#F5C518]/60"
               autoComplete="off"
             />
             {loading && (
@@ -102,7 +102,7 @@ export function PapersSearch({ defaultQuery = '', onPick }: Props) {
             Preprints {includePreprints ? '✓' : '✗'}
           </button>
         </div>
-        <p className="font-pixel text-[7px] text-white/30 leading-loose">
+        <p className="font-pixel text-[7px] text-white/40 leading-loose">
           One search across arXiv + PubMed — the badge on each result says preprint or
           peer-reviewed. Pick a paper to open its abstract, then follow its citations to branch.
         </p>
@@ -151,7 +151,7 @@ export function PapersSearch({ defaultQuery = '', onPick }: Props) {
                           Review
                         </span>
                       )}
-                      {r.published && <span className="text-[10px] text-white/30">{r.published}</span>}
+                      {r.published && <span className="text-[10px] text-white/40">{r.published}</span>}
                       {adding === r.externalId && <span className="text-[10px] text-[#F5C518] animate-pulse ml-auto">adding…</span>}
                     </div>
                     <p className="text-sm text-white/85 leading-snug line-clamp-2">{r.title}</p>

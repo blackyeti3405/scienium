@@ -192,7 +192,7 @@ export function DiscoveryHome({
                   </button>
                   <button
                     onClick={onCancelEdit}
-                    className="text-white/30 hover:text-white/60 shrink-0"
+                    className="text-white/40 hover:text-white/60 shrink-0"
                     title="Cancel"
                   >
                     <X size={13} />
@@ -205,7 +205,7 @@ export function DiscoveryHome({
             {!editingTopic && (
               <button
                 onClick={() => onBeginEdit(finalTopic ?? '')}
-                className="text-white/25 hover:text-[#F5C518]/70 shrink-0 transition-colors"
+                className="text-white/40 hover:text-[#F5C518]/70 shrink-0 transition-colors"
                 title="Edit research topic"
               >
                 <Pencil size={13} />

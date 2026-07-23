@@ -131,9 +131,9 @@ test('an economy building can be placed (purchased) and sold for a refund', asyn
   await page.getByRole('button', { name: 'Done arranging' }).click()
 
   // Sell via the new regular-mode menu: click the building to open .plot-menu,
-  // then click .plot-menu__sell. Use JS click to bypass pointer interception from
-  // overlapping isometric z-order.
-  await page.getByRole('button', { name: '3D Printing Shop' }).evaluate((el) => (el as HTMLButtonElement).click())
+  // then click .plot-menu__sell. A real pointer click lands thanks to the
+  // silhouette hitbox (LabPlot `.plot-building__hit`).
+  await page.getByRole('button', { name: '3D Printing Shop' }).click()
   await expect(page.locator('.plot-menu')).toBeVisible()
   await page.locator('.plot-menu__sell').click()
   await expect(page.getByText(/Sold 3D Printing Shop for .* KP/)).toBeVisible()

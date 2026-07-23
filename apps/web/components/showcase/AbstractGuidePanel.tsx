@@ -102,7 +102,7 @@ export function AbstractGuide() {
               >
                 {example.quality}
               </span>
-              <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest">
+              <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest">
                 {example.wordCount} words
               </span>
             </div>

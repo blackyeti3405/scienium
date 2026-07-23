@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage, uploadLogAttachment, clickBuilding, openLiteratureReview } from './api'
+import { api, withSeedPage, uploadLogAttachment, openLiteratureReview } from './api'
 import { e2eDb, e2eTeamId } from './db'
 
 /**
@@ -41,8 +41,7 @@ let seededFailureId: string | null = null
 /** Open the Operations Hub feature panel from /lab and switch to a given tab. */
 async function openOpsHub(page: Page, tab: 'Project Log' | 'Failure Log') {
   await page.goto('/lab')
-  await page.getByRole('button', { name: 'Open Operations Hub' }).waitFor({ state: 'attached' })
-  await clickBuilding(page, 'Open Operations Hub')
+  await page.getByRole('button', { name: 'Open Operations Hub' }).click()
   // Wait for the Operations Hub panel to open before clicking the tab.
   await expect(page.getByRole('dialog', { name: 'Operations Hub' })).toBeVisible({ timeout: 5000 })
   await page.getByRole('button', { name: tab }).click()
@@ -51,8 +50,7 @@ async function openOpsHub(page: Page, tab: 'Project Log' | 'Failure Log') {
 /** Open the Discovery feature panel from /lab, then click through the home screen. */
 async function openDiscovery(page: Page) {
   await page.goto('/lab')
-  await page.getByRole('button', { name: 'Open Discovery' }).waitFor({ state: 'attached' })
-  await clickBuilding(page, 'Open Discovery')
+  await page.getByRole('button', { name: 'Open Discovery' }).click()
   // Wait for the Discovery panel to open.
   const panel = page.getByRole('dialog', { name: 'Discovery' })
   await expect(panel).toBeVisible({ timeout: 5000 })

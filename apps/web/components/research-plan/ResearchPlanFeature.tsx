@@ -84,12 +84,12 @@ export function ResearchPlanFeature() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
         <div>
           <h2 className="font-pixel text-[10px] text-white">Research Plan</h2>
-          <p className="font-pixel text-[7px] text-white/35 mt-1">
+          <p className="font-pixel text-[7px] text-white/40 mt-1">
             Connect your plan, get a type-specific review, and check originality
           </p>
         </div>
         {synced && plan?.lastSyncedAt && (
-          <span className="font-pixel text-[7px] text-white/30">
+          <span className="font-pixel text-[7px] text-white/40">
             synced {formatDistanceToNow(new Date(plan.lastSyncedAt), { addSuffix: true })}
           </span>
         )}
@@ -132,7 +132,7 @@ export function ResearchPlanFeature() {
                   }`}
                 >
                   <span className="block text-[13px] text-white/85">{s.label}</span>
-                  <span className="block font-pixel text-[6px] text-white/35 mt-0.5">{s.blurb}</span>
+                  <span className="block font-pixel text-[6px] text-white/40 mt-0.5">{s.blurb}</span>
                 </button>
               ))}
             </div>
@@ -183,7 +183,7 @@ export function ResearchPlanFeature() {
 
           {mode === 'doc' ? (
             <>
-              <p className="font-pixel text-[7px] text-white/30 leading-loose mb-2">
+              <p className="font-pixel text-[7px] text-white/40 leading-loose mb-2">
                 Paste an &ldquo;Anyone with the link&rdquo; Google Doc URL. We read its latest text
                 on sync (no account connection needed yet).
               </p>
@@ -192,7 +192,7 @@ export function ResearchPlanFeature() {
                   value={docUrl}
                   onChange={(e) => setDocUrl(e.target.value)}
                   placeholder="https://docs.google.com/document/d/…"
-                  className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30"
+                  className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40"
                 />
                 <BusyButton
                   busy={syncing}
@@ -209,7 +209,7 @@ export function ResearchPlanFeature() {
             </>
           ) : (
             <>
-              <p className="font-pixel text-[7px] text-white/30 leading-loose mb-2">
+              <p className="font-pixel text-[7px] text-white/40 leading-loose mb-2">
                 Paste or type your plan text — the review and idea check read it directly.
               </p>
               <textarea
@@ -217,10 +217,10 @@ export function ResearchPlanFeature() {
                 onChange={(e) => setPlanText(e.target.value)}
                 placeholder="Paste your research plan here…"
                 rows={10}
-                className="w-full bg-[#0a1628] border border-white/20 text-white/90 text-[13px] leading-relaxed px-3 py-2.5 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 resize-y"
+                className="w-full bg-[#0a1628] border border-white/20 text-white/90 text-[13px] leading-relaxed px-3 py-2.5 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 resize-y"
               />
               <div className="flex items-center justify-between mt-2 gap-2">
-                <span className={`font-pixel text-[7px] ${overCap ? 'text-red-400' : 'text-white/30'}`}>
+                <span className={`font-pixel text-[7px] ${overCap ? 'text-red-400' : 'text-white/40'}`}>
                   {textLen.toLocaleString()} / {MAX_PLAN_TEXT.toLocaleString()}
                 </span>
                 <BusyButton
@@ -240,7 +240,7 @@ export function ResearchPlanFeature() {
 
           {synced && plan?.textPreview && (
             <div className="mt-3 px-3 py-2 bg-white/3 border border-white/10 rounded-sm">
-              <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest flex items-center gap-1 mb-1">
+              <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest flex items-center gap-1 mb-1">
                 <FileText size={9} /> synced preview
               </span>
               <p className="text-[12px] text-white/55 leading-relaxed line-clamp-3">

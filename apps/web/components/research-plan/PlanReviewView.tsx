@@ -142,7 +142,7 @@ export function PlanReviewView({
         {(strengths.length > 0 || gaps.length > 0 || recommendations.length > 0) && bulletGrid}
 
         {reviewedAt && (
-          <p className="text-xs text-white/30">Reviewed {fmtDate(reviewedAt)}</p>
+          <p className="text-xs text-white/40">Reviewed {fmtDate(reviewedAt)}</p>
         )}
       </div>
     )
@@ -273,7 +273,7 @@ function BulletColumn({
           </li>
         ))}
         {!teacher && items.length === 0 && streaming && (
-          <li className="font-pixel text-[7px] text-white/25">…</li>
+          <li className="font-pixel text-[7px] text-white/40">…</li>
         )}
       </ul>
     </div>

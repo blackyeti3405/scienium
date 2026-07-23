@@ -42,13 +42,13 @@ export function FailureLogTab() {
           visual parity wins over adoption. */}
       {loadError ? (
         <div className="ops-empty">
-          <AlertTriangle size={22} className="text-white/25 mb-2" />
+          <AlertTriangle size={22} className="text-white/40 mb-2" />
           <span className="font-pixel text-[8px] text-white/40">{loadError}</span>
         </div>
       ) : entries.length === 0 ? (
         <div className="ops-empty">
-          <AlertTriangle size={22} className="text-white/15 mb-2" />
-          <span className="font-pixel text-[8px] text-white/30">No failures logged yet — every setback is data.</span>
+          <AlertTriangle size={22} className="text-white/40 mb-2" />
+          <span className="font-pixel text-[8px] text-white/40">No failures logged yet — every setback is data.</span>
         </div>
       ) : (
         <div className="ops-timeline">
@@ -76,9 +76,9 @@ export function FailureLogTab() {
                     <Avatar name={e.author} size={24} />
                     <div className="flex flex-col min-w-0">
                       <span className="font-pixel text-[7px] text-white/70">{e.author}</span>
-                      <span className="font-pixel text-[6px] text-white/30 mt-0.5">
+                      <span className="font-pixel text-[6px] text-white/40 mt-0.5">
                         {formatDate(e.createdAt)} · {timeAgo(e.createdAt)}
-                        {e.editedBy && <span className="text-white/25"> · edited by {e.editedBy}</span>}
+                        {e.editedBy && <span className="text-white/40"> · edited by {e.editedBy}</span>}
                       </span>
                     </div>
                     <div className="ops-entry-actions">
@@ -94,7 +94,7 @@ export function FailureLogTab() {
                       />
                     </div>
                   </div>
-                  <p className="font-pixel text-[6px] text-white/30 uppercase tracking-widest mb-1">What failed</p>
+                  <p className="font-pixel text-[6px] text-white/40 uppercase tracking-widest mb-1">What failed</p>
                   <p className="text-sm text-white/80 leading-relaxed mb-3">{e.happened}</p>
                   <div className="ops-nextsteps">
                     <span className="ops-nextsteps__label font-pixel">What I learned</span>

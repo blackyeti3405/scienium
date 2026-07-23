@@ -60,7 +60,7 @@ export function BuildingsSection({ overview }: { overview: Overview }) {
                   <span className="ml-2 text-white/50 text-xs">Lv {b.currentLevel}</span>
                 </div>
                 {b.lastUpgradedByName && (
-                  <span className="text-white/35 text-xs">
+                  <span className="text-white/40 text-xs">
                     upgraded by {b.lastUpgradedByName}
                     {b.lastUpgradedAt ? ` · ${fmtDate(b.lastUpgradedAt)}` : ''}
                   </span>
@@ -79,7 +79,7 @@ export function BuildingsSection({ overview }: { overview: Overview }) {
                 <div className="flex items-center justify-between">
                   <span className="font-medium text-white text-sm">{b.name}</span>
                   {b.purchasedByName && (
-                    <span className="text-white/35 text-xs">
+                    <span className="text-white/40 text-xs">
                       {b.purchasedByName} · {fmtDate(b.purchasedAt)}
                     </span>
                   )}

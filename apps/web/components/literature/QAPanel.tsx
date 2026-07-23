@@ -47,7 +47,7 @@ export function QAPanel({
               href={paper.fileUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-pixel text-[7px] text-white/30 hover:text-white/60 flex items-center gap-1 shrink-0"
+              className="font-pixel text-[7px] text-white/40 hover:text-white/60 flex items-center gap-1 shrink-0"
             >
               <ExternalLink size={9} />
               open
@@ -58,7 +58,7 @@ export function QAPanel({
         {paper.fileUrl ? (
           <iframe src={paper.fileUrl} className="flex-1 w-full" title="Paper PDF" />
         ) : (
-          <div className="flex-1 flex items-center justify-center text-white/20">
+          <div className="flex-1 flex items-center justify-center text-white/40">
             <p className="font-pixel text-[8px] text-center px-6">PDF not available</p>
           </div>
         )}
@@ -113,7 +113,7 @@ export function QAPanel({
               </button>
             </div>
           )}
-          <button onClick={onClose} aria-label="Close Q&A" className="text-white/30 hover:text-white/60 transition-colors">
+          <button onClick={onClose} aria-label="Close Q&A" className="text-white/40 hover:text-white/60 transition-colors">
             <X size={13} />
           </button>
         </div>

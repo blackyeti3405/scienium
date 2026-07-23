@@ -81,7 +81,7 @@ export function CheckpointResults({
                   +{result.kpEarned} KP earned
                 </div>
               ) : (
-                <p className="font-pixel text-[7px] text-white/35 uppercase tracking-widest mt-4">
+                <p className="font-pixel text-[7px] text-white/40 uppercase tracking-widest mt-4">
                   Already earned — no new KP
                 </p>
               )}
@@ -104,7 +104,7 @@ export function CheckpointResults({
                 )}
               </div>
               {onNext && nextLabel && (
-                <p className="font-pixel text-[7px] text-white/30 mt-3">Up next: {nextLabel}</p>
+                <p className="font-pixel text-[7px] text-white/40 mt-3">Up next: {nextLabel}</p>
               )}
             </div>
           ) : (
@@ -117,7 +117,7 @@ export function CheckpointResults({
                 </p>
               </div>
 
-              <p className="font-pixel text-[7px] text-white/35 uppercase tracking-widest mt-6 mb-2">Review your misses</p>
+              <p className="font-pixel text-[7px] text-white/40 uppercase tracking-widest mt-6 mb-2">Review your misses</p>
               <div className="space-y-2.5">
                 {result.perQuestion
                   .filter((q) => !q.correct && q.explanation)

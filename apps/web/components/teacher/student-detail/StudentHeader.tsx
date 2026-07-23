@@ -61,17 +61,17 @@ export function StudentHeader({ overview }: { overview: Overview }) {
             {team && <span>{team.name}</span>}
             {labTypeLabel && (
               <>
-                <span className="text-white/20">·</span>
+                <span className="text-white/40">·</span>
                 <span>{labTypeLabel}</span>
               </>
             )}
             {student.class && (
               <>
-                <span className="text-white/20">·</span>
+                <span className="text-white/40">·</span>
                 <span>{student.class.name}</span>
               </>
             )}
-            <span className="text-white/20">·</span>
+            <span className="text-white/40">·</span>
             <span>Joined {fmtDate(student.joinedAt ?? student.createdAt)}</span>
           </p>
           {/* Stat chips */}
@@ -125,7 +125,7 @@ export function StudentHeader({ overview }: { overview: Overview }) {
                           ? 'text-[#F5C518] font-medium'
                           : isPast
                           ? 'text-white/40'
-                          : 'text-white/20'
+                          : 'text-white/40'
                       }`}
                     >
                       {info.label}

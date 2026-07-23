@@ -28,7 +28,7 @@ export function EmptyState({ icon, message, hint, bordered = true, testId }: Emp
     >
       {icon && <div className="mb-2 text-base text-white/40">{icon}</div>}
       <p className="font-pixel text-[9px] text-white/40">{message}</p>
-      {hint && <p className="mt-2 text-[12px] leading-relaxed text-white/35">{hint}</p>}
+      {hint && <p className="mt-2 text-[12px] leading-relaxed text-white/40">{hint}</p>}
     </div>
   )
 }

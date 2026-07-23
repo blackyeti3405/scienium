@@ -46,13 +46,13 @@ export function BranchSelectionPanel({
               : 'border-dashed border-white/15 bg-white/[0.02] text-white/40'
           }`}
         >
-          <span className={`shrink-0 text-base ${pendingLinks[i] ? 'text-[#F5C518]' : 'text-white/30'}`}>
+          <span className={`shrink-0 text-base ${pendingLinks[i] ? 'text-[#F5C518]' : 'text-white/40'}`}>
             {pendingLinks[i] ? '✓' : '○'}
           </span>
           <span className="truncate flex-1 text-xs text-white/80">
             {pendingLinks[i]
               ? labelFor(pendingLinks[i])
-              : <span className="italic text-white/30">{emptyHint}</span>}
+              : <span className="italic text-white/40">{emptyHint}</span>}
           </span>
           {pendingLinks[i] && (
             <button

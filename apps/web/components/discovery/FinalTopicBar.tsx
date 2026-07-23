@@ -54,7 +54,7 @@ export function FinalTopicBar({
               if (e.key === 'Escape') onCancelEdit()
             }}
             placeholder="State your final research topic…"
-            className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 rounded-sm px-2.5 py-1.5 outline-none focus:border-[#F5C518]/60"
+            className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/40 rounded-sm px-2.5 py-1.5 outline-none focus:border-[#F5C518]/60"
           />
           <BusyButton
             busy={saving}

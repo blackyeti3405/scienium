@@ -142,11 +142,11 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
               <div>
                 <div className="flex items-baseline justify-between mb-2">
                   <h3 className="font-pixel text-[9px] text-white/90">{data.name}</h3>
-                  <span className="font-pixel text-[8px] text-white/35">
+                  <span className="font-pixel text-[8px] text-white/40">
                     {data.memberCount} / {data.maxMembers} researchers
                   </span>
                 </div>
-                <p className="font-pixel text-[7px] text-white/30 leading-loose mb-2">
+                <p className="font-pixel text-[7px] text-white/40 leading-loose mb-2">
                   Each researcher earns KP independently — it all adds to your shared lab total,
                   shown the same for everyone.
                 </p>
@@ -159,15 +159,15 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                       {m.role === 'lead' ? (
                         <Crown size={12} className="text-[#F5C518] shrink-0" />
                       ) : (
-                        <Users size={12} className="text-white/30 shrink-0" />
+                        <Users size={12} className="text-white/40 shrink-0" />
                       )}
                       <span className="text-sm text-white/85 truncate">{m.name}</span>
                       {m.isYou && (
-                        <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest">
+                        <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest">
                           you
                         </span>
                       )}
-                      <span className="ml-auto font-pixel text-[6px] text-white/30 uppercase tracking-widest">
+                      <span className="ml-auto font-pixel text-[6px] text-white/40 uppercase tracking-widest">
                         {m.role}
                       </span>
                     </li>
@@ -181,7 +181,7 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                   <GraduationCap size={11} className="text-[#F5C518]" /> Your teacher&apos;s class
                 </h3>
                 {data.myClass ? (
-                  <p className="font-pixel text-[7px] text-white/35 leading-loose">
+                  <p className="font-pixel text-[7px] text-white/40 leading-loose">
                     Connected to <span className="text-[#F5C518]">{data.myClass.name}</span> — your
                     teacher can see this lab&apos;s progress.
                   </p>
@@ -191,7 +191,7 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                     for your teacher to approve you before your lab is linked.
                   </p>
                 ) : (
-                  <p className="font-pixel text-[7px] text-white/35 leading-loose">
+                  <p className="font-pixel text-[7px] text-white/40 leading-loose">
                     Not linked to a teacher yet. Enter the class code from your teacher — they&apos;ll
                     approve your request so they can follow your lab.
                   </p>
@@ -202,7 +202,7 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                     onChange={(e) => setClassCode(e.target.value.toUpperCase())}
                     placeholder={data.myClass ? 'Switch class code' : 'Class code'}
                     maxLength={32}
-                    className="flex-1 min-w-0 bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.2em] px-3 py-2.5 rounded-sm outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30 placeholder:tracking-normal"
+                    className="flex-1 min-w-0 bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.2em] px-3 py-2.5 rounded-sm outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40 placeholder:tracking-normal"
                   />
                   <BusyButton
                     busy={joining}
@@ -225,12 +225,12 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                     <UserPlus size={11} className="text-[#F5C518]" /> Invite a researcher
                   </h3>
                   {full ? (
-                    <p className="font-pixel text-[7px] text-white/35 leading-loose">
+                    <p className="font-pixel text-[7px] text-white/40 leading-loose">
                       Your lab is full ({data.maxMembers} researchers). No seats to fill.
                     </p>
                   ) : (
                     <>
-                      <p className="font-pixel text-[7px] text-white/35 leading-loose mb-3">
+                      <p className="font-pixel text-[7px] text-white/40 leading-loose mb-3">
                         Share a single-use code. Each member tracks their own source proficiency
                         and earns KP independently.
                       </p>
@@ -267,7 +267,7 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                   )}
                 </div>
               ) : (
-                <p className="border-t border-white/10 pt-4 font-pixel text-[7px] text-white/30 leading-loose">
+                <p className="border-t border-white/10 pt-4 font-pixel text-[7px] text-white/40 leading-loose">
                   Only the lab lead can invite new researchers.
                 </p>
               )}

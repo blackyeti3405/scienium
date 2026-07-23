@@ -87,7 +87,7 @@ export function ChartsGuidePanel() {
       {loading ? (
         <div className="flex items-center justify-center py-10 gap-2">
           <PixelSpinner size="md" tone="chrome" />
-          <span className="font-pixel text-[8px] text-white/35">Loading field…</span>
+          <span className="font-pixel text-[8px] text-white/40">Loading field…</span>
         </div>
       ) : error ? (
         <div className="border border-dashed border-red-400/25 py-10 text-center">

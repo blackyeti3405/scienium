@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api, withSeedPage, clickBuilding } from './api'
+import { api, withSeedPage } from './api'
 import { e2eDb } from './db'
 import { findLessonLocation } from '../lib/ops/codex/engine'
 
@@ -128,8 +128,7 @@ interface ProgressResponse {
  *  dev-only phase override) and switch to the Field Codex tab. */
 async function openCodex(page: Page, phase?: string) {
   await page.goto(phase ? `/lab?phase=${phase}` : '/lab')
-  await page.getByRole('button', { name: 'Open Operations Hub' }).waitFor({ state: 'attached' })
-  await clickBuilding(page, 'Open Operations Hub')
+  await page.getByRole('button', { name: 'Open Operations Hub' }).click({ timeout: 10_000 })
   await expect(page.getByRole('dialog', { name: 'Operations Hub' })).toBeVisible({ timeout: 15_000 })
   const codexTab = page.getByTestId('codex-tab')
   await expect(codexTab).toBeVisible({ timeout: 30_000 })

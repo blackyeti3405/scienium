@@ -143,7 +143,7 @@ export function DiscoveryTree({
       <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
         <span className="text-3xl">🌱</span>
         <p className="font-pixel text-[8px] text-white/50 leading-loose">Your discovery tree<br/>will appear here</p>
-        <p className="font-pixel text-[7px] text-white/30">Search a topic above to start exploring</p>
+        <p className="font-pixel text-[7px] text-white/40">Search a topic above to start exploring</p>
       </div>
     )
   }

@@ -77,7 +77,7 @@ export function ArticleReader({ node, onStar, onBack }: Props) {
               {isFull ? 'full article' : 'link-out'}
             </span>
             {node.articlePublishedAt && (
-              <span className="text-[11px] text-white/35">
+              <span className="text-[11px] text-white/40">
                 {new Date(node.articlePublishedAt).toLocaleDateString()}
               </span>
             )}
@@ -91,11 +91,11 @@ export function ArticleReader({ node, onStar, onBack }: Props) {
                 Conversation; explainer content (MedlinePlus/NIH) is a US-
                 government public-domain work and must not carry a CC notice. */}
             {isFull && node.provider === 'explainer' ? (
-              <span className="block text-[11px] text-white/35 mt-0.5">
+              <span className="block text-[11px] text-white/40 mt-0.5">
                 Source: {sourceName} — content in the public domain
               </span>
             ) : isFull ? (
-              <span className="block text-[11px] text-white/35 mt-0.5">
+              <span className="block text-[11px] text-white/40 mt-0.5">
                 Republished from {sourceName} under CC BY-ND
               </span>
             ) : null}
@@ -106,7 +106,7 @@ export function ArticleReader({ node, onStar, onBack }: Props) {
             onClick={onStar}
             title={node.starred ? 'Unstar this article' : 'Star this article'}
             className={`text-xl transition-colors ${
-              node.starred ? 'text-[#F5C518]' : 'text-white/30 hover:text-[#F5C518]/70'
+              node.starred ? 'text-[#F5C518]' : 'text-white/40 hover:text-[#F5C518]/70'
             }`}
           >
             {node.starred ? '★' : '☆'}

@@ -82,7 +82,7 @@ const BADGE_TONE: Record<RowTone, string> = {
   selected: 'border-[#F5C518] bg-[#F5C518] text-[#0d1b2e]',
   correct: 'border-emerald-400 bg-emerald-400 text-[#0d1b2e]',
   wrong: 'border-red-400 bg-red-400 text-[#0d1b2e]',
-  dim: 'border-white/12 text-white/35',
+  dim: 'border-white/12 text-white/40',
 }
 
 const ROW_BASE =
@@ -167,7 +167,7 @@ export function OrderingAnswer({
   }
   return (
     <div className="space-y-2">
-      <p className="font-pixel text-[7px] text-white/35 uppercase tracking-widest">Put these in order</p>
+      <p className="font-pixel text-[7px] text-white/40 uppercase tracking-widest">Put these in order</p>
       {order.map((itemId, idx) => {
         const item = question.items.find((it) => it.id === itemId)!
         let tone: RowTone = 'idle'
@@ -223,7 +223,7 @@ export function MatchingAnswer({
   const locked = !!reveal
   return (
     <div className="space-y-2">
-      <p className="font-pixel text-[7px] text-white/35 uppercase tracking-widest">Match each pair</p>
+      <p className="font-pixel text-[7px] text-white/40 uppercase tracking-widest">Match each pair</p>
       {question.left.map((l) => {
         let tone: RowTone = 'idle'
         if (reveal?.matchingCorrectByLeft) tone = pairs[l.id] && pairs[l.id] === reveal.matchingCorrectByLeft[l.id] ? 'correct' : 'wrong'

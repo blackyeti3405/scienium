@@ -226,7 +226,7 @@ function CriterionCard({
             onBlur={save}
             className="w-16 bg-[#0a1628] border border-white/20 text-white text-sm px-2 py-1.5 outline-none focus:border-[#F5C518]/60 rounded-sm"
           />
-          <span className="font-pixel text-[7px] text-white/30">/ {row.maxScore}</span>
+          <span className="font-pixel text-[7px] text-white/40">/ {row.maxScore}</span>
 
           <BusyButton
             busy={saving}
@@ -253,13 +253,13 @@ function CriterionCard({
           rows={2}
           maxLength={1000}
           placeholder="Notes — what still needs work here?"
-          className="w-full bg-[#0a1628] border border-white/15 text-white text-[13px] px-3 py-2 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/25 resize-none rounded-sm"
+          className="w-full bg-[#0a1628] border border-white/15 text-white text-[13px] px-3 py-2 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40 resize-none rounded-sm"
         />
 
         {saveError && <p className="font-pixel text-[7px] text-red-400 leading-loose">{saveError}</p>}
 
         {row.updatedByName && !saveError && (
-          <p className="font-pixel text-[6px] text-white/25">Last updated by {row.updatedByName}</p>
+          <p className="font-pixel text-[6px] text-white/40">Last updated by {row.updatedByName}</p>
         )}
       </div>
     </div>

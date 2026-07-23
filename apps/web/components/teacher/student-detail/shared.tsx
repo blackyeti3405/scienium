@@ -10,5 +10,5 @@ export function Field({ label, value }: { label: string; value: string | React.R
 }
 
 export function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="text-sm text-white/30 py-2">{children}</p>
+  return <p className="text-sm text-white/40 py-2">{children}</p>
 }

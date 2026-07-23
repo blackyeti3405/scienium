@@ -129,7 +129,7 @@ function MethodBox({
       </div>
 
       {method.fieldRef && (
-        <p className="font-pixel text-[6px] text-white/30 uppercase tracking-widest">
+        <p className="font-pixel text-[6px] text-white/40 uppercase tracking-widest">
           See also: Charts Guide → {method.fieldRef}
         </p>
       )}

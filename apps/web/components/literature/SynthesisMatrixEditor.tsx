@@ -107,7 +107,7 @@ export function SynthesisMatrixEditor({ matrixId, onBack }: { matrixId: string; 
             <thead>
               <tr>
                 <th className="text-left pl-6 pr-2 py-2 sticky left-0 bg-[#0d1b2e] z-20 border-r border-white/10 min-w-[184px]">
-                  <span className="font-pixel text-[7px] text-white/30 uppercase">Source</span>
+                  <span className="font-pixel text-[7px] text-white/40 uppercase">Source</span>
                 </th>
                 {matrix.columns.map((col, i) => (
                   <th
@@ -149,14 +149,14 @@ export function SynthesisMatrixEditor({ matrixId, onBack }: { matrixId: string; 
                           <button
                             title="Remove column"
                             onClick={() => removeColumn(col.id)}
-                            className="text-white/20 hover:text-red-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="text-white/40 hover:text-red-400 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                           >
                             <X size={10} />
                           </button>
                         )}
                       </div>
                     )}
-                    {col.hint && <p className="mt-1 text-[10px] text-white/35 leading-snug">{col.hint}</p>}
+                    {col.hint && <p className="mt-1 text-[10px] text-white/40 leading-snug">{col.hint}</p>}
                   </th>
                 ))}
                 <th className="p-2 align-top min-w-[160px]">
@@ -266,7 +266,7 @@ export function SynthesisMatrixEditor({ matrixId, onBack }: { matrixId: string; 
           className="border-t border-white/10 px-6 py-5 max-h-[45%] overflow-y-auto flex flex-col gap-5"
         >
           {lastResult?.cached && (
-            <span className="font-pixel text-[6px] uppercase tracking-widest text-white/25">
+            <span className="font-pixel text-[6px] uppercase tracking-widest text-white/40">
               cached — grid unchanged since last check
             </span>
           )}
@@ -288,7 +288,7 @@ export function SynthesisMatrixEditor({ matrixId, onBack }: { matrixId: string; 
           <VerdictSection title="Gaps" empty="No obvious gaps flagged.">
             {verdict.gaps.map((g, i) => (
               <li key={`gap-${i}`} className="flex items-start gap-2">
-                <AlertTriangle size={11} className="text-white/30 shrink-0 mt-0.5" />
+                <AlertTriangle size={11} className="text-white/40 shrink-0 mt-0.5" />
                 <span className="text-[12px] text-white/65 leading-relaxed">{g.text}</span>
               </li>
             ))}

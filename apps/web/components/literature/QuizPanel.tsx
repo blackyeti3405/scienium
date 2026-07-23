@@ -26,7 +26,7 @@ function QAExplain({ rationale, strongAnswer }: { rationale?: string; strongAnsw
       )}
       {strongAnswer && (
         <p className="text-[13px] text-white/60 leading-relaxed pl-5">
-          <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest block mb-0.5">
+          <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest block mb-0.5">
             What a strong answer covers
           </span>
           {strongAnswer}
@@ -82,7 +82,7 @@ export function QuizPanel({
           <div
             className={`flex-1 overflow-y-auto p-4 flex flex-col gap-5 transition-opacity ${phase === 'grading' ? 'opacity-50 pointer-events-none' : ''}`}
           >
-            <p className="font-pixel text-[7px] text-white/35 leading-loose">
+            <p className="font-pixel text-[7px] text-white/40 leading-loose">
               Answer in your own words to demonstrate you understood this paper. Pass mark:{' '}
               {results?.threshold ?? 70}%.
             </p>
@@ -98,7 +98,7 @@ export function QuizPanel({
                   rows={3}
                   placeholder="Your answer…"
                   readOnly={phase === 'grading'}
-                  className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
+                  className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/40 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
                 />
               </div>
             ))}
@@ -182,7 +182,7 @@ export function QuizPanel({
                   </div>
                   {answers[q.id] && (
                     <p className="text-[13px] text-white/70 leading-relaxed pl-5 border-l border-white/10 ml-1">
-                      <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest block mb-0.5">
+                      <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest block mb-0.5">
                         Your answer
                       </span>
                       {answers[q.id]}
@@ -229,7 +229,7 @@ export function QuizPanel({
               <div
                 className={`flex-1 overflow-y-auto p-4 flex flex-col gap-5 transition-opacity ${phase === 'retrying' ? 'opacity-50 pointer-events-none' : ''}`}
               >
-                <p className="font-pixel text-[7px] text-white/35 leading-loose">
+                <p className="font-pixel text-[7px] text-white/40 leading-loose">
                   Fix your missed questions, plus one new question. Pass mark: {results?.threshold ?? 70}%.
                 </p>
                 {failedQuestions.map((q, i) => {
@@ -242,7 +242,7 @@ export function QuizPanel({
                       </div>
                       {answers[q.id] && (
                         <p className="text-[13px] text-white/50 leading-relaxed pl-5 border-l border-white/10 ml-1">
-                          <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest block mb-0.5">
+                          <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest block mb-0.5">
                             Your previous answer
                           </span>
                           {answers[q.id]}
@@ -257,7 +257,7 @@ export function QuizPanel({
                         rows={3}
                         placeholder="Your new answer…"
                         readOnly={phase === 'retrying'}
-                        className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
+                        className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/40 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
                       />
                     </div>
                   )
@@ -269,7 +269,7 @@ export function QuizPanel({
                         {failedQuestions.length + 1}.
                       </span>
                       <p className="text-sm text-white/85 leading-relaxed">{newQuestion.prompt}</p>
-                      <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest shrink-0">
+                      <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest shrink-0">
                         New
                       </span>
                     </div>
@@ -281,7 +281,7 @@ export function QuizPanel({
                       rows={3}
                       placeholder="Your answer…"
                       readOnly={phase === 'retrying'}
-                      className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
+                      className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/40 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
                     />
                   </div>
                 )}

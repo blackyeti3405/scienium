@@ -243,8 +243,14 @@ export function LabPlot({
         title={tooltip}
         aria-label={name}
       >
-        <span className="plot-building__art">
-          <Sprite entry={sprite} scale={PLOT_SCALE} />
+        {/* The button box is a transparent rectangle that overlaps neighbours in
+            iso; restrict the actual pointer-hit region to the sprite silhouette
+            (clip-path clips hit-testing too) so a real click lands on the
+            building under the cursor, not a neighbour's transparent corner. */}
+        <span className="plot-building__hit">
+          <span className="plot-building__art">
+            <Sprite entry={sprite} scale={PLOT_SCALE} />
+          </span>
         </span>
         {kind === 'economy' && (
           <span className="plot-level font-pixel">L{item.level ?? 1}</span>

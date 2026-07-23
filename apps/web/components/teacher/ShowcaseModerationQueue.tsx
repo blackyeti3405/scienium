@@ -63,7 +63,7 @@ export function ShowcaseModerationQueue() {
           <div>
             <p className="text-xs text-white font-medium">{s.shortTitle || s.title}</p>
             {s.shortTitle && (
-              <p className="font-pixel text-[7px] text-white/35 mt-0.5 leading-relaxed">{s.title}</p>
+              <p className="font-pixel text-[7px] text-white/40 mt-0.5 leading-relaxed">{s.title}</p>
             )}
           </div>
 
@@ -73,7 +73,7 @@ export function ShowcaseModerationQueue() {
             </p>
           )}
 
-          <div className="font-pixel text-[7px] text-white/35">
+          <div className="font-pixel text-[7px] text-white/40">
             {s.team.labType && <span className="uppercase mr-2">{s.team.labType.replace('_', ' ')}</span>}
             Last edited {new Date(s.lastEditedAt).toLocaleDateString()}
           </div>

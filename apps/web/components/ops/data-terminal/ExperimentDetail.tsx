@@ -225,7 +225,7 @@ export function ExperimentDetail({
         <div ref={chartRef} className="bg-[#0a1628] border border-white/10 p-2" style={{ height: 240 }}>
           {chartData.length === 0 ? (
             <div className="h-full flex items-center justify-center">
-              <span className="font-pixel text-[8px] text-white/25">
+              <span className="font-pixel text-[8px] text-white/40">
                 Add points to plot the graph
               </span>
             </div>
@@ -292,28 +292,28 @@ export function ExperimentDetail({
               onChange={(e) => setX(e.target.value)}
               placeholder={experiment.xLabel}
               inputMode="decimal"
-              className="w-20 bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+              className="w-20 bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40"
             />
             <input
               value={y}
               onChange={(e) => setY(e.target.value)}
               placeholder={experiment.yLabel}
               inputMode="decimal"
-              className="w-20 bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+              className="w-20 bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40"
             />
             <input
               value={series}
               onChange={(e) => setSeries(e.target.value)}
               placeholder="series (optional)"
               maxLength={40}
-              className="flex-1 min-w-[120px] bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+              className="flex-1 min-w-[120px] bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40"
             />
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="note (optional)"
               maxLength={200}
-              className="flex-1 min-w-[140px] bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+              className="flex-1 min-w-[140px] bg-[#0a1628] border border-white/15 text-white text-xs px-2 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40"
             />
             <BusyButton
               busy={busy}
@@ -346,12 +346,12 @@ export function ExperimentDetail({
             className="w-full flex items-center justify-between px-3 py-2 font-pixel text-[8px] text-white/50 hover:text-white/80 transition-colors"
           >
             <span>Paste from spreadsheet</span>
-            <span className="text-white/30">{pasteOpen ? '▲' : '▼'}</span>
+            <span className="text-white/40">{pasteOpen ? '▲' : '▼'}</span>
           </button>
 
           {pasteOpen && (
             <div className="px-3 pb-3 space-y-2">
-              <p className="font-pixel text-[7px] text-white/30">
+              <p className="font-pixel text-[7px] text-white/40">
                 x, y, series, note — one row per line (tab or comma separated)
               </p>
               <textarea
@@ -359,7 +359,7 @@ export function ExperimentDetail({
                 onChange={(e) => setPasteText(e.target.value)}
                 rows={6}
                 placeholder="Paste spreadsheet data here…"
-                className="w-full bg-[#0d1b2e] border border-white/15 text-white text-xs px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/20 resize-y"
+                className="w-full bg-[#0d1b2e] border border-white/15 text-white text-xs px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 resize-y"
               />
               {busy ? (
                 <LabeledLoader
@@ -385,7 +385,7 @@ export function ExperimentDetail({
         {measurements.length > 0 && (
           <table className="w-full text-xs text-white/80 border-collapse">
             <thead>
-              <tr className="font-pixel text-[7px] text-white/35 uppercase">
+              <tr className="font-pixel text-[7px] text-white/40 uppercase">
                 <th className="text-left py-1">{experiment.xLabel}</th>
                 <th className="text-left py-1">{experiment.yLabel}</th>
                 <th className="text-left py-1">series</th>
@@ -405,7 +405,7 @@ export function ExperimentDetail({
                       busy={deletingPointId === m.id}
                       icon={<Trash2 size={12} />}
                       onClick={() => removePoint(m.id)}
-                      className="text-white/25 hover:text-red-400 transition-colors disabled:text-white/25"
+                      className="text-white/40 hover:text-red-400 transition-colors disabled:text-white/40"
                       aria-label="Delete point"
                     />
                   </td>

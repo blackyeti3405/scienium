@@ -157,7 +157,7 @@ export function FeedbackPanel({
           )}
 
           {!loading && !error && items.length === 0 && (
-            <p className="font-pixel text-[8px] text-white/30 text-center py-10 px-6">
+            <p className="font-pixel text-[8px] text-white/40 text-center py-10 px-6">
               No feedback from your teacher yet.
             </p>
           )}
@@ -177,11 +177,11 @@ export function FeedbackPanel({
                     <span className="font-pixel text-[8px] text-[#F5C518]">
                       {item.teacher.name ?? 'Your teacher'}
                     </span>
-                    <span className="font-pixel text-[7px] text-white/30">·</span>
-                    <span className="font-pixel text-[7px] text-white/30">
+                    <span className="font-pixel text-[7px] text-white/40">·</span>
+                    <span className="font-pixel text-[7px] text-white/40">
                       {timeAgo(item.createdAt)}
                     </span>
-                    <span className="font-pixel text-[7px] text-white/30">·</span>
+                    <span className="font-pixel text-[7px] text-white/40">·</span>
                     <span className="font-pixel text-[7px] text-[#7ff2e3]/60">
                       {targetLabel(item.targetType)}
                     </span>
@@ -201,7 +201,7 @@ export function FeedbackPanel({
                         busy={patching === item.id}
                         showSpinner={false}
                         onClick={() => toggleResolved(item, false)}
-                        className="font-pixel text-[7px] text-white/30 hover:text-white/60 transition-colors disabled:opacity-40"
+                        className="font-pixel text-[7px] text-white/40 hover:text-white/60 transition-colors disabled:opacity-40"
                       >
                         undo
                       </BusyButton>

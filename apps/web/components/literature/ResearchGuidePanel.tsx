@@ -72,7 +72,7 @@ export function ResearchGuidePanel({ onClose }: { onClose: () => void }) {
               Anatomy of a Paper
             </button>
           </div>
-          <button onClick={onClose} aria-label="Close Research Guide" className="text-white/30 hover:text-white/60 transition-colors">
+          <button onClick={onClose} aria-label="Close Research Guide" className="text-white/40 hover:text-white/60 transition-colors">
             <X size={13} />
           </button>
         </div>
@@ -128,7 +128,7 @@ function GlossaryView() {
         </select>
         <ChevronDown
           size={13}
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/30"
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/40"
         />
       </div>
 

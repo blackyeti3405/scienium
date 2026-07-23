@@ -83,7 +83,7 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
       {/* Feed picker (grouped Conversation vs Journalism) + keyword filter */}
       <div className="px-6 py-4 border-b border-white/10 shrink-0 space-y-2.5">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-pixel text-[7px] text-white/30 uppercase tracking-widest shrink-0">
+          <span className="font-pixel text-[7px] text-white/40 uppercase tracking-widest shrink-0">
             The Conversation
           </span>
           <div className="flex items-center rounded-sm border border-white/15 overflow-hidden">
@@ -101,7 +101,7 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-pixel text-[7px] text-white/30 uppercase tracking-widest shrink-0">
+          <span className="font-pixel text-[7px] text-white/40 uppercase tracking-widest shrink-0">
             Journalism
           </span>
           <div className="flex items-center rounded-sm border border-white/15 overflow-hidden">
@@ -120,7 +120,7 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
         </div>
         {(explainerFeeds.length > 0 || patentFeeds.length > 0) && (
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-pixel text-[7px] text-white/30 uppercase tracking-widest shrink-0">
+            <span className="font-pixel text-[7px] text-white/40 uppercase tracking-widest shrink-0">
               Look it up
             </span>
             <div className="flex items-center rounded-sm border border-white/15 overflow-hidden">
@@ -150,7 +150,7 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
                   ? 'Search patents for prior art…'
                   : 'Filter this feed by keyword…'
             }
-            className="w-full rounded-sm border border-white/20 bg-[#0a1628] px-4 py-2 pl-9 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#F5C518]/60"
+            className="w-full rounded-sm border border-white/20 bg-[#0a1628] px-4 py-2 pl-9 text-sm text-white placeholder:text-white/40 focus:outline-none focus:border-[#F5C518]/60"
             autoComplete="off"
           />
           {loading && <PixelSpinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />}
@@ -192,7 +192,7 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
                       >
                         {r.sourceName}
                       </span>
-                      <span className="font-pixel text-[6px] text-white/30 uppercase">
+                      <span className="font-pixel text-[6px] text-white/40 uppercase">
                         {r.renderMode === 'full' ? 'full article' : 'link-out'}
                       </span>
                       {r.provider === 'explainer' && (
@@ -210,7 +210,7 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
                         </span>
                       )}
                       {r.publishedAt && (
-                        <span className="text-[10px] text-white/30">
+                        <span className="text-[10px] text-white/40">
                           {new Date(r.publishedAt).toLocaleDateString()}
                         </span>
                       )}
@@ -220,7 +220,7 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
                     </div>
                     <p className="text-sm text-white/85 leading-snug line-clamp-2">{r.title}</p>
                     {r.author && <p className="text-[11px] text-white/40 mt-0.5 truncate">{r.author}</p>}
-                    {r.excerpt && <p className="text-[11px] text-white/30 mt-1 line-clamp-2">{r.excerpt}</p>}
+                    {r.excerpt && <p className="text-[11px] text-white/40 mt-1 line-clamp-2">{r.excerpt}</p>}
                   </button>
                 </li>
               )

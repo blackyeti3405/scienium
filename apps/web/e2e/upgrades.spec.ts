@@ -125,11 +125,10 @@ test.describe('upgrades feature', () => {
     }
 
     // Open a placed economy building's Sell/Upgrade menu via a REGULAR-mode click
-    // (not arrange). JS .click() bypasses isometric z-order overlap.
+    // (not arrange). The silhouette hitbox (LabPlot `.plot-building__hit`) lets a
+    // real pointer click land on the intended building.
     async function openBuildingMenu(page: Page) {
-      await page
-        .getByRole('button', { name: UPGRADE_BUILDING_NAME })
-        .evaluate((el) => (el as HTMLButtonElement).click())
+      await page.getByRole('button', { name: UPGRADE_BUILDING_NAME }).click()
       await expect(page.locator('.plot-menu')).toBeVisible()
     }
 
@@ -160,9 +159,7 @@ test.describe('upgrades feature', () => {
       await page.goto('/lab')
 
       // Regular click on a gateway opens its feature panel — NOT the building menu.
-      await page
-        .getByRole('button', { name: 'Open Operations Hub' })
-        .evaluate((el) => (el as HTMLButtonElement).click())
+      await page.getByRole('button', { name: 'Open Operations Hub' }).click()
       await expect(page.locator('.plot-menu')).toHaveCount(0)
 
       // Arrange mode: picking up a gateway shows no Delete affordance.

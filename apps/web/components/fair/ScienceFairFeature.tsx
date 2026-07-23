@@ -83,7 +83,7 @@ export function ScienceFairFeature() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
         <div>
           <h2 className="font-pixel text-[10px] text-white">Science Fair Hub</h2>
-          <p className="font-pixel text-[7px] text-white/35 mt-1">
+          <p className="font-pixel text-[7px] text-white/40 mt-1">
             Your competition path — regional, state, and ISEF
           </p>
         </div>
@@ -101,7 +101,7 @@ export function ScienceFairFeature() {
               <CalendarClock size={14} />
               {countdown.days <= 0 ? 'Today!' : `${countdown.days}d`}
             </div>
-            <p className="font-pixel text-[7px] text-white/35 mt-1 max-w-[200px] truncate">
+            <p className="font-pixel text-[7px] text-white/40 mt-1 max-w-[200px] truncate">
               to {countdown.name}
             </p>
           </div>
@@ -124,7 +124,7 @@ export function ScienceFairFeature() {
             className={`flex items-center gap-1.5 font-pixel text-[7px] uppercase tracking-widest px-4 py-2.5 border-b-2 transition-colors ${
               tab === key
                 ? 'border-[#F5C518] text-[#F5C518]'
-                : 'border-transparent text-white/35 hover:text-white/60'
+                : 'border-transparent text-white/40 hover:text-white/60'
             }`}
           >
             {icon}
@@ -310,8 +310,8 @@ function FairCard({
   if (!fair) {
     return (
       <div className="border border-dashed border-white/12 rounded-sm p-4 flex flex-col gap-2">
-        <span className="font-pixel text-[7px] text-white/30 uppercase tracking-widest">{kind}</span>
-        <p className="text-[13px] text-white/35 leading-relaxed">{emptyHint ?? 'Not available.'}</p>
+        <span className="font-pixel text-[7px] text-white/40 uppercase tracking-widest">{kind}</span>
+        <p className="text-[13px] text-white/40 leading-relaxed">{emptyHint ?? 'Not available.'}</p>
       </div>
     )
   }
@@ -328,7 +328,7 @@ function FairCard({
           {isIsef ? <Trophy size={9} /> : <Award size={9} />} {kind}
         </span>
         {fair.distanceMiles != null && (
-          <span className="font-pixel text-[7px] text-white/30">~{fair.distanceMiles} mi</span>
+          <span className="font-pixel text-[7px] text-white/40">~{fair.distanceMiles} mi</span>
         )}
       </div>
 
@@ -342,7 +342,7 @@ function FairCard({
         {e?.venue && (
           <p className="font-pixel text-[7px] text-white/40 mt-0.5">{e.venue}</p>
         )}
-        {!e && <p className="font-pixel text-[7px] text-white/30">No dates on file yet.</p>}
+        {!e && <p className="font-pixel text-[7px] text-white/40">No dates on file yet.</p>}
       </div>
 
       {/* Status + actions */}
@@ -406,7 +406,7 @@ function DateRow({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-2">
-      <span className="font-pixel text-[7px] text-white/35 uppercase tracking-widest">{label}</span>
+      <span className="font-pixel text-[7px] text-white/40 uppercase tracking-widest">{label}</span>
       <span className={`text-[13px] ${highlight ? 'text-[#F5C518]' : 'text-white/70'}`}>
         {value ? format(new Date(value), 'MMM d, yyyy') : '—'}
       </span>
@@ -456,7 +456,7 @@ function IsefRubric() {
                     <span className="font-pixel text-[7px] text-white/55 uppercase tracking-widest">
                       {s.title}
                     </span>
-                    <span className="font-pixel text-[7px] text-white/30">{s.points} pts</span>
+                    <span className="font-pixel text-[7px] text-white/40">{s.points} pts</span>
                   </div>
                   <div className="mt-1.5">
                     <ChecklistItems items={s.items} />

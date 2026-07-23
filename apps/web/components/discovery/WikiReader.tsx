@@ -141,7 +141,7 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
             onClick={onStar}
             title={starred ? 'Unstar this article' : 'Star this article'}
             className={`text-xl transition-colors ${
-              starred ? 'text-[#F5C518]' : 'text-white/30 hover:text-[#F5C518]/70'
+              starred ? 'text-[#F5C518]' : 'text-white/40 hover:text-[#F5C518]/70'
             }`}
           >
             {starred ? '★' : '☆'}

@@ -70,7 +70,7 @@ export function DecisionControls({
         onChange={(e) => setNote(id, e.target.value)}
         placeholder="Optional note to the team…"
         maxLength={500}
-        className="w-full bg-[#0d1b2e] border border-white/15 text-white text-xs px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+        className="w-full bg-[#0d1b2e] border border-white/15 text-white text-xs px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40"
       />
       <div className="flex gap-2 items-center flex-wrap">
         <BusyButton
@@ -112,7 +112,7 @@ export function QueueNotice({
   return (
     <p
       className={`font-pixel text-[9px] py-10 text-center border border-dashed ${
-        tone === 'error' ? 'text-red-400 border-red-400/25' : 'text-white/30 border-white/10'
+        tone === 'error' ? 'text-red-400 border-red-400/25' : 'text-white/40 border-white/10'
       }`}
     >
       {children}

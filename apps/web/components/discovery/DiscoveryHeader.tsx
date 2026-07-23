@@ -102,7 +102,7 @@ export function DiscoveryHeader({
 
       <button
         onClick={onStartOver}
-        className="ml-auto font-pixel text-[7px] text-white/35 hover:text-red-400 transition-colors"
+        className="ml-auto font-pixel text-[7px] text-white/40 hover:text-red-400 transition-colors"
       >
         Start over
       </button>

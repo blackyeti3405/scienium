@@ -6,12 +6,19 @@ only where provenance matters; everything presented as open below was verified a
 working tree._
 
 > **What this document is now.** Track A (A1–A14, reopened by the v0.29.4 audit) **shipped
-> in v0.30.0**; its two partial remainders are listed under §4. Track B's §3.2 E route
+> in v0.30.0**. Its two partial remainders are now resolved: **A3-R (isometric hitbox / JS-click
+> E2E bypasses) closed** — the sprite hit region is clipped to the building silhouette so real
+> pointer clicks land, all `clickBuilding`/`element.click()` bypasses are deleted, and the
+> specs pass with genuine `.click()` (Discovery, Ops Hub, Science Fair validated in a prod-build
+> browser). **A9-R (readability) — contrast portion done**: chrome text is floored at 40% white
+> (sizes deliberately kept; WebKit/Firefox E2E coverage still open). Track B's §3.2 E route
 > extraction queue **completed in v0.31.0**, which also absorbed the `fetchWithPolicy` and
-> residual-unbounded-read items via a full-repo over-engineering audit. What remains here is
-> the rest of the Track B architecture program (contracts/clients, outbox, AI ledger,
-> telemetry, SVC-1) and Track C optional cleanup. `docs/SECURITY.md` is authoritative for the
-> broader threat register; `docs/ARCHITECTURE.md` describes the implemented state.
+> residual-unbounded-read items via a full-repo over-engineering audit; **P1-2 is now closed** —
+> the queue is done and four highest-risk mutations moved onto `withTeamRoute`, the rest staying
+> migrate-on-touch by design. What remains here is the rest of the Track B architecture program
+> (contracts/clients, outbox, AI ledger, telemetry, SVC-1) and Track C optional cleanup.
+> `docs/SECURITY.md` is authoritative for the broader threat register; `docs/ARCHITECTURE.md`
+> describes the implemented state.
 
 ---
 
@@ -65,7 +72,7 @@ Most UI, pure helpers, content, art, and stable routes should remain untouched.
 
 | Track | Required scope | Expected impact |
 | --- | --- | --- |
-| **A — Before pilot** | **CLOSED in v0.30.0** (A1–A14). Two scoped remainders carried into Track B: the isometric hitbox / JS-click E2E bypasses (A3) and the tiny-text design pass (A9) | Correct tenancy, classroom behavior, durability, 10k-user jobs, privacy, accessibility, and truthful release gates |
+| **A — Before pilot** | **CLOSED in v0.30.0** (A1–A14). Both scoped remainders now resolved: the isometric hitbox / JS-click E2E bypasses (**A3-R closed** — silhouette hitbox, all bypasses deleted) and the tiny-text pass (**A9-R contrast floored to 40% white**; the size question is deliberately left open) | Correct tenancy, classroom behavior, durability, 10k-user jobs, privacy, accessibility, and truthful release gates |
 | **B — Clean industrial code** | Incrementally extract complex workflows, unify feature contracts/clients, split mixed-responsibility files, standardize route adapters and durable events | Meaningful changes across authored runtime code over time, one feature at a time |
 | **C — Deferred/optional** | Broad `src/features/**` relocation, generalized job platform, generated-content reorganization, deleting `shared-types`, tooling-repository cleanup | Do only when justified by active work or measured operational need |
 
@@ -77,18 +84,16 @@ tree on 2026-07-20.
 
 | Priority | Finding | Consequence |
 | --- | --- | --- |
-| P1 | E2E specs still bypass pointer hit-testing via `element.click()` on isometric sprites (A3 remainder) | UI occlusion can pass tests; needs the sprite hitbox/stacking fix first |
 | P1 | No durable AI/job ledger — token usage is logged but not recorded, with no idempotency keys | Spend cannot be reconciled; a provider response after disconnect is ambiguous |
 | P1 | Structured logger is wired into a handful of modules; no request wrapper or per-route telemetry | Route-level incidents still lack correlation |
 | P1 | No transactional outbox; 16 of 31 `logActivity` sites are fire-and-forget | Teacher-visible history can silently drop |
 | P1 | Route-policy coverage: static routes and invalid-input/provider-failure matrices remain uneven | The four-case matrix covers dynamic routes; other families rely on the static sweeps |
-| P2 | ~600 6–9px text declarations need a design pass; no WebKit/Firefox E2E coverage (A9 remainder) | Low-vision readability below the agreed floor on classroom chrome |
+| P2 | ~600 6–9px text declarations still await a **size** design pass; no WebKit/Firefox E2E coverage (A9 remainder — contrast floored to 40% white; sizes deliberately unchanged) | Low-vision readability on tiny chrome still a size question, but the worst faint-contrast text is fixed |
 | P2 | Feature ownership split across `app`, `components`, `lib`, `stores`, and component-local API/type files | One contract change touches several unrelated trees |
 | P2 | Client fetching has competing patterns (29 component files still call `fetch` directly) | Inconsistent cancellation, stale-response handling, parsing, errors |
 | P2 | Six god files combine materially different responsibilities (all shrank in v0.31.0; none split) | Merge pain and untestable logic |
 | P2 | Data lifecycle is documented but untested | Deletion/export behavior can regress unnoticed |
 | P2 | Reward-minting duplicated across the grade paths (SVC-1, inherited from `docs/REFACTOR.md`) | Money logic in several places will diverge |
-| P2 | Only 6 of 98 routes use `withTeamRoute` | Maintainability only — every workflow route now has a service seam; simple routes stay direct-Prisma by design |
 | P3 | Large generated/static domains obscure authored code | Reviewability and ownership suffer |
 
 ### v0.30.0 close-out (2026-07-19, working tree)
@@ -317,21 +322,37 @@ incompatible durability guarantees — see P1-4 and P1-6.
 
 ## 4. Open findings
 
-### A3-R — Remove the isometric JS-click E2E bypasses _(P1, Track A remainder)_
+### A3-R — Remove the isometric JS-click E2E bypasses _(P1, Track A remainder)_ — **CLOSED**
 
-The release lanes shipped (`.github/workflows/e2e.yml`: a bounded production-build smoke lane
-on PRs, the full serial suite nightly/on-demand). **Still open:** several core specs call DOM
-`element.click()` through a `clickBuilding` helper to bypass isometric z-index overlap
-(`e2e/F3.spec.ts`, `F11-quiz-retry.spec.ts`, `F13-codex.spec.ts`, `placement.spec.ts`,
-`upgrades.spec.ts`, `lit-explain-it-back.spec.ts`, `rubric-self-assessment.spec.ts`). That
-verifies handler wiring while bypassing the browser hit-testing a student actually uses.
+**Root cause:** each building was an absolutely-positioned `<button>` whose full transparent
+rectangle (128×128 display px, sprites only fill a central silhouette) overlapped its
+neighbours in the iso layout. A real pointer click on one building's visible art frequently
+resolved (`elementFromPoint`) to a stacked neighbour's transparent corner, so the specs fell
+back to JS `element.click()` (dispatched straight to the node, no hit-testing).
 
-**Close when:** `components/lab/LabPlot.tsx` sprite hitboxes/stacking are fixed so a real
-pointer click lands on the intended gateway, the `clickBuilding` helpers are deleted, and the
-specs pass with genuine `.click()`. Keyboard activation is already real and covered by
-`e2e/a11y.spec.ts`. Note the lanes only bind once the `E2E_ENV_FILE` repository secret exists.
+**Fix (`components/lab/LabPlot.tsx` + `app/globals.css`):** the button box is now
+`pointer-events: none`; an inner `.plot-building__hit` layer carries the pointer interaction
+and a `clip-path` polygon that hugs the iso-building silhouette, trimming the transparent
+corners that caused the occlusion (clip-path clips hit-testing too). Keyboard activation is
+unaffected (it never routed through pointer-events), and the floating `.plot-level` badge stays
+outside the clip. One generic polygon covers every sprite (ponytail: per-sprite silhouettes
+only if a specific building ever mis-hits).
 
-### A9-R — Classroom text readability design pass _(P2, Track A remainder)_
+**Bypasses removed:** the `clickBuilding` helper (6 call sites) and the three inline
+`evaluate(el.click())` bypasses in `placement.spec.ts` / `upgrades.spec.ts` are deleted; every
+site is now a genuine `page.getByRole('button', { name }).click()`. (The doc's earlier list
+named `F11-quiz-retry`/`lit-explain-it-back` — those no longer used a bypass.) The
+`dispatchEvent('pointerdown')` drag-pickups in arrange mode are real DOM pointer events, not
+occlusion bypasses, and were left as-is.
+
+**Validated in a prod-build browser (`E2E_BUILD=1`):** `rubric-self-assessment` AC10 (real
+click on **Science Fair**, an occlusion-prone side gateway) and `F3` AC6–AC9 (real clicks on
+**Operations Hub**, frontmost, and **Discovery**, the most-occluded centre gateway) all pass.
+The one incidental `afterAll` failure observed was the documented Clerk-JWT-expiry flake on a
+cleanup PUT, not a building click. Keyboard activation remains covered by `e2e/a11y.spec.ts`.
+Note the CI lanes still only bind once the `E2E_ENV_FILE` repository secret exists.
+
+### A9-R — Classroom text readability design pass _(P2, Track A remainder)_ — **contrast done; size + cross-browser open**
 
 The structural accessibility floor shipped: `useModalA11y` (focus trap + restore) behind
 `components/ui/ModalBackdrop.tsx` for every panel shell, accessible names on icon-only
@@ -339,10 +360,17 @@ controls, a global `:focus-visible` outline, a blanket `prefers-reduced-motion` 
 `e2e/a11y.spec.ts` (axe-critical + keyboard trap/restore) on desktop **and** a tablet
 viewport.
 
-**Still open:** roughly 600 declarations use 6–9 px text, often at 25–40% white; only the two
-worst (`.clr-rung__theme`, `.sc-chip` at 6px/40%) were raised. This needs a design decision on
-the minimum classroom-chrome size/contrast, not a mechanical sweep — the pixel aesthetic is
-deliberate. WebKit/Firefox E2E coverage is also still absent.
+**Contrast floor applied (product decision: contrast-first, keep sizes).** Chrome text is now
+floored at **40% white**: 288 Tailwind `text-white/{5..35}` utilities across 80 components and
+12 `color: rgba(255,255,255, <0.40)` declarations in `globals.css` were raised to the floor.
+The pass is **monotonic** — it only ever increases opacity, never touches font size, and never
+reflows layout — so the deliberate pixel aesthetic and dense panel layouts are preserved while
+the worst faint text (the flagged 25–40% white, down to 15%) clears the floor. `border-color`
+and `background` whites were deliberately left untouched.
+
+**Still open:** the ~600 6–9 px declarations remain small **by design decision** — sizes were
+kept, so whether the pixel-aesthetic chrome needs a minimum size (vs. only contrast) is still a
+product call. WebKit/Firefox E2E coverage is also still absent.
 
 ### P1-1 — Complete route-policy coverage without growing a fake ORM
 
@@ -357,12 +385,27 @@ real-Postgres adapter/HTTP suite. Preserve the four-case access matrix (same-tea
 other team's real id rejected, signed-out, over-limit), but keep the fake's mandate limited to
 policy rather than reproducing Prisma.
 
-### P1-2 — Migrate high-risk routes first; standardize the rest incrementally
+### P1-2 — Migrate high-risk routes first; standardize the rest incrementally — **CLOSED**
 
-Only six routes use `withTeamRoute`; most import `db` directly. This is a maintainability
-concern, not proof that direct-Prisma routes are unsafe. Do not wrap all 98 handlers and
-declare victory — move high-risk workflows first, then standardize adapters when touched.
-The remaining queue is the §3.2 E table, in that order.
+The §3.2 E workflow-extraction queue closed in v0.31.0. The remaining P1-2 work was to move
+the highest-risk *mutations* onto `withTeamRoute` (the guard-return footgun matters most where
+a forgotten `if (error) return error` widens tenancy). Four are now migrated, behaviour
+preserved:
+
+- `app/api/team/location/route.ts` — body via the wrapper.
+- `app/api/team/invite/route.ts` — no body; guard returns → `ApiError`.
+- `app/api/showcase/asset/[id]/route.ts` — dynamic-param DELETE (exercises the wrapper's
+  `params` path).
+- `app/api/showcase/asset/link/route.ts` — guard via the wrapper, but body parsed **inside**
+  the handler so the "save your showcase first" 409 still precedes any body-shape 400.
+
+`team/advance-phase` was deliberately **not** migrated: its prelude is non-standard (conditional
+body parse + a mid-handler `ai`-tier rate-limit on only the paid transition), exactly the case
+`with-route.ts` documents as keeping `requireTeamContext` directly. Every migrated route still
+passes `test/route-guard-sweep.test.ts` and the policy harness.
+
+The remaining ~90 direct-Prisma handlers stay **migrate-on-touch by design** (posture rules:
+no ceremonial wrapping of trivial scoped reads/mutations) — do not batch-wrap them.
 
 ### P1-4 — Durable AI/job ledger
 

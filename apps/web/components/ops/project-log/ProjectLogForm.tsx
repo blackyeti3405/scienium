@@ -116,7 +116,7 @@ export function ProjectLogForm({
         <span className="ops-entry-card__badge font-pixel">#{isEdit ? entry!.entryNumber : headerNumber}</span>
         <div className="flex flex-col">
           <span className="font-pixel text-[9px] text-white">{isEdit ? 'Editing entry' : 'New session entry'}</span>
-          <span className="font-pixel text-[6px] text-white/35 mt-0.5 flex items-center gap-1">
+          <span className="font-pixel text-[6px] text-white/40 mt-0.5 flex items-center gap-1">
             <Calendar size={8} />
             {formatDate(entry?.createdAt ?? new Date().toISOString())}
           </span>

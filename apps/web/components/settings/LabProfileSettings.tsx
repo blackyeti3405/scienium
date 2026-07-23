@@ -233,7 +233,7 @@ export function LabProfileSettings() {
               onChange={(e) => setName(e.target.value)}
               maxLength={80}
               placeholder="Your name"
-              className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
+              className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm"
             />
           </div>
 
@@ -246,7 +246,7 @@ export function LabProfileSettings() {
               onChange={(e) => setSchool(e.target.value)}
               maxLength={120}
               placeholder="High school name"
-              className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
+              className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm"
             />
           </div>
         </div>
@@ -266,14 +266,14 @@ export function LabProfileSettings() {
             Your lab
           </h3>
           {!data?.isLead && (
-            <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest">
+            <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest">
               Lead only
             </span>
           )}
         </div>
 
         {!data?.isLead && (
-          <p className="font-pixel text-[7px] text-white/35 leading-loose">
+          <p className="font-pixel text-[7px] text-white/40 leading-loose">
             Only the lab lead can edit lab settings.
           </p>
         )}
@@ -288,7 +288,7 @@ export function LabProfileSettings() {
             maxLength={80}
             placeholder="Lab name"
             disabled={!data?.isLead}
-            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
           />
         </div>
 
@@ -302,10 +302,10 @@ export function LabProfileSettings() {
             maxLength={10}
             placeholder="90089"
             disabled={!data?.isLead}
-            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
           />
           {data?.state && (
-            <span className="font-pixel text-[7px] text-white/35">
+            <span className="font-pixel text-[7px] text-white/40">
               Current: {data.zip} · {data.state}
             </span>
           )}
@@ -320,9 +320,9 @@ export function LabProfileSettings() {
             onChange={(e) => setResearchIdea(e.target.value)}
             maxLength={500}
             placeholder="e.g. I'm investigating how soil pH affects plant growth rate…"
-            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
+            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm"
           />
-          <span className="font-pixel text-[7px] text-white/25 leading-loose">
+          <span className="font-pixel text-[7px] text-white/40 leading-loose">
             Editing this does not change your assigned lab type.
           </span>
         </div>
@@ -373,7 +373,7 @@ export function LabProfileSettings() {
                 <span className="text-sm text-white/90 flex-1">{topic}</span>
               </div>
             ) : (
-              <p className="font-pixel text-[7px] text-white/35 leading-loose">
+              <p className="font-pixel text-[7px] text-white/40 leading-loose">
                 No topic set yet — choose your final research topic here.
               </p>
             )}
@@ -402,7 +402,7 @@ export function LabProfileSettings() {
                 }}
                 maxLength={200}
                 placeholder="State your final research topic…"
-                className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
+                className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm"
               />
             </div>
             <div className="flex items-center gap-2">
@@ -447,7 +447,7 @@ export function LabProfileSettings() {
             </div>
             <button
               onClick={() => setTopicWipeResult(null)}
-              className="text-white/30 hover:text-white/60 shrink-0 font-pixel text-[8px]"
+              className="text-white/40 hover:text-white/60 shrink-0 font-pixel text-[8px]"
             >
               ✕
             </button>
@@ -456,7 +456,7 @@ export function LabProfileSettings() {
 
         {/* Paper count hint when topic is set */}
         {topic && topicPaperCount > 0 && (
-          <p className="font-pixel text-[7px] text-white/30 leading-loose">
+          <p className="font-pixel text-[7px] text-white/40 leading-loose">
             {topicPaperCount} source{topicPaperCount !== 1 ? 's' : ''} in your literature review
           </p>
         )}
@@ -477,7 +477,7 @@ export function LabProfileSettings() {
             Research plan
           </h3>
           {planHasText && planLastSyncedAt && (
-            <span className="font-pixel text-[7px] text-white/30">
+            <span className="font-pixel text-[7px] text-white/40">
               synced {formatDistanceToNow(new Date(planLastSyncedAt), { addSuffix: true })}
             </span>
           )}
@@ -522,7 +522,7 @@ export function LabProfileSettings() {
                 }`}
               >
                 <span className="block text-[13px] text-white/85">{s.label}</span>
-                <span className="block font-pixel text-[6px] text-white/35 mt-0.5">{s.blurb}</span>
+                <span className="block font-pixel text-[6px] text-white/40 mt-0.5">{s.blurb}</span>
               </button>
             ))}
           </div>
@@ -533,7 +533,7 @@ export function LabProfileSettings() {
           <label className="font-pixel text-[7px] text-white/50 uppercase tracking-widest flex items-center gap-1">
             <Link2 size={9} className="text-[#F5C518]" /> Google Doc URL
           </label>
-          <p className="font-pixel text-[7px] text-white/30 leading-loose">
+          <p className="font-pixel text-[7px] text-white/40 leading-loose">
             Paste an &ldquo;Anyone with the link&rdquo; Google Doc URL.
           </p>
           <div className="flex items-center gap-2">
@@ -541,7 +541,7 @@ export function LabProfileSettings() {
               value={planDocUrl}
               onChange={(e) => setPlanDocUrl(e.target.value)}
               placeholder="https://docs.google.com/document/d/…"
-              className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
+              className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm"
             />
             <BusyButton
               busy={savingPlan}

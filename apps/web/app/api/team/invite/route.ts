@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { requireTeamContext } from '@/lib/api/route-context'
+import { withTeamRoute, ApiError } from '@/lib/api/with-route'
 import { generateInviteCode, INVITE_TTL_DAYS } from '@/lib/team/invite'
 import { db } from '@/lib/db'
 
@@ -8,20 +8,17 @@ import { db } from '@/lib/db'
  * POST /api/team/invite — the lead mints a single-use join code (Feature 1b).
  * Refuses when the lab is already at capacity, since there'd be no seat to fill.
  */
-export async function POST(req: NextRequest) {
-  const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
-  if (error) return error
-
+export const POST = withTeamRoute({ tier: 'mutate' }, async ({ ctx }) => {
   const team = await db.team.findUnique({
     where: { id: ctx.teamId },
     select: { teamLeadId: true, maxMembers: true, _count: { select: { members: true } } },
   })
-  if (!team) return NextResponse.json({ error: 'No team found' }, { status: 404 })
+  if (!team) throw new ApiError('No team found', 404)
   if (team.teamLeadId !== ctx.dbUserId) {
-    return NextResponse.json({ error: 'Only the lab lead can invite members' }, { status: 403 })
+    throw new ApiError('Only the lab lead can invite members', 403)
   }
   if (team._count.members >= team.maxMembers) {
-    return NextResponse.json({ error: 'Your lab is already full' }, { status: 409 })
+    throw new ApiError('Your lab is already full', 409)
   }
 
   const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000)
@@ -40,5 +37,5 @@ export async function POST(req: NextRequest) {
       throw err
     }
   }
-  return NextResponse.json({ error: 'Could not generate a code, try again' }, { status: 500 })
-}
+  throw new ApiError('Could not generate a code, try again', 500)
+})

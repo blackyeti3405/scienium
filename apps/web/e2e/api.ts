@@ -287,14 +287,6 @@ export async function withSeedPage<T>(
   }
 }
 
-/** Click a building-sprite button by its aria-label (canvas sprites need a JS click — see upgrades.spec.ts / rubric-self-assessment.spec.ts). */
-export async function clickBuilding(page: Page, ariaLabel: string): Promise<void> {
-  await page.evaluate((label) => {
-    const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-    if (!btn) throw new Error(`Building button not found: ${label}`)
-    btn.click()
-  }, ariaLabel)
-}
 
 /**
  * The quiz/explain/synthesis routes all enforce the shared 'ai' rate-limit
@@ -323,8 +315,7 @@ export async function withRateLimitRetry<T>(
 /** Open the Literature Review feature panel from /lab. */
 export async function openLiteratureReview(page: Page): Promise<void> {
   await page.goto('/lab')
-  await page.getByRole('button', { name: 'Open Literature Review' }).waitFor({ state: 'attached' })
-  await clickBuilding(page, 'Open Literature Review')
+  await page.getByRole('button', { name: 'Open Literature Review' }).click()
   await expect(page.getByRole('dialog', { name: 'Literature Review' })).toBeVisible({ timeout: 5000 })
 }
 

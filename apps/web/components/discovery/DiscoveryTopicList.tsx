@@ -88,7 +88,7 @@ export function DiscoveryTopicList({ nodes, currentNodeId, onNavigate }: Props) 
             </div>
             {byTree.map(({ treeIndex, rows: treeRows }) => (
               <div key={treeIndex} className="px-3 pb-2">
-                <p className="font-pixel text-[7px] text-white/30 mb-1">Tree {treeIndex + 1}</p>
+                <p className="font-pixel text-[7px] text-white/40 mb-1">Tree {treeIndex + 1}</p>
                 <div className="flex flex-col gap-0.5">
                   {treeRows.map(({ node }) => (
                     <button

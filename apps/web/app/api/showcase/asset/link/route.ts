@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireTeamContext } from '@/lib/api/route-context'
+import { withTeamRoute } from '@/lib/api/with-route'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
@@ -36,10 +36,10 @@ class SlotCapError extends Error {
   }
 }
 
-export async function POST(req: NextRequest) {
-  const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate', feature: 'showcase' })
-  if (guardError) return guardError
-
+// Body is parsed inside the handler (not hoisted into the wrapper) so the
+// "save your showcase first" 409 still precedes any body-shape 400, exactly as
+// before this route moved onto withTeamRoute.
+export const POST = withTeamRoute({ tier: 'mutate', feature: 'showcase' }, async ({ req, ctx }) => {
   const showcase = await db.showcase.findUnique({ where: { teamId: ctx.teamId }, select: { id: true } })
   if (!showcase) {
     return NextResponse.json({ error: 'Save your showcase details first.' }, { status: 409 })
@@ -98,4 +98,4 @@ export async function POST(req: NextRequest) {
     { asset: { id: asset.id, assetType: asset.assetType, url: null, metadata: asset.metadataJson } },
     { status: 201 },
   )
-}
+})

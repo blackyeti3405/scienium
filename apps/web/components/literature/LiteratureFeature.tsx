@@ -192,7 +192,7 @@ export function LiteratureFeature() {
               🎯 {topic}
             </p>
           ) : (
-            <p className="font-pixel text-[7px] text-white/35 mt-1">
+            <p className="font-pixel text-[7px] text-white/40 mt-1">
               Upload and review 25 sources to advance your lab
             </p>
           )}
@@ -233,7 +233,7 @@ export function LiteratureFeature() {
             <span className="font-pixel text-[18px] text-[#F5C518]">
               {papersLoaded ? readyCount : '—'}
             </span>
-            <span className="font-pixel text-[10px] text-white/30"> / 25</span>
+            <span className="font-pixel text-[10px] text-white/40"> / 25</span>
           </div>
         </div>
       </div>
@@ -292,7 +292,7 @@ export function LiteratureFeature() {
                   maxLength={500}
                   disabled={ideaBusy}
                   placeholder="e.g. I'm investigating how soil pH affects plant growth rate…"
-                  className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm font-pixel text-[8px]"
+                  className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/40 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm font-pixel text-[8px]"
                 />
                 <BusyButton
                   busy={ideaBusy}
@@ -345,7 +345,7 @@ export function LiteratureFeature() {
         <div className="h-1 bg-white/8 shrink-0" />
       ) : locked ? (
         <div className="flex items-center gap-2 px-6 py-3 bg-white/[0.02] border-t border-white/8 shrink-0">
-          <Lock size={10} className="text-white/25 shrink-0" />
+          <Lock size={10} className="text-white/40 shrink-0" />
           <span className="font-pixel text-[7px] text-green-300/70">Sources locked — 25/25</span>
           <div className="flex-1 h-1.5 rounded-full bg-green-400 ml-2" />
         </div>

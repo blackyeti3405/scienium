@@ -141,7 +141,7 @@ export function NotificationBell() {
             {!loaded ? (
               <LabeledLoader label="Loading…" fill="inline" className="py-6" />
             ) : items.length === 0 ? (
-              <p className="font-pixel text-[8px] text-white/30 text-center py-6">
+              <p className="font-pixel text-[8px] text-white/40 text-center py-6">
                 No notifications yet.
               </p>
             ) : (

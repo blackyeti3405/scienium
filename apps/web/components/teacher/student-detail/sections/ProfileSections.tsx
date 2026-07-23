@@ -79,7 +79,7 @@ export function PhaseSection({ overview }: { overview: Overview }) {
                       ? 'border-[#F5C518]/50 bg-[#F5C518]/[0.06] text-white'
                       : isPast
                       ? 'border-white/10 bg-white/[0.02] text-white/40'
-                      : 'border-white/5 text-white/20'
+                      : 'border-white/5 text-white/40'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-1">

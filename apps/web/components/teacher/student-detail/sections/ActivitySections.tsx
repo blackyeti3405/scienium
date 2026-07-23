@@ -28,7 +28,7 @@ export function ActivitySection({ overview }: { overview: Overview }) {
           <li key={i} className="flex flex-wrap gap-x-2 gap-y-0.5 text-sm border-l-2 border-white/10 pl-3">
             <span className="text-white/70">{a.description}</span>
             <span className="text-white/40 text-xs">— {a.userName}</span>
-            <span className="text-white/30 text-xs">{fmtDate(a.createdAt)}</span>
+            <span className="text-white/40 text-xs">{fmtDate(a.createdAt)}</span>
           </li>
         ))}
       </ul>
@@ -120,7 +120,7 @@ export function FeedbackSection({
           onChange={(e) => setBody(e.target.value)}
           placeholder="Leave feedback the team will see…"
           maxLength={2000}
-          className="flex-1 bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25 transition-colors"
+          className="flex-1 bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 transition-colors"
         />
         <BusyButton
           busy={busy}
@@ -139,7 +139,7 @@ export function FeedbackSection({
           {items.map((f) => (
             <li key={f.id} className="text-sm text-white/65 border-l-2 border-[#F5C518]/30 pl-2">
               {f.body}
-              <span className="text-white/30 text-xs ml-2">{fmtDate(f.createdAt)}</span>
+              <span className="text-white/40 text-xs ml-2">{fmtDate(f.createdAt)}</span>
             </li>
           ))}
         </ul>

@@ -47,7 +47,7 @@ export function ResearchPlanSection({ overview }: { overview: Overview }) {
               <ExternalLink size={13} /> Open research plan
             </a>
           ) : (
-            <span className="text-xs text-white/30 shrink-0">No plan linked yet</span>
+            <span className="text-xs text-white/40 shrink-0">No plan linked yet</span>
           )}
         </div>
       </Card>

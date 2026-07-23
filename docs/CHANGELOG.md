@@ -5,6 +5,59 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.33.0] — 2026-07-22
+
+Closes both remaining Track A findings from the REFACTOR2 audit and finishes P1-2. No new
+features — this is correctness (real pointer clicks), accessibility (contrast), and one more
+turn of the route-adapter crank.
+
+### Fixed — isometric building clicks now land on the right building (A3-R)
+Each building on the lab plot was an absolutely-positioned `<button>` whose full 128×128
+transparent rectangle overlapped its neighbours in the iso layout; a real pointer click on one
+building's visible art often resolved (`elementFromPoint`) to a stacked neighbour's transparent
+corner. The E2E specs papered over this with JS `element.click()` bypasses, which dispatch
+straight to the node and skip the browser hit-testing a student actually uses.
+
+The fix (`components/lab/LabPlot.tsx`, `app/globals.css`): the button box is now
+`pointer-events: none` and an inner `.plot-building__hit` layer carries the interaction plus a
+`clip-path` polygon hugging the iso-building silhouette — clip-path clips hit-testing too, so
+the transparent corners no longer intercept. Keyboard activation is unchanged (it never routed
+through pointer-events) and the floating `.plot-level` badge stays outside the clip. One generic
+polygon serves every sprite.
+
+### Removed — the JS-click E2E bypasses (A3-R)
+Deleted the `clickBuilding` helper (6 call sites) and the three inline `evaluate(el.click())`
+bypasses in `placement.spec.ts` / `upgrades.spec.ts`; every site is now a genuine
+`getByRole('button').click()`. Validated in a prod-build browser: `rubric-self-assessment` AC10
+(Science Fair, an occlusion-prone side gateway) and `F3` AC6–AC9 (Operations Hub, frontmost,
+and Discovery, the most-occluded centre gateway) all pass with real clicks. The
+`dispatchEvent('pointerdown')` arrange-mode drag pickups are real pointer events, not occlusion
+bypasses, and were left as-is.
+
+### Changed — chrome text contrast floor at 40% white (A9-R, contrast portion)
+The readability audit flagged ~600 tiny declarations, "often at 25–40% white." Per the product
+decision to fix contrast first and keep the deliberate pixel-art sizes, all faint chrome text is
+now floored at 40% white: 288 Tailwind `text-white/{5..35}` utilities across 80 components and
+12 `color: rgba(255,255,255, <0.40)` declarations in `globals.css` were raised. The pass is
+monotonic — opacity only, never font size, never layout — so nothing reflows; `border-color` and
+`background` whites were left untouched. The 6–9 px **size** question and WebKit/Firefox E2E
+coverage remain deliberately open.
+
+### Changed — four highest-risk mutations onto `withTeamRoute` (P1-2, closed)
+With the §3.2 E workflow-extraction queue already done (v0.31.0), the remaining P1-2 work was to
+move the highest-risk *mutations* onto the guard wrapper, where a forgotten guard-return would
+widen tenancy. Migrated behaviour-preserved: `team/location`, `team/invite`,
+`showcase/asset/[id]` (dynamic-param DELETE), and `showcase/asset/link` (body parsed inside the
+handler so its "save your showcase first" 409 still precedes any body-shape 400).
+`team/advance-phase` was deliberately left on `requireTeamContext` directly — its prelude is
+non-standard (conditional body parse plus a mid-handler `ai`-tier rate-limit on only the paid
+transition). The remaining ~90 simple direct-Prisma handlers stay migrate-on-touch by design.
+
+Gates 1–5 green; full Vitest 1292 passed; `test/route-guard-sweep.test.ts` confirms every
+migrated route still carries its tenancy guard.
+
+---
+
 ## [0.32.1] — 2026-07-21
 
 Cleanup release, no behavior change. Finishes removing NCBI from the repo and collapses the

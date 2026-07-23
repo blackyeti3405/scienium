@@ -32,7 +32,7 @@ export function ReferenceChips({
   const muted = !onRemove
   return (
     <div className="mt-3" data-testid={testId}>
-      <span className={`font-pixel text-[6px] uppercase tracking-widest ${muted ? 'text-white/35' : 'text-white/40'}`}>
+      <span className={`font-pixel text-[6px] uppercase tracking-widest ${muted ? 'text-white/40' : 'text-white/40'}`}>
         {title}
       </span>
       <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -43,7 +43,7 @@ export function ReferenceChips({
             data-entry-number={ref.entryNumber}
             className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-pixel text-[6px] ${
               muted
-                ? 'border-white/10 text-white/35 bg-white/[0.02]'
+                ? 'border-white/10 text-white/40 bg-white/[0.02]'
                 : 'border-[#F5C518]/30 text-[#F5C518]/85 bg-[#F5C518]/[0.06]'
             }`}
           >

@@ -185,7 +185,7 @@ export default function OnboardingPage() {
                 onChange={(e) => setName(e.target.value)}
                 required
                 placeholder="Rig Saini"
-                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
+                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
               />
             </div>
 
@@ -199,13 +199,13 @@ export default function OnboardingPage() {
                 onChange={(e) => setHighSchool(e.target.value)}
                 placeholder="Santa Clara High School"
                 maxLength={120}
-                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
+                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
               />
             </div>
 
             <div className="space-y-1.5">
               <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-                Class code <span className="text-white/25">(optional · from your teacher)</span>
+                Class code <span className="text-white/40">(optional · from your teacher)</span>
               </label>
               <input
                 type="text"
@@ -213,7 +213,7 @@ export default function OnboardingPage() {
                 onChange={(e) => setClassCode(e.target.value.toUpperCase())}
                 placeholder="MRB-2026"
                 maxLength={32}
-                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.2em] px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30 placeholder:tracking-normal"
+                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.2em] px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40 placeholder:tracking-normal"
               />
             </div>
 
@@ -228,11 +228,11 @@ export default function OnboardingPage() {
                   onChange={(e) => setTeamName(e.target.value)}
                   required
                   placeholder="Saini Research Lab"
-                  className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
+                  className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
                 />
                 <div className="space-y-1.5 pt-3">
                   <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-                    ZIP code <span className="text-white/25">(optional · finds your fairs)</span>
+                    ZIP code <span className="text-white/40">(optional · finds your fairs)</span>
                   </label>
                   <input
                     type="text"
@@ -240,7 +240,7 @@ export default function OnboardingPage() {
                     onChange={(e) => setZip(e.target.value)}
                     placeholder="90089"
                     maxLength={10}
-                    className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
+                    className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
                   />
                 </div>
               </div>
@@ -256,9 +256,9 @@ export default function OnboardingPage() {
                   required
                   placeholder="K7M9QP"
                   maxLength={8}
-                  className="w-full bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.3em] px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30 placeholder:tracking-normal"
+                  className="w-full bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.3em] px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40 placeholder:tracking-normal"
                 />
-                <p className="font-pixel text-[7px] text-white/30 leading-loose">
+                <p className="font-pixel text-[7px] text-white/40 leading-loose">
                   Ask your lab lead for the code shown in their Team panel.
                 </p>
               </div>
@@ -295,7 +295,7 @@ export default function OnboardingPage() {
               onChange={(e) => setName(e.target.value)}
               required
               placeholder="Rig Saini"
-              className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
+              className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
             />
           </div>
 
@@ -309,7 +309,7 @@ export default function OnboardingPage() {
               onChange={(e) => setHighSchool(e.target.value)}
               placeholder="Santa Clara High School"
               maxLength={120}
-              className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
+              className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
             />
           </div>
 

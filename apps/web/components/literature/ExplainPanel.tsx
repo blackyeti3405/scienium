@@ -84,7 +84,7 @@ export function ExplainPanel({
             <span className="font-pixel text-[7px] text-white/40">Attempt {attemptCount}</span>
 
             <p className="text-[13px] text-white/70 leading-relaxed pl-3 border-l border-white/10 italic whitespace-pre-wrap">
-              <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest block mb-1 not-italic">
+              <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest block mb-1 not-italic">
                 Your last explanation
               </span>
               {state.latestText}
@@ -140,7 +140,7 @@ export function ExplainPanel({
           </div>
         )}
 
-        <p className="font-pixel text-[7px] text-white/35 leading-loose">
+        <p className="font-pixel text-[7px] text-white/40 leading-loose">
           In your own words — no jargon, no copying: what did this paper find, and why does it matter?
         </p>
         <textarea
@@ -150,9 +150,9 @@ export function ExplainPanel({
           rows={8}
           placeholder="Explain it back in your own words…"
           readOnly={submitting}
-          className="flex-1 min-h-[140px] bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
+          className="flex-1 min-h-[140px] bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/40 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
         />
-        <span className="font-pixel text-[6px] text-white/30 self-end">
+        <span className="font-pixel text-[6px] text-white/40 self-end">
           {draftLength} / {EXPLAIN_MAX_CHARS}
         </span>
       </div>

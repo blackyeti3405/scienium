@@ -122,7 +122,7 @@ export function FormsChecklist() {
         <PixelProgressBar value={denominator ? (completed / denominator) * 100 : 0} />
       </div>
 
-      <p className="font-pixel text-[7px] text-white/35 leading-loose">
+      <p className="font-pixel text-[7px] text-white/40 leading-loose">
         Click the status icon to cycle Not started → In progress → Complete.
         Click the chevron to expand a form&apos;s full guide. Forms 1, 1A, and 1C
         are required for every project; the others apply based on your
@@ -161,7 +161,7 @@ export function FormsChecklist() {
                   ) : form.status === 'in_progress' ? (
                     <Clock size={15} className="text-amber-400" />
                   ) : (
-                    <Circle size={15} className="text-white/25 hover:text-white/50" />
+                    <Circle size={15} className="text-white/40 hover:text-white/50" />
                   )}
                 </button>
 
@@ -181,7 +181,7 @@ export function FormsChecklist() {
                     >
                       <ChevronDown
                         size={11}
-                        className={`shrink-0 text-white/30 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                        className={`shrink-0 text-white/40 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                       />
                       {form.code}: {form.name}
                     </span>
@@ -191,7 +191,7 @@ export function FormsChecklist() {
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
-                        className="font-pixel text-[7px] text-white/30 hover:text-white/60 flex items-center gap-0.5 shrink-0"
+                        className="font-pixel text-[7px] text-white/40 hover:text-white/60 flex items-center gap-0.5 shrink-0"
                       >
                         <ExternalLink size={8} /> PDF
                       </a>
@@ -206,7 +206,7 @@ export function FormsChecklist() {
                         className={`font-pixel text-[6px] uppercase tracking-widest px-1.5 py-0.5 rounded-sm ${
                           tag === 'all'
                             ? 'bg-[#F5C518]/15 text-[#F5C518]/80'
-                            : 'bg-white/8 text-white/35'
+                            : 'bg-white/8 text-white/40'
                         }`}
                       >
                         {REQUIRED_FOR_LABELS[tag] ?? tag}
@@ -287,7 +287,7 @@ export function FormsChecklist() {
                 >
                   <ChevronDown
                     size={13}
-                    className={`shrink-0 mt-0.5 text-white/30 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    className={`shrink-0 mt-0.5 text-white/40 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                   />
                   <div className="flex-1 min-w-0">
                     <span className="font-pixel text-[9px] text-white">{hazard.label}</span>
@@ -331,6 +331,6 @@ export function FormsChecklist() {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-pixel text-[6px] text-white/35 uppercase tracking-widest mb-1">{children}</p>
+    <p className="font-pixel text-[6px] text-white/40 uppercase tracking-widest mb-1">{children}</p>
   )
 }

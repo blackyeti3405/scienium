@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage, clickBuilding } from './api'
+import { api, withSeedPage } from './api'
 
 /**
  * Rubric self-assessment (Feature F1 — Rubric self-assessment).
@@ -68,8 +68,7 @@ async function resetResearchQuestion(page: Page) {
 /** Open the Science Fair Hub feature panel from /lab (mirrors F3.spec.ts's openLiteratureReview). */
 async function openScienceFairHub(page: Page) {
   await page.goto('/lab')
-  await page.getByRole('button', { name: 'Open Science Fair' }).waitFor({ state: 'attached', timeout: 10_000 })
-  await clickBuilding(page, 'Open Science Fair')
+  await page.getByRole('button', { name: 'Open Science Fair' }).click({ timeout: 10_000 })
   await expect(page.getByRole('dialog', { name: 'Science Fair' })).toBeVisible({ timeout: 5000 })
 }
 

@@ -170,7 +170,7 @@ export function TeacherRoster() {
 
         {visible.length === 0 ? (
           <div className="border border-dashed border-white/10 rounded-lg py-12 text-center">
-            <p className="text-sm text-white/30">
+            <p className="text-sm text-white/40">
               {students.length === 0
                 ? 'No students yet — share a class code so students can join.'
                 : 'No students need attention right now.'}
@@ -180,19 +180,19 @@ export function TeacherRoster() {
           <div className="border border-white/10 bg-[#0a1628] rounded-lg overflow-hidden">
             {/* Table header */}
             <div className="hidden sm:grid grid-cols-[1fr_8rem_9rem_5rem_9rem] gap-3 px-4 py-2.5 bg-white/[0.02] border-b border-white/10">
-              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider">
+              <span className="font-pixel text-[10px] text-white/40 uppercase tracking-wider">
                 Student
               </span>
-              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider">
+              <span className="font-pixel text-[10px] text-white/40 uppercase tracking-wider">
                 Team
               </span>
-              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider">
+              <span className="font-pixel text-[10px] text-white/40 uppercase tracking-wider">
                 Phase
               </span>
-              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider text-right">
+              <span className="font-pixel text-[10px] text-white/40 uppercase tracking-wider text-right">
                 Papers
               </span>
-              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider text-right">
+              <span className="font-pixel text-[10px] text-white/40 uppercase tracking-wider text-right">
                 Flags
               </span>
             </div>
@@ -212,20 +212,20 @@ export function TeacherRoster() {
                     </span>
                     <span className="w-32 sm:w-auto text-sm text-white/50 truncate">
                       {s.teamName ?? (
-                        <span className="text-white/25 italic text-xs">No team</span>
+                        <span className="text-white/40 italic text-xs">No team</span>
                       )}
                     </span>
                     <span className="w-28 sm:w-auto">
                       {phaseInfo ? (
                         <span className="text-sm text-white/70">{phaseInfo.label}</span>
                       ) : (
-                        <span className="text-sm text-white/25 italic">—</span>
+                        <span className="text-sm text-white/40 italic">—</span>
                       )}
                     </span>
                     <span className="text-sm tabular-nums text-white/40 sm:text-right">
                       {s.readyPapers > 0 ? (
                         <span className="inline-flex items-center gap-1">
-                          <BookOpen size={12} className="text-white/25" />
+                          <BookOpen size={12} className="text-white/40" />
                           {s.readyPapers}
                         </span>
                       ) : (
@@ -412,7 +412,7 @@ function ClassManager({
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-sm font-medium text-white block">{c.name}</span>
-                  <span className="text-xs text-white/35">
+                  <span className="text-xs text-white/40">
                     {c._count?.users ?? 0} students
                     {c.school?.name ? ` · ${c.school.name}` : ''}
                   </span>
@@ -491,14 +491,14 @@ function ClassManager({
             onChange={(e) => setName(e.target.value)}
             placeholder="New class name (e.g. Period 3 Biology)"
             maxLength={80}
-            className="flex-1 min-w-[180px] bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25 transition-colors"
+            className="flex-1 min-w-[180px] bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 transition-colors"
           />
           <input
             value={schoolName}
             onChange={(e) => setSchoolName(e.target.value)}
             placeholder="School (optional)"
             maxLength={120}
-            className="min-w-[140px] bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25 transition-colors"
+            className="min-w-[140px] bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 transition-colors"
           />
           <BusyButton
             busy={busy}

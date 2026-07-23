@@ -26,8 +26,8 @@ export function UploadSourceButton({ onUpload }: { onUpload?: (file: File) => vo
       onClick={() => fileInputRef.current?.click()}
     >
       <div className="flex items-center justify-center gap-2 h-full py-4">
-        <Upload size={13} className="text-white/35" />
-        <span className="font-pixel text-[8px] text-white/35">Upload source</span>
+        <Upload size={13} className="text-white/40" />
+        <span className="font-pixel text-[8px] text-white/40">Upload source</span>
         <input
           ref={fileInputRef}
           type="file"

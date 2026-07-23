@@ -43,7 +43,7 @@ export function NewExperimentForm({
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Experiment title"
         maxLength={120}
-        className="w-full bg-[#0d1b2e] border border-white/15 text-white text-sm px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+        className="w-full bg-[#0d1b2e] border border-white/15 text-white text-sm px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40"
       />
       <div className="grid grid-cols-2 gap-2">
         <input
@@ -51,14 +51,14 @@ export function NewExperimentForm({
           onChange={(e) => setXLabel(e.target.value)}
           placeholder="x-axis label"
           maxLength={40}
-          className="bg-[#0d1b2e] border border-white/15 text-white text-xs px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+          className="bg-[#0d1b2e] border border-white/15 text-white text-xs px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40"
         />
         <input
           value={yLabel}
           onChange={(e) => setYLabel(e.target.value)}
           placeholder="y-axis label"
           maxLength={40}
-          className="bg-[#0d1b2e] border border-white/15 text-white text-xs px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+          className="bg-[#0d1b2e] border border-white/15 text-white text-xs px-2.5 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40"
         />
       </div>
       {error && <p className="font-pixel text-[8px] text-red-400">{error}</p>}

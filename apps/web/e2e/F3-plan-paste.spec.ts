@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api, clickBuilding } from './api'
+import { api } from './api'
 
 /**
  * F3 — Research Plan paste-text fallback.
@@ -73,10 +73,7 @@ let originalPlan: unknown = null
 /** Open the Research Plan feature panel from /lab. */
 async function openResearchPlan(page: Page) {
   await page.goto('/lab')
-  await page
-    .getByRole('button', { name: 'Open Research Plan' })
-    .waitFor({ state: 'attached', timeout: 10_000 })
-  await clickBuilding(page, 'Open Research Plan')
+  await page.getByRole('button', { name: 'Open Research Plan' }).click({ timeout: 10_000 })
   const dialog = page.getByRole('dialog', { name: 'Research Plan' })
   await expect(dialog).toBeVisible({ timeout: 5000 })
   // Wait past the dynamic-import fallback AND the panel's own initial GET

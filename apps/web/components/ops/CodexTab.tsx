@@ -93,7 +93,7 @@ function TrackCard({
       {rationale && <p className="text-sm text-white/55 mt-1.5 leading-snug">{rationale}</p>}
       <div className="mt-2.5">
         <PixelProgressBar value={pct} />
-        <span className="font-pixel text-[6px] text-white/30 mt-1 block">{pct}% complete</span>
+        <span className="font-pixel text-[6px] text-white/40 mt-1 block">{pct}% complete</span>
       </div>
       {next && (
         <div data-testid="codex-next-lesson" className="mt-2 font-pixel text-[7px] text-white/45">
@@ -152,15 +152,15 @@ function CodexHome({
       <div className="max-w-2xl mx-auto w-full space-y-4 py-2">
         <div className="flex items-center justify-between">
           <span className="font-pixel text-[9px] text-[#F5C518] uppercase tracking-widest">Your Study Plan</span>
-          <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest">
+          <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest">
             {dailyCap.completedToday}/{dailyCap.limit} lessons today
           </span>
         </div>
 
         {memberSlugs.length === 0 ? (
           <div className="border border-dashed border-white/15 py-8 text-center">
-            <Sparkles size={20} className="text-white/20 mx-auto mb-2" />
-            <span className="font-pixel text-[8px] text-white/35 block mb-3">
+            <Sparkles size={20} className="text-white/40 mx-auto mb-2" />
+            <span className="font-pixel text-[8px] text-white/40 block mb-3">
               No study plan yet — generate one tailored to your project.
             </span>
             <BusyButton
@@ -306,7 +306,7 @@ function TrackView({
               <div key={unit.id} data-testid="codex-unit" className="border border-white/10 bg-[#0a1628]">
                 <div className="px-3 py-2 border-b border-white/5 flex items-center justify-between">
                   <span className="font-pixel text-[8px] text-white/70">{unit.label}</span>
-                  {!unlocked && <Lock size={11} className="text-white/25" />}
+                  {!unlocked && <Lock size={11} className="text-white/40" />}
                 </div>
                 <div className="divide-y divide-white/5">
                   {unit.lessons.map((lesson, idx) => {
@@ -326,9 +326,9 @@ function TrackView({
                         {done ? (
                           <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
                         ) : clickable ? (
-                          <ChevronRight size={13} className="text-white/25 shrink-0" />
+                          <ChevronRight size={13} className="text-white/40 shrink-0" />
                         ) : (
-                          <Lock size={12} className="text-white/20 shrink-0" />
+                          <Lock size={12} className="text-white/40 shrink-0" />
                         )}
                       </button>
                     )
@@ -402,7 +402,7 @@ export function CodexTab() {
   if (loadError || !payload) {
     return (
       <div className="ops-tab-body items-center justify-center text-center">
-        <BookOpen size={20} className="text-white/25 mb-2" />
+        <BookOpen size={20} className="text-white/40 mb-2" />
         <span className="font-pixel text-[8px] text-white/40">{loadError ?? 'Could not load the Field Codex.'}</span>
       </div>
     )

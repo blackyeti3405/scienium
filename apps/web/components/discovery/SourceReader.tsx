@@ -151,7 +151,7 @@ export function SourceReader({
                 {meta.label}
               </span>
             )}
-            {node.publishedAt && <span className="text-[11px] text-white/35">{node.publishedAt}</span>}
+            {node.publishedAt && <span className="text-[11px] text-white/40">{node.publishedAt}</span>}
           </div>
           {/* Full, un-truncated title — regular (non-pixel) font for reading. */}
           <h2 className="text-base font-bold leading-snug text-white mt-0.5">{node.title}</h2>
@@ -167,7 +167,7 @@ export function SourceReader({
             onClick={onStar}
             title={node.starred ? 'Unstar this source' : 'Star this source'}
             className={`text-xl transition-colors ${
-              node.starred ? 'text-[#F5C518]' : 'text-white/30 hover:text-[#F5C518]/70'
+              node.starred ? 'text-[#F5C518]' : 'text-white/40 hover:text-[#F5C518]/70'
             }`}
           >
             {node.starred ? '★' : '☆'}
@@ -227,10 +227,10 @@ export function SourceReader({
             rows={2}
             maxLength={500}
             placeholder="Summarize the key finding in your own words…"
-            className="w-full bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/25 rounded-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 resize-none"
+            className="w-full bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/40 rounded-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 resize-none"
           />
           <div className="flex items-center justify-between mt-1.5">
-            <span className="font-pixel text-[7px] text-white/30">
+            <span className="font-pixel text-[7px] text-white/40">
               {reflectionSaved ? <span className="text-green-400">✓ saved</span> : 'Saves when you click away'}
             </span>
             <BusyButton
@@ -295,7 +295,7 @@ export function SourceReader({
                         <PixelSkeleton variant="pill" h="h-6" w="w-4/5" />
                       </div>
                     ) : chips.length === 0 ? (
-                      <p className="text-[11px] text-white/25 italic">
+                      <p className="text-[11px] text-white/40 italic">
                         none found — try another lane
                       </p>
                     ) : (
@@ -313,7 +313,7 @@ export function SourceReader({
                                 selected
                                   ? 'border-[#F5C518]/60 bg-[#F5C518]/10 text-[#F5C518]'
                                   : atLimit
-                                  ? 'border-white/5 bg-white/[0.01] text-white/25 cursor-not-allowed'
+                                  ? 'border-white/5 bg-white/[0.01] text-white/40 cursor-not-allowed'
                                   : 'border-white/10 bg-white/[0.02] text-white/70 hover:border-white/25 hover:text-white/90'
                               }`}
                             >
@@ -322,7 +322,7 @@ export function SourceReader({
                                 <span className="min-w-0">
                                   <span className="line-clamp-2">{chip.title}</span>
                                   {chip.subtitle && (
-                                    <span className="block text-white/30 truncate">{chip.subtitle}</span>
+                                    <span className="block text-white/40 truncate">{chip.subtitle}</span>
                                   )}
                                 </span>
                               </span>

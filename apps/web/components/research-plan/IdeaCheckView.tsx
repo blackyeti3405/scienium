@@ -251,7 +251,7 @@ export function IdeaCheckView({
       )}
 
       {teacher && checkedAt && (
-        <p className="text-xs text-white/30">Checked {fmtDate(checkedAt)}</p>
+        <p className="text-xs text-white/40">Checked {fmtDate(checkedAt)}</p>
       )}
     </>
   )
@@ -277,7 +277,7 @@ export function IdeaActivity({ activity }: { activity: IdeaCheckActivity }) {
       <div className="flex items-center gap-2 mb-3">
         <PixelSpinner size="sm" tone="gold" />
         <h3 className="font-pixel text-[9px] text-white">Checking the web…</h3>
-        <span className="font-pixel text-[7px] text-white/35">{activity.status}</span>
+        <span className="font-pixel text-[7px] text-white/40">{activity.status}</span>
       </div>
 
       {activity.searches.length > 0 && (
@@ -293,7 +293,7 @@ export function IdeaActivity({ activity }: { activity: IdeaCheckActivity }) {
 
       {activity.sources.length > 0 && (
         <div>
-          <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest">
+          <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest">
             {activity.sources.length} sources found
           </span>
           <ul className="flex flex-col gap-1 mt-1.5">

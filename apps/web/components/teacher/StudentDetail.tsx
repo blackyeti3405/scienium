@@ -96,7 +96,7 @@ export function StudentDetail({ studentId }: { studentId: string }) {
       {!team ? (
         <div className="border border-white/10 bg-[#0a1628] rounded-lg px-4 py-8 text-center space-y-4">
           <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mx-auto">
-            <User size={20} className="text-white/30" />
+            <User size={20} className="text-white/40" />
           </div>
           <p className="text-sm text-white/40">
             This student hasn&apos;t joined a lab yet.

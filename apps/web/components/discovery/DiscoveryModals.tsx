@@ -28,7 +28,7 @@ function DismissBanner({
       <div className="flex-1 min-w-0">{children}</div>
       <button
         onClick={onDismiss}
-        className="text-white/30 hover:text-white/60 shrink-0 font-pixel text-[8px]"
+        className="text-white/40 hover:text-white/60 shrink-0 font-pixel text-[8px]"
       >
         ✕
       </button>

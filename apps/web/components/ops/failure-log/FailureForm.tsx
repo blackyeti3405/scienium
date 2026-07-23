@@ -46,7 +46,7 @@ export function FailureForm({
         </span>
         <div className="flex flex-col">
           <span className="font-pixel text-[9px] text-white">{isEdit ? 'Editing failure' : 'Log a failure'}</span>
-          <span className="font-pixel text-[6px] text-white/35 mt-0.5">Every setback is data — document it</span>
+          <span className="font-pixel text-[6px] text-white/40 mt-0.5">Every setback is data — document it</span>
         </div>
         {isEdit && onCancel && (
           <button onClick={onCancel} className="ops-entry-card__cancel font-pixel" title="Cancel edit">

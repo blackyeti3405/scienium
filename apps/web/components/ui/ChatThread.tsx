@@ -31,7 +31,7 @@ export function ChatMessageList({
           key={i}
           className={`flex flex-col gap-1 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
         >
-          <span className="font-pixel text-[6px] text-white/25 uppercase tracking-widest px-1">
+          <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest px-1">
             {msg.role === 'user' ? 'You' : 'Vega'}
           </span>
           <div
@@ -95,7 +95,7 @@ export function ChatComposer({
         onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), onSend())}
         disabled={disableInputWhileSending ? sending : undefined}
         placeholder={placeholder}
-        className={`flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm font-pixel text-[8px]${disableInputWhileSending ? ' disabled:opacity-60' : ''}`}
+        className={`flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/40 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm font-pixel text-[8px]${disableInputWhileSending ? ' disabled:opacity-60' : ''}`}
       />
       <button
         onClick={onSend}

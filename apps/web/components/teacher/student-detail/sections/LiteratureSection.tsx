@@ -81,12 +81,12 @@ export function LiteratureSection({ overview }: { overview: Overview }) {
                           Proficient · {prof.bestScore}%
                         </span>
                       ) : (
-                        <span className="text-xs text-white/35 bg-white/5 border border-white/10 rounded-full px-2 py-0.5 whitespace-nowrap">
+                        <span className="text-xs text-white/40 bg-white/5 border border-white/10 rounded-full px-2 py-0.5 whitespace-nowrap">
                           Not demonstrated
                         </span>
                       )
                     ) : (
-                      <span className="text-xs text-white/25 whitespace-nowrap">
+                      <span className="text-xs text-white/40 whitespace-nowrap">
                         No attempt
                       </span>
                     )}

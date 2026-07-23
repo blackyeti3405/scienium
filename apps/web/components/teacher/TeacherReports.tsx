@@ -75,7 +75,7 @@ export function TeacherReports() {
     return (
       <div className="max-w-6xl mx-auto tr-report">
         <div className="border border-dashed border-white/10 rounded-lg py-12 text-center">
-          <p className="text-sm text-white/30">
+          <p className="text-sm text-white/40">
             No class data yet — share a class code so students can join.
           </p>
         </div>
@@ -125,11 +125,11 @@ export function TeacherReports() {
           Proficiency by team
         </h2>
         {data.proficiency.length === 0 ? (
-          <p className="text-sm text-white/30">No proficiency data yet.</p>
+          <p className="text-sm text-white/40">No proficiency data yet.</p>
         ) : (
           <table className="w-full text-sm text-white/80 border-collapse">
             <thead>
-              <tr className="font-pixel text-[8px] text-white/35 uppercase">
+              <tr className="font-pixel text-[8px] text-white/40 uppercase">
                 <th className="text-left py-1.5 px-2">Team</th>
                 <th className="text-right py-1.5 px-2">Distinct papers mastered</th>
                 <th className="text-right py-1.5 px-2">Distinct papers in progress</th>
@@ -178,7 +178,7 @@ export function TeacherReports() {
           Days in current phase
         </h2>
         {data.pacing.length === 0 ? (
-          <p className="text-sm text-white/30">No teams yet.</p>
+          <p className="text-sm text-white/40">No teams yet.</p>
         ) : (
           <ul className="space-y-1.5">
             {data.pacing.map((row) => {

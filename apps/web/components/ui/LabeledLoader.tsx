@@ -59,7 +59,7 @@ export function LabeledLoader({
       <PixelSpinner size="lg" tone={TONE_SPINNER[tone]} />
       <span className={`font-pixel text-[9px] uppercase tracking-widest ${labelColor}`}>{label}</span>
       {sublabel && (
-        <span className="font-pixel text-[7px] text-white/30 text-center max-w-[260px] normal-case tracking-normal">
+        <span className="font-pixel text-[7px] text-white/40 text-center max-w-[260px] normal-case tracking-normal">
           {sublabel}
         </span>
       )}
