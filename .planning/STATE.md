@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 2 planned — 3 plans authored (02-01, 02-02, 02-03) + verified by checker (PASS, 0 blockers, 3 warnings fixed); ready for /gsd:execute-phase 2"
-last_updated: "2026-07-24T00:00:00.000Z"
-last_activity: 2026-07-24 -- /gsd:plan-phase 2 completed: 3 plans authored (02-01 engine/gate, 02-02 BattleScreen+leaderboard, 02-03 E2E+SPEC); plan-checker PASS with 0 blockers; 3 warnings (leaderboard route tracking, BattleScreen data flow, RESEARCH.md resolution) fixed
+stopped_at: "Phase 02 Wave 1 complete — 02-01 executed (compile baseline green, engine/gate/matchmaking fixes, combat-engine 18 tests); ready for Wave 2 (02-02: BattleScreen)"
+last_updated: "2026-07-24T11:24:00.000Z"
+last_activity: 2026-07-24 -- /gsd:execute-phase 2 Wave 1 (02-01) complete: barrel repoint → tsc --noEmit green, 18 combat-engine tests pass, 32 existing tests pass (0 regressions), trophy-loss mechanism behind TROPHY_LOSS_TODO
 progress:
-  total_phases: 3
+  total_phases: 2
   completed_phases: 1
   total_plans: 4
-  completed_plans: 1
-  percent: 17
+  completed_plans: 2
+  percent: 33
 ---
 
 # Project State
@@ -22,42 +22,42 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 See: .planning/ROADMAP.md (created 2026-07-19)
 
 **Core value:** Ship a finished, verified, and balanced PvP raid system students can use to raid each other — grounded truth of what's actually built, completed to spec §11, proven by tests, tuned so losing trophies feels fair instead of arbitrary.
-**Current focus:** Phase 02 — close-spec-gaps-tests (UN-GATED 2026-07-22)
+**Current focus:** Phase 02 — close-spec-gaps-tests
 
 ## Current Position
 
-Phase: 01 — COMPLETE (report-only audit delivered + signed off)
-Plan: 1 of 1 in Phase 1 — DONE (report committed `7c6e9e2`; AUDIT-05 held)
-Status: Phase 01 complete; Phase 2 review gate passed 2026-07-22 — Phase 02 un-gated. CONTEXT written (`02-CONTEXT.md`, D-01..D-25); **no `*-PLAN.md` files yet** → next: `/gsd:plan-phase 2`
-Last activity: 2026-07-22 -- Phase 01 marked complete; user sign-off un-gated Phase 2
+Phase: 02 (close-spec-gaps-tests) — EXECUTING (Wave 1/3 complete)
+Plan: 2 of 3
+Status: Executing Phase 02 — 02-01 complete, advancing to 02-02 (Wave 2)
+Last activity: 2026-07-24 -- Wave 1 (02-01) complete: tsc green, 18 combat-engine tests pass, 0 regressions
 
-Progress: [██░░░░░░░░] 17% (1 of 6 plans across phases)
+Progress: [███░░░░░░░] 33% (2 of 6 plans across phases)
 
 ## Phase Status
 
 | Phase | Plans | Status |
 |-------|-------|--------|
 | 1. Verify-State Audit (Report Only) | 1/1 | **Complete** — audit report committed (`7c6e9e2`); user (Matthew) signed off 2026-07-22; AUDIT-05 no-mutation gate held |
-| 2. Close Spec Gaps + Tests | 3/3 | **Planned** — 02-01 (wave 1, engine+gate), 02-02 (wave 2, BattleScreen+leaderboard), 02-03 (wave 3, E2E+SPEC). Plan checker: PASS, 0 blockers. Ready for `/gsd:execute-phase 2`. |
+| 2. Close Spec Gaps + Tests | 1/3 | **In Progress** — 02-01 complete (engine/gate/matchmaking + combat-engine tests); advancing to 02-02 (BattleScreen + leaderboard). |
 | 3. Balance Tuning | 0/2 | Not started (blocked on Phase 2) |
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 1
-- Average duration: — (Phase 1 plan executed inline across a context compaction; not reliably timed)
-- Total execution time: —
+- Total plans completed: 2
+- Average duration: 02-01 = 37 min (executor agent)
+- Total execution time: 37 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Verify-State Audit | 1/1 | — (inline) | — |
-| 2. Close Spec Gaps + Tests | 0/3 | — | — |
+| 2. Close Spec Gaps + Tests | 1/3 (02-01) | 37 min | 37 min |
 | 3. Balance Tuning | 0/2 | — | — |
 
-**Recent Trend:** Phase 1 (report-only) delivered in 1 plan; zero source mutated (AUDIT-05). The milestone's first real code work begins with Phase 2's `02-01`.
+**Recent Trend:** Phase 2 Wave 1 (02-01) landed: 4 commits, barrel repoint closed the 16-error tsc baseline (now green), 18 combat-engine tests pass, `TROPHY_LOSS_TODO` mechanism in place. First real code work of the milestone delivered.
 
 *Updated after each plan completion.*
 
@@ -74,7 +74,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ### Pending Todos
 
-- [PvP audit finding: apps/web @/packages/* alias resolution broken (tsc --noEmit fails)](todos/pending/2026-07-20-pvp-audit-finding-apps-web-packages-alias-broken.md) — **verified pre-merge, pre-existing on `matthew/pvp-system`**; folded as the TOP row of the Phase 1 audit's "Phase 2 Fix Scope" table; signed off 2026-07-22; scheduled to resolve as the first `02-01` action (option (b): repoint to `@scienium/shared-types` barrel). The todo stays PENDING until Phase 2's `02-01` actually applies the repoint.
+- [PvP audit finding: apps/web @/packages/* alias resolution broken (tsc --noEmit fails)](todos/pending/2026-07-20-pvp-audit-finding-apps-web-packages-alias-broken.md) — **RESOLVED by 02-01 Wave 1** — barrel repoint applied (`f7b83b6`), `tsc --noEmit` now green (0 errors).
 
 ### Blockers/Concerns
 
@@ -95,6 +95,6 @@ Items acknowledged and carried forward (from milestone PROJECT.md Out of Scope; 
 
 ## Session Continuity
 
-Last session: 2026-07-24 -- `/gsd:plan-phase 2 --skip-research` completed: 3 plans authored (7 planner agents, 4 failures handled), UI-SPEC typography block resolved (4 sans-serif sizes + pixel exception), plan-checker PASS (0 blockers, 3 warnings → fixed). Research, UI contract, and planning artifacts all committed.
-Stopped at: Phase 02 planning complete; ready for `/gsd:execute-phase 2` (first: 02-01 — barrel repoint → tsc green)
-Resume file: .planning/phases/02-close-spec-gaps-tests/02-PLAN-OUTLINE.md
+Last session: 2026-07-24 -- `/gsd:execute-phase 2` Wave 1 complete: 02-01 executed (4 commits), barrel repoint → tsc green, 18 combat-engine tests pass, 32 existing tests pass (0 regressions). SUMMARY.md written.
+Stopped at: Wave 1 (02-01) complete; advancing to Wave 2 (02-02: BattleScreen + leaderboard + type-cycle + meter tests)
+Resume file: .planning/phases/02-close-spec-gaps-tests/02-01-SUMMARY.md
