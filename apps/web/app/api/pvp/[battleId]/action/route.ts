@@ -30,7 +30,7 @@ import type {
   BuildingTarget,
   RaidCastEvent,
   RaidSession,
-} from '@/packages/shared-types/src/pvp'
+} from '@scienium/shared-types'
 
 // ─── raidLogJson shape stored on PvpRaid rows ─────────────────────────────
 

@@ -23,8 +23,7 @@ import {
   buildSpell,
   buildBuildingTarget,
 } from '@/lib/pvp/combat-engine'
-import type { LabType } from '@/packages/shared-types/src/enums'
-import type { Spell, BuildingTarget, RaidSession } from '@/packages/shared-types/src/pvp'
+import type { LabType, Spell, BuildingTarget, RaidSession } from '@scienium/shared-types'
 
 // ─── Tunable balancing values (spec §4, §7) ──────────────────────────────
 
@@ -304,7 +303,7 @@ export async function POST(req: NextRequest) {
           defenderBase: defenderBuildings,
           castEvents: [],
           lastCastTs: 0,
-        },
+        } as any,
       },
     })
 
