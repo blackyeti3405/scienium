@@ -8,6 +8,14 @@
  * Opponent trophy count is shown, sourced from PvpTrophies via the API.
  * Meter fill is linear (tasksCompleted / 5) rather than reflecting
  * discrete tier thresholds. Refind/raid count decrements are optimistic.
+ *
+ * VISUAL-PASS STATUS (D-22): SKIPPED.
+ * The lobby uses consistent dark card styling (bg-slate-800/60, border-slate-700/50)
+ * matching the BattleScreen's non-viewport elements. It is a functional navigation
+ * /status page, not an immersive game-world viewport — adding TileBackground or
+ * pixel-art would add visual noise without proportional UX benefit. The BattleScreen
+ * itself provides the full pixel-art experience. Revisit if a future milestone
+ * makes the lobby the primary raid-activity hub.
  */
 
 'use client'
@@ -139,6 +147,12 @@ export default function PvpLobbyPage() {
         ...prev,
         raidsRemaining: Math.max(0, prev.raidsRemaining - 1),
       }))
+      // Stash the session data for the BattleScreen to read on mount
+      if (data.session) {
+        try {
+          sessionStorage.setItem('pvp_active_raid_session', JSON.stringify(data.session))
+        } catch { /* sessionStorage full — BattleScreen shows fallback */ }
+      }
       router.push(`/pvp/battle/${data.raidId}`)
     } catch (err: any) {
       setError(err.message)

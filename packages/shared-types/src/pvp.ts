@@ -97,5 +97,5 @@ export interface RaidResult {
   raidId: string
   percentDestroyed: number // 0–100
   trophyDelta: number // positive = gained by attacker, negative = lost
-  attackerTrophiesAfter: number // defender unaffected in v1
+  attackerTrophiesAfter: number // defender loses same trophies in v1
 }
