@@ -1,7 +1,8 @@
 ---
 phase: 02
 phase_name: Close Spec Gaps + Tests
-status: draft
+status: approved
+reviewed_at: 2026-07-23
 created: 2026-07-23
 source: Signed-off Phase-1 audit report + CONTEXT.md (D-01..D-35) + RESEARCH.md + codebase scouting
 ---
@@ -60,19 +61,16 @@ The app is a student-facing pixel-art game targeting ~120 students. The dark the
 
 ### Font Sizes
 
-Exactly 4 sizes declared for PvP UI:
+Exactly 4 sizes declared for PvP UI (sans-serif scale; 1 justified exception — see below):
 
 | Size | Tailwind | CSS px | Usage | Font |
 |------|----------|--------|-------|------|
-| pixel-micro | N/A (custom) | 10px (0.625rem) | Building/spell names in HUD, label text, badge text | `.font-pixel` |
-| body-xs | `text-xs` | 12px (0.75rem) | Explanatory text, secondary info, meter notch labels | sans |
-| body-sm | `text-sm` | 14px (0.875rem) | Body text, non-interactive details, trophy count | sans |
-| body-base | `text-base` | 16px (1rem) | Primary body text, button labels, lobby text | sans |
-| heading-md | `text-xl` | 20px (1.25rem) | Section headings, opponent name | sans (bold) |
-| heading-lg | `text-2xl` | 24px (1.5rem) | Lobby page heading, trophy display | sans (bold) |
-| heading-xl | `text-3xl` | 30px (1.875rem) | Results screen trophy delta, timer | sans (bold) |
+| body | `text-sm` | 14px (0.875rem) | Body text, explanatory text, secondary info, non-interactive details, trophy count, meter labels | sans |
+| body-lg | `text-base` | 16px (1rem) | Primary body text, button labels, lobby text, opponent name | sans |
+| heading | `text-xl` | 20px (1.25rem) | Section headings, lobby page heading | sans |
+| display | `text-3xl` | 30px (1.875rem) | Results screen trophy delta, timer | sans |
 
-**Note:** `.font-pixel` at 10px is defined in `globals.css:59-64` with `line-height: 1.6`. This is the explicit game-UI font utility. Use it ONLY for game chrome (HUD, spell bar, meter labels) — NOT for body text (accessibility concern documented in the existing CSS comment).
+**Justified exception — game-chrome pixel font:** `.font-pixel` at 10px (0.625rem) is used ONLY for building/spell names in the HUD, spell bar, cooldown indicators, and badge text. This is a game-specific utility font declared in `globals.css:59-64` with `line-height: 1.6`. NOT part of the sans-serif visual hierarchy. NOT used for body text or standard UI elements (accessibility concern documented in the existing CSS comment).
 
 ### Font Weights
 
@@ -81,8 +79,7 @@ Exactly 2 weights:
 | Weight | Tailwind | Usage |
 |--------|----------|-------|
 | 400 (normal) | `font-normal` | All body text, explanatory text |
-| 600 (semibold) | `font-semibold` | Section headings, important labels, trophy numbers, meter idle/active labels |
-| 700 (bold) | `font-bold` | Lobby heading, opponent name, results trophy delta |
+| 600 (semibold) | `font-semibold` | All headings, important labels, trophy numbers, meter idle/active labels, lobby heading, opponent name, results trophy delta |
 
 ### Line Heights
 
