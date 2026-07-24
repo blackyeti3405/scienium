@@ -7,9 +7,8 @@
  * (getRaidQuota, consumeRaid, consumeRefind, buildSpell, buildBuildingTarget),
  * spell-power.ts (getSpellPower), and Prisma db for opponent/building lookups.
  *
- * Known shortcuts: spell/building display names are derived from buildingKey
- * via formatBuildingName() instead of fetching a catalog. MAX_RAIDS_PER_DAY
- * and MAX_REFINDS_PER_DAY are hardcoded at 3 (spec says tunable in v1).
+ * Known shortcuts: MAX_RAIDS_PER_DAY and MAX_REFINDS_PER_DAY are hardcoded
+ * at 3 (spec says tunable in v1).
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -24,6 +23,7 @@ import {
   buildBuildingTarget,
 } from '@/lib/pvp/combat-engine'
 import type { LabType, Spell, BuildingTarget, RaidSession } from '@scienium/shared-types'
+import { shopBuilding } from '@/lib/shop'
 
 // ─── Tunable balancing values (spec §4, §7) ──────────────────────────────
 
@@ -31,11 +31,6 @@ const MAX_RAIDS_PER_DAY = 3
 const MAX_REFINDS_PER_DAY = 3
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
-
-/** Derive a human-readable name from a shop building key (e.g. "power_plant" → "Power Plant"). */
-function formatBuildingName(key: string): string {
-  return key.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-}
 
 /** Build Spell objects for every owned shop building that has a matching Spell row. */
 async function getTeamSpells(
@@ -56,7 +51,7 @@ async function getTeamSpells(
       if (!spell) return null
       return buildSpell(
         spell.id,
-        formatBuildingName(b.buildingKey),
+        shopBuilding(b.buildingKey)?.name ?? b.buildingKey,
         b.id,
         b.level,
         labType,
@@ -84,7 +79,7 @@ async function getTeamBuildings(teamId: string): Promise<BuildingTarget[]> {
       if (!spell) return null
       return buildBuildingTarget(
         b.id,
-        formatBuildingName(b.buildingKey),
+        shopBuilding(b.buildingKey)?.name ?? b.buildingKey,
         b.level,
         b.posX!,
         b.posY!,
@@ -94,13 +89,22 @@ async function getTeamBuildings(teamId: string): Promise<BuildingTarget[]> {
     .filter((b): b is BuildingTarget => b !== null)
 }
 
-/** Pick a random team from the same class that isn't the current team. */
+/** Pick a random eligible opponent team from the same class. */
 async function findRandomOpponent(
   ownTeamId: string,
   classId: string,
+  shownBaseIds?: string[],
 ): Promise<{ id: string; name: string; labType: LabType | null } | null> {
   const eligible = await db.team.findMany({
-    where: { classId, id: { not: ownTeamId } },
+    where: {
+      classId,
+      id: {
+          not: ownTeamId,
+          notIn: shownBaseIds ?? [],
+        },
+      phase: { in: ['working', 'showcase'] },
+      shopBuildings: { some: { posX: { not: null } } },
+    },
     select: { id: true, name: true, labType: true },
   })
   if (eligible.length === 0) return null
@@ -187,7 +191,7 @@ export async function POST(req: NextRequest) {
 
   const { teamId, labType } = ctx
 
-  let body: { action?: string; opponentTeamId?: string }
+  let body: { action?: string; opponentTeamId?: string; shownBaseIds?: string[] }
   try {
     body = await req.json()
   } catch {
@@ -197,7 +201,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const { action, opponentTeamId } = body
+  const { action, opponentTeamId, shownBaseIds } = body
 
   // ── refind ──────────────────────────────────────────────────────────
 
@@ -228,7 +232,7 @@ export async function POST(req: NextRequest) {
     } | null = null
 
     if (team?.classId) {
-      const match = await findRandomOpponent(teamId, team.classId)
+      const match = await findRandomOpponent(teamId, team.classId, shownBaseIds)
       if (match) {
         const [buildings, oppTrophiesRow] = await Promise.all([
           getTeamBuildings(match.id),
@@ -277,6 +281,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Snapshot defender base at raid start
+    // TODO(D-04, ENGINE-05): Also read TeamGatewayPlacement rows for the defender
+    // and fold them into the snapshot so the raid engine sees the full base layout.
+    // Gateways (navigation-only structures) don't have SpellType/level/damage, so
+    // the BuildingTarget type needs an `isGateway` flag or a separate array. For now,
+    // only TeamShopBuilding positions are included (the core targetable buildings).
     const defenderBuildings = await getTeamBuildings(opponentTeamId)
     const attackerSpells = await getTeamSpells(teamId, labType ?? 'biocore')
 

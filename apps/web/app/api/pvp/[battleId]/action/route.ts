@@ -116,6 +116,8 @@ export async function POST(
 
   // ── Enforce 15-second time limit (DB createdAt is authoritative) ─────
 
+  // Server-authoritative 15s window: Date.now() - raid.startedAt.getTime()
+  // must be <= 15000ms. Client timestamps are advisory only.
   const elapsed = Date.now() - raid.startedAt.getTime()
   if (elapsed >= RAID_TIME_LIMIT_MS) {
     // Timer expired before this cast — finalize from stored log
@@ -131,6 +133,8 @@ export async function POST(
     lastCastTs: 0,
   }
 
+  // Server-authoritative cooldown: lastCastTs must be >= 1500ms ago.
+  // Client cooldown UX is presentation only.
   if (raidLog.lastCastTs > 0 && Date.now() - raidLog.lastCastTs < 1500) {
     return NextResponse.json(
       { error: 'Cast delay not met — 1.5s required between casts' },
@@ -143,6 +147,10 @@ export async function POST(
   const { multiplier } = await getSpellPower(teamId)
 
   // ── Reconstruct RaidSession and apply damage ─────────────────────────
+
+  // Non-destructive raid invariant: defender buildings are reconstructed from
+  // raidLogJson snapshot only. team_shop_buildings rows are NEVER read or
+  // mutated on the cast path. All damage exists only inside the raid instance.
 
   const session: RaidSession = {
     id: raid.id,
@@ -167,6 +175,8 @@ export async function POST(
 
   // ── Persist updated raid log ─────────────────────────────────────────
 
+  // Raid log stores {spellId, x, y, clientTs} per cast. Client damage is
+  // never stored. Log enables replay/dispute verification.
   const updatedLog: RaidLog = {
     spellsAvailable: raidLog.spellsAvailable,
     defenderBase: session.defenderBase,
@@ -196,6 +206,8 @@ export async function POST(
 
   const elapsedAfterCast = Date.now() - raid.startedAt.getTime()
   if (elapsedAfterCast >= RAID_TIME_LIMIT_MS) {
+    // completeRaid reads trophies and persists the result from the snapshot only.
+    // Defender team_shop_buildings rows are NEVER mutated here — invariant upheld.
     const result = await completeRaid(session, battleId)
     return NextResponse.json({
       defenderBase: session.defenderBase,
