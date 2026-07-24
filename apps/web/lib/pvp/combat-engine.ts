@@ -22,6 +22,8 @@ export const RAID_TIME_LIMIT_MS = 15_000
 
 export const TROPHY_GAIN_THRESHOLD = 30 // percent — below this = loss
 export const MAX_TROPHY_GAIN = 10 // at 100% destruction
+export const TROPHY_LOSS_THRESHOLD = 30 // percent — below this = loss
+export const MAX_TROPHY_LOSS = 10 // at 0% destruction
 export const TROPHY_LOSS_TODO = true // exact loss formula is a TODO tunable
 
 // ─── Spell Construction ─────────────────────────────────────────────────────
@@ -276,13 +278,16 @@ export function calculateTrophyDelta(percentDestroyed: number): number {
     return Math.ceil(ratio * MAX_TROPHY_GAIN)
   }
 
-  // Loss: below 30% threshold
-  // TODO: replace with proper tuned loss formula once balancing values are set.
-  // For now: linear scale from 0% = -10, 29% = -1.
-  if (TROPHY_LOSS_TODO) {
-    const ratio = percentDestroyed / TROPHY_GAIN_THRESHOLD
-    return -Math.ceil((1 - ratio) * MAX_TROPHY_GAIN)
-  }
+  // Loss: below threshold — inversely scaled with Math.ceil for steppy integer loss.
+	// 0% = -MAX_TROPHY_LOSS (worst), 29% = -1 (best loss), threshold boundary = 0.
+	if (TROPHY_LOSS_TODO) {
+	  const rawLoss =
+	    MAX_TROPHY_LOSS -
+	    Math.ceil(
+	      (percentDestroyed / TROPHY_LOSS_THRESHOLD) * (MAX_TROPHY_LOSS - 1),
+	    )
+	  return -Math.min(Math.max(rawLoss, 1), MAX_TROPHY_LOSS)
+	}
 
   return 0
 }
