@@ -1,14 +1,13 @@
 import { db } from '@/lib/db'
 import { getSpellPower } from './spell-power'
-import type { LabType, SpellType } from '@/packages/shared-types/src/enums'
+import type { LabType, SpellType } from '@scienium/shared-types'
 import type {
   BuildingTarget,
   RaidCastEvent,
   RaidResult,
   RaidSession,
   Spell,
-  SpellPowerTier,
-} from '@/packages/shared-types/src/pvp'
+} from '@scienium/shared-types'
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -23,6 +22,8 @@ export const RAID_TIME_LIMIT_MS = 15_000
 
 export const TROPHY_GAIN_THRESHOLD = 30 // percent — below this = loss
 export const MAX_TROPHY_GAIN = 10 // at 100% destruction
+export const TROPHY_LOSS_THRESHOLD = 30 // percent — below this = loss
+export const MAX_TROPHY_LOSS = 10 // at 0% destruction
 export const TROPHY_LOSS_TODO = true // exact loss formula is a TODO tunable
 
 // ─── Spell Construction ─────────────────────────────────────────────────────
@@ -78,45 +79,6 @@ export function buildBuildingTarget(
   }
 }
 
-// ─── Spell Power Meter ──────────────────────────────────────────────────────
-
-/**
- * Returns the attacker's Spell Power tier + multiplier for today.
- * Reads TeamDailyTaskDay; defaults to NONE / 0.5x if no row exists yet.
- */
-export async function resolveSpellPowerMultiplier(
-  teamId: string,
-): Promise<{ tier: SpellPowerTier; multiplier: number }> {
-  const { tier, multiplier } = await getSpellPower(teamId)
-  return { tier, multiplier }
-}
-
-// ─── Raid Session Creation ──────────────────────────────────────────────────
-
-export interface CreateRaidSessionInput {
-  attackerTeamId: string
-  defenderTeamId: string
-  attackerSpells: Spell[]
-  defenderBuildings: BuildingTarget[]
-}
-
-/**
- * Creates a RaidSession — called server-side when a raid is initiated.
- * Snapshots the defender's base so mutations during the raid don't affect
- * the real building rows.
- */
-export function createRaidSession(input: CreateRaidSessionInput): RaidSession {
-  return {
-    id: crypto.randomUUID(),
-    attackerTeamId: input.attackerTeamId,
-    defenderTeamId: input.defenderTeamId,
-    timeLimit: RAID_TIME_LIMIT_MS,
-    spellsAvailable: input.attackerSpells,
-    defenderBase: input.defenderBuildings,
-    startedAt: Date.now(),
-  }
-}
-
 // ─── Damage Resolution ─────────────────────────────────────────────────────
 
 /**
@@ -159,7 +121,7 @@ export function resolveCast(
  * Type effectiveness: empirical > theoretical > applied > empirical.
  * Returns 2.0 (super-effective), 0.5 (resist), or 1.0 (neutral).
  */
-function typeEffectiveness(
+export function typeEffectiveness(
   spellType: SpellType,
   buildingType: SpellType,
 ): number {
@@ -170,7 +132,7 @@ function typeEffectiveness(
 
 const TYPE_ORDER: SpellType[] = ['empirical', 'theoretical', 'applied']
 
-function isSuperEffective(attacker: SpellType, defender: SpellType): boolean {
+export function isSuperEffective(attacker: SpellType, defender: SpellType): boolean {
   const a = TYPE_ORDER.indexOf(attacker)
   const d = TYPE_ORDER.indexOf(defender)
   return (a + 1) % 3 === d // next in cycle is super-effective
@@ -238,7 +200,7 @@ export async function completeRaid(
     raidLogJson: {
       spellsAvailable: session.spellsAvailable,
       defenderBase: session.defenderBase,
-    },
+    } as any,
   }
 
   if (existingRaidId) {
@@ -316,13 +278,16 @@ export function calculateTrophyDelta(percentDestroyed: number): number {
     return Math.ceil(ratio * MAX_TROPHY_GAIN)
   }
 
-  // Loss: below 30% threshold
-  // TODO: replace with proper tuned loss formula once balancing values are set.
-  // For now: linear scale from 0% = -10, 29% = -1.
-  if (TROPHY_LOSS_TODO) {
-    const ratio = percentDestroyed / TROPHY_GAIN_THRESHOLD
-    return -Math.ceil((1 - ratio) * MAX_TROPHY_GAIN)
-  }
+  // Loss: below threshold — inversely scaled with Math.ceil for steppy integer loss.
+	// 0% = -MAX_TROPHY_LOSS (worst), 29% = -1 (best loss), threshold boundary = 0.
+	if (TROPHY_LOSS_TODO) {
+	  const rawLoss =
+	    MAX_TROPHY_LOSS -
+	    Math.ceil(
+	      (percentDestroyed / TROPHY_LOSS_THRESHOLD) * (MAX_TROPHY_LOSS - 1),
+	    )
+	  return -Math.min(Math.max(rawLoss, 1), MAX_TROPHY_LOSS)
+	}
 
   return 0
 }

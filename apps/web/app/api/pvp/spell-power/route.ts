@@ -3,7 +3,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { getSpellPower } from '@/lib/pvp/spell-power'
 
 export async function GET(req: NextRequest) {
-  const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
+  const { ctx, error } = await requireTeamContext(req, { tier: 'read', feature: 'pvp' })
   if (error) return error
 
   const { tasksCompleted, tier, multiplier } = await getSpellPower(ctx.teamId)

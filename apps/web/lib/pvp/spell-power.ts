@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import type { SpellPowerTier } from '@/packages/shared-types/src/pvp'
+import type { SpellPowerTier } from '@scienium/shared-types'
 
 // ─── Spell Power Tiers (Option B — spec §4.4) ─────────────────────────────
 // The multiplier is applied to every spell's baseDamage on the attacker's side
