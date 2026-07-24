@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 1 complete; review-gate sign-off received 2026-07-22 (Phase 2 un-gated)"
-last_updated: "2026-07-22T04:23:58.938Z"
-last_activity: 2026-07-22 -- Phase 01 marked complete; user sign-off un-gated Phase 2
+stopped_at: "Phase 2 planned — 3 plans authored (02-01, 02-02, 02-03) + verified by checker (PASS, 0 blockers, 3 warnings fixed); ready for /gsd:execute-phase 2"
+last_updated: "2026-07-24T00:00:00.000Z"
+last_activity: 2026-07-24 -- /gsd:plan-phase 2 completed: 3 plans authored (02-01 engine/gate, 02-02 BattleScreen+leaderboard, 02-03 E2E+SPEC); plan-checker PASS with 0 blockers; 3 warnings (leaderboard route tracking, BattleScreen data flow, RESEARCH.md resolution) fixed
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 1
+  total_plans: 4
   completed_plans: 1
   percent: 17
 ---
@@ -28,7 +28,7 @@ See: .planning/ROADMAP.md (created 2026-07-19)
 
 Phase: 01 — COMPLETE (report-only audit delivered + signed off)
 Plan: 1 of 1 in Phase 1 — DONE (report committed `7c6e9e2`; AUDIT-05 held)
-Status: Phase 01 complete; Phase 2 review gate passed 2026-07-22 — Phase 02 un-gated, ready for `/gsd-execute-phase 2`
+Status: Phase 01 complete; Phase 2 review gate passed 2026-07-22 — Phase 02 un-gated. CONTEXT written (`02-CONTEXT.md`, D-01..D-25); **no `*-PLAN.md` files yet** → next: `/gsd:plan-phase 2`
 Last activity: 2026-07-22 -- Phase 01 marked complete; user sign-off un-gated Phase 2
 
 Progress: [██░░░░░░░░] 17% (1 of 6 plans across phases)
@@ -38,7 +38,7 @@ Progress: [██░░░░░░░░] 17% (1 of 6 plans across phases)
 | Phase | Plans | Status |
 |-------|-------|--------|
 | 1. Verify-State Audit (Report Only) | 1/1 | **Complete** — audit report committed (`7c6e9e2`); user (Matthew) signed off 2026-07-22; AUDIT-05 no-mutation gate held |
-| 2. Close Spec Gaps + Tests | 0/3 | **Un-gated** — Phase 1 review gate passed 2026-07-22; ready for execution (first action `02-01`: repoint `@/packages` → `@scienium/shared-types` barrel → `tsc` green) |
+| 2. Close Spec Gaps + Tests | 3/3 | **Planned** — 02-01 (wave 1, engine+gate), 02-02 (wave 2, BattleScreen+leaderboard), 02-03 (wave 3, E2E+SPEC). Plan checker: PASS, 0 blockers. Ready for `/gsd:execute-phase 2`. |
 | 3. Balance Tuning | 0/2 | Not started (blocked on Phase 2) |
 
 ## Performance Metrics
@@ -95,6 +95,6 @@ Items acknowledged and carried forward (from milestone PROJECT.md Out of Scope; 
 
 ## Session Continuity
 
-Last session: 2026-07-22 -- Phase 1 audit executed inline (report-only); review-gate sign-off received
-Stopped at: Phase 1 complete; Phase 2 un-gated — ready for `/gsd-execute-phase 2`
-Resume file: .planning/phases/01-verify-state-audit-report-only/01-AUDIT-REPORT.md (signed off, §7 fix-scope table + §8 sign-off) → next: .planning/phases/02-close-spec-gaps-tests/02-01-PLAN.md (first Phase 2 action: repoint @/packages → barrel, tsc green)
+Last session: 2026-07-24 -- `/gsd:plan-phase 2 --skip-research` completed: 3 plans authored (7 planner agents, 4 failures handled), UI-SPEC typography block resolved (4 sans-serif sizes + pixel exception), plan-checker PASS (0 blockers, 3 warnings → fixed). Research, UI contract, and planning artifacts all committed.
+Stopped at: Phase 02 planning complete; ready for `/gsd:execute-phase 2` (first: 02-01 — barrel repoint → tsc green)
+Resume file: .planning/phases/02-close-spec-gaps-tests/02-PLAN-OUTLINE.md

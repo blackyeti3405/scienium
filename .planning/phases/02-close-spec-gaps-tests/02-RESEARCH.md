@@ -633,22 +633,16 @@ function typeEffectiveness(spellType: SpellType, buildingType: SpellType): numbe
 | A5 | The second student team (devuser2) is in the same class as "E2E Test Lab" | Test Strategy | If not in same class, matchmaking finds no opponent and E2E fails. MEDIUM risk — check the seed data or seed a second team. |
 | A6 | `vitest.config.ts` resolver handles `@scienium/shared-types` imports | Test Strategy | If Vitest can't resolve the workspace package, unit tests fail. MEDIUM risk — the resolver uses `tsconfigPaths`, and `@scienium/shared-types` is resolved by pnpm workspace, not tsconfig paths. May need a vitest `resolve.alias` entry. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Is the E2E Test Lab team at `working` phase?**
-   - What we know: The E2E suite uses a single shared "E2E Test Lab" team. Other specs (F11 etc.) test features unlocked at earlier phases. PvP requires `working`.
-   - What's unclear: The team's current phase in the local dev DB.
-   - Recommendation: Check `select phase from teams where name = 'E2E Test Lab'` against the development database. If it's not `working`, add a DB seed/advance step to the PvP E2E's `beforeAll`.
+1. **Is the E2E Test Lab team at `working` phase?** — RESOLVED: 02-03 PLANNED
+   - Plan handling: 02-03 Task 1 includes a `beforeAll` DB-check step that queries the team phase. If not `working`, the step advances the team to `working` phase via DB seed/update before any PvP tests run. This is also tracked as an AC1 precondition check.
 
-2. **Is the second dev team in the same class as "E2E Test Lab"?**
-   - What we know: E2E has two student accounts (leader = devuser1 "E2E Test Lab", student = devuser2) and a teacher. Matchmaking requires same class.
-   - What's unclear: Whether devuser2's team is in the same class as "E2E Test Lab".
-   - Recommendation: Check class membership in dev DB or seed the second team during pvp.spec.ts beforeAll.
+2. **Is the second dev team in the same class as "E2E Test Lab"?** — RESOLVED: 02-03 PLANNED
+   - Plan handling: 02-03 Task 1's setup step verifies devuser2's team class membership against "E2E Test Lab". If they differ, the `beforeAll` seeds or updates the second team to share the class. Ensuring same-class matchmaking eligibility is explicitly listed as an E2E precondition.
 
-3. **Does Vitest resolve `@scienium/shared-types` via workspace or need alias config?**
-   - What we know: `vitest.config.ts` uses `resolve: { tsconfigPaths: true }` which resolves `@/*` from tsconfig. `@scienium/shared-types` is resolved by pnpm workspace symlinks.
-   - What's unclear: Whether Vitest's tsconfigPaths plugin also resolves workspace packages.
-   - Recommendation: Write a quick smoke test importing from `@scienium/shared-types` in a Vitest test to confirm resolution works. If not, add `resolve.alias` entries to `vitest.config.ts`.
+3. **Does Vitest resolve `@scienium/shared-types` via workspace or need alias config?** — RESOLVED: 02-01 PLANNED
+   - Plan handling: 02-01 Task 3 creates `combat-engine.test.ts` with imports from `@scienium/shared-types`. If resolution fails at execution time, the executor adds `resolve.alias` entries to `vitest.config.ts`. The plan acknowledges both the workspace symlink (likely-works) and the alias fallback path. Testing this is part of Task 3's verify step (`npx vitest run combat-engine.test.ts`).
 
 ## Environment Availability
 
