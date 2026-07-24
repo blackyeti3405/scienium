@@ -139,6 +139,12 @@ export default function PvpLobbyPage() {
         ...prev,
         raidsRemaining: Math.max(0, prev.raidsRemaining - 1),
       }))
+      // Stash the session data for the BattleScreen to read on mount
+      if (data.session) {
+        try {
+          sessionStorage.setItem('pvp_active_raid_session', JSON.stringify(data.session))
+        } catch { /* sessionStorage full — BattleScreen shows fallback */ }
+      }
       router.push(`/pvp/battle/${data.raidId}`)
     } catch (err: any) {
       setError(err.message)
