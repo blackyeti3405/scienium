@@ -1515,6 +1515,15 @@ model Fair {
   longitude    Float?
   // Stable natural key from the seed dataset, so re-seeding upserts in place.
   seedKey      String?   @unique @map("seed_key")
+  // ── Paid-sync control (REFACTOR2 P1-S10) ────────────────────────────────
+  // `Fair`/`FairEvent` are GLOBAL rows shared by every team, but any student
+  // matched to the fair could trigger a paid Firecrawl crawl and race the write.
+  /// Claim stamp electing ONE crawler; conditional, with a TTL for a dead claim.
+  syncClaimedAt    DateTime? @map("sync_claimed_at")
+  /// When a crawl last completed — the cooldown that stops repeat spend.
+  lastSyncedAt     DateTime? @map("last_synced_at")
+  /// `User.id` that triggered the last crawl. Provenance for a shared row.
+  lastSyncedByUserId String? @map("last_synced_by_user_id")
 
   events     FairEvent[]
   userAssocs FairUserAssociation[]

@@ -5,6 +5,36 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.40.0] — 2026-07-25
+
+### Fixed — the global fair catalog is no longer any student's to rewrite (P1-S10)
+`Fair` and `FairEvent` are **global rows shared by every team**, but any student matched to a
+fair could trigger a paid Firecrawl crawl. N students in one state each paid for the same fair,
+concurrently, and the read-then-write on the shared event row was last-writer-wins. Provider
+output was cast rather than validated, and the returned year was trusted unbounded.
+
+- **One crawler, with a cooldown.** A conditional stamp on `Fair.syncClaimedAt` elects a single
+  crawler and enforces a 12-hour cooldown in the same statement: the row must have no live claim
+  **and** not have been synced recently. Losers get 429 instead of each starting a paid job. A
+  2-minute TTL keeps a dead claim from wedging the fair, and any failure releases it.
+- **Validated, not cast.** The Firecrawl response now goes through `DatesSchema.safeParse`.
+  Firecrawl steers its LLM with the schema, but the response is still provider output landing in
+  a row every team in the state reads.
+- **Plausible years only.** A year outside `[thisYear-1, thisYear+3]` is rejected — a model
+  returning 1999 or 2190 has misread the page.
+- **Compare-and-set publish.** The update is predicated on `status: 'estimated'`, so the
+  database refuses to downgrade curated data whoever wins the race. The old `findFirst` →
+  `update` checked `confirmed` against a stale pre-read.
+- **Provenance.** `lastSyncedAt` / `lastSyncedByUserId` record who refreshed a shared row.
+
+**Still open:** the audit's preferred model — students *request* a refresh and an
+admin/background job stages it for review before publishing. That is a product change; this
+makes the existing student-triggered path safe rather than replacing it.
+
+### Verification
+Gates 1–5 pass. Vitest: **104 files / 1,484 tests passed**. Migration applied to the local dev
+database.
+
 ## [0.39.1] — 2026-07-25
 
 Closes the two items v0.39.0 left open.

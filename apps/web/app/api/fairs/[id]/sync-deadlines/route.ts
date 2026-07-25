@@ -14,6 +14,25 @@ import { serverEnv } from '@/lib/env'
  */
 const FIRECRAWL_TIMEOUT_MS = 60_000
 
+/** A sync claim older than this is assumed dead and may be taken over. */
+const SYNC_CLAIM_TTL_MS = 2 * 60_000
+
+/**
+ * How long a completed crawl stands before another is allowed. `Fair` is a
+ * GLOBAL row: without a cooldown, every matched student in a state could pay for
+ * the same crawl, repeatedly, on a dataset that changes a few times a year.
+ */
+const SYNC_COOLDOWN_MS = 12 * 60 * 60_000
+
+/**
+ * Plausible event years. A model that returns 1999 or 2190 has misread the page,
+ * and this writes to a row every team in the state reads.
+ */
+function isPlausibleYear(year: number): boolean {
+  const now = new Date().getUTCFullYear()
+  return Number.isInteger(year) && year >= now - 1 && year <= now + 3
+}
+
 /**
  * Resolve `promise`, or reject once `ms` elapses. The underlying work is not
  * cancellable (the Firecrawl SDK exposes no abort signal) — this bounds how
@@ -114,6 +133,45 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     })
   }
 
+  // ── Claim the crawl before paying for it (REFACTOR2 P1-S10) ───────────────
+  // One conditional stamp elects a single crawler and enforces the cooldown in
+  // the same statement: the row must have no live claim AND not have been synced
+  // recently. Losers are told to wait rather than each starting their own paid
+  // job against a row they all share.
+  const claimStamp = new Date()
+  const claim = await db.fair.updateMany({
+    where: {
+      id: fair.id,
+      OR: [
+        { syncClaimedAt: null },
+        { syncClaimedAt: { lt: new Date(claimStamp.getTime() - SYNC_CLAIM_TTL_MS) } },
+      ],
+      AND: [
+        {
+          OR: [
+            { lastSyncedAt: null },
+            { lastSyncedAt: { lt: new Date(claimStamp.getTime() - SYNC_COOLDOWN_MS) } },
+          ],
+        },
+      ],
+    },
+    data: { syncClaimedAt: claimStamp },
+  })
+  if (claim.count !== 1) {
+    return NextResponse.json(
+      {
+        error:
+          'These dates were refreshed recently, or another student is refreshing them right now. Try again later.',
+      },
+      { status: 429 },
+    )
+  }
+  /** Hand the slot back so a failure does not hold the fair for the full TTL. */
+  const releaseClaim = () =>
+    db.fair
+      .updateMany({ where: { id: fair.id, syncClaimedAt: claimStamp }, data: { syncClaimedAt: null } })
+      .catch(() => {})
+
   const today = new Date().toISOString().slice(0, 10)
 
   // Pass both the homepage and a wildcard so Firecrawl can follow links to
@@ -146,17 +204,23 @@ Return null for any date not found on the site — do not guess.`,
     )
 
     if (res.success && res.data) {
-      extracted = res.data as ExtractedDates
+      // VALIDATE, don't cast (P1-S10). Firecrawl steers an LLM with the schema
+      // but the response is still provider output landing in a row every team
+      // in the state reads — a cast would let any shape through.
+      const parsed = DatesSchema.safeParse(res.data)
+      extracted = parsed.success ? parsed.data : null
     }
   } catch (err) {
     console.error('[sync-deadlines] Firecrawl extract failed:', err)
+    await releaseClaim()
     return NextResponse.json(
       { error: "Could not read the fair's site — check it manually" },
       { status: 502 },
     )
   }
 
-  if (!extracted?.year) {
+  if (!extracted?.year || !isPlausibleYear(Number(extracted.year))) {
+    await releaseClaim()
     return NextResponse.json(
       { error: "Couldn't find clear dates on that page — please verify manually" },
       { status: 422 },
@@ -172,21 +236,40 @@ Return null for any date not found on the site — do not guess.`,
     status: 'estimated' as const,
   }
 
-  const existing = await db.fairEvent.findFirst({
-    where: { fairId: fair.id, year },
-    select: { id: true, status: true },
+  // Publish under a COMPARE-AND-SET, not a read-then-write (P1-S10). The old
+  // findFirst→update was last-writer-wins on a row every team in the state
+  // reads, and its `confirmed` check was a stale pre-read. Predicating the
+  // update on `status: 'estimated'` makes the database refuse to downgrade
+  // curated data, whoever wins the race.
+  const published = await db.fairEvent.updateMany({
+    where: { fairId: fair.id, year, status: 'estimated' },
+    data,
   })
-  if (existing?.status === 'confirmed') {
-    // A confirmed row for this exact year appeared since the pre-check (or the
-    // scrape targeted an older year) — scrape output never downgrades it.
-    return NextResponse.json(
-      { error: 'This year\'s dates are already confirmed and cannot be overwritten.' },
-      { status: 409 },
-    )
+  if (published.count === 0) {
+    const created = await db.fairEvent
+      .create({ data: { fairId: fair.id, year, ...data } })
+      .catch(() => null)
+    if (!created) {
+      // Either a `confirmed` row already stands for this year, or another
+      // crawler created one first. Curated data is never downgraded.
+      await db.fair.updateMany({
+        where: { id: fair.id, syncClaimedAt: claimStamp },
+        data: { syncClaimedAt: null, lastSyncedAt: claimStamp, lastSyncedByUserId: ctx.dbUserId },
+      })
+      return NextResponse.json(
+        { error: 'This year\'s dates are already confirmed and cannot be overwritten.' },
+        { status: 409 },
+      )
+    }
   }
-  const event = existing
-    ? await db.fairEvent.update({ where: { id: existing.id }, data })
-    : await db.fairEvent.create({ data: { fairId: fair.id, year, ...data } })
+
+  const event = await db.fairEvent.findFirstOrThrow({ where: { fairId: fair.id, year } })
+
+  // Release the claim and start the cooldown, with provenance for the shared row.
+  await db.fair.updateMany({
+    where: { id: fair.id, syncClaimedAt: claimStamp },
+    data: { syncClaimedAt: null, lastSyncedAt: new Date(), lastSyncedByUserId: ctx.dbUserId },
+  })
 
   return NextResponse.json({
     event: {
