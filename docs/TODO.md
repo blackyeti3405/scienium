@@ -107,6 +107,23 @@ fails too — the list can only shrink on purpose.
 Two of these (`showcase/route.ts`, `discovery/tree/route.ts`) have no transaction at all
 today, so they need one introduced before the activity write can join it.
 
+## E2E asset reclaim needs a separate R2 test bucket (REFACTOR2 P1-S15)
+
+v0.47.0 routed `e2e/paper-upload.spec.ts` cleanup through the real deletion lifecycle
+and made it assert the `UploadedAsset` row ends up `orphaned` — provably queued for the
+reclaim sweep. What it does NOT do is verify the object is physically gone, because
+**R2 `nova-lab-assets` is shared with production**: a test that deletes objects there
+is one bad predicate away from deleting real student uploads.
+
+To close it properly: create a separate bucket (e.g. `nova-lab-assets-e2e`), point the
+E2E environment's `R2_BUCKET_NAME` at it, and then the spec can run the reclaim and
+assert the object is actually gone. Until then, physical reclaim stays covered only at
+the unit level (`test/paper-delete-asset.test.ts`, `reconcileOrphanedAssets`).
+
+The rewritten spec has also **not been executed** — it needs the dev server, database,
+Clerk credentials, and makes a paid ingestion call. Run
+`pnpm --filter web test:e2e:file e2e/paper-upload.spec.ts` before trusting it.
+
 ## PatentsView API key (Discovery prior-art lane)
 - **Now:** the "Prior art (patents)" lane in Discovery's Articles tab runs keyless —
   it degrades to a single Google Patents search link-out card instead of live

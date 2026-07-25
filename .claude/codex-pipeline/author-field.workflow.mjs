@@ -97,10 +97,16 @@
  * script enforces.
  *
  * returns:
- *   { plan, results, contradictions, allClean } — `plan` is ready to write to
- *   `.claude/codex-pipeline/plans/<field>.json` and hand to codex:merge.
- *   `allClean` requires every lane clean AND no unresolved cross-lesson
- *   contradiction, so a field that disagrees with itself does not read as green.
+ *   { plan, results, contradictions, failedSegments, allClean } — `plan` is ready
+ *   to write to `.claude/codex-pipeline/plans/<field>.json` and hand to
+ *   codex:merge.
+ *
+ *   `allClean` is a claim that the run PRODUCED A COMPLETE FIELD, not merely that
+ *   nothing it attempted failed: every requested segment authored, at least one
+ *   lesson in the plan, every lane returned and clean, and no contradiction
+ *   surviving reconciliation. It used to check only the last three, all of which
+ *   are trivially empty when nothing was attempted — so a run whose briefs all
+ *   died reported green having written nothing (REFACTOR2 P1-R15).
  *
  * WHY A CONSISTENCY PHASE EXISTS AT ALL: every other agent here sees exactly one
  * unit, so nothing in the pipeline could ever notice two lessons teaching the
@@ -476,7 +482,7 @@ async function authorAndVerifyUnit(seg, unit) {
       const a = auditVerdicts.find((v) => v.findingId === f.id)
       return a && a.correctionAccurate === false ? { ...f, auditorNote: a.note } : f
     })
-    await agent(fixPrompt(unit, enriched), {
+    const fixed = await agent(fixPrompt(unit, enriched), {
       // effort: medium, not low — the fixer must sweep the whole lesson for other
       // copies of a corrected fact and re-check the answer key against the edited
       // prose. At low it only patched the cited `where`, which produced 8 of the
@@ -485,6 +491,18 @@ async function authorAndVerifyUnit(seg, unit) {
       agentType: AGENT, model: 'sonnet', effort: 'medium', phase: 'Fix',
       label: `fix:${seg.short}/${unit.unitShort}#${round}`,
     })
+
+    // A DEAD FIXER IS NOT A CLEAN LANE (P1-R15). The return was previously
+    // ignored, so a fixer that died on a MED/LOW-only round fell straight into
+    // the `survivingHigh.length === 0` ship below and reported the unit clean —
+    // with none of its findings applied.
+    if (!fixed) {
+      log(`✗ ${seg.short}/${unit.unitShort}: fixer died — ${toApply.length} finding(s) unapplied`)
+      return {
+        segmentId: seg.id, unitId: unit.unitId, rounds: round, clean: false,
+        openHigh: [{ id: 'fixer-dead', severity: 'HIGH', where: unit.unitId, excerpt: '', problem: `fix agent died with ${toApply.length} finding(s) unapplied`, correction: 're-run this unit' }],
+      }
+    }
 
     // Ship once no HIGH survives. MED/LOW were just applied by the fix above and
     // do NOT earn another round — see the header note: blocking on MED made every
@@ -545,10 +563,26 @@ const briefs = await parallel(
   ),
 )
 
+/**
+ * Requested-segment completeness is a HARD invariant (REFACTOR2 P1-R15).
+ *
+ * This used to filter empty briefs out of `planned` and log a warning. If every
+ * brief died or came back empty, `lanes`, `results`, `dirty`, `lost`, and
+ * `contradictions` were all empty — and the workflow returned `allClean: true`
+ * having authored nothing at all. A run that produced no content is the loudest
+ * possible failure, not the quietest possible success.
+ */
+const failedSegments = segments
+  .map((seg, i) => {
+    const b = briefs[i]
+    if (!b) return { id: seg.id, reason: 'brief agent died' }
+    if (b.units.length === 0) return { id: seg.id, reason: 'brief returned no units' }
+    return null
+  })
+  .filter(Boolean)
+
 const planned = briefs.filter(Boolean).filter((b) => b.units.length > 0)
-for (const b of briefs.filter(Boolean)) {
-  if (b.units.length === 0) log(`⚠ ${b.seg.id}: brief returned no units — segment skipped`)
-}
+for (const f of failedSegments) log(`✗ ${f.id}: ${f.reason} — segment NOT authored`)
 
 /**
  * Title → slug-safe id fragment. Truncate BEFORE trimming separators: cutting a
@@ -626,9 +660,12 @@ const CONSISTENCY_SCHEMA = {
   },
 }
 
-let contradictions = []
-if (results.length) {
-  const found = await agent(
+/**
+ * The cross-lesson contradiction probe. A function, not an inline string, so the
+ * post-reconciliation RE-CHECK runs the identical probe (P1-R15) — a re-check
+ * that asked a different question could not tell you whether the fix worked.
+ */
+const consistencyPrompt = () =>
     `Find CROSS-LESSON contradictions in the "${A.label}" Field Codex draft set — places where two different lessons state incompatible versions of the same fact.
 
 The drafts are one JSON \`Lesson\` per file under \`${DRAFT_DIR}/${A.field}-*/\`.
@@ -647,14 +684,19 @@ Then find pairs that DISAGREE ABOUT THE SAME EVENT. You are looking for one thin
 
 Open the specific draft files only for pairs you are about to flag, to confirm the contradiction is real and quote it exactly.
 
-Return the contradictions with the exact draft file paths involved. Return an empty array if the field is internally consistent — that is the expected result, and inventing findings here is worse than finding none.`,
+Return the contradictions with the exact draft file paths involved. Return an empty array if the field is internally consistent — that is the expected result, and inventing findings here is worse than finding none.`
+
+let contradictions = []
+if (results.length) {
+  const found = await agent(
+    consistencyPrompt(),
     { agentType: AGENT, model: 'sonnet', effort: 'high', phase: 'Consistency', label: `consistency:${A.field}`, schema: CONSISTENCY_SCHEMA },
   )
   contradictions = found?.contradictions ?? []
 
   if (contradictions.length) {
     log(`⚠ ${contradictions.length} cross-lesson contradiction(s) — reconciling`)
-    await agent(
+    const reconciled = await agent(
       `Reconcile cross-lesson contradictions in the "${A.label}" Field Codex drafts. Each entry names the draft files that disagree about one shared fact, and which version is correct.
 
 For each: edit the WRONG file(s) so every lesson tells the same story. Verify with WebSearch if the resolution looks uncertain (budget: 4 calls total) — do not propagate an error by making the correct lesson match the wrong one.
@@ -669,6 +711,32 @@ ${JSON.stringify(contradictions, null, 2)}
 Return a one-line summary per file changed.`,
       { agentType: AGENT, model: 'sonnet', effort: 'medium', phase: 'Consistency', label: `reconcile:${A.field}` },
     )
+
+    // RE-DETECT (P1-R15). The reconciler's return used to be discarded, so a
+    // reconciler that died — or that edited the wrong side — left the run
+    // reporting the ORIGINAL findings with no idea whether anything had been
+    // fixed. Re-running the detector is the only thing that can tell the
+    // difference, and it is what `contradictions` means from here on: what is
+    // STILL wrong, not what was once found.
+    if (!reconciled) {
+      log('✗ reconciler died — contradictions stand unresolved')
+    } else {
+      const after = await agent(consistencyPrompt(), {
+        agentType: AGENT, model: 'sonnet', effort: 'high', phase: 'Consistency',
+        label: `consistency-recheck:${A.field}`, schema: CONSISTENCY_SCHEMA,
+      })
+      if (!after) {
+        log('✗ consistency re-check died — treating the original contradictions as unresolved')
+      } else {
+        const remaining = after.contradictions ?? []
+        log(
+          remaining.length
+            ? `⚠ ${remaining.length} contradiction(s) survived reconciliation`
+            : `Consistency: all ${contradictions.length} contradiction(s) reconciled`,
+        )
+        contradictions = remaining
+      }
+    }
   } else {
     log('Consistency: no cross-lesson contradictions found')
   }
@@ -698,6 +766,34 @@ const plan = {
 
 const dirty = results.filter((r) => !r.clean)
 const lost = lanes.length - results.length
-log(`Done: ${results.length}/${lanes.length} units authored, ${results.filter((r) => r.clean).length} clean${dirty.length ? `, ${dirty.length} with open HIGH findings: ${dirty.map((r) => r.unitId).join(', ')}` : ''}${lost ? `, ${lost} lane(s) died` : ''}.`)
+const shippedLessons = plan.segments.reduce(
+  (n, seg) => n + seg.units.reduce((m, u) => m + u.lessons.length, 0),
+  0,
+)
 
-return { plan, results, contradictions, allClean: dirty.length === 0 && lost === 0 && contradictions.length === 0 }
+/**
+ * `allClean` is a claim that this run PRODUCED A COMPLETE, VERIFIED FIELD — not
+ * merely that nothing it attempted went wrong (REFACTOR2 P1-R15).
+ *
+ * The old expression checked only `dirty`, `lost`, and `contradictions`, every
+ * one of which is empty when nothing was attempted. A run whose briefs all died
+ * returned `allClean: true` having written zero lessons. Producing nothing is
+ * now the loudest failure available:
+ *
+ *   - every REQUESTED segment produced units          (failedSegments)
+ *   - the plan actually contains lessons              (shippedLessons)
+ *   - every lane came back, and came back clean       (lost, dirty)
+ *   - nothing contradicts itself AFTER reconciliation (contradictions)
+ */
+const allClean =
+  failedSegments.length === 0 &&
+  lanes.length > 0 &&
+  shippedLessons > 0 &&
+  dirty.length === 0 &&
+  lost === 0 &&
+  contradictions.length === 0
+
+log(`Done: ${results.length}/${lanes.length} units authored, ${results.filter((r) => r.clean).length} clean, ${shippedLessons} lesson(s) in the plan${failedSegments.length ? `, ${failedSegments.length} segment(s) NOT authored: ${failedSegments.map((f) => f.id).join(', ')}` : ''}${dirty.length ? `, ${dirty.length} with open HIGH findings: ${dirty.map((r) => r.unitId).join(', ')}` : ''}${lost ? `, ${lost} lane(s) died` : ''}.`)
+if (!allClean) log('✗ allClean: false — do NOT run codex:merge on this plan until the named problems are re-run.')
+
+return { plan, results, contradictions, failedSegments, allClean }

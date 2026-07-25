@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Browser } from '@playwright/test'
 import { api, withSeedPage } from './api'
 import { e2eDb, e2eTeamId } from './db'
 import { minimalPdfBytes } from './fixtures'
@@ -14,6 +14,18 @@ import { minimalPdfBytes } from './fixtures'
  *
  * The assertions walk the service's rejection ladder in order, then the success
  * path, so a regression tells you WHICH step broke rather than just "upload failed".
+ *
+ * CLEANUP GOES THROUGH THE REAL DELETION LIFECYCLE (REFACTOR2 P1-S15). This spec
+ * used to tidy up with `e2eDb.paper.deleteMany` — a direct row delete that skips
+ * the route entirely, so the `UploadedAsset` row stayed `attached` pointing at a
+ * paper that no longer existed and the stored object was left to a later
+ * reconcile pass to notice. A test that proves an upload is correctly ledgered
+ * and then strands that exact ledger row is not a cleanup, it is a second bug.
+ * `DELETE /api/papers/:id` retires the paper and orphans the asset in one
+ * transaction, which is also the behaviour worth having under test.
+ *
+ * It also set `team.topic = null` in `beforeAll` and never put it back, leaking
+ * fixture state into every spec that ran afterwards. Restored in `afterAll` now.
  */
 
 const UPLOADED_TITLE_MARKER = 'E2E Fixture Paper: Thermal Tolerance of Reef Symbionts'
@@ -49,23 +61,58 @@ function pdfWithoutText(): Buffer {
   return Buffer.from(minimalPdfBytes())
 }
 
-async function cleanupFixturePapers() {
-  await e2eDb.paper.deleteMany({
-    where: { teamId: await e2eTeamId(), fullText: { contains: UPLOADED_TITLE_MARKER } },
+/**
+ * Retire every fixture paper through the authenticated route, so the asset
+ * ledger is left in the state the app itself would leave it: the row orphaned
+ * and queued for the reclaim sweep, not `attached` to a paper that is gone.
+ */
+async function cleanupFixturePapers(browser: Browser) {
+  const teamId = await e2eTeamId()
+  const papers = await e2eDb.paper.findMany({
+    where: { teamId, fullText: { contains: UPLOADED_TITLE_MARKER } },
+    select: { id: true },
+  })
+  if (papers.length === 0) return
+
+  await withSeedPage(browser, 'leader', async (page) => {
+    for (const p of papers) {
+      const res = await api.delete(page, `/api/papers/${p.id}`)
+      // 404 is fine — a previous run may already have retired it.
+      expect([200, 204, 404]).toContain(res.status())
+    }
   })
 }
 
 test.describe('paper upload — extracted service workflow', () => {
-  test.beforeAll(async () => {
+  /** The team's real topic, put back in `afterAll` (P1-S15). */
+  let savedTopic: string | null = null
+
+  test.beforeAll(async ({ browser }) => {
+    const teamId = await e2eTeamId()
     // The relevance gate only runs when a topic is committed; keep it out of the
-    // way so these assertions isolate the upload workflow itself.
-    await e2eDb.team.update({ where: { id: await e2eTeamId() }, data: { topic: null } })
-    await cleanupFixturePapers()
+    // way so these assertions isolate the upload workflow itself. SAVED, because
+    // every other spec shares this fixture team and several of them depend on it.
+    const team = await e2eDb.team.findUnique({ where: { id: teamId }, select: { topic: true } })
+    savedTopic = team?.topic ?? null
+    await e2eDb.team.update({ where: { id: teamId }, data: { topic: null } })
+    await cleanupFixturePapers(browser)
   })
 
-  test.afterAll(async () => {
-    await cleanupFixturePapers()
-    await e2eDb.$disconnect()
+  test.afterAll(async ({ browser }) => {
+    // `finally`-shaped: a failed cleanup must not stop the topic being restored,
+    // and neither must stop the client disconnecting.
+    try {
+      await cleanupFixturePapers(browser)
+    } finally {
+      try {
+        await e2eDb.team.update({
+          where: { id: await e2eTeamId() },
+          data: { topic: savedTopic },
+        })
+      } finally {
+        await e2eDb.$disconnect()
+      }
+    }
   })
 
   test('rejects a non-PDF that lies about its MIME type', async ({ browser }) => {
@@ -144,6 +191,30 @@ test.describe('paper upload — extracted service workflow', () => {
       expect(list.ok()).toBeTruthy()
       const ids = (await list.json()).papers.map((p: { id: string }) => p.id)
       expect(ids).toContain(created.id)
+
+      // Deleting through the route retires the asset too (P1-S8/P1-S15): the
+      // ledger row must end up ORPHANED — queued for the reclaim sweep — not
+      // `attached` to a paper that no longer exists. The old direct-row cleanup
+      // left exactly that, which is how a test that proves correct ledgering
+      // went on to strand the row it had just verified.
+      const del = await api.delete(page, `/api/papers/${created.id}`)
+      expect(del.ok()).toBeTruthy()
+
+      const retired = await e2eDb.uploadedAsset.findFirst({
+        where: { attachedToType: 'paper', attachedToId: created.id },
+        select: { status: true },
+      })
+      expect(retired, 'the asset ledger row should survive the paper').toBeTruthy()
+      expect(retired!.status).toBe('orphaned')
+
+      // The paper itself is gone, so the same bytes upload cleanly again rather
+      // than colliding with a tombstone.
+      const again = await api.post(page, '/api/papers', {
+        multipart: {
+          file: { name: 'fixture-again.pdf', mimeType: 'application/pdf', buffer: pdf },
+        },
+      })
+      expect(again.ok()).toBeTruthy()
     })
   })
 })

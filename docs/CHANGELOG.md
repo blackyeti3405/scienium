@@ -5,6 +5,72 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.47.0] — 2026-07-25
+
+### Fixed — content authoring cannot report green after producing nothing (P1-R15)
+`author-field.workflow.mjs` computed `allClean` from `dirty`, `lost`, and `contradictions` —
+every one of which is empty when **nothing was attempted**. A run whose briefs all died or came
+back empty filtered them out with a warning and returned `allClean: true` having authored zero
+lessons. Three related holes closed:
+
+- **An empty brief is a failed segment, not a skipped one.** `failedSegments` is tracked and
+  returned, and `allClean` now also requires that every requested segment produced units, that
+  lanes exist, and that the plan contains at least one lesson. Producing nothing is the loudest
+  failure available rather than the quietest success.
+- **A dead fixer no longer ships a unit as clean.** The fix agent's return was ignored, so a
+  fixer that died on a MED/LOW-only round fell straight through to "no surviving HIGH → clean"
+  with none of its findings applied. The lane is now dirty, and a source test pins the guard
+  *ahead* of the ship path.
+- **Reconciliation is verified, not assumed.** The reconciler's return was discarded and there
+  was no re-detect, so `contradictions` reported what was *found* with no idea whether anything
+  was fixed. The consistency probe is now a function used by both the detector and a
+  post-reconciliation re-check, and `contradictions` means what still disagrees. A dead
+  reconciler or dead re-check leaves the originals standing.
+
+### Fixed — `codex:merge` installs atomically (P1-R15)
+The merge wrote content, three registries, then shelled out to the wrapper/checksum build — five
+independent writes. An interruption or a failing build left the repository half-updated, and
+nothing noticed until a later unrelated `codex:build --check` failed. Every artifact is now
+snapshotted, written, and **verified with the same `--check` CI runs**; if any step throws, every
+file is restored to its pre-merge state. A merge either fully lands and verifies, or the tree is
+untouched.
+
+The script also ran `main()` on import, so it could not be imported at all — which is why its
+hand-written mirror of the lesson schema had never been tested. It is now guarded by the standard
+entrypoint check, the key lists are one exported `SHAPE_KEYS` map, and
+`test/codex-schema-drift.test.ts` parses `types.ts` and fails when the two disagree. Importing it
+from a test also brought 640 lines of content-generating script under `tsc` for the first time;
+the JSDoc gaps that surfaced are fixed.
+
+### Fixed — the upload E2E spec cleans up through the real lifecycle (P1-S15)
+`e2e/paper-upload.spec.ts` proved an upload was correctly ledgered and then tidied up with
+`e2eDb.paper.deleteMany` — a direct row delete that skipped the route entirely, leaving the
+`UploadedAsset` row `attached` to a paper that no longer existed. A test that strands the exact
+ledger row it just verified is a second bug, not a cleanup. It also set `team.topic = null` in
+`beforeAll` and never restored it, leaking fixture state into every spec that ran after it.
+
+Cleanup now goes through `DELETE /api/papers/:id`, which retires the paper and orphans the asset
+in one transaction, and the spec **asserts the ledger row ends up `orphaned`** — provably queued
+for the reclaim sweep rather than stranded. The topic is saved and restored in nested `finally`
+blocks so a failed cleanup cannot skip it.
+
+### Still owed
+- The workflow test is a **source-level check**, and says so in its header. Workflow scripts run
+  sandboxed with no module access and this one ends in a top-level `return`, so it cannot be
+  imported and its logic cannot be executed under test. The test fails when a named guard is
+  deleted — the regression that actually happened — but cannot prove the guards are correct.
+- The audit asks for reclaim to be verified "in a test bucket". There is no test bucket: R2
+  `nova-lab-assets` is shared with production, so the spec asserts the ledger is queued rather
+  than deleting objects. Physical reclaim stays covered at the unit level. A separate test bucket
+  is the prerequisite for closing that properly.
+- The E2E spec was rewritten but **not executed** — it needs the dev server, database, Clerk
+  credentials, and makes a paid ingestion call.
+
+### Verification
+Gates 1–5 pass. Vitest: **114 files / 1,591 tests passed** (was 112 / 1,581). 10 new tests across
+the workflow invariants and the schema-drift guard. `codex:merge --dry-run` re-run against a real
+plan: still validates before writing, still wrote nothing.
+
 ## [0.46.0] — 2026-07-25
 
 ### Fixed — background work is durable, bounded, and honestly named (P1-R5)

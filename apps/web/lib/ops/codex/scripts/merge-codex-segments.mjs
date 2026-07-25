@@ -45,13 +45,53 @@
  * a whole-field run, a single `--branch`, and a `--deepen`.
  */
 import { readFileSync, writeFileSync, readdirSync, existsSync, unlinkSync, rmdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+
+/**
+ * Install every generated artifact ATOMICALLY (REFACTOR2 P1-R15).
+ *
+ * The old sequence wrote content, then three registries, then shelled out to the
+ * wrapper/checksum build — five independent writes with no relationship. An
+ * interruption or a failing wrapper build anywhere in the middle left the
+ * repository half-updated: new content with stale wrappers, or a synced registry
+ * naming a track whose file was never written. Nothing detected it until a
+ * later, unrelated `codex:build --check` failed for reasons that had nothing to
+ * do with whoever was running.
+ *
+ * `apply` snapshots every file it is about to touch, runs the writes and the
+ * verification, and puts every file back exactly as it was if ANY step throws.
+ * A merge either fully lands and verifies, or the tree is untouched.
+ */
+/**
+ * @param {string[]} paths
+ * @param {() => void} run
+ */
+function atomically(paths, run) {
+  /** @type {Map<string, string | null>} */
+  const before = new Map()
+  for (const p of paths) before.set(p, existsSync(p) ? readFileSync(p, 'utf8') : null)
+  try {
+    return run()
+  } catch (err) {
+    for (const [p, content] of before) {
+      if (content === null) {
+        if (existsSync(p)) unlinkSync(p)
+      } else if (!existsSync(p) || readFileSync(p, 'utf8') !== content) {
+        writeFileSync(p, content, 'utf8')
+      }
+    }
+    console.error('\ncodex:merge failed during install — every file was restored to its pre-merge state.')
+    throw err
+  }
+}
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 
 const codexDir = fileURLToPath(new URL('../', import.meta.url))
 const scriptsDir = `${codexDir}scripts/`
 const contentDir = `${codexDir}content/`
+/** Generated per-track wrappers — regenerated wholesale by build-codex-tracks.mjs. */
+const tracksDir = `${codexDir}tracks/`
 const indexPath = `${codexDir}index.ts`
 const shapeTestPath = `${codexDir}__tests__/content-shape.test.ts`
 const generatedTestPath = `${codexDir}__tests__/generated-content.test.ts`
@@ -93,6 +133,27 @@ function checkKeys(obj, allowed, where, problems) {
   }
 }
 
+/**
+ * The shapes this script validates, as key lists.
+ *
+ * These MIRROR the canonical interfaces in `lib/ops/codex/types.ts`, which is a
+ * duplication the audit flagged (REFACTOR2 P1-R15): a field added to `Lesson`
+ * there and not here means the merge silently rejects valid content, or silently
+ * accepts content the app cannot render. A `.mjs` script run by bare node cannot
+ * import a TypeScript interface, and interfaces have no runtime representation to
+ * read even if it could — so instead of a generator, `codex-schema-drift.test.ts`
+ * parses `types.ts` and fails when these lists and those interfaces disagree.
+ * Exported for exactly that test.
+ */
+export const SHAPE_KEYS = {
+  Lesson: ['id', 'label', 'readingMinutes', 'sections', 'workedExample', 'judgeFraming', 'checkpoint'],
+  LessonSection: ['heading', 'body'],
+  Checkpoint: ['questions'],
+  McQuestion: ['kind', 'id', 'prompt', 'options', 'answerId', 'explanations'],
+  OrderingQuestion: ['kind', 'id', 'prompt', 'items', 'correctOrder', 'explanation'],
+  MatchingQuestion: ['kind', 'id', 'prompt', 'left', 'right', 'correctPairs', 'explanation'],
+}
+
 /** @param {any} q @param {string} where @param {string[]} problems */
 function validateQuestion(q, where, problems) {
   if (!q || typeof q !== 'object') {
@@ -104,7 +165,7 @@ function validateQuestion(q, where, problems) {
   if (typeof q.prompt !== 'string' || !q.prompt.trim()) problems.push(`${at}: needs a non-empty prompt`)
 
   if (q.kind === 'mc') {
-    checkKeys(q, ['kind', 'id', 'prompt', 'options', 'answerId', 'explanations'], at, problems)
+    checkKeys(q, SHAPE_KEYS.McQuestion, at, problems)
     const ids = Array.isArray(q.options) ? q.options.map((/** @type {any} */ o) => o?.id) : []
     if (ids.length < 2) problems.push(`${at}: needs at least 2 options`)
     if (new Set(ids).size !== ids.length) problems.push(`${at}: duplicate option ids`)
@@ -123,7 +184,7 @@ function validateQuestion(q, where, problems) {
       if (!ids.includes(id)) problems.push(`${at}: explanations has key "${id}" with no matching option`)
     }
   } else if (q.kind === 'ordering') {
-    checkKeys(q, ['kind', 'id', 'prompt', 'items', 'correctOrder', 'explanation'], at, problems)
+    checkKeys(q, SHAPE_KEYS.OrderingQuestion, at, problems)
     const ids = Array.isArray(q.items) ? q.items.map((/** @type {any} */ i) => i?.id) : []
     const order = Array.isArray(q.correctOrder) ? q.correctOrder : []
     if (ids.length < 2) problems.push(`${at}: needs at least 2 items`)
@@ -134,7 +195,7 @@ function validateQuestion(q, where, problems) {
     }
     if (typeof q.explanation !== 'string' || !q.explanation.trim()) problems.push(`${at}: needs a non-empty explanation`)
   } else if (q.kind === 'matching') {
-    checkKeys(q, ['kind', 'id', 'prompt', 'left', 'right', 'correctPairs', 'explanation'], at, problems)
+    checkKeys(q, SHAPE_KEYS.MatchingQuestion, at, problems)
     const leftIds = Array.isArray(q.left) ? q.left.map((/** @type {any} */ l) => l?.id) : []
     const rightIds = Array.isArray(q.right) ? q.right.map((/** @type {any} */ r) => r?.id) : []
     const pairs = Array.isArray(q.correctPairs) ? q.correctPairs : []
@@ -226,13 +287,14 @@ function scanOrphanPremises(lesson, at, warnings) {
   }
 }
 
+/** @param {any} lesson @param {string} where @param {string[]} problems @param {string[]} warnings */
 function validateLesson(lesson, where, problems, warnings) {
   if (!lesson || typeof lesson !== 'object') {
     problems.push(`${where}: lesson is not an object`)
     return
   }
   const at = `${where} lesson "${lesson.id ?? '?'}"`
-  checkKeys(lesson, ['id', 'label', 'readingMinutes', 'sections', 'workedExample', 'judgeFraming', 'checkpoint'], at, problems)
+  checkKeys(lesson, SHAPE_KEYS.Lesson, at, problems)
 
   // Slug-safety + GLOBAL uniqueness (checked in main() against this run and every
   // shipped track) are the real invariants — the same ones content-shape.test.ts
@@ -251,7 +313,7 @@ function validateLesson(lesson, where, problems, warnings) {
     problems.push(`${at}: needs at least one section`)
   } else {
     lesson.sections.forEach((/** @type {any} */ s, /** @type {number} */ i) => {
-      checkKeys(s ?? {}, ['heading', 'body'], `${at} section ${i + 1}`, problems)
+      checkKeys(s ?? {}, SHAPE_KEYS.LessonSection, `${at} section ${i + 1}`, problems)
       if (!s?.body?.trim()) problems.push(`${at} section ${i + 1}: empty body`)
     })
   }
@@ -263,7 +325,7 @@ function validateLesson(lesson, where, problems, warnings) {
     problems.push(`${at}: checkpoint.questions must be an array`)
     return
   }
-  checkKeys(lesson.checkpoint, ['questions'], `${at} checkpoint`, problems)
+  checkKeys(lesson.checkpoint, SHAPE_KEYS.Checkpoint, `${at} checkpoint`, problems)
   if (questions.length < 3 || questions.length > 5) {
     problems.push(`${at}: checkpoint has ${questions.length} questions — must be 3-5`)
   }
@@ -303,7 +365,7 @@ function readUnit(planUnit, segId, problems, consumed, warnings) {
     try {
       lesson = JSON.parse(readFileSync(abs, 'utf8'))
     } catch (err) {
-      problems.push(`${pl.path}: invalid JSON — ${err.message}`)
+      problems.push(`${pl.path}: invalid JSON — ${err instanceof Error ? err.message : String(err)}`)
       continue
     }
     validateLesson(lesson, pl.path, problems, warnings)
@@ -327,15 +389,19 @@ function readUnit(planUnit, segId, problems, consumed, warnings) {
 // on every merge rather than hand-edited. That's what retires the "a NEW track
 // means THREE registries" footgun — drift is now impossible by construction.
 
-/** `acoustics-sound` → `acousticsSound` */
+/**
+ * `acoustics-sound` → `acousticsSound`
+ * @param {string} slug
+ */
 function camel(slug) {
-  return slug.replace(/-([a-z0-9])/g, (_, c) => c.toUpperCase())
+  return slug.replace(/-([a-z0-9])/g, (/** @type {string} */ _, /** @type {string} */ c) => c.toUpperCase())
 }
 
 /** @param {any} track */
 function lessonCount(track) {
   return [track.core, ...track.branches].reduce(
-    (n, seg) => n + seg.units.reduce((m, u) => m + u.lessons.length, 0),
+    (/** @type {number} */ n, /** @type {any} */ seg) =>
+      n + seg.units.reduce((/** @type {number} */ m, /** @type {any} */ u) => m + u.lessons.length, 0),
     0,
   )
 }
@@ -413,7 +479,11 @@ function main() {
 
   /** @type {string[]} */
   const problems = []
-  /** Non-blocking advisories — printed after a successful merge. */
+  /**
+   * Non-blocking advisories — printed after a successful merge.
+   * @type {string[]}
+   */
+  /** @type {string[]} */
   const warnings = []
   /** @type {string[]} */
   const consumed = []
@@ -499,12 +569,12 @@ function main() {
   for (const seg of assembled) {
     if (seg.kind === 'core') {
       track.core = seg
-      applied.push(`core (${seg.units.length} units, ${seg.units.reduce((n, u) => n + u.lessons.length, 0)} lessons)`)
+      applied.push(`core (${seg.units.length} units, ${seg.units.reduce((/** @type {number} */ n, /** @type {any} */ u) => n + u.lessons.length, 0)} lessons)`)
     } else {
       const at = track.branches.findIndex((/** @type {any} */ b) => b.id === seg.id)
       if (at === -1) track.branches.push(seg)
       else track.branches[at] = seg
-      applied.push(`${at === -1 ? 'branch' : 'branch (replaced)'} ${seg.id} (${seg.units.length} units, ${seg.units.reduce((n, u) => n + u.lessons.length, 0)} lessons)`)
+      applied.push(`${at === -1 ? 'branch' : 'branch (replaced)'} ${seg.id} (${seg.units.length} units, ${seg.units.reduce((/** @type {number} */ n, /** @type {any} */ u) => n + u.lessons.length, 0)} lessons)`)
     }
   }
 
@@ -515,25 +585,50 @@ function main() {
     return
   }
 
-  writeFileSync(trackPath, JSON.stringify(track, null, 2) + '\n', 'utf8')
-  console.log(`wrote content/${plan.slug}.json`)
-  for (const a of applied) console.log(`  - ${a}`)
-
-  // Regenerate every registry from content/ — including this field's, whether
-  // it is new or not.
-  const tracks = readdirSync(contentDir)
+  // Every path this merge can touch: the content file, the three registries, the
+  // per-track wrappers the build script generates, and the checksum manifest.
+  // Snapshotting the wrapper directory wholesale is deliberate — the build
+  // regenerates any of them, and a partial regeneration is exactly what we are
+  // protecting against.
+  const existingSlugs = readdirSync(contentDir)
     .filter((f) => f.endsWith('.json') && !f.startsWith('.'))
     .map((f) => f.replace(/\.json$/, ''))
-    .sort()
-    .map((slug) => ({ slug, track: JSON.parse(readFileSync(`${contentDir}${slug}.json`, 'utf8')) }))
+  const touched = [
+    trackPath,
+    indexPath,
+    shapeTestPath,
+    generatedTestPath,
+    `${contentDir}.checksums.json`,
+    ...new Set([...existingSlugs, plan.slug].map((slug) => `${tracksDir}${slug}.ts`)),
+  ]
 
-  writeFileSync(indexPath, syncIndex(tracks), 'utf8')
-  writeFileSync(shapeTestPath, syncTestRegistry(shapeTestPath, 'const ALL_TRACK_MODULES: Record<string, CodexTrack> = {', tracks), 'utf8')
-  writeFileSync(generatedTestPath, syncTestRegistry(generatedTestPath, 'const WRAPPERS: Record<string, CodexTrack> = {', tracks), 'utf8')
-  console.log(`synced registries for ${tracks.length} track(s): index.ts, content-shape.test.ts, generated-content.test.ts`)
+  atomically(touched, () => {
+    writeFileSync(trackPath, JSON.stringify(track, null, 2) + '\n', 'utf8')
+    console.log(`wrote content/${plan.slug}.json`)
+    for (const a of applied) console.log(`  - ${a}`)
 
-  // Generate the wrapper + checksums for the merged content.
-  execFileSync(process.execPath, [`${scriptsDir}build-codex-tracks.mjs`], { stdio: 'inherit' })
+    // Regenerate every registry from content/ — including this field's, whether
+    // it is new or not.
+    const tracks = readdirSync(contentDir)
+      .filter((f) => f.endsWith('.json') && !f.startsWith('.'))
+      .map((f) => f.replace(/\.json$/, ''))
+      .sort()
+      .map((slug) => ({ slug, track: JSON.parse(readFileSync(`${contentDir}${slug}.json`, 'utf8')) }))
+
+    writeFileSync(indexPath, syncIndex(tracks), 'utf8')
+    writeFileSync(shapeTestPath, syncTestRegistry(shapeTestPath, 'const ALL_TRACK_MODULES: Record<string, CodexTrack> = {', tracks), 'utf8')
+    writeFileSync(generatedTestPath, syncTestRegistry(generatedTestPath, 'const WRAPPERS: Record<string, CodexTrack> = {', tracks), 'utf8')
+    console.log(`synced registries for ${tracks.length} track(s): index.ts, content-shape.test.ts, generated-content.test.ts`)
+
+    // Generate the wrapper + checksums for the merged content.
+    execFileSync(process.execPath, [`${scriptsDir}build-codex-tracks.mjs`], { stdio: 'inherit' })
+
+    // VERIFY BEFORE COMMITTING TO IT. The same deterministic check CI runs — if
+    // the artifacts this merge just produced do not agree with the content it
+    // just wrote, the rollback above puts the tree back rather than leaving a
+    // repository that only fails later, somewhere else.
+    execFileSync(process.execPath, [`${scriptsDir}build-codex-tracks.mjs`, '--check'], { stdio: 'inherit' })
+  })
 
   if (!keepDrafts) {
     for (const d of consumed) unlinkSync(d)
@@ -548,4 +643,9 @@ function main() {
   console.log(`codex:merge done — ${plan.slug}: ${track.branches.length} branches, ${lessonCount(track)} lessons.`)
 }
 
-main()
+// Only run when invoked as a script. Without this the module cannot be imported
+// at all — `main()` fired on import and `parseArgs` exited the process — which
+// is why the key lists above had no test until now (P1-R15).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+}

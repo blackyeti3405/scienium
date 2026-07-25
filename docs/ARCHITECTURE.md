@@ -1323,6 +1323,19 @@ is already wired through `DATABASE_URL` for pooled app runtime queries and
 multi-instance rate-limit backend; in-process LRU remains the app's best-effort
 read cache. Resend is optional for email notifications.
 
+**`codex:merge` installs atomically.** It validates every draft before writing
+anything, then snapshots the content file, the three registries, the generated
+wrappers and the checksum manifest, writes them, regenerates the wrappers, and
+runs the same `codex:build --check` CI runs. If any step throws, every file is
+restored to its pre-merge state (REFACTOR2 P1-R15) — a merge either fully lands
+and verifies, or the tree is untouched. It used to be five unrelated writes, so
+an interruption left new content with stale wrappers and nothing noticed until an
+unrelated check failed later.
+
+The script's key lists mirror the interfaces in `lib/ops/codex/types.ts`, which a
+bare-node `.mjs` cannot import. `test/codex-schema-drift.test.ts` parses that file
+and fails when the two disagree, which is the drift guard in place of codegen.
+
 `apps/web/vercel.json` schedules:
 
 - `/api/cron/papers` every five minutes.
