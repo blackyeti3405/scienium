@@ -109,19 +109,14 @@ export function extractDoi(text: string): string | null {
   return match[0].replace(/[.,;:)\]]+$/, '') || null
 }
 
-/**
- * Deterministic, offline DOI → tier mapping. A DOI is only minted by a
- * registrar (Crossref, DataCite, …) for a formally published/versioned work —
- * so its mere presence implies "published somewhere," the cautious signal we
- * can support without resolving the DOI against any network. We have no
- * resolved host for a raw upload (unlike a Discovery-promoted source), so we
- * can't distinguish peer-reviewed from open-access from a DOI alone — treat
- * every registered DOI as `peer_reviewed`, the tier that best matches "this
- * is a real, indexed publication."
- */
-export function tierFromDoi(_doi: string): CredibilityTier {
-  return 'peer_reviewed'
-}
+// A DOI is an IDENTIFIER, not a review status (REFACTOR2 P1-S11). Crossref
+// registers DOIs for posted content/preprints, DataCite for software, datasets,
+// and physical objects, and the DOI Foundation states nothing definitive can be
+// inferred from the name itself. `tierFromDoi` used to return `peer_reviewed`
+// for any DOI, so an uploaded preprint got a green "reviewed by other
+// scientists" badge — the product taught a false research-credibility rule.
+// There is no honest offline mapping, so there is no function: an upload with a
+// DOI carries `credibilityTier: null` and the DOI is displayed on its own.
 
 /**
  * Static "how to vet a source" checklist — pure authored content, no LLM.

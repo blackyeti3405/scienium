@@ -41,7 +41,7 @@ export function PublishFooter({
             : privacy === 'private'
             ? 'Only your team can see it'
             : privacy === 'school_only'
-            ? 'Visible to your school'
+            ? 'School sharing was withdrawn — only your team can see it'
             : 'Shareable by link'}
         </span>
       </div>

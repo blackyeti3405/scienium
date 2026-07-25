@@ -1543,7 +1543,7 @@ model IsefCategory {
 model FormsCatalog {
   id                    String           @id @default(cuid())
   name                  String
-  formCode              String           @map("form_code")
+  formCode              String           @unique @map("form_code")
   requiredForLevelsJson Json             @map("required_for_levels_json")
   templateUrl           String?          @map("template_url")
   description           String

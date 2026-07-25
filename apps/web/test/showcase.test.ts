@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   canViewShowcase,
+  PRIVACY_OPTIONS,
   teamSchoolIds,
   isSafeHttpUrl,
   parseVideoUrl,
@@ -46,14 +47,23 @@ describe('canViewShowcase', () => {
     expect(canViewShowcase({ ...base, privacyLevel: 'link_only' }, anon)).toBe(true)
   })
 
-  it('school_only admits same-school signed-in viewers only', () => {
-    expect(canViewShowcase({ ...base, privacyLevel: 'school_only' }, sameSchool)).toBe(true)
+  // P0-R2: `User.schoolId` comes from a free-text name any student can type in
+  // settings, so a matching schoolId proved nothing. Legacy school_only rows now
+  // fail closed to team-only — including for a viewer whose school genuinely
+  // matches, which is the attack.
+  it('school_only is withdrawn — even a same-school viewer is denied', () => {
+    expect(canViewShowcase({ ...base, privacyLevel: 'school_only' }, sameSchool)).toBe(false)
     expect(canViewShowcase({ ...base, privacyLevel: 'school_only' }, otherSchool)).toBe(false)
     expect(canViewShowcase({ ...base, privacyLevel: 'school_only' }, anon)).toBe(false)
+    expect(canViewShowcase({ ...base, privacyLevel: 'school_only' }, { userId: 'u', schoolId: null, teamIds: [] })).toBe(false)
   })
 
-  it('school_only denies viewers with a null school', () => {
-    expect(canViewShowcase({ ...base, privacyLevel: 'school_only' }, { userId: 'u', schoolId: null, teamIds: [] })).toBe(false)
+  it('school_only still shows to the owning team', () => {
+    expect(canViewShowcase({ ...base, privacyLevel: 'school_only' }, owner)).toBe(true)
+  })
+
+  it('school_only is not offered as a publishable option', () => {
+    expect(PRIVACY_OPTIONS.map((o) => o.value)).not.toContain('school_only')
   })
 
   it('private is never visible to non-owners, even approved+published', () => {

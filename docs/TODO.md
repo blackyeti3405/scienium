@@ -100,7 +100,7 @@ Tracked items intentionally deferred during development. Remove an entry once do
   Layer in true ZIP-centroid coordinates for finer "nearest regional fair" ordering.
 
 ## Showcase teacher moderation — SHIPPED (kept here as a map, not a TODO)
-- Teacher moderation is implemented end-to-end: publishing at `public`/`school_only`
+- Teacher moderation is implemented end-to-end: publishing at `public`
   privacy sets `moderationStatus = 'pending_review'` (`app/api/showcase/route.ts`);
   `link_only` still auto-approves so sharing is safe out of the box. Teachers review
   the queue at `app/(teacher)/teacher/showcase-moderation` (`ShowcaseModerationQueue`

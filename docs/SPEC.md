@@ -832,13 +832,13 @@ The 22 ISEF categories are listed with descriptions to help students identify wh
 This is particularly useful because students often pick a category mismatched to their actual project, hurting their chances. The category matcher recommends the best fit based on the student's topic and methodology.
 
 ### 13.5 Forms & Requirements
-Comprehensive checklist of required ISEF forms (1, 1A, 1B, 2, 3, 4, 5, 6, 7) and equivalent forms for regional/state levels:
+Checklist of the ISEF forms for the active season (2027: 1, 1A, 1B, 2A, 2B, 2C, 3, 4, 5A, 5B, 6A, 6B, 7) and equivalent forms for regional/state levels. Note the 2026→2027 renumbering: Form 1C and Form 2 are retired, and 2A/2B/2C are new:
 
 - Particularly highlighted: SRC/IRB forms for human subjects, vertebrate animal research, hazardous chemicals/devices, etc.
 - Form templates downloadable directly from the app
 - Completion status tracked per team
 - Deadline reminders tied to each form
-- **(Implemented)** the Forms checklist tracks **12 ISEF forms**, each expandable into a full in-app guide (what it is, who needs it, section-by-section walkthrough — `ISEF_FORM_GUIDES` in `lib/fairs/forms.ts`), plus a **hazard-class primer** (4 classes, `lib/fairs/safety.ts`) so teams can tell which conditional forms apply to their project
+- **(Implemented, deliberately narrowed in v0.34.0)** the Forms checklist tracks the **13 ISEF 2027 forms** as a personal status tracker (not started / in progress / complete). It shows each form's **official code and title only**, linked to the official form. It does **not** tell a student which forms their project needs or when each is signed: that guidance was materially wrong (REFACTOR2 P0-R4) and is now fail-closed behind `ISEF_EDITION.reviewedBy` in `lib/fairs/forms.ts` until a qualified teacher/SRC reviewer approves corrected copy. Until then the panel renders a notice pointing at the official forms and rules. The **hazard-class primer** (4 classes, `lib/fairs/safety.ts`) is generic lab-safety reference and is unaffected
 
 ### 13.6 Project Board Specifications
 - Standard tri-fold board dimensions and display rules

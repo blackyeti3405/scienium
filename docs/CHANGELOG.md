@@ -5,6 +5,96 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.34.0] — 2026-07-25
+
+First remediation batch against the 2026-07-23 adversarial re-audit (`REFACTOR2.MD` §0). Two of
+the three P0 launch blockers and three P1 findings are closed. Everything here fails **closed**:
+where the app was making a claim it could not back (this school is yours, this DOI was peer
+reviewed, this is Form 1C, this link is a Google Doc), the claim is withdrawn rather than
+patched with a better guess.
+
+### Fixed — ISEF forms guidance no longer misidentifies required safety forms (P0-R4)
+`lib/fairs/forms.ts` shipped the wrong form catalog: it named Form 1 the Student Checklist,
+Form 1A the adult-sponsor approval, Form 1B an off-campus-only form, and Form 1C the
+pre-approval research plan. The official ISEF listing assigns those numbers to
+*Checklist for Adult Sponsor/Safety Assessment*, *Student Checklist/Research Plan*, and
+*Approval Form* (required for every project); the 2027 edition retires 1C and Form 2 in favour
+of 2A *Student Support Disclosure*, 2B *Qualified Scientist*, and 2C *Regulated Research
+Institution*. A student following the old guide could skip a required approval or be
+disqualified.
+
+- The catalog is now a versioned `ISEF_EDITION` (season 2027, official forms + rules URLs,
+  `sourcedAt` provenance) carrying **only the officially published form codes and titles**.
+- Applicability and timing are **fail-closed**: `appliesTo` is `null` and `isEditionReviewed()`
+  returns `false` until a qualified teacher/SRC reviewer sets `reviewedBy`/`reviewedAt`. While
+  unreviewed, the checklist renders a notice pointing at the official forms and rules instead
+  of restating them.
+- The ~170-line `ISEF_FORM_GUIDES` prose (what the form is / what goes in it / why it triggers,
+  plus per-form hazard-class tags) is **deleted**, not rewritten. Re-authoring unreviewed
+  safety copy would reproduce the defect. The generic hazard-class primer (`lib/fairs/safety.ts`)
+  is unaffected and still rendered.
+- `forms.test.ts` no longer asserts the wrong mapping (it previously pinned "Form 1C is the
+  Student Research Plan" as expected truth). It now pins the official titles for the codes the
+  old catalog got wrong, the retirement of 1C/Form 2, and the fail-closed review gate.
+
+### Fixed — a same-size catalog correction can no longer be suppressed (P1-R16, forms half)
+`ensureFormsSeeded()` returned early when `count >= ISEF_FORMS.length`, so this very correction
+would never have reached an already-seeded database. Seeding is now keyed on **code coverage**.
+`GET /api/fairs/forms` serves names from the authored edition rather than the stored row and
+filters out codes outside the active edition, so a database seeded under 2026 stops serving
+retired forms without deleting rows that `TeamFormStatus` still references.
+
+### Fixed — `school_only` showcase visibility withdrawn (P0-R2)
+`User.schoolId` is derived from a free-text school name (`resolveSchool()` upserts whatever is
+typed, and settings let a student change it at any time), yet `canViewShowcase` treated a
+matching `schoolId` as proof of affiliation. Typing a victim school's exact name granted read
+access to its school-only showcases and streamed assets. `school_only` now fails closed to
+team-only, is removed from `PRIVACY_OPTIONS` and from the accepted `PATCH /api/showcase`
+values, and existing rows degrade to private. The `PrivacyLevel` union keeps the value so
+legacy rows typecheck. Restoring the level requires a **verified** school membership, not a
+profile string. `showcase-public-asset.test.ts` now asserts the attack: a same-school viewer
+gets 404 and no bytes are streamed.
+
+### Fixed — Google Docs link validation accepted attacker URLs (P1-S12)
+`extractGoogleDocId` searched for `docs.google.com/document/d/<id>` **anywhere** in the pasted
+string, so `https://evil.example/?next=docs.google.com/document/d/<real-id>` passed: the server
+fetched the genuine document by id but persisted the pasted URL, which the teacher view renders
+as "Open research plan". The extractor now parses the URL and requires `https:` and an exact
+`docs.google.com` host with a `/document/d/<id>` path; `fetchGoogleDocText` returns a
+`canonicalUrl` built from the id alone, and that is what `POST /api/research-plan` stores.
+
+### Fixed — a DOI is no longer presented as proof of peer review (P1-S11)
+`tierFromDoi()` returned `peer_reviewed` for any DOI, and the badge told students the work was
+"reviewed by other scientists". Crossref registers DOIs for preprints and posted content,
+DataCite for datasets, software, and physical objects, and the DOI Foundation states nothing
+definitive can be inferred from the name itself — so an uploaded preprint earned a green
+peer-review badge and the product taught a false research-credibility rule. The function is
+deleted (there is no honest offline mapping); an upload carries `credibilityTier: null` and
+displays its DOI on its own. The DOI itself is still extracted and stored.
+
+### Fixed — rate-limit store failures no longer remove the paid ceiling (P1-R4)
+`UpstashStore.incr` caught every failure and returned `count = 1` — "first hit of a fresh
+window", i.e. always allowed — so paid tiers ran uncapped during exactly the outage that should
+have stopped cost growth. HTTP-200 responses carrying per-command pipeline errors or a
+non-numeric `INCR` result defaulted the same way, because elements were never validated. The
+store now validates the pipeline shape and every element and throws `RateLimitStoreError`;
+`enforceRateLimit` owns the policy: **paid tiers (`ai`, `upload`) fail closed with 503 +
+`Retry-After`**, read/mutation tiers fail open and log `rate_limit.store_error`.
+
+### Added — `forms_catalog.form_code` unique index
+`ensureFormsSeeded` has always depended on `form_code` uniqueness for its `skipDuplicates`
+stampede guard, but no index existed (P2-S5). Migration `20260725120000_forms_catalog_unique_code`
+adds it — and, applying P1-S14's lesson, **dedupes first**: it keeps the lowest id per code,
+drops or repoints `team_form_status` rows that would violate the existing
+`(team_id, form_id)` unique, and only then creates the index.
+
+### Verification
+Gates 1–5 pass (shared-types build, text integrity, typecheck, lint, production build).
+Vitest: **90 files / 1,299 tests passed**. The migration is created and unapplied, per the
+project's deploy convention.
+
+---
+
 ## [0.33.1] — 2026-07-24
 
 Field Codex content — two whole fields authored via `/codex-pipeline` (one invocation each:

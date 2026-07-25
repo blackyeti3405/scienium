@@ -127,18 +127,20 @@ export async function POST(req: NextRequest) {
   if (usingDoc) {
     // Doc path — unchanged behaviour: fetch the live doc text, surface sharing
     // problems as a clean error instead of a 500.
-    let text: string
+    let fetched: { text: string; canonicalUrl: string }
     try {
-      text = await fetchGoogleDocText(googleDocUrl)
+      fetched = await fetchGoogleDocText(googleDocUrl)
     } catch (err) {
       if (err instanceof GoogleDocError) {
         return NextResponse.json({ error: err.message }, { status: err.status })
       }
       throw err
     }
-    stored = text.slice(0, MAX_STORED_TEXT)
+    stored = fetched.text.slice(0, MAX_STORED_TEXT)
     data = {
-      googleDocUrl: googleDocUrl.trim(),
+      // The CANONICAL doc URL, never the pasted string — the teacher view
+      // renders this as a trusted link (REFACTOR2 P1-S12).
+      googleDocUrl: fetched.canonicalUrl,
       projectType: projectType ?? null,
       projectSubtype: projectSubtype ?? null,
       lastSyncedText: stored,

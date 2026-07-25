@@ -8,10 +8,30 @@
  * change how the text is retrieved.
  */
 
-/** Pull the document id out of a Google Docs URL, or null if it isn't one. */
+/**
+ * Pull the document id out of a Google Docs URL, or null if it isn't one.
+ *
+ * Parses the URL rather than searching it for a substring (REFACTOR2 P1-S12).
+ * The old regex matched `docs.google.com/document/d/<id>` ANYWHERE in the
+ * string, so `https://evil.example/?next=docs.google.com/document/d/<real-id>`
+ * passed validation — we then fetched the real Google export by id but stored
+ * the attacker's URL, which the teacher view renders as "Open research plan".
+ */
 export function extractGoogleDocId(url: string): string | null {
-  const m = url.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/)
-  return m ? m[1] : null
+  let parsed: URL
+  try {
+    parsed = new URL(url.trim())
+  } catch {
+    return null
+  }
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'docs.google.com') return null
+  const m = parsed.pathname.match(/^\/document\/d\/([a-zA-Z0-9_-]+)(?:\/|$)/)
+  return m ? m[1]! : null
+}
+
+/** The only URL we persist/display for a doc — never the pasted string. */
+export function canonicalGoogleDocUrl(id: string): string {
+  return `https://docs.google.com/document/d/${id}/edit`
 }
 
 export class GoogleDocError extends Error {
@@ -27,7 +47,9 @@ export class GoogleDocError extends Error {
  * Fetch the plain-text export of an "anyone with the link" Google Doc.
  * Throws GoogleDocError with a user-facing message on bad URLs / sharing issues.
  */
-export async function fetchGoogleDocText(url: string): Promise<string> {
+export async function fetchGoogleDocText(
+  url: string,
+): Promise<{ text: string; canonicalUrl: string }> {
   const id = extractGoogleDocId(url)
   if (!id) {
     throw new GoogleDocError('That is not a Google Docs link', 400)
@@ -58,5 +80,5 @@ export async function fetchGoogleDocText(url: string): Promise<string> {
   if (!text) {
     throw new GoogleDocError('That document appears to be empty', 422)
   }
-  return text
+  return { text, canonicalUrl: canonicalGoogleDocUrl(id) }
 }

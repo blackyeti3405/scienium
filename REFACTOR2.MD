@@ -12,6 +12,11 @@ authoritative. Older version close-outs remain as provenance, not as pilot sign-
 > durability, research-integrity, content-lifecycle, and release-control failures. “Closed in v0.30.0” below
 > means that historical finding closed; it does not override the current register.
 > `docs/SECURITY.md` is authoritative for exploit mechanics and security sign-off.
+>
+> **Remediation in progress — see §0.11 for the running close-out.** As of **v0.34.0
+> (2026-07-25)**: P0-R2 and P0-R4 are closed, P0-R3 remains open, and P1-R4, P1-S11, P1-S12,
+> and the forms half of P1-R16 are closed. One P0 launch blocker (P0-R3, showcase revision
+> moderation) plus the P1 program remain.
 
 ---
 
@@ -127,7 +132,7 @@ However, an open teacher role is not evidence of school affiliation and cannot m
 `SchoolMembership` by itself; otherwise an impostor teacher could recreate P0-R2 by creating
 and approving a class.
 
-#### P0-R2 — `school_only` privacy trusts a self-asserted school name
+#### P0-R2 — `school_only` privacy trusts a self-asserted school name — **CLOSED (v0.34.0)**
 
 `resolveSchool(name)` upserts any typed name. Student onboarding and `PATCH /api/settings`
 let a student set `User.schoolId` from that text at any time. `resolveShowcaseViewer` and
@@ -147,6 +152,14 @@ Required architecture:
 - until that migration is deployed and existing rows are backfilled safely, disable
   `school_only` or treat it as non-confidential;
 - test the direct attack: an account that merely types a matching school must receive 404.
+
+**Closed in v0.34.0 by withdrawal, not by migration.** `canViewShowcase` returns `false` for
+`school_only` to every non-owner, the level is gone from `PRIVACY_OPTIONS` and from the
+accepted `PATCH /api/showcase` values, and legacy rows degrade to team-only. The
+verified-`SchoolMembership` model above is still the prerequisite for ever re-offering the
+level; it is now optional product work rather than a launch blocker.
+`test/showcase-public-asset.test.ts` pins the direct attack (same-school viewer → 404, no
+bytes streamed).
 
 #### P0-R3 — Showcase approval is bypassable and cannot inspect the submission
 
@@ -177,7 +190,7 @@ Required architecture:
 - test edit-after-approval, replace-after-approval, link-only publication, rejected resubmit,
   and foreign-teacher preview paths with real authorization behavior.
 
-#### P0-R4 — The ISEF safety-forms guide maps form numbers to the wrong documents
+#### P0-R4 — The ISEF safety-forms guide maps form numbers to the wrong documents — **CLOSED (v0.34.0)**
 
 `lib/fairs/forms.ts` is not merely one season behind. Its base catalog and detailed guide
 identify Form 1 as the Student Checklist, Form 1A as adult-sponsor approval, Form 1B as an
@@ -224,6 +237,19 @@ Required architecture:
 - have a qualified adult review every safety bullet. General software review cannot certify
   chemical, biological, animal, or human-participant advice.
 
+**Closed in v0.34.0.** `lib/fairs/forms.ts` is now a versioned `ISEF_EDITION` (season 2027,
+official forms/rules URLs, `sourcedAt` provenance, `reviewedBy`/`reviewedAt` sign-off fields)
+carrying only the officially published codes and titles — 1C and Form 2 retired, 2A/2B/2C
+added. Applicability and timing **fail closed**: `appliesTo` is `null` and
+`isEditionReviewed()` is `false` until a qualified reviewer signs the edition off, and the
+checklist renders an official-rules pointer in the meantime. The 170-line
+`ISEF_FORM_GUIDES` prose was **deleted rather than rewritten** — re-authoring unreviewed
+safety copy is the same defect. `forms.test.ts` no longer asserts the wrong mapping.
+`ensureFormsSeeded` now keys on code coverage, and the route serves the authored edition, so
+a database seeded under the wrong catalog stops serving it. **Still owed before the pilot:**
+the qualified teacher/SRC review that sets `reviewedBy` and restores applicability guidance,
+plus the season-bound AI-use disclosure contract.
+
 #### P1-R1 — Destructive confirmations are client assertions, not capabilities
 
 `POST /api/discovery/topic` accepts `confirmWipe` and arbitrary same-team
@@ -262,7 +288,7 @@ an input hash and caller idempotency key, `pending/running/succeeded/failed` sta
 attempts, prompt/model version, token/cost fields, and a result reference. Reserve before the
 provider call, reconcile after disconnect, and expose a global/team kill switch.
 
-#### P1-R4 — Limiter-store failure removes the paid ceiling
+#### P1-R4 — Limiter-store failure removes the paid ceiling — **CLOSED (v0.34.0), header policy open**
 
 Production refuses paid tiers when no shared store is configured, which is good. Once Upstash
 is configured, however, any network/timeout error returns `count = 1` for every tier.
@@ -275,6 +301,13 @@ shape; add a short circuit breaker and a distinct degraded response. Read/mutati
 use a separately documented degraded policy. Configure one deployment-guaranteed client-IP
 header instead of accepting a chain of headers whose trust depends on undocumented edge
 behavior.
+
+**Closed in v0.34.0 for the fail-open path.** `UpstashStore.incr` validates the pipeline
+shape, every element's `error`, and the numeric `INCR` result, and throws
+`RateLimitStoreError` instead of fabricating `count = 1`. `enforceRateLimit` owns the policy:
+`ai`/`upload` fail closed (503 + `Retry-After`), read/mutation tiers fail open and log
+`rate_limit.store_error`. **Still open:** the circuit breaker and the single
+deployment-guaranteed client-IP header.
 
 #### P1-R5 — Background work is durable only in parts
 
@@ -877,8 +910,8 @@ keep them distinct from the earlier `P1-R*` register.
 | **P1-S8** | Domain deletion and storage retirement still split across commits | Paper and showcase-asset deletion remove the domain row before calling `orphanObjectKey`; process death leaves an `attached` asset with no live owner, and retry returns 404. Topic change separately deletes rows/bytes and updates topic. Project-log deletion already demonstrates the correct same-transaction ledger transition. | Domain deletion plus ledger orphan/outbox in one database transaction; physical delete remains a retryable worker. Reconcile attached rows without live owners. |
 | **P1-S9** | Paid writebacks are versionless | Codex study-plan, research-plan review, and idea-check read a source/hash, call external work, then write without proving that source/version is still current. Slow old work can overwrite new truth; same-input callers can consume multiple daily slots; manual track-array mutation loses concurrent edits. | `(principal/team, operation, sourceHash/version)` claim, reuse, CAS commit, and normalized set mutations. |
 | **P1-S10** | Any matched student can rewrite a global fair event and trigger paid crawl | `POST /api/fairs/[id]/sync-deadlines` requires only a team in the same state (or any team for ISEF), calls paid Firecrawl, trusts a cast rather than local `safeParse`, and writes the global shared `FairEvent`. Concurrent callers pay/race; year/date plausibility is weak. | Students read/request refresh only. An admin/background versioned catalog job claims the fair+edition, parses locally, records provenance, stages review, and CAS-publishes. |
-| **P1-S11** | DOI presence is presented as proof of peer review | `lib/discovery/credibility.ts` explicitly admits DOI-only classification cannot distinguish review status, then returns `peer_reviewed`; upload persistence and UI badge say scientists reviewed it, and the test pins the false inference. DOI registries cover preprints, datasets, reports, software, and other objects; DOI syntax itself conveys no such status. | Represent DOI as identifier/version evidence only; derive review/publication type from trusted metadata and preserve unknown. Add preprint/dataset/reference-DOI fixtures. |
-| **P1-S12** | Google Docs validation creates a teacher-facing phishing link | `extractGoogleDocId` matches a Google path substring anywhere in attacker text. The server fetches the real Google export by extracted ID but stores the original raw URL; the teacher view renders that URL as “Open research plan.” `https://evil.example/?next=docs.google.com/document/d/<real-id>` therefore passes fetch validation and becomes a trusted-looking teacher link. | Parse `URL`, require exact `https:` and `docs.google.com` host/path, persist the canonical document ID/URL only, cap redirects/body, and test hostile prefixes/query strings. |
+| **P1-S11 — CLOSED (v0.34.0)** | DOI presence is presented as proof of peer review | `lib/discovery/credibility.ts` explicitly admits DOI-only classification cannot distinguish review status, then returns `peer_reviewed`; upload persistence and UI badge say scientists reviewed it, and the test pins the false inference. DOI registries cover preprints, datasets, reports, software, and other objects; DOI syntax itself conveys no such status. | Represent DOI as identifier/version evidence only; derive review/publication type from trusted metadata and preserve unknown. Add preprint/dataset/reference-DOI fixtures. **Done:** `tierFromDoi` deleted; a raw upload carries `credibilityTier: null` and shows its DOI alone. Deriving a real publication type from trusted metadata remains future work. |
+| **P1-S12 — CLOSED (v0.34.0)** | Google Docs validation creates a teacher-facing phishing link | `extractGoogleDocId` matches a Google path substring anywhere in attacker text. The server fetches the real Google export by extracted ID but stores the original raw URL; the teacher view renders that URL as “Open research plan.” `https://evil.example/?next=docs.google.com/document/d/<real-id>` therefore passes fetch validation and becomes a trusted-looking teacher link. | Parse `URL`, require exact `https:` and `docs.google.com` host/path, persist the canonical document ID/URL only, cap redirects/body, and test hostile prefixes/query strings. **Done** except redirect/body caps, which belong to the P2 outbound gateway: `test/google-doc-url.test.ts` pins the hostile prefix/query/subdomain/scheme cases. |
 | **P1-S13** | The configured E2E workflow cannot reliably reach the tests | It writes only `.env.local`, but `prisma migrate deploy` receives no exported `DATABASE_URL`; Prisma CLI does not consume Next's `.env.local`. If that is repaired, duplicate database keys make Playwright's first-wins loader and `node --env-file` consumers choose different databases. A fresh service DB then cannot seed because seeding requires Clerk-created users that Playwright setup creates only afterward. | Build one duplicate-free CI environment, export DB vars, migrate, materialize identities against that same DB, seed the exact graph, assert a DB fingerprint, then execute specs. Missing trusted-run secrets must fail. |
 | **P1-S14** | A13's production migration assumes uniqueness it never established | The migration backfills `ShowcaseView.day` and immediately creates a unique daily index while claiming historical lifetime dedupe. The initial schema had no uniqueness, and historical `findFirst`→`create` was race-prone. One duplicate pair makes deploy fail. | Preflight/deterministically dedupe or quarantine before the unique index; test replay from dirty historical fixtures. Audit other uniqueness-only migrations by the same rule. |
 | **P1-S15** | The browser upload test itself leaks quota/objects | `e2e/paper-upload.spec.ts` directly deletes Paper rows after proving an attached asset exists; it never uses the domain/ledger retirement path. Repeated runs leak test-bucket objects/quota and it also fails to restore the team topic. | Use the authenticated deletion lifecycle and wait for/reconcile reclaim in a test bucket; isolate and restore fixture state in `finally`. |
@@ -1068,6 +1101,30 @@ Pilot sign-off requires every P0 closed, every P1 closed or explicitly accepted 
 with a date and compensating control, legal/minors/privacy approval, a successful restore
 drill, enforceable CI, and a measured capacity test matching the actual classroom plan.
 
+### 0.11 Remediation close-out — running log
+
+Each batch closes findings in severity-then-size order and updates this table plus
+`docs/CHANGELOG.md`. A finding is **CLOSED** only when the exploit path is gone and a test
+fails if it returns; anything narrower is recorded as **PARTIAL** with what is still owed.
+
+#### v0.34.0 — 2026-07-25
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P0-R2** `school_only` trusts self-asserted school | **CLOSED** | Level withdrawn: `canViewShowcase` denies every non-owner, removed from `PRIVACY_OPTIONS` and the accepted `PATCH /api/showcase` values, legacy rows degrade to team-only. Attack pinned in `test/showcase-public-asset.test.ts` (404, no bytes). | Verified `SchoolMembership` if the level is ever re-offered — now optional product work, not a blocker. |
+| **P0-R4** ISEF forms guide is materially wrong | **CLOSED** | Versioned `ISEF_EDITION` (2027 codes/titles, source URLs, `sourcedAt`); applicability/timing fail closed behind `reviewedBy`; the 170-line unreviewed guide prose deleted; wrong-mapping tests replaced. | Qualified teacher/SRC review to set `reviewedBy` and restore applicability; season-bound AI-use disclosure contract. |
+| **P0-R3** Showcase approval not bound to a revision | **OPEN** | — | The full revision/digest state machine, teacher preview of the exact pending revision, and moderation event log. **This is the remaining P0 launch blocker.** |
+| **P1-R4** Limiter failure removes the paid ceiling | **CLOSED** | Pipeline shape + per-element errors + numeric `INCR` validated; `RateLimitStoreError` thrown instead of a fabricated `count = 1`; paid tiers 503, read/mutate fail open and log. | Circuit breaker; one deployment-guaranteed client-IP header. |
+| **P1-S11** DOI presented as peer review | **CLOSED** | `tierFromDoi` deleted; uploads carry `credibilityTier: null` and display the DOI as an identifier. | Real publication-type derivation from trusted metadata. |
+| **P1-S12** Google Docs substring match | **CLOSED** | URL parsed; exact `https:` + `docs.google.com` host and `/document/d/<id>` path; only the canonical URL is persisted. Hostile prefix/query/subdomain/scheme cases pinned. | Redirect and body caps — belongs to the P2 outbound gateway. |
+| **P1-R16** Count-based seeders suppress corrections | **PARTIAL** | Forms seeding keys on code coverage, not row count; the route serves the authored edition and filters retired codes. | `seedFairsBatched`; edition digest/retirement for the fair catalog. |
+| **P2-S5** `form_code` has no unique index | **CLOSED** | Migration `20260725120000_forms_catalog_unique_code` dedupes (keep lowest id, drop/repoint conflicting `team_form_status` rows) **before** creating the index — P1-S14's lesson applied prospectively. | Same preflight audit for A13's existing `ShowcaseView` migration (P1-S14 itself). |
+
+Gates 1–5 pass; Vitest 90 files / 1,299 tests. The migration is created and unapplied, per the
+project's deploy convention.
+
+---
+
 ---
 
 ## Executive verdict
@@ -1131,9 +1188,9 @@ Track A's named findings remain historical close-outs. The following list is the
 
 | Priority | Finding | Consequence |
 | --- | --- | --- |
-| P0 | `school_only` trusts student-editable `User.schoolId` | A self-entered school name crosses a privacy boundary |
+| ~~P0~~ **CLOSED v0.34.0** | `school_only` trusts student-editable `User.schoolId` | Level withdrawn; fails closed to team-only pending verified `SchoolMembership` |
 | P0 | Showcase approval is not bound to the content/assets served, and reviewers cannot inspect required pending assets | Unreviewed or replaced minor-created content can remain approved and externally reachable |
-| P0 | The ISEF guide assigns the wrong names, timing, and applicability to required forms | Students can miss required safety review/approval or be disqualified; tests currently protect the wrong mapping |
+| ~~P0~~ **CLOSED v0.34.0** | The ISEF guide assigns the wrong names, timing, and applicability to required forms | Versioned 2027 edition, titles only, applicability fail-closed until a qualified reviewer signs off |
 | ACCEPTED / OPTIONAL | Fresh accounts can self-provision `teacher` | Intentional open-registration policy; optional grant/domain/allowlist hardening later |
 | P1 | Client assertions authorize destructive shared actions | A member can bypass the intended confirmation path and delete papers/tree data |
 | P1 | Paid phase advancement and daily AI caps are not atomically claimed | Duplicate cost, budget overrun, stale writes |
@@ -1145,9 +1202,9 @@ Track A's named findings remain historical close-outs. The following list is the
 | P1 | Matrix checks do not wait for cell saves | Stale work can be graded, cached, and rewarded |
 | P1 | Asset deletion is split from ledger orphaning, and the sweep terminalizes before physical delete | Process death can leave attached-without-owner or live-unretryable R2 objects |
 | P1 | Matched students can run paid syncs that mutate the global fair catalog | Shared deadlines can race or be overwritten without admin/reviewer provenance |
-| P1 | DOI-only uploads are labeled “peer-reviewed” | The product teaches a false research-credibility rule and can overstate unreviewed work |
-| P1 | Substring-only Google Docs validation stores an attacker URL behind a trusted teacher link | A student can present a phishing destination as “Open research plan” |
-| P1 | Upstash runtime errors fail open, including unvalidated pipeline errors | Paid ceilings disappear during limiter degradation |
+| ~~P1~~ **CLOSED v0.34.0** | DOI-only uploads are labeled “peer-reviewed” | Mapping deleted; DOI is shown as an identifier, tier is `null` |
+| ~~P1~~ **CLOSED v0.34.0** | Substring-only Google Docs validation stores an attacker URL behind a trusted teacher link | URL parsed and host-pinned; only the canonical doc URL is persisted |
+| ~~P1~~ **CLOSED v0.34.0** | Upstash runtime errors fail open, including unvalidated pipeline errors | Elements validated; paid tiers 503, read/mutate documented fail-open |
 | P1 | Cron/activity/email side effects lack uniform claims/outbox durability | Duplicate email, dropped history, bursty paid work |
 | P1 | The configured E2E workflow has no Prisma DB env, conflicting DB parsers, and impossible fresh-seed order; real-Postgres tests self-skip | A green or configured release can omit/fail browser and database-invariant validation |
 | P1 | A13's unique-index migration has no historical dedupe/preflight | Production deploy can fail on rows the old schema/code permitted |
@@ -1156,7 +1213,7 @@ Track A's named findings remain historical close-outs. The following list is the
 | P1 | `link_only` uses a title-derived slug plus only 24 random bits | Anonymous student content is protected by a guessable bearer namespace |
 | P1 | Team/class membership has no complete switch/leave/remove/transfer/revoke/archive lifecycle | Stale membership becomes stale authorization and pilot support cannot repair it safely |
 | P1 | Account export/deletion and retention are manual or undefined | Minor data and private objects cannot be proven removed on request |
-| P1 | Codex authoring and count-based catalog seeders can return false clean/stale success | Empty curriculum work or same-size content corrections can silently fail to ship |
+| P1 (partial) | Codex authoring and count-based catalog seeders can return false clean/stale success | Forms seeder now keys on code coverage (v0.34.0); the Codex authoring workflow and `seedFairsBatched` remain open |
 | P2 | Outbound HTTP lacks redirect/host/byte policy | SSRF and memory/resource exposure remain |
 | P2 | ~600 6–9px text declarations still await a **size** design pass; no WebKit/Firefox E2E coverage (A9 remainder — contrast floored to 40% white; sizes deliberately unchanged) | Low-vision readability on tiny chrome still a size question, but the worst faint-contrast text is fixed |
 | P2 | Feature ownership split across `app`, `components`, `lib`, `stores`, and component-local API/type files | One contract change touches several unrelated trees |

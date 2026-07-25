@@ -63,10 +63,14 @@ export function wordCount(text: string): number {
 
 export type PrivacyLevel = 'public' | 'school_only' | 'link_only' | 'private'
 
+/**
+ * Selectable privacy levels. `school_only` is NOT offered — see
+ * `canViewShowcase` (REFACTOR2 P0-R2). The union above still carries it so
+ * rows written before it was withdrawn keep typechecking.
+ */
 export const PRIVACY_OPTIONS: { value: PrivacyLevel; label: string; blurb: string }[] = [
   { value: 'private', label: 'Private', blurb: 'Only your team can see it. A working draft.' },
   { value: 'link_only', label: 'Anyone with the link', blurb: 'Unlisted — viewable by link, not in the gallery.' },
-  { value: 'school_only', label: 'Your school', blurb: 'Signed-in students at your school can view it.' },
   { value: 'public', label: 'Public', blurb: 'Submitted for teacher review — appears in the public gallery once approved.' },
 ]
 
@@ -103,7 +107,13 @@ export function canViewShowcase(sc: ShowcaseForView, viewer: ShowcaseViewer | nu
     case 'link_only':
       return true
     case 'school_only':
-      return !!viewer?.schoolId && sc.teamSchoolIds.includes(viewer.schoolId)
+      // WITHDRAWN — fails closed to private (REFACTOR2 P0-R2). `User.schoolId`
+      // is self-asserted: `resolveSchool()` upserts any typed name and settings
+      // let a student change it at will, so "same schoolId" proved nothing but
+      // that the viewer typed the victim school's name. Restoring this level
+      // requires a *verified* SchoolMembership, not a profile string. Existing
+      // school_only rows degrade to team-only until then.
+      return false
     case 'private':
       return false
   }

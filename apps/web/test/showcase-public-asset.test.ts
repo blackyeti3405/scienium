@@ -105,14 +105,18 @@ describe('public showcase asset privacy', () => {
     expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff')
   })
 
-  it('school_only admits a same-school signed-in viewer', async () => {
+  // REFACTOR2 P0-R2, the direct attack the audit asked for: `schoolId` is set
+  // from a free-text school name the student types, so "same school" is just
+  // "typed the same string". A matching viewer must now get 404, not the bytes.
+  it('school_only 404s a same-school signed-in viewer — the level is withdrawn', async () => {
     mocks.assetFindUnique.mockResolvedValue(asset({ privacyLevel: 'school_only' }))
     mocks.auth.mockResolvedValue({ userId: 'clerk_viewer' })
     mocks.userFindUnique.mockResolvedValue({ schoolId: 'school_A', teamMemberships: [] })
 
     const res = await GET(assetReq())
 
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(404)
+    expect(mocks.getObjectStream).not.toHaveBeenCalled()
   })
 
   it('school_only rejects an other-school viewer', async () => {

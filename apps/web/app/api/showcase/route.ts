@@ -14,7 +14,10 @@ import {
 } from '@/lib/showcase'
 import { makeSlug } from '@/lib/showcase-server'
 
-const PRIVACY = ['public', 'school_only', 'link_only', 'private'] as const
+// `school_only` is deliberately NOT accepted — it authorized on a self-asserted
+// `User.schoolId` (REFACTOR2 P0-R2). Legacy rows still hold the value and now
+// read as private; nothing new can be written with it.
+const PRIVACY = ['public', 'link_only', 'private'] as const
 
 // Asset types whose bytes are streamed (board PDF, quad chart PDF/image).
 const STREAMABLE = new Set(['board', 'quad_chart'])
@@ -148,7 +151,7 @@ export async function PUT(req: NextRequest) {
       )
     }
     // Public showcases require teacher approval before appearing in the gallery.
-    // link_only / school_only / private are self-serve (auto-approved).
+    // link_only / private are self-serve (auto-approved).
     if (nextPrivacy === 'public') {
       publishFields = {
         publishedAt: existing?.publishedAt ?? new Date(),

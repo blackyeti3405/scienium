@@ -6,7 +6,7 @@ import { db } from '@/lib/db'
 import { putObject, paperPdfKey } from '@/lib/storage'
 import { inspectPdf, isPdfMagic, sanitizePdfText } from '@/lib/pdf/sanitize'
 import { checkPaperRelevance } from '@/lib/literature/relevance'
-import { extractDoi, tierFromDoi } from '@/lib/discovery/credibility'
+import { extractDoi } from '@/lib/discovery/credibility'
 import {
   attachAssetsByKey,
   checkTeamStorageQuota,
@@ -120,10 +120,11 @@ export async function uploadPaper(input: {
     }
   }
 
-  // Derive list-view metadata once, here, so the paper list never has to read full
-  // text to show a DOI / credibility badge.
+  // Derive list-view metadata once, here, so the paper list never has to read
+  // full text to show the DOI. A raw upload gets NO credibility tier: we have no
+  // resolved host, and a DOI alone says nothing about review status (P1-S11).
   const doi = extractDoi(fullText)
-  const credibilityTier: CredibilityTier | null = doi ? tierFromDoi(doi) : null
+  const credibilityTier: CredibilityTier | null = null
 
   // ── Recoverable upload state machine (A5/A12) ─────────────────────────────
   // 1. RESERVE: quota check + `temporary` ledger row in one atomic step,

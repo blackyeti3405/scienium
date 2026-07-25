@@ -25,7 +25,6 @@ const mocks = vi.hoisted(() => ({
   sanitizePdfText: vi.fn((t: string) => t),
   checkPaperRelevance: vi.fn(),
   extractDoi: vi.fn(() => null),
-  tierFromDoi: vi.fn(() => null),
   checkTeamStorageQuota: vi.fn(),
   reserveUploadAsset: vi.fn(),
   markAssetsOrphanedByKey: vi.fn(() => Promise.resolve()),
@@ -74,7 +73,6 @@ vi.mock('@/lib/pdf/sanitize', () => ({
 vi.mock('@/lib/literature/relevance', () => ({ checkPaperRelevance: mocks.checkPaperRelevance }))
 vi.mock('@/lib/discovery/credibility', () => ({
   extractDoi: mocks.extractDoi,
-  tierFromDoi: mocks.tierFromDoi,
 }))
 vi.mock('@/lib/uploads/assets', () => ({
   checkTeamStorageQuota: mocks.checkTeamStorageQuota,

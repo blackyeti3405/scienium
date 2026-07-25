@@ -557,8 +557,11 @@ Feature-owned library folders:
   verified Prisma `P2002` on the `LabCreditClaim` unique reads as "already
   paid" — every other failure retries once, emits a redacted event, and
   reports `failed` instead of silently dropping the reward.
-- `fairs/`: abstract guidance, categories, forms (client-safe catalog in
-  `forms.ts`, DB seeder split into `server-only` `forms-server.ts`), rubric
+- `fairs/`: abstract guidance, categories, forms (client-safe versioned
+  `ISEF_EDITION` catalog in `forms.ts` — official codes/titles only, with
+  applicability and timing fail-closed behind a `reviewedBy` sign-off gate; DB
+  seeder split into `server-only` `forms-server.ts`, which keys on code
+  coverage so a same-size edition change is not suppressed), rubric
   anchors/scoring, safety, ZIP lookup, and matching.
 - `guides/` and `hooks/`: guide filtering; reusable client hooks
   (`useToggleSet`, `useAutoDismiss`, `useResizablePanel`, `usePlotBuildings`,

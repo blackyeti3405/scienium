@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   extractDoi,
-  tierFromDoi,
   tierMeta,
   SELF_UPLOADED_META,
   TIER_META,
@@ -20,9 +19,10 @@ describe('extractDoi', () => {
   })
 })
 
-describe('tierFromDoi', () => {
-  it('returns peer_reviewed for a valid DOI', () => {
-    expect(tierFromDoi('10.1234/example.2024.001')).toBe('peer_reviewed')
+describe('DOI is an identifier, not a review status (P1-S11)', () => {
+  it('exposes no DOI→tier mapping — a DOI cannot prove peer review', async () => {
+    const mod = await import('@/lib/discovery/credibility')
+    expect('tierFromDoi' in mod).toBe(false)
   })
 })
 

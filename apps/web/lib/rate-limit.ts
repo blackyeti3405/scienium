@@ -104,10 +104,15 @@ export class MemoryStore implements RateLimitStore {
  *   PEXPIRE key windowMs NX    → set the window TTL only on the first hit
  *   PTTL key                   → remaining ms, to compute `resetAt`
  *
- * Fails OPEN: if Upstash is unreachable we allow the request (a limiter outage
- * shouldn't take the whole API down) but log it. For a hard guarantee under
- * limiter failure, pair with an edge WAF.
+ * Throws `RateLimitStoreError` when the store can't answer — including an
+ * HTTP 200 whose pipeline elements carry per-command errors or a non-numeric
+ * count. `enforceRateLimit` decides the policy: paid tiers fail CLOSED, read/
+ * mutation tiers fail open (REFACTOR2 P1-R4). Returning a fabricated
+ * `count = 1` here removed the paid ceiling during exactly the outage that
+ * should have stopped cost growth.
  */
+export class RateLimitStoreError extends Error {}
+
 export class UpstashStore implements RateLimitStore {
   constructor(
     private url: string,
@@ -115,6 +120,7 @@ export class UpstashStore implements RateLimitStore {
   ) {}
 
   async incr(key: string, windowMs: number, now: number): Promise<WindowState> {
+    let out: Array<{ result?: unknown; error?: string }>
     try {
       const res = await fetch(`${this.url}/pipeline`, {
         method: 'POST',
@@ -128,16 +134,25 @@ export class UpstashStore implements RateLimitStore {
         signal: AbortSignal.timeout(2_000),
       })
       if (!res.ok) throw new Error(`Upstash HTTP ${res.status}`)
-      const out = (await res.json()) as Array<{ result?: number; error?: string }>
-      const count = Number(out[0]?.result ?? 1)
-      const ttl = Number(out[2]?.result ?? windowMs)
-      const resetAt = now + (Number.isFinite(ttl) && ttl > 0 ? ttl : windowMs)
-      return { count, resetAt }
+      out = (await res.json()) as Array<{ result?: unknown; error?: string }>
     } catch (err) {
-      console.error('[rate-limit] Upstash unreachable — failing open:', err)
-      // Fail open: treat as the first hit of a fresh window (always allowed).
-      return { count: 1, resetAt: now + windowMs }
+      throw new RateLimitStoreError(`Upstash unreachable: ${String(err)}`)
     }
+
+    // A 200 can still carry per-command failures; an unvalidated `?? 1` here
+    // would silently read as "first hit of a fresh window" = always allowed.
+    if (!Array.isArray(out) || out.length < 3) {
+      throw new RateLimitStoreError('Upstash returned a malformed pipeline response')
+    }
+    const failed = out.find((el) => el?.error)
+    if (failed) throw new RateLimitStoreError(`Upstash command error: ${failed.error}`)
+
+    const count = Number(out[0]?.result)
+    if (!Number.isFinite(count)) {
+      throw new RateLimitStoreError('Upstash returned a non-numeric INCR result')
+    }
+    const ttl = Number(out[2]?.result)
+    return { count, resetAt: now + (Number.isFinite(ttl) && ttl > 0 ? ttl : windowMs) }
   }
 }
 
@@ -272,10 +287,33 @@ export async function enforceRateLimit(
   // Per-IP backstop is intentionally generous (see IP_LIMIT_MULTIPLIER); the
   // per-user bucket carries the real limit when the caller is authenticated.
   const ipTier: RateLimitTier = { limit: tier.limit * IP_LIMIT_MULTIPLIER, windowMs: tier.windowMs }
-  const checks = await Promise.all([
-    hit(`${tierName}:ip:${clientIp(req)}`, ipTier, now),
-    ...(userId ? [hit(`${tierName}:user:${userId}`, tier, now)] : []),
-  ])
+  let checks: HitResult[]
+  try {
+    checks = await Promise.all([
+      hit(`${tierName}:ip:${clientIp(req)}`, ipTier, now),
+      ...(userId ? [hit(`${tierName}:user:${userId}`, tier, now)] : []),
+    ])
+  } catch (err) {
+    // Store degraded. Paid tiers fail CLOSED — the whole point of the ceiling is
+    // to bound spend, and a limiter outage is when spend runs away (P1-R4).
+    // Read/mutation tiers fail open: no money at stake, and taking the app down
+    // because Upstash blipped is the worse outcome.
+    const failClosed = PAID_TIERS.has(tierName)
+    logEvent({
+      event: 'rate_limit.store_error',
+      route: req.nextUrl.pathname,
+      requestId: requestIdFrom(req),
+      tier: tierName,
+      userId: userId ?? null,
+      outcome: failClosed ? 'denied' : 'error',
+      detail: err instanceof Error ? err.message : String(err),
+    })
+    if (!failClosed) return null
+    return NextResponse.json(
+      { error: 'This feature is briefly unavailable. Try again in a minute.' },
+      { status: 503, headers: { 'Retry-After': '60' } },
+    )
+  }
 
   const blocked = checks.find((c) => !c.ok)
   if (!blocked) return null
