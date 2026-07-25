@@ -10,6 +10,7 @@ import {
   QUIZ_PASS_THRESHOLD,
   QuizQuestion,
   loadRubric,
+  parseGeneratedQuestions,
   stripKeys,
   extractJson,
   mapGradedQuizSession,
@@ -136,9 +137,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     })
 
     const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-    const parsed = extractJson<Array<{ prompt: string; focus: string; key: string }>>(raw)
+    // EXACT cardinality (P1-S3): the old check accepted any non-empty array, so
+    // a one-element response became a one-question "5-question" exam worth the
+    // same proficiency and KP.
+    const validated = parseGeneratedQuestions(extractJson(raw), QUIZ_QUESTION_COUNT)
 
-    if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
+    if (!validated) {
       // Model output can echo paper text — log lengths only, never content (A7).
       logEvent({
         event: 'quiz.generation_parse_failed',
@@ -148,12 +152,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       return NextResponse.json({ error: 'Failed to generate quiz' }, { status: 502 })
     }
 
-    questions = parsed.map((q, i) => ({
-      id: `q${i + 1}`,
-      prompt: q.prompt,
-      focus: q.focus ?? 'general',
-      key: q.key ?? '',
-    }))
+    questions = validated
   }
 
   const session = await db.paperQuizSession.create({

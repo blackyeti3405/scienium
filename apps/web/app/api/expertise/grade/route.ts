@@ -12,6 +12,7 @@ import {
 } from '@/lib/clearance/expertise'
 import { loadExpertiseRubric } from '@/lib/clearance/rubric'
 import { AnswerItem, buildGradingPayload, gradeAnswers } from '@/lib/literature/grading'
+import { aggregateOverQuestions } from '@/lib/literature/quiz'
 import { getProjectContext, renderProjectContext } from '@/lib/clearance/context'
 import { clampScore } from '@/lib/economy'
 import { logActivity } from '@/lib/activity/log'
@@ -104,9 +105,9 @@ export async function POST(req: NextRequest) {
   const graded = result.graded
 
   const gradeMap = new Map(graded.map((g) => [g.questionId, g]))
-  const aggregate = Math.round(
-    questions.reduce((sum, q) => sum + clampScore(gradeMap.get(q.id)?.score ?? 0), 0) / questions.length,
-  )
+  // Already used the canonical denominator; routed through the shared helper so
+  // the rule has ONE owner and cannot drift apart from the quiz path (P1-S3).
+  const aggregate = aggregateOverQuestions(questions, graded, clampScore)
   const passed = aggregate >= CLEARANCE_PASS_THRESHOLD
   // The clearance bonus is a fixed property of the target level; whether it is
   // actually awarded is decided by the conditional raise below, not here.

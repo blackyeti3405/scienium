@@ -1,6 +1,8 @@
 import 'server-only'
 import { clerkClient, currentUser } from '@clerk/nextjs/server'
+import type { ClassJoinRequestStatus } from '@prisma/client'
 import { db } from '@/lib/db'
+import { lockAggregate } from '@/lib/db-lock'
 import { normalizeInviteCode } from '@/lib/team/invite'
 
 type ClerkUser = Awaited<ReturnType<typeof currentUser>>
@@ -115,37 +117,94 @@ export async function requestClassJoin(
   return classId
 }
 
+/** What a class-join decision actually committed. */
+export type ClassDecisionOutcome =
+  | { committed: true; decision: 'approve' | 'deny' }
+  /** Someone already decided this request; `status` is the state that stands. */
+  | { committed: false; status: ClassJoinRequestStatus }
+
 /**
- * Approve a pending class-join request: enroll ONLY the requesting student into
- * the class (set their `classId` + adopt the class's school). Class membership is
- * per-student — a lab can span multiple classes/schools, so approval never
- * touches teammates or the team row. Caller must have already verified the
- * request belongs to a class this teacher owns.
+ * Decide a class-join request — the ONE path for both approve and deny (P1-S2).
+ *
+ * The old split had contradictory terminal states. The route pre-read
+ * `status: 'pending'` and then acted on that stale snapshot: approval re-read
+ * inside its transaction and returned silently when the row had moved on (while
+ * the route still answered `{ ok: true }`), and denial wrote **unconditionally**
+ * with no status predicate. Approve-then-deny therefore left the student
+ * enrolled — `User.classId` set — against a request marked `denied`.
+ *
+ * Everything now hangs off one compare-and-set:
+ *
+ *   - the transition is `updateMany` predicated on `status: 'pending'`, so only
+ *     the first decision commits and the loser learns what actually stands;
+ *   - approval takes a per-student lock before touching `User.classId`, so two
+ *     teachers approving into different classes serialize instead of racing to
+ *     last-writer-wins;
+ *   - any other approved request for that student is marked `superseded`, so the
+ *     database never holds two `approved` rows describing one `classId`.
+ *
+ * Denial deliberately does NOT un-enrol an already-approved student: that is a
+ * class-removal command, which belongs to the membership lifecycle still open as
+ * P1-R8. Refusing the stale decision is the honest answer here.
+ *
+ * The caller must have already verified the request belongs to a class this
+ * teacher owns.
  */
-export async function approveClassJoin(
+export async function decideClassJoin(
   requestId: string,
   decidedByUserId: string,
-): Promise<void> {
-  await db.$transaction(async (tx) => {
+  decision: 'approve' | 'deny',
+): Promise<ClassDecisionOutcome> {
+  return db.$transaction(async (tx) => {
     const request = await tx.classJoinRequest.findUnique({
       where: { id: requestId },
       select: { id: true, classId: true, userId: true, status: true },
     })
-    if (!request || request.status !== 'pending') return
+    if (!request) return { committed: false, status: 'denied' as ClassJoinRequestStatus }
 
-    const klass = await tx.class.findUniqueOrThrow({
-      where: { id: request.classId },
-      select: { id: true, schoolId: true },
-    })
+    // Serialize competing decisions about THIS student's single class slot.
+    await lockAggregate(tx, `class-membership:${request.userId}`)
 
-    await tx.user.update({
-      where: { id: request.userId },
-      data: { classId: klass.id, schoolId: klass.schoolId },
+    const applied = await tx.classJoinRequest.updateMany({
+      where: { id: requestId, status: 'pending' },
+      data: {
+        status: decision === 'approve' ? 'approved' : 'denied',
+        decidedAt: new Date(),
+        decidedByUserId,
+      },
     })
-    await tx.classJoinRequest.update({
-      where: { id: request.id },
-      data: { status: 'approved', decidedAt: new Date(), decidedByUserId },
-    })
+    if (applied.count !== 1) {
+      // Lost the race (or the row was never pending). Report what stands rather
+      // than claiming success for a write that did not happen.
+      const fresh = await tx.classJoinRequest.findUnique({
+        where: { id: requestId },
+        select: { status: true },
+      })
+      return { committed: false, status: fresh?.status ?? request.status }
+    }
+
+    if (decision === 'approve') {
+      const klass = await tx.class.findUniqueOrThrow({
+        where: { id: request.classId },
+        select: { id: true, schoolId: true },
+      })
+
+      // Class membership is per-student (ADR-004): approval enrols ONLY the
+      // requester, never teammates or the team row.
+      await tx.user.update({
+        where: { id: request.userId },
+        data: { classId: klass.id, schoolId: klass.schoolId },
+      })
+
+      // `User.classId` holds one class, so a prior approval elsewhere no longer
+      // describes reality. Mark it superseded — not denied; no teacher refused it.
+      await tx.classJoinRequest.updateMany({
+        where: { userId: request.userId, status: 'approved', id: { not: requestId } },
+        data: { status: 'superseded', decidedAt: new Date(), decidedByUserId },
+      })
+    }
+
+    return { committed: true, decision }
   })
 }
 

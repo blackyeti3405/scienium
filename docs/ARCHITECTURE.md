@@ -225,7 +225,11 @@ public entry page.
 
 `app/(onboarding)/onboarding/page.tsx` creates or joins a lab, records the
 student's school, and — when a class code is entered — files a pending
-class-join request the teacher must approve (it does not enrol directly).
+class-join request the teacher must approve (it does not enrol directly). The
+teacher's decision runs through `decideClassJoin` in `lib/onboarding/profile.ts`:
+one compare-and-set on `status: 'pending'` under a per-student lock, returning the
+committed outcome so a second decision cannot silently no-op or contradict the
+first. A replaced approval is marked `superseded`, never `denied`.
 
 `app/game/page.tsx` is the authenticated role router: teachers go to `/teacher`
 and students go to `/lab`. The legacy `/dashboard` page redirects to `/lab`.

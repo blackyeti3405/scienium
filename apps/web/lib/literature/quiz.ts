@@ -56,6 +56,66 @@ export function stripKeys(questions: QuizQuestion[]): ClientQuizQuestion[] {
   return questions.map(({ key: _key, ...rest }) => rest)
 }
 
+/**
+ * Turn a model's generated-question array into exactly `count` usable questions,
+ * or `null` if it isn't one (REFACTOR2 P1-S3).
+ *
+ * Generation used to accept ANY non-empty array, so a model that returned a
+ * single element produced a one-question "5-question" exam — a much easier bar
+ * for the same proficiency and KP. Cardinality is the whole point of the
+ * contract, so it is checked exactly rather than as a floor.
+ */
+export function parseGeneratedQuestions(
+  raw: unknown,
+  count: number = QUIZ_QUESTION_COUNT,
+): QuizQuestion[] | null {
+  if (!Array.isArray(raw) || raw.length !== count) return null
+
+  const questions: QuizQuestion[] = []
+  for (const [i, q] of raw.entries()) {
+    if (!q || typeof q !== 'object') return null
+    const { prompt, focus, key } = q as Record<string, unknown>
+    // A blank prompt is not a question; a blank key would hand the grader
+    // nothing to grade against.
+    if (typeof prompt !== 'string' || prompt.trim().length === 0) return null
+    if (typeof key !== 'string' || key.trim().length === 0) return null
+    questions.push({
+      id: `q${i + 1}`,
+      prompt: prompt.trim(),
+      focus: typeof focus === 'string' && focus.trim() ? focus.trim() : 'general',
+      key: key.trim(),
+    })
+  }
+  return questions
+}
+
+/**
+ * Aggregate a graded set over the CANONICAL questions (REFACTOR2 P1-S3).
+ *
+ * The initial-grade route used to divide by `graded.length` — the rows the model
+ * happened to return. One `{ questionId: "q1", score: 100 }` row therefore passed
+ * a five-question session outright and minted proficiency and KP, and a foreign
+ * or duplicated id could inflate the same sum. The denominator must be the
+ * questions we asked:
+ *
+ *   - a question with no grade counts as 0, not as absent;
+ *   - a grade for an id we never asked is ignored;
+ *   - a duplicated id counts once (the first occurrence).
+ */
+export function aggregateOverQuestions(
+  questions: { id: string }[],
+  graded: GradedAnswer[],
+  clamp: (n: number) => number,
+): number {
+  if (questions.length === 0) return 0
+  const byId = new Map<string, GradedAnswer>()
+  for (const g of graded) {
+    if (!byId.has(g.questionId)) byId.set(g.questionId, g)
+  }
+  const total = questions.reduce((sum, q) => sum + clamp(byId.get(q.id)?.score ?? 0), 0)
+  return Math.round(total / questions.length)
+}
+
 /** Extracts the first JSON value (object or array) from a model response. */
 export function extractJson<T>(raw: string): T | null {
   const match = raw.match(/[[{][\s\S]*[\]}]/)

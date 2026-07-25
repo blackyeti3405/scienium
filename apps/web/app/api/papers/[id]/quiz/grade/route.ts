@@ -7,6 +7,7 @@ import {
   QUIZ_PASS_THRESHOLD,
   QuizQuestion,
   GradedAnswer,
+  aggregateOverQuestions,
   loadRubric,
 } from '@/lib/literature/quiz'
 import {
@@ -87,7 +88,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   }
 
   const gradeMap = new Map(graded.map((g) => [g.questionId, g]))
-  const aggregate = Math.round(graded.reduce((sum, g) => sum + clampScore(g.score), 0) / graded.length)
+  // Denominator is the questions WE asked, not the rows the model returned
+  // (P1-S3): one `{questionId:"q1",score:100}` row used to pass a five-question
+  // session outright and mint proficiency + KP.
+  const aggregate = aggregateOverQuestions(questions, graded, clampScore)
   const passed = aggregate >= QUIZ_PASS_THRESHOLD
 
   // Proficiency + KP are tracked PER STUDENT now (paper_proficiency), so every

@@ -134,6 +134,11 @@ enum ClassJoinRequestStatus {
   pending
   approved
   denied
+  /// A later approval into a DIFFERENT class replaced this one. `User.classId`
+  /// holds exactly one class, so two `approved` rows for the same student would
+  /// be a contradiction: one of them no longer describes reality (P1-S2).
+  /// Distinct from `denied`, which means a teacher actually refused.
+  superseded
 
   @@map("class_join_request_status")
 }

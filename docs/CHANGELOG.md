@@ -5,6 +5,64 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.36.0] — 2026-07-25
+
+### Fixed — class-join decisions have one terminal state (P1-S2)
+The route pre-read `status: 'pending'` and then acted on that stale snapshot. Approval re-read
+inside its own transaction and **returned silently** when the row had moved on — while the
+route still answered `{ ok: true }` — and denial wrote with **no status predicate at all**.
+Approve-then-deny therefore left a student enrolled (`User.classId` set) against a request
+marked `denied`; deny-then-approve reported success for a write that never happened. Competing
+approvals were also last-writer-wins on that single `classId`, leaving two `approved` rows.
+
+One `decideClassJoin(requestId, teacherId, decision)` service now owns the transition:
+
+- the change is an `updateMany` predicated on `status: 'pending'`, so only the first decision
+  commits and the loser is told **which state actually stands** (409, not a false success);
+- approval takes a per-student advisory lock before touching `User.classId`, so two teachers
+  approving into different classes serialize instead of racing;
+- any other approved request for that student becomes **`superseded`** — a new status, distinct
+  from `denied` because no teacher refused it — so the database never holds two `approved` rows
+  describing one `classId`;
+- the route's own query is now purely the **authorization** check (does this teacher own the
+  class); it no longer draws conclusions about whether the request is still open.
+
+Denial deliberately does **not** un-enrol an already-approved student. That is a class-removal
+command and belongs to the membership lifecycle still open as P1-R8; refusing the stale
+decision is the honest answer here.
+
+### Fixed — malformed model output can no longer mint proficiency or KP (P1-S3)
+Two independent holes, both reachable without touching the UI:
+
+- **Generation accepted any non-empty array.** A model returning one element produced a
+  one-question "5-question" exam worth the same proficiency and KP.
+  `parseGeneratedQuestions` now requires **exactly** `QUIZ_QUESTION_COUNT` elements, each with
+  a non-blank prompt and grading key (a blank key leaves the grader nothing to grade against).
+- **Grading divided by `graded.length`** — the rows the model happened to return. A single
+  `{ questionId: "q1", score: 100 }` passed a five-question session outright and minted
+  proficiency and KP; a foreign or duplicated id could inflate the same sum.
+  `aggregateOverQuestions` uses the **canonical** denominator: an ungraded question counts as
+  zero rather than as absent, a grade for a question we never asked is ignored, and a
+  duplicated id counts once.
+
+The expertise/clearance route already used a canonical denominator and was **not** vulnerable;
+it now routes through the same helper so the rule has one owner and the two cannot drift apart.
+
+### Changed — the route-policy harness may take advisory locks
+`lockAggregate` issues `$executeRaw`, which the in-memory harness rejected outright, so any
+route guarded by a lock became untestable for authorization. The harness now no-ops
+**`pg_advisory_xact_lock` specifically** — it is single-threaded against maps, so there is no
+concurrency for a lock to serialize — and still throws on any other raw SQL, so this cannot
+quietly become a general escape hatch. Real lock behaviour remains proven against PostgreSQL in
+`test/pg/invariants.pg.test.ts`.
+
+### Verification
+Gates 1–5 pass. Vitest: **100 files / 1,419 tests passed**. 31 new tests: 13 pinning the
+class-decision compare-and-set, lock ordering, and supersede rule (including both
+approve-after-deny and deny-after-approve interleavings), and 18 driving hostile provider
+output through the quiz cardinality and aggregate contracts. Migration applied to the local dev
+database; team data verified untouched.
+
 ## [0.35.2] — 2026-07-25
 
 ### Added — unit tests for the v0.34.0–v0.35.1 remediation wiring

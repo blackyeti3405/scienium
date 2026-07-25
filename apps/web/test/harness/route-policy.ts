@@ -465,6 +465,28 @@ function createDbProxy(): unknown {
       if (typeof arg === 'function') return arg(dbProxy)
       throw new HarnessQueryError('unsupported $transaction form')
     },
+    /**
+     * ONLY `lockAggregate`'s advisory lock, and only as a no-op.
+     *
+     * The harness runs single-threaded against in-memory maps, so there is no
+     * concurrency for a lock to serialize — taking one is genuinely a no-op
+     * here. Routes that guard a mutation with `lockAggregate` would otherwise be
+     * untestable for AUTHORIZATION, which is all this harness claims to prove.
+     * Real lock behaviour is proven against PostgreSQL in
+     * `test/pg/invariants.pg.test.ts`; any other raw SQL still throws, so this
+     * cannot quietly become a general escape hatch.
+     */
+    $executeRaw: async (arg: unknown) => {
+      const sql = String(
+        (arg as { strings?: string[]; text?: string })?.strings?.join(' ') ??
+          (arg as { text?: string })?.text ??
+          arg,
+      )
+      if (sql.includes('pg_advisory_xact_lock')) return 0
+      throw new HarnessQueryError(
+        'db.$executeRaw is not supported by the route-policy harness (advisory locks excepted)',
+      )
+    },
   }
   const dbProxy: unknown = new Proxy(target, {
     get(t, prop) {

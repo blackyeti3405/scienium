@@ -1047,7 +1047,8 @@ The teacher approval that *does* exist is **class enrolment**. Because class mem
 1. A student enters the teacher's class code (at onboarding or from the Team panel); this files a `class_join_requests` row (`pending`) rather than enrolling
 2. The teacher sees pending requests via the roster indicator or the **Class Requests** tab
 3. The teacher **approves** (enrols only that student — sets their `class_id` + school, leaving teammates untouched) or **denies** the request
-4. A leaked or over-shared class code can be **regenerated** from Class Settings, immediately invalidating the old one
+4. The decision is a **compare-and-set on the pending state** (v0.36.0, P1-S2): only the first decision commits, and a second one gets a 409 naming the state that stands rather than a false success. Approval takes a per-student lock before writing `class_id`, so two teachers approving into different classes serialize; the earlier approval is then marked `superseded` — distinct from `denied`, since no teacher refused it. Denial does **not** un-enrol an already-approved student: that is class removal, a separate lifecycle command
+5. A leaked or over-shared class code can be **regenerated** from Class Settings, immediately invalidating the old one
 
 Once a student is in a teacher's class, that teacher can see the student's individual work *and* any lab the student is on (shared team artifacts are visible to every teacher who owns a member); a teammate's personal pages stay private to that teammate's own teacher.
 
