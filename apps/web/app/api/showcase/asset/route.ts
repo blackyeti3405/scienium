@@ -13,6 +13,7 @@ import {
   reserveUploadAsset,
 } from '@/lib/uploads/assets'
 import { lockAggregate } from '@/lib/db-lock'
+import { syncShowcaseRevision } from '@/lib/showcase-server'
 import { db } from '@/lib/db'
 import { MAX_PDF_BYTES } from '@/lib/papers/service'
 
@@ -201,6 +202,10 @@ export async function POST(req: NextRequest) {
           tx,
         )
       }
+      // Replacing the board/quad chart changes the revision a teacher approved
+      // (P0-R3) — inside the same commit as the slot swap, so the digest can
+      // never lag the asset it covers.
+      await syncShowcaseRevision(tx, showcase.id, ctx.dbUserId)
       return created
     })
   } catch (err) {

@@ -17,16 +17,149 @@ export function makeSlug(title: string): string {
   return `${slugify(title)}-${randomUUID().slice(0, 6)}`
 }
 
-/** Resolves the signed-in viewer's team/school context for a privacy check (null when anonymous). */
+// ─── Revision binding (REFACTOR2 P0-R3) ──────────────────────────────────────
+
+/** The fields and assets an approval covers. Change this ⇒ change the digest. */
+interface DigestInput {
+  shortTitle: string
+  title: string
+  abstract: string
+  privacyLevel: string
+  assets: { assetType: string; fileUrl: string | null; metadataJson: unknown }[]
+}
+
+/**
+ * Digest of everything a reviewer would have seen.
+ *
+ * `moderationStatus = 'approved'` used to be a mutable flag: after approval a
+ * team could rewrite the title/abstract or replace the board, quad chart, video,
+ * repository, and supplement assets and stay approved. Approval is now bound to
+ * this value, so any covered change is detectable.
+ *
+ * Assets are sorted by `(type, url, metadata)` so the digest depends on content,
+ * not on row ids or insertion order — replacing a board with an identical file
+ * is genuinely the same revision and should not re-trigger review.
+ */
+export function showcaseContentDigest(sc: DigestInput): string {
+  // JSON, not concatenation: a separator a title could itself contain would let
+  // two different revisions hash alike, which is the one failure this must not
+  // have. (`check:integrity` also forbids a control byte as that separator.)
+  const assets = sc.assets
+    .map((a) => JSON.stringify([a.assetType, a.fileUrl ?? '', a.metadataJson ?? null]))
+    .sort()
+  return createHash('sha256')
+    .update(JSON.stringify([sc.shortTitle, sc.title, sc.abstract, sc.privacyLevel, assets]))
+    .digest('hex')
+}
+
+/** Privacy levels whose content is reachable outside the author team AND reviewed. */
+export function requiresReview(privacyLevel: string): boolean {
+  // `public` (listed in the gallery, indexable) is the reviewed mode.
+  //
+  // `link_only` is an EXPLICIT ACCEPTANCE, per REFACTOR2 P0-R3's "require review
+  // for every externally reachable mode, or explicitly accept each narrower
+  // mode": it is unlisted, exists so a team can share a work-in-progress with a
+  // parent or mentor, and gating it behind a teacher queue would make the
+  // ordinary sharing path unusable. The real weakness of that acceptance is the
+  // guessable bearer slug tracked separately as P1-R7 — fixing the token is what
+  // makes "unlisted" true, not adding a review step.
+  return privacyLevel === 'public'
+}
+
+/** Minimal Prisma surface `syncShowcaseRevision` needs — the client or a tx. */
+type RevisionDb = Pick<typeof db, 'showcase' | 'showcaseModerationEvent'>
+
+/**
+ * Recompute the digest after a write and, if the content moved away from what a
+ * teacher approved, atomically return the showcase to review.
+ *
+ * EVERY path that can change a covered field or asset must call this — the
+ * showcase PUT, the file-upload route, the link route, and asset deletion.
+ * That is why it lives here rather than in any one route.
+ *
+ * Returns the current digest and whether an approval was invalidated.
+ */
+export async function syncShowcaseRevision(
+  tx: RevisionDb,
+  showcaseId: string,
+  actorUserId?: string | null,
+): Promise<{ digest: string; invalidated: boolean }> {
+  const sc = await tx.showcase.findUnique({
+    where: { id: showcaseId },
+    select: {
+      shortTitle: true,
+      title: true,
+      abstract: true,
+      privacyLevel: true,
+      moderationStatus: true,
+      approvedDigest: true,
+      contentDigest: true,
+      assets: { select: { assetType: true, fileUrl: true, metadataJson: true } },
+    },
+  })
+  if (!sc) return { digest: '', invalidated: false }
+
+  const digest = showcaseContentDigest(sc)
+  if (digest === sc.contentDigest) return { digest, invalidated: false }
+
+  // Approval covers a revision, not a showcase. Once the served content differs
+  // from the approved one, the showcase is no longer approved-as-served.
+  const invalidated =
+    sc.moderationStatus === 'approved' &&
+    requiresReview(sc.privacyLevel) &&
+    sc.approvedDigest !== digest
+
+  await tx.showcase.update({
+    where: { id: showcaseId },
+    data: {
+      contentDigest: digest,
+      ...(invalidated
+        ? { moderationStatus: 'pending_review' as const, moderatedAt: null, approvedDigest: null }
+        : {}),
+    },
+  })
+
+  if (invalidated) {
+    await tx.showcaseModerationEvent.create({
+      data: { showcaseId, digest, action: 'revision_invalidated', actorUserId: actorUserId ?? null },
+    })
+  }
+
+  return { digest, invalidated }
+}
+
+/**
+ * Resolves the signed-in viewer's team/school context for a privacy check (null
+ * when anonymous). For a teacher this also resolves the teams they teach, so
+ * `canViewShowcase` can grant the moderator preview (P0-R3) — the extra query
+ * runs only for `role: 'teacher'`, never on the anonymous public-page path.
+ */
 export async function resolveShowcaseViewer(): Promise<ShowcaseViewer | null> {
   const { userId } = await auth()
   if (!userId) return null
   const u = await db.user.findUnique({
     where: { clerkUserId: userId },
-    select: { schoolId: true, teamMemberships: { select: { teamId: true } } },
+    select: { id: true, role: true, schoolId: true, teamMemberships: { select: { teamId: true } } },
   })
-  if (!u) return { userId, schoolId: null, teamIds: [] }
-  return { userId, schoolId: u.schoolId, teamIds: u.teamMemberships.map((m) => m.teamId) }
+  if (!u) return { userId, schoolId: null, teamIds: [], moderatorTeamIds: [] }
+
+  let moderatorTeamIds: string[] = []
+  if (u.role === 'teacher' || u.role === 'admin') {
+    // Teams with at least one member in a class this teacher owns — the same
+    // ownership rule `teacherOwnsTeam` applies, expressed as one query.
+    const teams = await db.team.findMany({
+      where: { members: { some: { user: { class: { teacherId: u.id } } } } },
+      select: { id: true },
+    })
+    moderatorTeamIds = teams.map((t) => t.id)
+  }
+
+  return {
+    userId,
+    schoolId: u.schoolId,
+    teamIds: u.teamMemberships.map((m) => m.teamId),
+    moderatorTeamIds,
+  }
 }
 
 /**

@@ -79,6 +79,14 @@ export interface ShowcaseViewer {
   schoolId: string | null
   /** Team ids the viewer belongs to (for owner/team access to private drafts). */
   teamIds: string[]
+  /**
+   * Team ids the viewer is the TEACHER of. A reviewer must be able to inspect
+   * the exact revision they are being asked to approve — including the board,
+   * quad chart, and video (REFACTOR2 P0-R3). Before this, "View submission"
+   * pointed at the public page, whose pending-content policy admitted team
+   * members but not the reviewing teacher.
+   */
+  moderatorTeamIds: string[]
 }
 
 export interface ShowcaseForView {
@@ -98,6 +106,11 @@ export interface ShowcaseForView {
 export function canViewShowcase(sc: ShowcaseForView, viewer: ShowcaseViewer | null): boolean {
   const isOwner = !!viewer && viewer.teamIds.includes(sc.teamId)
   if (isOwner) return true
+
+  // Moderator preview: the teacher of this team sees every revision, in every
+  // state, exactly as stored. Scoped to teams they teach — never a global
+  // teacher bypass.
+  if (viewer?.moderatorTeamIds.includes(sc.teamId)) return true
 
   const live = sc.publishedAt != null && sc.moderationStatus === 'approved'
   if (!live) return false

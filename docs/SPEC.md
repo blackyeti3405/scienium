@@ -725,8 +725,13 @@ The editor's abstract field carries an **Abstract Structure guide** *(implemente
 - Showcase Wing feature unlocks when the team reaches the `showcase` phase (self-paced advancement to school/regional competition)
 - Available even if the student doesn't advance further — reaching this phase acknowledges the level most projects reach
 - For minors, **public publishing requires verified parental consent** (separate from initial app consent)
-- For school-only publishing, **teacher approval is required**
-- Showcases can be edited or unpublished at any time by the team
+- ~~For school-only publishing, teacher approval is required~~ — the `school_only`
+  level was **withdrawn** in v0.34.0 (REFACTOR2 P0-R2): it authorized on a self-entered
+  school name. Existing rows read as team-only
+- Showcases can be edited or unpublished at any time by the team — but **editing an
+  approved public showcase returns it to review** (v0.35.0, P0-R3): approval names a
+  content digest covering the title, abstract, privacy level, and every asset, so a
+  changed or replaced board/quad/video invalidates the prior decision
 
 ### 12.5 Gallery
 
@@ -1060,6 +1065,15 @@ A dedicated tab for items awaiting moderation:
 
 Teacher can approve, request changes, or reject with a reason. Approved items go live; rejected items return to the student with the teacher's feedback.
 
+**(As built, v0.35.0)** A decision binds to the revision the teacher reviewed. The queue returns
+the showcase's `contentDigest` plus every asset with a direct link (and marks any required asset
+that is missing), and "View submission" renders the exact pending revision — `canViewShowcase`
+grants the team's own teacher every revision in every state, so the reviewer can open the board,
+quad chart, and video before deciding. The decision echoes the digest back and the update is a
+compare-and-set on it, so a submission edited mid-review is refused with 409 rather than
+approved. Every decision, submission, unpublish, and revision invalidation is appended to
+`showcase_moderation_events` with its digest, actor, and note.
+
 ### 15.9 Class Settings
 - View the class join code and **regenerate** it (revokes a leaked/over-shared code; the code is otherwise long-lived and does not expire)
 - Approve/deny pending class-join requests (also surfaced as the Class Requests queue)
@@ -1098,7 +1112,9 @@ class_join_requests        id, class_id, user_id, status (pending | approved | d
 teacher_feedback           id, team_id, target_type (paper | project_log | failure_log | lab_note | showcase),
                            target_id, body, created_by_user_id, created_at, resolved
 ```
-Showcase moderation state lives on the `showcase` row itself (`moderation_status`), not a separate queue table. There is no `teacher_class_assignments` (a class has one `teacher_id`) and no `teacher_validations` (phase advancement is self-paced).
+Showcase moderation state lives on the `showcase` row itself (`moderation_status`, plus
+`content_digest` / `approved_digest` for revision binding), with an append-only
+`showcase_moderation_events` history — not a separate queue table. There is no `teacher_class_assignments` (a class has one `teacher_id`) and no `teacher_validations` (phase advancement is self-paced).
 
 **UI components:**
 - Reuses student-facing visualization components (`DiscoveryTree`, lab views, `ProjectLogTimeline`) wrapped in teacher context

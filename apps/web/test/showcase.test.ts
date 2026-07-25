@@ -22,9 +22,9 @@ describe('canViewShowcase', () => {
     moderationStatus: 'approved',
     teamSchoolIds: ['school-A'],
   }
-  const owner: ShowcaseViewer = { userId: 'u1', schoolId: 'school-Z', teamIds: ['team-1'] }
-  const sameSchool: ShowcaseViewer = { userId: 'u2', schoolId: 'school-A', teamIds: ['team-9'] }
-  const otherSchool: ShowcaseViewer = { userId: 'u3', schoolId: 'school-B', teamIds: ['team-9'] }
+  const owner: ShowcaseViewer = { userId: 'u1', schoolId: 'school-Z', teamIds: ['team-1'], moderatorTeamIds: []  }
+  const sameSchool: ShowcaseViewer = { userId: 'u2', schoolId: 'school-A', teamIds: ['team-9'], moderatorTeamIds: []  }
+  const otherSchool: ShowcaseViewer = { userId: 'u3', schoolId: 'school-B', teamIds: ['team-9'], moderatorTeamIds: []  }
   const anon = null
 
   it('team members always see their own showcase regardless of state/privacy', () => {
@@ -55,7 +55,7 @@ describe('canViewShowcase', () => {
     expect(canViewShowcase({ ...base, privacyLevel: 'school_only' }, sameSchool)).toBe(false)
     expect(canViewShowcase({ ...base, privacyLevel: 'school_only' }, otherSchool)).toBe(false)
     expect(canViewShowcase({ ...base, privacyLevel: 'school_only' }, anon)).toBe(false)
-    expect(canViewShowcase({ ...base, privacyLevel: 'school_only' }, { userId: 'u', schoolId: null, teamIds: [] })).toBe(false)
+    expect(canViewShowcase({ ...base, privacyLevel: 'school_only' }, { userId: 'u', schoolId: null, teamIds: [], moderatorTeamIds: []  })).toBe(false)
   })
 
   it('school_only still shows to the owning team', () => {
@@ -69,6 +69,39 @@ describe('canViewShowcase', () => {
   it('private is never visible to non-owners, even approved+published', () => {
     expect(canViewShowcase({ ...base, privacyLevel: 'private' }, sameSchool)).toBe(false)
     expect(canViewShowcase({ ...base, privacyLevel: 'private' }, anon)).toBe(false)
+  })
+
+  // P0-R3: a reviewer was sent to the public page, whose pending-content policy
+  // admitted team members but not the reviewing teacher — they were asked to
+  // approve a submission they could not open.
+  describe('moderator preview', () => {
+    const ourTeacher: ShowcaseViewer = {
+      userId: 't1', schoolId: null, teamIds: [], moderatorTeamIds: ['team-1'],
+    }
+    const foreignTeacher: ShowcaseViewer = {
+      userId: 't2', schoolId: null, teamIds: [], moderatorTeamIds: ['team-9'],
+    }
+
+    it('the team’s teacher sees a pending revision', () => {
+      expect(
+        canViewShowcase({ ...base, privacyLevel: 'public', moderationStatus: 'pending_review' }, ourTeacher),
+      ).toBe(true)
+    })
+
+    it('the team’s teacher sees an unpublished private draft', () => {
+      expect(
+        canViewShowcase({ ...base, privacyLevel: 'private', publishedAt: null, moderationStatus: 'draft' }, ourTeacher),
+      ).toBe(true)
+    })
+
+    it('a teacher of ANOTHER class sees nothing — it is not a global teacher bypass', () => {
+      expect(
+        canViewShowcase({ ...base, privacyLevel: 'public', moderationStatus: 'pending_review' }, foreignTeacher),
+      ).toBe(false)
+      expect(
+        canViewShowcase({ ...base, privacyLevel: 'private', publishedAt: null }, foreignTeacher),
+      ).toBe(false)
+    })
   })
 })
 

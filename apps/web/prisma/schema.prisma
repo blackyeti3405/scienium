@@ -1294,12 +1294,51 @@ model Showcase {
   moderationStatus ModerationStatus @default(draft) @map("moderation_status")
   moderationNote   String?          @map("moderation_note")
   moderatedAt      DateTime?        @map("moderated_at")
+  // Revision binding (REFACTOR2 P0-R3). `contentDigest` covers every field and
+  // asset a reviewer would have seen; `approvedDigest` is the revision a teacher
+  // actually approved. `approved` only means "approved as served" while the two
+  // are equal — `syncShowcaseRevision` re-derives the digest after every write
+  // and resets the status when they diverge.
+  contentDigest    String           @default("") @map("content_digest")
+  approvedDigest   String?          @map("approved_digest")
 
-  team   Team            @relation(fields: [teamId], references: [id])
-  assets ShowcaseAsset[]
-  views  ShowcaseView[]
+  team             Team                      @relation(fields: [teamId], references: [id])
+  assets           ShowcaseAsset[]
+  views            ShowcaseView[]
+  moderationEvents ShowcaseModerationEvent[]
 
   @@map("showcases")
+}
+
+/// Append-only moderation history. Rows are never updated or deleted, so a
+/// decision can always be traced to the exact revision it applied to.
+model ShowcaseModerationEvent {
+  id          String                   @id @default(cuid())
+  showcaseId  String                   @map("showcase_id")
+  /// The `Showcase.contentDigest` this event applied to.
+  digest      String
+  action      ShowcaseModerationAction
+  /// `User.id` of the teacher who decided, or null for system/team-triggered events.
+  actorUserId String?                  @map("actor_user_id")
+  note        String?
+  createdAt   DateTime                 @default(now()) @map("created_at")
+
+  showcase Showcase @relation(fields: [showcaseId], references: [id], onDelete: Cascade)
+
+  @@index([showcaseId, createdAt])
+  @@map("showcase_moderation_events")
+}
+
+enum ShowcaseModerationAction {
+  submitted
+  approved
+  rejected
+  /// The team changed a covered field or asset after approval; the approval no
+  /// longer applies and the showcase returned to review.
+  revision_invalidated
+  unpublished
+
+  @@map("showcase_moderation_action")
 }
 
 enum PrivacyLevel {

@@ -13,10 +13,11 @@ authoritative. Older version close-outs remain as provenance, not as pilot sign-
 > means that historical finding closed; it does not override the current register.
 > `docs/SECURITY.md` is authoritative for exploit mechanics and security sign-off.
 >
-> **Remediation in progress — see §0.11 for the running close-out.** As of **v0.34.0
-> (2026-07-25)**: P0-R2 and P0-R4 are closed, P0-R3 remains open, and P1-R4, P1-S11, P1-S12,
-> and the forms half of P1-R16 are closed. One P0 launch blocker (P0-R3, showcase revision
-> moderation) plus the P1 program remain.
+> **Remediation in progress — see §0.11 for the running close-out.** As of **v0.35.0
+> (2026-07-25)**: **all three P0 launch blockers are closed** (P0-R2, P0-R3, P0-R4), along with
+> P1-R4, P1-R10, P1-S1, P1-S4, P1-S11, P1-S12, P2-S5, and the forms half of P1-R16. Closing the
+> P0s is **not pilot sign-off**: the P1 program, the legal/minors/privacy approval, the restore
+> drill, enforceable CI, and the measured capacity test in §0.10 all remain outstanding.
 
 ---
 
@@ -161,7 +162,7 @@ level; it is now optional product work rather than a launch blocker.
 `test/showcase-public-asset.test.ts` pins the direct attack (same-school viewer → 404, no
 bytes streamed).
 
-#### P0-R3 — Showcase approval is bypassable and cannot inspect the submission
+#### P0-R3 — Showcase approval is bypassable and cannot inspect the submission — **CLOSED (v0.35.0)**
 
 The publish route sends only `public` showcases to `pending_review`; `link_only`,
 `school_only`, and `private` publications become `approved` automatically. More importantly,
@@ -189,6 +190,19 @@ Required architecture:
   event; add report/unpublish/takedown controls;
 - test edit-after-approval, replace-after-approval, link-only publication, rejected resubmit,
   and foreign-teacher preview paths with real authorization behavior.
+
+**Closed in v0.35.0.** `Showcase.contentDigest` covers every field and asset an approval
+applies to; `approvedDigest` names the revision a teacher approved; `syncShowcaseRevision`
+re-derives it on all four write paths and atomically resets an approved showcase to
+`pending_review` with a `revision_invalidated` event when the two diverge. Teacher preview is
+granted through `ShowcaseViewer.moderatorTeamIds` in the single `canViewShowcase` predicate, so
+the public page **and** the asset-stream route both admit the reviewing teacher (scoped to
+teams they teach). Decisions are a compare-and-set on the echoed digest — a mid-review edit
+yields 409. `ShowcaseModerationEvent` is the append-only history. `requiresReview()` gates
+`public` and documents the explicit acceptance of `link_only`/`private`. The migration fails
+closed: previously approved public showcases return to review because no evidence exists of
+which revision was seen. **Still open:** report/takedown controls, and the P1-R7 share token
+that would make the `link_only` acceptance genuinely "unlisted".
 
 #### P0-R4 — The ISEF safety-forms guide maps form numbers to the wrong documents — **CLOSED (v0.34.0)**
 
@@ -791,7 +805,7 @@ as documentation drift.
 
 | Gap | Evidence in the current tree | Required decision / implementation |
 | --- | --- | --- |
-| Showcase revision moderation | Approval is a mutable flag; text and every asset route can change approved content without a new decision; the pending-review queue cannot inspect required assets. | Implement the P0-R3 reviewed-revision state machine and exact teacher preview before externally sharing student work. |
+| Showcase revision moderation | ~~Approval is a mutable flag~~ — **CLOSED v0.35.0**: approval names a `contentDigest`, every covered write resets it, and the reviewing teacher can open the exact pending revision. | Remaining: report/unpublish/takedown controls for published content. |
 | Verified school affiliation | `User.schoolId` is both self-reported profile data and the `school_only` authorization fact. | Add evidence-bearing membership or remove confidentiality claims from `school_only`. |
 | Team membership lifecycle | `TeamMember` permits one user in many teams; direct team join adds another membership and changes `activeTeamId`. There is no complete switch/leave/remove/lead-transfer/disband flow. | Decide one-team vs multi-team semantics. If one team, enforce it transactionally. If many, build explicit switching, leave/removal, final-lead transfer, disband, and stale-membership repair. |
 | Class lifecycle | Approving another class request overwrites `User.classId`; historical approved requests remain. There is no complete withdraw/transfer/revoke/remove/archive path. | Add an explicit class-membership state/history, teacher removal, student transfer/withdrawal, class archive, and audit events. |
@@ -1118,11 +1132,12 @@ fails if it returns; anything narrower is recorded as **PARTIAL** with what is s
 | --- | --- | --- | --- |
 | **P0-R2** `school_only` trusts self-asserted school | **CLOSED** | Level withdrawn: `canViewShowcase` denies every non-owner, removed from `PRIVACY_OPTIONS` and the accepted `PATCH /api/showcase` values, legacy rows degrade to team-only. Attack pinned in `test/showcase-public-asset.test.ts` (404, no bytes). | Verified `SchoolMembership` if the level is ever re-offered — now optional product work, not a blocker. |
 | **P0-R4** ISEF forms guide is materially wrong | **CLOSED** | Versioned `ISEF_EDITION` (2027 codes/titles, source URLs, `sourcedAt`); applicability/timing fail closed behind `reviewedBy`; the 170-line unreviewed guide prose deleted; wrong-mapping tests replaced. | Qualified teacher/SRC review to set `reviewedBy` and restore applicability; season-bound AI-use disclosure contract. |
-| **P0-R3** Showcase approval not bound to a revision | **OPEN** | — | The full revision/digest state machine, teacher preview of the exact pending revision, and moderation event log. **This is the remaining P0 launch blocker.** |
+| **P0-R3** Showcase approval not bound to a revision | **OPEN in this batch — closed in v0.35.0 below** | — | — |
 | **P1-R4** Limiter failure removes the paid ceiling | **CLOSED** | Pipeline shape + per-element errors + numeric `INCR` validated; `RateLimitStoreError` thrown instead of a fabricated `count = 1`; paid tiers 503, read/mutate fail open and log. | Circuit breaker; one deployment-guaranteed client-IP header. |
 | **P1-S11** DOI presented as peer review | **CLOSED** | `tierFromDoi` deleted; uploads carry `credibilityTier: null` and display the DOI as an identifier. | Real publication-type derivation from trusted metadata. |
 | **P1-S12** Google Docs substring match | **CLOSED** | URL parsed; exact `https:` + `docs.google.com` host and `/document/d/<id>` path; only the canonical URL is persisted. Hostile prefix/query/subdomain/scheme cases pinned. | Redirect and body caps — belongs to the P2 outbound gateway. |
 | **P1-R16** Count-based seeders suppress corrections | **PARTIAL** | Forms seeding keys on code coverage, not row count; the route serves the authored edition and filters retired codes. | `seedFairsBatched`; edition digest/retirement for the fair catalog. |
+
 | **P2-S5** `form_code` has no unique index | **CLOSED** | Migration `20260725120000_forms_catalog_unique_code` dedupes (keep lowest id, drop/repoint conflicting `team_form_status` rows) **before** creating the index — P1-S14's lesson applied prospectively. | Same preflight audit for A13's existing `ShowcaseView` migration (P1-S14 itself). |
 
 Gates 1–5 pass; Vitest 90 files / 1,299 tests. The migration is created and unapplied, per the
@@ -1137,6 +1152,15 @@ project's deploy convention.
 | **P1-S4** Failed quiz-history GET starts paid work | **CLOSED** | Read failure sets a recoverable error; generation requires an explicit successful `session: null` or the student's retry click. | — |
 
 Gates 1–5 pass; Vitest 91 files / 1,310 tests.
+
+#### v0.35.0 — 2026-07-25 — **all three P0 blockers now closed**
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P0-R3** Showcase approval is a mutable flag and the reviewer cannot inspect the submission | **CLOSED** | `contentDigest` covers every field and asset an approval applies to (JSON-framed, asset-order independent); `approvedDigest` names the reviewed revision; `syncShowcaseRevision` runs on all four write paths and atomically resets an approved showcase to `pending_review` with a `revision_invalidated` event. `ShowcaseViewer.moderatorTeamIds` grants the team's teacher every revision through the single `canViewShowcase` predicate, so the public page and the asset-stream route both admit the reviewer — scoped to teams they teach. Decisions are a CAS on the echoed digest (409 on a mid-review edit). `ShowcaseModerationEvent` is append-only. The migration fails closed on backfill. | Report/unpublish/takedown controls; P1-R7's share token, which is what makes the `link_only` acceptance genuinely unlisted. |
+
+**Closing the P0s is not pilot sign-off.** §0.10 still requires the P1 program, legal/minors/
+privacy approval, a restore drill, enforceable CI, and a measured capacity test.
 
 ---
 
@@ -1204,7 +1228,7 @@ Track A's named findings remain historical close-outs. The following list is the
 | Priority | Finding | Consequence |
 | --- | --- | --- |
 | ~~P0~~ **CLOSED v0.34.0** | `school_only` trusts student-editable `User.schoolId` | Level withdrawn; fails closed to team-only pending verified `SchoolMembership` |
-| P0 | Showcase approval is not bound to the content/assets served, and reviewers cannot inspect required pending assets | Unreviewed or replaced minor-created content can remain approved and externally reachable |
+| ~~P0~~ **CLOSED v0.35.0** | Showcase approval is not bound to the content/assets served, and reviewers cannot inspect required pending assets | Approval names a content digest; any covered change resets to review; teacher preview streams the exact pending revision |
 | ~~P0~~ **CLOSED v0.34.0** | The ISEF guide assigns the wrong names, timing, and applicability to required forms | Versioned 2027 edition, titles only, applicability fail-closed until a qualified reviewer signs off |
 | ACCEPTED / OPTIONAL | Fresh accounts can self-provision `teacher` | Intentional open-registration policy; optional grant/domain/allowlist hardening later |
 | P1 | Client assertions authorize destructive shared actions | A member can bypass the intended confirmation path and delete papers/tree data |

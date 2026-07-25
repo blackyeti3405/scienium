@@ -5,6 +5,61 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.35.0] — 2026-07-25
+
+**The last P0 launch blocker from the 2026-07-23 audit.** Showcase approval was a mutable
+status flag, not the approval of a piece of content — this makes it name a revision.
+
+### Fixed — showcase approval is now bound to the revision that was reviewed (P0-R3)
+An already-approved public showcase could change its title and abstract, or replace its board
+PDF, quad chart, video, repository, and supplement assets, and stay `approved`. The teacher
+queue could not compensate: its moderation query selected only text and team summary fields,
+and its "View submission" link pointed at the public page, whose pending-content policy
+admitted team members but **not the reviewing teacher**. A reviewer could therefore be asked to
+approve a submission whose required assets they had no way to open, and the team could swap
+those assets afterwards. This is minor-created content reachable by anyone on the internet.
+
+- `Showcase.contentDigest` covers every field and asset an approval applies to — short title,
+  title, abstract, privacy level, and each asset's type, object key, and metadata. Assets are
+  sorted and the digest is built from JSON rather than delimiter concatenation, so two
+  different revisions cannot collide and asset row order is not significant.
+- `Showcase.approvedDigest` records the revision a teacher approved. `approved` means
+  "approved as served" only while the two match.
+- `syncShowcaseRevision()` re-derives the digest after every covered write and, when an
+  approved showcase moves away from its approved revision, atomically resets it to
+  `pending_review`, clears `approvedDigest`, and appends a `revision_invalidated` event. It is
+  called from **all four** write paths: the showcase PUT, the file-upload route (inside the
+  same transaction as the slot swap, so the digest can never lag the asset), the link route,
+  and asset deletion.
+- **Teacher preview.** `ShowcaseViewer` gained `moderatorTeamIds`, resolved only for teachers,
+  and `canViewShowcase` grants the teacher of that team every revision in every state. Because
+  the public page and the asset-stream route already route through that one predicate, the
+  reviewer can now open the exact pending board, quad chart, and video. It is scoped to teams
+  they teach — a teacher of another class still sees nothing.
+- **Decisions are compare-and-set.** The queue returns `contentDigest` and the full asset list;
+  the decision echoes the digest back, and the update predicate includes it. A submission
+  edited between the reviewer opening it and clicking Approve no longer matches, so the request
+  is refused with 409 ("this team changed their showcase while you were reviewing it") instead
+  of approving content nobody read.
+- **Append-only history.** `ShowcaseModerationEvent` records `submitted`, `approved`,
+  `rejected`, `revision_invalidated`, and `unpublished` against the digest each applied to,
+  with the acting teacher and note. Rows are never updated or deleted.
+- The review queue card now links every required asset directly and marks any that is missing.
+- `requiresReview()` is the single owner of which privacy levels are gated. `public` is
+  reviewed; `link_only` and `private` are an **explicit acceptance** documented at that
+  function — its real weakness is the guessable bearer slug tracked as P1-R7, and fixing the
+  token is what makes "unlisted" true, not adding a review step.
+
+Migration `20260725140000_showcase_revision_moderation` **fails closed on backfill**: existing
+approved public showcases were approved under the old mutable flag, so there is no evidence of
+which revision a teacher saw. They return to `pending_review` rather than staying live on an
+unverifiable approval. `link_only`/`private` are untouched.
+
+### Verification
+Gates 1–5 pass. Vitest: **93 files / 1,329 tests passed** — including
+`test/pg/invariants.pg.test.ts` against the local dev database (both this migration and
+`20260725120000_forms_catalog_unique_code` applied cleanly there, dedupe path included).
+
 ## [0.34.1] — 2026-07-25
 
 Second remediation batch against `REFACTOR2.MD` §0 — the small, high-severity P1 tenancy and

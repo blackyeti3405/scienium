@@ -30,19 +30,33 @@ export function useDecisionQueue(onDecided: (id: string) => void) {
     setNotes((n) => ({ ...n, [id]: note }))
   }
 
-  async function decide(id: string, decision: QueueDecision) {
+  /**
+   * `digest` is the revision the teacher was shown. The server compares it and
+   * refuses (409) if the team edited the submission mid-review, so a decision can
+   * never land on content nobody read (REFACTOR2 P0-R3).
+   */
+  async function decide(id: string, decision: QueueDecision, digest: string) {
     setBusy({ id, decision })
     setDecideError(null)
     try {
       const res = await fetch(ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [PAYLOAD_KEY]: id, decision, note: notes[id]?.trim() || undefined }),
+        body: JSON.stringify({
+          [PAYLOAD_KEY]: id,
+          decision,
+          digest,
+          note: notes[id]?.trim() || undefined,
+        }),
       })
       if (res.ok) {
         onDecided(id)
       } else {
-        setDecideError({ id, message: 'Could not save this decision — try again.' })
+        const body = await res.json().catch(() => null)
+        setDecideError({
+          id,
+          message: body?.error ?? 'Could not save this decision — try again.',
+        })
       }
     } catch {
       setDecideError({ id, message: 'Could not save this decision — try again.' })
@@ -57,9 +71,12 @@ export function useDecisionQueue(onDecided: (id: string) => void) {
 /** Note input + Approve / Request-changes button row for one queue card. */
 export function DecisionControls({
   id,
+  digest,
   queue,
 }: {
   id: string
+  /** The reviewed revision, echoed back so the server can compare-and-set. */
+  digest: string
   queue: ReturnType<typeof useDecisionQueue>
 }) {
   const { busy, decideError, notes, setNote, decide } = queue
@@ -78,7 +95,7 @@ export function DecisionControls({
           busyLabel="Approving…"
           icon={<Check size={12} />}
           disabled={busy !== null}
-          onClick={() => decide(id, 'approve')}
+          onClick={() => decide(id, 'approve', digest)}
           className="inline-flex items-center gap-1.5 font-pixel text-[8px] bg-emerald-500 text-[#0d1b2e] px-3 py-2 hover:brightness-110 disabled:opacity-40 transition-all"
         >
           Approve
@@ -88,7 +105,7 @@ export function DecisionControls({
           busyLabel="Requesting…"
           icon={<X size={12} />}
           disabled={busy !== null}
-          onClick={() => decide(id, 'reject')}
+          onClick={() => decide(id, 'reject', digest)}
           className="inline-flex items-center gap-1.5 font-pixel text-[8px] border border-white/20 text-white/70 px-3 py-2 hover:border-red-400 hover:text-red-400 disabled:opacity-40 transition-all"
         >
           Request changes

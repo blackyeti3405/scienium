@@ -4,6 +4,7 @@ import { withTeamRoute } from '@/lib/api/with-route'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
+import { syncShowcaseRevision } from '@/lib/showcase-server'
 import {
   isSafeHttpUrl,
   parseVideoUrl,
@@ -93,6 +94,9 @@ export const POST = withTeamRoute({ tier: 'mutate', feature: 'showcase' }, async
     }
     throw err
   }
+
+  // A replaced video/repo/supplement link changes the reviewed revision (P0-R3).
+  await syncShowcaseRevision(db, showcase.id, ctx.dbUserId)
 
   return NextResponse.json(
     { asset: { id: asset.id, assetType: asset.assetType, url: null, metadata: asset.metadataJson } },

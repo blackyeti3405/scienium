@@ -508,8 +508,10 @@ Top-level infrastructure and policy files:
   unblock it) — plus the one shared `sleep`, replacing five copy-pasted
   discovery-adapter retry loops.
 - `shop-server.ts`, `plot-server.ts`, `showcase-server.ts` (+
-  `resolveShowcaseViewer` — the signed-in viewer's team/school context for a
-  showcase privacy check): database-backed loaders.
+  `resolveShowcaseViewer` — the signed-in viewer's team/school context, plus the
+  teams they teach, for a showcase privacy check; and
+  `showcaseContentDigest`/`syncShowcaseRevision`/`requiresReview`, which bind
+  moderation approval to a specific content revision): database-backed loaders.
 - `featureRegistry.tsx`, `gateways.ts`: lab feature wiring. (The client currency
   provider moved to `components/lab/labCurrency.tsx`.)
 - `lru.ts`, `rate-limit.ts`, `storage.ts`, `uploadWithProgress.ts`,

@@ -12,7 +12,7 @@ import {
   wordCount,
   type PrivacyLevel,
 } from '@/lib/showcase'
-import { makeSlug } from '@/lib/showcase-server'
+import { makeSlug, requiresReview, syncShowcaseRevision } from '@/lib/showcase-server'
 
 // `school_only` is deliberately NOT accepted — it authorized on a self-asserted
 // `User.schoolId` (REFACTOR2 P0-R2). Legacy rows still hold the value and now
@@ -150,9 +150,9 @@ export async function PUT(req: NextRequest) {
         { status: 400 },
       )
     }
-    // Public showcases require teacher approval before appearing in the gallery.
-    // link_only / private are self-serve (auto-approved).
-    if (nextPrivacy === 'public') {
+    // Reviewed modes require teacher approval before the content is reachable.
+    // link_only / private are self-serve — see `requiresReview` for why.
+    if (requiresReview(nextPrivacy)) {
       publishFields = {
         publishedAt: existing?.publishedAt ?? new Date(),
         moderationStatus: 'pending_review',
@@ -172,7 +172,7 @@ export async function PUT(req: NextRequest) {
     // unconditionally (ANY transition to public must go through moderation,
     // closing the link_only→public bypass), or immediately approve when moving
     // away from public.
-    if (nextPrivacy === 'public') {
+    if (requiresReview(nextPrivacy)) {
       publishFields = { publishedAt: existing.publishedAt, moderationStatus: 'pending_review', moderationNote: null }
     } else {
       publishFields = { publishedAt: existing.publishedAt, moderationStatus: 'approved' }
@@ -204,6 +204,22 @@ export async function PUT(req: NextRequest) {
         include: includeFull,
       })
 
+  // Re-derive the content digest and, if this edit moved an approved showcase
+  // away from the revision a teacher signed off, return it to review (P0-R3).
+  const { digest } = await syncShowcaseRevision(db, sc.id, ctx.dbUserId)
+
+  // Record the submission against the exact revision being submitted, so the
+  // moderation history can always be traced to reviewed content.
+  if (publishFields?.moderationStatus === 'pending_review') {
+    await db.showcaseModerationEvent.create({
+      data: { showcaseId: sc.id, digest, action: 'submitted', actorUserId: ctx.dbUserId },
+    })
+  } else if (data.published === false) {
+    await db.showcaseModerationEvent.create({
+      data: { showcaseId: sc.id, digest, action: 'unpublished', actorUserId: ctx.dbUserId },
+    })
+  }
+
   if (data.published === true) {
     logActivity(ctx.teamId, ctx.dbUserId, 'showcase_published', {
       title: sc.shortTitle || sc.title,
@@ -211,5 +227,9 @@ export async function PUT(req: NextRequest) {
     }).catch(console.error)
   }
 
-  return NextResponse.json({ showcase: serialize({ ...sc, views: sc._count.views, team: sc.team }) })
+  // Re-read so the client sees the post-sync moderation state rather than the
+  // pre-sync one it would otherwise render as "still approved".
+  const fresh = await db.showcase.findUnique({ where: { id: sc.id }, include: includeFull })
+  const out = fresh ?? sc
+  return NextResponse.json({ showcase: serialize({ ...out, views: out._count.views, team: out.team }) })
 }
