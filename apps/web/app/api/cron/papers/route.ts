@@ -27,20 +27,34 @@ export async function GET(req: NextRequest) {
     take: 20,
     select: { paperId: true },
   })
+  let terminalized = 0
   if (stuck.length) {
     const ids = stuck.map((s) => s.paperId)
-    await db.$transaction([
-      db.paperProcessingJob.updateMany({
-        where: { paperId: { in: ids } },
+    terminalized = await db.$transaction(async (tx) => {
+      // Re-assert the selection predicate on the WRITE (P1-S5). The `findMany`
+      // above is a snapshot: by the time this runs a worker may have re-claimed
+      // the job, and a write keyed on `paper_id` alone would erase its progress.
+      const wrote = await tx.paperProcessingJob.updateMany({
+        where: {
+          paperId: { in: ids },
+          status: 'running',
+          claimedAt: { lt: staleBefore },
+          attempts: { gte: 3 },
+        },
         data: {
           status: 'failed',
           terminalAt: now,
           nextRunAt: null,
           lastError: 'Processing timed out after the maximum number of attempts.',
         },
-      }),
-      db.paper.updateMany({ where: { id: { in: ids } }, data: { status: 'error' } }),
-    ])
+      })
+      // Only the papers whose job this transaction actually terminalized.
+      await tx.paper.updateMany({
+        where: { id: { in: ids }, processingJob: { terminalAt: now } },
+        data: { status: 'error' },
+      })
+      return wrote.count
+    })
   }
 
   const jobs = await db.paperProcessingJob.findMany({
@@ -77,12 +91,12 @@ export async function GET(req: NextRequest) {
     route: '/api/cron/papers',
     durationMs: Date.now() - now.getTime(),
     outcome: 'ok',
-    detail: `processed=${jobs.length} terminalized=${stuck.length} reconciled=${reconciled} cleanedAssets=${cleanedAssets}`,
+    detail: `processed=${jobs.length} terminalized=${terminalized} reconciled=${reconciled} cleanedAssets=${cleanedAssets}`,
   })
 
   return NextResponse.json({
     processed: jobs.length,
-    terminalized: stuck.length,
+    terminalized,
     reconciled,
     cleanedAssets,
   })

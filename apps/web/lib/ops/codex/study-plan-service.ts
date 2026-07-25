@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { recommendTracks } from '@/lib/ops/codex/study-plan'
 import { CODEX_TRACKS } from '@/lib/ops/codex/index'
+import { aiIdempotencyKey, runAiOperation } from '@/lib/ai/operation'
 import { todayUtc } from '@/lib/date'
 
 /**
@@ -33,6 +34,14 @@ import { todayUtc } from '@/lib/date'
  * this costly — it catches its own call/parse failures internally and
  * returns a safe default recommendation rather than throwing (see
  * `lib/ops/codex/study-plan.ts`).
+ *
+ * VERSIONED WRITEBACK (P1-S9): reserving the slot also stamps
+ * `pendingSourceHash` with the source this generation is working from, and the
+ * commit is a compare-and-set on it. Haiku takes seconds; in that window the
+ * team can edit its topic and a second generation can finish. Without the CAS
+ * the slower, older result overwrote the newer one. The paid call itself runs
+ * through `runAiOperation`, so two callers that both miss the row-level cache
+ * with identical input share one result instead of buying two.
  */
 
 /** Re-run cap for the study-plan classifier — the LLM rate cap on top of the 'ai' tier limiter. */
@@ -106,14 +115,18 @@ export async function generateStudyPlan(
   // still under the cap. A losing concurrent request's RETURNING set is
   // empty, exactly the field-dispatch/lesson-cap safety property.
   const reserved = await db.$queryRaw<{ runs_today: number }[]>(Prisma.sql`
-    INSERT INTO "team_study_plans" (team_id, tracks_json, source_hash, runs_today, runs_day, generated_at, updated_at)
-    VALUES (${principal.teamId}, '[]'::jsonb, '', 1, ${today}, now(), now())
+    INSERT INTO "team_study_plans" (team_id, tracks_json, source_hash, pending_source_hash, runs_today, runs_day, generated_at, updated_at)
+    VALUES (${principal.teamId}, '[]'::jsonb, '', ${sourceHash}, 1, ${today}, now(), now())
     ON CONFLICT (team_id) DO UPDATE
       SET runs_today = CASE
             WHEN "team_study_plans".runs_day IS DISTINCT FROM ${today} THEN 1
             ELSE "team_study_plans".runs_today + 1
           END,
           runs_day = ${today},
+          -- Stamp the source this generation works from (P1-S9). A later
+          -- generation overwrites it, which is exactly what makes the commit's
+          -- compare-and-set discard the earlier, staler result.
+          pending_source_hash = ${sourceHash},
           updated_at = now()
       WHERE "team_study_plans".runs_day IS DISTINCT FROM ${today}
          OR "team_study_plans".runs_today < ${STUDY_PLAN_DAILY_RUN_CAP}
@@ -128,39 +141,63 @@ export async function generateStudyPlan(
     }
   }
 
-  const recommendations = await recommendTracks({
-    topic: team.topic,
-    researchIdea: team.researchIdea,
-    planText: researchPlan?.lastSyncedText ?? null,
-    labType: team.labType,
+  // Run the paid classifier at most once per (team, source) and replay its
+  // result to an identical concurrent caller (P1-S9 via the P1-R3 ledger). The
+  // row-level `sourceHash` cache above catches the sequential repeat; this
+  // catches two clicks that both miss it.
+  const op = await runAiOperation({
+    operation: 'study_plan_tracks',
+    idempotencyKey: aiIdempotencyKey(['study_plan_tracks', principal.teamId, sourceHash]),
+    teamId: principal.teamId,
+    run: () =>
+      recommendTracks({
+        topic: team.topic,
+        researchIdea: team.researchIdea,
+        planText: researchPlan?.lastSyncedText ?? null,
+        labType: team.labType,
+      }),
   })
+  if (!op.ok) {
+    if (op.reason === 'in_flight') {
+      return { ok: false, error: 'Your Study Plan is already being generated — give it a moment.', status: 409 }
+    }
+    throw op.error
+  }
 
   // Validate returned slugs against CODEX_TRACKS (recommendTracks already
   // constrains this, but re-validate defensively at the persistence
   // boundary — never trust a single layer).
   const validSlugs = new Set(CODEX_TRACKS.map((t) => t.slug))
-  const cleanedTracks = recommendations.filter((r) => validSlugs.has(r.trackSlug))
+  const cleanedTracks = op.result.filter((r) => validSlugs.has(r.trackSlug))
 
-  // The slot (runsToday/runsDay) is already reserved above — this update
-  // only persists the generated content, never re-touches the cap counters
-  // (which would risk clobbering a THIRD concurrent request's own reservation
-  // made between our reserve and this write).
-  const saved = await db.teamStudyPlan.update({
-    where: { teamId: principal.teamId },
+  // COMPARE-AND-SET on the source this generation reserved against (P1-S9),
+  // not an unconditional update. The slot (runsToday/runsDay) is already
+  // reserved above, so this write never re-touches the cap counters — and the
+  // `pending_source_hash` predicate means a generation started against an older
+  // topic cannot land on top of a newer one that already finished.
+  const committed = await db.teamStudyPlan.updateMany({
+    where: { teamId: principal.teamId, pendingSourceHash: sourceHash },
     data: {
       tracksJson: cleanedTracks as unknown as Prisma.InputJsonValue,
       sourceHash,
       generatedAt: new Date(),
     },
+  })
+
+  const saved = await db.teamStudyPlan.findUnique({
+    where: { teamId: principal.teamId },
     select: { tracksJson: true, manualTrackSlugs: true, generatedAt: true },
   })
+  if (!saved) return { ok: false, error: 'Study plan not found', status: 404 }
 
   return {
     ok: true,
     tracks: saved.tracksJson,
     manualTrackSlugs: saved.manualTrackSlugs,
     generatedAt: saved.generatedAt.toISOString(),
-    cached: false,
+    // A lost CAS means a newer generation already published; the caller gets
+    // that plan, and honestly labelled as not freshly generated for them.
+    cached: committed.count !== 1,
   }
 }
 

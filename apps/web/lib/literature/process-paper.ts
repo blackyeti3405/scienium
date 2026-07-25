@@ -1,4 +1,5 @@
 import 'server-only'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import { anthropic } from '@/lib/anthropic'
 import { db } from '@/lib/db'
@@ -30,10 +31,16 @@ const MAX_ATTEMPTS = 3
 /** Retry backoff: attempt N schedules the next try ~N × this into the future. */
 const RETRY_BACKOFF_MS = 2 * 60_000
 
+/** Thrown to roll back a terminal transaction whose claim was taken over. */
+class LostClaimError extends Error {}
+
 /** Claim and process one paper job. Concurrent callers are harmless. */
 export async function processPaperJob(paperId: string): Promise<void> {
   const now = new Date()
   const staleBefore = new Date(now.getTime() - STALE_CLAIM_MS)
+  // Fences this attempt (P1-S5). Every terminal write below is conditional on it,
+  // so a worker whose lease was taken over writes nothing at all.
+  const claimToken = randomUUID()
   const claimed = await db.paperProcessingJob.updateMany({
     where: {
       paperId,
@@ -63,6 +70,7 @@ export async function processPaperJob(paperId: string): Promise<void> {
     data: {
       status: 'running',
       claimedAt: now,
+      claimToken,
       attempts: { increment: 1 },
       lastError: null,
     },
@@ -109,8 +117,16 @@ export async function processPaperJob(paperId: string): Promise<void> {
       year: parseYear(null),
       url: paper.fileUrl ?? null,
     })
-    await db.$transaction([
-      db.paper.update({
+    // The job transition goes FIRST and is conditional on still owning the claim.
+    // If a takeover happened during the model call, it matches nothing, the
+    // transaction rolls back, and the paper/citation writes never land.
+    await db.$transaction(async (tx) => {
+      const done = await tx.paperProcessingJob.updateMany({
+        where: { paperId, status: 'running', claimToken },
+        data: { status: 'completed', completedAt: new Date(), nextRunAt: null, lastError: null },
+      })
+      if (done.count !== 1) throw new LostClaimError()
+      await tx.paper.update({
         where: { id: paper.id },
         data: {
           title: metadata.title ?? paper.title,
@@ -118,8 +134,8 @@ export async function processPaperJob(paperId: string): Promise<void> {
           abstract: metadata.abstract ?? null,
           status: 'ready',
         },
-      }),
-      db.citation.createMany({
+      })
+      await tx.citation.createMany({
         data: [
           {
             paperId: paper.id,
@@ -131,12 +147,8 @@ export async function processPaperJob(paperId: string): Promise<void> {
           },
         ],
         skipDuplicates: true,
-      }),
-      db.paperProcessingJob.update({
-        where: { paperId },
-        data: { status: 'completed', completedAt: new Date(), nextRunAt: null },
-      }),
-    ])
+      })
+    })
     logEvent({
       event: 'paper_job.completed',
       jobId: paperId,
@@ -145,28 +157,58 @@ export async function processPaperJob(paperId: string): Promise<void> {
       outcome: 'ok',
     })
   } catch (error) {
+    if (error instanceof LostClaimError) {
+      // Another worker took the lease over and owns the outcome. Say nothing.
+      logEvent({
+        event: 'paper_job.claim_lost',
+        jobId: paperId,
+        teamId: paper.teamId,
+        attempts: job?.attempts,
+        outcome: 'ok',
+      })
+      return
+    }
     const message = error instanceof Error ? error.message.slice(0, 1_000) : 'Unknown error'
     // A transient failure is NOT a terminal paper error: keep the paper in
     // `processing` and schedule a backed-off retry while attempts remain. Only
     // once retries are exhausted does the paper become a real `error`.
     const attempts = job?.attempts ?? MAX_ATTEMPTS
     const exhausted = attempts >= MAX_ATTEMPTS
-    await db.$transaction([
-      db.paper.update({
-        where: { id: paper.id },
-        data: { status: exhausted ? 'error' : 'processing' },
-      }),
-      db.paperProcessingJob.update({
-        where: { paperId },
-        data: exhausted
-          ? { status: 'failed', lastError: message, terminalAt: new Date(), nextRunAt: null }
-          : {
-              status: 'failed',
-              lastError: message,
-              nextRunAt: new Date(Date.now() + attempts * RETRY_BACKOFF_MS),
-            },
-      }),
-    ])
+    // Same fence as the success path: a worker that lost its lease does not get
+    // to record a failure over the new owner's work.
+    let owned = true
+    try {
+      await db.$transaction(async (tx) => {
+        const wrote = await tx.paperProcessingJob.updateMany({
+          where: { paperId, status: 'running', claimToken },
+          data: exhausted
+            ? { status: 'failed', lastError: message, terminalAt: new Date(), nextRunAt: null }
+            : {
+                status: 'failed',
+                lastError: message,
+                nextRunAt: new Date(Date.now() + attempts * RETRY_BACKOFF_MS),
+              },
+        })
+        if (wrote.count !== 1) throw new LostClaimError()
+        await tx.paper.update({
+          where: { id: paper.id },
+          data: { status: exhausted ? 'error' : 'processing' },
+        })
+      })
+    } catch (writeError) {
+      if (!(writeError instanceof LostClaimError)) throw writeError
+      owned = false
+    }
+    if (!owned) {
+      logEvent({
+        event: 'paper_job.claim_lost',
+        jobId: paperId,
+        teamId: paper.teamId,
+        attempts: job?.attempts,
+        outcome: 'ok',
+      })
+      return
+    }
     logEvent({
       event: exhausted ? 'paper_job.terminal' : 'paper_job.retry_scheduled',
       jobId: paperId,

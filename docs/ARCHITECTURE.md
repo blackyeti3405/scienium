@@ -623,18 +623,25 @@ Feature-owned library folders:
   atomic daily-lesson cap), `study-plan-service.ts` (sourceHash-cached
   generation with a re-run cap enforced by one atomic guarded
   `INSERT ... ON CONFLICT DO UPDATE ... WHERE ... RETURNING` executed BEFORE
-  the paid Haiku call), plus the Codex engine, schemas, source corpus,
+  the paid Haiku call; that same statement stamps `pendingSourceHash`, and the
+  commit is a compare-and-set on it so an older generation cannot overwrite a
+  newer one — the classifier itself runs through `runAiOperation`), plus the Codex engine, schemas, source corpus,
   generated wrappers, checksums, build script, and tests.
 - `pdf/`: `sanitize.ts` — active-content inspection (rejects JS/launch/embedded/
   XFA/encrypted/page-bomb PDFs) run before an upload is stored or parsed.
 - `research-plan/`: Google Doc extraction, types, authored science/engineering
   rubrics, `require-plan-text.ts` (the shared "team must have synced plan
-  text" guard both workflows below share), `review-service.ts` (the
+  text" guard both workflows below share), `claim.ts` (the pre-call claim both
+  paid plan workflows take on `ResearchPlan` — the same stamp/TTL/release shape
+  as `Team.advanceClaimedAt`; holding it is also what makes the idea-check daily
+  cap exact rather than advisory), `review-service.ts` (the
   rubric-critique application service — streams the model's JSON-Lines output
   as NDJSON via `lib/ndjson.ts::createNdjsonStream`; a sha256-matched
-  unchanged-plan review replays the persisted result), and
+  unchanged-plan review replays the persisted result). Both services commit as a
+  compare-and-set on the exact source they worked from, so a result for text the
+  team has since rewritten is discarded rather than shown as current (P1-S9). And
   `idea-check-service.ts` (the novelty-check application service, also NDJSON-
-  streamed).
+  streamed; its ledger row and plan writeback commit in one transaction).
 - `sprites/`: runtime manifest, generated anchors, and manifest test.
 - `teacher/`: role and membership-based class/team authorization
   (`auth.ts`), `student-overview.ts` (the application service behind the
@@ -833,9 +840,10 @@ PDF upload workflow:
    comes back ready rather than stuck `pending` — on serverless a detached
    promise is frozen once the response flushes. The papers cron drains a full
    classroom's backlog (batch of 30) as the recovery path.
-7. `lib/literature/process-paper.ts` atomically claims the job, extracts metadata
-   through Anthropic (on Haiku — sufficient for title/author/abstract), and marks
-   the paper ready or failed; citation rows are created at ready-time.
+7. `lib/literature/process-paper.ts` atomically claims the job — writing a fresh
+   `claimToken` that FENCES the claim — extracts metadata through Anthropic (on
+   Haiku — sufficient for title/author/abstract), and marks the paper ready or
+   failed; citation rows are created at ready-time.
 8. Status polling may process a claim; `/api/cron/papers` recovers jobs that
    outlive the original request.
 
@@ -844,7 +852,13 @@ PDF upload workflow:
 failure keeps the paper in `processing` while attempts remain (bounded at three) and
 only becomes `error` once retries are exhausted; every claim path is attempt-capped so
 a crash-loop can't over-run the extractor, and the papers cron terminalizes a final
-attempt that crashed mid-run. Paper **list** reads are metadata-only — `Paper` stores
+attempt that crashed mid-run — re-asserting the same predicate on the write, so a job
+legitimately re-claimed since the scan is left alone. The five-minute lease permits a
+takeover, and `claimToken` is what makes that takeover safe: both terminal paths open a
+transaction whose FIRST statement is an `updateMany` predicated on
+`(paperId, status: 'running', claimToken)`, and roll the whole transaction back when it
+matches nothing. A worker whose lease was taken over writes nothing at all — not the
+paper status, not the citation, not a competing failure (REFACTOR2 P1-S5). Paper **list** reads are metadata-only — `Paper` stores
 `doi`/`credibilityTier`/`sourceHost` so listing never loads full text — and a
 `(teamId, contentHash)` unique makes a duplicate upload a 409 at the database.
 Paper file bytes are streamed inline for the in-panel `<iframe>` by the shared

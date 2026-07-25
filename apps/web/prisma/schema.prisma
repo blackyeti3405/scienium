@@ -644,6 +644,10 @@ model PaperProcessingJob {
   attempts    Int                 @default(0)
   lastError   String?             @map("last_error")
   claimedAt   DateTime?           @map("claimed_at")
+  // Fences the claim (P1-S5). Rewritten on every claim, including a stale
+  // takeover, so a revived old worker's terminal write no longer matches and is
+  // discarded instead of overwriting the new owner's outcome.
+  claimToken  String?             @map("claim_token")
   completedAt DateTime?           @map("completed_at")
   // Earliest time a retryable (`failed`, attempts remaining) job may be re-claimed
   // — set to a backoff on each failure so retries space out instead of hammering.
@@ -938,6 +942,13 @@ model ResearchPlan {
   // (The `IdeaCheck` table is only the per-day rate-limit ledger.)
   lastIdeaCheckJson Json?     @map("last_idea_check_json")
   lastIdeaCheckAt   DateTime? @map("last_idea_check_at")
+  // Pre-call claims for the two paid plan workflows (P1-S9). One review and one
+  // idea check per team at a time: the claim is taken BEFORE the provider call,
+  // released on failure, and taken over after its TTL. It is also what makes the
+  // idea-check daily cap exact rather than advisory — the count is read while
+  // holding it, so no second run can be counting at the same moment.
+  reviewClaimedAt    DateTime? @map("review_claimed_at")
+  ideaCheckClaimedAt DateTime? @map("idea_check_claimed_at")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
@@ -1957,6 +1968,11 @@ model TeamStudyPlan {
   teamId           String    @id @map("team_id")
   tracksJson       Json      @map("tracks_json")
   sourceHash       String    @map("source_hash")
+  // The source hash the CURRENT in-flight generation is working from, stamped
+  // when the daily slot is reserved (P1-S9). The commit is a compare-and-set on
+  // it, so a slow generation started against an older topic can no longer land
+  // on top of a newer one that already finished.
+  pendingSourceHash String?  @map("pending_source_hash")
   generatedAt      DateTime  @default(now()) @map("generated_at")
   runsToday        Int       @default(0) @map("runs_today")
   runsDay          DateTime? @db.Date @map("runs_day")

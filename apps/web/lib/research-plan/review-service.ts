@@ -7,6 +7,7 @@ import { anthropic } from '@/lib/anthropic'
 import { loadResearchRubric } from '@/lib/research-plan/rubric'
 import { findProjectType, findSubtype } from '@/lib/research-plan/types'
 import { requirePlanText } from '@/lib/research-plan/require-plan-text'
+import { claimPlanWork } from '@/lib/research-plan/claim'
 import { createNdjsonStream } from '@/lib/ndjson'
 
 /**
@@ -23,6 +24,11 @@ import { createNdjsonStream } from '@/lib/ndjson'
  * re-review of byte-identical plan text under the same type/subtype replays
  * the persisted review as the same NDJSON events instead of paying for a new
  * Claude call; edit the plan (or re-pick the type) and it re-runs for real.
+ *
+ * Versioned writeback (P1-S9): one review per team runs at a time
+ * (`reviewClaimedAt`, claimed before the paid call), and the commit is a
+ * compare-and-set on the exact text/type/subtype that was reviewed. A review of
+ * superseded text is discarded rather than presented as current.
  *
  * The route is a thin adapter: it maps `{ ok: false }` to a JSON error and
  * either success variant to an NDJSON Response. Streaming stays synchronous
@@ -100,8 +106,21 @@ export async function reviewPlan(principal: ReviewPrincipal): Promise<ReviewPlan
     return { ok: false, error: 'Could not load the review rubric', status: 500 }
   }
 
+  // Claim BEFORE the paid call (P1-S9). Two students hitting Review at the same
+  // moment used to both pay Sonnet for the same plan.
+  const claim = await claimPlanWork(principal.teamId, 'reviewClaimedAt')
+  if (!claim) {
+    return { ok: false, error: 'A review of this plan is already running — give it a moment.', status: 409 }
+  }
+
   const planText = planTextForHash
   const teamId = principal.teamId
+  // The exact source this review is graded against. The commit below is a
+  // compare-and-set on these three columns, so a review of text the team has
+  // since rewritten cannot present itself as a review of the current plan.
+  const reviewedText = plan.lastSyncedText
+  const reviewedType = plan.projectType
+  const reviewedSubtype = plan.projectSubtype
 
   const stream = createNdjsonStream(async (send) => {
     // Assembled structured review (persisted at the end, mirrors the client shape).
@@ -203,22 +222,43 @@ export async function reviewPlan(principal: ReviewPrincipal): Promise<ReviewPlan
       handleLine(buf) // flush any trailing line
 
       if (!review.overall && review.sections.length === 0) {
+        await claim.release()
         send({ type: 'error', error: 'Review failed — try again' })
         return
       }
 
       // Persist the review WITH the input hash so a re-review of unchanged
       // text replays this result instead of paying for a new call (PERF-7).
-      await db.researchPlan.update({
-        where: { teamId },
+      //
+      // COMPARE-AND-SET on the reviewed source, not an unconditional update
+      // (P1-S9). Sonnet takes tens of seconds; in that window a teammate can
+      // re-sync the doc or re-pick the project type. Writing anyway would show
+      // a critique of text nobody can see as the current plan's review.
+      const committed = await db.researchPlan.updateMany({
+        where: {
+          teamId,
+          lastSyncedText: reviewedText,
+          projectType: reviewedType,
+          projectSubtype: reviewedSubtype,
+        },
         data: {
           lastReviewJson: { ...review, planHash } as unknown as Prisma.InputJsonValue,
           lastReviewedAt: new Date(),
+          reviewClaimedAt: null,
         },
       })
+      if (committed.count !== 1) {
+        await claim.release()
+        send({
+          type: 'error',
+          error: 'Your plan changed while this review was running — run it again on the new text.',
+        })
+        return
+      }
 
       send({ type: 'done' })
     } catch (err) {
+      await claim.release()
       console.error('[research-plan/review] failed:', err)
       send({ type: 'error', error: 'Review failed — try again' })
     }

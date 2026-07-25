@@ -5,6 +5,71 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.43.0] — 2026-07-25
+
+### Fixed — the paper-processing lease is fenced (P1-S5)
+`processPaperJob` already let a second worker take over a claim after five minutes. What it
+did **not** do was stop the first worker from coming back. Every terminal write — job status,
+paper status, citation row — was keyed on `paper_id` alone, so a revived old worker could
+overwrite the new worker's success or failure, and both paid Haiku for the same paper. The
+existing test covered two *simultaneous* claims, which is the case that already worked.
+
+- **`paper_processing_jobs.claim_token`.** A fresh UUID is written on every claim, including a
+  stale takeover. The old owner's token no longer matches.
+- **Terminal writes are compare-and-set.** Both the success and the failure path open an
+  interactive transaction, run the job transition **first** as an `updateMany` predicated on
+  `(paperId, status: 'running', claimToken)`, and roll the whole transaction back when it
+  matches nothing. A worker that lost its lease writes nothing at all: not `ready`, not the
+  citation, not a competing `failed`. It logs `paper_job.claim_lost` and returns.
+- **A lost success does not fall through into the failure path.** The rollback is a distinct
+  `LostClaimError`, caught before the retry bookkeeping, so a taken-over worker cannot record a
+  failure over the new owner's completion.
+- **The cron's stuck-job sweep re-asserts its predicate on the write.** It selected
+  `running` + stale + attempts-exhausted rows, then terminalized them with a bare
+  `paperId IN (…)`. Between the two a worker can legitimately re-claim; the write now repeats
+  the full predicate, the paper update is scoped to the jobs this transaction actually
+  terminalized, and the reported count is the real one rather than the snapshot size.
+
+### Fixed — paid plan writebacks are versioned (P1-S9)
+Codex study-plan generation, research-plan review, and idea-check each read a source, called
+out for tens of seconds, then wrote back unconditionally. Two failures follow: slow old work
+overwrites newer truth, and concurrent same-input callers both pay.
+
+- **Study plan.** Reserving the daily slot now also stamps `team_study_plans.pending_source_hash`
+  with the source the generation is working from, and the commit is a compare-and-set on it. A
+  generation started against an older topic can no longer land on top of a newer one that
+  already finished; the caller is handed the newer plan, honestly labelled as not theirs. The
+  paid classifier also runs through `runAiOperation` (`study_plan_tracks`), so two clicks that
+  both miss the row-level `sourceHash` cache share one result instead of buying two.
+- **Research-plan review.** `research_plans.review_claimed_at` is claimed **before** the Sonnet
+  call (5-minute TTL, released on every failure path, and cleared by the successful commit
+  itself). The commit is an `updateMany` predicated on the exact `lastSyncedText`, `projectType`,
+  and `projectSubtype` that were reviewed — a real compare-and-set on the source columns, not a
+  re-read. A review of text the team has since rewritten is discarded with an explicit
+  "your plan changed" event instead of being displayed as the current plan's critique.
+- **Idea check.** `research_plans.idea_check_claimed_at` is claimed before counting *and* before
+  paying. That ordering is what makes the 3/day cap **exact** rather than advisory: the count is
+  read while holding the claim, so three simultaneous requests can no longer all read "2 used".
+  The writeback compare-and-sets on the searched text, and commits in one transaction with the
+  `IdeaCheck` ledger row. The ledger row is written either way — the web search was bought, so
+  the slot is spent whether or not the verdict still applies.
+- `lib/research-plan/claim.ts` owns the claim/release shape for both plan workflows. Two more
+  inlines of a pattern already written five times is where a twenty-line helper starts paying.
+
+### Verification
+Gates 1–5 pass. Vitest: **107 files / 1,528 tests passed** (was 106 / 1,510). 18 new tests: 5
+pinning the paper-lease takeover (success and failure both discarded, no fall-through, per-attempt
+token) and 13 across the three paid writebacks. Both migrations applied to the local dev
+database; devlab verified intact afterwards (25 papers, 11 discovery nodes, 25 quiz sessions,
+25 proficiencies, 12 vocab cards).
+
+### Still owed
+- P1-S5: a real two-worker PostgreSQL takeover test (the P1-R14 database lane) and a heartbeat,
+  so a genuinely slow-but-alive worker is not taken over at all.
+- P1-S9: the study-plan CAS detects a competing *generation*, not a bare source edit with no
+  regeneration — that case still self-heals on the next request via the `sourceHash` cache miss.
+  A crash between the paid idea-check search and the ledger write refunds a slot.
+
 ## [0.42.0] — 2026-07-25
 
 ### Added — result replay for paid provider calls (P1-R3 replay half; closes the P1-R11 and P1-S6 remainders)

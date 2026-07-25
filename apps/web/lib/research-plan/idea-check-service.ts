@@ -5,6 +5,7 @@ import { anthropic } from '@/lib/anthropic'
 import { db } from '@/lib/db'
 import { IDEA_CHECK_DAILY_LIMIT, ideaChecksUsedToday } from '@/lib/research-plan/idea-check'
 import { requirePlanText } from '@/lib/research-plan/require-plan-text'
+import { claimPlanWork } from '@/lib/research-plan/claim'
 import { createNdjsonStream } from '@/lib/ndjson'
 import { logEvent } from '@/lib/observability/log'
 
@@ -16,7 +17,14 @@ import { logEvent } from '@/lib/observability/log'
  * Streams NDJSON so the UI can show the web searches AS THEY HAPPEN (each
  * query + the sources it returns), not just the final verdict. Runs Claude
  * with the Anthropic native web-search tool (`web_search_20260209`) over the
- * team's synced plan; rate-limited 3/day per team. Pre-flight failures return
+ * team's synced plan; rate-limited 3/day per team.
+ *
+ * Versioned writeback (P1-S9): `ideaCheckClaimedAt` is claimed before the paid
+ * call, which is also what makes the 3/day cap exact — the count is read while
+ * holding the claim. The plan writeback is a compare-and-set on the text that
+ * was actually searched, committed in one transaction with the ledger row.
+ *
+ * Pre-flight failures return
  * a typed `{ ok: false }` (the route maps them to normal JSON errors); once
  * streaming starts, problems arrive as `{ type: 'error' }` events.
  */
@@ -31,8 +39,25 @@ export type IdeaCheckResult =
   | { ok: true; stream: ReadableStream }
 
 export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaCheckResult> {
+  const planResult = await requirePlanText(principal.teamId)
+  if (!planResult.ok) return planResult
+  const plan = planResult.plan
+
+  // Claim BEFORE counting and BEFORE paying (P1-S9). The count that follows is
+  // only exact because we hold the claim: a bare count-then-call lets three
+  // simultaneous requests all read "2 used" and all spend a fourth slot.
+  const claim = await claimPlanWork(principal.teamId, 'ideaCheckClaimedAt')
+  if (!claim) {
+    return {
+      ok: false,
+      error: 'An idea check is already running for your team — give it a moment.',
+      status: 409,
+    }
+  }
+
   const usedToday = await ideaChecksUsedToday(principal.teamId)
   if (usedToday >= IDEA_CHECK_DAILY_LIMIT) {
+    await claim.release()
     return {
       ok: false,
       error: `Your team has used all ${IDEA_CHECK_DAILY_LIMIT} idea checks for today`,
@@ -40,12 +65,10 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
     }
   }
 
-  const planResult = await requirePlanText(principal.teamId)
-  if (!planResult.ok) return planResult
-  const plan = planResult.plan
-
   const planText = (plan.lastSyncedText ?? '').slice(0, 12000)
   const { teamId, dbUserId } = principal
+  /** The exact source this check was run against — the commit CASes on it. */
+  const checkedText = plan.lastSyncedText
 
   const stream = createNdjsonStream(async (send) => {
     try {
@@ -181,6 +204,7 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
             chars: verdictText.length,
             sources: sources.length,
           })
+          await claim.release()
           send({
             type: 'error',
             error: 'That search turned up more prior work than the check can summarise at once — narrow your plan a little and try again.',
@@ -193,6 +217,7 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
           outcome: 'error',
           detail: `len=${verdictText.length}`,
         })
+        await claim.release()
         send({ type: 'error', error: 'Could not interpret the result — try again' })
         return
       }
@@ -208,23 +233,41 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
         citations: sources.slice(0, 10),
       }
 
-      // Ledger row (rate-limit counting) + replace the plan's current result so
-      // it persists across reloads and overwrites the previous one.
-      await db.ideaCheck.create({
-        data: {
-          teamId,
-          userId: dbUserId,
-          verdict,
-          findingsJson: findings as unknown as Prisma.InputJsonValue,
-        },
+      // Ledger row (rate-limit counting) + the plan's current result, in ONE
+      // transaction. The plan writeback is a COMPARE-AND-SET on the text this
+      // check actually searched (P1-S9): the web-search agent runs for a minute
+      // or more, and a verdict on a plan the team has since rewritten must not
+      // be shown as the verdict on the plan they can see.
+      //
+      // The ledger row is written either way — the search was paid for, so the
+      // slot is spent whether or not the verdict is still applicable.
+      const applied = await db.$transaction(async (tx) => {
+        await tx.ideaCheck.create({
+          data: {
+            teamId,
+            userId: dbUserId,
+            verdict,
+            findingsJson: findings as unknown as Prisma.InputJsonValue,
+          },
+        })
+        const committed = await tx.researchPlan.updateMany({
+          where: { teamId, lastSyncedText: checkedText },
+          data: {
+            lastIdeaCheckJson: { verdict, findings } as unknown as Prisma.InputJsonValue,
+            lastIdeaCheckAt: new Date(),
+            ideaCheckClaimedAt: null,
+          },
+        })
+        return committed.count === 1
       })
-      await db.researchPlan.update({
-        where: { teamId },
-        data: {
-          lastIdeaCheckJson: { verdict, findings } as unknown as Prisma.InputJsonValue,
-          lastIdeaCheckAt: new Date(),
-        },
-      })
+      if (!applied) {
+        await claim.release()
+        send({
+          type: 'error',
+          error: 'Your plan changed while this check was running — run it again on the new text.',
+        })
+        return
+      }
 
       send({
         type: 'done',
@@ -235,6 +278,7 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
         remaining: Math.max(0, IDEA_CHECK_DAILY_LIMIT - usedToday - 1),
       })
     } catch (err) {
+      await claim.release()
       console.error('[idea-check] failed:', err)
       send({ type: 'error', error: 'Idea check failed — try again' })
     }

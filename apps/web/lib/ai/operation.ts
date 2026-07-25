@@ -19,7 +19,11 @@ import { db } from '@/lib/db'
  */
 
 /** Paid workflows that replay. Add a member here, not a free string at a call site. */
-export type AiOperationName = 'quiz_retry_grade' | 'explain_grade' | 'phase_advance_classify'
+export type AiOperationName =
+  | 'quiz_retry_grade'
+  | 'explain_grade'
+  | 'phase_advance_classify'
+  | 'study_plan_tracks'
 
 /** A `running` row older than this is assumed dead and may be retried. */
 const RUNNING_TTL_MS = 3 * 60_000
