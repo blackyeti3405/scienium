@@ -205,6 +205,11 @@ model Team {
   // One-sentence research idea submitted at the end of lit review — used to
   // auto-assign lab type via Haiku classification before entering research_planning.
   researchIdea  String?      @map("research_idea")
+  // Claim stamp electing ONE payer for the literature_review -> research_planning
+  // advance (REFACTOR2 P1-R2). That transition runs a paid Haiku classification
+  // and used to finish with an UNCONDITIONAL update, so two clicks paid twice and
+  // a slow response could overwrite a newer phase — rolling the team backwards.
+  advanceClaimedAt DateTime? @map("advance_claimed_at")
   createdAt     DateTime     @default(now()) @map("created_at")
 
   teamLead        User                    @relation("teamLead", fields: [teamLeadId], references: [id])

@@ -5,6 +5,36 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.41.0] — 2026-07-25
+
+### Fixed — paid phase advancement is claimed and compare-and-set (P1-R2)
+`literature_review → research_planning` read the current phase, ran a **paid** Haiku
+classification, then finished with an unconditional `team.update({ id })`. Two consequences:
+two concurrent clicks both paid and both wrote, and a request whose model call returned *after*
+another transition stamped `research_planning` over whatever the team had moved on to — a late
+result rolling the lab **backwards** through the arc.
+
+The self-advance transitions in the same route already used a conditional `updateMany`. This
+brings the paid path in line:
+
+- **Claim before spending.** A conditional stamp on `Team.advanceClaimedAt`, predicated on the
+  phase as well, so it doubles as the "still in literature_review" check. The loser gets 409
+  without reaching Anthropic. A 2-minute TTL means a crashed request cannot wedge the team, and
+  a classification failure releases the slot.
+- **Compare-and-set the transition.** The write is predicated on `phase: 'literature_review'`.
+  If the team moved on while we were classifying, the route reports where it *actually* is
+  (`alreadyAdvanced: true`) rather than dragging it back, and does not log a phase-advance it
+  did not perform.
+
+`advance-phase-paid-gate.test.ts` asserted the old unconditional `team.update`; it now asserts
+the CAS, and that `team.update` is not used on this path at all.
+
+### Verification
+Gates 1–5 pass. Vitest: **105 files / 1,494 tests passed** (was 104 / 1,484). 10 new tests
+covering claim ordering, the unpaid loser, TTL takeover, claim release on failure, the CAS
+predicate, the backwards-roll case, and the untouched free self-advance path. Migration applied
+to the local dev database.
+
 ## [0.40.0] — 2026-07-25
 
 ### Fixed — the global fair catalog is no longer any student's to rewrite (P1-S10)

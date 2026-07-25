@@ -13,6 +13,9 @@ import { enforceRateLimit } from '@/lib/rate-limit'
 import { logActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
+/** A dead advance claim is taken over after this, so a crash cannot wedge a team. */
+const ADVANCE_CLAIM_TTL_MS = 2 * 60_000
+
 const AdvanceBody = z
   .object({
     // Required when advancing from literature_review: one-sentence summary of
@@ -90,13 +93,66 @@ export async function POST(req: NextRequest) {
   const aiLimited = await enforceRateLimit(req, 'ai', ctx.userId)
   if (aiLimited) return aiLimited
 
-  const { labType, rationale } = await classifyLabType(researchIdea)
-
-  // Skip lab_selection; jump straight to research_planning with lab type set.
-  await db.team.update({
-    where: { id: ctx.teamId },
-    data: { phase: 'research_planning', labType, researchIdea },
+  // ── Claim the advance BEFORE paying (REFACTOR2 P1-R2) ─────────────────────
+  // The claim is predicated on the phase too, so it doubles as the "still in
+  // literature_review" check: two concurrent clicks can no longer both pay.
+  // A stale claim is taken over so a crashed request cannot wedge the team.
+  const claimStamp = new Date()
+  const claim = await db.team.updateMany({
+    where: {
+      id: ctx.teamId,
+      phase: 'literature_review',
+      OR: [
+        { advanceClaimedAt: null },
+        { advanceClaimedAt: { lt: new Date(claimStamp.getTime() - ADVANCE_CLAIM_TTL_MS) } },
+      ],
+    },
+    data: { advanceClaimedAt: claimStamp },
   })
+  if (claim.count !== 1) {
+    return NextResponse.json(
+      { error: 'Your lab is already advancing — give it a moment.' },
+      { status: 409 },
+    )
+  }
+  /** Hand the slot back so a failure does not hold the team for the full TTL. */
+  const releaseClaim = () =>
+    db.team
+      .updateMany({ where: { id: ctx.teamId, advanceClaimedAt: claimStamp }, data: { advanceClaimedAt: null } })
+      .catch(() => {})
+
+  let labType: Awaited<ReturnType<typeof classifyLabType>>['labType']
+  let rationale: string
+  try {
+    ;({ labType, rationale } = await classifyLabType(researchIdea))
+  } catch (err) {
+    await releaseClaim()
+    throw err
+  }
+
+  // COMPARE-AND-SET, not an unconditional write. The paid call above takes
+  // seconds; without the `phase` predicate a response arriving after another
+  // transition would stamp `research_planning` over whatever the team had moved
+  // on to — a later result rolling the lab BACKWARDS through the arc.
+  const advanced = await db.team.updateMany({
+    where: { id: ctx.teamId, phase: 'literature_review' },
+    data: { phase: 'research_planning', labType, researchIdea, advanceClaimedAt: null },
+  })
+  if (advanced.count !== 1) {
+    // Someone else advanced while we were classifying. Report where the team
+    // actually is rather than dragging it back.
+    await releaseClaim()
+    const fresh = await db.team.findUnique({
+      where: { id: ctx.teamId },
+      select: { phase: true, labType: true },
+    })
+    return NextResponse.json({
+      phase: fresh?.phase ?? 'research_planning',
+      labType: fresh?.labType ?? null,
+      labTypeLabel: fresh?.labType ? LAB_TYPE_LABELS[fresh.labType] : null,
+      alreadyAdvanced: true,
+    })
+  }
 
   logActivity(ctx.teamId, ctx.dbUserId, 'phase_advanced', {
     fromPhase: 'literature_review',

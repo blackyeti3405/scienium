@@ -78,12 +78,15 @@ describe('advance-phase paid gate', () => {
 
     expect(res.status).toBe(200)
     expect(mocks.classifyLabType).toHaveBeenCalledOnce()
-    expect(mocks.teamUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: CTX.teamId },
-        data: expect.objectContaining({ phase: 'research_planning', labType: 'volt_lab' }),
-      }),
-    )
+    // The transition is a COMPARE-AND-SET on the phase, not an unconditional
+    // `team.update({ id })` (REFACTOR2 P1-R2) — a paid call takes seconds, and
+    // an unconditional write could stamp `research_planning` over a phase the
+    // team had already moved past. `teamUpdate` is no longer used at all here.
+    expect(mocks.teamUpdate).not.toHaveBeenCalled()
+    expect(mocks.teamUpdateMany).toHaveBeenCalledWith({
+      where: { id: CTX.teamId, phase: 'literature_review' },
+      data: expect.objectContaining({ phase: 'research_planning', labType: 'volt_lab' }),
+    })
   })
 
   it('self-paced transitions never touch the paid tier or the model', async () => {

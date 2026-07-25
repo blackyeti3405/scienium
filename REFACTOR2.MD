@@ -287,7 +287,7 @@ previously had no confirmation at all. `test/topic-removal.test.ts` no longer pi
 may destroy shared work, deliberately not made here. Also unaddressed: the audit's preferred
 "mark papers out-of-scope instead of deleting" model.
 
-#### P1-R2 — Paid phase advancement has a race and stale-write path
+#### P1-R2 — Paid phase advancement has a race and stale-write path — **CLOSED (v0.41.0)**
 
 Literature advancement reads the current phase, checks readiness, performs Anthropic work,
 then runs an unconditional `team.update({ id })`. Two concurrent requests can pay twice and
@@ -298,6 +298,13 @@ phase with `research_planning`. The later self-advance transitions correctly use
 Create a durable operation claim/idempotency key, perform a compare-and-set on
 `(teamId, phase = literature_review)`, and store/reuse the classification result. Never hold a
 database transaction open across the provider call.
+
+**Closed in v0.41.0.** `Team.advanceClaimedAt` elects one payer before the Haiku call (2-minute
+TTL, released on failure), predicated on the phase so it doubles as the readiness check; the
+transition is a CAS on `phase: 'literature_review'`, and a team that moved on is reported as-is
+rather than dragged back. No transaction is held across the provider call. **Still owed:**
+storing/reusing the classification result for a retry — that is the P1-R3 operation ledger; a
+loser currently re-reads the committed `labType` instead of replaying its own result.
 
 #### P1-R3 — Daily AI limits and duplicate submissions are not atomic
 
@@ -1254,6 +1261,7 @@ pinned the bypass rather than preventing it. It now asserts the opposite.
 | **P1-R12** team-cascade half | **CLOSED** | `uploaded_assets.team_id` is now `ON DELETE RESTRICT`: a future team-deletion command must retire assets first instead of silently destroying the ledger and stranding R2 objects. | Bucket-vs-ledger reconciliation (R2 inventory side) and stale/terminal alerting. |
 | **P1-S8** reconciliation half | **CLOSED** | `reconcileOrphanedAssets()` flips pre-existing `attached` rows whose owner is gone; the papers cron runs it before the sweep. An unrecognised attach type is left alone rather than guessed at. Run against the real dev database it repaired **18 of 19** attached rows — the defect was not theoretical. | — |
 | **P1-S10** Student-triggered paid global fair sync | **CLOSED** | Claim-with-cooldown elects one crawler; response `safeParse`d rather than cast; year bounded to a plausible window; publish is a CAS on `status: 'estimated'` so curated data cannot be downgraded; `lastSyncedAt`/`lastSyncedByUserId` provenance. | Moving the trigger to an admin/background job with staged review — a product change. |
+| **P1-R2** Paid phase advance races and can roll a lab backwards | **CLOSED** | `Team.advanceClaimedAt` elects one payer before the Haiku call (2-min TTL, released on failure), predicated on the phase so it also serves as the state check. The transition is a CAS on `phase: 'literature_review'`; a team that advanced meanwhile is reported as-is (`alreadyAdvanced`) rather than dragged back, and no phase-advance is logged that did not happen. | Result replay for a retry — the P1-R3 ledger. |
 
 ---
 
@@ -1325,7 +1333,7 @@ Track A's named findings remain historical close-outs. The following list is the
 | ~~P0~~ **CLOSED v0.34.0** | The ISEF guide assigns the wrong names, timing, and applicability to required forms | Versioned 2027 edition, titles only, applicability fail-closed until a qualified reviewer signs off |
 | ACCEPTED / OPTIONAL | Fresh accounts can self-provision `teacher` | Intentional open-registration policy; optional grant/domain/allowlist hardening later |
 | P1 (bypass **CLOSED v0.38.0**) | Client assertions authorize destructive shared actions | Server-issued single-use `DestructiveProposal` binds actor/team/command/payload/expiry; the capability matrix remains a product decision |
-| P1 | Paid phase advancement and daily AI caps are not atomically claimed | Duplicate cost, budget overrun, stale writes |
+| P1 (partial) | Paid phase advancement and daily AI caps are not atomically claimed | Phase advancement **CLOSED v0.41.0** (claim + CAS); the daily AI caps / budget ledger (P1-R3) remain open |
 | P1 (partial) | Team invite redemption and class decisions use stale pre-checks | Invite redemption **CLOSED v0.34.1** (conditional consume); class decisions (P1-S2) still open |
 | ~~P1~~ **CLOSED v0.34.1** | Discovery accepts foreign-team parents and cycles | Same-team acyclic validation before any write; 400 on rejection |
 | ~~P1~~ **CLOSED v0.36.0 + v0.37.0** | Quiz generation/grading trusts malformed model cardinality/IDs; retry/explain/follow-up paths lack complete claims | Cardinality + canonical denominator (P1-S3); retry grading claim + monotonic session, explain in-lock derivation + unique attempt sequence, follow-up claim row (P1-R11/S6/S7). Result replay stays with the P1-R3 ledger |
