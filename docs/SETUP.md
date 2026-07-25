@@ -150,6 +150,15 @@ pnpm prisma migrate deploy      # applies the squashed baseline + subsequent mig
 Set-Location ..\..
 ```
 
+> **Adding a unique index?** The migration that creates it must first remove the
+> duplicates the old schema permitted — a later migration is too late, because
+> `CREATE UNIQUE INDEX` aborts the whole deploy on the first colliding pair. Prefer
+> quarantine (null the column, keep the row) when the row is or parents student
+> work. `pnpm --filter web verify:migration-preflights` proves a preflight against
+> your real local PostgreSQL inside a rolled-back transaction, and
+> `test/migration-unique-index-policy.test.ts` fails the build if a new migration
+> skips one without a stated exemption.
+>
 > The migration history was squashed to one baseline
 > (`prisma/migrations/00000000000000_init`); `migrate deploy` builds a fresh
 > database from scratch by applying it plus the few migrations added since.

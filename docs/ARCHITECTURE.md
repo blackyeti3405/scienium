@@ -1324,6 +1324,18 @@ read cache. Resend is optional for email notifications.
 Migrations are committed under `apps/web/prisma/migrations/` and applied with
 `prisma migrate deploy`. Production and development databases must be separate.
 
+**A migration that adds a unique index to a table it did not just create MUST
+remove the rows the old schema permitted, first, in that same migration**
+(REFACTOR2 P1-S14). A follow-up migration cannot rescue it: `CREATE UNIQUE INDEX`
+aborts on the first duplicate pair and takes the whole deploy with it. Prefer
+**quarantine** over deletion whenever the row is, or parents, real student work —
+null the offending column and keep the row, since PostgreSQL treats NULLs as
+distinct. A comment asserting that duplicates cannot exist is not a preflight;
+that assumption is what the finding was. `test/migration-unique-index-policy.test.ts`
+enforces this and requires any exemption to state its reason, and
+`pnpm --filter web verify:migration-preflights` proves each preflight against a
+real PostgreSQL instance inside a rolled-back transaction.
+
 No error-monitoring or product-analytics SDK is currently integrated. Those
 remain pre-pilot operational work in `SECURITY.md`.
 

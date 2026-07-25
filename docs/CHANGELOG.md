@@ -5,6 +5,57 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.43.1] — 2026-07-25
+
+### Fixed — unique-index migrations dedupe before they index (P1-S14)
+A13's migration backfilled `showcase_views.day` and immediately created a unique daily index,
+justified by a comment claiming historical rows were lifetime-deduped. That was an assumption
+about the *old code*, not a property of the data: the initial schema had no uniqueness and the
+historical `findFirst`→`create` was race-prone. One surviving duplicate pair aborts
+`CREATE UNIQUE INDEX` and takes the whole deploy with it.
+
+The audit's "audit other uniqueness-only migrations by the same rule" found the defect had
+landed **four** times, not once. All four now preflight, in the migration that creates the index
+— a follow-up migration cannot help, because the deploy has already aborted by then. (Prisma
+does not enforce checksums on applied migrations here, so amending in place is safe; the local
+dev database already has all four applied and is unaffected.)
+
+| Migration | Index | Treatment |
+| --- | --- | --- |
+| `20260719120000_track_a_hardening` | `showcase_views (showcase_id, visitor_fingerprint, day)` | **Dedupe.** Keep the earliest view of each visitor-day — that row *is* the first visit the contract counts. Nothing holds an FK into the table. |
+| `20260709140000_paper_list_metadata` | `papers (team_id, content_hash)` | **Quarantine.** A Paper parents quizzes, proficiencies, explanations, chat, citations, vocabulary, and discovery nodes; deleting one destroys student work. Clear `content_hash` on the later copies instead — NULLs are distinct, every row and child survives. |
+| `20260713100000_plot_cell_unique` | `team_shop_buildings (team_id, pos_x, pos_y)` | **Quarantine.** NULL the later occupant's position. "Owned but not yet placed" is already a supported state, so the team loses a position, not a building it paid KP for. |
+| `20260701040000_discovery_v2_citation_manager` | `discovery_nodes (paper_id)` | **Quarantine.** Detach the later node from the paper. Deleting it would break the tree *and* destroy the `discovery_source_visits` row that is the once-ever KP claim, letting the team re-earn KP. |
+
+Two more were reviewed and are genuinely safe (a strictly wider unique replacing a narrower one,
+or an index on a column the same migration adds); they are recorded as exemptions **with their
+reasons** rather than passed over silently.
+
+### Added — a recurrence guard and a real-Postgres verification
+- `test/migration-unique-index-policy.test.ts` fails on any migration that adds a unique index
+  to a table it did not just create without a preceding dedupe, unless it is exempted with a
+  stated reason. The first version of this guard accepted *any* preceding write to the table —
+  which `track_a_hardening`'s unrelated `day` backfill satisfied, so it would have passed the
+  exact migration it exists to catch. It now requires a construct that actually picks a winner
+  per duplicate group, and a negative-control test pins that false pass shut.
+- `pnpm --filter web verify:migration-preflights` runs each preflight against the **real** local
+  PostgreSQL: drop the index, inject the duplicates the pre-index schema allowed, run the
+  migration's dedupe verbatim, rebuild the index — inside a transaction that always rolls back.
+  All four pass. This caught a genuine bug in the checker itself (it was extracting the backfill
+  statement, not the dedupe) that reading the SQL would not have.
+
+### Verification
+Gates 1–5 pass. Vitest: **108 files / 1,535 tests passed** (was 107 / 1,528). No new migration —
+four existing ones amended. devlab verified intact after the verification run (25 papers, 11
+discovery nodes, 25 quiz sessions, 25 proficiencies, 12 vocab cards).
+
+### Still owed
+The audit's "test replay from dirty historical fixtures" is satisfied against the dev database's
+shape, not against a production-sized dirty corpus. Nobody has yet counted the real duplicates in
+the production database — the preflights are proven correct, but the *blast radius* of the
+quarantines (how many papers lose duplicate-detection, how many buildings come unplaced) is
+unknown until they run there.
+
 ## [0.43.0] — 2026-07-25
 
 ### Fixed — the paper-processing lease is fenced (P1-S5)
