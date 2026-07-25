@@ -546,10 +546,16 @@ Feature-owned library folders:
 - `uploads/`: uploaded-asset lifecycle (`assets.ts`) — `reserveUploadAsset`
   commits a `temporary` `UploadedAsset` ledger row, under a per-team advisory
   lock that atomically checks the storage-quota ceiling, BEFORE any byte
-  reaches R2; the row then moves through attached → orphaned → deleted, with a
-  single claim-then-delete reclaim sweep as the only physical-delete site, and
+  reaches R2; the row then moves through attached → orphaned → deleting →
+  deleted, with a single reclaim sweep as the only physical-delete site, and
   `orphanObjectKey` adopts a legacy object only on a verified Prisma `P2002`
-  race.
+  race. `deleting` is the crash-durable step: the sweep claims it (taking a
+  lease), deletes the object, and writes the terminal `deleted` only once the
+  object is confirmed gone, so a worker that dies mid-delete leaves a
+  re-selectable lease rather than a live object behind a terminal row. Domain
+  routes record the `orphaned` transition in the SAME transaction as the domain
+  delete that caused it, so a crash cannot leave an attached asset with no
+  owner.
 - `data-terminal/`: CSV utilities, chart-guide index, pure PNG/CSV `export.ts`,
   tests, and one chart module per scientific field under `charts/`.
 - `discovery/`: OpenAlex (`openalex.ts` — the sole live scholarly-search/

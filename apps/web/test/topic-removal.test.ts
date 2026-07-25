@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => ({
   paperCount: vi.fn(),
   paperFindMany: vi.fn(),
   paperDeleteMany: vi.fn(() => Promise.resolve({ count: 0 })),
+  orphanObjectKey: vi.fn((): Promise<void> => Promise.resolve()),
+  txPaperDeleteMany: vi.fn(() => Promise.resolve({ count: 0 })),
   topicInterestFindMany: vi.fn(() => Promise.resolve([])),
   proposeDestructive: vi.fn(() => Promise.resolve('proposal_token_1')),
   consumeDestructive: vi.fn(
@@ -46,6 +48,7 @@ vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTea
 vi.mock('@/lib/rate-limit', () => ({ enforceRateLimit: mocks.enforceRateLimit }))
 vi.mock('@/lib/literature/relevance', () => ({ batchCheckRelevance: mocks.batchCheckRelevance }))
 vi.mock('@/lib/storage', () => ({ deleteObject: mocks.deleteObject }))
+vi.mock('@/lib/uploads/assets', () => ({ orphanObjectKey: mocks.orphanObjectKey }))
 vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
 vi.mock('@/lib/discovery/interest-match', () => ({ matchInterests: mocks.matchInterests }))
 vi.mock('@/lib/api/destructive-proposal', () => ({
@@ -84,8 +87,21 @@ beforeEach(() => {
   mocks.teamFindUnique.mockResolvedValue({ topic: 'Old topic about corals' })
   mocks.matchInterests.mockReturnValue([])
   mocks.topicInterestFindMany.mockResolvedValue([])
-  // Topic-lock bonus transaction: pretend already granted (P2002-shaped throw).
-  mocks.transaction.mockRejectedValue({ code: 'P2002' })
+  mocks.txPaperDeleteMany.mockResolvedValue({ count: 0 })
+  mocks.orphanObjectKey.mockResolvedValue(undefined)
+  // ONE `$transaction` mock now serves two callers: the paper-removal commit
+  // (P1-S8 — domain delete + ledger orphan together) and the topic-lock KP
+  // bonus. Run the callback for real; the bonus fails from INSIDE via its own
+  // P2002-shaped throw, exactly as an already-granted bonus would.
+  mocks.transaction.mockImplementation((fn: (t: unknown) => unknown) =>
+    fn({
+      paper: { deleteMany: mocks.txPaperDeleteMany },
+      discoveryTopicBonus: {
+        create: () => Promise.reject({ code: 'P2002' }),
+      },
+      teamCurrency: { upsert: () => Promise.resolve({}) },
+    }),
+  )
   mocks.proposeDestructive.mockResolvedValue('proposal_token_1')
   mocks.consumeDestructive.mockResolvedValue({ ok: true })
 })
@@ -96,7 +112,7 @@ describe('phase 0 — topic changing with papers, no confirmation yet', () => {
     const res = await POST(topicReq({ topic: 'New topic about magnets' }))
     expect(res.status).toBe(409)
     expect(await res.json()).toMatchObject({ requiresConfirmation: true, paperCount: 3 })
-    expect(mocks.paperDeleteMany).not.toHaveBeenCalled()
+    expect(mocks.txPaperDeleteMany).not.toHaveBeenCalled()
     expect(mocks.batchCheckRelevance).not.toHaveBeenCalled()
   })
 })
@@ -135,7 +151,7 @@ describe('phase 1 — confirmWipe proposes, never deletes', () => {
     const body = await res.json()
     expect(body.requiresRemovalConfirmation).toBe(true)
     expect(body.papers).toEqual([{ id: 'p_drop', title: 'Coral paper' }])
-    expect(mocks.paperDeleteMany).not.toHaveBeenCalled()
+    expect(mocks.txPaperDeleteMany).not.toHaveBeenCalled()
     expect(mocks.deleteObject).not.toHaveBeenCalled()
 
     // The server records what it proposed, bound to actor/team/topic-change.
@@ -161,7 +177,7 @@ describe('phase 1 — confirmWipe proposes, never deletes', () => {
     const res = await POST(topicReq({ topic: 'New topic about magnets', confirmWipe: true }))
 
     expect(res.status).toBe(200)
-    expect(mocks.paperDeleteMany).not.toHaveBeenCalled()
+    expect(mocks.txPaperDeleteMany).not.toHaveBeenCalled()
     expect(mocks.teamUpdate).toHaveBeenCalled()
   })
 })
@@ -171,7 +187,7 @@ describe('phase 2 — the server’s own proposal authorizes the delete', () => 
     // The student approved two ids, but the team-scoped resolution only finds
     // one — the other is foreign or stale and must be silently dropped.
     mocks.paperFindMany.mockResolvedValue([{ id: 'p_mine', title: 'Mine', pdfKey: 'k1' }])
-    mocks.paperDeleteMany.mockResolvedValue({ count: 1 })
+    mocks.txPaperDeleteMany.mockResolvedValue({ count: 1 })
 
     const res = await POST(
       topicReq({
@@ -189,8 +205,9 @@ describe('phase 2 — the server’s own proposal authorizes the delete', () => 
         where: expect.objectContaining({ teamId: CTX.teamId, status: 'ready' }),
       }),
     )
-    // Delete carries teamId AND only the resolved id — never the foreign one.
-    expect(mocks.paperDeleteMany).toHaveBeenCalledWith(
+    // Delete carries teamId AND only the resolved id — never the foreign one,
+    // and runs on the TRANSACTION client alongside the ledger retirement.
+    expect(mocks.txPaperDeleteMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ teamId: CTX.teamId, id: { in: ['p_mine'] } }),
       }),
@@ -200,7 +217,7 @@ describe('phase 2 — the server’s own proposal authorizes the delete', () => 
 
   it('makes NO model call — the student list, not the verdict, authorizes', async () => {
     mocks.paperFindMany.mockResolvedValue([{ id: 'p1', title: 'T', pdfKey: null }])
-    mocks.paperDeleteMany.mockResolvedValue({ count: 1 })
+    mocks.txPaperDeleteMany.mockResolvedValue({ count: 1 })
 
     await POST(
       topicReq({
@@ -217,6 +234,48 @@ describe('phase 2 — the server’s own proposal authorizes the delete', () => 
 })
 
 // The bypass the previous version of this file pinned instead of preventing.
+// REFACTOR2 P1-S8: the removal used to delete rows, then best-effort-delete
+// bytes with a direct `deleteObject` outside any transaction. A crash between
+// them stranded both — rows gone, object leaked, quota still charged.
+describe('deletion and storage retirement commit together (P1-S8)', () => {
+  it('retires each PDF through the ledger on the SAME transaction client', async () => {
+    mocks.paperFindMany.mockResolvedValue([{ id: 'p1', title: 'T', pdfKey: 'papers/team_1/p1.pdf' }])
+    mocks.txPaperDeleteMany.mockResolvedValue({ count: 1 })
+
+    await POST(
+      topicReq({
+        topic: 'New topic about magnets',
+        confirmWipe: true,
+        confirmRemoveIds: ['p1'],
+        proposalToken: 'proposal_token_1',
+      }),
+    )
+
+    expect(mocks.orphanObjectKey).toHaveBeenCalledWith(
+      expect.objectContaining({ objectKey: 'papers/team_1/p1.pdf', purpose: 'paper_pdf' }),
+      expect.objectContaining({ paper: expect.anything() }),
+    )
+    // The reclaim sweep remains the single physical-delete site.
+    expect(mocks.deleteObject).not.toHaveBeenCalled()
+  })
+
+  it('skips the ledger for a paper with no stored PDF', async () => {
+    mocks.paperFindMany.mockResolvedValue([{ id: 'p1', title: 'T', pdfKey: null }])
+    mocks.txPaperDeleteMany.mockResolvedValue({ count: 1 })
+
+    await POST(
+      topicReq({
+        topic: 'New topic about magnets',
+        confirmWipe: true,
+        confirmRemoveIds: ['p1'],
+        proposalToken: 'proposal_token_1',
+      }),
+    )
+
+    expect(mocks.orphanObjectKey).not.toHaveBeenCalled()
+  })
+})
+
 describe('a client-asserted confirmation is not a capability (P1-R1)', () => {
   it('deletes NOTHING when confirmRemoveIds arrives with no proposal token', async () => {
     mocks.paperFindMany.mockResolvedValue([{ id: 'p_mine', title: 'Mine', pdfKey: 'k1' }])
@@ -230,7 +289,7 @@ describe('a client-asserted confirmation is not a capability (P1-R1)', () => {
     )
 
     expect(res.status).toBe(409)
-    expect(mocks.paperDeleteMany).not.toHaveBeenCalled()
+    expect(mocks.txPaperDeleteMany).not.toHaveBeenCalled()
     expect(mocks.deleteObject).not.toHaveBeenCalled()
     // The topic must not change either — the command failed as a whole.
     expect(mocks.teamUpdate).not.toHaveBeenCalled()
@@ -251,13 +310,13 @@ describe('a client-asserted confirmation is not a capability (P1-R1)', () => {
     )
 
     expect(res.status).toBe(409)
-    expect(mocks.paperDeleteMany).not.toHaveBeenCalled()
+    expect(mocks.txPaperDeleteMany).not.toHaveBeenCalled()
     expect(mocks.teamUpdate).not.toHaveBeenCalled()
   })
 
   it('consumes the proposal against the EXACT ids the caller sent', async () => {
     mocks.paperFindMany.mockResolvedValue([{ id: 'p_mine', title: 'Mine', pdfKey: 'k1' }])
-    mocks.paperDeleteMany.mockResolvedValue({ count: 1 })
+    mocks.txPaperDeleteMany.mockResolvedValue({ count: 1 })
 
     await POST(
       topicReq({

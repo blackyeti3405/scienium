@@ -28,6 +28,7 @@ const tx = {
   showcaseAsset: {
     findFirst: mocks.assetFindFirst,
     deleteMany: mocks.assetDeleteMany,
+    delete: mocks.assetDelete,
     create: mocks.assetCreate,
     count: mocks.assetCount,
   },
@@ -95,8 +96,30 @@ describe('asset deletion re-derives the revision', () => {
       method: 'DELETE',
     }), { id: 'asset_1' })
 
+    // P1-S8: the row delete, the revision re-derivation, and the ledger orphan
+    // all run on the SAME transaction client, so a crash cannot leave an
+    // `attached` asset with no live owner.
     expect(mocks.assetDelete).toHaveBeenCalled()
-    expect(mocks.syncShowcaseRevision).toHaveBeenCalledWith(expect.anything(), 'sc_1', 'user_1')
+    expect(mocks.syncShowcaseRevision).toHaveBeenCalledWith(tx, 'sc_1', 'user_1')
+    expect(mocks.orphanObjectKey).toHaveBeenCalledWith(
+      expect.objectContaining({ objectKey: 'showcase/t1/board.pdf' }),
+      tx,
+    )
+  })
+
+  it('retires nothing in storage for a link-only asset', async () => {
+    mocks.assetFindFirst.mockResolvedValue({
+      id: 'asset_1',
+      assetType: 'video',
+      fileUrl: 'https://youtu.be/abc',
+      showcaseId: 'sc_1',
+    })
+
+    await DELETE(new NextRequest('http://app.example.com/api/showcase/asset/asset_1', {
+      method: 'DELETE',
+    }), { id: 'asset_1' })
+
+    expect(mocks.orphanObjectKey).not.toHaveBeenCalled()
   })
 
   it('does not sync when the asset belongs to another team', async () => {

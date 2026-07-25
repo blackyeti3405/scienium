@@ -5,6 +5,48 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.39.0] — 2026-07-25
+
+Closes the storage-lifecycle pair: the sweep could lose an object permanently, and domain
+deletion could orphan a ledger row that nothing would ever reclaim.
+
+### Fixed — the reclaim sweep is crash-durable (P1-R12)
+`reclaimAbandonedAssets` wrote the **terminal** `deleted` status and only then called R2. A
+caught rejection was handled, but a process death, function timeout, or lost machine between
+the two left a **live object behind a terminal ledger row** — invisible to every future sweep,
+still charged against the team's 2 GB quota, permanently.
+
+- New intermediate `deleting` status plus `deleteLeaseAt` / `deleteAttempts`. The sweep claims
+  into `deleting`, deletes the object, and writes `deleted` **only after** the object is
+  confirmed gone.
+- A `deleting` row whose lease has aged out (5 min) is re-selected, so a crashed worker's claim
+  is recovered rather than leaked.
+- A failed delete now simply leaves the row `deleting` for the lease to retry. The old code
+  restored the previous status, which worked for that one failure mode; the lease covers both
+  it and the crash, and one recovery path is easier to trust than two.
+- `deleteAttempts` makes a poison object visible instead of retried silently forever.
+
+### Fixed — domain deletion and storage retirement commit together (P1-S8)
+Paper deletion, showcase-asset deletion, and the topic-change removal each deleted the domain
+row in one commit and orphaned the ledger row in another. A crash in between left an `attached`
+`UploadedAsset` with **no live owner** — the sweep cannot see it, and retrying cannot fix it
+(the retry 404s on the now-missing paper). All three now do both in one transaction, passing the
+transaction client into `orphanObjectKey`.
+
+The topic-change path was the worst of the three: it deleted paper rows and then called
+`deleteObject` directly, outside any transaction and bypassing the ledger entirely. It now
+retires through the ledger like every other caller, so a failed R2 delete is retried by the
+sweep instead of silently leaking.
+
+### Fixed — a malformed attachment URL is no longer a 500 (P1-R12)
+`decodeURIComponent` throws `URIError` on a bad escape (`%zz`, a lone `%`). Both legacy
+attachment-URL parsers called it unguarded, so hostile or corrupted input became a route-level
+500. A URL we cannot decode is simply not a reference we recognise, and now reads as `null`.
+
+### Verification
+Gates 1–5 pass. Vitest: **103 files / 1,469 tests passed** (was 1,462). Migration applied to the
+local dev database; devlab verified untouched (25 papers, 11 nodes, 25 quiz sessions).
+
 ## [0.38.0] — 2026-07-25
 
 ### Fixed — destructive confirmations are server-owned capabilities, not client assertions (P1-R1)

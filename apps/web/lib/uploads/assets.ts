@@ -13,13 +13,19 @@ import { Prisma } from '@prisma/client'
  *   attached   — bound to a live domain row (a saved project log)
  *   orphaned   — no longer referenced (log deleted / attachment removed / a
  *                failed upload step); awaiting reclaim
- *   deleted    — object removed from storage (terminal)
+ *   deleting   — claimed by the sweep, object not yet confirmed gone; retryable
+ *                by lease age
+ *   deleted    — object confirmed removed from storage (terminal)
  *
  * There is exactly ONE physical-delete site: the reclaim sweep. Domain routes only
- * record intent (`attached` / `orphaned`); they never call `deleteObject`. The sweep
- * uses claim-then-delete (guarded status transition first, object delete second) so a
- * concurrent attach can never have its live object removed, and a failed delete leaves
- * the row reclaimable for a later run instead of leaking.
+ * record intent (`attached` / `orphaned`), in the SAME transaction as the domain
+ * delete that caused it (P1-S8) — so a crash can never leave an `attached` row with
+ * no live owner. They never call `deleteObject`.
+ *
+ * The sweep claims into `deleting`, deletes the object, and only then writes the
+ * terminal `deleted` (P1-R12). The intermediate state is the whole point: the old
+ * order wrote `deleted` FIRST, so a process death before the R2 call left a live
+ * object behind a terminal row that no later sweep would ever select.
  */
 
 /**
@@ -98,16 +104,32 @@ export async function reserveUploadAsset(input: {
   })
 }
 
+/**
+ * `decodeURIComponent` throws a `URIError` on a malformed escape (`%zz`, a lone
+ * `%`). These parse user-reachable legacy URLs, so an unguarded call turned bad
+ * input into a route-level 500 (REFACTOR2 P1-R12). A URL we cannot decode simply
+ * is not a reference we recognise.
+ */
+function safeDecode(raw: string | undefined): string | null {
+  if (raw === undefined) return null
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return null
+  }
+}
+
+/** How long a `deleting` claim is honoured before the sweep retries it. */
+const DELETE_LEASE_MS = 5 * 60_000
+
 /** Extract the R2 object key from a legacy key-based attachment URL, or null. */
 function keyFromAttachmentUrl(url: string): string | null {
-  const m = url.match(/[?&]key=([^&]+)/)
-  return m ? decodeURIComponent(m[1]) : null
+  return safeDecode(url.match(/[?&]key=([^&]+)/)?.[1])
 }
 
 /** Extract the asset id from an id-based attachment view URL, or null. */
 function assetIdFromAttachmentUrl(url: string): string | null {
-  const m = url.match(/[?&]id=([^&]+)/)
-  return m ? decodeURIComponent(m[1]) : null
+  return safeDecode(url.match(/[?&]id=([^&]+)/)?.[1])
 }
 
 /**
@@ -271,11 +293,23 @@ export async function orphanObjectKey(
 export async function reclaimAbandonedAssets(opts: {
   olderThanMs: number
   limit: number
+  /** A `deleting` claim older than this is assumed dead and retried. */
+  leaseMs?: number
 }): Promise<number> {
-  const cutoff = new Date(Date.now() - opts.olderThanMs)
+  const now = Date.now()
+  const cutoff = new Date(now - opts.olderThanMs)
+  const leaseCutoff = new Date(now - (opts.leaseMs ?? DELETE_LEASE_MS))
+
   const candidates = await db.uploadedAsset.findMany({
     where: {
-      OR: [{ status: 'orphaned' }, { status: 'temporary', createdAt: { lt: cutoff } }],
+      OR: [
+        { status: 'orphaned' },
+        { status: 'temporary', createdAt: { lt: cutoff } },
+        // Crash recovery (P1-R12): a claim whose worker never came back. Without
+        // this arm the object leaks permanently, because the old code had
+        // already written the terminal status before calling R2.
+        { status: 'deleting', deleteLeaseAt: { lt: leaseCutoff } },
+      ],
     },
     orderBy: { createdAt: 'asc' },
     take: opts.limit,
@@ -284,26 +318,36 @@ export async function reclaimAbandonedAssets(opts: {
 
   let cleaned = 0
   for (const asset of candidates) {
-    // Claim: only transition if the row is still in the status we read. An attach
-    // that won the race leaves status='attached', so the guard matches 0 rows.
+    // Claim into the INTERMEDIATE state. Only transition if the row is still in
+    // the status we read — an attach that won the race leaves `attached`, so the
+    // guard matches 0 rows. `deleting` is not terminal, so a crash from here on
+    // is recoverable by lease age rather than a silent leak.
     const claim = await db.uploadedAsset.updateMany({
       where: { id: asset.id, status: asset.status },
-      data: { status: 'deleted', deletedAt: new Date() },
+      data: {
+        status: 'deleting',
+        deleteLeaseAt: new Date(),
+        deleteAttempts: { increment: 1 },
+      },
     })
-    if (claim.count !== 1) continue // raced (e.g. just attached) — leave it alone.
+    if (claim.count !== 1) continue // raced (e.g. just attached, or another sweep).
 
     try {
       await deleteObject(asset.objectKey)
-      cleaned++
     } catch (err) {
-      console.error('[uploads] failed to delete object, releasing claim', asset.objectKey, err)
-      // Release the claim so a later sweep retries instead of leaving a blob that
-      // no longer has a reclaimable ledger row.
-      await db.uploadedAsset.updateMany({
-        where: { id: asset.id, status: 'deleted' },
-        data: { status: asset.status, deletedAt: null },
-      })
+      // Leave it `deleting`: the lease arm above retries it. Restoring the old
+      // status would work too, but only for THIS failure mode — the lease also
+      // covers the crash, and one recovery path is easier to trust than two.
+      console.error('[uploads] object delete failed, leaving claim to expire', asset.objectKey, err)
+      continue
     }
+
+    // Terminal ONLY after the object is confirmed gone.
+    await db.uploadedAsset.updateMany({
+      where: { id: asset.id, status: 'deleting' },
+      data: { status: 'deleted', deletedAt: new Date(), deleteLeaseAt: null },
+    })
+    cleaned++
   }
   return cleaned
 }

@@ -5,8 +5,8 @@ import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { consumeDestructive, proposeDestructive } from '@/lib/api/destructive-proposal'
+import { orphanObjectKey } from '@/lib/uploads/assets'
 import { batchCheckRelevance } from '@/lib/literature/relevance'
-import { deleteObject } from '@/lib/storage'
 import { logActivity } from '@/lib/activity/log'
 import { TOPIC_LOCK_KP } from '@/lib/discovery/economy'
 import { matchInterests } from '@/lib/discovery/interest-match'
@@ -129,11 +129,30 @@ export async function POST(req: NextRequest) {
       select: { id: true, title: true, pdfKey: true },
     })
     if (approved.length > 0) {
-      await db.paper.deleteMany({
-        where: { id: { in: approved.map((p) => p.id) }, teamId: ctx.teamId },
+      // Domain delete AND ledger retirement in ONE transaction (P1-S8), and
+      // through the ledger rather than a direct `deleteObject` (P1-R12): the
+      // reclaim sweep is the single physical-delete site, so a failed R2 call
+      // is retried by the sweep instead of silently leaking the object. This
+      // path previously deleted rows, then best-effort-deleted bytes outside
+      // any transaction — a crash between them stranded both.
+      await db.$transaction(async (tx) => {
+        await tx.paper.deleteMany({
+          where: { id: { in: approved.map((p) => p.id) }, teamId: ctx.teamId },
+        })
+        for (const p of approved) {
+          if (!p.pdfKey) continue
+          await orphanObjectKey(
+            {
+              teamId: ctx.teamId,
+              userId: ctx.dbUserId,
+              objectKey: p.pdfKey,
+              contentType: 'application/pdf',
+              purpose: 'paper_pdf',
+            },
+            tx,
+          )
+        }
       })
-      // Best-effort R2 cleanup; don't fail the whole request if storage delete errors
-      await Promise.allSettled(approved.filter((p) => p.pdfKey).map((p) => deleteObject(p.pdfKey!)))
       removedCount = approved.length
       removedTitles.push(...approved.map((p) => p.title))
     }

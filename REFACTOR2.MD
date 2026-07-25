@@ -456,7 +456,7 @@ from an in-lock re-read. **Still owed:** answer-hash binding and completed-resul
 P1-R3 ledger), consolidating the grade/retry persistence clone (SVC-1), and the real-Postgres
 race test (P1-R14's lane).
 
-#### P1-R12 — Asset deletion is retryable on exceptions, but not crash durable
+#### P1-R12 — Asset deletion is retryable on exceptions, but not crash durable — **CLOSED (v0.39.0)**
 
 `reclaimAbandonedAssets` changes a candidate from `orphaned`/`temporary` to terminal
 `deleted`, then calls R2. A caught delete error restores the prior status, which handles an
@@ -470,6 +470,12 @@ stale leases and make object-not-found success. Deletion work must live in a tom
 that survives domain/team deletion. Reconcile bucket inventory against the ledger and alert on
 stale/terminal mismatches. Also catch malformed percent encoding in legacy attachment URLs:
 `decodeURIComponent` currently turns a bad `%` sequence into a route-level 500.
+
+**Closed in v0.39.0 for the crash-durability defect.** `deleting` + `deleteLeaseAt` +
+`deleteAttempts`: claim, delete the object, then terminalize; a stale lease is re-selected.
+The `decodeURIComponent` 500 is guarded. **Still open:** the tombstone/outbox that survives
+TEAM deletion (`UploadedAsset.teamId` still cascades, so deleting a team removes the ledger
+before object cleanup can run), and bucket-vs-ledger reconciliation with alerting.
 
 #### P1-R13 — “Check my synthesis” can grade stale cells
 
@@ -952,7 +958,7 @@ keep them distinct from the earlier `P1-R*` register.
 | **P1-S5** | Paper-processing lease recovery is unfenced | `lib/literature/process-paper.ts` lets a second worker steal a claim after five minutes, but terminal paper/job writes are keyed only by paper ID. The old worker can later overwrite the new worker's success or failure and both can pay. The test covers simultaneous initial claims, not stale-owner takeover. | Claim token/version plus heartbeat; every success/failure transition conditional on ownership; lost-owner no-op and stale-takeover PostgreSQL test. |
 | **P1-S6 — CLOSED (v0.37.0)** | Explain-back concurrency duplicates spend and can lower truth | `app/api/papers/[id]/explain/route.ts` reads attempt/best/pass before Anthropic, then locks only after the paid call without re-reading. Concurrent requests can share `attemptNo`, duplicate cost, and let a late lower/failing result overwrite best/pass. The attempt table has no unique sequence constraint. | Pre-call operation claim, fresh state under lock, unique attempt sequence, database `GREATEST`/monotonic pass, and result replay. **Done:** fresh state under the lock (attemptNo, bestScore, passed, KP eligibility), unique `(paperId, userId, attemptNo)`, monotonic pass/best. **Still owed:** the pre-call claim for a FIRST attempt (no parent row to stamp) and result replay — both the P1-R3 ledger. |
 | **P1-S7 — CLOSED (v0.37.0)** | Failure follow-up “one per entry” and daily cap are advisory | Both the existing-follow-up check and daily count happen before the paid call; `ProjectLogFollowup` lacks a unique `projectLogId`. Two requests can both pay/create, overshoot the team daily cap, and race the single answer field. | Unique follow-up-per-log, atomic team/day slots claimed before Anthropic, and conditional unanswered→answered transition. **Done, all three:** unique `projectLogId`; the row IS the claim, created empty before the call under a per-team lock, released on failure and reclaimable after 2 minutes; the answer is an `updateMany` predicated on `response: null`. |
-| **P1-S8** | Domain deletion and storage retirement still split across commits | Paper and showcase-asset deletion remove the domain row before calling `orphanObjectKey`; process death leaves an `attached` asset with no live owner, and retry returns 404. Topic change separately deletes rows/bytes and updates topic. Project-log deletion already demonstrates the correct same-transaction ledger transition. | Domain deletion plus ledger orphan/outbox in one database transaction; physical delete remains a retryable worker. Reconcile attached rows without live owners. |
+| **P1-S8 — CLOSED (v0.39.0)** | Domain deletion and storage retirement still split across commits | Paper and showcase-asset deletion remove the domain row before calling `orphanObjectKey`; process death leaves an `attached` asset with no live owner, and retry returns 404. Topic change separately deletes rows/bytes and updates topic. Project-log deletion already demonstrates the correct same-transaction ledger transition. | Domain deletion plus ledger orphan/outbox in one database transaction; physical delete remains a retryable worker. Reconcile attached rows without live owners. **Done:** paper deletion, showcase-asset deletion, and the topic-change removal all commit the domain delete and the ledger orphan together. The topic path also stopped calling `deleteObject` directly, so the sweep is once again the single physical-delete site. **Still owed:** reconciliation of pre-existing `attached` rows with no live owner. |
 | **P1-S9** | Paid writebacks are versionless | Codex study-plan, research-plan review, and idea-check read a source/hash, call external work, then write without proving that source/version is still current. Slow old work can overwrite new truth; same-input callers can consume multiple daily slots; manual track-array mutation loses concurrent edits. | `(principal/team, operation, sourceHash/version)` claim, reuse, CAS commit, and normalized set mutations. |
 | **P1-S10** | Any matched student can rewrite a global fair event and trigger paid crawl | `POST /api/fairs/[id]/sync-deadlines` requires only a team in the same state (or any team for ISEF), calls paid Firecrawl, trusts a cast rather than local `safeParse`, and writes the global shared `FairEvent`. Concurrent callers pay/race; year/date plausibility is weak. | Students read/request refresh only. An admin/background versioned catalog job claims the fair+edition, parses locally, records provenance, stages review, and CAS-publishes. |
 | **P1-S11 — CLOSED (v0.34.0)** | DOI presence is presented as proof of peer review | `lib/discovery/credibility.ts` explicitly admits DOI-only classification cannot distinguish review status, then returns `peer_reviewed`; upload persistence and UI badge say scientists reviewed it, and the test pins the false inference. DOI registries cover preprints, datasets, reports, software, and other objects; DOI syntax itself conveys no such status. | Represent DOI as identifier/version evidence only; derive review/publication type from trusted metadata and preserve unknown. Add preprint/dataset/reference-DOI fixtures. **Done:** `tierFromDoi` deleted; a raw upload carries `credibilityTier: null` and shows its DOI alone. Deriving a real publication type from trusted metadata remains future work. |
@@ -1232,6 +1238,13 @@ lock-guarded route was untestable for authorization.
 The v0.28.0 `test/topic-removal.test.ts` asserted phase 2 with `confirmRemoveIds` alone — it
 pinned the bypass rather than preventing it. It now asserts the opposite.
 
+#### v0.39.0 — 2026-07-25 — storage lifecycle
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P1-R12** Sweep terminalizes before the physical delete | **CLOSED** | Intermediate `deleting` status + `deleteLeaseAt`/`deleteAttempts`. Claim → delete object → terminalize. A stale lease is re-selected, so a crashed worker's claim is recovered instead of leaking a live object behind a terminal row. A failed delete stays `deleting` for the lease rather than restoring the prior status — one recovery path, not two. The `decodeURIComponent` 500 on malformed legacy attachment URLs is guarded. | The tombstone/outbox that survives **team** deletion (`UploadedAsset.teamId` still cascades). Bucket-vs-ledger reconciliation and stale/terminal alerting. |
+| **P1-S8** Domain deletion split from storage retirement | **CLOSED** | Paper deletion, showcase-asset deletion, and topic-change removal each commit the domain delete and the ledger orphan in ONE transaction. The topic path additionally stopped calling `deleteObject` directly, restoring the sweep as the single physical-delete site. | Reconciling pre-existing `attached` rows that already have no live owner. |
+
 ---
 
 ---
@@ -1309,7 +1322,7 @@ Track A's named findings remain historical close-outs. The following list is the
 | P1 | Paper-processing stale-lease recovery is not fenced | An old worker can overwrite a newer worker and both can pay |
 | ~~P1~~ **CLOSED v0.34.1** | A failed quiz-history GET starts a new paid quiz | Generation requires an explicit `session: null` or student intent |
 | P1 | Matrix checks do not wait for cell saves | Stale work can be graded, cached, and rewarded |
-| P1 | Asset deletion is split from ledger orphaning, and the sweep terminalizes before physical delete | Process death can leave attached-without-owner or live-unretryable R2 objects |
+| ~~P1~~ **CLOSED v0.39.0** | Asset deletion is split from ledger orphaning, and the sweep terminalizes before physical delete | One transaction per deletion; `deleting` lease state before the terminal write |
 | P1 | Matched students can run paid syncs that mutate the global fair catalog | Shared deadlines can race or be overwritten without admin/reviewer provenance |
 | ~~P1~~ **CLOSED v0.34.0** | DOI-only uploads are labeled “peer-reviewed” | Mapping deleted; DOI is shown as an identifier, tier is `null` |
 | ~~P1~~ **CLOSED v0.34.0** | Substring-only Google Docs validation stores an attacker URL behind a trusted teacher link | URL parsed and host-pinned; only the canonical doc URL is persisted |

@@ -118,7 +118,29 @@ describe('reclaimAbandonedAssets claim-then-delete', () => {
     expect(mocks.deleteObject).toHaveBeenCalledWith('log-attachments/team_1/a.png')
   })
 
-  it('releases the claim when the storage delete fails, so a later sweep retries', async () => {
+  // REFACTOR2 P1-R12: the terminal write now happens ONLY after the object is
+  // confirmed gone. Writing `deleted` first meant a crash before the R2 call
+  // left a live object behind a terminal row no later sweep would ever select.
+  it('claims into the intermediate `deleting` state, never straight to terminal', async () => {
+    mocks.assetFindMany.mockResolvedValue([CANDIDATE])
+    mocks.assetUpdateMany.mockResolvedValue({ count: 1 })
+    mocks.deleteObject.mockResolvedValue(undefined)
+
+    await reclaimAbandonedAssets({ olderThanMs: 1000, limit: 10 })
+
+    const [claim, terminal] = mocks.assetUpdateMany.mock.calls
+    expect(claim![0].data).toMatchObject({ status: 'deleting' })
+    expect(terminal![0]).toMatchObject({
+      where: { id: 'asset_1', status: 'deleting' },
+      data: expect.objectContaining({ status: 'deleted' }),
+    })
+    // Terminal write comes AFTER the object delete.
+    expect(mocks.deleteObject.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.assetUpdateMany.mock.invocationCallOrder[1]!,
+    )
+  })
+
+  it('leaves a failed delete in `deleting` for the lease to retry — never terminal', async () => {
     mocks.assetFindMany.mockResolvedValue([CANDIDATE])
     mocks.assetUpdateMany.mockResolvedValue({ count: 1 })
     mocks.deleteObject.mockRejectedValue(new Error('r2 down'))
@@ -126,13 +148,33 @@ describe('reclaimAbandonedAssets claim-then-delete', () => {
     const cleaned = await reclaimAbandonedAssets({ olderThanMs: 1000, limit: 10 })
 
     expect(cleaned).toBe(0)
-    // Second updateMany call is the release back to the prior status.
-    expect(mocks.assetUpdateMany).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        where: { id: 'asset_1', status: 'deleted' },
-        data: { status: 'temporary', deletedAt: null },
-      }),
-    )
+    // Exactly one write — the claim. Nothing terminalizes an object still there.
+    expect(mocks.assetUpdateMany).toHaveBeenCalledTimes(1)
+    expect(mocks.assetUpdateMany.mock.calls[0]![0].data).toMatchObject({ status: 'deleting' })
+  })
+
+  it('selects stale `deleting` rows so a crashed sweep is recoverable', async () => {
+    mocks.assetFindMany.mockResolvedValue([])
+
+    await reclaimAbandonedAssets({ olderThanMs: 1000, limit: 10, leaseMs: 60_000 })
+
+    const where = mocks.assetFindMany.mock.calls[0]![0].where as { OR: unknown[] }
+    expect(where.OR).toContainEqual({
+      status: 'deleting',
+      deleteLeaseAt: { lt: expect.any(Date) },
+    })
+  })
+
+  it('counts attempts so a poison object is visible rather than retried silently', async () => {
+    mocks.assetFindMany.mockResolvedValue([CANDIDATE])
+    mocks.assetUpdateMany.mockResolvedValue({ count: 1 })
+    mocks.deleteObject.mockResolvedValue(undefined)
+
+    await reclaimAbandonedAssets({ olderThanMs: 1000, limit: 10 })
+
+    expect(mocks.assetUpdateMany.mock.calls[0]![0].data).toMatchObject({
+      deleteAttempts: { increment: 1 },
+    })
   })
 })
 

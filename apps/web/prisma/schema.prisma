@@ -1157,6 +1157,14 @@ model UploadedAsset {
   createdAt      DateTime            @default(now()) @map("created_at")
   attachedAt     DateTime?           @map("attached_at")
   deletedAt      DateTime?           @map("deleted_at")
+  /// When the reclaim sweep took this row for physical deletion (REFACTOR2
+  /// P1-R12). A `deleting` row whose lease has aged out is retryable; without
+  /// it, a crash between the status write and the R2 call left a LIVE object
+  /// behind a terminal `deleted` row that no future sweep would ever select.
+  deleteLeaseAt  DateTime?           @map("delete_lease_at")
+  /// How many times the sweep has tried this object. Surfaces a poison object
+  /// instead of retrying it silently forever.
+  deleteAttempts Int                 @default(0) @map("delete_attempts")
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id])
@@ -1170,6 +1178,9 @@ enum UploadedAssetStatus {
   temporary
   attached
   orphaned
+  /// Claimed by the reclaim sweep, object not yet confirmed gone. The ONLY
+  /// state from which a physical delete may run, and retryable by lease age.
+  deleting
   deleted
 
   @@map("uploaded_asset_status")

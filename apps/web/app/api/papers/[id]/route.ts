@@ -47,32 +47,36 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
   })
   if (!paper) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Remove dependent rows first (FK constraints), then the paper itself.
-  await db.$transaction([
-    db.paperChatMessage.deleteMany({ where: { paperId: paper.id } }),
-    db.paperQuizAttempt.deleteMany({ where: { paperId: paper.id } }),
-    db.paperQuizSession.deleteMany({ where: { paperId: paper.id } }),
-    db.paperRelevanceNote.deleteMany({ where: { paperId: paper.id } }),
-    db.paperProficiency.deleteMany({ where: { paperId: paper.id } }),
-    db.paperExplanationAttempt.deleteMany({ where: { paperId: paper.id } }),
-    db.paperExplanation.deleteMany({ where: { paperId: paper.id } }),
-    db.paper.delete({ where: { id: paper.id } }),
-  ])
+  // Domain rows AND the ledger transition commit TOGETHER (REFACTOR2 P1-S8).
+  // These used to be two commits: the paper was deleted, then the asset was
+  // orphaned. A crash in between left an `attached` UploadedAsset with no live
+  // owner — invisible to the sweep, permanently charged against the team's
+  // quota, and unfixable by retrying (the second attempt 404s on the missing
+  // paper). Retiring through the ledger rather than calling `deleteObject` is
+  // also what keeps the sweep the single physical-delete site.
+  await db.$transaction(async (tx) => {
+    await tx.paperChatMessage.deleteMany({ where: { paperId: paper.id } })
+    await tx.paperQuizAttempt.deleteMany({ where: { paperId: paper.id } })
+    await tx.paperQuizSession.deleteMany({ where: { paperId: paper.id } })
+    await tx.paperRelevanceNote.deleteMany({ where: { paperId: paper.id } })
+    await tx.paperProficiency.deleteMany({ where: { paperId: paper.id } })
+    await tx.paperExplanationAttempt.deleteMany({ where: { paperId: paper.id } })
+    await tx.paperExplanation.deleteMany({ where: { paperId: paper.id } })
+    await tx.paper.delete({ where: { id: paper.id } })
 
-  // Retire the stored PDF through the ledger, NOT with a direct deleteObject:
-  // the reclaim sweep is the single physical-delete site. Without this the
-  // `attached` UploadedAsset row outlives its paper, so the bytes stay charged
-  // against the team's storage quota forever and the object is never reclaimed —
-  // an ordinary student hits that just by tidying their library.
-  if (paper.pdfKey) {
-    await orphanObjectKey({
-      teamId: ctx.teamId,
-      userId: ctx.dbUserId,
-      objectKey: paper.pdfKey,
-      contentType: 'application/pdf',
-      purpose: 'paper_pdf',
-    })
-  }
+    if (paper.pdfKey) {
+      await orphanObjectKey(
+        {
+          teamId: ctx.teamId,
+          userId: ctx.dbUserId,
+          objectKey: paper.pdfKey,
+          contentType: 'application/pdf',
+          purpose: 'paper_pdf',
+        },
+        tx,
+      )
+    }
+  })
 
   logActivity(ctx.teamId, ctx.dbUserId, 'paper_delete', { title: paper.title }).catch(console.error)
 
