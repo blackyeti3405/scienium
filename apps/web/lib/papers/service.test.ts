@@ -31,7 +31,7 @@ const mocks = vi.hoisted(() => ({
   attachAssetsByKey: vi.fn(() => Promise.resolve(1)),
   uploadedAssetUpdateMany: vi.fn(() => Promise.resolve({ count: 1 })),
   processPaperJob: vi.fn(() => Promise.resolve()),
-  logActivity: vi.fn(() => Promise.resolve()),
+  logActivityBestEffort: vi.fn(() => Promise.resolve()),
   getDocumentProxy: vi.fn(),
   extractText: vi.fn(),
 }))
@@ -81,7 +81,7 @@ vi.mock('@/lib/uploads/assets', () => ({
   attachAssetsByKey: mocks.attachAssetsByKey,
 }))
 vi.mock('@/lib/literature/process-paper', () => ({ processPaperJob: mocks.processPaperJob }))
-vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
+vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
 vi.mock('unpdf', () => ({
   getDocumentProxy: mocks.getDocumentProxy,
   extractText: mocks.extractText,

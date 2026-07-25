@@ -24,7 +24,7 @@ import {
   QUIZ_GRADING_PROMPT_INTRO,
 } from '@/lib/literature/grading'
 import { clampScore, computeQuizAward, computeRetryAggregate } from '@/lib/economy'
-import { logActivity } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 import { logEvent } from '@/lib/observability/log'
 import { lockAggregate } from '@/lib/db-lock'
 import { sleep } from '@/lib/fetch-retry'
@@ -567,15 +567,17 @@ export async function submitRetry(
         update: { kp: { increment: award.kpEarned } },
       })
     }
+    // The proficiency/KP writes and the record that the student passed commit
+    // together (P1-R5): teacher-visible evidence of progression must not be able
+    // to go missing on its own.
+    if (passed) {
+      await recordActivity(tx, principal.teamId, principal.dbUserId, 'quiz_passed', {
+        paperTitle: session.paper.title,
+        score: aggregate,
+      })
+    }
     return award.kpEarned
   })
-
-  if (passed) {
-    logActivity(principal.teamId, principal.dbUserId, 'quiz_passed', {
-      paperTitle: session.paper.title,
-      score: aggregate,
-    }).catch(console.error)
-  }
 
   return {
     ok: true,

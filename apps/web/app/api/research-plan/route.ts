@@ -5,7 +5,7 @@ import { parseJson } from '@/lib/validation'
 import { isValidSelection } from '@/lib/research-plan/types'
 import { fetchGoogleDocText, GoogleDocError } from '@/lib/research-plan/google-doc'
 import { IDEA_CHECK_DAILY_LIMIT, ideaChecksUsedToday } from '@/lib/research-plan/idea-check'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
 const MAX_STORED_TEXT = 100_000
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
     update: data,
   })
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'plan_synced', {}).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'plan_synced', {}).catch(console.error)
 
   return NextResponse.json({
     plan: {

@@ -20,12 +20,12 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   eventCreate: vi.fn(() => Promise.resolve({})),
   syncShowcaseRevision: vi.fn(() => Promise.resolve({ digest: 'd'.repeat(64), invalidated: false })),
-  logActivity: vi.fn(() => Promise.resolve()),
+  logActivityBestEffort: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTeamContext }))
-vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
+vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
 vi.mock('@/lib/showcase-server', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/showcase-server')>()),
   syncShowcaseRevision: mocks.syncShowcaseRevision,

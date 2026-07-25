@@ -21,14 +21,14 @@ const mocks = vi.hoisted(() => ({
   teamFindUnique: vi.fn(),
   classifyLabType: vi.fn(),
   getLiteratureAdvanceProgress: vi.fn(),
-  logActivity: vi.fn(() => Promise.resolve()),
+  logActivityBestEffort: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTeamContext }))
 vi.mock('@/lib/rate-limit', () => ({ enforceRateLimit: mocks.enforceRateLimit }))
 vi.mock('@/lib/lab-type/classify', () => ({ classifyLabType: mocks.classifyLabType }))
-vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
+vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
 vi.mock('@/lib/team/advance', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/team/advance')>()),
   getLiteratureAdvanceProgress: mocks.getLiteratureAdvanceProgress,
@@ -150,13 +150,13 @@ describe('a late result can never roll the lab backwards', () => {
     expect(res.status).toBe(200)
     expect(body).toMatchObject({ phase: 'showcase', alreadyAdvanced: true })
     // And it did NOT claim to have advanced the team itself.
-    expect(mocks.logActivity).not.toHaveBeenCalled()
+    expect(mocks.logActivityBestEffort).not.toHaveBeenCalled()
   })
 
   it('logs the advance only when the transition actually committed', async () => {
     await POST(advanceReq())
 
-    expect(mocks.logActivity).toHaveBeenCalledWith(
+    expect(mocks.logActivityBestEffort).toHaveBeenCalledWith(
       'team_1',
       'user_1',
       'phase_advanced',

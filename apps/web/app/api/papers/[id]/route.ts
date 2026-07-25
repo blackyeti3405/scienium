@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeamContext } from '@/lib/api/route-context'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { orphanObjectKey } from '@/lib/uploads/assets'
 import { db } from '@/lib/db'
 
@@ -78,7 +78,7 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
     }
   })
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'paper_delete', { title: paper.title }).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'paper_delete', { title: paper.title }).catch(console.error)
 
   return NextResponse.json({ ok: true })
 }

@@ -18,7 +18,7 @@ import {
   QUIZ_GRADING_PROMPT_INTRO,
 } from '@/lib/literature/grading'
 import { clampScore, computeQuizAward } from '@/lib/economy'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { lockAggregate } from '@/lib/db-lock'
 
 // Server-side only; the Anthropic key never reaches the browser.
@@ -186,7 +186,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   })
 
   if (passed) {
-    logActivity(ctx.teamId, ctx.dbUserId, 'quiz_passed', {
+    logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'quiz_passed', {
       paperTitle: session.paper.title,
       score: aggregate,
     }).catch(console.error)

@@ -89,7 +89,7 @@ vi.mock('@/lib/anthropic', () => ({
   }),
 }))
 
-vi.mock('@/lib/activity/log', () => ({ logActivity: vi.fn(async () => {}) }))
+vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: vi.fn(async () => {}) }))
 vi.mock('@/lib/observability/log', () => ({ logEvent: vi.fn() }))
 
 import { prepareRetry } from '@/lib/literature/quiz-retry'

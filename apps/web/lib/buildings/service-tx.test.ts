@@ -22,7 +22,8 @@ const mocks = vi.hoisted(() => ({
   lockAggregate: vi.fn(() => Promise.resolve()),
   loadShopState: vi.fn(),
   loadPlotState: vi.fn(),
-  logActivity: vi.fn(() => Promise.resolve()),
+  logActivityBestEffort: vi.fn(() => Promise.resolve()),
+  recordActivity: vi.fn(() => Promise.resolve()),
   tx: {
     teamShopBuilding: {
       findFirst: vi.fn(),
@@ -48,7 +49,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/db-lock', () => ({ lockAggregate: mocks.lockAggregate }))
 vi.mock('@/lib/shop-server', () => ({ loadShopState: mocks.loadShopState }))
-vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
+vi.mock('@/lib/activity/log', () => ({
+  logActivityBestEffort: mocks.logActivityBestEffort,
+  // Progression events now write inside the caller's transaction (P1-R5), so the
+  // mock records the tx it was handed — that IS the property under test.
+  recordActivity: mocks.recordActivity,
+}))
 vi.mock('@/lib/plot-server', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   loadPlotState: mocks.loadPlotState,
@@ -137,7 +143,7 @@ describe('placeBuilding — purchase path', () => {
       expect.objectContaining({ data: { posX: 2, posY: 3 } }),
     )
     // A free positioning is not a purchase — no activity entry.
-    expect(mocks.logActivity).not.toHaveBeenCalled()
+    expect(mocks.logActivityBestEffort).not.toHaveBeenCalled()
   })
 
   it('a concurrent double-buy surfacing as P2002 maps to 409, not a 500', async () => {

@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
   requireTeamContext: vi.fn(),
   orphanObjectKey: vi.fn((): Promise<void> => Promise.resolve()),
   deleteObject: vi.fn(() => Promise.resolve()),
-  logActivity: vi.fn(() => Promise.resolve()),
+  logActivityBestEffort: vi.fn(() => Promise.resolve()),
   paperFindFirst: vi.fn(),
   transaction: vi.fn(),
 }))
@@ -31,7 +31,7 @@ vi.mock('server-only', () => ({}))
 vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTeamContext }))
 vi.mock('@/lib/uploads/assets', () => ({ orphanObjectKey: mocks.orphanObjectKey }))
 vi.mock('@/lib/storage', () => ({ deleteObject: mocks.deleteObject }))
-vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
+vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
 vi.mock('@/lib/db', () => ({
   db: {
     paper: { findFirst: mocks.paperFindFirst, delete: vi.fn() },

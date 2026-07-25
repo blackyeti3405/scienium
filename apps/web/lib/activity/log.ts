@@ -30,10 +30,74 @@ export type ActivityAction =
   | 'vocab_term_mastered'
 
 /**
- * Appends a team activity entry. Fire-and-forget safe: awaiting is optional;
- * never throws so it can't break the calling request.
+ * Actions that are part of a team's PROGRESSION or a teacher's history of what a
+ * lab did — the ones a teacher may be looking at when they ask "did this student
+ * actually do the work". Losing one of these is losing evidence, so they belong
+ * in the same transaction as the domain change (`recordActivity`).
+ *
+ * Everything not listed here is ambient telemetry: nice in the feed, harmless to
+ * drop, and correctly written with `logActivityBestEffort`.
  */
-export async function logActivity(
+export const DURABLE_ACTIVITY_ACTIONS: ReadonlySet<ActivityAction> = new Set([
+  'quiz_passed',
+  'explanation_passed',
+  'codex_lesson_completed',
+  'clearance_raised',
+  'phase_advanced',
+  'showcase_published',
+  'member_joined',
+  'topic_locked',
+  'discovery_kp_awarded',
+  'building_purchased',
+  'building_sold',
+  'building_upgraded',
+  'source_promoted',
+  'vocab_term_mastered',
+])
+
+/** The subset of the Prisma client a transactional activity write needs. */
+type ActivityWriter = {
+  activityFeed: { create(args: { data: Record<string, unknown> }): Promise<unknown> }
+}
+
+/**
+ * Append an activity entry INSIDE the caller's transaction (REFACTOR2 P1-R5).
+ *
+ * Throws on failure — deliberately. The point is that the feed row and the thing
+ * it records either both land or neither does: if a student's KP moved, the
+ * teacher-visible evidence that it moved must not be able to go missing on its
+ * own. That is the transactional-outbox property the audit asked for, in its
+ * simplest correct form (same transaction, so there is nothing to reconcile).
+ *
+ * Use `logActivityBestEffort` for ambient telemetry.
+ */
+export async function recordActivity(
+  tx: ActivityWriter,
+  teamId: string,
+  userId: string,
+  action: ActivityAction,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  await tx.activityFeed.create({
+    data: {
+      teamId,
+      userId,
+      actionType: action,
+      payloadJson: payload as Prisma.InputJsonValue,
+    },
+  })
+}
+
+/**
+ * Append a team activity entry, swallowing any failure.
+ *
+ * EXPLICITLY named best-effort (REFACTOR2 P1-R5). This used to be called
+ * `logActivity`, which read like a durability guarantee at 28 of its 29 call
+ * sites while actually being `.catch(console.error)` — gameplay and
+ * teacher-visible history with no contract at all. The name is now the contract:
+ * if losing this entry would matter, you want `recordActivity` in a transaction.
+ */
+export async function logActivityBestEffort(
   teamId: string,
   userId: string,
   action: ActivityAction,
@@ -49,7 +113,7 @@ export async function logActivity(
       },
     })
   } catch {
-    // Activity logging must never break the main request path.
+    // Ambient telemetry must never break the main request path.
   }
 }
 

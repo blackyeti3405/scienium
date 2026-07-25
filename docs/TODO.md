@@ -79,6 +79,34 @@ date-automatic: a server-clock-driven price switch is a landmine.
 - `runAiOperation` (the replay ledger) still does not wrap
   `phase_advance_classify`, so that call has a claim but no replay.
 
+## Activity durability — 11 events still outside a transaction (REFACTOR2 P1-R5)
+
+v0.46.0 split activity logging into `recordActivity(tx, …)` (durable, throws, writes
+inside the caller's transaction) and `logActivityBestEffort(…)` (explicitly optional).
+Five progression events were migrated. These eleven are **durable-class but still
+best-effort**, because in each the payload is only known after the domain write, so
+migrating means restructuring the handler rather than renaming a call:
+
+- `app/api/papers/[id]/quiz/grade/route.ts` — `quiz_passed`
+- `app/api/papers/[id]/explain/route.ts` — `explanation_passed`
+- `app/api/expertise/grade/route.ts` — `clearance_raised`
+- `app/api/team/advance-phase/route.ts` — `phase_advanced` (two sites: self-advance
+  and the paid classify path)
+- `app/api/team/join/route.ts` — `member_joined`
+- `app/api/showcase/route.ts` — `showcase_published`
+- `app/api/discovery/topic/route.ts` — `topic_locked`
+- `app/api/discovery/tree/route.ts` — `discovery_kp_awarded`
+- `app/api/discovery/sources/[id]/reflection/route.ts` — `discovery_kp_awarded`
+- `app/api/discovery/source/[id]/promote/route.ts` — `source_promoted`
+- `app/api/literature/vocab/review/route.ts` — `vocab_term_mastered`
+
+`test/activity-durability.test.ts` asserts this list EXACTLY. Removing an entry from the
+code without updating the test fails, and adding a new best-effort durable-class event
+fails too — the list can only shrink on purpose.
+
+Two of these (`showcase/route.ts`, `discovery/tree/route.ts`) have no transaction at all
+today, so they need one introduced before the activity write can join it.
+
 ## PatentsView API key (Discovery prior-art lane)
 - **Now:** the "Prior art (patents)" lane in Discovery's Articles tab runs keyless —
   it degrades to a single Google Patents search link-out card instead of live

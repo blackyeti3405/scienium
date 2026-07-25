@@ -29,7 +29,8 @@ const mocks = vi.hoisted(() => ({
   proficiencyUpsert: vi.fn<(...args: unknown[]) => unknown>(),
   currencyUpsert: vi.fn<(...args: unknown[]) => unknown>(),
   lockAggregate: vi.fn<(...args: unknown[]) => unknown>(),
-  logActivity: vi.fn<(...args: unknown[]) => unknown>(),
+  logActivityBestEffort: vi.fn<(...args: unknown[]) => unknown>(),
+  recordActivity: vi.fn<(...args: unknown[]) => unknown>(() => Promise.resolve()),
   anthropicCreate: vi.fn<(...args: unknown[]) => unknown>(),
   // Replay ledger (P1-R11 remainder): the real grading path now runs through
   // runAiOperation, so the retry service needs `db.aiOperation` present.
@@ -41,7 +42,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/db-lock', () => ({ lockAggregate: mocks.lockAggregate }))
-vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
+vi.mock('@/lib/activity/log', () => ({
+  logActivityBestEffort: mocks.logActivityBestEffort,
+  // Progression events now write inside the caller's transaction (P1-R5), so the
+  // mock records the tx it was handed — that IS the property under test.
+  recordActivity: mocks.recordActivity,
+}))
 vi.mock('@/lib/anthropic', () => ({
   anthropic: () => ({ messages: { create: mocks.anthropicCreate } }),
 }))
@@ -132,7 +138,7 @@ beforeEach(() => {
   mocks.proficiencyUpsert.mockResolvedValue({})
   mocks.currencyUpsert.mockResolvedValue({})
   mocks.lockAggregate.mockResolvedValue(undefined)
-  mocks.logActivity.mockResolvedValue(undefined)
+  mocks.logActivityBestEffort.mockResolvedValue(undefined)
 })
 
 describe('loadRetryableSession scoping (via prepareRetry)', () => {

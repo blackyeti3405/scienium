@@ -15,12 +15,12 @@ const mocks = vi.hoisted(() => ({
   requireTeamContext: vi.fn(),
   fetchGoogleDocText: vi.fn(),
   upsert: vi.fn(),
-  logActivity: vi.fn(() => Promise.resolve()),
+  logActivityBestEffort: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTeamContext }))
-vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
+vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
 vi.mock('@/lib/research-plan/google-doc', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/research-plan/google-doc')>()),
   fetchGoogleDocText: mocks.fetchGoogleDocText,

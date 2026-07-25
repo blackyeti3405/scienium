@@ -4,7 +4,7 @@ import { aiCreate } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
 import { Prisma } from '@prisma/client'
@@ -230,7 +230,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   })
 
   // Best-effort activity log.
-  logActivity(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'failure' }).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'failure' }).catch(console.error)
 
   return NextResponse.json({ followup: mapFollowup(updated) })
 }

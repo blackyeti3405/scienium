@@ -8,7 +8,7 @@ import { aiCreate } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import { paperTextBlock } from '@/lib/literature/grading'
 import { extractJson } from '@/lib/literature/quiz'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { lockAggregate } from '@/lib/db-lock'
 import { aiIdempotencyKey, runAiOperation } from '@/lib/ai/operation'
 import {
@@ -258,7 +258,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   // claim) — so gating the activity log on kpEarned > 0 is exactly "on a
   // first pass", per the plan.
   if (passed && kpEarned > 0) {
-    logActivity(ctx.teamId, ctx.dbUserId, 'explanation_passed', {
+    logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'explanation_passed', {
       paperTitle: paper.title,
       score: overall,
     }).catch(console.error)

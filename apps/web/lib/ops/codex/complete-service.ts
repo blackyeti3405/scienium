@@ -9,7 +9,7 @@ import {
   lessonUnlocked,
   CODEX_DAILY_LESSON_CAP,
 } from '@/lib/ops/codex/engine'
-import { logActivity } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 import type { CheckpointQuestion } from '@/lib/ops/codex/types'
 import { todayUtc } from '@/lib/date'
 
@@ -271,6 +271,11 @@ export async function completeLesson(
         create: { teamId: principal.teamId, kp: award.kpEarned },
         update: { kp: { increment: award.kpEarned } },
       })
+      // Progression evidence commits with the KP that proves it (P1-R5).
+      await recordActivity(tx, principal.teamId, principal.dbUserId, 'codex_lesson_completed', {
+        trackSlug,
+        lessonId,
+      })
     })
   } catch (err) {
     if (!(err instanceof CapSlotUnavailable)) throw err
@@ -287,11 +292,6 @@ export async function completeLesson(
       capReached: outcome === 'cap',
     }
   }
-
-  logActivity(principal.teamId, principal.dbUserId, 'codex_lesson_completed', {
-    trackSlug,
-    lessonId,
-  }).catch(console.error)
 
   return {
     ok: true,

@@ -4,7 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { awardDiscoveryVisit } from '@/lib/discovery/awardVisit'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 
 // ── PATCH /api/discovery/sources/[id]/reflection ──────────────────────────────
 // Persists the ONE-line reflection ("In one sentence, what did they find?") onto
@@ -68,7 +68,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   })
 
   if (kpAwarded > 0) {
-    logActivity(ctx.teamId, ctx.dbUserId, 'discovery_kp_awarded', { kp: kpAwarded, nodeCount: 1 }).catch(
+    logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'discovery_kp_awarded', { kp: kpAwarded, nodeCount: 1 }).catch(
       console.error,
     )
   }

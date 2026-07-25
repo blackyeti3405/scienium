@@ -10,7 +10,7 @@ import {
 } from '@/lib/team/advance'
 import { classifyLabType } from '@/lib/lab-type/classify'
 import { enforceRateLimit } from '@/lib/rate-limit'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
 /** A dead advance claim is taken over after this, so a crash cannot wedge a team. */
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       data: { phase: toPhase },
     })
     if (count > 0) {
-      logActivity(ctx.teamId, ctx.dbUserId, 'phase_advanced', {
+      logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'phase_advanced', {
         fromPhase: ctx.phase,
         toPhase,
       }).catch(console.error)
@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'phase_advanced', {
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'phase_advanced', {
     fromPhase: 'literature_review',
     toPhase: 'research_planning',
     labType: LAB_TYPE_LABELS[labType],

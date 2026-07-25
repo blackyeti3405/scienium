@@ -6,7 +6,7 @@ import { aiCreate } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import { extractJson } from '@/lib/literature/quiz'
 import { lockAggregate } from '@/lib/db-lock'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import {
   parseColumns,
   matrixInputHash,
@@ -187,7 +187,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     kpEarned = SYNTHESIS_KP_AWARD
   })
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'synthesis_checked', { matrixId: matrix.id, missed }).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'synthesis_checked', { matrixId: matrix.id, missed }).catch(console.error)
 
   return NextResponse.json({ verdict, cached: false, kpEarned })
 }

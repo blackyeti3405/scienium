@@ -1588,13 +1588,54 @@ model ShowcaseView {
 // history; the cron prunes old days. No FK on purpose: a deleted team's rows
 // age out harmlessly.
 model NotificationRunTeam {
-  id        String   @id @default(cuid())
-  runDay    DateTime @map("run_day") @db.Date
-  teamId    String   @map("team_id")
-  checkedAt DateTime @default(now()) @map("checked_at")
+  id          String    @id @default(cuid())
+  runDay      DateTime  @map("run_day") @db.Date
+  teamId      String    @map("team_id")
+  /// When this team was CLAIMED (not when it finished — see `completedAt`).
+  checkedAt   DateTime  @default(now()) @map("checked_at")
+  // ── Claim-before-work (REFACTOR2 P1-R5) ──────────────────────────────────
+  // The row used to be written AFTER processing, so two overlapping runs both
+  // read the same unchecked roster and both processed — and both emailed. The
+  // notification unique key stopped duplicate ROWS; nothing stopped the second
+  // email, because the send was driven by the pre-insert "fresh" list.
+  /// Fences the claim: a run only processes teams whose row carries ITS token.
+  claimToken  String    @default("") @map("claim_token")
+  /// Null while in flight. A claim with no completion, older than the lease, is
+  /// a crashed run's and is taken over rather than stranding the team all day.
+  completedAt DateTime? @map("completed_at")
 
   @@unique([runDay, teamId])
+  @@index([runDay, completedAt])
   @@map("notification_run_teams")
+}
+
+/// Email outbox (REFACTOR2 P1-R5). Sends used to happen inline, driven by the
+/// list of notifications a run believed were fresh — so a duplicated run
+/// duplicated the email even though the notification row was deduped.
+///
+/// Enqueued in the SAME transaction as the notification rows, then delivered by
+/// a claimed pass. `(dedupeKey, recipient)` unique is the event key that makes
+/// at-most-once delivery a property of the database rather than of timing.
+model NotificationEmail {
+  id         String    @id @default(cuid())
+  /// The notification's `dedupeKey` — the event this email is about.
+  dedupeKey  String    @map("dedupe_key")
+  recipient  String
+  subject    String
+  body       String
+  /// pending | sending | sent | failed
+  status     String    @default("pending")
+  attempts   Int       @default(0)
+  /// Fences the delivery claim, same shape as the paper-job lease.
+  claimToken String?   @map("claim_token")
+  claimedAt  DateTime? @map("claimed_at")
+  sentAt     DateTime? @map("sent_at")
+  lastError  String?   @map("last_error")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@unique([dedupeKey, recipient])
+  @@index([status, claimedAt])
+  @@map("notification_emails")
 }
 
 // ─── Science Fair Hub ────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
 // v1 is log↔log linking only (progress entries linking to other progress
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     }
   }
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'progress' }).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'progress' }).catch(console.error)
 
   // entryNumber is oldest-first index+1 across the team's progress entries —
   // same derivation as the read path (GET /api/project-log).

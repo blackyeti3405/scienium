@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   classifyLabType: vi.fn(),
   getLiteratureAdvanceProgress: vi.fn(),
   isSelfAdvance: vi.fn(),
-  logActivity: vi.fn(() => Promise.resolve()),
+  logActivityBestEffort: vi.fn(() => Promise.resolve()),
   teamUpdate: vi.fn(() => Promise.resolve({})),
   teamUpdateMany: vi.fn(() => Promise.resolve({ count: 1 })),
 }))
@@ -27,7 +27,7 @@ vi.mock('@/lib/team/advance', () => ({
   isSelfAdvance: mocks.isSelfAdvance,
   SELF_ADVANCE_TRANSITIONS: { research_planning: 'working', working: 'showcase' },
 }))
-vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
+vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
 vi.mock('@/lib/db', () => ({
   db: { team: { update: mocks.teamUpdate, updateMany: mocks.teamUpdateMany } },
 }))

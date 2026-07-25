@@ -22,11 +22,11 @@ const mocks = vi.hoisted(() => ({
   externalSourceCreate: vi.fn(),
   transaction: vi.fn(),
   requireTeamContext: vi.fn(),
-  logActivity: vi.fn(() => Promise.resolve()),
+  logActivityBestEffort: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('server-only', () => ({}))
-vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
+vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
 vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTeamContext }))
 vi.mock('@/lib/discovery/awardVisit', () => ({ awardDiscoveryVisit: vi.fn(async () => ({ kpAwarded: 0 })) }))
 vi.mock('@/lib/db', () => ({

@@ -5,6 +5,61 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.46.0] — 2026-07-25
+
+### Fixed — background work is durable, bounded, and honestly named (P1-R5)
+Three separate gaps, one theme: work that ran outside a request had claims in some places,
+guarantees in none.
+
+**Notifications: claim before work, not after.** The run ledger recorded a team *after*
+processing it, so two overlapping runs read the same unchecked roster, both processed the same
+teams, and both emailed. `notifications.dedupe_key` kept the notification **row** singular;
+nothing kept the **send** singular, because the send was driven by that run's in-memory "fresh"
+list. A team is now claimed first, fenced by a `claimToken` — a run processes only the teams
+whose row carries its token — with a 5-minute lease so a crashed run's teams are retried rather
+than stranded for the day. Failed and budget-skipped teams are **released** rather than left to
+wait the lease out. Claim, complete, and release are all batched per page: per-team writes would
+have turned 3,500 teams into 3,500 round trips inside a 60-second function, which is the exact
+fan-out this cron was rebuilt to avoid.
+
+**Email outbox.** Sends no longer happen inline. Notification rows and their outbox entries
+commit in one transaction, and `(dedupeKey, recipient)` unique makes "one email per event per
+person" a property of PostgreSQL rather than of timing. Delivery is a separate claimed pass with
+its own lease, bounded batch, attempt cap, and a `failed` parking state so one bad address
+cannot consume every run. At-most-once, not exactly-once — a crash between the provider
+accepting and the `sent` write retries, and one duplicate is a better failure than a reminder
+that never arrives.
+
+**Paper cron burst.** `Promise.all` over a batch of 30 meant 30 simultaneous Anthropic calls
+inside a 60-second function, against provider rate limits and a database URL configured with
+`connection_limit=1`. Per-job claims made that *correct*, not sane. Now four at a time through a
+shared `lib/concurrency.ts` — which also replaces the private copy the notification cron was
+carrying.
+
+**Activity logging has a contract for the first time.** One function named `logActivity` served
+both "a teacher may need this as evidence a student did the work" and "nice-to-have feed noise",
+and swallowed every failure. Split in two:
+- `recordActivity(tx, …)` writes inside the caller's transaction and **throws**, so the KP move
+  and the record that it happened cannot land separately. Migrated: building purchase / sale /
+  upgrade, quiz-retry pass, Codex lesson completion.
+- `logActivityBestEffort(…)` is the old swallow-everything behaviour, now *named* as such at all
+  30 call sites.
+- `DURABLE_ACTIVITY_ACTIONS` classifies which events are progression or teacher history.
+
+### Still owed
+Eleven durable-class events are still written outside a transaction — mostly route handlers where
+the payload is only known after the domain write, so migrating each is a per-site restructure
+rather than a rename. `test/activity-durability.test.ts` asserts that list **exactly**, so it can
+only shrink deliberately: a new one cannot be added quietly, and removing one without updating
+the list fails too. Tracked in `docs/TODO.md`.
+
+### Verification
+Gates 1–5 pass. Vitest: **112 files / 1,581 tests passed** (was 110 / 1,564). New coverage
+includes two overlapping notification runs never processing a team twice, an in-flight claim
+being respected while an expired one is taken over, two concurrent outbox drains never sending
+the same row, a failed send returning to the queue, and a permanently-failing address being
+parked. Migration applied to the local dev database; devlab verified intact.
+
 ## [0.45.0] — 2026-07-25
 
 ### Added — model registry, AI accounting, and a kill switch (P1-R3 budget half, part 1)

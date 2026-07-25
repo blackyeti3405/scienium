@@ -26,7 +26,7 @@ const mocks = vi.hoisted(() => ({
   enforceRateLimit: vi.fn(),
   batchCheckRelevance: vi.fn(),
   deleteObject: vi.fn(() => Promise.resolve()),
-  logActivity: vi.fn(() => Promise.resolve()),
+  logActivityBestEffort: vi.fn(() => Promise.resolve()),
   matchInterests: vi.fn(() => []),
   teamFindUnique: vi.fn(),
   teamUpdate: vi.fn(() => Promise.resolve({})),
@@ -49,7 +49,7 @@ vi.mock('@/lib/rate-limit', () => ({ enforceRateLimit: mocks.enforceRateLimit })
 vi.mock('@/lib/literature/relevance', () => ({ batchCheckRelevance: mocks.batchCheckRelevance }))
 vi.mock('@/lib/storage', () => ({ deleteObject: mocks.deleteObject }))
 vi.mock('@/lib/uploads/assets', () => ({ orphanObjectKey: mocks.orphanObjectKey }))
-vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
+vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
 vi.mock('@/lib/discovery/interest-match', () => ({ matchInterests: mocks.matchInterests }))
 vi.mock('@/lib/api/destructive-proposal', () => ({
   proposeDestructive: mocks.proposeDestructive,

@@ -5,7 +5,7 @@ import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { hydrateTree, createTreeNodes, TreeGraphError } from '@/lib/discovery/tree-service'
 import { consumeDestructive, proposeDestructive } from '@/lib/api/destructive-proposal'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 
 // Bounded batch of client-generated nodes; `.strict()` rejects extra fields.
 // `source` nodes (Discovery v2 Papers tab) carry external metadata fields that the
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (kpAwarded > 0) {
-    logActivity(ctx.teamId, ctx.dbUserId, 'discovery_kp_awarded', {
+    logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'discovery_kp_awarded', {
       kp: kpAwarded,
       nodeCount: plainCount,
     }).catch(console.error)

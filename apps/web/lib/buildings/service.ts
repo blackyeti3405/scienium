@@ -25,7 +25,7 @@ import {
 import { loadShopState } from '@/lib/shop-server'
 import { loadPlotState, occupancyOf } from '@/lib/plot-server'
 import { isOnGrid, cellKey } from '@/lib/plot'
-import { logActivity } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 
 export type PlotResult<T> = ({ ok: true } & T) | { ok: false; error: string; status: number }
 
@@ -127,16 +127,16 @@ export async function placeBuilding(
         },
       })
       const after = await tx.teamCurrency.findUnique({ where: { teamId }, select: { kp: true } })
-      return { kp: after?.kp ?? Math.max(0, shop.kp - cost), costPaid: cost, level: 1 }
-    })
-
-    if (!ownedUnplaced) {
-      logActivity(teamId, userId, 'building_purchased', {
+      // The KP debit and the record that it happened commit together (P1-R5).
+      // A purchase whose feed entry silently vanished is a teacher looking at a
+      // building nobody appears to have bought.
+      await recordActivity(tx, teamId, userId, 'building_purchased', {
         buildingKey: building.key,
         buildingName: building.name,
-        cost: result.costPaid,
-      }).catch(console.error)
-    }
+        cost,
+      })
+      return { kp: after?.kp ?? Math.max(0, shop.kp - cost), costPaid: cost, level: 1 }
+    })
 
     return {
       ok: true,
@@ -284,14 +284,13 @@ export async function sellBuilding(
         data: { kp: { increment: refund } },
         select: { kp: true },
       })
+      await recordActivity(tx, teamId, userId, 'building_sold', {
+        buildingKey: building.key,
+        buildingName: building.name,
+        refund,
+      })
       return { kp: after.kp, refund }
     })
-
-    logActivity(teamId, userId, 'building_sold', {
-      buildingKey: building.key,
-      buildingName: building.name,
-      refund: result.refund,
-    }).catch(console.error)
 
     return { ok: true, kp: result.kp, refund: result.refund }
   } catch (err) {
@@ -360,14 +359,13 @@ export async function upgradeBuilding(
         where: { teamId },
         select: { kp: true, lc: true },
       })
+      await recordActivity(tx, teamId, userId, 'building_upgraded', {
+        buildingKey: building.key,
+        buildingName: building.name,
+        level: nextLevel,
+      })
       return { level: nextLevel, kp: after?.kp ?? 0, lc: after?.lc ?? 0 }
     })
-
-    logActivity(teamId, userId, 'building_upgraded', {
-      buildingKey: building.key,
-      buildingName: building.name,
-      level: result.level,
-    }).catch(console.error)
 
     return {
       ok: true,

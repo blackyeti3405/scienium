@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import {
   attachAssetsByKey,
   markAssetsOrphanedByKey,
@@ -121,7 +121,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     throw e
   }
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'progress' }).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'progress' }).catch(console.error)
 
   return NextResponse.json({ entry })
 }
@@ -159,7 +159,7 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
     await markAssetsOrphanedByKey(tx, { teamId: ctx.teamId, objectKeys: removedKeys })
   })
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'log_deleted', { kind: 'progress' }).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'log_deleted', { kind: 'progress' }).catch(console.error)
 
   return NextResponse.json({ ok: true })
 }

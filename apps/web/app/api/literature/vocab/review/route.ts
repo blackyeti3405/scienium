@@ -11,7 +11,7 @@ import {
   VOCAB_KP_PER_TERM,
   VOCAB_DAILY_KP_CAP,
 } from '@/lib/literature/srs'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { todayUtc } from '@/lib/date'
 
 const ReviewBody = z
@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
 
     if (outcome === 'paid') {
       kpEarned = VOCAB_KP_PER_TERM
-      logActivity(ctx.teamId, ctx.dbUserId, 'vocab_term_mastered', { term: card.term }).catch(console.error)
+      logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'vocab_term_mastered', { term: card.term }).catch(console.error)
     } else if (outcome === 'cap') {
       capReached = true
     }

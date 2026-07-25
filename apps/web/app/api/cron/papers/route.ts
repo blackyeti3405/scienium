@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertCron } from '@/lib/cron/auth'
+import { mapWithConcurrency } from '@/lib/concurrency'
 import { db } from '@/lib/db'
 import { processPaperJob } from '@/lib/literature/process-paper'
 import { logEvent } from '@/lib/observability/log'
 import { reclaimAbandonedAssets, reconcileOrphanedAssets } from '@/lib/uploads/assets'
+
+/** Paper jobs processed at once. Each is one Anthropic call; the wait is network. */
+const PAPER_JOB_CONCURRENCY = 4
 
 /** Reclaim uploads that were never attached to a domain row within this window. */
 const STALE_ASSET_MS = 24 * 60 * 60 * 1000
@@ -76,7 +80,13 @@ export async function GET(req: NextRequest) {
     select: { paperId: true },
   })
 
-  await Promise.all(jobs.map((job) => processPaperJob(job.paperId)))
+  // BOUNDED, not `Promise.all` (P1-R5). The batch of 30 exists so a classroom's
+  // backlog drains in one invocation; firing all 30 at once meant 30 simultaneous
+  // Anthropic calls inside a 60-second function, against provider rate limits and
+  // a database URL configured with `connection_limit=1`. Per-job claims made that
+  // safe, not sane. Four at a time still drains 30 jobs well inside maxDuration,
+  // because each job is one bounded call and the wait is network, not CPU.
+  await mapWithConcurrency(jobs, PAPER_JOB_CONCURRENCY, (job) => processPaperJob(job.paperId))
 
   // Reclaim abandoned uploads: orphaned attachments (a deleted/edited log) plus
   // temporary assets never attached within the stale window. Physical delete of the

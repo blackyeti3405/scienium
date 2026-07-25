@@ -339,7 +339,7 @@ shape, every element's `error`, and the numeric `INCR` result, and throws
 `rate_limit.store_error`. **Still open:** the circuit breaker and the single
 deployment-guaranteed client-IP header.
 
-#### P1-R5 — Background work is durable only in parts
+#### P1-R5 — Background work is durable only in parts — **CLOSED (v0.46.0); activity-migration remainder tracked**
 
 - Notifications materialize every checked team ID for the day, restart roster scanning from
   the beginning, and mark completion after processing. Overlapping runs can process/email the
@@ -1319,6 +1319,14 @@ of them, so ten of sixteen cache, and the six that do not are short prompts belo
 minimum or single-use calls with no second read. No caching work was needed.
 
 Gates 1–5 pass; Vitest 110 files / 1,564 tests. Migration applied; devlab verified intact.
+
+#### v0.46.0 — 2026-07-25 — durable background work
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P1-R5** Background work is durable only in parts | **CLOSED** for two of three bullets; the third is mechanism-complete with a pinned migration list | **Notifications:** the ledger row was written AFTER processing, so two overlapping runs read the same unchecked roster, both processed, and both emailed — `dedupe_key` kept the notification ROW singular but not the SEND, which was driven by a run's in-memory "fresh" list. Teams are now claimed first, fenced by a `claimToken`, with a 5-minute lease so a crashed run's teams are retried rather than stranded; failed and budget-skipped teams are RELEASED rather than made to wait it out. Claim/complete/release are batched per page, keeping the run's query count page-scaled. **Email outbox:** notification rows and outbox entries commit in one transaction, and `(dedupeKey, recipient)` unique makes at-most-once delivery a database property; delivery is a separate claimed pass with a lease, batch bound, attempt cap, and a `failed` parking state. **Paper cron:** the 30-wide `Promise.all` is now four at a time through a shared `lib/concurrency.ts`. **Activity:** `logActivity` served both progression evidence and feed noise while swallowing every failure; split into `recordActivity(tx, …)` (writes in the caller's transaction, THROWS) and `logActivityBestEffort(…)` (named for what it is, at all 30 sites), with `DURABLE_ACTIVITY_ACTIONS` classifying which is which. Migrated: building purchase/sale/upgrade, quiz-retry pass, Codex lesson completion. | Eleven durable-class activity events still write outside a transaction — route handlers whose payload is only known after the domain write, so each is a per-site restructure rather than a rename. `test/activity-durability.test.ts` asserts that list EXACTLY, so it can only shrink deliberately. Outbox delivery is at-most-once, not exactly-once: a crash between provider acceptance and the `sent` write retries. |
+
+Gates 1–5 pass; Vitest 112 files / 1,581 tests. Migration applied; devlab verified intact.
 
 ---
 

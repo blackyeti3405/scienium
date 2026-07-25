@@ -1331,6 +1331,29 @@ read cache. Resend is optional for email notifications.
   resume where the last one left off, so one day's runs can cover a
   10,000-student population instead of the previous single daily invocation.
 
+**Both crons claim before they work, and both bound their concurrency**
+(REFACTOR2 P1-R5). The notification ledger row used to be written *after*
+processing, so two overlapping runs saw the same unchecked roster, both processed,
+and both emailed — the notification unique key kept the row singular but not the
+send. A team is now claimed first, fenced by a `claimToken` with a five-minute
+lease; a run processes only teams whose row carries its token, and a team it
+knows it abandoned is released rather than made to wait the lease out. Claim,
+complete, and release are batched per page, because per-team writes would put a
+3,500-team roster at 3,500 round trips inside a 60-second function.
+
+Reminder **email is an outbox**, not an inline send: notification rows and their
+`NotificationEmail` entries commit in one transaction, and `(dedupeKey, recipient)`
+unique makes one-email-per-event-per-person a property of PostgreSQL rather than
+of timing. Delivery is a separate claimed pass (`lib/notifications/outbox.ts`)
+with its own lease, batch bound, attempt cap, and a `failed` parking state.
+At-most-once, not exactly-once — a crash between provider acceptance and the
+`sent` write retries.
+
+Paper jobs run four at a time through `lib/concurrency.ts`, not `Promise.all` over
+the whole batch: thirty simultaneous Anthropic calls inside a 60-second function
+were safe (per-job claims) and hostile to provider limits, cost, latency, and a
+database URL configured with `connection_limit=1`.
+
 Migrations are committed under `apps/web/prisma/migrations/` and applied with
 `prisma migrate deploy`. Production and development databases must be separate.
 
@@ -1345,6 +1368,17 @@ that assumption is what the finding was. `test/migration-unique-index-policy.tes
 enforces this and requires any exemption to state its reason, and
 `pnpm --filter web verify:migration-preflights` proves each preflight against a
 real PostgreSQL instance inside a rolled-back transaction.
+
+### Activity feed — two contracts, named
+
+`lib/activity/log.ts` exposes `recordActivity(tx, …)` and
+`logActivityBestEffort(…)`, and the distinction is load-bearing (REFACTOR2
+P1-R5). Progression and teacher-history events — a passed quiz, a Codex lesson,
+a KP-moving purchase — write inside the caller's transaction and **throw**, so
+the change and the evidence of it cannot land separately. Everything else is
+ambient feed noise and says so in its name. `DURABLE_ACTIVITY_ACTIONS` is the
+classification; `test/activity-durability.test.ts` pins the list of durable-class
+events still on the best-effort path so it can only shrink deliberately.
 
 ### AI spend — one door, measured
 

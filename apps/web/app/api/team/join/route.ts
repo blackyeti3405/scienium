@@ -6,7 +6,7 @@ import { ApiError } from '@/lib/api/with-route'
 import { parseJson } from '@/lib/validation'
 import { normalizeInviteCode } from '@/lib/team/invite'
 import { applySchoolAndClass, resolvePrimaryEmail, syncClerkDisplayName } from '@/lib/onboarding/profile'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
 
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
     // their own class (or requests their own teacher's class separately); the
     // teacher sees the lab because they own ≥1 member (teacherOwnsTeam).
 
-    logActivity(teamId, user.id, 'member_joined', { name: user.name }).catch(console.error)
+    logActivityBestEffort(teamId, user.id, 'member_joined', { name: user.name }).catch(console.error)
     return NextResponse.json({ teamId })
   } catch (err) {
     if (err instanceof ApiError) {

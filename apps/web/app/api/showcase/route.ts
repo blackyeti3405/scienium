@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import {
   SHORT_TITLE_MAX,
   TITLE_MAX,
@@ -243,7 +243,7 @@ export async function PUT(req: NextRequest) {
   }
 
   if (data.published === true) {
-    logActivity(ctx.teamId, ctx.dbUserId, 'showcase_published', {
+    logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'showcase_published', {
       title: sc.shortTitle || sc.title,
       slug: sc.slug,
     }).catch(console.error)

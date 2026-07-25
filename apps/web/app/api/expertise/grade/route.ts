@@ -15,7 +15,7 @@ import { AnswerItem, buildGradingPayload, gradeAnswers } from '@/lib/literature/
 import { aggregateOverQuestions } from '@/lib/literature/quiz'
 import { getProjectContext, renderProjectContext } from '@/lib/clearance/context'
 import { clampScore } from '@/lib/economy'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 
 /** A grading claim older than this is treated as abandoned and may be re-taken. */
 const STALE_CLAIM_MS = 5 * 60 * 1000
@@ -182,7 +182,7 @@ export async function POST(req: NextRequest) {
   const kpEarned = raised ? kpBonus : 0
 
   if (raised) {
-    logActivity(ctx.teamId, ctx.dbUserId, 'clearance_raised', {
+    logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'clearance_raised', {
       level: exam.targetLevel,
       title: levelInfo(exam.targetLevel)?.title,
       score: aggregate,

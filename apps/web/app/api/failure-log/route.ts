@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { awardDailyLabCredit } from '@/lib/economy/lab-credit'
 import { db } from '@/lib/db'
 import { parseFailureBody, stringifyFailureBody } from '@/lib/ops/failure-followup'
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
 
   const parsed = parseFailureBody(entry.body)
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'log_created', { kind: 'failure' }).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'log_created', { kind: 'failure' }).catch(console.error)
 
   // +1 LC the first time this member files a log today (real calendar day, team
   // pool). Never blocks the saved log; only a duplicate-claim P2002 counts as

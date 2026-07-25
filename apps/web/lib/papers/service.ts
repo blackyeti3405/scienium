@@ -14,7 +14,7 @@ import {
   reserveUploadAsset,
 } from '@/lib/uploads/assets'
 import { processPaperJob } from '@/lib/literature/process-paper'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 
 /**
  * Paper-upload application service (REFACTOR2 §2.2, §3.2 E).
@@ -217,7 +217,7 @@ export async function uploadPaper(input: {
   // and never throws, so awaiting it is just latency — and the paper comes back
   // ready-to-read in the same request.
   await processPaperJob(paper.id)
-  await logActivity(teamId, dbUserId, 'paper_upload', { title }).catch(console.error)
+  await logActivityBestEffort(teamId, dbUserId, 'paper_upload', { title }).catch(console.error)
 
   // Re-read the fields ingestion just filled so the client shows the real
   // title/status without waiting for its first poll.

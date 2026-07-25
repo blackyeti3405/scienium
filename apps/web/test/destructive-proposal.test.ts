@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTeamContext }))
-vi.mock('@/lib/activity/log', () => ({ logActivity: vi.fn(() => Promise.resolve()) }))
+vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: vi.fn(() => Promise.resolve()) }))
 vi.mock('@/lib/db', () => ({
   db: {
     destructiveProposal: { create: mocks.proposalCreate, updateMany: mocks.proposalUpdateMany },

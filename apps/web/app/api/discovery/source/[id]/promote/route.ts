@@ -7,7 +7,7 @@ import { db } from '@/lib/db'
 import { checkPaperRelevance } from '@/lib/literature/relevance'
 import { buildCitations, parseYear } from '@/lib/literature/citation'
 import { lockAggregate } from '@/lib/db-lock'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 
 // ── POST /api/discovery/source/[id]/promote (#13 Citation Manager) ────────────
 // Promote a starred Discovery `source` node into a real team Paper. External
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   }
   const paperId = promoted.paperId
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'source_promoted', {
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'source_promoted', {
     title: es.sourceTitle,
     paperId,
   }).catch(console.error)
