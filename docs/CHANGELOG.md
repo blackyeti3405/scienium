@@ -5,6 +5,49 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.35.2] — 2026-07-25
+
+### Added — unit tests for the v0.34.0–v0.35.1 remediation wiring
+The audit remediation added logic in places the existing suite did not reach. The pure
+functions were tested as they were written; the **wiring** around them — seeding, route
+policy, and which write paths call what — largely was not, and that is where a silent
+regression would live. 54 tests across 6 files:
+
+- **`forms-seeding`** (9) — `ensureFormsSeeded` seeds the 2027 codes into a database holding
+  the 12 legacy ones (the exact case the old `count >=` fast path suppressed), is a no-op when
+  coverage is complete, and uses `skipDuplicates`. The GET route never serves a retired code
+  even while its row survives, serves the **authored** name rather than the stored one, emits
+  no applicability copy while unreviewed, and stays team-scoped.
+- **`showcase-write-policy`** (15) — `school_only` is refused with 400 and writes nothing; a
+  share token is minted on create, back-filled for a legacy row, left alone on an ordinary
+  save, and changed on rotate; `shareUrl` is the token URL for `link_only` and the slug for
+  `public`; every write syncs the revision; `submitted`/`unpublished` events are recorded
+  against the digest; and the response comes from the post-sync re-read, so a client is never
+  told "approved" about a revision that just reset to review.
+- **`showcase-viewer-resolution`** (8) — `moderatorTeamIds` comes from classes the caller
+  actually teaches, is empty for students (and the extra query does not run for them), covers
+  admins, and degrades safely for a Clerk identity with no row. Plus `makeShareToken` shape
+  and non-repetition.
+- **`showcase-asset-revision`** (5) — the link route and asset deletion both re-derive the
+  revision, and neither does so on a rejected URL, a missing showcase, or another team's asset.
+- **`showcase-moderation-decision`** (+6) — the queue GET returns the reviewed digest, every
+  asset with an openable link, and a preview URL; it is class-scoped and returns nothing for a
+  teacher with no classes.
+- **`discovery-tree-graph`** (+6) — `createTreeNodes` writes nothing when validation rejects a
+  batch, and `hydrateTree`'s depth walk terminates on a two-node cycle and a self-edge while
+  still reporting real depth for a healthy chain.
+- **`research-plan-doc-url`** (4) — the canonical URL is what reaches the database, query
+  junk and all, and nothing is stored when the fetcher rejects the URL.
+- **`papers/service`** (+2) — an upload with a DOI persists the DOI and a **null**
+  credibility tier.
+
+**Not covered, and why:** `usePaperQuiz` (P1-S4) and `FormsChecklist` are React units, and this
+suite is node-only with no jsdom or testing-library. Adding that infrastructure is a larger
+decision than this batch; the P1-S4 fix is currently pinned only by the reading of the diff.
+
+### Verification
+Gates 1–5 pass. Vitest: **98 files / 1,388 tests passed** (was 93 / 1,334).
+
 ## [0.35.1] — 2026-07-25
 
 ### Fixed — `link_only` sharing now uses a real 128-bit secret (P1-R7)

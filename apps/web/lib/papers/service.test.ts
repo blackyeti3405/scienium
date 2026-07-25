@@ -24,7 +24,7 @@ const mocks = vi.hoisted(() => ({
   inspectPdf: vi.fn(),
   sanitizePdfText: vi.fn((t: string) => t),
   checkPaperRelevance: vi.fn(),
-  extractDoi: vi.fn(() => null),
+  extractDoi: vi.fn((): string | null => null),
   checkTeamStorageQuota: vi.fn(),
   reserveUploadAsset: vi.fn(),
   markAssetsOrphanedByKey: vi.fn(() => Promise.resolve()),
@@ -186,6 +186,33 @@ describe('relevance gate', () => {
     const res = await uploadPaper({ ...INPUT, file: VALID_PDF })
     expect(res).toMatchObject({ ok: false, status: 422, code: 'IRRELEVANT' })
     expect(mocks.paperCreate).not.toHaveBeenCalled()
+  })
+})
+
+// REFACTOR2 P1-S11: `tierFromDoi` used to return `peer_reviewed` for ANY DOI,
+// so an uploaded preprint earned a green "reviewed by other scientists" badge.
+// Crossref registers DOIs for posted content, DataCite for datasets and
+// software; the identifier conveys no review status. The DOI is still extracted
+// and stored — only the credibility claim is gone.
+describe('DOI is stored, review status is not inferred (P1-S11)', () => {
+  it('never persists a credibility tier for an upload, even when a DOI is found', async () => {
+    mocks.extractDoi.mockReturnValue('10.1234/example.2024.001')
+
+    await uploadPaper({ ...INPUT, file: VALID_PDF })
+
+    const created = mocks.paperCreate.mock.calls[0]![0].data
+    expect(created.doi).toBe('10.1234/example.2024.001')
+    expect(created.credibilityTier).toBeNull()
+  })
+
+  it('persists a null tier when there is no DOI either', async () => {
+    mocks.extractDoi.mockReturnValue(null)
+
+    await uploadPaper({ ...INPUT, file: VALID_PDF })
+
+    const created = mocks.paperCreate.mock.calls[0]![0].data
+    expect(created.doi).toBeNull()
+    expect(created.credibilityTier).toBeNull()
   })
 })
 

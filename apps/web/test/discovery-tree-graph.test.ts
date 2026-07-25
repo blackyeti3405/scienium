@@ -16,14 +16,32 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   nodeFindMany: vi.fn(),
+  nodeCreateMany: vi.fn(() => Promise.resolve({ count: 0 })),
+  nodeFindFirst: vi.fn(() => Promise.resolve(null)),
+  nodeCreate: vi.fn(),
+  externalSourceCreate: vi.fn(),
+  transaction: vi.fn(),
+  requireTeamContext: vi.fn(),
+  logActivity: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('server-only', () => ({}))
+vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
+vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTeamContext }))
+vi.mock('@/lib/discovery/awardVisit', () => ({ awardDiscoveryVisit: vi.fn(async () => ({ kpAwarded: 0 })) }))
 vi.mock('@/lib/db', () => ({
-  db: { discoveryNode: { findMany: mocks.nodeFindMany } },
+  db: {
+    discoveryNode: {
+      findMany: mocks.nodeFindMany,
+      createMany: mocks.nodeCreateMany,
+      findFirst: mocks.nodeFindFirst,
+    },
+    externalSource: {},
+    $transaction: mocks.transaction,
+  },
 }))
 
-import { assertValidTreeGraph, TreeGraphError } from '@/lib/discovery/tree-service'
+import { assertValidTreeGraph, createTreeNodes, hydrateTree, TreeGraphError } from '@/lib/discovery/tree-service'
 
 const TEAM = 'team_attacker'
 const OURS = 'node_ours'
@@ -103,5 +121,75 @@ describe('assertValidTreeGraph', () => {
   it('rejects a chain deeper than one batch may add', async () => {
     const chain = Array.from({ length: 60 }, (_, i) => node(`n${i}`, i === 0 ? null : `n${i - 1}`))
     await expect(assertValidTreeGraph(TEAM, chain)).rejects.toThrow(/too deep/)
+  })
+})
+
+
+describe('createTreeNodes — validation runs before any write', () => {
+  it('writes nothing when the batch names a foreign parent', async () => {
+    ownedByUs([])
+
+    await expect(
+      createTreeNodes({ teamId: TEAM, userId: 'u1', nodes: [node('n1', VICTIM)] }),
+    ).rejects.toBeInstanceOf(TreeGraphError)
+    expect(mocks.nodeCreateMany).not.toHaveBeenCalled()
+  })
+
+  it('writes nothing when the batch contains a cycle', async () => {
+    ownedByUs([])
+
+    await expect(
+      createTreeNodes({ teamId: TEAM, userId: 'u1', nodes: [node('a', 'b'), node('b', 'a')] }),
+    ).rejects.toBeInstanceOf(TreeGraphError)
+    expect(mocks.nodeCreateMany).not.toHaveBeenCalled()
+  })
+
+  it('persists a valid batch', async () => {
+    ownedByUs([OURS])
+    mocks.nodeFindMany.mockImplementation(async ({ where }) => {
+      // ownership probe first, then the KP first-visit lookup
+      const asked: string[] = where.id?.in ?? []
+      return asked.filter((id) => id === OURS).map((id) => ({ id }))
+    })
+
+    await createTreeNodes({ teamId: TEAM, userId: 'u1', nodes: [node('n1', OURS)] })
+
+    expect(mocks.nodeCreateMany).toHaveBeenCalled()
+  })
+})
+
+describe('hydrateTree — depth walk survives corrupt rows', () => {
+  // Containment, not the fix: rows written before assertValidTreeGraph existed
+  // must not make the team's own GET walk parent pointers forever.
+  it('terminates on a two-node cycle instead of hanging', async () => {
+    mocks.nodeFindMany.mockResolvedValue([
+      { id: 'a', parentId: 'b', sourceType: 'wikipedia', wikipediaTitle: 'A', visitedAt: new Date(), starred: false, interestLevel: null, externalId: null, paperId: null, youtubeTitle: null, youtubeVideoId: null, externalSource: null, articleSource: null },
+      { id: 'b', parentId: 'a', sourceType: 'wikipedia', wikipediaTitle: 'B', visitedAt: new Date(), starred: false, interestLevel: null, externalId: null, paperId: null, youtubeTitle: null, youtubeVideoId: null, externalSource: null, articleSource: null },
+    ])
+
+    const nodes = await hydrateTree(TEAM)
+
+    expect(nodes).toHaveLength(2)
+    for (const n of nodes) expect(Number.isFinite(n.depth)).toBe(true)
+  })
+
+  it('terminates on a self-edge', async () => {
+    mocks.nodeFindMany.mockResolvedValue([
+      { id: 'a', parentId: 'a', sourceType: 'wikipedia', wikipediaTitle: 'A', visitedAt: new Date(), starred: false, interestLevel: null, externalId: null, paperId: null, youtubeTitle: null, youtubeVideoId: null, externalSource: null, articleSource: null },
+    ])
+
+    expect((await hydrateTree(TEAM))[0]!.depth).toBe(0)
+  })
+
+  it('still reports real depth for a healthy chain', async () => {
+    const row = (id: string, parentId: string | null) => ({
+      id, parentId, sourceType: 'wikipedia', wikipediaTitle: id, visitedAt: new Date(),
+      starred: false, interestLevel: null, externalId: null, paperId: null,
+      youtubeTitle: null, youtubeVideoId: null, externalSource: null, articleSource: null,
+    })
+    mocks.nodeFindMany.mockResolvedValue([row('a', null), row('b', 'a'), row('c', 'b')])
+
+    const byId = Object.fromEntries((await hydrateTree(TEAM)).map((n) => [n.id, n.depth]))
+    expect(byId).toEqual({ a: 0, b: 1, c: 2 })
   })
 })

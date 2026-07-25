@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   requireTeacher: vi.fn(),
   teacherOwnsTeam: vi.fn(() => Promise.resolve(true)),
   findUnique: vi.fn(),
+  findMany: vi.fn((): Promise<unknown[]> => Promise.resolve([])),
   updateMany: vi.fn(),
   eventCreate: vi.fn(() => Promise.resolve({})),
   notificationCreate: vi.fn(() => Promise.resolve({})),
@@ -31,12 +32,12 @@ vi.mock('@/lib/teacher/auth', () => ({
 }))
 vi.mock('@/lib/db', () => ({
   db: {
-    showcase: { findUnique: mocks.findUnique, findMany: vi.fn() },
+    showcase: { findUnique: mocks.findUnique, findMany: mocks.findMany },
     $transaction: (fn: (t: typeof tx) => unknown) => fn(tx),
   },
 }))
 
-import { POST } from '@/app/api/teacher/showcase-moderation/route'
+import { GET, POST } from '@/app/api/teacher/showcase-moderation/route'
 
 const REVIEWED = 'a'.repeat(64)
 
@@ -64,6 +65,91 @@ beforeEach(() => {
     title: 'Mould growth',
   })
   mocks.updateMany.mockResolvedValue({ count: 1 })
+  mocks.findMany.mockResolvedValue([])
+})
+
+// P0-R3: the queue used to select only text/team summary fields, so a reviewer
+// could be asked to approve a submission whose required board, quad chart, and
+// video they had no way to open.
+describe('moderation queue GET gives the reviewer the whole submission', () => {
+  function queueReq(): NextRequest {
+    return new NextRequest('http://app.example.com/api/teacher/showcase-moderation')
+  }
+
+  const PENDING = {
+    id: 'sc_1',
+    slug: 'mould-ab12cd',
+    shortTitle: 'Mould',
+    title: 'Mould growth',
+    abstract: 'We grew mould.',
+    lastEditedAt: new Date('2026-07-20'),
+    contentDigest: REVIEWED,
+    assets: [
+      { id: 'a_board', assetType: 'board', fileUrl: 'showcase/t1/board.pdf', metadataJson: null },
+      { id: 'a_quad', assetType: 'quad_chart', fileUrl: 'showcase/t1/quad.png', metadataJson: null },
+      { id: 'a_video', assetType: 'video', fileUrl: null, metadataJson: { url: 'https://youtu.be/x' } },
+    ],
+    team: { name: 'Lab', labType: 'volt_lab' },
+  }
+
+  it('returns the reviewed digest so the decision can compare-and-set on it', async () => {
+    mocks.findMany.mockResolvedValue([PENDING])
+
+    const { showcases } = await (await GET(queueReq())).json()
+
+    expect(showcases[0].contentDigest).toBe(REVIEWED)
+  })
+
+  it('returns every asset with an openable link', async () => {
+    mocks.findMany.mockResolvedValue([PENDING])
+
+    const { showcases } = await (await GET(queueReq())).json()
+    const byType = Object.fromEntries(
+      showcases[0].assets.map((a: { assetType: string; url: string | null; metadata: unknown }) => [a.assetType, a]),
+    )
+
+    expect(byType.board.url).toBe('/api/showcase/public/asset?id=a_board')
+    expect(byType.board.kind).toBe('pdf')
+    expect(byType.quad_chart.kind).toBe('image')
+    // A link asset has no bytes — the reviewer follows its stored URL instead.
+    expect(byType.video.url).toBeNull()
+    expect(byType.video.metadata).toEqual({ url: 'https://youtu.be/x' })
+  })
+
+  it('points the preview at the slug page, which now admits this teacher', async () => {
+    mocks.findMany.mockResolvedValue([PENDING])
+
+    const { showcases } = await (await GET(queueReq())).json()
+
+    expect(showcases[0].previewUrl).toBe('/showcase/mould-ab12cd')
+  })
+
+  it('is class-scoped and returns nothing for a teacher with no classes', async () => {
+    mocks.requireTeacher.mockResolvedValue({
+      ctx: { userId: 'clerk_t', dbUserId: 'db_t', classIds: [] },
+      error: null,
+    })
+
+    const { showcases } = await (await GET(queueReq())).json()
+
+    expect(showcases).toEqual([])
+    expect(mocks.findMany).not.toHaveBeenCalled()
+  })
+
+  it('queries only pending submissions inside the caller’s classes', async () => {
+    mocks.findMany.mockResolvedValue([])
+
+    await GET(queueReq())
+
+    expect(mocks.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          moderationStatus: 'pending_review',
+          team: { members: { some: { user: { classId: { in: ['class_1'] } } } } },
+        }),
+      }),
+    )
+  })
 })
 
 describe('showcase moderation decision', () => {
