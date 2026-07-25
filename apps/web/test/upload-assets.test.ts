@@ -14,6 +14,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   assetFindMany: vi.fn(),
+  paperFindMany: vi.fn((): Promise<{ id: string }[]> => Promise.resolve([])),
+  projectLogFindMany: vi.fn((): Promise<{ id: string }[]> => Promise.resolve([])),
+  showcaseAssetFindMany: vi.fn((): Promise<{ id: string }[]> => Promise.resolve([])),
   assetUpdateMany: vi.fn(),
   assetAggregate: vi.fn(),
   assetCreate: vi.fn(),
@@ -28,6 +31,9 @@ vi.mock('@/lib/db', () => ({
       aggregate: mocks.assetAggregate,
       create: mocks.assetCreate,
     },
+    paper: { findMany: mocks.paperFindMany },
+    projectLog: { findMany: mocks.projectLogFindMany },
+    showcaseAsset: { findMany: mocks.showcaseAssetFindMany },
   },
 }))
 vi.mock('@/lib/storage', () => ({ deleteObject: mocks.deleteObject }))
@@ -38,6 +44,7 @@ import {
   orphanObjectKey,
   resolveAttachmentKeys,
   reclaimAbandonedAssets,
+  reconcileOrphanedAssets,
 } from '@/lib/uploads/assets'
 
 beforeEach(() => {
@@ -175,6 +182,58 @@ describe('reclaimAbandonedAssets claim-then-delete', () => {
     expect(mocks.assetUpdateMany.mock.calls[0]![0].data).toMatchObject({
       deleteAttempts: { increment: 1 },
     })
+  })
+})
+
+// REFACTOR2 P1-S8 (reconciliation half): deletion now retires the ledger row in
+// the same transaction, so new orphans of this shape cannot form. These are the
+// ones that formed BEFORE that fix — `attached` with a dead owner is invisible
+// to the reclaim sweep and stays charged against the team's quota forever.
+describe('reconcileOrphanedAssets', () => {
+  const ROWS = [
+    { id: 'a1', attachedToType: 'paper', attachedToId: 'paper_live' },
+    { id: 'a2', attachedToType: 'paper', attachedToId: 'paper_gone' },
+    { id: 'a3', attachedToType: 'project_log', attachedToId: 'log_gone' },
+  ]
+
+  it('orphans only the rows whose owner is gone', async () => {
+    mocks.assetFindMany.mockResolvedValue(ROWS)
+    mocks.paperFindMany.mockResolvedValue([{ id: 'paper_live' }])
+    mocks.projectLogFindMany.mockResolvedValue([])
+    mocks.assetUpdateMany.mockResolvedValue({ count: 2 })
+
+    expect(await reconcileOrphanedAssets()).toBe(2)
+    expect(mocks.assetUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['a2', 'a3'] }, status: 'attached' },
+      data: { status: 'orphaned' },
+    })
+  })
+
+  it('writes nothing when every owner is alive', async () => {
+    mocks.assetFindMany.mockResolvedValue([ROWS[0]])
+    mocks.paperFindMany.mockResolvedValue([{ id: 'paper_live' }])
+
+    expect(await reconcileOrphanedAssets()).toBe(0)
+    expect(mocks.assetUpdateMany).not.toHaveBeenCalled()
+  })
+
+  // Guessing here would mean deleting assets whose owner we simply cannot see.
+  it('leaves an UNRECOGNISED attach type alone rather than assuming it is dead', async () => {
+    mocks.assetFindMany.mockResolvedValue([
+      { id: 'a9', attachedToType: 'something_new', attachedToId: 'x' },
+    ])
+
+    expect(await reconcileOrphanedAssets()).toBe(0)
+    expect(mocks.assetUpdateMany).not.toHaveBeenCalled()
+  })
+
+  it('guards the write on `attached` so a concurrent re-attach is not undone', async () => {
+    mocks.assetFindMany.mockResolvedValue([ROWS[1]])
+    mocks.paperFindMany.mockResolvedValue([])
+    mocks.assetUpdateMany.mockResolvedValue({ count: 0 })
+
+    expect(await reconcileOrphanedAssets()).toBe(0)
+    expect(mocks.assetUpdateMany.mock.calls[0]![0].where).toMatchObject({ status: 'attached' })
   })
 })
 

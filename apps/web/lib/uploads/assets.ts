@@ -290,6 +290,69 @@ export async function orphanObjectKey(
  * to its prior status so a later sweep retries rather than leaking the blob.
  * Returns how many objects were actually deleted.
  */
+/**
+ * Repair `attached` rows whose owning domain row no longer exists (REFACTOR2
+ * P1-S8, reconciliation half).
+ *
+ * Deletion now retires the ledger row in the SAME transaction as the domain
+ * delete, so new orphans of this shape cannot form. This exists for the ones
+ * that formed BEFORE that fix — an `attached` asset with a dead owner is
+ * invisible to the reclaim sweep (which only looks at `orphaned`/`temporary`)
+ * and stays charged against the team's quota forever.
+ *
+ * Owner existence is checked per attach type; an UNKNOWN type is left alone
+ * rather than guessed at, so adding a new attach type cannot silently start
+ * deleting live assets.
+ */
+export async function reconcileOrphanedAssets(limit = 200): Promise<number> {
+  const attached = await db.uploadedAsset.findMany({
+    where: { status: 'attached', attachedToType: { not: null }, attachedToId: { not: null } },
+    orderBy: { createdAt: 'asc' },
+    take: limit,
+    select: { id: true, attachedToType: true, attachedToId: true },
+  })
+  if (attached.length === 0) return 0
+
+  const byType = new Map<string, string[]>()
+  for (const a of attached) {
+    const list = byType.get(a.attachedToType!) ?? []
+    list.push(a.attachedToId!)
+    byType.set(a.attachedToType!, list)
+  }
+
+  const liveIds = new Set<string>()
+  for (const [type, ids] of byType) {
+    let rows: { id: string }[]
+    switch (type) {
+      case 'paper':
+        rows = await db.paper.findMany({ where: { id: { in: ids } }, select: { id: true } })
+        break
+      case 'project_log':
+        rows = await db.projectLog.findMany({ where: { id: { in: ids } }, select: { id: true } })
+        break
+      case 'showcase_asset':
+        rows = await db.showcaseAsset.findMany({ where: { id: { in: ids } }, select: { id: true } })
+        break
+      default:
+        // Unrecognised owner type — treat every one of them as live. Guessing
+        // here would mean deleting assets whose owner we simply cannot see.
+        for (const id of ids) liveIds.add(id)
+        continue
+    }
+    for (const r of rows) liveIds.add(r.id)
+  }
+
+  const dead = attached.filter((a) => !liveIds.has(a.attachedToId!)).map((a) => a.id)
+  if (dead.length === 0) return 0
+
+  // Guarded on `attached` so a concurrent re-attach cannot be undone.
+  const { count } = await db.uploadedAsset.updateMany({
+    where: { id: { in: dead }, status: 'attached' },
+    data: { status: 'orphaned' },
+  })
+  return count
+}
+
 export async function reclaimAbandonedAssets(opts: {
   olderThanMs: number
   limit: number

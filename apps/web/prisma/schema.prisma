@@ -1166,10 +1166,16 @@ model UploadedAsset {
   /// instead of retrying it silently forever.
   deleteAttempts Int                 @default(0) @map("delete_attempts")
 
-  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// RESTRICT, not Cascade (REFACTOR2 P1-R12). Cascading deleted the ledger row
+  /// the moment a team was removed — destroying the only record of an R2 object
+  /// BEFORE anything could delete it, leaving a permanent, untracked orphan.
+  /// Restrict makes that a loud failure instead: a future team-deletion command
+  /// must retire the team's assets first, which is the correct order anyway.
+  team Team @relation(fields: [teamId], references: [id], onDelete: Restrict)
   user User @relation(fields: [userId], references: [id])
 
   @@index([teamId, status, createdAt])
+  @@index([status, attachedToType, attachedToId])
   @@index([attachedToType, attachedToId])
   @@map("uploaded_assets")
 }

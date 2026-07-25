@@ -182,3 +182,6 @@ art/.venv/
 art_ref/stardew-valley-*.png
 art_ref/images.jpeg
 .claude/worktrees/
+
+# Local DB dumps — never commit (100MB+)
+backups/

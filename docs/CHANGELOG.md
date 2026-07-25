@@ -5,6 +5,39 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.39.1] — 2026-07-25
+
+Closes the two items v0.39.0 left open.
+
+### Fixed — the asset ledger survives team deletion (P1-R12 remainder)
+`uploaded_assets.team_id` cascaded, so removing a team destroyed the only record of its R2
+objects **before** anything could delete them — a permanent, untracked orphan with no way to
+even discover it. Nothing deletes a `Team` today, so this was latent; `ON DELETE RESTRICT`
+converts it into a loud failure the moment a team-deletion command is written, forcing the
+correct order (retire the assets, then remove the team).
+
+### Added — reconciliation for `attached` rows with a dead owner (P1-S8 remainder)
+Deletion now retires the ledger row in the same transaction, so new orphans of this shape
+cannot form — but the ones that formed *before* that fix are invisible to the reclaim sweep
+(which only looks at `orphaned`/`temporary`) and stay charged against the team's quota forever.
+`reconcileOrphanedAssets()` flips them to `orphaned`, and the papers cron runs it before the
+sweep so both happen in one pass. An **unrecognised** attach type is left alone rather than
+guessed at, so adding a new type can never silently start orphaning live assets. The write is
+guarded on `status: 'attached'` so a concurrent re-attach is not undone.
+
+### Local dev database — backup and cleanup
+A full backup was taken before touching anything: `backups/scienium_dev-<stamp>.dump` (custom
+format, 75 tables), a plain-SQL twin, and `backups/manifest-<stamp>.json` recording exact row
+counts per table. `backups/` is gitignored — these are ~143 MB combined.
+
+Running the new reconciler against real data repaired **18 of 19 `attached` rows**, every one
+of which had a dead owner: concrete evidence P1-S8 was not theoretical. The ledger now reads 1
+`attached` / 122 `orphaned`.
+
+### Verification
+Gates 1–5 pass. Vitest: **103 files / 1,473 tests passed**. Migration applied to the local dev
+database; devlab verified untouched (25 papers, 11 nodes, 25 quiz sessions).
+
 ## [0.39.0] — 2026-07-25
 
 Closes the storage-lifecycle pair: the sweep could lose an object permanently, and domain

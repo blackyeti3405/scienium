@@ -3,7 +3,7 @@ import { assertCron } from '@/lib/cron/auth'
 import { db } from '@/lib/db'
 import { processPaperJob } from '@/lib/literature/process-paper'
 import { logEvent } from '@/lib/observability/log'
-import { reclaimAbandonedAssets } from '@/lib/uploads/assets'
+import { reclaimAbandonedAssets, reconcileOrphanedAssets } from '@/lib/uploads/assets'
 
 /** Reclaim uploads that were never attached to a domain row within this window. */
 const STALE_ASSET_MS = 24 * 60 * 60 * 1000
@@ -67,6 +67,9 @@ export async function GET(req: NextRequest) {
   // Reclaim abandoned uploads: orphaned attachments (a deleted/edited log) plus
   // temporary assets never attached within the stale window. Physical delete of the
   // object happens here — the only site that removes stored objects. Bounded.
+  // Repair pre-fix `attached` rows with a dead owner FIRST, so the sweep below
+  // can reclaim them in the same run rather than a day later (P1-S8).
+  const reconciled = await reconcileOrphanedAssets()
   const cleanedAssets = await reclaimAbandonedAssets({ olderThanMs: STALE_ASSET_MS, limit: 50 })
 
   logEvent({
@@ -74,8 +77,13 @@ export async function GET(req: NextRequest) {
     route: '/api/cron/papers',
     durationMs: Date.now() - now.getTime(),
     outcome: 'ok',
-    detail: `processed=${jobs.length} terminalized=${stuck.length} cleanedAssets=${cleanedAssets}`,
+    detail: `processed=${jobs.length} terminalized=${stuck.length} reconciled=${reconciled} cleanedAssets=${cleanedAssets}`,
   })
 
-  return NextResponse.json({ processed: jobs.length, terminalized: stuck.length, cleanedAssets })
+  return NextResponse.json({
+    processed: jobs.length,
+    terminalized: stuck.length,
+    reconciled,
+    cleanedAssets,
+  })
 }
