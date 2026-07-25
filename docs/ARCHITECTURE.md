@@ -1019,6 +1019,16 @@ rubric self-assessment, teacher rubric scoring, and Firecrawl deadline
 synchronization — the latter restricted to fairs the team is matched with (ISEF
 or the team's own state) and refusing to overwrite a `confirmed` event.
 
+`ensureFairsSeeded()` reconciles the database against the authored edition, gated
+on that edition's **digest** rather than its row count (P1-R16 — a count gate made
+a same-size correction unreachable). `FAIRS` is a compile-time constant, so a
+process that has already reconciled returns with zero queries. Keys the edition
+drops are **retired** (`Fair.retiredAt`) and skipped by every matching path rather
+than deleted, because events, team interests, and notifications hold FKs to them.
+Event dates follow provenance: an authored refresh lands only while the row is a
+pure default (`estimated`, and its fair never crawled), so a Firecrawl correction
+is never clobbered by the static dataset.
+
 ### 8.7 Showcase
 
 Showcases are team-owned portfolios with text, repository/video links, uploaded

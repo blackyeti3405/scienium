@@ -529,7 +529,7 @@ schema/content checks after fixes, stage every merge output, and install atomica
 all validation passes. Generate one schema representation from the canonical Zod/type source
 instead of maintaining mirrors.
 
-#### P1-R16 — Count-based catalog seeders suppress same-size corrections
+#### P1-R16 — Count-based catalog seeders suppress same-size corrections — **CLOSED (v0.34.0 forms, v0.44.0 fairs)**
 
 Both `seedFairsBatched` and `ensureFormsSeeded` return early when the database row count is at
 least the authored-array length. A renamed/replaced form, changed fair field, removed stale key,
@@ -1178,7 +1178,7 @@ fails if it returns; anything narrower is recorded as **PARTIAL** with what is s
 | **P1-R4** Limiter failure removes the paid ceiling | **CLOSED** | Pipeline shape + per-element errors + numeric `INCR` validated; `RateLimitStoreError` thrown instead of a fabricated `count = 1`; paid tiers 503, read/mutate fail open and log. | Circuit breaker; one deployment-guaranteed client-IP header. |
 | **P1-S11** DOI presented as peer review | **CLOSED** | `tierFromDoi` deleted; uploads carry `credibilityTier: null` and display the DOI as an identifier. | Real publication-type derivation from trusted metadata. |
 | **P1-S12** Google Docs substring match | **CLOSED** | URL parsed; exact `https:` + `docs.google.com` host and `/document/d/<id>` path; only the canonical URL is persisted. Hostile prefix/query/subdomain/scheme cases pinned. | Redirect and body caps — belongs to the P2 outbound gateway. |
-| **P1-R16** Count-based seeders suppress corrections | **PARTIAL** | Forms seeding keys on code coverage, not row count; the route serves the authored edition and filters retired codes. | `seedFairsBatched`; edition digest/retirement for the fair catalog. |
+| **P1-R16** Count-based seeders suppress corrections | **PARTIAL** — fairs half closed in v0.44.0 | Forms seeding keys on code coverage, not row count; the route serves the authored edition and filters retired codes. | `seedFairsBatched`; edition digest/retirement for the fair catalog. **Done in v0.44.0.** |
 
 | **P2-S5** `form_code` has no unique index | **CLOSED** | Migration `20260725120000_forms_catalog_unique_code` dedupes (keep lowest id, drop/repoint conflicting `team_form_status` rows) **before** creating the index — P1-S14's lesson applied prospectively. | Same preflight audit for A13's existing `ShowcaseView` migration (P1-S14 itself). |
 
@@ -1293,6 +1293,18 @@ group, with a negative control pinning that false pass shut. The real-Postgres r
 same bug in the verification script itself; reading the SQL would not have.
 
 Gates 1–5 pass; Vitest 108 files / 1,535 tests. No new migration — four existing ones amended.
+
+#### v0.44.0 — 2026-07-25 — the fair catalog reconciles
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P1-R16** Count-based catalog seeders suppress same-size corrections | **CLOSED** (forms half in v0.34.0) | `seedFairsBatched` opened with `count >= FAIRS.length → return`, so everything below it — the drift repair the comments promised — was unreachable whenever the count already matched. The gate is now the authored edition's **digest**: `FAIRS` is a compile-time constant, so a process that has reconciled to `EDITION_DIGEST` returns with ZERO queries (cheaper than the count it replaces) and a new deploy is a new digest. The digest is logged with the reconcile counts, so the live edition is provable. Keys the edition dropped are **retired** (`Fair.retiredAt`) and excluded from every matching path, not deleted — events, team interests, and notifications hold FKs, and a retired fair is still the history of a team that entered it; a key that reappears is un-retired. Events previously could never be updated at all; an existing `(fairId, year)` row is now refreshed only while it is a pure authored default (`estimated` AND its fair never crawled), and the refresh is an `updateMany` predicated on `status: 'estimated'` so a crawl landing mid-reconcile wins. That is the audit's "separate sourced defaults from local corrections", using the provenance v0.40.0 added. | Reconciling inside a GET is still a mutating read (P2-S6) — the right home is a deploy-time command; the digest memo makes it cheap, not correct-by-design. Corrections are distinguished at **fair** granularity, not per event row, so a fair crawled for one year freezes the dataset out of its other years. Retirement is invisible to teachers: a team already tracking a retired fair is not told. |
+
+The `/api/team/momentum` comment claiming the seeder "is currently only 70/266 seeded and hangs"
+— and that switching to `matchFairs()` was therefore blocked — was stale before this batch and
+wrong after it. Corrected to state the real remaining reason for the local replica.
+
+Gates 1–5 pass; Vitest 109 files / 1,546 tests. Migration applied; devlab verified intact.
 
 ---
 

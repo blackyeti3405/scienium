@@ -1568,6 +1568,10 @@ model Fair {
   longitude    Float?
   // Stable natural key from the seed dataset, so re-seeding upserts in place.
   seedKey      String?   @unique @map("seed_key")
+  // Set when a seeded key disappears from the authored edition (P1-R16). The row
+  // stays — events, team interests, and notifications reference it, and it is
+  // the true history of a team that entered — but matching skips it.
+  retiredAt    DateTime? @map("retired_at")
   // ── Paid-sync control (REFACTOR2 P1-S10) ────────────────────────────────
   // `Fair`/`FairEvent` are GLOBAL rows shared by every team, but any student
   // matched to the fair could trigger a paid Firecrawl crawl and race the write.

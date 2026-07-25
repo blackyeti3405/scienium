@@ -5,6 +5,53 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.44.0] — 2026-07-25
+
+### Fixed — the fair catalog reconciles against the edition, not the row count (P1-R16, fairs half)
+`seedFairsBatched` opened with `count >= FAIRS.length → return`. Everything below it — the
+drift repair the comments promised, key coverage, event top-up — was unreachable whenever the
+row count already matched. A renamed fair, moved coordinates, a corrected website, a key
+swapped for another, or an entire same-size annual regen was a silent no-op. (The forms half of
+this finding closed in v0.34.0.)
+
+- **The gate is the edition digest.** `FAIRS` is a compile-time constant, so once a process has
+  reconciled the database to `EDITION_DIGEST` there is genuinely nothing left to check and
+  later calls cost **zero** queries — cheaper than the `count` they replace. A new deploy is a
+  new process with a new digest. The digest is logged with the reconcile counts, so which
+  edition is live is provable rather than inferred.
+- **Retirement.** A seeded key the edition dropped is marked `Fair.retiredAt` and excluded from
+  every matching path (`matchFairs`, `loadFairIndex`). Retire, not delete: `FairEvent`,
+  team fair interests, and notifications hold FKs, and a retired fair is still the true history
+  of a team that entered it. A key that reappears in a later edition is un-retired.
+- **Events separate sourced defaults from local corrections.** Previously events were created
+  but *never* updated, so an authored date fix could not land at all. An existing `(fairId,
+  year)` row is now refreshed only while it is still a pure authored default — `estimated`
+  **and** its fair never crawled (`Fair.lastSyncedAt === null`, the provenance v0.40.0 added).
+  Once `sync-deadlines` has corrected a fair, the static dataset never touches its dates again.
+  The refresh is itself an `updateMany` predicated on `status: 'estimated'`, so a crawl landing
+  between the read and the write wins rather than loses.
+
+### Changed
+`/api/team/momentum`'s comment claimed the seeder "is currently only 70/266 seeded and hangs"
+and that switching to `matchFairs()` was therefore blocked. That stopped being true when
+seeding was batched, and is further wrong now. The comment states the real remaining reason to
+replace the local replica (it reads the static dataset, so a crawled correction is invisible
+there while the Fair Hub shows it) and records that the switch is now available, not blocked.
+
+### Verification
+Gates 1–5 pass. Vitest: **109 files / 1,546 tests passed** (was 108 / 1,535). 11 new tests, each
+describing a database that passes the old count check and is nonetheless wrong — renamed fair,
+swapped key, returned key — plus the opposite obligation: a crawled fair's and a `confirmed`
+row's dates are asserted untouched. Migration applied to the local dev database; devlab verified
+intact (25 papers, 11 discovery nodes, 25 quiz sessions, 25 proficiencies, 12 vocab cards).
+
+### Still owed
+Reconciling on a request is still a GET that mutates (P2-S6). The right home is a deploy-time
+command; the digest memo makes it cheap, not correct-by-design. Operator-corrected event dates
+are distinguished at *fair* granularity (`lastSyncedAt`), not per event row — a fair crawled for
+one year freezes the dataset out of its other years too. Retirement is also not surfaced anywhere
+a teacher can see: a team already tracking a retired fair is not told.
+
 ## [0.43.1] — 2026-07-25
 
 ### Fixed — unique-index migrations dedupe before they index (P1-S14)

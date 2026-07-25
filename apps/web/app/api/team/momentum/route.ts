@@ -106,12 +106,12 @@ export async function GET(req: NextRequest) {
  * regional, never `otherRegionals`) — sourced purely from the FAIRS dataset
  * literal (content/fairs/dataset.ts) already resident in memory, deliberately
  * bypassing matchFairs()/ensureFairsSeeded() (lib/fairs/match.ts).
- * ensureFairsSeeded re-runs a ~266-row sequential upsert loop on every call
- * while the seeded count is still short of FAIRS.length, which is exactly
- * what currently hangs /api/fairs/match, and matchFairs() calls it
- * unconditionally (not just from the route) — so calling matchFairs at all
- * here would inherit the same hang. Momentum is ambient lab chrome that must
- * return fast on every load, so it may never touch that seeding path.
+ * (Historical reason, now obsolete: ensureFairsSeeded used to re-run a ~266-row
+ * sequential upsert loop and hang /api/fairs/match. It has been batched and
+ * single-flighted since, and as of P1-R16 a process that has already reconciled
+ * the current edition returns from it with zero queries.) Momentum is ambient
+ * lab chrome that must return fast on every load; the local replica is kept for
+ * now because it is a pure in-memory read, not because the seeder is unsafe.
  *
  * Nearest-regional selection mirrors matchFairs() line-for-line: prefer the
  * team's stored geocoded coords (`Team.locationLat/Lng`, already resident on
@@ -124,13 +124,13 @@ export async function GET(req: NextRequest) {
  * first (nearest) is kept as a candidate — `otherRegionals` are intentionally
  * discarded, matching the hub's candidate set.
  *
- * STALENESS NOTE: this reads the static FAIRS dataset literal, not the
- * `FairEvent` DB rows that /api/fairs/[id]/sync-deadlines corrects in place
- * (Firecrawl-sourced date fixes). matchFairs() reads those corrected rows;
- * this function cannot without touching ensureFairsSeeded's seeding path,
- * which is currently only 70/266 seeded and hangs. Once the fairs-seeding fix
- * lands (separate task) this route should switch to calling matchFairs()
- * directly instead of this local replica.
+ * STALENESS NOTE — still true, and now the only reason to replace this: it
+ * reads the static FAIRS dataset literal, not the `FairEvent` DB rows that
+ * /api/fairs/[id]/sync-deadlines corrects in place (Firecrawl-sourced date
+ * fixes). So a crawled correction is invisible here while the Fair Hub shows
+ * it. The seeding path that used to make switching impossible is fixed, so
+ * this route CAN now call matchFairs() directly — a deliberate follow-up, not
+ * a blocked one.
  */
 function nextFairFromDataset(
   state: string | null,
