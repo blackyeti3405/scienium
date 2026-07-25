@@ -1,6 +1,6 @@
 import 'server-only'
 import { z } from 'zod'
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import { VOCAB_MAX_TERMS_PER_PAPER, type ExtractedTerm, type TermSource } from './vocab'
 
@@ -184,8 +184,7 @@ export async function curateTerms(input: {
     }))
   }
 
-  const response = await anthropic().messages.create({
-    model: 'claude-sonnet-5',
+  const response = await aiCreate('vocab_curate', {
     max_tokens: 8000,
     thinking: { type: 'adaptive' },
     output_config: { effort: 'medium', format: { type: 'json_schema', schema: CURATION_JSON_SCHEMA } },

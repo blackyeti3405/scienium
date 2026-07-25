@@ -1,4 +1,4 @@
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate } from '@/lib/ai/spend'
 import { extractJson } from '@/lib/literature/quiz'
 
 export interface RelevanceResult {
@@ -83,8 +83,7 @@ export async function checkPaperRelevance(
     }
   }
 
-  const response = await anthropic().messages.create({
-    model: 'claude-haiku-4-5-20251001',
+  const response = await aiCreate('paper_relevance', {
     max_tokens: 200,
     system: SYSTEM_PROMPT,
     messages: [
@@ -131,8 +130,7 @@ export async function batchCheckRelevance(
     .map((p, i) => `${i + 1}. ID: ${p.id}\n   Title: ${p.title}\n   Abstract: ${p.abstract ?? '(not yet extracted)'}`)
     .join('\n\n')
 
-  const response = await anthropic().messages.create({
-    model: 'claude-haiku-4-5-20251001',
+  const response = await aiCreate('paper_relevance', {
     max_tokens: 800,
     system: SYSTEM_PROMPT,
     messages: [

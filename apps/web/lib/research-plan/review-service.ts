@@ -3,7 +3,8 @@ import { createHash } from 'crypto'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { anthropic } from '@/lib/anthropic'
+import { aiStream, assertAiSpendAllowed, AiDisabledError } from '@/lib/ai/spend'
+import { currentAiScope } from '@/lib/ai/scope'
 import { loadResearchRubric } from '@/lib/research-plan/rubric'
 import { findProjectType, findSubtype } from '@/lib/research-plan/types'
 import { requirePlanText } from '@/lib/research-plan/require-plan-text'
@@ -113,6 +114,19 @@ export async function reviewPlan(principal: ReviewPrincipal): Promise<ReviewPlan
     return { ok: false, error: 'A review of this plan is already running — give it a moment.', status: 409 }
   }
 
+  // Checked BEFORE the stream opens — once the body is streaming there is no
+  // status code left to return (P1-R3).
+  try {
+    await assertAiSpendAllowed()
+  } catch (err) {
+    await claim.release()
+    if (err instanceof AiDisabledError) return { ok: false, error: err.message, status: 503 }
+    throw err
+  }
+  // Captured while the request's async scope is still current — the stream body
+  // runs when the consumer reads it, which may be outside that context.
+  const spendScope = currentAiScope()
+
   const planText = planTextForHash
   const teamId = principal.teamId
   // The exact source this review is graded against. The commit below is a
@@ -183,8 +197,7 @@ export async function reviewPlan(principal: ReviewPrincipal): Promise<ReviewPlan
     }
 
     try {
-      const ms = anthropic().messages.stream({
-        model: 'claude-sonnet-5',
+      const ms = aiStream('research_plan_review', {
         // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
         // and thinking shares this `max_tokens` budget. Disabled to preserve the
         // cost, latency, and output length this route was tuned for.
@@ -205,7 +218,7 @@ export async function reviewPlan(principal: ReviewPrincipal): Promise<ReviewPlan
           },
         ],
         messages: [{ role: 'user', content: 'Review this research plan against the rubric.' }],
-      })
+      }, spendScope)
 
       let buf = ''
       for await (const event of ms) {

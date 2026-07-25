@@ -2,6 +2,83 @@
 
 Tracked items intentionally deferred during development. Remove an entry once done.
 
+## AI cost review — YOUR call, from real pilot data (REFACTOR2 P1-R3, budget half)
+
+Accounting, the kill switch, and the model registry shipped in v0.45.0. What is
+**deliberately not built** is everything that needs a number only a real
+classroom can give. Do these in order.
+
+### 1. Read the data (nobody has looked yet)
+Nothing in the app has ever recorded what a call cost, so every figure below is
+an estimate from `max_tokens` ceilings, not an observation. After a week of real
+use:
+
+```sql
+-- Per team per day, most expensive first
+SELECT team_id, day, SUM(cost_micros)/1000000.0 AS dollars, COUNT(*) AS calls
+FROM ai_usage GROUP BY team_id, day ORDER BY dollars DESC LIMIT 50;
+
+-- Which feature actually costs the money
+SELECT operation, model, COUNT(*), SUM(cost_micros)/1000000.0 AS dollars
+FROM ai_usage GROUP BY operation, model ORDER BY dollars DESC;
+
+-- Per class (attribution joins through teams)
+SELECT c.name, SUM(u.cost_micros)/1000000.0 AS dollars
+FROM ai_usage u JOIN teams t ON t.id = u.team_id JOIN classes c ON c.id = t.class_id
+WHERE u.day >= CURRENT_DATE - 7 GROUP BY c.name ORDER BY dollars DESC;
+```
+
+### 2. Move cheap work to a cheap model
+`lib/ai/models.ts` is one table; changing a line changes one call's model, and
+the `ai_usage` rows show what it saved. **The registry currently encodes exactly
+the models that were hardcoded before it — no call was moved.** The split to
+evaluate, generation vs. anything that mints a reward:
+
+- **Candidates to move down:** `vocab_curate` (8,000 output tokens, the largest
+  single call), `quiz_generate` (highest volume — 25 papers x every student),
+  `quiz_retry_generate`, `expertise_generate`, `failure_followup`.
+- **Leave alone until measured:** `quiz_grade`, `explain_grade`,
+  `expertise_grade` — these mint proficiency and KP, and P1-S3 was *literally*
+  about bad grading output minting false proficiency. Do not cheapen the payout
+  path first. Also `research_plan_review` (teacher-facing), `idea_check`
+  (tool-use quality).
+- Change ONE at a time and compare `ai_usage` before/after alongside a spot check
+  of output quality. There is no eval harness for this yet.
+
+### 3. Set the caps, then turn enforcement on
+Nothing is refused today. Starting points, sized from `max_tokens` ceilings on
+the **current** Sonnet-heavy mix — expect them to drop a lot after step 2:
+- Per team per day: **~$3**. Generous on purpose. A cap that fires mid-lesson
+  stops a student's work, which is worse than the bill it saved.
+- Global per day: **~$50**. This is a *what am I willing to lose in a bad day*
+  number, not a usage forecast.
+- Enforcement should reserve at the maximum possible cost (counted input +
+  `max_tokens` x output rate) and settle to actuals, or the ceiling can be
+  overshot by whatever the estimate missed.
+
+### 4. Teacher-facing cost view
+Attribution is already there (`ai_usage.team_id` joins to class and school), so
+this is a query plus a page. Worth doing *before* enforcement: a teacher who can
+see their class's spend can self-police, which is the pressure valve that keeps
+per-team caps from ever firing.
+
+### 5. Sonnet 5 introductory pricing ends 2026-08-31
+$2.00/$10.00 per MTok becomes $3.00/$15.00 — a **50% rise**, not a doubling.
+When it changes, edit `AI_RATES` **and** bump `AI_RATE_VERSION` in
+`lib/ai/models.ts` in the same commit. Rows already written keep their old
+version string, so historical totals stay true. This is deliberately NOT
+date-automatic: a server-clock-driven price switch is a landmine.
+
+### Also owed from this batch
+- `AiDisabledError` maps to a clean **503** only on the two streaming services
+  (review, idea-check), which had to preflight anyway. The other thirteen call
+  sites surface it through their existing generic error path — the *money* is
+  guarded everywhere, the status code is not.
+- A dropped `ai_usage` write is logged (`ai_usage.record_failed`) and lost. There
+  is no outbox; accounting must never fail a request that already paid.
+- `runAiOperation` (the replay ledger) still does not wrap
+  `phase_advance_classify`, so that call has a claim but no replay.
+
 ## PatentsView API key (Discovery prior-art lane)
 - **Now:** the "Prior art (patents)" lane in Discovery's Articles tab runs keyless —
   it degrades to a single Google Patents search link-out card instead of live

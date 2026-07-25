@@ -18,12 +18,14 @@ import { db } from '@/lib/db'
  * the insert does the work; everyone else reads what the winner stored.
  */
 
-/** Paid workflows that replay. Add a member here, not a free string at a call site. */
-export type AiOperationName =
-  | 'quiz_retry_grade'
-  | 'explain_grade'
-  | 'phase_advance_classify'
-  | 'study_plan_tracks'
+/**
+ * Operation names come from the model registry (`lib/ai/models.ts`) — one union
+ * for the whole app, so "which model runs this" and "does this replay" can never
+ * drift onto two different spellings of the same call. Not every operation
+ * replays; the type does not need to encode which do.
+ */
+export type { AiOperationName } from '@/lib/ai/models'
+import type { AiOperationName } from '@/lib/ai/models'
 
 /** A `running` row older than this is assumed dead and may be retried. */
 const RUNNING_TTL_MS = 3 * 60_000

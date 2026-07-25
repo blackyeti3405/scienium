@@ -1306,6 +1306,20 @@ wrong after it. Corrected to state the real remaining reason for the local repli
 
 Gates 1–5 pass; Vitest 109 files / 1,546 tests. Migration applied; devlab verified intact.
 
+#### v0.45.0 — 2026-07-25 — AI accounting, kill switch, model registry
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P1-R3** budget half | **PARTIAL** — measurement and the stop lever done, enforcement deliberately not | The audit asked for token/cost fields, a per-team ledger, and a global/team kill switch. None existed: nineteen paid entry points behind one 12/min tier, four unrelated per-feature daily caps, **no aggregate at all**, and the highest-volume paths (quiz generation, explain-back, chat) uncapped. `lib/ai/models.ts` is now the single registry of which model runs which call — the model had been a hardcoded literal in sixteen files, making the biggest cost lever a sixteen-file edit; a test fails if a literal reappears. It is a pure refactor: **no call changed model**. `lib/ai/spend.ts` is the one door every paid call goes through, taking the operation as its first argument and supplying the model itself. `AI_KILL_SWITCH` (global, no deploy) + `Team.aiDisabledAt` (per lab) are checked BEFORE the call and **fail closed**. `AiUsage` records team, user, operation, model, the three disjoint input buckets, output tokens, cost, rate version and outcome per call — joining to class and school through `Team`, so attribution is a `GROUP BY`. Cached tokens price separately (read 0.1x, write 1.25x): ten of sixteen sites lead with a cached block, so charging reads at full input rate would overstate exactly the optimised calls. Attribution rides an `AsyncLocalStorage` scope entered by `requireTeamContext`, avoiding a team id threaded through six libraries that have no other reason to know one. | **Enforcement** — nothing is refused for being over budget, and a test pins that shut. Caps set before a week of real classroom data are a guess, and one that fires mid-lesson costs more than it saves. Also owed: moving any call to a cheaper model (now a one-line change, but a separate measured decision); the teacher-facing cost view; a clean 503 on the thirteen non-streaming sites (the money is guarded everywhere, the status code is not); an outbox for dropped `ai_usage` writes; and `phase_advance_classify` still unwrapped by `runAiOperation`. All carried in `docs/TODO.md` → "AI cost review" with the queries to run first. |
+
+Two claims from the preceding analysis were wrong and are corrected in the changelog: Sonnet 5's
+introductory pricing ending 2026-08-31 is a **50% rise**, not a doubling; and the "eight paid
+sites lack prompt caching" figure was wrong — `paperTextBlock` supplies `cache_control` for four
+of them, so ten of sixteen cache, and the six that do not are short prompts below the cacheable
+minimum or single-use calls with no second read. No caching work was needed.
+
+Gates 1–5 pass; Vitest 110 files / 1,564 tests. Migration applied; devlab verified intact.
+
 ---
 
 ---

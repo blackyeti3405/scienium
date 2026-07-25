@@ -3,6 +3,7 @@ import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveActiveTeam } from '@/lib/team/context'
 import { enforceRateLimit, type TierName } from '@/lib/rate-limit'
+import { enterAiScope } from '@/lib/ai/scope'
 import {
   assertFeatureUnlocked,
   PhaseGateError,
@@ -107,6 +108,13 @@ export async function requireTeamContext(
       throw err
     }
   }
+
+  // Attribute any paid AI call made later in this request to this team and user
+  // (REFACTOR2 P1-R3). `enterWith` rather than a callback because this helper
+  // returns context instead of wrapping the handler — the alternative was
+  // threading a team id through six library functions that have no other reason
+  // to know one, and remembering to do it at every new call site.
+  enterAiScope({ teamId: team.id, userId: dbUserId })
 
   return {
     ctx: {

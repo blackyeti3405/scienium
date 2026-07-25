@@ -1,6 +1,6 @@
 import 'server-only'
 import { Prisma } from '@prisma/client'
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate } from '@/lib/ai/spend'
 import { db } from '@/lib/db'
 import { aiIdempotencyKey, runAiOperation } from '@/lib/ai/operation'
 import {
@@ -136,8 +136,7 @@ async function generateNewQuestion(
   }
 
   const rubric = await loadRubric()
-  const genResponse = await anthropic().messages.create({
-    model: 'claude-sonnet-5',
+  const genResponse = await aiCreate('quiz_retry_generate', {
     // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
     // and thinking shares this `max_tokens` budget. Disabled to preserve the
     // cost, latency, and output length this route was tuned for.
@@ -435,6 +434,7 @@ export async function submitRetry(
       teamId: principal.teamId,
       run: async () => {
         const result = await gradeAnswers<GradedAnswer>({
+      operation: 'quiz_retry_grade',
           instructions: RETRY_GRADING_INSTRUCTIONS(rubric),
           contextBlock: paperTextContext(session.paper.fullText),
           payload: gradingPayload,

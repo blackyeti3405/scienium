@@ -17,7 +17,7 @@
  * is responsible for the sourceHash-based cache check + the 2/team/day cap
  * BEFORE ever calling this function.
  */
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import { CODEX_TRACKS, labTypeFields, loadTrack } from './index'
 import type { LabType } from '@/lib/phase'
@@ -123,8 +123,7 @@ export async function recommendTracks(input: StudyPlanInput): Promise<Recommende
 
   let raw = ''
   try {
-    const response = await anthropic().messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const response = await aiCreate('study_plan_tracks', {
       max_tokens: 700,
       system: `You recommend Field Codex curriculum tracks for a student science-fair team, based on their project topic/idea/plan. Below are the ONLY valid track slugs (and, where applicable, their ONLY valid branch slugs) — you may recommend ONLY these exact ids, never invent new ones:
 

@@ -1,7 +1,7 @@
 import 'server-only'
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate } from '@/lib/ai/spend'
 import { db } from '@/lib/db'
 import { buildCitations, parseYear } from '@/lib/literature/citation'
 import { logEvent } from '@/lib/observability/log'
@@ -87,10 +87,9 @@ export async function processPaperJob(paperId: string): Promise<void> {
   if (!paper) return
 
   try {
-    const response = await anthropic().messages.create({
+    const response = await aiCreate('paper_metadata', {
       // Haiku suffices for simple metadata extraction (PERF-6) — same model id
       // as the relevance/classify calls (lib/literature/relevance.ts).
-      model: 'claude-haiku-4-5-20251001',
       max_tokens: 512,
       system: EXTRACTION_SYSTEM_PROMPT,
       messages: [

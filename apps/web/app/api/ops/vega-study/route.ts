@@ -4,7 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { buildStudyContext, STUDY_INSTRUCTIONS } from '@/lib/ops/vega-study-context'
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate } from '@/lib/ai/spend'
 import { buildChatTurns, runChatTurn } from '@/lib/chat/thread'
 
 // The server owns the team's shared study thread. A request carries ONE new user
@@ -74,8 +74,7 @@ export async function POST(req: NextRequest) {
         }
       }
       const context = await buildStudyContext(ctx.teamId)
-      const response = await anthropic().messages.create({
-        model: 'claude-sonnet-5',
+      const response = await aiCreate('vega_study', {
         // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
         // and thinking shares this `max_tokens` budget. Disabled to preserve the
         // cost, latency, and output length this route was tuned for.

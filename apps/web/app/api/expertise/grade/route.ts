@@ -84,6 +84,7 @@ export async function POST(req: NextRequest) {
   const gradingPayload = buildGradingPayload(questions, answerMap)
 
   const result = await gradeAnswers<GradedExpertiseAnswer>({
+    operation: 'expertise_grade',
     instructions: GRADING_INSTRUCTIONS(rubric, exam.targetLevel),
     // Project context is student-authored (topic, idea, logs, plan) — i.e.
     // untrusted relative to the grade it informs. Delimited and marked

@@ -5,6 +5,71 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.45.0] — 2026-07-25
+
+### Added — model registry, AI accounting, and a kill switch (P1-R3 budget half, part 1)
+The replay half of P1-R3 closed in v0.42.0. The budget half asked for token/cost fields, a
+per-team ledger, and a global/team kill switch. None of it existed: nineteen paid entry points
+sat behind one 12/min rate-limit tier, four unrelated per-feature daily caps counted their own
+features and nothing else, and **no aggregate existed at all** — the highest-volume paid paths
+(quiz generation, explain-back, paper chat) had no daily ceiling. Spend was unmeasurable and
+unstoppable short of a deploy.
+
+**`lib/ai/models.ts` — one table for which model runs which call.** The model was a hardcoded
+string literal in sixteen separate files, so the single biggest lever on cost was the one that
+took sixteen edits to pull. This is a **pure refactor**: every operation keeps exactly the model
+it had. A test fails if a `model: 'claude-…'` literal reappears at a call site. Published rates
+live here too, in micro-dollars per 1,000 tokens, with an `AI_RATE_VERSION` stamped on every row
+so a price change cannot silently rewrite historical totals.
+
+**`lib/ai/spend.ts` — the one door every paid call goes through.** `aiCreate` / `aiStream` take
+the operation as their first argument and supply the model themselves, so no call site can
+carry one or forget the accounting. All sixteen sites converted, including the shared
+`gradeAnswers`, which now names which of its three callers is spending.
+
+**Kill switch.** `AI_KILL_SWITCH` (global, no deploy) plus `Team.aiDisabledAt` (per lab),
+checked **before** the call — checking after is worthless. **Fails closed**: if the team flag
+cannot be read we do not know whether spending is allowed, and on a paid call the safe reading
+of "don't know" is no. The two streaming services preflight it explicitly, because once a
+response body is streaming there is no status code left to return.
+
+**`AiUsage` — a durable row per call.** Team, user, operation, model, the three *disjoint* input
+buckets, output tokens, cost, rate version, outcome, UTC day. `lib/anthropic.ts` has always
+logged token counts; logs evaporate. These rows join to class and school through `Team`, so
+per-class cost attribution is a `GROUP BY`, not a feature. Cached tokens are priced separately
+(reads at 0.1×, writes at 1.25×) — ten of the paid sites lead with a cached block, and billing
+those at the full input rate would overstate exactly the calls that were optimised.
+
+**Attribution without churn.** `requireTeamContext` enters an `AsyncLocalStorage` scope, so every
+paid call in a request is attributed automatically. The alternative was threading a team id
+through six library functions that have no other reason to know one — and remembering to at
+every new call site.
+
+### Deliberately not built
+**No enforcement.** Nothing is refused for being over budget, and a test pins that shut. Caps set
+before a week of real classroom data would be a guess, and one that fires mid-lesson stops a
+student's work — worse than the bill it saved. Also not built: moving any call to a cheaper
+model (the registry makes it a one-line change; doing it is a separate measured decision), and
+the teacher-facing cost view. `docs/TODO.md` → "AI cost review" carries all of it with the
+queries to run first.
+
+### Corrections to earlier claims
+- Sonnet 5's introductory pricing ending 2026-08-31 is a **50% rise** ($2/$10 → $3/$15), not a
+  doubling as previously stated.
+- An earlier audit note claimed eight paid sites lacked prompt caching. Wrong: `paperTextBlock`
+  adds `cache_control` for four of them, so **ten of sixteen** cache. The six that don't are
+  short prompts below the cacheable minimum or single-use calls with no second read — caching
+  them would buy write cost and no reads. No work was needed.
+- `record()` guarded only the promise chain, so a *synchronous* throw building the write (a
+  client without the model) escaped into the caller — turning accounting into a new way for an
+  already-paid, already-successful call to fail. Now guarded both ways, with a test.
+
+### Verification
+Gates 1–5 pass. Vitest: **110 files / 1,564 tests passed** (was 109 / 1,546). 18 new tests
+covering exhaustive registry coverage, cached-token pricing, the fail-closed kill switch,
+attribution from request scope, and that accounting cannot break a paid request. Migration
+applied to the local dev database; devlab verified intact.
+
 ## [0.44.0] — 2026-07-25
 
 ### Fixed — the fair catalog reconciles against the edition, not the row count (P1-R16, fairs half)

@@ -1,7 +1,8 @@
 import 'server-only'
 import { Prisma } from '@prisma/client'
 import Anthropic from '@anthropic-ai/sdk'
-import { anthropic } from '@/lib/anthropic'
+import { aiStream, assertAiSpendAllowed, AiDisabledError } from '@/lib/ai/spend'
+import { currentAiScope } from '@/lib/ai/scope'
 import { db } from '@/lib/db'
 import { IDEA_CHECK_DAILY_LIMIT, ideaChecksUsedToday } from '@/lib/research-plan/idea-check'
 import { requirePlanText } from '@/lib/research-plan/require-plan-text'
@@ -65,6 +66,19 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
     }
   }
 
+  // The kill switch must be checked BEFORE the stream opens — once the response
+  // body is streaming there is no status code left to return (P1-R3).
+  try {
+    await assertAiSpendAllowed()
+  } catch (err) {
+    await claim.release()
+    if (err instanceof AiDisabledError) return { ok: false, error: err.message, status: 503 }
+    throw err
+  }
+  // Captured here, where the request's async scope is still current: the stream
+  // body runs when the consumer reads it, which may be outside that context.
+  const spendScope = currentAiScope()
+
   const planText = (plan.lastSyncedText ?? '').slice(0, 12000)
   const { teamId, dbUserId } = principal
   /** The exact source this check was run against — the commit CASes on it. */
@@ -96,8 +110,7 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
         verdictText = ''
         // Cast events to a loose shape — server-tool streaming blocks aren't
         // fully covered by the SDK's narrowed event union.
-        const ms = anthropic().messages.stream({
-          model: 'claude-sonnet-5',
+        const ms = aiStream('idea_check', {
           // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
           // and thinking shares this `max_tokens` budget. Disabled to preserve the
           // cost, latency, and output length this route was tuned for.
@@ -117,7 +130,7 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
           system: IDEA_CHECK_SYSTEM,
           tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }],
           messages,
-        })
+        }, spendScope)
 
         const blocks = new Map<number, { type?: string; name?: string; json: string; emitted: boolean }>()
 

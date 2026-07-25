@@ -1,6 +1,7 @@
 import 'server-only'
 import { z } from 'zod'
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate } from '@/lib/ai/spend'
+import type { AiOperationName } from '@/lib/ai/models'
 import { logEvent } from '@/lib/observability/log'
 import { QUIZ_PASS_THRESHOLD, extractJson } from '@/lib/literature/quiz'
 
@@ -96,6 +97,7 @@ export type GradeAnswersResult<T> = { ok: true; graded: T[] } | { ok: false }
  * `{ ok: false }` — callers turn that into their existing generic 502.
  */
 export async function gradeAnswers<T>({
+  operation,
   instructions,
   contextBlock,
   payload,
@@ -103,6 +105,12 @@ export async function gradeAnswers<T>({
   maxTokens,
   logLabel,
 }: {
+  /**
+   * Which paid call this is. Shared by three routes with different cost and risk
+   * profiles, so the accounting must be able to tell them apart — and the model
+   * registry keys off it (`lib/ai/models.ts`).
+   */
+  operation: AiOperationName
   /** System instructions (the route's rubric-bearing GRADING_INSTRUCTIONS variant). */
   instructions: string
   /**
@@ -122,8 +130,7 @@ export async function gradeAnswers<T>({
 }): Promise<GradeAnswersResult<T>> {
   let response
   try {
-    response = await anthropic().messages.create({
-      model: 'claude-sonnet-5',
+    response = await aiCreate(operation, {
       // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
       // and thinking shares this `max_tokens` budget. Disabled to preserve the
       // cost, latency, and output length this route was tuned for.

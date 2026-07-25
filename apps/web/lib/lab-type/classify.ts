@@ -1,4 +1,4 @@
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate } from '@/lib/ai/spend'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
 
 const LAB_TYPE_DESCRIPTIONS: Record<LabType, string> = {
@@ -29,8 +29,7 @@ export async function classifyLabType(
     .map((k) => `- ${k}: ${LAB_TYPE_DESCRIPTIONS[k]}`)
     .join('\n')
 
-  const response = await anthropic().messages.create({
-    model: 'claude-haiku-4-5-20251001',
+  const response = await aiCreate('phase_advance_classify', {
     max_tokens: 200,
     system: `You classify student research ideas into one of six lab types. Return ONLY valid JSON with exactly two fields: "labType" (one of the exact strings below) and "rationale" (one sentence explaining why).
 

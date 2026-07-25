@@ -11,27 +11,27 @@ datasource db {
 // ─── Users & Org ─────────────────────────────────────────────────────────────
 
 model User {
-  id          String   @id @default(cuid())
-  clerkUserId String   @unique @map("clerk_user_id")
-  name        String
-  email       String   @unique
-  schoolId    String?  @map("school_id")
-  classId     String?  @map("class_id")
-  activeTeamId String? @map("active_team_id")
-  role        UserRole @default(student)
-  isMinor     Boolean  @default(true) @map("is_minor")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id           String   @id @default(cuid())
+  clerkUserId  String   @unique @map("clerk_user_id")
+  name         String
+  email        String   @unique
+  schoolId     String?  @map("school_id")
+  classId      String?  @map("class_id")
+  activeTeamId String?  @map("active_team_id")
+  role         UserRole @default(student)
+  isMinor      Boolean  @default(true) @map("is_minor")
+  createdAt    DateTime @default(now()) @map("created_at")
 
-  school               School?                 @relation(fields: [schoolId], references: [id])
-  class                Class?                  @relation(fields: [classId], references: [id])
-  activeTeam           Team?                   @relation("activeTeam", fields: [activeTeamId], references: [id], onDelete: SetNull)
-  schoolsAdministered  School[]                @relation("schoolAdmin")
-  teamsLed             Team[]                  @relation("teamLead")
-  classesTeaching      Class[]                 @relation("classTeacher")
+  school               School?                @relation(fields: [schoolId], references: [id])
+  class                Class?                 @relation(fields: [classId], references: [id])
+  activeTeam           Team?                  @relation("activeTeam", fields: [activeTeamId], references: [id], onDelete: SetNull)
+  schoolsAdministered  School[]               @relation("schoolAdmin")
+  teamsLed             Team[]                 @relation("teamLead")
+  classesTeaching      Class[]                @relation("classTeacher")
   classJoinRequests    ClassJoinRequest[]
   teamMemberships      TeamMember[]
   projectLogEntries    ProjectLog[]
-  projectLogEdits      ProjectLog[]            @relation("projectLogEditor")
+  projectLogEdits      ProjectLog[]           @relation("projectLogEditor")
   discoveryNodes       DiscoveryNode[]
   expertiseAttempts    ExpertiseAttempt[]
   expertiseExams       ExpertiseExam[]
@@ -42,10 +42,10 @@ model User {
   activityFeedEntries  ActivityFeed[]
   paperProficiencies   PaperProficiency[]
   paperExplanations    PaperExplanation[]
-  teacherFeedbackGiven TeacherFeedback[]       @relation("teacherFeedbackAuthor")
+  teacherFeedbackGiven TeacherFeedback[]      @relation("teacherFeedbackAuthor")
   notifications        Notification[]
   notificationPref     NotificationPref?
-  experiments          Experiment[]            @relation("experimentAuthor")
+  experiments          Experiment[]           @relation("experimentAuthor")
   codexLessonProgress  CodexLessonProgress[]
   codexKpDays          CodexKpDay[]
   vegaStudyMessages    VegaStudyMessage[]
@@ -96,12 +96,12 @@ model Class {
   teacherId         String             @map("teacher_id")
   joinCode          String?            @unique @map("join_code")
   joinCodeExpiresAt DateTime?          @map("join_code_expires_at")
-  createdAt    DateTime           @default(now()) @map("created_at")
-  school       School             @relation(fields: [schoolId], references: [id])
-  teacher      User               @relation("classTeacher", fields: [teacherId], references: [id])
-  users        User[]
-  teams        Team[]
-  joinRequests ClassJoinRequest[]
+  createdAt         DateTime           @default(now()) @map("created_at")
+  school            School             @relation(fields: [schoolId], references: [id])
+  teacher           User               @relation("classTeacher", fields: [teacherId], references: [id])
+  users             User[]
+  teams             Team[]
+  joinRequests      ClassJoinRequest[]
 
   @@index([teacherId])
   @@map("classes")
@@ -193,6 +193,48 @@ model AiOperation {
   @@map("ai_operations")
 }
 
+// One row per paid provider call (REFACTOR2 P1-R3, budget half). Token counts
+// were already logged by the instrumented client, but logs evaporate — these
+// rows are queryable and join to class and school through `Team`, so per-class
+// and per-school cost attribution is a GROUP BY rather than a feature.
+//
+// NOT enforcement: nothing reads these to refuse work yet. Caps are set from
+// real classroom data, not from a guess (docs/TODO.md → "AI cost review").
+model AiUsage {
+  id                       String   @id @default(cuid())
+  /// Which paid call, from `AiOperationName` — the same key that picks the model.
+  operation                String
+  /// The model actually used, recorded rather than re-derived: the registry may
+  /// have changed since, and a historical row must stay true to what it bought.
+  model                    String
+  /// Null for cron-driven work with no request scope. Attribution, not ownership.
+  teamId                   String?  @map("team_id")
+  userId                   String?  @map("user_id")
+  /// The three input buckets are DISJOINT — `inputTokens` is the uncached
+  /// remainder, not the total. Cached reads bill at 0.1x, writes at 1.25x.
+  inputTokens              Int      @default(0) @map("input_tokens")
+  outputTokens             Int      @default(0) @map("output_tokens")
+  cacheReadInputTokens     Int      @default(0) @map("cache_read_input_tokens")
+  cacheCreationInputTokens Int      @default(0) @map("cache_creation_input_tokens")
+  /// Micro-dollars ($1 = 1,000,000). Integer — money in floats rounds wrong.
+  costMicros               Int      @default(0) @map("cost_micros")
+  /// Which price list produced `costMicros`, so a rate change cannot silently
+  /// rewrite history.
+  rateVersion              String   @map("rate_version")
+  /// 'ok' | 'error' — a failed call still spent time and often input tokens.
+  outcome                  String
+  /// UTC day bucket, so spend rolls up on one calendar boundary everywhere.
+  day                      DateTime @db.Date
+  createdAt                DateTime @default(now()) @map("created_at")
+
+  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, day])
+  @@index([day])
+  @@index([operation, day])
+  @@map("ai_usage")
+}
+
 enum AiOperationStatus {
   running
   succeeded
@@ -218,76 +260,80 @@ enum ClassJoinRequestStatus {
 // ─── Teams ───────────────────────────────────────────────────────────────────
 
 model Team {
-  id            String       @id @default(cuid())
-  name          String
-  teamLeadId    String       @map("team_lead_id")
+  id               String       @id @default(cuid())
+  name             String
+  teamLeadId       String       @map("team_lead_id")
   // VESTIGIAL (ADR-004): class membership is per-student (User.classId); labs may
   // span classes/schools. Never read this for authorization — teacher access is
   // membership-based (lib/teacher/auth.ts::teacherOwnsTeam). Kept for old rows only.
-  classId       String?      @map("class_id")
-  labType       LabType?     @map("lab_type")
-  topic         String?
-  phase         ProjectPhase @default(discovery)
+  classId          String?      @map("class_id")
+  labType          LabType?     @map("lab_type")
+  topic            String?
+  phase            ProjectPhase @default(discovery)
   // Cap on how many students may join this lab. Building costs scale with the
   // live member count (lib/shop.ts), so a bigger team earns more KP but pays more.
-  maxMembers    Int          @default(3) @map("max_members")
+  maxMembers       Int          @default(3) @map("max_members")
   // US location (Feature 3) — drives Science Fair matching. ZIP is captured at
   // onboarding; `locationState` is the 2-letter code derived from it (lib/fairs/zip.ts).
-  locationZip   String?      @map("location_zip")
-  locationState String?      @map("location_state")
+  locationZip      String?      @map("location_zip")
+  locationState    String?      @map("location_state")
   // Geocoded coordinates for the team's ZIP — more accurate than state centroid
   // for ordering regional fairs. Set at onboarding / location update via Nominatim.
-  locationLat   Float?       @map("location_lat")
-  locationLng   Float?       @map("location_lng")
+  locationLat      Float?       @map("location_lat")
+  locationLng      Float?       @map("location_lng")
   // One-sentence research idea submitted at the end of lit review — used to
   // auto-assign lab type via Haiku classification before entering research_planning.
-  researchIdea  String?      @map("research_idea")
+  researchIdea     String?      @map("research_idea")
   // Claim stamp electing ONE payer for the literature_review -> research_planning
   // advance (REFACTOR2 P1-R2). That transition runs a paid Haiku classification
   // and used to finish with an UNCONDITIONAL update, so two clicks paid twice and
   // a slow response could overwrite a newer phase — rolling the team backwards.
-  advanceClaimedAt DateTime? @map("advance_claimed_at")
-  createdAt     DateTime     @default(now()) @map("created_at")
+  advanceClaimedAt DateTime?    @map("advance_claimed_at")
+  // Per-team AI kill switch (REFACTOR2 P1-R3). Set to stop this lab's paid calls
+  // without touching anyone else's; the global switch is `AI_KILL_SWITCH`.
+  aiDisabledAt     DateTime?    @map("ai_disabled_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
 
-  teamLead        User                    @relation("teamLead", fields: [teamLeadId], references: [id])
-  class           Class?                  @relation(fields: [classId], references: [id], onDelete: SetNull)
-  activeUsers     User[]                  @relation("activeTeam")
-  members         TeamMember[]
-  currency        TeamCurrency?
-  buildings       TeamBuilding[]
-  shopBuildings   TeamShopBuilding[]
-  gatewayPlacements TeamGatewayPlacement[]
-  labCreditClaims LabCreditClaim[]
-  expertiseExams  ExpertiseExam[]
-  discoveryNodes  DiscoveryNode[]
-  topicInterests  TopicInterest[]
+  teamLead              User                   @relation("teamLead", fields: [teamLeadId], references: [id])
+  class                 Class?                 @relation(fields: [classId], references: [id], onDelete: SetNull)
+  activeUsers           User[]                 @relation("activeTeam")
+  members               TeamMember[]
+  aiUsage               AiUsage[]
+  currency              TeamCurrency?
+  buildings             TeamBuilding[]
+  shopBuildings         TeamShopBuilding[]
+  gatewayPlacements     TeamGatewayPlacement[]
+  labCreditClaims       LabCreditClaim[]
+  expertiseExams        ExpertiseExam[]
+  discoveryNodes        DiscoveryNode[]
+  topicInterests        TopicInterest[]
   discoverySourceVisits DiscoverySourceVisit[]
-  discoveryKpDays DiscoveryKpDay[]
-  discoveryTopicBonus DiscoveryTopicBonus?
-  papers          Paper[]
-  citations       Citation[]
-  projectLogs     ProjectLog[]
-  invites         TeamInvite[]
-  destructiveProposals DestructiveProposal[]
-  researchPlan    ResearchPlan?
-  ideaChecks      IdeaCheck[]
-  pvpTrophies     PvpTrophies?
-  pvpRaidQuota    PvpRaidQuota[]
-  showcase        Showcase?
-  formStatuses    TeamFormStatus[]
-  activityFeed    ActivityFeed[]
-  teacherFeedback TeacherFeedback[]
-  notifications   Notification[]
-  experiments     Experiment[]
-  teamRubricScores TeamRubricScore[]
-  codexLessonProgress CodexLessonProgress[]
-  codexKpDays     CodexKpDay[]
-  studyPlan       TeamStudyPlan?
-  vegaStudyMessages VegaStudyMessage[]
-  uploadedAssets  UploadedAsset[]
-  synthesisMatrices SynthesisMatrix[]
-  vocabCards      VocabCard[]
-  vocabKpDays     VocabKpDay[]
+  discoveryKpDays       DiscoveryKpDay[]
+  discoveryTopicBonus   DiscoveryTopicBonus?
+  papers                Paper[]
+  citations             Citation[]
+  projectLogs           ProjectLog[]
+  invites               TeamInvite[]
+  destructiveProposals  DestructiveProposal[]
+  researchPlan          ResearchPlan?
+  ideaChecks            IdeaCheck[]
+  pvpTrophies           PvpTrophies?
+  pvpRaidQuota          PvpRaidQuota[]
+  showcase              Showcase?
+  formStatuses          TeamFormStatus[]
+  activityFeed          ActivityFeed[]
+  teacherFeedback       TeacherFeedback[]
+  notifications         Notification[]
+  experiments           Experiment[]
+  teamRubricScores      TeamRubricScore[]
+  codexLessonProgress   CodexLessonProgress[]
+  codexKpDays           CodexKpDay[]
+  studyPlan             TeamStudyPlan?
+  vegaStudyMessages     VegaStudyMessage[]
+  uploadedAssets        UploadedAsset[]
+  synthesisMatrices     SynthesisMatrix[]
+  vocabCards            VocabCard[]
+  vocabKpDays           VocabKpDay[]
 
   @@index([classId])
   @@map("teams")
@@ -475,14 +521,14 @@ model ExternalSource {
 model ArticleSource {
   id              String    @id @default(cuid())
   discoveryNodeId String    @unique @map("discovery_node_id")
-  provider        String    // 'the_conversation' | 'journalism'
+  provider        String // 'the_conversation' | 'journalism'
   renderMode      String    @map("render_mode") // 'full' | 'linkout'
   sourceName      String    @map("source_name") // attribution label: "The Conversation", "Quanta Magazine"
   title           String
   author          String?
-  url             String    // canonical outbound (http(s), validated)
-  excerpt         String?   // linkout card summary (sanitized/stripped)
-  html            String?   // full sanitized article HTML (renderMode 'full' only)
+  url             String // canonical outbound (http(s), validated)
+  excerpt         String? // linkout card summary (sanitized/stripped)
+  html            String? // full sanitized article HTML (renderMode 'full' only)
   publishedAt     DateTime? @map("published_at")
   resolvedAt      DateTime  @default(now()) @map("resolved_at")
 
@@ -579,44 +625,44 @@ model DiscoveryTopicBonus {
 // ─── Literature ──────────────────────────────────────────────────────────────
 
 model Paper {
-  id               String      @id @default(cuid())
-  teamId           String      @map("team_id")
+  id               String           @id @default(cuid())
+  teamId           String           @map("team_id")
   title            String
   authors          String[]
   abstract         String?
-  sourceType       PaperSource @map("source_type")
-  fileUrl          String?     @map("file_url")
-  contentHash      String?     @map("content_hash")
-  fullText         String?     @map("full_text")
+  sourceType       PaperSource      @map("source_type")
+  fileUrl          String?          @map("file_url")
+  contentHash      String?          @map("content_hash")
+  fullText         String?          @map("full_text")
   // List-view metadata, computed once at upload so the paper list never has to
   // read `fullText` to derive a DOI/credibility badge. `sourceHost` is the
   // origin host for externally-sourced papers (null for self-uploaded PDFs).
-  doi              String?         @map("doi")
+  doi              String?          @map("doi")
   credibilityTier  CredibilityTier? @map("credibility_tier")
-  sourceHost       String?         @map("source_host")
+  sourceHost       String?          @map("source_host")
   // PDF binary lives in Cloudflare R2; `pdfKey` is the object key (see lib/storage.ts).
   // `pdfData` is the legacy in-DB blob, kept only as a fallback for rows uploaded
   // before the R2 migration — new uploads leave it null and a cleanup migration
   // can drop it once all rows are backfilled.
-  pdfKey           String?     @map("pdf_key")
-  pdfData          Bytes?      @map("pdf_data")
-  status           PaperStatus @default(pending)
-  uploadedByUserId String      @map("uploaded_by_user_id")
-  createdAt        DateTime    @default(now()) @map("created_at")
+  pdfKey           String?          @map("pdf_key")
+  pdfData          Bytes?           @map("pdf_data")
+  status           PaperStatus      @default(pending)
+  uploadedByUserId String           @map("uploaded_by_user_id")
+  createdAt        DateTime         @default(now()) @map("created_at")
 
-  team           Team                 @relation(fields: [teamId], references: [id])
-  quizSessions   PaperQuizSession[]
-  quizAttempts   PaperQuizAttempt[]
-  relevanceNotes PaperRelevanceNote[]
-  chatMessages   PaperChatMessage[]
-  proficiencies  PaperProficiency[]
-  explanations   PaperExplanation[]
+  team                Team                      @relation(fields: [teamId], references: [id])
+  quizSessions        PaperQuizSession[]
+  quizAttempts        PaperQuizAttempt[]
+  relevanceNotes      PaperRelevanceNote[]
+  chatMessages        PaperChatMessage[]
+  proficiencies       PaperProficiency[]
+  explanations        PaperExplanation[]
   explanationAttempts PaperExplanationAttempt[]
-  processingJob PaperProcessingJob?
+  processingJob       PaperProcessingJob?
   // #13: the source node this Paper was promoted from (if any) + its formatted citation.
-  promotedFromNode DiscoveryNode?     @relation("promotedFrom")
-  citation       Citation?
-  vocabCards     VocabCard[]
+  promotedFromNode    DiscoveryNode?            @relation("promotedFrom")
+  citation            Citation?
+  vocabCards          VocabCard[]
   vocabPaperCurations VocabPaperCuration[]
 
   // DB-level duplicate-upload guard. Postgres treats NULL content hashes as
@@ -712,7 +758,7 @@ model PaperExplanation {
 
 // One row per submission — the revise-loop history. Carries no KP.
 model PaperExplanationAttempt {
-  id String @id @default(cuid())
+  id           String   @id @default(cuid())
   // `(paperId, userId, attemptNo)` is UNIQUE (REFACTOR2 P1-S6): the sequence used
   // to be derived from a read taken BEFORE a multi-second paid call, so two
   // concurrent submissions minted the same attempt number. It is now derived
@@ -781,11 +827,11 @@ model SynthesisCell {
 }
 
 model PaperChatMessage {
-  id        String   @id @default(cuid())
-  paperId   String   @map("paper_id")
-  userId    String   @map("user_id")
-  role      MessageRole
-  content   String
+  id             String            @id @default(cuid())
+  paperId        String            @map("paper_id")
+  userId         String            @map("user_id")
+  role           MessageRole
+  content        String
   // Server-owned turn lifecycle: `pending` is written before the paid LLM call,
   // `complete` after a successful reply, `error` if the call failed — so the paid
   // call and the visible/history state never silently diverge.
@@ -793,8 +839,8 @@ model PaperChatMessage {
   requestId      String?           @map("request_id")
   error          String?
   tokenUsageJson Json?             @map("token_usage_json")
-  createdAt DateTime @default(now()) @map("created_at")
-  paper     Paper    @relation(fields: [paperId], references: [id])
+  createdAt      DateTime          @default(now()) @map("created_at")
+  paper          Paper             @relation(fields: [paperId], references: [id])
 
   @@index([paperId, userId, createdAt])
   @@map("paper_chat_messages")
@@ -835,25 +881,25 @@ enum PaperStatus {
 // A single quiz attempt: a generated set of questions (with keys) and, once
 // submitted, the per-question grades and aggregate result.
 model PaperQuizSession {
-  id            String    @id @default(cuid())
-  paperId       String    @map("paper_id")
-  userId        String    @map("user_id")
+  id                  String    @id @default(cuid())
+  paperId             String    @map("paper_id")
+  userId              String    @map("user_id")
   // [{ id, prompt, focus, key }] — `key` is server-only, never sent to client
-  questionsJson Json      @map("questions_json")
-  score         Int? // aggregate 0-100, set on grading
-  passed        Boolean   @default(false)
-  gradedAt      DateTime? @map("graded_at")
+  questionsJson       Json      @map("questions_json")
+  score               Int? // aggregate 0-100, set on grading
+  passed              Boolean   @default(false)
+  gradedAt            DateTime? @map("graded_at")
   // A8: claim stamp electing ONE retry-question generator under concurrency.
   // Set via a conditional update before the paid generation call; cleared when
   // the generated question commits (or the claim is released on failure).
   // Stale claims (crashed generator) are taken over after a timeout.
-  retryGenClaimedAt DateTime? @map("retry_gen_claimed_at")
+  retryGenClaimedAt   DateTime? @map("retry_gen_claimed_at")
   // P1-R11: the same election, one step later. Retry GRADING had no claim at
   // all — two concurrent submits both loaded the failed session and both paid
   // Anthropic before the advisory lock, which protected only the KP maths that
   // ran after the money was spent.
   retryGradeClaimedAt DateTime? @map("retry_grade_claimed_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
 
   paper    Paper              @relation(fields: [paperId], references: [id])
   attempts PaperQuizAttempt[]
@@ -923,25 +969,25 @@ model Citation {
 // active source (`lastSyncedSource`). The project type/subtype selects the rubric
 // the AI review grades against.
 model ResearchPlan {
-  teamId            String    @id @map("team_id")
-  googleDocUrl      String?   @map("google_doc_url")
-  projectType       String?   @map("project_type") // 'engineering' | 'science'
-  projectSubtype    String?   @map("project_subtype") // e.g. 'robotics', 'biology'
-  lastSyncedText    String?   @map("last_synced_text")
-  lastSyncedAt      DateTime? @map("last_synced_at")
+  teamId             String    @id @map("team_id")
+  googleDocUrl       String?   @map("google_doc_url")
+  projectType        String?   @map("project_type") // 'engineering' | 'science'
+  projectSubtype     String?   @map("project_subtype") // e.g. 'robotics', 'biology'
+  lastSyncedText     String?   @map("last_synced_text")
+  lastSyncedAt       DateTime? @map("last_synced_at")
   // Which input last populated `lastSyncedText` — 'google_doc' | 'paste'. Nullable:
   // existing rows predate this column and are treated as 'google_doc' at read time
   // (every prior row's text came from a doc). "Last-saved wins" — a single POST
   // sets exactly this + lastSyncedText together (see app/api/research-plan/route.ts).
-  lastSyncedSource  String?   @map("last_synced_source")
+  lastSyncedSource   String?   @map("last_synced_source")
   // Latest AI review of the synced plan; replaced on each re-review so it
   // persists across reloads and never piles up.
-  lastReviewJson    Json?     @map("last_review_json")
-  lastReviewedAt    DateTime? @map("last_reviewed_at")
+  lastReviewJson     Json?     @map("last_review_json")
+  lastReviewedAt     DateTime? @map("last_reviewed_at")
   // Latest idea-check result ({ verdict, findings }); replaced on each re-run.
   // (The `IdeaCheck` table is only the per-day rate-limit ledger.)
-  lastIdeaCheckJson Json?     @map("last_idea_check_json")
-  lastIdeaCheckAt   DateTime? @map("last_idea_check_at")
+  lastIdeaCheckJson  Json?     @map("last_idea_check_json")
+  lastIdeaCheckAt    DateTime? @map("last_idea_check_at")
   // Pre-call claims for the two paid plan workflows (P1-S9). One review and one
   // idea check per team at a time: the claim is taken BEFORE the provider call,
   // released on failure, and taken over after its TTL. It is also what makes the
@@ -949,8 +995,8 @@ model ResearchPlan {
   // holding it, so no second run can be counting at the same moment.
   reviewClaimedAt    DateTime? @map("review_claimed_at")
   ideaCheckClaimedAt DateTime? @map("idea_check_claimed_at")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   team Team @relation(fields: [teamId], references: [id])
 
@@ -1043,7 +1089,7 @@ model TeamShopBuilding {
   costPaid          Int      @default(0) @map("cost_paid")
 
   // Upgrade level (1 = freshly placed; increments via POST /api/buildings/upgrade).
-  level       Int      @default(1)
+  level Int @default(1)
 
   team        Team @relation(fields: [teamId], references: [id])
   purchasedBy User @relation(fields: [purchasedByUserId], references: [id])
@@ -1103,21 +1149,21 @@ model LabCreditClaim {
 // passing (>= threshold) raises `TeamCurrency.clearanceLevel`. Mirrors the paper
 // quiz's session/attempt split (PaperQuizSession / PaperQuizAttempt).
 model ExpertiseExam {
-  id            String    @id @default(cuid())
-  teamId        String    @map("team_id")
-  userId        String    @map("user_id")
+  id               String              @id @default(cuid())
+  teamId           String              @map("team_id")
+  userId           String              @map("user_id")
   // Clearance level this exam attempts to reach (current + 1).
-  targetLevel   Int       @map("target_level")
+  targetLevel      Int                 @map("target_level")
   // [{ id, prompt, focus, key }] — `key` is the server-only grading guidance.
-  questionsJson Json      @map("questions_json")
+  questionsJson    Json                @map("questions_json")
   // In-progress answers ({ [questionId]: response }) + how far the student has
   // got, persisted as they go so an ungraded exam can be RESUMED after closing
   // the panel (rather than regenerating a fresh one). Null until the first answer.
-  answersJson   Json?     @map("answers_json")
-  progressIndex Int       @default(0) @map("progress_index")
-  score         Int? // aggregate 0-100, set on grading
-  passed        Boolean   @default(false)
-  gradedAt      DateTime? @map("graded_at")
+  answersJson      Json?               @map("answers_json")
+  progressIndex    Int                 @default(0) @map("progress_index")
+  score            Int? // aggregate 0-100, set on grading
+  passed           Boolean             @default(false)
+  gradedAt         DateTime?           @map("graded_at")
   // Grading lifecycle. `active` = answerable/regradable; `grading` = a request
   // has claimed it and the paid Claude call is in flight (a second concurrent
   // grade is refused, so the LLM is never called twice for one exam); `graded` =
@@ -1253,7 +1299,7 @@ enum ProjectLogEntry {
 }
 
 model ProjectLogFollowup {
-  id String @id @default(cuid())
+  id           String     @id @default(cuid())
   /// UNIQUE (REFACTOR2 P1-S7): the route promised "one follow-up per entry" but
   /// enforced it with a pre-read before the paid Anthropic call, so two
   /// concurrent requests could both pay and both insert. The row now doubles as
@@ -1288,14 +1334,14 @@ model ProjectLogReference {
 // Free-text feedback a teacher attaches to a team (optionally to a specific
 // target like a project log or paper). Visible to the team in their own view.
 model TeacherFeedback {
-  id            String   @id @default(cuid())
-  teamId        String   @map("team_id")
-  teacherUserId String   @map("teacher_user_id")
+  id            String         @id @default(cuid())
+  teamId        String         @map("team_id")
+  teacherUserId String         @map("teacher_user_id")
   targetType    FeedbackTarget @map("target_type")
-  targetId      String?  @map("target_id")
+  targetId      String?        @map("target_id")
   body          String
-  resolved      Boolean  @default(false)
-  createdAt     DateTime @default(now()) @map("created_at")
+  resolved      Boolean        @default(false)
+  createdAt     DateTime       @default(now()) @map("created_at")
 
   team    Team @relation(fields: [teamId], references: [id])
   teacher User @relation("teacherFeedbackAuthor", fields: [teacherUserId], references: [id])
@@ -1319,16 +1365,16 @@ enum FeedbackTarget {
 // UNIQUE so the daily cron is idempotent — re-running never double-inserts the
 // same "regional fair in 7 days" reminder.
 model Notification {
-  id        String    @id @default(cuid())
-  teamId    String    @map("team_id")
-  userId    String?   @map("user_id")
+  id        String           @id @default(cuid())
+  teamId    String           @map("team_id")
+  userId    String?          @map("user_id")
   kind      NotificationKind
   title     String
   body      String
-  linkUrl   String?   @map("link_url")
-  dedupeKey String    @unique @map("dedupe_key")
-  readAt    DateTime? @map("read_at")
-  createdAt DateTime  @default(now()) @map("created_at")
+  linkUrl   String?          @map("link_url")
+  dedupeKey String           @unique @map("dedupe_key")
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
 
   team Team  @relation(fields: [teamId], references: [id])
   user User? @relation(fields: [userId], references: [id])
@@ -1554,33 +1600,33 @@ model NotificationRunTeam {
 // ─── Science Fair Hub ────────────────────────────────────────────────────────
 
 model Fair {
-  id           String    @id @default(cuid())
-  name         String
-  level        FairLevel
-  state        String?
-  county       String?
-  country      String    @default("US")
-  websiteUrl   String?   @map("website_url")
-  parentFairId String?   @map("parent_fair_id")
+  id                 String    @id @default(cuid())
+  name               String
+  level              FairLevel
+  state              String?
+  county             String?
+  country            String    @default("US")
+  websiteUrl         String?   @map("website_url")
+  parentFairId       String?   @map("parent_fair_id")
   // Representative coordinates (host city / state centre) for nearest-fair
   // matching against a team's location (Feature 3, lib/fairs/match.ts).
-  latitude     Float?
-  longitude    Float?
+  latitude           Float?
+  longitude          Float?
   // Stable natural key from the seed dataset, so re-seeding upserts in place.
-  seedKey      String?   @unique @map("seed_key")
+  seedKey            String?   @unique @map("seed_key")
   // Set when a seeded key disappears from the authored edition (P1-R16). The row
   // stays — events, team interests, and notifications reference it, and it is
   // the true history of a team that entered — but matching skips it.
-  retiredAt    DateTime? @map("retired_at")
+  retiredAt          DateTime? @map("retired_at")
   // ── Paid-sync control (REFACTOR2 P1-S10) ────────────────────────────────
   // `Fair`/`FairEvent` are GLOBAL rows shared by every team, but any student
   // matched to the fair could trigger a paid Firecrawl crawl and race the write.
   /// Claim stamp electing ONE crawler; conditional, with a TTL for a dead claim.
-  syncClaimedAt    DateTime? @map("sync_claimed_at")
+  syncClaimedAt      DateTime? @map("sync_claimed_at")
   /// When a crawl last completed — the cooldown that stops repeat spend.
-  lastSyncedAt     DateTime? @map("last_synced_at")
+  lastSyncedAt       DateTime? @map("last_synced_at")
   /// `User.id` that triggered the last crawl. Provenance for a shared row.
-  lastSyncedByUserId String? @map("last_synced_by_user_id")
+  lastSyncedByUserId String?   @map("last_synced_by_user_id")
 
   events     FairEvent[]
   userAssocs FairUserAssociation[]
@@ -1684,17 +1730,17 @@ model RubricSelfAssessment {
 // the two coexist instead of colliding into one overwritten row. Existing rows
 // default/backfill to 'student' (they were all authored by students pre-F10).
 model TeamRubricScore {
-  id              String   @id @default(cuid())
-  teamId          String   @map("team_id")
+  id              String           @id @default(cuid())
+  teamId          String           @map("team_id")
   track           RubricTrack
-  criterionKey    String   @map("criterion_key") // e.g. "science:III"
+  criterionKey    String           @map("criterion_key") // e.g. "science:III"
   score           Int // 0..maxScore for that criterion (validated server-side against ISEF_RUBRIC)
   notes           String?
   scorerRole      RubricScorerRole @default(student) @map("scorer_role")
-  updatedByUserId String   @map("updated_by_user_id")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-  team            Team     @relation(fields: [teamId], references: [id])
-  updatedBy       User     @relation(fields: [updatedByUserId], references: [id])
+  updatedByUserId String           @map("updated_by_user_id")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  team            Team             @relation(fields: [teamId], references: [id])
+  updatedBy       User             @relation(fields: [updatedByUserId], references: [id])
 
   @@unique([teamId, criterionKey, scorerRole])
   @@map("team_rubric_scores")
@@ -1882,9 +1928,9 @@ enum VocabSource {
   stats_guide
   methods_guide
   data_quality_guide
-  paper_definition     // the paper itself defines it (validated acronym expansion)
-  paper_context        // no grounded definition exists — show the paper's own sentence
-  llm_definition       // written at build time by vocab-curate.ts, grounded in the paper's own sentence (kept as `quote`)
+  paper_definition // the paper itself defines it (validated acronym expansion)
+  paper_context // no grounded definition exists — show the paper's own sentence
+  llm_definition // written at build time by vocab-curate.ts, grounded in the paper's own sentence (kept as `quote`)
 
   @@map("vocab_source")
 }
@@ -1920,19 +1966,19 @@ model VocabCard {
   userId         String      @map("user_id")
   teamId         String      @map("team_id")
   paperId        String      @map("paper_id")
-  termKey        String      @map("term_key")     // canonicalKey() — the dedupe key
+  termKey        String      @map("term_key") // canonicalKey() — the dedupe key
   term           String
   aliases        String[]    @default([])
   definition     String
   source         VocabSource
   sourceEntryId  String?     @map("source_entry_id")
-  quote          String?                          // VERBATIM sentence from the paper
+  quote          String? // VERBATIM sentence from the paper
   box            Int         @default(1)
   dueAt          DateTime    @map("due_at")
   lastReviewedAt DateTime?   @map("last_reviewed_at")
   reviewCount    Int         @default(0) @map("review_count")
   lapses         Int         @default(0)
-  kpAwarded      Int         @default(0) @map("kp_awarded")   // once-ever high-water (0 → VOCAB_KP_PER_TERM)
+  kpAwarded      Int         @default(0) @map("kp_awarded") // once-ever high-water (0 → VOCAB_KP_PER_TERM)
   createdAt      DateTime    @default(now()) @map("created_at")
   updatedAt      DateTime    @updatedAt @map("updated_at")
 
@@ -1940,8 +1986,8 @@ model VocabCard {
   team  Team  @relation(fields: [teamId], references: [id])
   paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, termKey])          // one card per term per student
-  @@index([userId, teamId, dueAt])     // "today's due cards"
+  @@unique([userId, termKey]) // one card per term per student
+  @@index([userId, teamId, dueAt]) // "today's due cards"
   @@index([paperId])
   @@map("vocab_cards")
 }
@@ -1969,19 +2015,19 @@ model VocabKpDay {
 // 1:1 on Team. `manualTrackSlugs` lets a student add tracks the classifier
 // didn't recommend, without another LLM call.
 model TeamStudyPlan {
-  teamId           String    @id @map("team_id")
-  tracksJson       Json      @map("tracks_json")
-  sourceHash       String    @map("source_hash")
+  teamId            String    @id @map("team_id")
+  tracksJson        Json      @map("tracks_json")
+  sourceHash        String    @map("source_hash")
   // The source hash the CURRENT in-flight generation is working from, stamped
   // when the daily slot is reserved (P1-S9). The commit is a compare-and-set on
   // it, so a slow generation started against an older topic can no longer land
   // on top of a newer one that already finished.
-  pendingSourceHash String?  @map("pending_source_hash")
-  generatedAt      DateTime  @default(now()) @map("generated_at")
-  runsToday        Int       @default(0) @map("runs_today")
-  runsDay          DateTime? @db.Date @map("runs_day")
-  manualTrackSlugs String[]  @default([]) @map("manual_track_slugs")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  pendingSourceHash String?   @map("pending_source_hash")
+  generatedAt       DateTime  @default(now()) @map("generated_at")
+  runsToday         Int       @default(0) @map("runs_today")
+  runsDay           DateTime? @map("runs_day") @db.Date
+  manualTrackSlugs  String[]  @default([]) @map("manual_track_slugs")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   team Team @relation(fields: [teamId], references: [id])
 
@@ -1998,17 +2044,17 @@ model TeamStudyPlan {
 // filters by teamId ONLY. Contrast with PaperChatMessage, which IS per-user
 // because paper comprehension is graded per-student.
 model VegaStudyMessage {
-  id        String   @id @default(cuid())
-  teamId    String   @map("team_id")
-  userId    String   @map("user_id")
-  role      MessageRole
-  content   String
+  id             String            @id @default(cuid())
+  teamId         String            @map("team_id")
+  userId         String            @map("user_id")
+  role           MessageRole
+  content        String
   // See PaperChatMessage: server-owned turn lifecycle (pending → complete/error).
   status         ChatMessageStatus @default(complete)
   requestId      String?           @map("request_id")
   error          String?
   tokenUsageJson Json?             @map("token_usage_json")
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
 
   team Team @relation(fields: [teamId], references: [id])
   user User @relation(fields: [userId], references: [id])

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import {
   MAX_CLEARANCE,
@@ -149,8 +149,7 @@ export async function POST(req: NextRequest) {
   }
 
   const rubric = await loadExpertiseRubric()
-  const response = await anthropic().messages.create({
-    model: 'claude-sonnet-5',
+  const response = await aiCreate('expertise_generate', {
     // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
     // and thinking shares this `max_tokens` budget. Disabled to preserve the
     // cost, latency, and output length this route was tuned for.

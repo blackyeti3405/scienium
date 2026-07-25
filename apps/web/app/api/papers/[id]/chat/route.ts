@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate } from '@/lib/ai/spend'
 import { paperTextBlock } from '@/lib/literature/grading'
 import { buildChatTurns, runChatTurn } from '@/lib/chat/thread'
 
@@ -89,8 +89,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       // (paperTextBlock) is reused across chat → quiz → grade → retry. The first
       // request pays full price; every follow-up reuses the cache at ~10% the
       // cost (5-minute TTL). Route instructions follow, outside the cached prefix.
-      const response = await anthropic().messages.create({
-        model: 'claude-sonnet-5',
+      const response = await aiCreate('paper_chat', {
         // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
         // and thinking shares this `max_tokens` budget. Disabled to preserve the
         // cost, latency, and output length this route was tuned for.

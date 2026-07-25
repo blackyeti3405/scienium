@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import { paperTextBlock } from '@/lib/literature/grading'
 import {
@@ -111,8 +111,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   } else {
     const rubric = await loadRubric()
 
-    const response = await anthropic().messages.create({
-      model: 'claude-sonnet-5',
+    const response = await aiCreate('quiz_generate', {
       // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
       // and thinking shares this `max_tokens` budget. Disabled to preserve the
       // cost, latency, and output length this route was tuned for.

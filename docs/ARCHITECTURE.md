@@ -1346,6 +1346,28 @@ enforces this and requires any exemption to state its reason, and
 `pnpm --filter web verify:migration-preflights` proves each preflight against a
 real PostgreSQL instance inside a rolled-back transaction.
 
+### AI spend — one door, measured
+
+Every paid provider call goes through `lib/ai/spend.ts` (`aiCreate` / `aiStream`).
+The operation name is the first argument and picks the model from
+`lib/ai/models.ts`, so no call site carries a model string — a test fails if one
+reappears. That registry is also what makes "should this run on a cheaper model"
+a one-line change instead of a sixteen-file edit (REFACTOR2 P1-R3).
+
+The same door holds the **kill switch** — `AI_KILL_SWITCH` globally, and
+`Team.aiDisabledAt` per lab — checked BEFORE the call and failing closed, and
+writes one `AiUsage` row per call: team, operation, model, the three disjoint
+input-token buckets, output tokens, cost in micro-dollars at a stamped rate
+version. Cached tokens price separately (reads 0.1x, writes 1.25x). Attribution
+comes from an `AsyncLocalStorage` scope entered by `requireTeamContext`, so it
+cannot be forgotten at a new call site, and joins to class and school through
+`Team`.
+
+There is deliberately **no budget enforcement**: nothing is refused for being over
+a cap, because a cap set before real classroom data is a guess and one that fires
+mid-lesson costs more than the bill it saves. See `docs/TODO.md` → "AI cost
+review".
+
 No error-monitoring or product-analytics SDK is currently integrated. Those
 remain pre-pilot operational work in `SECURITY.md`.
 

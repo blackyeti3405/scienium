@@ -69,6 +69,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     }))
   } else {
     const result = await gradeAnswers<GradedAnswer>({
+      operation: 'quiz_grade',
       instructions: GRADING_INSTRUCTIONS(rubric),
       // Untrusted, attacker-influenceable content (an uploaded PDF) — delimited
       // and explicitly marked non-instructional in GRADING_INSTRUCTIONS so a
