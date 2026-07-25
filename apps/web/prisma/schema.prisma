@@ -1301,6 +1301,12 @@ model Showcase {
   // and resets the status when they diverge.
   contentDigest    String           @default("") @map("content_digest")
   approvedDigest   String?          @map("approved_digest")
+  /// Bearer secret for `link_only` sharing (REFACTOR2 P1-R7). `slug` is a
+  /// PUBLIC identifier — title-derived plus six hex characters — and was never
+  /// a defensible secret for anonymous access to a minor's work. Anonymous
+  /// `link_only` reads must present this instead. Rotating it revokes every
+  /// previously shared link.
+  shareToken       String?          @unique @map("share_token")
 
   team             Team                      @relation(fields: [teamId], references: [id])
   assets           ShowcaseAsset[]

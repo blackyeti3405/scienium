@@ -70,7 +70,7 @@ export type PrivacyLevel = 'public' | 'school_only' | 'link_only' | 'private'
  */
 export const PRIVACY_OPTIONS: { value: PrivacyLevel; label: string; blurb: string }[] = [
   { value: 'private', label: 'Private', blurb: 'Only your team can see it. A working draft.' },
-  { value: 'link_only', label: 'Anyone with the link', blurb: 'Unlisted — viewable by link, not in the gallery.' },
+  { value: 'link_only', label: 'Anyone with the link', blurb: 'Unlisted — viewable only through your secret share link, not in the gallery.' },
   { value: 'public', label: 'Public', blurb: 'Submitted for teacher review — appears in the public gallery once approved.' },
 ]
 
@@ -99,11 +99,24 @@ export interface ShowcaseForView {
 }
 
 /**
+ * How the caller addressed this showcase.
+ *
+ * `slug` is a PUBLIC identifier (title-derived + six hex characters).
+ * `share_token` means the caller presented the 128-bit secret — the only thing
+ * that grants anonymous `link_only` access (REFACTOR2 P1-R7).
+ */
+export type ShowcaseAccess = 'slug' | 'share_token'
+
+/**
  * Whether `viewer` may see a showcase's PUBLIC page. Team members always can
  * (preview their own draft); everyone else needs the showcase published+approved
- * and the privacy level to admit them.
+ * and the privacy level to admit them **through the route they used**.
  */
-export function canViewShowcase(sc: ShowcaseForView, viewer: ShowcaseViewer | null): boolean {
+export function canViewShowcase(
+  sc: ShowcaseForView,
+  viewer: ShowcaseViewer | null,
+  via: ShowcaseAccess = 'slug',
+): boolean {
   const isOwner = !!viewer && viewer.teamIds.includes(sc.teamId)
   if (isOwner) return true
 
@@ -117,8 +130,13 @@ export function canViewShowcase(sc: ShowcaseForView, viewer: ShowcaseViewer | nu
 
   switch (sc.privacyLevel) {
     case 'public':
-    case 'link_only':
+      // Listed in the gallery and reviewed — the slug is enough.
       return true
+    case 'link_only':
+      // Unlisted. The slug is NOT the secret: its only random part is six hex
+      // characters (24 bits), which request limiting slows but cannot turn into
+      // a capability. Only the 128-bit share token opens this (P1-R7).
+      return via === 'share_token'
     case 'school_only':
       // WITHDRAWN — fails closed to private (REFACTOR2 P0-R2). `User.schoolId`
       // is self-asserted: `resolveSchool()` upserts any typed name and settings

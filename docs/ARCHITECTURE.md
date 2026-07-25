@@ -511,7 +511,9 @@ Top-level infrastructure and policy files:
   `resolveShowcaseViewer` — the signed-in viewer's team/school context, plus the
   teams they teach, for a showcase privacy check; and
   `showcaseContentDigest`/`syncShowcaseRevision`/`requiresReview`, which bind
-  moderation approval to a specific content revision): database-backed loaders.
+  moderation approval to a specific content revision; and `makeShareToken`, the
+  128-bit `link_only` bearer secret that `makeSlug`'s public identifier is
+  explicitly not): database-backed loaders.
 - `featureRegistry.tsx`, `gateways.ts`: lab feature wiring. (The client currency
   provider moved to `components/lab/labCurrency.tsx`.)
 - `lru.ts`, `rate-limit.ts`, `storage.ts`, `uploadWithProgress.ts`,

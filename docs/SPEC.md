@@ -725,6 +725,10 @@ The editor's abstract field carries an **Abstract Structure guide** *(implemente
 - Showcase Wing feature unlocks when the team reaches the `showcase` phase (self-paced advancement to school/regional competition)
 - Available even if the student doesn't advance further — reaching this phase acknowledges the level most projects reach
 - For minors, **public publishing requires verified parental consent** (separate from initial app consent)
+- **`link_only` sharing uses a secret 128-bit share token**, not the public slug
+  (v0.35.1, P1-R7): the share URL is `/showcase/<token>`, the same token gates the
+  board/quad-chart byte stream, and "New link" rotates it to revoke every link already
+  handed out. The slug is a public identifier and opens only `public` showcases
 - ~~For school-only publishing, teacher approval is required~~ — the `school_only`
   level was **withdrawn** in v0.34.0 (REFACTOR2 P0-R2): it authorized on a self-entered
   school name. Existing rows read as team-only

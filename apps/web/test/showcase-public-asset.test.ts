@@ -31,15 +31,19 @@ vi.mock('@/lib/db', () => ({
 
 import { GET } from '@/app/api/showcase/public/asset/route'
 
-function assetReq(id = 'asset_1'): NextRequest {
-  return new NextRequest(`http://app.example.com/api/showcase/public/asset?id=${id}`)
+function assetReq(id = 'asset_1', shareToken?: string): NextRequest {
+  const t = shareToken ? `&t=${encodeURIComponent(shareToken)}` : ''
+  return new NextRequest(`http://app.example.com/api/showcase/public/asset?id=${id}${t}`)
 }
+
+const SHARE_TOKEN = 'Zm9vYmFyYmF6cXV4MTIzNA'
 
 function asset(overrides: {
   privacyLevel?: string
   publishedAt?: Date | null
   moderationStatus?: string
   fileUrl?: string
+  shareToken?: string | null
 }) {
   return {
     fileUrl: overrides.fileUrl ?? 'showcase/team_1/board.png',
@@ -49,6 +53,7 @@ function asset(overrides: {
       privacyLevel: overrides.privacyLevel ?? 'private',
       publishedAt: 'publishedAt' in overrides ? overrides.publishedAt : new Date('2026-01-01'),
       moderationStatus: overrides.moderationStatus ?? 'approved',
+      shareToken: 'shareToken' in overrides ? overrides.shareToken : SHARE_TOKEN,
       team: { members: [{ user: { schoolId: 'school_A' } }] },
     },
   }
@@ -127,6 +132,30 @@ describe('public showcase asset privacy', () => {
     const res = await GET(assetReq())
 
     expect(res.status).toBe(404)
+    expect(mocks.getObjectStream).not.toHaveBeenCalled()
+  })
+
+  // P1-R7: the share token would be worthless if the bytes stayed reachable by
+  // asset id alone — a lock on the front door with the window left open.
+  it('link_only streams only when the correct share token is presented', async () => {
+    mocks.assetFindUnique.mockResolvedValue(asset({ privacyLevel: 'link_only' }))
+
+    expect((await GET(assetReq('asset_1', SHARE_TOKEN))).status).toBe(200)
+    expect(mocks.getObjectStream).toHaveBeenCalledWith('showcase/team_1/board.png')
+  })
+
+  it('link_only 404s an anonymous request with no token or a wrong one', async () => {
+    mocks.assetFindUnique.mockResolvedValue(asset({ privacyLevel: 'link_only' }))
+
+    expect((await GET(assetReq())).status).toBe(404)
+    expect((await GET(assetReq('asset_1', 'not-the-token'))).status).toBe(404)
+    expect(mocks.getObjectStream).not.toHaveBeenCalled()
+  })
+
+  it('a valid share token cannot open a private showcase', async () => {
+    mocks.assetFindUnique.mockResolvedValue(asset({ privacyLevel: 'private' }))
+
+    expect((await GET(assetReq('asset_1', SHARE_TOKEN))).status).toBe(404)
     expect(mocks.getObjectStream).not.toHaveBeenCalled()
   })
 

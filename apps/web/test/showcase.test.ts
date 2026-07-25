@@ -43,8 +43,33 @@ describe('canViewShowcase', () => {
     expect(canViewShowcase({ ...base, privacyLevel: 'public' }, anon)).toBe(true)
   })
 
-  it('link_only + approved is visible to anyone', () => {
-    expect(canViewShowcase({ ...base, privacyLevel: 'link_only' }, anon)).toBe(true)
+  // P1-R7: the slug's only unguessable part is six hex characters (24 bits), so
+  // it was never a defensible secret for a minor's project. `link_only` now
+  // opens ONLY for a caller presenting the 128-bit share token.
+  it('link_only opens for the share token and nothing else', () => {
+    const sc = { ...base, privacyLevel: 'link_only' as const }
+    expect(canViewShowcase(sc, anon, 'share_token')).toBe(true)
+    expect(canViewShowcase(sc, anon, 'slug')).toBe(false)
+    expect(canViewShowcase(sc, anon)).toBe(false) // default must be the safe one
+    expect(canViewShowcase(sc, otherSchool, 'slug')).toBe(false)
+  })
+
+  it('public stays reachable by its slug — it is a listed, reviewed identifier', () => {
+    expect(canViewShowcase({ ...base, privacyLevel: 'public' }, anon, 'slug')).toBe(true)
+  })
+
+  it('a share token does not resurrect a private or unapproved showcase', () => {
+    expect(canViewShowcase({ ...base, privacyLevel: 'private' }, anon, 'share_token')).toBe(false)
+    expect(
+      canViewShowcase(
+        { ...base, privacyLevel: 'link_only', moderationStatus: 'pending_review' },
+        anon,
+        'share_token',
+      ),
+    ).toBe(false)
+    expect(
+      canViewShowcase({ ...base, privacyLevel: 'link_only', publishedAt: null }, anon, 'share_token'),
+    ).toBe(false)
   })
 
   // P0-R2: `User.schoolId` comes from a free-text name any student can type in

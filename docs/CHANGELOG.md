@@ -5,6 +5,57 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.35.1] — 2026-07-25
+
+### Fixed — `link_only` sharing now uses a real 128-bit secret (P1-R7)
+`makeSlug(title)` produces a title-derived prefix plus six hexadecimal characters from a UUID.
+That is **24 bits** of bearer entropy standing between an anonymous visitor and a minor's
+project work — request limiting slows enumeration but does not turn a small, predictable
+namespace into a capability.
+
+- `Showcase.shareToken` is a 128-bit `randomBytes(16).toString('base64url')` value, unique.
+  `slug` is now documented as what it always was: a **public identifier**, not a secret.
+- `canViewShowcase` takes a `via: 'slug' | 'share_token'` argument. `public` opens by slug
+  (listed, reviewed, indexable); `link_only` opens **only** for `share_token`. The parameter
+  defaults to `'slug'`, so a caller that forgets to pass it fails closed.
+- `/showcase/<param>` resolves by slug **or** share token and reports which matched, so
+  existing public URLs are unchanged and the share link is a single path segment (no token in
+  a query string, where it would leak through `Referer` more readily).
+- **The asset stream is gated identically.** `/api/showcase/public/asset` accepts `?t=` and
+  compares it to the showcase's token. Without this the token would be a lock on the front
+  door with the window left open — board and quad-chart bytes were reachable by asset id
+  alone.
+- **Rotation is the revocation mechanism.** `PUT /api/showcase { rotateShareToken: true }`
+  mints a new token and invalidates every link handed out so far; the editor exposes it as
+  "New link" for `link_only` showcases. There is no way to un-share a URL somebody already
+  copied, so this is deliberately an explicit action rather than a side effect of saving.
+- The API returns `shareUrl` — the URL a team should actually hand out — and the editor uses
+  it instead of building one from `slug`.
+
+**Deliberately not done, with reasons:** the token is stored in plaintext rather than as a
+digest, because the team must be able to read their own link back out of the editor to share
+it; time-based expiry is omitted because rotation covers revocation and a link that dies
+mid-science-fair is a real usability cost; and unknown-token throttling is left to the existing
+`read` tier, since 128 bits makes enumeration infeasible rather than merely slow.
+
+**Breaking:** existing `link_only` URLs stop working. A 24-bit link cannot be upgraded in
+place, only replaced — teams re-copy the new link from the editor. Migration
+`20260725160000_showcase_share_token` backfills every existing row with two concatenated
+`gen_random_uuid()` values (~244 bits, no extension required).
+
+### Changed — `e2e/F4.spec.ts` acceptance criteria follow the new contract
+AC3 asserted that the seeded teacher gets 404 on a pending showcase. That teacher owns the
+leader's class, and since v0.35.0 the team's own teacher is *supposed* to see pending revisions
+— the old assertion would now pin the very defect P0-R3 fixed. AC3 now uses a signed-out
+visitor (a genuine stranger), new **AC3b** asserts the moderator preview positively, and AC4
+asserts `link_only` opens at its share URL and **not** at its slug.
+
+### Verification
+Gates 1–5 pass. Vitest: **93 files / 1,334 tests passed**. Migration applied to the local dev
+database; the backfill produced tokens on every row and left team data untouched. **E2E was not
+run for this change** — `F4` needs the dev server, database, and Clerk credentials; the three
+edited criteria above are the ones to watch on the next full run.
+
 ## [0.35.0] — 2026-07-25
 
 **The last P0 launch blocker from the 2026-07-23 audit.** Showcase approval was a mutable

@@ -352,7 +352,7 @@ untrusted forks, require the check in active branch protection, and add Firefox/
 bounded compatibility lane. Keep E2E credentials in a least-privilege test tenant and review
 failure artifacts for student data.
 
-#### P1-R7 — `link_only` uses a 24-bit bearer suffix
+#### P1-R7 — `link_only` uses a 24-bit bearer suffix — **CLOSED (v0.35.1)**
 
 `makeSlug(title)` exposes a title-derived prefix plus only six hexadecimal characters from a
 UUID. That is 24 bits of bearer entropy for anonymous `link_only` access, not a defensible
@@ -362,6 +362,17 @@ predictable namespace into a long-lived capability.
 Use a separate public slug and at least a 128-bit random share token. Store only a digest where
 practical, support rotate/revoke and expiry, throttle unknown-token misses at the edge, and
 alert on enumeration. Moderation approval must still bind the shared revision.
+
+**Closed in v0.35.1.** `Showcase.shareToken` is a unique 128-bit base64url value; `slug` is
+documented as the public identifier it always was. `canViewShowcase` takes
+`via: 'slug' | 'share_token'` (defaulting to the safe `'slug'`), and `link_only` opens only for
+the token — at the page **and** at the asset-stream route, which now takes `?t=`. Rotation via
+`PUT /api/showcase { rotateShareToken: true }` is the revocation mechanism and is surfaced in
+the editor. Moderation revision binding from P0-R3 is unaffected. Existing `link_only` URLs
+break by design. **Explicitly not done:** digest-only storage (the team must read their own
+link back), time-based expiry (rotation covers revocation; a link dying mid-fair is a real
+usability cost), and edge throttling of unknown tokens (128 bits makes enumeration infeasible,
+not merely slow). **Still open:** enumeration alerting.
 
 #### P1-R8 — Team and class authority has no revocation lifecycle
 
@@ -1162,6 +1173,15 @@ Gates 1–5 pass; Vitest 91 files / 1,310 tests.
 **Closing the P0s is not pilot sign-off.** §0.10 still requires the P1 program, legal/minors/
 privacy approval, a restore drill, enforceable CI, and a measured capacity test.
 
+#### v0.35.1 — 2026-07-25
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P1-R7** `link_only` protected by a 24-bit slug suffix | **CLOSED** | Unique 128-bit `shareToken`; `canViewShowcase(sc, viewer, via)` opens `link_only` only for `via === 'share_token'` (default `'slug'` fails closed); the page resolves by slug **or** token; the asset-stream route takes `?t=` so the bytes are gated identically; rotation revokes and is exposed in the editor. Existing `link_only` URLs break by design. | Enumeration alerting. Digest-only storage, expiry, and edge throttling are documented non-goals with reasons. |
+
+E2E `F4` AC3/AC3b/AC4 were rewritten for the new contract but **not executed** — they need the
+dev server, database, and Clerk credentials.
+
 ---
 
 ---
@@ -1249,7 +1269,7 @@ Track A's named findings remain historical close-outs. The following list is the
 | P1 | A13's unique-index migration has no historical dedupe/preflight | Production deploy can fail on rows the old schema/code permitted |
 | P1 | No durable AI operation/cost ledger, global budget, or kill switch | Spend and provider outcomes cannot be reconciled |
 | P1 | No append-only security audit events or actionable alert thresholds | Role/privacy/destructive abuse is hard to detect or investigate |
-| P1 | `link_only` uses a title-derived slug plus only 24 random bits | Anonymous student content is protected by a guessable bearer namespace |
+| ~~P1~~ **CLOSED v0.35.1** | `link_only` uses a title-derived slug plus only 24 random bits | 128-bit rotatable share token gates both the page and the asset bytes |
 | P1 | Team/class membership has no complete switch/leave/remove/transfer/revoke/archive lifecycle | Stale membership becomes stale authorization and pilot support cannot repair it safely |
 | P1 | Account export/deletion and retention are manual or undefined | Minor data and private objects cannot be proven removed on request |
 | P1 (partial) | Codex authoring and count-based catalog seeders can return false clean/stale success | Forms seeder now keys on code coverage (v0.34.0); the Codex authoring workflow and `seedFairsBatched` remain open |

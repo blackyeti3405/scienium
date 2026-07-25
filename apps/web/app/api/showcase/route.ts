@@ -12,7 +12,12 @@ import {
   wordCount,
   type PrivacyLevel,
 } from '@/lib/showcase'
-import { makeSlug, requiresReview, syncShowcaseRevision } from '@/lib/showcase-server'
+import {
+  makeShareToken,
+  makeSlug,
+  requiresReview,
+  syncShowcaseRevision,
+} from '@/lib/showcase-server'
 
 // `school_only` is deliberately NOT accepted — it authorized on a self-asserted
 // `User.schoolId` (REFACTOR2 P0-R2). Legacy rows still hold the value and now
@@ -33,6 +38,7 @@ function serialize(sc: {
   publishedAt: Date | null
   moderationStatus: string
   moderationNote: string | null
+  shareToken: string | null
   assets: { id: string; assetType: string; fileUrl: string | null; metadataJson: unknown }[]
   views?: number
   team?: { name: string; labType: string | null }
@@ -48,6 +54,13 @@ function serialize(sc: {
     publishedAt: sc.publishedAt,
     moderationStatus: sc.moderationStatus,
     moderationNote: sc.moderationNote,
+    // The URL the team should actually hand out. `link_only` is reachable ONLY
+    // through the 128-bit share token (P1-R7); the slug is a public identifier
+    // and opens nothing unlisted.
+    shareUrl:
+      sc.privacyLevel === 'link_only' && sc.shareToken
+        ? `/showcase/${sc.shareToken}`
+        : `/showcase/${sc.slug}`,
     views: sc.views ?? 0,
     team: sc.team,
     assets: sc.assets.map((a) => ({
@@ -95,6 +108,8 @@ const PutBody = z
     abstract: z.string().trim().max(ABSTRACT_MAX).optional(),
     privacyLevel: z.enum(PRIVACY).optional(),
     published: z.boolean().optional(),
+    /** Mint a fresh share token — revokes every link handed out so far (P1-R7). */
+    rotateShareToken: z.boolean().optional(),
   })
   .strict()
 
@@ -187,6 +202,12 @@ export async function PUT(req: NextRequest) {
           ...(data.title !== undefined ? { title: nextTitle } : {}),
           ...(data.abstract !== undefined ? { abstract: nextAbstract } : {}),
           ...(data.privacyLevel !== undefined ? { privacyLevel: nextPrivacy } : {}),
+          // Rotation is the revocation mechanism: there is no way to un-share a
+          // link that has already been copied, only to invalidate it. Also
+          // back-fills a token for a showcase created before P1-R7.
+          ...(data.rotateShareToken || !existing.shareToken
+            ? { shareToken: makeShareToken() }
+            : {}),
           ...(publishFields ?? {}),
         },
         include: includeFull,
@@ -195,6 +216,7 @@ export async function PUT(req: NextRequest) {
         data: {
           teamId: ctx.teamId,
           slug: makeSlug(nextShort || nextTitle),
+          shareToken: makeShareToken(),
           shortTitle: nextShort,
           title: nextTitle,
           abstract: nextAbstract,

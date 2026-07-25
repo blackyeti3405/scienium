@@ -3,7 +3,7 @@ import { headers } from 'next/headers'
 import { Github, Paperclip, ExternalLink, Eye, Printer } from 'lucide-react'
 import { db } from '@/lib/db'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
-import { canViewShowcase, toShowcaseForView } from '@/lib/showcase'
+import { canViewShowcase, toShowcaseForView, type ShowcaseAccess } from '@/lib/showcase'
 import { viewFingerprint, recordShowcaseView, resolveShowcaseViewer } from '@/lib/showcase-server'
 import { PrintButton } from '@/components/showcase/PrintButton'
 
@@ -12,14 +12,31 @@ interface Props {
   searchParams: Promise<{ print?: string }>
 }
 
+/** Asset stream URL, carrying the share token when the page was opened by one. */
+function assetHref(id: string, via: ShowcaseAccess, shareToken: string | null): string {
+  const base = `/api/showcase/public/asset?id=${id}`
+  return via === 'share_token' && shareToken
+    ? `${base}&t=${encodeURIComponent(shareToken)}`
+    : base
+}
+
 /** Null-safe narrowing of an asset's `metadataJson` (stored as JSON, typed loosely). */
 function readMeta<T>(a?: { metadataJson: unknown }): T | undefined {
   return a && typeof a.metadataJson === 'object' && a.metadataJson ? (a.metadataJson as T) : undefined
 }
 
-async function loadShowcase(slug: string) {
-  return db.showcase.findUnique({
-    where: { slug },
+/**
+ * Resolve `/showcase/<param>` by EITHER the public slug or the secret share
+ * token, and report which matched (REFACTOR2 P1-R7).
+ *
+ * `link_only` used to be reachable at the same title-derived slug as a public
+ * showcase, whose only unguessable part is six hex characters. Presenting the
+ * 128-bit token is now the sole anonymous way into a `link_only` showcase;
+ * `canViewShowcase` decides using `via`.
+ */
+async function loadShowcase(param: string) {
+  const sc = await db.showcase.findFirst({
+    where: { OR: [{ slug: param }, { shareToken: param }] },
     include: {
       assets: { orderBy: { uploadedAt: 'asc' } },
       team: {
@@ -32,20 +49,26 @@ async function loadShowcase(slug: string) {
       _count: { select: { views: true } },
     },
   })
+  if (!sc) return null
+  // A token match wins: the slug is public, so only an exact token match may
+  // upgrade the caller's access.
+  const via: ShowcaseAccess = sc.shareToken === param ? 'share_token' : 'slug'
+  return { sc, via }
 }
 
 export async function generateMetadata(props: Props) {
   const params = await props.params;
-  const sc = await loadShowcase(params.slug)
+  const found = await loadShowcase(params.slug)
   const viewer = await resolveShowcaseViewer()
-  if (!sc || !canViewShowcase(toShowcaseForView(sc), viewer)) {
+  if (!found || !canViewShowcase(toShowcaseForView(found.sc), viewer, found.via)) {
     return { title: 'Showcase' }
   }
+  const { sc } = found
   const headline = sc.shortTitle || sc.title
   // OG image must be an image — use the quad chart only when it's an image file.
   const quad = sc.assets.find((a) => a.assetType === 'quad_chart')
   const ogImage = quad && quad.fileUrl && !quad.fileUrl.endsWith('.pdf')
-    ? [{ url: `/api/showcase/public/asset?id=${quad.id}` }]
+    ? [{ url: assetHref(quad.id, found.via, sc.shareToken) }]
     : undefined
   return {
     title: headline,
@@ -61,10 +84,11 @@ export async function generateMetadata(props: Props) {
 export default async function PublicShowcasePage(props: Props) {
   const searchParams = await props.searchParams;
   const params = await props.params;
-  const sc = await loadShowcase(params.slug)
+  const found = await loadShowcase(params.slug)
   const viewer = await resolveShowcaseViewer()
 
-  if (!sc || !canViewShowcase(toShowcaseForView(sc), viewer)) notFound()
+  if (!found || !canViewShowcase(toShowcaseForView(found.sc), viewer, found.via)) notFound()
+  const { sc } = found
 
   // `?print=1` only ever selects a layout — the authorization check above runs
   // first and identically either way, so the flag can never leak a private or
@@ -88,7 +112,9 @@ export default async function PublicShowcasePage(props: Props) {
     }
   }
 
-  const assetUrl = (id: string) => `/api/showcase/public/asset?id=${id}`
+  // Carry the share token onto every asset request, so a `link_only` page can
+  // actually load its own board/quad bytes (P1-R7).
+  const assetUrl = (id: string) => assetHref(id, found.via, sc.shareToken)
   const isPdf = (fileUrl: string | null) => !!fileUrl && fileUrl.endsWith('.pdf')
   const embedOf = (a?: { metadataJson: unknown }) => readMeta<{ embedUrl?: string }>(a)?.embedUrl
 

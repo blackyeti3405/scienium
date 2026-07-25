@@ -9,8 +9,10 @@ import { minimalPdfBytes, minimalPngBytes } from './fixtures'
  * Criterion → test mapping:
  *  AC1  — Public publish shows "Pending teacher review" pill in the editor
  *  AC2  — Pending public showcase is absent from /showcase/gallery
- *  AC3  — Non-team viewer (teacher session, not a team member) gets HTTP 404 on /showcase/{slug}
- *  AC4  — link_only publish is self-serve: showcase reachable at /showcase/{slug} immediately (HTTP 200)
+ *  AC3  — An unrelated (signed-out) visitor cannot see a pending showcase
+ *  AC3b — The TEAM'S OWN TEACHER can preview the exact pending revision (P0-R3)
+ *  AC4  — link_only publish is self-serve and reachable ONLY at its secret share
+ *         URL — the public slug does not open it (P1-R7)
  *  AC5  — Teacher GET /api/teacher/showcase-moderation lists the pending showcase from their class
  *  AC6  — Teacher GET scoped: no cross-class leakage; all returned showcases have team names (scope guard)
  *  AC7  — POST approve/reject for a nonexistent showcaseId returns 404 (security path tested)
@@ -201,26 +203,49 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       return showcase.slug as string
     })
 
-    // Teacher is NOT a team member (isOwner=false); pending ≠ live → the
-    // not-found boundary renders and the showcase content must not.
+    // An unrelated visitor: pending is not live, so the not-found boundary
+    // renders and the content must not.
+    //
+    // This deliberately uses a SIGNED-OUT context rather than the seeded
+    // teacher. The seed makes that teacher own the leader's class, and since
+    // P0-R3 the team's own teacher is *supposed* to see pending revisions
+    // (AC3b) — asserting 404 for them would now pin the very defect P0-R3
+    // fixed. A signed-out visitor is the genuine stranger.
+    //
     // NOTE on the assertion shape: the slug page streams behind its
     // loading.tsx, so Next can flush a 200 shell before notFound() runs — the
     // HTTP status is a render-speed race, but the rendered outcome is not.
-    // Assert the real privacy property (not-found UI, zero content) instead of
-    // the status code. Separate session so the teacher context is isolated.
-    await withSeedPage(browser, 'teacher', async (teacherPage) => {
-      await teacherPage.goto(`/showcase/${slug}`)
-      await expect(teacherPage.getByText('This page could not be found.')).toBeVisible({
+    const anonContext = await browser.newContext()
+    try {
+      const anonPage = await anonContext.newPage()
+      await anonPage.goto(`/showcase/${slug}`)
+      await expect(anonPage.getByText('This page could not be found.')).toBeVisible({
         timeout: 10000,
       })
-      await expect(teacherPage.getByText(SHORT_TITLE)).toHaveCount(0)
+      await expect(anonPage.getByText(SHORT_TITLE)).toHaveCount(0)
+    } finally {
+      await anonContext.close()
+    }
+  })
+
+  // ── AC3b ──────────────────────────────────────────────────────────────────────
+  // P0-R3: a reviewer must be able to inspect the exact revision they are being
+  // asked to approve. Before this, "View submission" pointed at the public page,
+  // whose pending-content policy admitted team members but NOT the teacher.
+  // State going in / out: pending_review, unchanged.
+  test("AC3b: the team's own teacher can preview the pending revision", async ({ browser }) => {
+    if (!showcaseSlug) throw new Error('Showcase slug not set')
+
+    await withSeedPage(browser, 'teacher', async (teacherPage) => {
+      await teacherPage.goto(`/showcase/${showcaseSlug}`)
+      await expect(teacherPage.getByText(SHORT_TITLE).first()).toBeVisible({ timeout: 10000 })
     })
   })
 
   // ── AC4 ───────────────────────────────────────────────────────────────────────
   // State going in: pending_review.
   // State going out: public + pending_review (restored after link_only test).
-  test('AC4: link_only publish is self-serve: showcase reachable immediately (HTTP 200)', async ({
+  test('AC4: link_only is self-serve and opens ONLY at its secret share URL', async ({
     browser,
   }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set')
@@ -236,11 +261,25 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       // Self-serve: link_only → immediately approved, no teacher step.
       expect(switched.moderationStatus).toBe('approved')
 
-      // Teacher (non-team member) can now reach the showcase at its slug.
-      await withSeedPage(browser, 'teacher', async (teacherPage) => {
-        const viewRes = await api.get(teacherPage, `/showcase/${showcaseSlug}`)
-        expect(viewRes.status()).toBe(200)
-      })
+      // P1-R7: the share URL carries a 128-bit token and is NOT the slug.
+      expect(switched.shareUrl).toBeTruthy()
+      expect(switched.shareUrl).not.toBe(`/showcase/${switched.slug}`)
+
+      // A signed-out stranger: the secret opens it, the public slug does not.
+      const anonContext = await browser.newContext()
+      try {
+        const anonPage = await anonContext.newPage()
+
+        await anonPage.goto(switched.shareUrl)
+        await expect(anonPage.getByText(SHORT_TITLE).first()).toBeVisible({ timeout: 10000 })
+
+        await anonPage.goto(`/showcase/${showcaseSlug}`)
+        await expect(anonPage.getByText('This page could not be found.')).toBeVisible({
+          timeout: 10000,
+        })
+      } finally {
+        await anonContext.close()
+      }
 
       // Restore to public + pending_review for subsequent tests via unpublish + re-publish.
       const unpubRes = await api.put(leaderPage, '/api/showcase', { data: { published: false } })

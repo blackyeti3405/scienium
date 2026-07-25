@@ -1,5 +1,5 @@
 import 'server-only'
-import { createHash, randomUUID } from 'crypto'
+import { createHash, randomBytes, randomUUID } from 'crypto'
 import { auth } from '@clerk/nextjs/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
@@ -12,9 +12,28 @@ import { viewFingerprintSalt } from '@/lib/env'
  * never lands in the browser bundle.
  */
 
-/** A slug guaranteed unique by appending a short random suffix. */
+/**
+ * A slug guaranteed unique by appending a short random suffix.
+ *
+ * This is a PUBLIC identifier, not a secret — it is title-derived and its random
+ * part is six hex characters. It identifies a `public` showcase in the gallery;
+ * anonymous `link_only` access goes through `makeShareToken()` instead
+ * (REFACTOR2 P1-R7).
+ */
 export function makeSlug(title: string): string {
   return `${slugify(title)}-${randomUUID().slice(0, 6)}`
+}
+
+/**
+ * A 128-bit bearer token for `link_only` sharing — the capability the six-hex
+ * slug suffix pretended to be. Base64url so it is one URL path segment.
+ *
+ * Stored in plaintext, deliberately: the team has to be able to read their own
+ * link back out of the editor to share it, so a digest-only column would make
+ * the feature unusable. Rotation is the revocation mechanism.
+ */
+export function makeShareToken(): string {
+  return randomBytes(16).toString('base64url')
 }
 
 // ─── Revision binding (REFACTOR2 P0-R3) ──────────────────────────────────────
@@ -60,9 +79,9 @@ export function requiresReview(privacyLevel: string): boolean {
   // for every externally reachable mode, or explicitly accept each narrower
   // mode": it is unlisted, exists so a team can share a work-in-progress with a
   // parent or mentor, and gating it behind a teacher queue would make the
-  // ordinary sharing path unusable. The real weakness of that acceptance is the
-  // guessable bearer slug tracked separately as P1-R7 — fixing the token is what
-  // makes "unlisted" true, not adding a review step.
+  // ordinary sharing path unusable. That acceptance now rests on a real secret —
+  // P1-R7 replaced the guessable slug with a 128-bit rotatable share token, so
+  // "unlisted" is true rather than aspirational.
   return privacyLevel === 'public'
 }
 

@@ -23,6 +23,11 @@ export interface Showcase {
   publishedAt: string | null
   moderationStatus: string
   moderationNote: string | null
+  /**
+   * The URL to actually hand out. For `link_only` this carries the secret share
+   * token, NOT the public slug (P1-R7) — never build a share link from `slug`.
+   */
+  shareUrl: string
   views: number
   assets: Asset[]
 }
@@ -99,7 +104,9 @@ export function useShowcaseEditor() {
   const words = wordCount(abstract)
   const overWords = words > ABSTRACT_WORD_MAX
 
-  async function save(extra?: { published?: boolean }): Promise<Showcase | null> {
+  async function save(
+    extra?: { published?: boolean; rotateShareToken?: boolean },
+  ): Promise<Showcase | null> {
     setError(null)
     const res = await fetch('/api/showcase', {
       method: 'PUT',
@@ -139,6 +146,18 @@ export function useShowcaseEditor() {
     setPublishing(false)
   }
 
+  /**
+   * Mint a new share token. There is no way to un-share a link somebody already
+   * copied — rotating is the revocation (P1-R7), so it is deliberately an
+   * explicit action rather than something a save does silently.
+   */
+  async function onRotateShareLink() {
+    setSaving(true)
+    const saved = await save({ rotateShareToken: true })
+    if (saved) flashNotice('New link generated — the old one no longer works')
+    setSaving(false)
+  }
+
   function flashNotice(msg: string) {
     setNotice(msg)
     setTimeout(() => setNotice(null), 2500)
@@ -167,7 +186,7 @@ export function useShowcaseEditor() {
     await fetch(`/api/showcase/asset/${id}`, { method: 'DELETE' }).catch(() => {})
   }
 
-  const publicUrl = sc ? `/showcase/${sc.slug}` : null
+  const publicUrl = sc?.shareUrl ?? null
   const board = sc ? byType(sc.assets, 'board') : undefined
   const quad = sc ? byType(sc.assets, 'quad_chart') : undefined
   const video = sc ? byType(sc.assets, 'video') : undefined
@@ -207,6 +226,7 @@ export function useShowcaseEditor() {
     overWords,
     onSave,
     onPublishToggle,
+    onRotateShareLink,
     flashNotice,
     ensureSaved,
     onAssetAdded,

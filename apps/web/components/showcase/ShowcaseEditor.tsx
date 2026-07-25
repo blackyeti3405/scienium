@@ -61,6 +61,7 @@ export function ShowcaseEditor() {
     onAssetAdded,
     removeAsset,
     publicUrl,
+    onRotateShareLink,
     board,
     quad,
     video,
@@ -77,7 +78,13 @@ export function ShowcaseEditor() {
   return (
     <div className="sc-editor">
       {/* ── Top status bar ───────────────────────────────────────────── */}
-      <TopBar sc={sc} publicUrl={publicUrl} notice={notice} flashNotice={flashNotice} />
+      <TopBar
+        sc={sc}
+        publicUrl={publicUrl}
+        onRotateShareLink={onRotateShareLink}
+        notice={notice}
+        flashNotice={flashNotice}
+      />
 
       {/* ── Rejection notice ─────────────────────────────────────────── */}
       {sc?.moderationStatus === 'rejected' && (

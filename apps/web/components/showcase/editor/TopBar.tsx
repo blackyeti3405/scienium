@@ -9,6 +9,7 @@ import {
   Globe,
   PenLine,
   Printer,
+  RefreshCw,
 } from 'lucide-react'
 import type { Showcase } from '@/components/showcase/useShowcaseEditor'
 
@@ -17,11 +18,14 @@ import type { Showcase } from '@/components/showcase/useShowcaseEditor'
 export function TopBar({
   sc,
   publicUrl,
+  onRotateShareLink,
   notice,
   flashNotice,
 }: {
   sc: Showcase | null
   publicUrl: string | null
+  /** Rotates the `link_only` share token — the only way to revoke a shared link. */
+  onRotateShareLink?: () => void
   notice: string | null
   flashNotice: (msg: string) => void
 }) {
@@ -83,11 +87,20 @@ export function TopBar({
               className="sc-ghost font-pixel"
               onClick={() => {
                 navigator.clipboard?.writeText(`${window.location.origin}${publicUrl}`)
-                flashNotice('Link copied')
+                flashNotice(
+                  sc.privacyLevel === 'link_only'
+                    ? 'Secret link copied — anyone who has it can view'
+                    : 'Link copied',
+                )
               }}
             >
               <Copy size={11} /> Copy link
             </button>
+            {sc.privacyLevel === 'link_only' && onRotateShareLink && (
+              <button className="sc-ghost font-pixel" onClick={onRotateShareLink}>
+                <RefreshCw size={11} /> New link
+              </button>
+            )}
             <a className="sc-ghost font-pixel" href={publicUrl} target="_blank" rel="noopener noreferrer">
               <ExternalLink size={11} /> View
             </a>
