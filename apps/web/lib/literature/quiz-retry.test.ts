@@ -31,6 +31,12 @@ const mocks = vi.hoisted(() => ({
   lockAggregate: vi.fn<(...args: unknown[]) => unknown>(),
   logActivity: vi.fn<(...args: unknown[]) => unknown>(),
   anthropicCreate: vi.fn<(...args: unknown[]) => unknown>(),
+  // Replay ledger (P1-R11 remainder): the real grading path now runs through
+  // runAiOperation, so the retry service needs `db.aiOperation` present.
+  aiOpCreate: vi.fn<(...args: unknown[]) => unknown>(),
+  aiOpFindUnique: vi.fn<(...args: unknown[]) => unknown>(),
+  aiOpUpdate: vi.fn<(...args: unknown[]) => unknown>(),
+  aiOpUpdateMany: vi.fn<(...args: unknown[]) => unknown>(),
 }))
 
 vi.mock('server-only', () => ({}))
@@ -45,6 +51,12 @@ vi.mock('@/lib/db', () => ({
       findFirst: mocks.sessionFindFirst,
       update: mocks.sessionUpdate,
       updateMany: mocks.sessionUpdateMany,
+    },
+    aiOperation: {
+      create: mocks.aiOpCreate,
+      findUnique: mocks.aiOpFindUnique,
+      update: mocks.aiOpUpdate,
+      updateMany: mocks.aiOpUpdateMany,
     },
     $transaction: (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
@@ -111,6 +123,10 @@ beforeEach(() => {
   mocks.sessionUpdateMany.mockResolvedValue({ count: 1 })
   // Session state re-read INSIDE the transaction for the monotonic write (P1-R11).
   mocks.sessionFindUniqueTx.mockResolvedValue({ score: 0, passed: false })
+  // Fresh operation each time: no prior result to replay.
+  mocks.aiOpCreate.mockResolvedValue({ id: 'aiop_1' })
+  mocks.aiOpUpdate.mockResolvedValue({})
+  mocks.aiOpUpdateMany.mockResolvedValue({ count: 1 })
   mocks.attemptCreateMany.mockResolvedValue({ count: 0 })
   mocks.proficiencyFindUnique.mockResolvedValue(null)
   mocks.proficiencyUpsert.mockResolvedValue({})
@@ -395,5 +411,86 @@ describe('submitRetry — grading claim and monotonic session write (P1-R11)', (
 
     const write = mocks.sessionUpdate.mock.calls[0]![0] as { data: Record<string, unknown> }
     expect(write.data.retryGradeClaimedAt).toBeNull()
+  })
+})
+
+// REFACTOR2 P1-R11 remainder: the claim stops two callers grading at the same
+// instant, but a client that timed out and retried with the SAME answers used
+// to pay again. The ledger replays the result it already paid for.
+describe('submitRetry — identical resubmissions replay instead of re-grading', () => {
+  beforeEach(() => {
+    mocks.sessionFindFirst.mockResolvedValue(failedSession({ withExtra: true }))
+    vi.stubEnv('E2E_SKIP_LLM', '') // exercise the real grading path
+  })
+
+  it('replays a stored grade without calling the provider again', async () => {
+    const { Prisma } = await import('@prisma/client')
+    mocks.aiOpCreate.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }),
+    )
+    mocks.aiOpFindUnique.mockResolvedValue({
+      id: 'aiop_1',
+      status: 'succeeded',
+      createdAt: new Date(),
+      resultJson: [
+        { questionId: 'q1', score: 91, rationale: 'replayed' },
+        { questionId: 'q2', score: 91, rationale: 'replayed' },
+        { questionId: 'q6', score: 91, rationale: 'replayed' },
+      ],
+    })
+
+    const res = await submitRetry('sess_1', 'paper_1', PRINCIPAL, [
+      { questionId: 'q2', response: 'same answer as before' },
+    ])
+
+    expect(res.ok).toBe(true)
+    // The provider was never called — the stored grade was reused.
+    expect(mocks.anthropicCreate).not.toHaveBeenCalled()
+    if (res.ok) expect(res.results.find((r) => r.questionId === 'q2')?.score).toBe(91)
+  })
+
+  it('keys the operation on the session AND the exact answers', async () => {
+    mocks.anthropicCreate.mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([{ questionId: 'q2', score: 80, rationale: 'ok' }]) }],
+    })
+
+    await submitRetry('sess_1', 'paper_1', PRINCIPAL, [{ questionId: 'q2', response: 'first' }])
+    const keyA = (mocks.aiOpCreate.mock.calls[0]![0] as { data: { idempotencyKey: string } }).data.idempotencyKey
+
+    vi.clearAllMocks()
+    mocks.sessionFindFirst.mockResolvedValue(failedSession({ withExtra: true }))
+    mocks.sessionUpdateMany.mockResolvedValue({ count: 1 })
+    mocks.sessionFindUniqueTx.mockResolvedValue({ score: 0, passed: false })
+    mocks.aiOpCreate.mockResolvedValue({ id: 'aiop_2' })
+    mocks.aiOpUpdate.mockResolvedValue({})
+    mocks.anthropicCreate.mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify([{ questionId: 'q2', score: 80, rationale: 'ok' }]) }],
+    })
+
+    await submitRetry('sess_1', 'paper_1', PRINCIPAL, [{ questionId: 'q2', response: 'DIFFERENT' }])
+    const keyB = (mocks.aiOpCreate.mock.calls[0]![0] as { data: { idempotencyKey: string } }).data.idempotencyKey
+
+    // Different answers must not replay each other's grade.
+    expect(keyA).not.toBe(keyB)
+  })
+
+  it('refuses rather than double-grading while an identical submission is in flight', async () => {
+    const { Prisma } = await import('@prisma/client')
+    mocks.aiOpCreate.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }),
+    )
+    mocks.aiOpFindUnique.mockResolvedValue({
+      id: 'aiop_1', status: 'running', createdAt: new Date(), resultJson: null,
+    })
+
+    const res = await submitRetry('sess_1', 'paper_1', PRINCIPAL, [
+      { questionId: 'q2', response: 'same' },
+    ])
+
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.status).toBe(409)
+    expect(mocks.anthropicCreate).not.toHaveBeenCalled()
   })
 })

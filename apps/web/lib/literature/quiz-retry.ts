@@ -2,6 +2,7 @@ import 'server-only'
 import { Prisma } from '@prisma/client'
 import { anthropic } from '@/lib/anthropic'
 import { db } from '@/lib/db'
+import { aiIdempotencyKey, runAiOperation } from '@/lib/ai/operation'
 import {
   QUIZ_QUESTION_COUNT,
   QUIZ_PASS_THRESHOLD,
@@ -188,6 +189,10 @@ const RETRY_GEN_CLAIM_TTL_MS = 120_000
 /** Follower poll cadence + budget while the elected generator works. */
 const RETRY_GEN_POLL_MS = 750
 const RETRY_GEN_POLL_BUDGET_MS = 30_000
+
+/** Unusable grading output. Thrown inside the operation so the ledger records a
+ *  real failed attempt; mapped to the existing 502 outside it. */
+class RetryGradingError extends Error {}
 
 /** How long a retry-grading claim is honoured before a crashed grader is taken over. */
 const RETRY_GRADE_CLAIM_TTL_MS = 2 * 60_000
@@ -413,20 +418,44 @@ export async function submitRetry(
     // deterministically PASSES. Never set this in production.
     graded = toGrade.map((q) => ({ questionId: q.id, score: 90, rationale: 'E2E fixture: strong retry answer.' }))
   } else {
+    // Replay an identical submission rather than re-grading it (REFACTOR2 P1-R11
+    // remainder). The claim above stops two callers grading at the same instant;
+    // it cannot help a client that timed out and retried with the same answers —
+    // that used to pay again. The key is the session plus the exact answers.
     const rubric = await loadRubric()
-    const result = await gradeAnswers<GradedAnswer>({
-      instructions: RETRY_GRADING_INSTRUCTIONS(rubric),
-      contextBlock: paperTextContext(session.paper.fullText),
-      payload: gradingPayload,
-      promptIntro: QUIZ_GRADING_PROMPT_INTRO,
-      maxTokens: 1536,
-      logLabel: '[quiz retry]',
+    const outcome = await runAiOperation<GradedAnswer[]>({
+      operation: 'quiz_retry_grade',
+      idempotencyKey: aiIdempotencyKey([
+        'quiz_retry',
+        session.id,
+        // Sorted so answer ORDER cannot change the key; the graded content is
+        // the same submission either way.
+        [...answerMap.entries()].sort(([a], [b]) => a.localeCompare(b)),
+      ]),
+      teamId: principal.teamId,
+      run: async () => {
+        const result = await gradeAnswers<GradedAnswer>({
+          instructions: RETRY_GRADING_INSTRUCTIONS(rubric),
+          contextBlock: paperTextContext(session.paper.fullText),
+          payload: gradingPayload,
+          promptIntro: QUIZ_GRADING_PROMPT_INTRO,
+          maxTokens: 1536,
+          logLabel: '[quiz retry]',
+        })
+        if (!result.ok) throw new RetryGradingError()
+        return result.graded
+      },
     })
-    if (!result.ok) {
+
+    if (!outcome.ok) {
       await releaseGradeClaim()
-      return fail('Failed to grade retry', 502)
+      if (outcome.reason === 'in_flight') {
+        return fail('This retry is already being graded — hold on a moment.', 409)
+      }
+      if (outcome.error instanceof RetryGradingError) return fail('Failed to grade retry', 502)
+      throw outcome.error
     }
-    graded = result.graded
+    graded = outcome.result
   }
 
   const gradeMap = new Map(graded.map((g) => [g.questionId, g]))

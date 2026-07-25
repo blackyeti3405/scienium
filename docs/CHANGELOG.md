@@ -5,6 +5,43 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.42.0] — 2026-07-25
+
+### Added — result replay for paid provider calls (P1-R3 replay half; closes the P1-R11 and P1-S6 remainders)
+The claim columns added in v0.37.0 and v0.41.0 solved the **concurrent** case: two callers can
+no longer pay at the same moment. They cannot solve the **sequential** one. A client that timed
+out and retried, or a student submitting the same answers twice, had exactly two outcomes — pay
+again, or be refused. Neither is right when the first call already produced an answer somebody
+paid for.
+
+`AiOperation` stores the outcome against a SHA-256 of the **inputs**, with a unique
+`(operation, idempotencyKey)`. Whoever wins the insert does the work; everyone else reads what
+the winner stored. `runAiOperation()` in `lib/ai/operation.ts` is the whole interface:
+
+- **Replay** — an identical request returns the stored result and never reaches the provider.
+- **In flight** — an identical request still running gets 409 rather than a duplicate call.
+- **Takeover** — a `running` row older than 3 minutes, or a `failed` one, is retryable; the
+  takeover is guarded on the status just read, so two takers cannot both proceed.
+- **Failures are not replayed as results** — a failed call is recorded as `failed`, so an
+  identical retry re-runs rather than inheriting an error as an answer.
+- `run` is deliberately given no transaction client: holding a transaction across a
+  multi-second provider call is what the audit forbids, and the signature makes it impossible.
+
+Keys are JSON-framed rather than concatenated. Replaying one student's grade onto another's
+answers is the failure mode that matters, so `['ab','c']` and `['a','bc']` must not collide —
+pinned by test.
+
+**Wired into both call sites named in the audit:**
+- **Quiz retry grading** (P1-R11) — keyed on the session plus the exact answers, sorted so
+  answer *order* cannot change the key.
+- **Explain-back** (P1-S6) — keyed on paper, student, and the submitted text, so a genuine
+  revision is graded fresh while a resubmission of the same text replays.
+
+### Verification
+Gates 1–5 pass. Vitest: **106 files / 1,510 tests passed** (was 105 / 1,494). 16 new tests: 10
+on the ledger itself, 3 pinning retry replay/keying/in-flight, 3 the same for explain-back.
+Migration applied to the local dev database.
+
 ## [0.41.0] — 2026-07-25
 
 ### Fixed — paid phase advancement is claimed and compare-and-set (P1-R2)

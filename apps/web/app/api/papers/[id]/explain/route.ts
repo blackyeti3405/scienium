@@ -10,6 +10,7 @@ import { paperTextBlock } from '@/lib/literature/grading'
 import { extractJson } from '@/lib/literature/quiz'
 import { logActivity } from '@/lib/activity/log'
 import { lockAggregate } from '@/lib/db-lock'
+import { aiIdempotencyKey, runAiOperation } from '@/lib/ai/operation'
 import {
   EXPLAIN_MAX_CHARS,
   EXPLAIN_PASS_ACCURACY,
@@ -25,6 +26,10 @@ import {
 } from '@/lib/literature/explain'
 
 const ExplainBody = z.object({ text: boundedText(EXPLAIN_MAX_CHARS) }).strict()
+
+/** Unusable model output. Thrown inside the operation so the row records a real
+ *  failed attempt; mapped to the route's existing 502 outside it. */
+class ExplainGradingError extends Error {}
 
 /**
  * GET /api/papers/[id]/explain — this student's current explanation state
@@ -90,6 +95,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   })
   const attemptCount = existing?.attemptCount ?? 0
 
+  // Replay an identical submission rather than re-grading it (REFACTOR2 P1-S6
+  // remainder). The lock below stops two callers grading at the same instant; it
+  // cannot help a client that timed out and retried, or a student who submitted
+  // the same text twice — both used to pay again. The key is the exact input.
+  const idempotencyKey = aiIdempotencyKey(['explain', paper.id, ctx.dbUserId, data.text])
+
   let verdict: ExplainVerdict
   if (process.env.E2E_SKIP_LLM === '1') {
     // E2E test-mode short-circuit: skip the real Anthropic call when
@@ -98,6 +109,11 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     // KP award with no paid call. Never set this in production.
     verdict = e2eFixtureVerdict(attemptCount)
   } else {
+    const graded = await runAiOperation<ExplainVerdict>({
+      operation: 'explain_grade',
+      idempotencyKey,
+      teamId: paper.teamId,
+      run: async () => {
     const response = await anthropic().messages.create({
       model: 'claude-sonnet-5',
       // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
@@ -120,19 +136,35 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       ],
     })
 
-    const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
-    const parsed = extractJson<unknown>(raw)
-    const result = parsed ? ExplainVerdictSchema.safeParse(parsed) : null
-    if (!result || !result.success) {
-      // Verdict can quote the student's explanation — log lengths only (A7).
-      logEvent({
-        event: 'explain.verdict_parse_failed',
-        outcome: 'error',
-        detail: `len=${raw.length}`,
-      })
-      return NextResponse.json({ error: 'Failed to grade your explanation' }, { status: 502 })
+        const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
+        const parsed = extractJson<unknown>(raw)
+        const result = parsed ? ExplainVerdictSchema.safeParse(parsed) : null
+        if (!result || !result.success) {
+          // Verdict can quote the student's explanation — log lengths only (A7).
+          logEvent({
+            event: 'explain.verdict_parse_failed',
+            outcome: 'error',
+            detail: `len=${raw.length}`,
+          })
+          throw new ExplainGradingError()
+        }
+        return normalizeVerdict(result.data)
+      },
+    })
+
+    if (!graded.ok) {
+      if (graded.reason === 'in_flight') {
+        return NextResponse.json(
+          { error: 'That explanation is still being graded — give it a moment.' },
+          { status: 409 },
+        )
+      }
+      if (graded.error instanceof ExplainGradingError) {
+        return NextResponse.json({ error: 'Failed to grade your explanation' }, { status: 502 })
+      }
+      throw graded.error
     }
-    verdict = normalizeVerdict(result.data)
+    verdict = graded.result
   }
 
   // Persist atomically: the attempt-history row, the parent high-water row,

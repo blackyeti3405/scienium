@@ -165,6 +165,43 @@ model DestructiveProposal {
   @@map("destructive_proposals")
 }
 
+/// Result replay for one paid provider call (REFACTOR2 P1-R3, and the replay
+/// half of P1-R11 / P1-S6 / P1-R2).
+///
+/// Claim columns (`retryGradeClaimedAt`, `advanceClaimedAt`, the follow-up row)
+/// stop two callers paying at the same time, but they cannot answer the other
+/// question: a caller that retries after a timeout, or arrives second, has no
+/// way to get the result the first call already paid for. It either pays again
+/// or fails. This table stores the outcome against a hash of the INPUTS, so an
+/// identical request replays instead of re-spending.
+model AiOperation {
+  id             String            @id @default(cuid())
+  /// Which paid workflow, e.g. `quiz_retry_grade`.
+  operation      String
+  /// SHA-256 over the exact inputs that determine the result.
+  idempotencyKey String            @map("idempotency_key")
+  /// Scope for cleanup and cost attribution; not part of the key.
+  teamId         String?           @map("team_id")
+  status         AiOperationStatus @default(running)
+  /// The provider result, replayed verbatim to an identical later request.
+  resultJson     Json?             @map("result_json")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  completedAt    DateTime?         @map("completed_at")
+
+  @@unique([operation, idempotencyKey])
+  @@index([status, createdAt])
+  @@map("ai_operations")
+}
+
+enum AiOperationStatus {
+  running
+  succeeded
+  /// The call failed; an identical request may try again rather than replay.
+  failed
+
+  @@map("ai_operation_status")
+}
+
 enum ClassJoinRequestStatus {
   pending
   approved

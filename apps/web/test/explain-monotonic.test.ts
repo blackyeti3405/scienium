@@ -25,6 +25,15 @@ const mocks = vi.hoisted(() => ({
   currencyUpsert: vi.fn(() => Promise.resolve({})),
   lockAggregate: vi.fn(() => Promise.resolve()),
   logActivity: vi.fn(() => Promise.resolve()),
+  // Replay ledger (P1-S6 remainder) — the real grading path runs through it.
+  aiOpCreate: vi.fn(
+    (_args: { data: { idempotencyKey: string } }): Promise<{ id: string }> =>
+      Promise.resolve({ id: 'aiop_1' }),
+  ),
+  aiOpFindUnique: vi.fn((): Promise<unknown> => Promise.resolve(null)),
+  aiOpUpdate: vi.fn(() => Promise.resolve({})),
+  aiOpUpdateMany: vi.fn(() => Promise.resolve({ count: 1 })),
+  anthropicCreate: vi.fn(),
 }))
 
 const tx = {
@@ -38,11 +47,19 @@ vi.mock('server-only', () => ({}))
 vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTeamContext }))
 vi.mock('@/lib/db-lock', () => ({ lockAggregate: mocks.lockAggregate }))
 vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
-vi.mock('@/lib/anthropic', () => ({ anthropic: () => ({ messages: { create: vi.fn() } }) }))
+vi.mock('@/lib/anthropic', () => ({
+  anthropic: () => ({ messages: { create: mocks.anthropicCreate } }),
+}))
 vi.mock('@/lib/db', () => ({
   db: {
     paper: { findFirst: mocks.paperFindFirst },
     paperExplanation: { findUnique: mocks.explanationFindUnique },
+    aiOperation: {
+      create: mocks.aiOpCreate,
+      findUnique: mocks.aiOpFindUnique,
+      update: mocks.aiOpUpdate,
+      updateMany: mocks.aiOpUpdateMany,
+    },
     $transaction: (fn: (t: typeof tx) => unknown) => fn(tx),
   },
 }))
@@ -88,6 +105,64 @@ beforeEach(() => {
     passed: false,
   })
   mocks.queryRaw.mockResolvedValue([{ kp_awarded: 25 }])
+  mocks.aiOpCreate.mockResolvedValue({ id: 'aiop_1' })
+  mocks.aiOpUpdate.mockResolvedValue({})
+  mocks.aiOpUpdateMany.mockResolvedValue({ count: 1 })
+})
+
+// P1-S6 remainder: the lock stops two callers grading at the same instant, but a
+// client that timed out and resubmitted the SAME text used to pay again.
+describe('an identical resubmission replays instead of re-grading', () => {
+  const VERDICT = { accuracy: 90, completeness: 90, strengths: [], gaps: [], nextSteps: [] }
+
+  it('replays a stored verdict without calling the provider', async () => {
+    vi.stubEnv('E2E_SKIP_LLM', '')
+    const { Prisma } = await import('@prisma/client')
+    mocks.aiOpCreate.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }),
+    )
+    mocks.aiOpFindUnique.mockResolvedValue({
+      id: 'aiop_1', status: 'succeeded', createdAt: new Date(), resultJson: VERDICT,
+    })
+
+    const body = await (await POST(explainReq(), params)).json()
+
+    expect(mocks.anthropicCreate).not.toHaveBeenCalled()
+    expect(body.accuracy).toBe(90)
+    expect(body.passed).toBe(true)
+  })
+
+  it('409s while an identical submission is still being graded', async () => {
+    vi.stubEnv('E2E_SKIP_LLM', '')
+    const { Prisma } = await import('@prisma/client')
+    mocks.aiOpCreate.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }),
+    )
+    mocks.aiOpFindUnique.mockResolvedValue({
+      id: 'aiop_1', status: 'running', createdAt: new Date(), resultJson: null,
+    })
+
+    const res = await POST(explainReq(), params)
+
+    expect(res.status).toBe(409)
+    expect(mocks.anthropicCreate).not.toHaveBeenCalled()
+    expect(mocks.attemptCreate).not.toHaveBeenCalled()
+  })
+
+  it('keys on the submitted TEXT, so a revision is graded fresh', async () => {
+    vi.stubEnv('E2E_SKIP_LLM', '')
+    mocks.anthropicCreate.mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify(VERDICT) }],
+    })
+
+    await POST(explainReq('first version of my explanation'), params)
+    const keyA = mocks.aiOpCreate.mock.calls[0]![0].data.idempotencyKey
+    mocks.aiOpCreate.mockClear()
+    await POST(explainReq('a genuinely revised explanation'), params)
+    const keyB = mocks.aiOpCreate.mock.calls[0]![0].data.idempotencyKey
+
+    expect(keyA).not.toBe(keyB)
+  })
 })
 
 describe('deciding state is re-read inside the lock', () => {
