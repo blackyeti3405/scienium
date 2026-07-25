@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   sessionFindFirst: vi.fn<(...args: unknown[]) => unknown>(),
   sessionUpdate: vi.fn<(...args: unknown[]) => unknown>(),
   sessionUpdateMany: vi.fn<(...args: unknown[]) => unknown>(),
+  sessionFindUniqueTx: vi.fn<(...args: unknown[]) => unknown>(),
   attemptCreateMany: vi.fn<(...args: unknown[]) => unknown>(),
   proficiencyFindUnique: vi.fn<(...args: unknown[]) => unknown>(),
   proficiencyUpsert: vi.fn<(...args: unknown[]) => unknown>(),
@@ -48,7 +49,10 @@ vi.mock('@/lib/db', () => ({
     $transaction: (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
         paperQuizAttempt: { createMany: mocks.attemptCreateMany },
-        paperQuizSession: { update: mocks.sessionUpdate },
+        paperQuizSession: {
+          update: mocks.sessionUpdate,
+          findUnique: mocks.sessionFindUniqueTx,
+        },
         paperProficiency: {
           findUnique: mocks.proficiencyFindUnique,
           upsert: mocks.proficiencyUpsert,
@@ -105,6 +109,8 @@ beforeEach(() => {
   // Claim + commit both go through conditional updateMany (A8); a count of 1
   // means this caller won/held the claim.
   mocks.sessionUpdateMany.mockResolvedValue({ count: 1 })
+  // Session state re-read INSIDE the transaction for the monotonic write (P1-R11).
+  mocks.sessionFindUniqueTx.mockResolvedValue({ score: 0, passed: false })
   mocks.attemptCreateMany.mockResolvedValue({ count: 0 })
   mocks.proficiencyFindUnique.mockResolvedValue(null)
   mocks.proficiencyUpsert.mockResolvedValue({})
@@ -293,5 +299,101 @@ describe('submitRetry — score integrity', () => {
         update: expect.objectContaining({ demonstrated: true }),
       }),
     )
+  })
+})
+
+// ── REFACTOR2 P1-R11 ────────────────────────────────────────────────────────
+// Retry-question GENERATION had a pre-call claim (A8); retry GRADING had none,
+// so two concurrent submits both graded and both paid — the advisory lock only
+// protected the KP arithmetic that ran after the money was gone. And the session
+// write was UNCONDITIONAL, so a later low-scoring retry could set passed=false
+// on a session another retry had already passed, while PaperProficiency stayed
+// demonstrated=true.
+describe('submitRetry — grading claim and monotonic session write (P1-R11)', () => {
+  beforeEach(() => {
+    mocks.sessionFindFirst.mockResolvedValue(failedSession({ withExtra: true }))
+  })
+
+  /** The conditional stamp that elects one grader. */
+  function gradeClaimCall() {
+    return mocks.sessionUpdateMany.mock.calls.find(
+      (c) => (c[0] as { data?: Record<string, unknown> })?.data?.retryGradeClaimedAt instanceof Date,
+    )
+  }
+
+  it('claims the grading slot before doing any work', async () => {
+    await submitRetry('sess_1', 'paper_1', PRINCIPAL, [{ questionId: 'q2', response: 'better' }])
+
+    expect(gradeClaimCall()).toBeDefined()
+    expect(mocks.sessionUpdateMany.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.attemptCreateMany.mock.invocationCallOrder[0]!,
+    )
+  })
+
+  it('refuses a second concurrent submit instead of grading again', async () => {
+    mocks.sessionUpdateMany.mockResolvedValue({ count: 0 }) // another submit holds it
+
+    const res = await submitRetry('sess_1', 'paper_1', PRINCIPAL, [
+      { questionId: 'q2', response: 'better' },
+    ])
+
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.status).toBe(409)
+    // Nothing was graded or persisted — the loser spends nothing.
+    expect(mocks.attemptCreateMany).not.toHaveBeenCalled()
+    expect(mocks.proficiencyUpsert).not.toHaveBeenCalled()
+  })
+
+  it('takes over a stale claim rather than wedging the session forever', async () => {
+    await submitRetry('sess_1', 'paper_1', PRINCIPAL, [{ questionId: 'q2', response: 'better' }])
+
+    const where = (gradeClaimCall()![0] as { where: { OR?: unknown[] } }).where
+    expect(where.OR).toEqual([
+      { retryGradeClaimedAt: null },
+      { retryGradeClaimedAt: { lt: expect.any(Date) } },
+    ])
+  })
+
+  // The headline: a late FAILING retry must not un-pass the session.
+  it('never lowers a session another retry already passed', async () => {
+    mocks.sessionFindUniqueTx.mockResolvedValue({ score: 88, passed: true })
+    // Force the real grading path so this round genuinely fails.
+    vi.stubEnv('E2E_SKIP_LLM', '')
+    mocks.anthropicCreate.mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify([
+            { questionId: 'q1', score: 5, rationale: 'weak' },
+            { questionId: 'q2', score: 5, rationale: 'weak' },
+            { questionId: 'q6', score: 5, rationale: 'weak' },
+          ]),
+        },
+      ],
+    })
+
+    await submitRetry('sess_1', 'paper_1', PRINCIPAL, [{ questionId: 'q2', response: 'weak' }])
+
+    const write = mocks.sessionUpdate.mock.calls[0]![0] as { data: Record<string, unknown> }
+    expect(write.data.passed).toBe(true)
+    expect(write.data.score).toBe(88)
+  })
+
+  it('still raises a session that genuinely improves', async () => {
+    mocks.sessionFindUniqueTx.mockResolvedValue({ score: 40, passed: false })
+
+    await submitRetry('sess_1', 'paper_1', PRINCIPAL, [{ questionId: 'q2', response: 'better' }])
+
+    const write = mocks.sessionUpdate.mock.calls[0]![0] as { data: Record<string, unknown> }
+    expect(write.data.passed).toBe(true)
+    expect(write.data.score as number).toBeGreaterThan(40)
+  })
+
+  it('clears the grading claim on the committing write', async () => {
+    await submitRetry('sess_1', 'paper_1', PRINCIPAL, [{ questionId: 'q2', response: 'better' }])
+
+    const write = mocks.sessionUpdate.mock.calls[0]![0] as { data: Record<string, unknown> }
+    expect(write.data.retryGradeClaimedAt).toBeNull()
   })
 })

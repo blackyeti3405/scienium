@@ -425,7 +425,7 @@ Return an error on any failed node instead of logging broad exceptions and repor
 `P2002`; `depthOf` carries a visited set. **Still open:** the composite `(teamId, id)` tenant
 FK, the O(n²) subtree scans, and the cycle-unsafe SVG layout in `DiscoveryTree.tsx`.
 
-#### P1-R11 — Quiz retries can pay twice and a late failure can overwrite a pass
+#### P1-R11 — Quiz retries can pay twice and a late failure can overwrite a pass — **CLOSED (v0.37.0)**
 
 Retry-question generation has a useful pre-call claim, but retry **grading** does not. Two
 concurrent `submitRetry` calls both load the same failed session and both call Anthropic before
@@ -440,6 +440,12 @@ operation/claim before grading, bind it to session version and normalized answer
 completed result, and perform a conditional state transition. Move all attempt/session/
 proficiency/KP persistence behind one shared quiz repository/service with monotonic
 `passed`/best-score semantics and real-Postgres race tests.
+
+**Closed in v0.37.0.** `retryGradeClaimedAt` elects one grader before the paid call (A8's
+pattern, 2-minute TTL, released on failure); the session write is monotonic on `score`/`passed`
+from an in-lock re-read. **Still owed:** answer-hash binding and completed-result replay (the
+P1-R3 ledger), consolidating the grade/retry persistence clone (SVC-1), and the real-Postgres
+race test (P1-R14's lane).
 
 #### P1-R12 — Asset deletion is retryable on exceptions, but not crash durable
 
@@ -935,8 +941,8 @@ keep them distinct from the earlier `P1-R*` register.
 | **P1-S3 — CLOSED (v0.36.0)** | Malformed LLM quiz output can mint false proficiency and KP | Quiz generation accepts any non-empty array, not exactly five valid questions. Shared grading accepts any non-empty output; quiz aggregate is divided by returned grades rather than canonical questions. One `q1=100` row—or even a foreign high-scoring ID—can pass a five-question session while omitted stored attempts are zero. Expertise grading uses the safe canonical denominator, but generation can still create a one-question 3–5-question exam. | Runtime schemas with exact generation cardinality, non-empty bounded fields, exact/no-duplicate grade ID sets, and canonical denominators; hostile provider-output tests. **Done:** `parseGeneratedQuestions` enforces exact cardinality and non-blank prompt/key; `aggregateOverQuestions` uses the canonical denominator, ignores foreign ids, and counts a duplicate once. Expertise grading (already safe) now shares the helper. 18 hostile-output tests. |
 | **P1-S4 — CLOSED (v0.34.1)** | A quiz-history read failure silently starts new paid work | `components/literature/usePaperQuiz.ts` does not distinguish “no graded session” from a failed/non-OK GET and falls through to `generateQuiz()`. A transient read outage invokes Anthropic, creates another session, and can strand the existing one. | Discriminated read state; generate only on an explicit successful `session:null` response and user intent. **Done:** a failed/non-OK GET sets a recoverable error instead of falling through; generation happens on explicit `session: null` or the student's retry click. |
 | **P1-S5** | Paper-processing lease recovery is unfenced | `lib/literature/process-paper.ts` lets a second worker steal a claim after five minutes, but terminal paper/job writes are keyed only by paper ID. The old worker can later overwrite the new worker's success or failure and both can pay. The test covers simultaneous initial claims, not stale-owner takeover. | Claim token/version plus heartbeat; every success/failure transition conditional on ownership; lost-owner no-op and stale-takeover PostgreSQL test. |
-| **P1-S6** | Explain-back concurrency duplicates spend and can lower truth | `app/api/papers/[id]/explain/route.ts` reads attempt/best/pass before Anthropic, then locks only after the paid call without re-reading. Concurrent requests can share `attemptNo`, duplicate cost, and let a late lower/failing result overwrite best/pass. The attempt table has no unique sequence constraint. | Pre-call operation claim, fresh state under lock, unique attempt sequence, database `GREATEST`/monotonic pass, and result replay. |
-| **P1-S7** | Failure follow-up “one per entry” and daily cap are advisory | Both the existing-follow-up check and daily count happen before the paid call; `ProjectLogFollowup` lacks a unique `projectLogId`. Two requests can both pay/create, overshoot the team daily cap, and race the single answer field. | Unique follow-up-per-log, atomic team/day slots claimed before Anthropic, and conditional unanswered→answered transition. |
+| **P1-S6 — CLOSED (v0.37.0)** | Explain-back concurrency duplicates spend and can lower truth | `app/api/papers/[id]/explain/route.ts` reads attempt/best/pass before Anthropic, then locks only after the paid call without re-reading. Concurrent requests can share `attemptNo`, duplicate cost, and let a late lower/failing result overwrite best/pass. The attempt table has no unique sequence constraint. | Pre-call operation claim, fresh state under lock, unique attempt sequence, database `GREATEST`/monotonic pass, and result replay. **Done:** fresh state under the lock (attemptNo, bestScore, passed, KP eligibility), unique `(paperId, userId, attemptNo)`, monotonic pass/best. **Still owed:** the pre-call claim for a FIRST attempt (no parent row to stamp) and result replay — both the P1-R3 ledger. |
+| **P1-S7 — CLOSED (v0.37.0)** | Failure follow-up “one per entry” and daily cap are advisory | Both the existing-follow-up check and daily count happen before the paid call; `ProjectLogFollowup` lacks a unique `projectLogId`. Two requests can both pay/create, overshoot the team daily cap, and race the single answer field. | Unique follow-up-per-log, atomic team/day slots claimed before Anthropic, and conditional unanswered→answered transition. **Done, all three:** unique `projectLogId`; the row IS the claim, created empty before the call under a per-team lock, released on failure and reclaimable after 2 minutes; the answer is an `updateMany` predicated on `response: null`. |
 | **P1-S8** | Domain deletion and storage retirement still split across commits | Paper and showcase-asset deletion remove the domain row before calling `orphanObjectKey`; process death leaves an `attached` asset with no live owner, and retry returns 404. Topic change separately deletes rows/bytes and updates topic. Project-log deletion already demonstrates the correct same-transaction ledger transition. | Domain deletion plus ledger orphan/outbox in one database transaction; physical delete remains a retryable worker. Reconcile attached rows without live owners. |
 | **P1-S9** | Paid writebacks are versionless | Codex study-plan, research-plan review, and idea-check read a source/hash, call external work, then write without proving that source/version is still current. Slow old work can overwrite new truth; same-input callers can consume multiple daily slots; manual track-array mutation loses concurrent edits. | `(principal/team, operation, sourceHash/version)` claim, reuse, CAS commit, and normalized set mutations. |
 | **P1-S10** | Any matched student can rewrite a global fair event and trigger paid crawl | `POST /api/fairs/[id]/sync-deadlines` requires only a team in the same state (or any team for ISEF), calls paid Firecrawl, trusts a cast rather than local `safeParse`, and writes the global shared `FairEvent`. Concurrent callers pay/race; year/date plausibility is weak. | Students read/request refresh only. An admin/background versioned catalog job claims the fair+edition, parses locally, records provenance, stages review, and CAS-publishes. |
@@ -1200,6 +1206,14 @@ The route-policy harness now no-ops `pg_advisory_xact_lock` specifically (it is 
 so a lock has nothing to serialize) and still throws on any other raw SQL. Without that, every
 lock-guarded route was untestable for authorization.
 
+#### v0.37.0 — 2026-07-25 — the pre-call-claim family
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P1-R11** Retry pays twice; a late failure overwrites a pass | **CLOSED** | `retryGradeClaimedAt` elects one grader before the paid call (A8's pattern, 2-min TTL, released on generation/grading failure, cleared on commit). The session write is monotonic — `score` max, `passed` OR — from an in-lock re-read, so a late low retry can no longer contradict `PaperProficiency.demonstrated`. | Answer-hash binding and completed-result replay (P1-R3 ledger); the grade/retry persistence clone (SVC-1); the real-Postgres race test (P1-R14 lane). |
+| **P1-S6** Explain-back duplicates spend and can lower truth | **CLOSED** | `attemptNo`, `bestScore`, `passed`, and KP eligibility are all re-read inside the per-(paper, user) transaction. `(paperId, userId, attemptNo)` is unique; the migration renumbers historical collisions by creation order rather than deleting student work. | A pre-call claim for a FIRST attempt — there is no parent row to stamp yet; concurrent first attempts are bounded by the `ai` tier and now collide on the unique sequence instead of corrupting it. Plus result replay (P1-R3). |
+| **P1-S7** Follow-up per-entry and daily caps are advisory | **CLOSED** | `projectLogId` unique; the row IS the claim, created empty before the model call under a per-team lock so the daily count and the claim commit together. Failure releases it; a claim orphaned by a crash is reclaimable after 2 minutes. The answer write is an `updateMany` predicated on `response: null`. | — |
+
 ---
 
 ---
@@ -1273,7 +1287,7 @@ Track A's named findings remain historical close-outs. The following list is the
 | P1 | Paid phase advancement and daily AI caps are not atomically claimed | Duplicate cost, budget overrun, stale writes |
 | P1 (partial) | Team invite redemption and class decisions use stale pre-checks | Invite redemption **CLOSED v0.34.1** (conditional consume); class decisions (P1-S2) still open |
 | ~~P1~~ **CLOSED v0.34.1** | Discovery accepts foreign-team parents and cycles | Same-team acyclic validation before any write; 400 on rejection |
-| P1 (partial) | Quiz generation/grading trusts malformed model cardinality/IDs; retry/explain/follow-up paths lack complete claims | Cardinality + canonical denominator **CLOSED v0.36.0** (P1-S3); the retry/explain/follow-up claims (P1-R11, P1-S6, P1-S7) remain open |
+| ~~P1~~ **CLOSED v0.36.0 + v0.37.0** | Quiz generation/grading trusts malformed model cardinality/IDs; retry/explain/follow-up paths lack complete claims | Cardinality + canonical denominator (P1-S3); retry grading claim + monotonic session, explain in-lock derivation + unique attempt sequence, follow-up claim row (P1-R11/S6/S7). Result replay stays with the P1-R3 ledger |
 | P1 | Paper-processing stale-lease recovery is not fenced | An old worker can overwrite a newer worker and both can pay |
 | ~~P1~~ **CLOSED v0.34.1** | A failed quiz-history GET starts a new paid quiz | Generation requires an explicit `session: null` or student intent |
 | P1 | Matrix checks do not wait for cell saves | Stale work can be graded, cached, and rewarded |

@@ -189,6 +189,9 @@ const RETRY_GEN_CLAIM_TTL_MS = 120_000
 const RETRY_GEN_POLL_MS = 750
 const RETRY_GEN_POLL_BUDGET_MS = 30_000
 
+/** How long a retry-grading claim is honoured before a crashed grader is taken over. */
+const RETRY_GRADE_CLAIM_TTL_MS = 2 * 60_000
+
 /**
  * Idempotently ensures the session's questionsJson carries exactly one extra
  * question beyond the original `QUIZ_QUESTION_COUNT` — and pays for AT MOST ONE
@@ -344,6 +347,34 @@ export async function submitRetry(
   const { session, error } = await loadRetryableSession(sessionId, paperId, principal)
   if (error) return error
 
+  // ── Claim retry GRADING before spending (REFACTOR2 P1-R11) ────────────────
+  // Generation already elects one payer (A8); grading did not, so two concurrent
+  // submits both graded and both paid. The advisory lock further down protects
+  // only the KP arithmetic — by then the money is gone. Same conditional-stamp
+  // election, with a TTL so a crashed grader cannot wedge the session.
+  const gradeStamp = new Date()
+  const gradeClaim = await db.paperQuizSession.updateMany({
+    where: {
+      id: session.id,
+      OR: [
+        { retryGradeClaimedAt: null },
+        { retryGradeClaimedAt: { lt: new Date(gradeStamp.getTime() - RETRY_GRADE_CLAIM_TTL_MS) } },
+      ],
+    },
+    data: { retryGradeClaimedAt: gradeStamp },
+  })
+  if (gradeClaim.count !== 1) {
+    return fail('This retry is already being graded — hold on a moment.', 409)
+  }
+  /** Hand the slot back so a failure does not wedge the session for the full TTL. */
+  const releaseGradeClaim = () =>
+    db.paperQuizSession
+      .updateMany({
+        where: { id: session.id, retryGradeClaimedAt: gradeStamp },
+        data: { retryGradeClaimedAt: null },
+      })
+      .catch(() => {})
+
   const storedQuestions = session.questionsJson as unknown as QuizQuestion[]
   let newQuestion: QuizQuestion
   let questions: QuizQuestion[]
@@ -351,6 +382,7 @@ export async function submitRetry(
     ;({ newQuestion, questions } = await ensureNewQuestion(session, storedQuestions))
   } catch (err) {
     console.error('[quiz retry] generation call failed:', err)
+    await releaseGradeClaim()
     return fail('Failed to generate retry question', 502)
   }
 
@@ -391,6 +423,7 @@ export async function submitRetry(
       logLabel: '[quiz retry]',
     })
     if (!result.ok) {
+      await releaseGradeClaim()
       return fail('Failed to grade retry', 502)
     }
     graded = result.graded
@@ -435,10 +468,16 @@ export async function submitRetry(
   // ── Persist atomically ─────────────────────────────────────────────────────
   const kpEarned = await db.$transaction(async (tx) => {
     await lockAggregate(tx, `paper-quiz:${session.paper.id}:${principal.dbUserId}`)
-    const existing = await tx.paperProficiency.findUnique({
-      where: { paperId_userId: { paperId: session.paper.id, userId: principal.dbUserId } },
-      select: { kpAwarded: true, bestScore: true },
-    })
+    const [freshSession, existing] = await Promise.all([
+      tx.paperQuizSession.findUnique({
+        where: { id: session.id },
+        select: { score: true, passed: true },
+      }),
+      tx.paperProficiency.findUnique({
+        where: { paperId_userId: { paperId: session.paper.id, userId: principal.dbUserId } },
+        select: { kpAwarded: true, bestScore: true },
+      }),
+    ])
     const award = computeQuizAward({
       passed,
       aggregate,
@@ -460,13 +499,19 @@ export async function submitRetry(
         }
       }),
     })
+    // MONOTONIC (REFACTOR2 P1-R11). This update used to be unconditional, so a
+    // later low-scoring retry could set `passed = false` on a session another
+    // retry had already passed — while `PaperProficiency.demonstrated` stayed
+    // true, leaving the two records contradicting each other. A retry may raise
+    // the visible verdict; it may never lower it.
     await tx.paperQuizSession.update({
       where: { id: session.id },
       data: {
-        score: aggregate,
-        passed,
+        score: Math.max(aggregate, freshSession?.score ?? 0),
+        passed: passed || (freshSession?.passed ?? false),
         gradedAt: new Date(),
         questionsJson: currentQuestions as unknown as Prisma.InputJsonValue,
+        retryGradeClaimedAt: null,
       },
     })
     if (passed) {

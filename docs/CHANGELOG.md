@@ -5,6 +5,62 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.37.0] — 2026-07-25
+
+Closes the "pre-call claim" family: three paid paths that read their deciding state **before**
+a multi-second model call and then wrote from that stale snapshot.
+
+### Fixed — retry grading claims before it spends, and never lowers a pass (P1-R11)
+Retry-question *generation* has elected a single payer since A8; retry *grading* had no claim
+at all, so two concurrent submits both loaded the same failed session and both called
+Anthropic. The advisory lock protected only the KP high-water arithmetic — which runs after the
+money is gone. Worse, the session write was **unconditional** and lacked the initial grade
+route's `gradedAt` guard: a later low-scoring retry set `passed = false` on a session another
+retry had already passed, while `PaperProficiency.demonstrated` stayed `true`, leaving the two
+records contradicting each other.
+
+- `PaperQuizSession.retryGradeClaimedAt` mirrors A8's conditional stamp, with a 2-minute TTL so
+  a crashed grader cannot wedge the session. The loser gets 409 having spent nothing; a failed
+  generation or grading releases the slot.
+- The session write is **monotonic**: `score` takes the max and `passed` ORs with what already
+  stands, both read inside the lock. A retry may raise the visible verdict; never lower it.
+
+### Fixed — explain-back derives its outcome under the lock (P1-S6)
+`attemptNo`, `bestScore`, `passed`, and KP eligibility all came from a read taken before the
+paid call. Two concurrent submissions minted the **same attempt number**, and a slower failing
+result recomputed the high-water fields from that stale read, overwriting a pass that had landed
+meanwhile. Every one of those values is now re-read inside the per-(paper, user) transaction:
+`attemptNo` from the fresh count, `bestScore` as a max, `passed` OR'd, KP eligibility from the
+fresh `kpAwarded`. `(paperId, userId, attemptNo)` is now **unique**, making the sequence
+structural rather than a habit; the migration renumbers historical collisions by creation order
+rather than deleting a student's work. The pre-call read survives only to shape the E2E fixture,
+and says so.
+
+### Fixed — failure-log follow-ups claim before they spend (P1-S7)
+"One follow-up per entry" and the per-team daily cap were both pre-reads with nothing behind
+them, so two concurrent requests both paid and both inserted. `ProjectLogFollowup.projectLogId`
+is now **unique** and the row itself is the claim: it is created (with an empty question) before
+the model call, so losing the race costs nothing, and the daily count runs under a per-team lock
+so concurrent claims for *different* entries serialize. A failed generation releases the claim,
+and a claim left empty by a crashed request is reclaimable after 2 minutes instead of burning
+the entry forever. The answer write moved from a `response === null` pre-read to an
+`updateMany` predicate, so a second answer is refused rather than silently overwriting the
+first.
+
+### Deliberately not done
+The audit's full remedy for these findings includes a durable operation ledger with result
+replay. That is **P1-R3's kernel** and remains open — these fixes close the correctness and
+duplicate-spend paths using the claim-column convention the repository already uses (A6/A8),
+without inventing half a ledger. Explain-back's *first* attempt still has no pre-call claim
+(there is no parent row to stamp yet); concurrent first attempts are bounded by the `ai` rate
+tier and now collide on the unique attempt sequence rather than corrupting it.
+
+### Verification
+Gates 1–5 pass. Vitest: **102 files / 1,443 tests passed** (was 100 / 1,419). 24 new tests: 6
+on the retry grading claim and monotonic write, 7 on explain-back's in-lock derivation, 11 on
+the follow-up claim and answer predicate. All three migrations applied to the local dev
+database; team data verified untouched.
+
 ## [0.36.0] — 2026-07-25
 
 ### Fixed — class-join decisions have one terminal state (P1-S2)

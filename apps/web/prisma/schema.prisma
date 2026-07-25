@@ -630,7 +630,11 @@ model PaperExplanation {
 
 // One row per submission — the revise-loop history. Carries no KP.
 model PaperExplanationAttempt {
-  id           String   @id @default(cuid())
+  id String @id @default(cuid())
+  // `(paperId, userId, attemptNo)` is UNIQUE (REFACTOR2 P1-S6): the sequence used
+  // to be derived from a read taken BEFORE a multi-second paid call, so two
+  // concurrent submissions minted the same attempt number. It is now derived
+  // under the lock; this constraint makes that structural rather than a habit.
   paperId      String   @map("paper_id")
   userId       String   @map("user_id")
   attemptNo    Int      @map("attempt_no")
@@ -644,6 +648,7 @@ model PaperExplanationAttempt {
 
   paper Paper @relation(fields: [paperId], references: [id])
 
+  @@unique([paperId, userId, attemptNo])
   @@index([paperId, userId, createdAt])
   @@map("paper_explanation_attempts")
 }
@@ -761,6 +766,11 @@ model PaperQuizSession {
   // the generated question commits (or the claim is released on failure).
   // Stale claims (crashed generator) are taken over after a timeout.
   retryGenClaimedAt DateTime? @map("retry_gen_claimed_at")
+  // P1-R11: the same election, one step later. Retry GRADING had no claim at
+  // all — two concurrent submits both loaded the failed session and both paid
+  // Anthropic before the advisory lock, which protected only the KP maths that
+  // ran after the money was spent.
+  retryGradeClaimedAt DateTime? @map("retry_grade_claimed_at")
   createdAt     DateTime  @default(now()) @map("created_at")
 
   paper    Paper              @relation(fields: [paperId], references: [id])
@@ -1137,8 +1147,13 @@ enum ProjectLogEntry {
 }
 
 model ProjectLogFollowup {
-  id           String     @id @default(cuid())
-  projectLogId String     @map("project_log_id")
+  id String @id @default(cuid())
+  /// UNIQUE (REFACTOR2 P1-S7): the route promised "one follow-up per entry" but
+  /// enforced it with a pre-read before the paid Anthropic call, so two
+  /// concurrent requests could both pay and both insert. The row now doubles as
+  /// the CLAIM — created before the model call, so losing the insert costs
+  /// nothing.
+  projectLogId String     @unique @map("project_log_id")
   question     String
   response     String?
   answeredAt   DateTime?  @map("answered_at")

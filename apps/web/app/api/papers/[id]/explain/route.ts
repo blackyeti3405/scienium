@@ -81,12 +81,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     return NextResponse.json({ error: 'Paper is still processing' }, { status: 409 })
   }
 
+  // Read ONLY to shape the deterministic E2E fixture. Every value that decides
+  // the stored outcome is re-read under the lock after the paid call (P1-S6) —
+  // nothing here may reach `bestScore`, `passed`, or `attemptNo`.
   const existing = await db.paperExplanation.findUnique({
     where: { paperId_userId: { paperId: paper.id, userId: ctx.dbUserId } },
-    select: { attemptCount: true, bestScore: true, kpAwarded: true, passed: true },
+    select: { attemptCount: true },
   })
-  const priorBest = existing?.bestScore ?? 0
-  const priorKp = existing?.kpAwarded ?? 0
   const attemptCount = existing?.attemptCount ?? 0
 
   let verdict: ExplainVerdict
@@ -134,19 +135,31 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     verdict = normalizeVerdict(result.data)
   }
 
-  const { overall, passed, kpEligible, newBestScore } = computeExplainOutcome({
-    accuracy: verdict.accuracy,
-    completeness: verdict.completeness,
-    priorBest,
-    priorKp,
-  })
-
-  const attemptNo = attemptCount + 1
-
   // Persist atomically: the attempt-history row, the parent high-water row,
   // and — only when eligible — the once-ever flat KP claim.
-  const kpEarned = await db.$transaction(async (tx) => {
+  //
+  // EVERYTHING that decides the outcome is re-read INSIDE the lock (REFACTOR2
+  // P1-S6). The `existing` snapshot above was taken before a multi-second paid
+  // call, so two concurrent submissions computed the same `attemptNo`, and a
+  // slower FAILING result recomputed `bestScore`/`passed` from that stale read
+  // and overwrote a pass that had landed in the meantime — a late result
+  // lowering visible truth.
+  const { attemptNo, overall, passed, kpEarned } = await db.$transaction(async (tx) => {
     await lockAggregate(tx, `paper-explain:${paper.id}:${ctx.dbUserId}`)
+
+    const fresh = await tx.paperExplanation.findUnique({
+      where: { paperId_userId: { paperId: paper.id, userId: ctx.dbUserId } },
+      select: { attemptCount: true, bestScore: true, kpAwarded: true, passed: true },
+    })
+    const { overall, passed, kpEligible, newBestScore } = computeExplainOutcome({
+      accuracy: verdict.accuracy,
+      completeness: verdict.completeness,
+      priorBest: fresh?.bestScore ?? 0,
+      priorKp: fresh?.kpAwarded ?? 0,
+    })
+    // Monotonic: a pass is never un-set by a later failure.
+    const nextPassed = passed || (fresh?.passed ?? false)
+    const attemptNo = (fresh?.attemptCount ?? 0) + 1
 
     await tx.paperExplanationAttempt.create({
       data: {
@@ -171,20 +184,20 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         userId: ctx.dbUserId,
         attemptCount: 1,
         bestScore: newBestScore,
-        passed,
+        passed: nextPassed,
         latestText: data.text,
         latestVerdictJson: verdict as unknown as Prisma.InputJsonValue,
       },
       update: {
         attemptCount: { increment: 1 },
         bestScore: newBestScore,
-        passed: passed || (existing?.passed ?? false),
+        passed: nextPassed,
         latestText: data.text,
         latestVerdictJson: verdict as unknown as Prisma.InputJsonValue,
       },
     })
 
-    if (!kpEligible) return 0
+    if (!kpEligible) return { attemptNo, overall, passed, kpEarned: 0 }
 
     // KP claim (money-shaped — mirrors app/api/ops/codex/complete/route.ts):
     // a raw WHERE-gated UPDATE ... RETURNING, NOT a caught unique violation —
@@ -199,14 +212,14 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
        WHERE paper_id = ${paper.id} AND user_id = ${ctx.dbUserId} AND kp_awarded = 0
       RETURNING kp_awarded
     `)
-    if (claimRows.length === 0) return 0
+    if (claimRows.length === 0) return { attemptNo, overall, passed, kpEarned: 0 }
 
     await tx.teamCurrency.upsert({
       where: { teamId: paper.teamId },
       create: { teamId: paper.teamId, kp: EXPLAIN_KP_AWARD },
       update: { kp: { increment: EXPLAIN_KP_AWARD } },
     })
-    return EXPLAIN_KP_AWARD
+    return { attemptNo, overall, passed, kpEarned: EXPLAIN_KP_AWARD }
   })
 
   // "First pass" and "KP minted" coincide by construction (kpEligible requires

@@ -339,7 +339,9 @@ construction follows one shape: the route file selects the policy, parses the
 body with Zod, calls ONE application-service function, and maps the typed
 result to HTTP — it contains no direct `db.` calls of its own. Nine modules
 currently own this seam: the three original exemplars (`lib/buildings/service.ts`,
-`lib/papers/service.ts`, `lib/literature/quiz-retry.ts`) plus the six extracted
+`lib/papers/service.ts`, `lib/literature/quiz-retry.ts` — whose `submitRetry`
+elects one grader via `retryGradeClaimedAt` before the paid call and writes the
+session monotonically, so a late low-scoring retry cannot un-pass it) plus the six extracted
 in the Track B P1-2 sweep — `lib/teacher/student-overview.ts`,
 `lib/logs/project-log-service.ts`, `lib/ops/codex/complete-service.ts`,
 `lib/ops/codex/study-plan-service.ts`, `lib/research-plan/review-service.ts`,
