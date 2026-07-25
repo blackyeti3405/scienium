@@ -374,7 +374,7 @@ Add an authenticated request and idempotent operator workflow backed by a deleti
 operation and outbox. Publish model-by-model retention/legal-hold rules, make cleanup survive
 parent deletion, and rehearse both export and deletion against production-like data.
 
-#### P1-R10 — The discovery tree accepts foreign parents and cyclic graphs
+#### P1-R10 — The discovery tree accepts foreign parents and cyclic graphs — **CLOSED (v0.34.1)**
 
 `POST /api/discovery/tree` accepts client-generated node IDs and arbitrary `parentId` values.
 Neither the route nor `createTreeNodes` proves that a parent belongs to the caller's team, or
@@ -394,6 +394,11 @@ same-team node, or a node in the same batch; IDs must be unique; no self-edge or
 allowed; depth and total size must be capped. Prefer a composite tenant FK where Prisma/Postgres
 can express it, and retain visited/depth guards in hydration/layout as corruption containment.
 Return an error on any failed node instead of logging broad exceptions and reporting `{ok:true}`.
+
+**Closed in v0.34.1.** `assertValidTreeGraph` enforces all of the above before any write and
+`TreeGraphError` maps to 400; the source/article branches now rethrow anything that is not a
+`P2002`; `depthOf` carries a visited set. **Still open:** the composite `(teamId, id)` tenant
+FK, the O(n²) subtree scans, and the cycle-unsafe SVG layout in `DiscoveryTree.tsx`.
 
 #### P1-R11 — Quiz retries can pay twice and a late failure can overwrite a pass
 
@@ -900,10 +905,10 @@ keep them distinct from the earlier `P1-R*` register.
 
 | ID | Verified failure | Evidence and adversarial path | Required direction |
 | --- | --- | --- | --- |
-| **P1-S1** | Single-use team invites are not single-use under concurrency | `app/api/team/join/route.ts` reads `usedByUserId` before taking the team lock, never re-reads/conditionally consumes the invite, then unconditionally overwrites it. Two joiners can both read “unused,” serialize only capacity, and both join. `test/team-join.test.ts` mocks an already-burned invite rather than interleaving the stale snapshot it claims to prove. | Claim with a conditional unused/unexpired update inside the transaction, then test two real PostgreSQL callers. |
+| **P1-S1 — CLOSED (v0.34.1)** | Single-use team invites are not single-use under concurrency | `app/api/team/join/route.ts` reads `usedByUserId` before taking the team lock, never re-reads/conditionally consumes the invite, then unconditionally overwrites it. Two joiners can both read “unused,” serialize only capacity, and both join. `test/team-join.test.ts` mocks an already-burned invite rather than interleaving the stale snapshot it claims to prove. | Claim with a conditional unused/unexpired update inside the transaction, then test two real PostgreSQL callers. **Done** for the conditional consume (before the membership create, 409 on `count !== 1`) and the interleaved-snapshot unit test; the real two-caller PostgreSQL race belongs to the P1-R14 database lane. |
 | **P1-S2** | Class approval/denial has contradictory terminal states | The teacher route pre-reads `pending`; approval re-reads and can silently no-op, while denial writes the stale ID unconditionally. Approve-then-deny can leave the student enrolled with a denied request; deny-then-approve can return success for a no-op. Competing class approvals are last-writer-wins on `User.classId`. | One locked/CAS decision service returning the committed outcome, invalidating incompatible requests, and appending an audit event. |
 | **P1-S3** | Malformed LLM quiz output can mint false proficiency and KP | Quiz generation accepts any non-empty array, not exactly five valid questions. Shared grading accepts any non-empty output; quiz aggregate is divided by returned grades rather than canonical questions. One `q1=100` row—or even a foreign high-scoring ID—can pass a five-question session while omitted stored attempts are zero. Expertise grading uses the safe canonical denominator, but generation can still create a one-question 3–5-question exam. | Runtime schemas with exact generation cardinality, non-empty bounded fields, exact/no-duplicate grade ID sets, and canonical denominators; hostile provider-output tests. |
-| **P1-S4** | A quiz-history read failure silently starts new paid work | `components/literature/usePaperQuiz.ts` does not distinguish “no graded session” from a failed/non-OK GET and falls through to `generateQuiz()`. A transient read outage invokes Anthropic, creates another session, and can strand the existing one. | Discriminated read state; generate only on an explicit successful `session:null` response and user intent. |
+| **P1-S4 — CLOSED (v0.34.1)** | A quiz-history read failure silently starts new paid work | `components/literature/usePaperQuiz.ts` does not distinguish “no graded session” from a failed/non-OK GET and falls through to `generateQuiz()`. A transient read outage invokes Anthropic, creates another session, and can strand the existing one. | Discriminated read state; generate only on an explicit successful `session:null` response and user intent. **Done:** a failed/non-OK GET sets a recoverable error instead of falling through; generation happens on explicit `session: null` or the student's retry click. |
 | **P1-S5** | Paper-processing lease recovery is unfenced | `lib/literature/process-paper.ts` lets a second worker steal a claim after five minutes, but terminal paper/job writes are keyed only by paper ID. The old worker can later overwrite the new worker's success or failure and both can pay. The test covers simultaneous initial claims, not stale-owner takeover. | Claim token/version plus heartbeat; every success/failure transition conditional on ownership; lost-owner no-op and stale-takeover PostgreSQL test. |
 | **P1-S6** | Explain-back concurrency duplicates spend and can lower truth | `app/api/papers/[id]/explain/route.ts` reads attempt/best/pass before Anthropic, then locks only after the paid call without re-reading. Concurrent requests can share `attemptNo`, duplicate cost, and let a late lower/failing result overwrite best/pass. The attempt table has no unique sequence constraint. | Pre-call operation claim, fresh state under lock, unique attempt sequence, database `GREATEST`/monotonic pass, and result replay. |
 | **P1-S7** | Failure follow-up “one per entry” and daily cap are advisory | Both the existing-follow-up check and daily count happen before the paid call; `ProjectLogFollowup` lacks a unique `projectLogId`. Two requests can both pay/create, overshoot the team daily cap, and race the single answer field. | Unique follow-up-per-log, atomic team/day slots claimed before Anthropic, and conditional unanswered→answered transition. |
@@ -1123,6 +1128,16 @@ fails if it returns; anything narrower is recorded as **PARTIAL** with what is s
 Gates 1–5 pass; Vitest 90 files / 1,299 tests. The migration is created and unapplied, per the
 project's deploy convention.
 
+#### v0.34.1 — 2026-07-25
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P1-R10** Discovery accepts foreign parents and cycles | **CLOSED** | `assertValidTreeGraph` runs before any write: batch cap, unique ids, no self-edge, same-team-or-in-batch parents, no cycle, depth cap. `TreeGraphError` → 400. Source/article branches rethrow anything that isn't `P2002` instead of reporting `{ok:true}`. `depthOf` gained a visited set. | Composite `(teamId, id)` tenant FK; O(n²) subtree scans; cycle-unsafe SVG layout in `DiscoveryTree.tsx`; total-depth cap (needs a recursive CTE). |
+| **P1-S1** Invites not single-use under concurrency | **CLOSED** | Conditional `updateMany` (unused + unexpired) consumes the code **before** the membership row exists; `count !== 1` → 409 and full rollback. Unit test now interleaves the stale snapshot it claimed to prove. | The two-caller real-PostgreSQL race, which belongs to the P1-R14 database lane. |
+| **P1-S4** Failed quiz-history GET starts paid work | **CLOSED** | Read failure sets a recoverable error; generation requires an explicit successful `session: null` or the student's retry click. | — |
+
+Gates 1–5 pass; Vitest 91 files / 1,310 tests.
+
 ---
 
 ---
@@ -1194,11 +1209,11 @@ Track A's named findings remain historical close-outs. The following list is the
 | ACCEPTED / OPTIONAL | Fresh accounts can self-provision `teacher` | Intentional open-registration policy; optional grant/domain/allowlist hardening later |
 | P1 | Client assertions authorize destructive shared actions | A member can bypass the intended confirmation path and delete papers/tree data |
 | P1 | Paid phase advancement and daily AI caps are not atomically claimed | Duplicate cost, budget overrun, stale writes |
-| P1 | Team invite redemption and class decisions use stale pre-checks | A single-use code admits multiple members; enrollment and decision history can contradict |
-| P1 | Discovery accepts foreign-team parents and cycles | Cross-tenant corruption and a persisted team-level denial of service |
+| P1 (partial) | Team invite redemption and class decisions use stale pre-checks | Invite redemption **CLOSED v0.34.1** (conditional consume); class decisions (P1-S2) still open |
+| ~~P1~~ **CLOSED v0.34.1** | Discovery accepts foreign-team parents and cycles | Same-team acyclic validation before any write; 400 on rejection |
 | P1 | Quiz generation/grading trusts malformed model cardinality/IDs; retry/explain/follow-up paths lack complete claims | False proficiency/KP, duplicate paid calls, cap bypass, and late results lowering visible truth |
 | P1 | Paper-processing stale-lease recovery is not fenced | An old worker can overwrite a newer worker and both can pay |
-| P1 | A failed quiz-history GET starts a new paid quiz | A read outage becomes spend and strands state |
+| ~~P1~~ **CLOSED v0.34.1** | A failed quiz-history GET starts a new paid quiz | Generation requires an explicit `session: null` or student intent |
 | P1 | Matrix checks do not wait for cell saves | Stale work can be graded, cached, and rewarded |
 | P1 | Asset deletion is split from ledger orphaning, and the sweep terminalizes before physical delete | Process death can leave attached-without-owner or live-unretryable R2 objects |
 | P1 | Matched students can run paid syncs that mutate the global fair catalog | Shared deadlines can race or be overwritten without admin/reviewer provenance |

@@ -28,32 +28,48 @@ export function usePaperQuiz(paper: Paper, onProficiencyEarned?: () => void) {
   const [retryLoading, setRetryLoading] = useState(false)
 
   // On open: if a graded quiz already exists, show those past answers + feedback
-  // (they stay accessible). Otherwise generate a fresh quiz.
+  // (they stay accessible). A fresh quiz is generated ONLY on an explicit
+  // `session: null` — a failed or non-OK read is NOT "no quiz yet" (REFACTOR2
+  // P1-S4). The old catch-all fell through to `generateQuiz()`, so a transient
+  // read outage silently spent an Anthropic call and could strand the existing
+  // session. On failure we surface a recoverable error; the banner's retry
+  // button makes generating an explicit student action.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
+      let data: { session?: unknown; error?: string }
       try {
         const res = await fetch(`/api/papers/${paper.id}/quiz`)
-        const data = await res.json()
+        data = await res.json()
         if (cancelled) return
-        if (data.session) {
-          const s = data.session
-          setQuiz({ sessionId: s.sessionId, questions: s.questions })
-          setAnswers(s.answers ?? {})
-          setResults({
-            score: s.score,
-            passed: s.passed,
-            threshold: s.threshold,
-            results: s.results,
-          })
-          setHasPastResults(true)
-          setPhase('results')
-          return
-        }
-      } catch {
-        // fall through to generate
+        if (!res.ok) throw new Error(data.error ?? 'Could not load your quiz')
+      } catch (err) {
+        if (cancelled) return
+        setQuizError(
+          err instanceof Error ? err.message : 'Could not load your quiz',
+        )
+        setPhase('quiz')
+        return
       }
-      if (!cancelled) generateQuiz()
+
+      if (data.session) {
+        const s = data.session as {
+          sessionId: string
+          questions: QuizQuestionView[]
+          answers?: Record<string, string>
+          score: number
+          passed: boolean
+          threshold: number
+          results: GradeResult['results']
+        }
+        setQuiz({ sessionId: s.sessionId, questions: s.questions })
+        setAnswers(s.answers ?? {})
+        setResults({ score: s.score, passed: s.passed, threshold: s.threshold, results: s.results })
+        setHasPastResults(true)
+        setPhase('results')
+        return
+      }
+      generateQuiz()
     })()
     return () => {
       cancelled = true

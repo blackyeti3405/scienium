@@ -48,6 +48,97 @@ function isHttpUrl(u: string): boolean {
   }
 }
 
+/** A concurrent insert tripping @@unique([teamId, externalId]) — genuine dedup. */
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: string }).code === 'P2002'
+  )
+}
+
+/** A proposed batch that isn't a same-team forest. Mapped to 400 by the route. */
+export class TreeGraphError extends Error {}
+
+/** One POST may not propose more than this many nodes. */
+const MAX_BATCH_NODES = 200
+/** Longest parent chain a single batch may introduce. */
+const MAX_BATCH_DEPTH = 50
+
+/**
+ * Reject anything that isn't a same-team acyclic forest, BEFORE any write
+ * (REFACTOR2 P1-R10).
+ *
+ * The UI emits a tree, but the endpoint accepts a general graph: node ids and
+ * `parentId`s are client-generated, and `DiscoveryNode`'s self-relation
+ * references only `id` — not `(teamId, id)` — so PostgreSQL happily let a
+ * team-A node point at a team-B parent. A single batch could also introduce a
+ * self-edge or a two-node cycle, and `hydrateTree.depthOf` walked parent
+ * pointers without a visited set, so one such write made the team's Discovery
+ * GET loop until the request timed out: a persisted, team-level denial of
+ * service written by any member.
+ *
+ * A parent must therefore be null, an existing node **of this team**, or another
+ * node in the same batch, and the batch's own edges must not close a loop.
+ */
+export async function assertValidTreeGraph(
+  teamId: string,
+  nodes: IncomingTreeNode[],
+): Promise<void> {
+  if (nodes.length > MAX_BATCH_NODES) {
+    throw new TreeGraphError(`A single request may add at most ${MAX_BATCH_NODES} nodes`)
+  }
+
+  const ids = nodes.map((n) => n.id)
+  if (new Set(ids).size !== ids.length) {
+    throw new TreeGraphError('Duplicate node ids in one request')
+  }
+
+  const batch = new Map(nodes.map((n) => [n.id, n]))
+  const referenced = [...new Set([...ids, ...nodes.map((n) => n.parentId)])].filter(
+    (id): id is string => !!id,
+  )
+  // Team-scoped, so a foreign-team id simply doesn't come back and is rejected
+  // below — the same 'unknown parent' answer an invented id gets, which is also
+  // the right thing to tell a caller probing for other teams' node ids.
+  const owned = new Set(
+    (
+      await db.discoveryNode.findMany({
+        where: { teamId, id: { in: referenced } },
+        select: { id: true },
+      })
+    ).map((r) => r.id),
+  )
+
+  for (const n of nodes) {
+    if (n.parentId === n.id) throw new TreeGraphError('A node cannot be its own parent')
+    if (n.parentId && !owned.has(n.parentId) && !batch.has(n.parentId)) {
+      throw new TreeGraphError('Unknown parent node')
+    }
+  }
+
+  // Cycles can only be introduced by edges NEW in this batch: every already
+  // persisted node keeps the parent it was stored with, and the stored forest is
+  // acyclic by this same check. So walk each new node's chain through the batch
+  // and stop as soon as it anchors on a persisted node or null.
+  for (const n of nodes) {
+    if (owned.has(n.id)) continue // already persisted — createMany/dedup skips it
+    const seen = new Set<string>([n.id])
+    let cur = n.parentId
+    let depth = 0
+    while (cur && batch.has(cur) && !owned.has(cur)) {
+      if (seen.has(cur)) throw new TreeGraphError('That branch would loop back on itself')
+      seen.add(cur)
+      // ponytail: caps depth ADDED by one batch, not total depth from the root.
+      // Total depth needs a recursive CTE; the hydration visited-guard already
+      // contains the failure mode. Add the CTE if deep trees become real.
+      if (++depth > MAX_BATCH_DEPTH) throw new TreeGraphError('That branch is too deep')
+      cur = batch.get(cur)!.parentId
+    }
+  }
+}
+
 /**
  * Hard bound on nodes returned by one hydrate (PERF-10). The client store
  * hydrates the WHOLE tree in one shot (a real cursor would change its
@@ -116,11 +207,16 @@ export async function hydrateTree(teamId: string) {
   const byId = new Map(rows.map((r) => [r.id, r]))
   const hasChildren = new Set(rows.map((r) => r.parentId).filter(Boolean) as string[])
 
+  // The visited set is corruption CONTAINMENT, not the fix: `assertValidTreeGraph`
+  // stops cycles at write time, but rows written before that guard existed (or by
+  // a future bug) must not make this GET spin until the request times out.
   function depthOf(id: string): number {
     let d = 0
+    const seen = new Set<string>([id])
     let cur = byId.get(id)
-    while (cur?.parentId) {
+    while (cur?.parentId && !seen.has(cur.parentId)) {
       d += 1
+      seen.add(cur.parentId)
       cur = byId.get(cur.parentId)
     }
     return d
@@ -182,6 +278,9 @@ export async function createTreeNodes({
   userId: string
   nodes: IncomingTreeNode[]
 }): Promise<{ kpAwarded: number; plainCount: number }> {
+  // Prove the whole proposed graph is a same-team forest before ANY write.
+  await assertValidTreeGraph(teamId, nodes)
+
   // wiki/youtube go through the bulk createMany path UNCHANGED. `source` and
   // `article` nodes each need an atomic node + side-row write, so they're
   // split out below.
@@ -281,8 +380,10 @@ export async function createTreeNodes({
         })
       })
     } catch (err) {
-      // A concurrent insert can still trip the unique constraint — treat as dedup.
-      console.error('[discovery/tree] source node create skipped:', err)
+      // ONLY a real unique-constraint violation is dedup. The old broad catch
+      // logged every failure and still returned `{ ok: true }`, so a genuine
+      // write error looked like a successful save (REFACTOR2 P1-R10).
+      if (!isUniqueViolation(err)) throw err
     }
   }
 
@@ -339,8 +440,7 @@ export async function createTreeNodes({
       })
       kpAwarded += got
     } catch (err) {
-      // A concurrent insert can still trip the unique constraint — treat as dedup.
-      console.error('[discovery/tree] article node create skipped:', err)
+      if (!isUniqueViolation(err)) throw err
     }
   }
 

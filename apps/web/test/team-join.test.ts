@@ -21,14 +21,14 @@ const mocks = vi.hoisted(() => ({
   userFindUnique: vi.fn(),
   userCreate: vi.fn(),
   txInviteFindUnique: vi.fn(),
-  txInviteUpdate: vi.fn(() => Promise.resolve({})),
+  txInviteUpdateMany: vi.fn(() => Promise.resolve({ count: 1 })),
   txTeamFindUnique: vi.fn(),
   txMemberCreate: vi.fn(() => Promise.resolve({})),
   txUserUpdate: vi.fn(() => Promise.resolve({})),
 }))
 
 const tx = {
-  teamInvite: { findUnique: mocks.txInviteFindUnique, update: mocks.txInviteUpdate },
+  teamInvite: { findUnique: mocks.txInviteFindUnique, updateMany: mocks.txInviteUpdateMany },
   team: { findUnique: mocks.txTeamFindUnique },
   teamMember: { create: mocks.txMemberCreate },
   user: { update: mocks.txUserUpdate },
@@ -89,6 +89,8 @@ beforeEach(() => {
     emailAddresses: [{ id: 'em_1', emailAddress: 'sam@example.com' }],
   })
   mocks.userFindUnique.mockResolvedValue(USER)
+  // clearAllMocks keeps implementations — restore the "consume succeeded" default.
+  mocks.txInviteUpdateMany.mockResolvedValue({ count: 1 })
 })
 
 describe('team join invariants', () => {
@@ -138,7 +140,7 @@ describe('team join invariants', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ teamId: 'team_1' })
     expect(mocks.txMemberCreate).not.toHaveBeenCalled()
-    expect(mocks.txInviteUpdate).not.toHaveBeenCalled()
+    expect(mocks.txInviteUpdateMany).not.toHaveBeenCalled()
   })
 
   it('a successful join adds the member, burns the code, and sets the active team', async () => {
@@ -151,12 +153,33 @@ describe('team join invariants', () => {
     expect(mocks.txMemberCreate).toHaveBeenCalledWith({
       data: { userId: USER.id, teamId: 'team_1', role: 'member' },
     })
-    expect(mocks.txInviteUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ usedByUserId: USER.id }) }),
+    // The code must be consumed CONDITIONALLY (unused + unexpired) and BEFORE
+    // the membership row exists, so a racing joiner's whole transaction rolls
+    // back rather than joining on a spent code.
+    expect(mocks.txInviteUpdateMany).toHaveBeenCalledWith({
+      where: { code: 'ABC123', usedByUserId: null, expiresAt: { gt: expect.any(Date) } },
+      data: { usedByUserId: USER.id, usedAt: expect.any(Date) },
+    })
+    expect(mocks.txInviteUpdateMany.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.txMemberCreate.mock.invocationCallOrder[0]!,
     )
     expect(mocks.txUserUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: { activeTeamId: 'team_1' } }),
     )
+  })
+
+  // REFACTOR2 P1-S1: the pre-read is a stale snapshot. Both racing joiners see
+  // `usedByUserId: null` and serialize on the team lock; only the conditional
+  // consume can tell them apart. `count: 0` IS the loser.
+  it('the loser of a true interleaved race is rejected by the conditional consume', async () => {
+    mocks.txInviteFindUnique.mockResolvedValue(invite()) // stale: still looks unused
+    mocks.txTeamFindUnique.mockResolvedValue(team())
+    mocks.txInviteUpdateMany.mockResolvedValue({ count: 0 }) // the other joiner won
+
+    const res = await POST(joinReq())
+
+    expect(res.status).toBe(409)
+    expect(mocks.txMemberCreate).not.toHaveBeenCalled()
   })
 
   it('a cross-class join is allowed by design (ADR-004: per-student class membership)', async () => {

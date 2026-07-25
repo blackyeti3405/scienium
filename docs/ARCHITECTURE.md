@@ -548,7 +548,9 @@ Feature-owned library folders:
   display metadata (`interest.ts` — the color/shape/glyph cycle shared by
   `DiscoveryTree`'s SVG swatch and `DiscoveryTopicList`'s plain glyph),
   interest matching (`interest-match.ts`), KP award policy, the route-side
-  `tree-service.ts` (node creation + tree hydration), and the client-safe
+  `tree-service.ts` (node creation + tree hydration; `assertValidTreeGraph`
+  proves the proposed batch is a same-team acyclic forest before any write —
+  parents must be null, an existing same-team node, or in the same batch), and the client-safe
   `treeApi.ts` persistence wrappers used by the Discovery store. `articles.ts`
   is a parallel, unified RSS/Atom adapter for the `article` source type (The
   Conversation + science-journalism feeds); see §8.1.

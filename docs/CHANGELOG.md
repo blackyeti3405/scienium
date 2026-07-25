@@ -5,6 +5,52 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.34.1] — 2026-07-25
+
+Second remediation batch against `REFACTOR2.MD` §0 — the small, high-severity P1 tenancy and
+concurrency findings. Same principle as v0.34.0: the fix is a database-owned predicate or an
+explicit rejection, not a longer chain of application pre-checks.
+
+### Fixed — the discovery tree accepted foreign-team parents and cycles (P1-R10)
+`POST /api/discovery/tree` takes client-generated node ids and arbitrary `parentId`s, and
+`DiscoveryNode`'s self-relation references only `id` — not `(teamId, id)` — so PostgreSQL
+permitted a team-A node pointing at a team-B parent. A single batch could also introduce a
+self-edge or a cycle, and `hydrateTree.depthOf` walked parent pointers with no visited set, so
+one such write made the team's own Discovery GET loop until the request timed out: a persisted,
+team-level denial of service any member could write.
+
+- New `assertValidTreeGraph(teamId, nodes)` runs **before any write**: batch size ≤ 200, unique
+  ids, no self-edge, every parent null / an existing **same-team** node / another node in the
+  same batch, no cycle among the batch's new edges, and a batch-depth cap. A foreign-team
+  parent gets the same "unknown parent node" answer an invented id gets, so the endpoint is not
+  an oracle for other teams' node ids.
+- `TreeGraphError` maps to 400 in the route.
+- The source/article create branches no longer swallow **every** exception as dedup: only a
+  genuine `P2002` is dedup, anything else propagates. The old broad catch logged the failure
+  and still returned `{ ok: true }`.
+- `depthOf` carries a visited set as corruption containment for rows written before the guard.
+- `test/discovery-tree-graph.test.ts` uses a real database-resident id owned by another team,
+  not a fabricated one.
+
+### Fixed — single-use team invites were not single-use under concurrency (P1-S1)
+`POST /api/team/join` read `usedByUserId` **before** taking the team lock, then wrote the
+invite unconditionally. Two joiners could both observe "unused", serialize only on capacity,
+both join, and the second silently overwrote the audit owner. The invite is now consumed by a
+conditional `updateMany` (`usedByUserId: null` + unexpired) **before** the membership row is
+created; `count !== 1` throws 409 and rolls the whole transaction back. `test/team-join.test.ts`
+now interleaves the stale snapshot it claimed to prove — the pre-read still says "unused" while
+the consume returns `count: 0`.
+
+### Fixed — a failed quiz-history read no longer starts paid work (P1-S4)
+`usePaperQuiz` could not distinguish "no graded session" from a failed or non-OK GET: both fell
+through to `generateQuiz()`, so a transient read outage invoked Anthropic, created another
+session, and could strand the existing one. A quiz is now generated only on an explicit
+successful `session: null`; a read failure surfaces a recoverable error, and the banner's retry
+button makes generating an explicit student action.
+
+### Verification
+Gates 1–5 pass. Vitest: **91 files / 1,310 tests passed**.
+
 ## [0.34.0] — 2026-07-25
 
 First remediation batch against the 2026-07-23 adversarial re-audit (`REFACTOR2.MD` §0). Two of

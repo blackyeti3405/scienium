@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { hydrateTree, createTreeNodes } from '@/lib/discovery/tree-service'
+import { hydrateTree, createTreeNodes, TreeGraphError } from '@/lib/discovery/tree-service'
 import { logActivity } from '@/lib/activity/log'
 
 // Bounded batch of client-generated nodes; `.strict()` rejects extra fields.
@@ -65,11 +65,22 @@ export async function POST(req: NextRequest) {
   const { data, error } = await parseJson(req, TreeBody)
   if (error) return error
 
-  const { kpAwarded, plainCount } = await createTreeNodes({
-    teamId: ctx.teamId,
-    userId: ctx.dbUserId,
-    nodes: data.nodes,
-  })
+  let kpAwarded: number
+  let plainCount: number
+  try {
+    // Rejects foreign-team parents and cycles before any write (P1-R10). A
+    // failed node is now an error, not a logged exception behind `{ ok: true }`.
+    ;({ kpAwarded, plainCount } = await createTreeNodes({
+      teamId: ctx.teamId,
+      userId: ctx.dbUserId,
+      nodes: data.nodes,
+    }))
+  } catch (err) {
+    if (err instanceof TreeGraphError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
+    }
+    throw err
+  }
 
   if (kpAwarded > 0) {
     logActivity(ctx.teamId, ctx.dbUserId, 'discovery_kp_awarded', {

@@ -63,6 +63,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const teamId = await db.$transaction(async (tx) => {
+      // This read is only for the team id and for friendly, specific errors. It
+      // is NOT the single-use check — see the conditional consume below.
       const invite = await tx.teamInvite.findUnique({ where: { code: normalized } })
       if (!invite) throw new ApiError('That join code is not valid', 404)
       if (invite.usedByUserId) throw new ApiError('That join code has already been used', 409)
@@ -92,11 +94,19 @@ export async function POST(req: NextRequest) {
       // No cross-class block: class membership is per-student, so a lab may hold
       // members from different classes/schools — each stays in their own class.
 
-      await tx.teamMember.create({ data: { userId: user.id, teamId: team.id, role: 'member' } })
-      await tx.teamInvite.update({
-        where: { code: normalized },
+      // CONSUME THE CODE FIRST, conditionally (REFACTOR2 P1-S1). The read above
+      // is a stale snapshot: two joiners can both see `usedByUserId: null`,
+      // serialize on the team lock, and both join — the old unconditional
+      // `update` then just overwrote the audit owner with the second one. This
+      // predicate makes redemption single-use in the database, so the loser gets
+      // a 409 and its whole transaction rolls back before any membership exists.
+      const consumed = await tx.teamInvite.updateMany({
+        where: { code: normalized, usedByUserId: null, expiresAt: { gt: new Date() } },
         data: { usedByUserId: user.id, usedAt: new Date() },
       })
+      if (consumed.count !== 1) throw new ApiError('That join code has already been used', 409)
+
+      await tx.teamMember.create({ data: { userId: user.id, teamId: team.id, role: 'member' } })
       await tx.user.update({ where: { id: user.id }, data: { activeTeamId: team.id } })
       return team.id
     })
