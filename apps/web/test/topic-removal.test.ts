@@ -2,16 +2,23 @@ import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * Two-phase topic-change removal protocol (v0.28.0) — "the model proposes,
- * the student disposes".
+ * Two-phase topic-change removal protocol — "the model proposes, the student
+ * disposes", with the SERVER holding the permission slip (REFACTOR2 P1-R1).
  *
  * The batch relevance check interpolates paper text the team does not control,
  * so its verdict must never drive the hard delete directly. These tests pin the
  * protocol a well-meaning refactor could quietly undo:
- *   - phase 1 (`confirmWipe`) runs the model but deletes NOTHING;
- *   - phase 2 (`confirmRemoveIds`) deletes ONLY caller-approved ids, resolved
- *     through a team-scoped query (IDOR), with NO model call at all;
+ *   - phase 1 (`confirmWipe`) runs the model, deletes NOTHING, and issues a
+ *     single-use proposal token bound to the exact ids it proposed;
+ *   - phase 2 deletes ONLY those ids, resolved through a team-scoped query
+ *     (IDOR), with NO model call — and ONLY when the matching token is present;
  *   - the paid `ai` tier is cleared before the model fires.
+ *
+ * The v0.28.0 version of this file asserted phase 2 with `confirmRemoveIds`
+ * alone, which pinned the bypass rather than preventing it: the "phases" were
+ * client-sent booleans, so a direct caller could post an arbitrary id list and
+ * delete any ready paper it knew. The token is what makes the confirmation the
+ * server's.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -27,6 +34,10 @@ const mocks = vi.hoisted(() => ({
   paperFindMany: vi.fn(),
   paperDeleteMany: vi.fn(() => Promise.resolve({ count: 0 })),
   topicInterestFindMany: vi.fn(() => Promise.resolve([])),
+  proposeDestructive: vi.fn(() => Promise.resolve('proposal_token_1')),
+  consumeDestructive: vi.fn(
+    (): Promise<{ ok: boolean; reason?: string }> => Promise.resolve({ ok: true }),
+  ),
   transaction: vi.fn(),
 }))
 
@@ -37,6 +48,10 @@ vi.mock('@/lib/literature/relevance', () => ({ batchCheckRelevance: mocks.batchC
 vi.mock('@/lib/storage', () => ({ deleteObject: mocks.deleteObject }))
 vi.mock('@/lib/activity/log', () => ({ logActivity: mocks.logActivity }))
 vi.mock('@/lib/discovery/interest-match', () => ({ matchInterests: mocks.matchInterests }))
+vi.mock('@/lib/api/destructive-proposal', () => ({
+  proposeDestructive: mocks.proposeDestructive,
+  consumeDestructive: mocks.consumeDestructive,
+}))
 vi.mock('@/lib/db', () => ({
   db: {
     team: { findUnique: mocks.teamFindUnique, update: mocks.teamUpdate },
@@ -71,6 +86,8 @@ beforeEach(() => {
   mocks.topicInterestFindMany.mockResolvedValue([])
   // Topic-lock bonus transaction: pretend already granted (P2002-shaped throw).
   mocks.transaction.mockRejectedValue({ code: 'P2002' })
+  mocks.proposeDestructive.mockResolvedValue('proposal_token_1')
+  mocks.consumeDestructive.mockResolvedValue({ ok: true })
 })
 
 describe('phase 0 — topic changing with papers, no confirmation yet', () => {
@@ -120,6 +137,16 @@ describe('phase 1 — confirmWipe proposes, never deletes', () => {
     expect(body.papers).toEqual([{ id: 'p_drop', title: 'Coral paper' }])
     expect(mocks.paperDeleteMany).not.toHaveBeenCalled()
     expect(mocks.deleteObject).not.toHaveBeenCalled()
+
+    // The server records what it proposed, bound to actor/team/topic-change.
+    expect(body.proposalToken).toBe('proposal_token_1')
+    expect(mocks.proposeDestructive).toHaveBeenCalledWith({
+      teamId: CTX.teamId,
+      actorUserId: CTX.dbUserId,
+      command: 'topic_paper_removal',
+      targetIds: ['p_drop'],
+      context: ['Old topic about corals', 'New topic about magnets'],
+    })
   })
 
   it('proceeds straight to the topic change when the model keeps everything', async () => {
@@ -139,7 +166,7 @@ describe('phase 1 — confirmWipe proposes, never deletes', () => {
   })
 })
 
-describe('phase 2 — confirmRemoveIds deletes only approved, team-scoped, NO model', () => {
+describe('phase 2 — the server’s own proposal authorizes the delete', () => {
   it('resolves approved ids through a team-scoped query and deletes only those', async () => {
     // The student approved two ids, but the team-scoped resolution only finds
     // one — the other is foreign or stale and must be silently dropped.
@@ -151,6 +178,7 @@ describe('phase 2 — confirmRemoveIds deletes only approved, team-scoped, NO mo
         topic: 'New topic about magnets',
         confirmWipe: true,
         confirmRemoveIds: ['p_mine', 'p_foreign'],
+        proposalToken: 'proposal_token_1',
       }),
     )
 
@@ -175,11 +203,81 @@ describe('phase 2 — confirmRemoveIds deletes only approved, team-scoped, NO mo
     mocks.paperDeleteMany.mockResolvedValue({ count: 1 })
 
     await POST(
-      topicReq({ topic: 'New topic about magnets', confirmWipe: true, confirmRemoveIds: ['p1'] }),
+      topicReq({
+        topic: 'New topic about magnets',
+        confirmWipe: true,
+        confirmRemoveIds: ['p1'],
+        proposalToken: 'proposal_token_1',
+      }),
     )
 
     expect(mocks.batchCheckRelevance).not.toHaveBeenCalled()
     expect(mocks.enforceRateLimit).not.toHaveBeenCalledWith(expect.anything(), 'ai', expect.anything())
+  })
+})
+
+// The bypass the previous version of this file pinned instead of preventing.
+describe('a client-asserted confirmation is not a capability (P1-R1)', () => {
+  it('deletes NOTHING when confirmRemoveIds arrives with no proposal token', async () => {
+    mocks.paperFindMany.mockResolvedValue([{ id: 'p_mine', title: 'Mine', pdfKey: 'k1' }])
+
+    const res = await POST(
+      topicReq({
+        topic: 'New topic about magnets',
+        confirmWipe: true,
+        confirmRemoveIds: ['p_mine'],
+      }),
+    )
+
+    expect(res.status).toBe(409)
+    expect(mocks.paperDeleteMany).not.toHaveBeenCalled()
+    expect(mocks.deleteObject).not.toHaveBeenCalled()
+    // The topic must not change either — the command failed as a whole.
+    expect(mocks.teamUpdate).not.toHaveBeenCalled()
+    expect(mocks.consumeDestructive).not.toHaveBeenCalled()
+  })
+
+  it('deletes NOTHING when the token does not match what the server proposed', async () => {
+    mocks.consumeDestructive.mockResolvedValue({ ok: false, reason: 'invalid' })
+    mocks.paperFindMany.mockResolvedValue([{ id: 'p_mine', title: 'Mine', pdfKey: 'k1' }])
+
+    const res = await POST(
+      topicReq({
+        topic: 'New topic about magnets',
+        confirmWipe: true,
+        confirmRemoveIds: ['p_someone_elses'],
+        proposalToken: 'guessed_or_replayed',
+      }),
+    )
+
+    expect(res.status).toBe(409)
+    expect(mocks.paperDeleteMany).not.toHaveBeenCalled()
+    expect(mocks.teamUpdate).not.toHaveBeenCalled()
+  })
+
+  it('consumes the proposal against the EXACT ids the caller sent', async () => {
+    mocks.paperFindMany.mockResolvedValue([{ id: 'p_mine', title: 'Mine', pdfKey: 'k1' }])
+    mocks.paperDeleteMany.mockResolvedValue({ count: 1 })
+
+    await POST(
+      topicReq({
+        topic: 'New topic about magnets',
+        confirmWipe: true,
+        confirmRemoveIds: ['p_mine'],
+        proposalToken: 'proposal_token_1',
+      }),
+    )
+
+    // Swapping in extra ids changes the digest, so the consume would fail —
+    // this is the binding that stops an expanded delete list riding a real token.
+    expect(mocks.consumeDestructive).toHaveBeenCalledWith({
+      token: 'proposal_token_1',
+      teamId: CTX.teamId,
+      actorUserId: CTX.dbUserId,
+      command: 'topic_paper_removal',
+      targetIds: ['p_mine'],
+      context: ['Old topic about corals', 'New topic about magnets'],
+    })
   })
 })
 

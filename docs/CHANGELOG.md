@@ -5,6 +5,49 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.38.0] — 2026-07-25
+
+### Fixed — destructive confirmations are server-owned capabilities, not client assertions (P1-R1)
+`POST /api/discovery/topic` treated `confirmWipe` and `confirmRemoveIds` as its two-phase
+protocol, but both are just fields the caller sends. A direct request could skip every proposed
+phase and delete any ready paper ids it knew — the confirmation lived entirely in the UI dialog.
+`DELETE /api/discovery/tree` was worse: it wiped a team's whole discovery tree on a single bare
+request, with no confirmation at all.
+
+- New `DestructiveProposal`: a single-use, 10-minute permission slip binding **actor, team,
+  command, the exact payload (as a SHA-256 digest), and expiry**. `lib/api/destructive-proposal.ts`
+  owns issuing and consuming it.
+- The digest sorts target ids (order is not meaning) and JSON-frames its parts, so no id can
+  impersonate a delimiter and let two different payloads hash alike.
+- **Topic removal**: phase 1 now records what the server proposed and returns a
+  `proposalToken`; phase 2 deletes only after `consumeDestructive` matches the token *and* the
+  byte-identical id set. An expanded delete list riding a genuine token no longer matches.
+- **Tree reset**: now two-phase. A bare `DELETE` destroys nothing and returns the node count
+  plus a token; only a request carrying that token wipes. The token binds the node set that
+  existed when it was issued, so one minted for a 3-node tree cannot later wipe 300.
+- Consumption is a compare-and-set on `consumedAt: null`, so a replayed token is inert and two
+  concurrent phase-2 requests cannot both proceed.
+- Every failure — guessed, expired, replayed, foreign, or payload-mismatched — returns the same
+  answer, so the endpoint is not an oracle for which proposals exist.
+
+`test/topic-removal.test.ts` previously asserted phase 2 with `confirmRemoveIds` alone, which
+**pinned the bypass rather than preventing it**. It now pins the opposite: a removal with no
+token, or with a token that does not match the proposal, deletes nothing and does not change the
+topic.
+
+### Still open in P1-R1 — a capability matrix
+The audit also asks for a member/lead/teacher/admin capability matrix enforced in a shared policy
+module. That is a product decision — today *any* member may reset a tree or change a topic, and
+whether that should require lead is not something this remediation should decide silently. The
+proposal makes each destructive act deliberate, bound, single-use, and auditable; it does not
+stop a determined direct caller from making both calls in sequence. Marked as such in
+`REFACTOR2.MD` rather than quietly counted as closed.
+
+### Verification
+Gates 1–5 pass. Vitest: **103 files / 1,462 tests passed** (was 102 / 1,443). 19 new tests
+across the digest binding, proposal issue/consume, the tree's two phases, and the topic bypass.
+Migration applied to the local dev database; team data verified untouched.
+
 ## [0.37.0] — 2026-07-25
 
 Closes the "pre-call claim" family: three paid paths that read their deciding state **before**

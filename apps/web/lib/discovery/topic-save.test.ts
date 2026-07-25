@@ -8,6 +8,35 @@ import { interpretTopicSaveResponse } from './topic-save'
  * never as a success that clears the student's topic.
  */
 
+
+// REFACTOR2 P1-R1: phase 2 cannot delete without echoing the server's token, so
+// losing it in the interpreter would silently break every removal.
+describe('proposal token passthrough', () => {
+  it('carries the token from the server proposal', () => {
+    const out = interpretTopicSaveResponse(
+      409,
+      {
+        requiresRemovalConfirmation: true,
+        proposalToken: 'tok_abc',
+        papers: [{ id: 'p1', title: 'T' }],
+      },
+      'New',
+    )
+    expect(out).toMatchObject({ kind: 'needsRemovalConfirmation', proposalToken: 'tok_abc' })
+  })
+
+  it('reports a missing or non-string token as null rather than inventing one', () => {
+    for (const bad of [undefined, 42, null, {}]) {
+      const out = interpretTopicSaveResponse(
+        409,
+        { requiresRemovalConfirmation: true, proposalToken: bad, papers: [] },
+        'New',
+      )
+      expect(out).toMatchObject({ proposalToken: null })
+    }
+  })
+})
+
 describe('interpretTopicSaveResponse', () => {
   it('a 429 is an error, NOT a cleared topic (the original bug)', () => {
     const out = interpretTopicSaveResponse(429, { error: 'Slow down' }, 'New topic')
@@ -42,6 +71,7 @@ describe('interpretTopicSaveResponse', () => {
     )
     expect(out).toEqual({
       kind: 'needsRemovalConfirmation',
+      proposalToken: null,
       newTopic: 'New',
       papers: [{ id: 'p1', title: 'Keepable' }],
     })

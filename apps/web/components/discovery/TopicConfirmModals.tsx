@@ -25,12 +25,21 @@ export function TopicConfirmModals({
 }: {
   variant: 'settings' | 'discovery'
   topicConfirm: { newTopic: string; paperCount: number } | null
-  topicRemovalConfirm: { newTopic: string; papers: { id: string; title: string }[] } | null
+  topicRemovalConfirm: {
+    newTopic: string
+    papers: { id: string; title: string }[]
+    /** Server-issued proposal token — echoed back to authorize the delete (P1-R1). */
+    proposalToken: string | null
+  } | null
   savingTopic: boolean
   onCancelTopicChange: () => void
   onConfirmTopicChange: (newTopic: string) => void
   onCancelTopicRemoval: () => void
-  onConfirmTopicRemoval: (newTopic: string, paperIds: string[]) => void
+  onConfirmTopicRemoval: (
+    newTopic: string,
+    paperIds: string[],
+    proposalToken: string | null,
+  ) => void
 }) {
   const backdropClass =
     variant === 'settings'
@@ -155,6 +164,7 @@ export function TopicConfirmModals({
                     onConfirmTopicRemoval(
                       topicRemovalConfirm.newTopic,
                       topicRemovalConfirm.papers.map((p) => p.id),
+                      topicRemovalConfirm.proposalToken,
                     )
                   }
                   className="flex-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 hover:brightness-110 disabled:opacity-50 transition-all"
@@ -168,6 +178,7 @@ export function TopicConfirmModals({
                     onConfirmTopicRemoval(
                       topicRemovalConfirm.newTopic,
                       topicRemovalConfirm.papers.map((p) => p.id),
+                      topicRemovalConfirm.proposalToken,
                     )
                   }
                   className="flex-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 hover:brightness-110 disabled:opacity-50 transition-all"

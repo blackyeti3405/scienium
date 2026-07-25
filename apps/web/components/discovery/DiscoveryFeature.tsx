@@ -330,7 +330,9 @@ export function DiscoveryFeature() {
         onCancelTopicChange={() => setTopicConfirm(null)}
         onConfirmTopicChange={(newTopic) => saveTopic(newTopic, true)}
         onCancelTopicRemoval={() => setTopicRemovalConfirm(null)}
-        onConfirmTopicRemoval={(newTopic, paperIds) => saveTopic(newTopic, true, paperIds)}
+        onConfirmTopicRemoval={(newTopic, paperIds, proposalToken) =>
+          saveTopic(newTopic, true, paperIds, proposalToken)
+        }
         topicWipeResult={topicWipeResult}
         onDismissWipeResult={() => setTopicWipeResult(null)}
         promoteMsg={promoteMsg}

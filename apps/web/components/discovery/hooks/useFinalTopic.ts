@@ -54,6 +54,7 @@ export function useFinalTopic({
   const [topicRemovalConfirm, setTopicRemovalConfirm] = useState<{
     newTopic: string
     papers: { id: string; title: string }[]
+    proposalToken: string | null
   } | null>(null)
 
   useEffect(() => {
@@ -70,14 +71,25 @@ export function useFinalTopic({
   // errors. The response protocol is interpreted by the SHARED
   // `interpretTopicSaveResponse` (also used by Lab Profile settings) so the
   // two clients can't diverge again.
-  async function saveTopic(topic: string, confirmWipe = false, confirmRemoveIds?: string[]) {
+  async function saveTopic(
+    topic: string,
+    confirmWipe = false,
+    confirmRemoveIds?: string[],
+    proposalToken?: string | null,
+  ) {
     setSavingTopic(true)
     setTopicSaveError(null)
     try {
       const res = await fetch('/api/discovery/topic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, confirmWipe, ...(confirmRemoveIds ? { confirmRemoveIds } : {}) }),
+        body: JSON.stringify({
+          topic,
+          confirmWipe,
+          ...(confirmRemoveIds ? { confirmRemoveIds } : {}),
+          // The server's proposal token authorizes the delete (P1-R1).
+          ...(proposalToken ? { proposalToken } : {}),
+        }),
       })
       const body = await res.json().catch(() => ({}))
       const outcome = interpretTopicSaveResponse(res.status, body, topic)
@@ -91,7 +103,11 @@ export function useFinalTopic({
           // Server proposed a specific removal list — surface the titles so the
           // student can spot a paper that should NOT be going.
           setTopicConfirm(null)
-          setTopicRemovalConfirm({ newTopic: outcome.newTopic, papers: outcome.papers })
+          setTopicRemovalConfirm({
+            newTopic: outcome.newTopic,
+            papers: outcome.papers,
+            proposalToken: outcome.proposalToken,
+          })
           return
         case 'error':
           // Keep the editor open with the draft intact — the topic did NOT change.

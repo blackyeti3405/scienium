@@ -4,6 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { hydrateTree, createTreeNodes, TreeGraphError } from '@/lib/discovery/tree-service'
+import { consumeDestructive, proposeDestructive } from '@/lib/api/destructive-proposal'
 import { logActivity } from '@/lib/activity/log'
 
 // Bounded batch of client-generated nodes; `.strict()` rejects extra fields.
@@ -93,11 +94,61 @@ export async function POST(req: NextRequest) {
 }
 
 // ─── DELETE: reset the whole tree for the team ───────────────────────────────
-
+//
+// TWO-PHASE, server-owned (REFACTOR2 P1-R1). This used to wipe every node the
+// moment any member called it — shared work, destroyed by a bare request, with
+// the only confirmation living in a UI dialog the caller need never open.
+//
+//   - Without `?token=`: destroys nothing. Returns 409 with the node count and a
+//     single-use proposal token so the client can show a real warning.
+//   - With a valid `?token=`: consumes the proposal and wipes.
+//
+// The proposal is bound to the actor, the team, and the exact node set that
+// existed when it was issued, so a token minted for a 3-node tree cannot be
+// replayed later to wipe 300.
 export async function DELETE(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
   if (error) return error
 
-  await db.discoveryNode.deleteMany({ where: { teamId: ctx.teamId } })
-  return NextResponse.json({ ok: true })
+  const nodes = await db.discoveryNode.findMany({
+    where: { teamId: ctx.teamId },
+    select: { id: true },
+  })
+  const nodeIds = nodes.map((n) => n.id)
+
+  // Nothing to destroy — no confirmation theatre for a no-op.
+  if (nodeIds.length === 0) return NextResponse.json({ ok: true, removedCount: 0 })
+
+  const token = req.nextUrl.searchParams.get('token')
+  if (!token) {
+    const proposalToken = await proposeDestructive({
+      teamId: ctx.teamId,
+      actorUserId: ctx.dbUserId,
+      command: 'discovery_tree_reset',
+      targetIds: nodeIds,
+    })
+    return NextResponse.json(
+      { requiresConfirmation: true, proposalToken, nodeCount: nodeIds.length },
+      { status: 409 },
+    )
+  }
+
+  const consumed = await consumeDestructive({
+    token,
+    teamId: ctx.teamId,
+    actorUserId: ctx.dbUserId,
+    command: 'discovery_tree_reset',
+    targetIds: nodeIds,
+  })
+  if (!consumed.ok) {
+    return NextResponse.json(
+      { error: 'That reset confirmation is no longer valid. Try again.' },
+      { status: 409 },
+    )
+  }
+
+  const removed = await db.discoveryNode.deleteMany({
+    where: { teamId: ctx.teamId, id: { in: nodeIds } },
+  })
+  return NextResponse.json({ ok: true, removedCount: removed.count })
 }

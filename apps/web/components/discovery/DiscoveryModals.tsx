@@ -63,12 +63,20 @@ export function DiscoveryModals({
   kpPill: { amount: number; nonce: number } | null
   sourceAddError: { nonce: number } | null
   topicConfirm: { newTopic: string; paperCount: number } | null
-  topicRemovalConfirm: { newTopic: string; papers: { id: string; title: string }[] } | null
+  topicRemovalConfirm: {
+    newTopic: string
+    papers: { id: string; title: string }[]
+    proposalToken: string | null
+  } | null
   savingTopic: boolean
   onCancelTopicChange: () => void
   onConfirmTopicChange: (newTopic: string) => void
   onCancelTopicRemoval: () => void
-  onConfirmTopicRemoval: (newTopic: string, paperIds: string[]) => void
+  onConfirmTopicRemoval: (
+    newTopic: string,
+    paperIds: string[],
+    proposalToken: string | null,
+  ) => void
   topicWipeResult: { removedCount: number; removedTitles: string[] } | null
   onDismissWipeResult: () => void
   promoteMsg: { text: string; ok: boolean } | null

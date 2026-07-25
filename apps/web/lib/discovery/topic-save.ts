@@ -13,7 +13,17 @@
 
 export type TopicSaveOutcome =
   | { kind: 'needsConfirmation'; newTopic: string; paperCount: number }
-  | { kind: 'needsRemovalConfirmation'; newTopic: string; papers: { id: string; title: string }[] }
+  | {
+      kind: 'needsRemovalConfirmation'
+      newTopic: string
+      papers: { id: string; title: string }[]
+      /**
+       * Single-use token for the server's removal proposal (REFACTOR2 P1-R1).
+       * Phase 2 MUST echo it: without it the approved-id list is just a
+       * caller-supplied delete request.
+       */
+      proposalToken: string | null
+    }
   | { kind: 'error'; message: string }
   | {
       kind: 'saved'
@@ -48,7 +58,12 @@ export function interpretTopicSaveResponse(
             typeof (p as { title?: unknown }).title === 'string',
         )
       : []
-    return { kind: 'needsRemovalConfirmation', newTopic: requestedTopic, papers }
+    return {
+      kind: 'needsRemovalConfirmation',
+      newTopic: requestedTopic,
+      papers,
+      proposalToken: typeof d.proposalToken === 'string' ? d.proposalToken : null,
+    }
   }
 
   // Any other non-2xx is an ERROR — never the success path. Falling through

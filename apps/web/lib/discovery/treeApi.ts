@@ -100,7 +100,44 @@ export const persistInterest = (id: string, level: 'high' | 'mid' | 'low' | null
 export const persistDelete = (id: string) =>
   safeFetch(`/api/discovery/tree/${id}`, { method: 'DELETE' }, 'delete')
 
-export const persistReset = () => safeFetch('/api/discovery/tree', { method: 'DELETE' }, 'reset')
+/**
+ * Wipe the team's tree through the server's two-phase reset (REFACTOR2 P1-R1).
+ *
+ * Phase 1 destroys nothing and returns a single-use token bound to the exact
+ * node set that exists right now; phase 2 presents it. The caller has already
+ * confirmed in the UI (`DiscoveryFeature`'s "Start over" dialog), so completing
+ * both steps here is the user's decision, not an auto-confirm.
+ *
+ * ponytail: this makes a wipe impossible from ONE stray or replayed request, and
+ * binds the token to the node set so a stale token cannot destroy newer work. It
+ * does NOT stop a determined direct caller from making both calls — that needs a
+ * member/lead capability rule, which is a product decision still open in P1-R1.
+ */
+export async function persistReset(): Promise<boolean> {
+  try {
+    const proposeRes = await fetch('/api/discovery/tree', { method: 'DELETE' })
+    if (proposeRes.ok) return true // nothing to remove
+
+    const body = await proposeRes.json().catch(() => null)
+    const token = body?.proposalToken
+    if (proposeRes.status !== 409 || typeof token !== 'string') {
+      console.error('[discovery] reset proposal failed:', proposeRes.status)
+      return false
+    }
+
+    const res = await fetch(`/api/discovery/tree?token=${encodeURIComponent(token)}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok) {
+      console.error('[discovery] reset failed:', res.status)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error('[discovery] reset failed:', err)
+    return false
+  }
+}
 
 /** Resolve a citation/search pick into a full source (server-authoritative
  *  host + credibility tier). Returns null on any failure — non-fatal, the

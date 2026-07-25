@@ -507,6 +507,11 @@ Top-level infrastructure and policy files:
 - `date.ts`: `todayUtc` — the UTC-midnight day key shared by every daily cap
   (Codex, Lab-Credit award, study-plan re-run).
 - `db.ts`, `db-lock.ts`: Prisma singleton and PostgreSQL advisory locks.
+- `api/destructive-proposal.ts`: server-owned confirmations for destructive
+  commands. A `DestructiveProposal` binds actor, team, command, the exact target
+  payload (SHA-256 digest), and a 10-minute expiry; consuming it is a single-use
+  compare-and-set. Topic-change paper removal and the discovery tree reset both
+  go through it, so a client-sent boolean can no longer authorize a delete.
 - `economy.ts`, `shop.ts`, `plot.ts`, `phase.ts`, `showcase.ts`: pure domain
   policy.
 - `fetch-retry.ts`: `fetchWithRetry` — 429/5xx retry-after backoff bounded by a

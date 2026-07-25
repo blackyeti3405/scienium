@@ -130,6 +130,41 @@ model ClassJoinRequest {
   @@map("class_join_requests")
 }
 
+/// A server-issued, single-use permission to run ONE destructive command
+/// (REFACTOR2 P1-R1).
+///
+/// Destructive confirmations used to be client assertions: `POST
+/// /api/discovery/topic` accepted `confirmWipe` and an arbitrary
+/// `confirmRemoveIds` array, so a direct caller could skip both server-proposed
+/// phases and delete any ready paper ids it knew. A boolean the client sends is
+/// not a capability.
+///
+/// The server now proposes (phase 1), stores what it proposed as a digest, and
+/// will only execute a phase-2 request that presents the matching token AND the
+/// exact same payload. Binding actor, team, command, old/new topic, target ids,
+/// and expiry — and consuming the row transactionally — is what makes the
+/// confirmation the server's, not the caller's.
+model DestructiveProposal {
+  /// The opaque token handed to the client. Unguessable by construction (cuid).
+  id            String    @id @default(cuid())
+  teamId        String    @map("team_id")
+  /// `User.id` of the member who requested the proposal. Only they may consume it.
+  actorUserId   String    @map("actor_user_id")
+  /// Which command this authorizes, e.g. `topic_paper_removal`.
+  command       String
+  /// SHA-256 over the exact proposed payload — a changed target set will not match.
+  payloadDigest String    @map("payload_digest")
+  expiresAt     DateTime  @map("expires_at")
+  /// Set once, by the consuming transaction. A second attempt finds it non-null.
+  consumedAt    DateTime? @map("consumed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, command, expiresAt])
+  @@map("destructive_proposals")
+}
+
 enum ClassJoinRequestStatus {
   pending
   approved
@@ -191,6 +226,7 @@ model Team {
   citations       Citation[]
   projectLogs     ProjectLog[]
   invites         TeamInvite[]
+  destructiveProposals DestructiveProposal[]
   researchPlan    ResearchPlan?
   ideaChecks      IdeaCheck[]
   pvpTrophies     PvpTrophies?

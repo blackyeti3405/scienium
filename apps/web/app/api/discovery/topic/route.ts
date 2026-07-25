@@ -4,6 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
+import { consumeDestructive, proposeDestructive } from '@/lib/api/destructive-proposal'
 import { batchCheckRelevance } from '@/lib/literature/relevance'
 import { deleteObject } from '@/lib/storage'
 import { logActivity } from '@/lib/activity/log'
@@ -23,6 +24,12 @@ const TopicBody = z
     topic: z.string().max(300).optional(),
     confirmWipe: z.boolean().optional(),
     confirmRemoveIds: z.array(z.string().trim().min(1).max(64)).max(200).optional(),
+    /**
+     * The single-use token the server issued alongside its removal proposal
+     * (REFACTOR2 P1-R1). Without it, `confirmRemoveIds` is just a caller-supplied
+     * list of papers to delete.
+     */
+    proposalToken: z.string().trim().min(1).max(64).optional(),
   })
   .strict()
 
@@ -47,9 +54,14 @@ export async function GET(req: NextRequest) {
 //   - With `confirmWipe: true`: runs a batch relevance check and returns 409
 //     { requiresRemovalConfirmation: true, papers: [{id,title}] } — the papers it
 //     PROPOSES removing. Nothing is deleted yet.
-//   - With `confirmRemoveIds: [...]`: deletes exactly those papers (team-scoped,
-//     no model call) and sets the topic. The student's approved list — not the
-//     model's verdict — is what authorizes the delete.
+//   - With `confirmRemoveIds: [...]` AND the matching `proposalToken`: deletes
+//     exactly those papers (team-scoped, no model call) and sets the topic.
+//
+// The token is what makes phase 2 real (REFACTOR2 P1-R1). `confirmRemoveIds`
+// alone was a caller-supplied delete list: a direct request could skip both
+// phases and remove any ready paper ids it knew, because the confirmation lived
+// in the UI dialog rather than on the server. The server now records exactly
+// what it proposed and executes only that.
 export async function POST(req: NextRequest) {
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
@@ -90,6 +102,28 @@ export async function POST(req: NextRequest) {
   // Taking the model out of the destructive step is the whole point; it also
   // avoids paying for a second relevance pass.
   if (topicIsChanging && confirmRemoveIds) {
+    // The server's own proposal is the authorization. A missing, expired,
+    // replayed, foreign, or payload-mismatched token all fail identically.
+    const consumed = data.proposalToken
+      ? await consumeDestructive({
+          token: data.proposalToken,
+          teamId: ctx.teamId,
+          actorUserId: ctx.dbUserId,
+          command: 'topic_paper_removal',
+          targetIds: confirmRemoveIds,
+          context: [oldTopic, newTopic],
+        })
+      : ({ ok: false, reason: 'invalid' } as const)
+    if (!consumed.ok) {
+      return NextResponse.json(
+        {
+          error:
+            'That removal confirmation is no longer valid. Reload and change the topic again.',
+        },
+        { status: 409 },
+      )
+    }
+
     const approved = await db.paper.findMany({
       where: { id: { in: confirmRemoveIds }, teamId: ctx.teamId, status: 'ready' },
       select: { id: true, title: true, pdfKey: true },
@@ -121,9 +155,19 @@ export async function POST(req: NextRequest) {
 
       const proposed = papers.filter((p) => !relevanceMap.get(p.id))
       if (proposed.length > 0) {
+        // Record WHAT was proposed, bound to this actor/team/topic-change, and
+        // hand back a single-use token. Phase 2 can then only delete this set.
+        const proposalToken = await proposeDestructive({
+          teamId: ctx.teamId,
+          actorUserId: ctx.dbUserId,
+          command: 'topic_paper_removal',
+          targetIds: proposed.map((p) => p.id),
+          context: [oldTopic, newTopic],
+        })
         return NextResponse.json(
           {
             requiresRemovalConfirmation: true,
+            proposalToken,
             papers: proposed.map((p) => ({ id: p.id, title: p.title })),
             oldTopic,
             newTopic,

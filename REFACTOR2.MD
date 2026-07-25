@@ -264,7 +264,7 @@ a database seeded under the wrong catalog stops serving it. **Still owed before 
 the qualified teacher/SRC review that sets `reviewedBy` and restores applicability guidance,
 plus the season-bound AI-use disclosure contract.
 
-#### P1-R1 — Destructive confirmations are client assertions, not capabilities
+#### P1-R1 — Destructive confirmations are client assertions, not capabilities — **CLOSED (v0.38.0); capability matrix still open**
 
 `POST /api/discovery/topic` accepts `confirmWipe` and arbitrary same-team
 `confirmRemoveIds`. A direct caller can skip both server-proposed phases and delete any ready
@@ -277,6 +277,15 @@ exact IDs, resource versions, and expiry. Consume it transactionally. Prefer mak
 change mark papers out-of-scope and keeping deletion explicit. Define a member/lead/teacher/
 admin capability matrix and enforce it in a shared policy module; UI visibility is never
 authorization.
+
+**Closed in v0.38.0 for the client-assertion bypass.** `DestructiveProposal` binds actor, team,
+command, exact target ids (SHA-256, order-insensitive, JSON-framed), old/new topic, and a
+10-minute expiry; consumption is a single-use CAS on `consumedAt`. Topic removal and the
+discovery tree reset both route through it, and the tree reset is now two-phase where it
+previously had no confirmation at all. `test/topic-removal.test.ts` no longer pins the bypass.
+**Still open:** the member/lead/teacher/admin capability matrix — a product decision about who
+may destroy shared work, deliberately not made here. Also unaddressed: the audit's preferred
+"mark papers out-of-scope instead of deleting" model.
 
 #### P1-R2 — Paid phase advancement has a race and stale-write path
 
@@ -1214,6 +1223,15 @@ lock-guarded route was untestable for authorization.
 | **P1-S6** Explain-back duplicates spend and can lower truth | **CLOSED** | `attemptNo`, `bestScore`, `passed`, and KP eligibility are all re-read inside the per-(paper, user) transaction. `(paperId, userId, attemptNo)` is unique; the migration renumbers historical collisions by creation order rather than deleting student work. | A pre-call claim for a FIRST attempt — there is no parent row to stamp yet; concurrent first attempts are bounded by the `ai` tier and now collide on the unique sequence instead of corrupting it. Plus result replay (P1-R3). |
 | **P1-S7** Follow-up per-entry and daily caps are advisory | **CLOSED** | `projectLogId` unique; the row IS the claim, created empty before the model call under a per-team lock so the daily count and the claim commit together. Failure releases it; a claim orphaned by a crash is reclaimable after 2 minutes. The answer write is an `updateMany` predicated on `response: null`. | — |
 
+#### v0.38.0 — 2026-07-25
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P1-R1** Destructive confirmations are client assertions | **CLOSED for the bypass** | `DestructiveProposal` binds actor, team, command, exact target ids (SHA-256, order-insensitive, JSON-framed), old/new topic, and a 10-minute expiry; consumption is a single-use CAS. Topic removal now requires the matching token; the tree reset went from no confirmation at all to two-phase, with the token bound to the node set that existed when it was issued. All failure modes answer identically, so the endpoint is not an oracle. | The member/lead/teacher/admin **capability matrix** — who may destroy shared work is a product decision, deliberately not made here. The proposal does not stop a determined caller from making both calls in sequence. Also open: the audit's preferred "mark papers out-of-scope rather than delete" model. |
+
+The v0.28.0 `test/topic-removal.test.ts` asserted phase 2 with `confirmRemoveIds` alone — it
+pinned the bypass rather than preventing it. It now asserts the opposite.
+
 ---
 
 ---
@@ -1283,7 +1301,7 @@ Track A's named findings remain historical close-outs. The following list is the
 | ~~P0~~ **CLOSED v0.35.0** | Showcase approval is not bound to the content/assets served, and reviewers cannot inspect required pending assets | Approval names a content digest; any covered change resets to review; teacher preview streams the exact pending revision |
 | ~~P0~~ **CLOSED v0.34.0** | The ISEF guide assigns the wrong names, timing, and applicability to required forms | Versioned 2027 edition, titles only, applicability fail-closed until a qualified reviewer signs off |
 | ACCEPTED / OPTIONAL | Fresh accounts can self-provision `teacher` | Intentional open-registration policy; optional grant/domain/allowlist hardening later |
-| P1 | Client assertions authorize destructive shared actions | A member can bypass the intended confirmation path and delete papers/tree data |
+| P1 (bypass **CLOSED v0.38.0**) | Client assertions authorize destructive shared actions | Server-issued single-use `DestructiveProposal` binds actor/team/command/payload/expiry; the capability matrix remains a product decision |
 | P1 | Paid phase advancement and daily AI caps are not atomically claimed | Duplicate cost, budget overrun, stale writes |
 | P1 (partial) | Team invite redemption and class decisions use stale pre-checks | Invite redemption **CLOSED v0.34.1** (conditional consume); class decisions (P1-S2) still open |
 | ~~P1~~ **CLOSED v0.34.1** | Discovery accepts foreign-team parents and cycles | Same-team acyclic validation before any write; 400 on rejection |
