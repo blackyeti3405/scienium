@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 02 Wave 1 complete — 02-01 executed (compile baseline green, engine/gate/matchmaking fixes, combat-engine 18 tests); ready for Wave 2 (02-02: BattleScreen)"
-last_updated: "2026-07-24T11:24:00.000Z"
-last_activity: 2026-07-24 -- /gsd:execute-phase 2 Wave 1 (02-01) complete: barrel repoint → tsc --noEmit green, 18 combat-engine tests pass, 32 existing tests pass (0 regressions), trophy-loss mechanism behind TROPHY_LOSS_TODO
+stopped_at: "Phase 02 Wave 2 complete — 02-02 executed (BattleScreen, type-cycle, leaderboard, team-builder removal); ready for Wave 3 (02-03: E2E + SPEC)"
+last_updated: "2026-07-24T17:00:00.000Z"
+last_activity: 2026-07-24 -- /gsd:execute-phase 2 Wave 2 (02-02) complete: BattleScreen (572 lines), type-cycle tooltip, class leaderboard + API, team-builder removed, lobby visual-pass assessed (SKIPPED), tsc green, all tests pass (18 PvP + 32 existing)
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 4
-  completed_plans: 2
-  percent: 33
+  completed_plans: 3
+  percent: 50
 ---
 
 # Project State
@@ -26,38 +26,38 @@ See: .planning/ROADMAP.md (created 2026-07-19)
 
 ## Current Position
 
-Phase: 02 (close-spec-gaps-tests) — EXECUTING (Wave 1/3 complete)
-Plan: 2 of 3
-Status: Executing Phase 02 — 02-01 complete, advancing to 02-02 (Wave 2)
-Last activity: 2026-07-24 -- Wave 1 (02-01) complete: tsc green, 18 combat-engine tests pass, 0 regressions
+Phase: 02 (close-spec-gaps-tests) — EXECUTING (Wave 2/3 complete)
+Plan: 3 of 3
+Status: Executing Phase 02 — 02-01 + 02-02 complete, advancing to 02-03 (Wave 3: E2E + SPEC)
+Last activity: 2026-07-24 -- Wave 2 (02-02) complete: BattleScreen playable, leaderboard, type-cycle tooltip
 
-Progress: [███░░░░░░░] 33% (2 of 6 plans across phases)
+Progress: [█████░░░░░] 50% (3 of 6 plans across phases)
 
 ## Phase Status
 
 | Phase | Plans | Status |
 |-------|-------|--------|
 | 1. Verify-State Audit (Report Only) | 1/1 | **Complete** — audit report committed (`7c6e9e2`); user (Matthew) signed off 2026-07-22; AUDIT-05 no-mutation gate held |
-| 2. Close Spec Gaps + Tests | 1/3 | **In Progress** — 02-01 complete (engine/gate/matchmaking + combat-engine tests); advancing to 02-02 (BattleScreen + leaderboard). |
+| 2. Close Spec Gaps + Tests | 2/3 | **In Progress** — 02-01 + 02-02 complete (engine/gate + BattleScreen/leaderboard); advancing to 02-03 (E2E + SPEC). |
 | 3. Balance Tuning | 0/2 | Not started (blocked on Phase 2) |
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 2
-- Average duration: 02-01 = 37 min (executor agent)
-- Total execution time: 37 min
+- Total plans completed: 3
+- Average duration: 02-01 = 37 min, 02-02 = 94 min
+- Total execution time: 131 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Verify-State Audit | 1/1 | — (inline) | — |
-| 2. Close Spec Gaps + Tests | 1/3 (02-01) | 37 min | 37 min |
+| 2. Close Spec Gaps + Tests | 2/3 (02-01, 02-02) | 66 min | 131 min |
 | 3. Balance Tuning | 0/2 | — | — |
 
-**Recent Trend:** Phase 2 Wave 1 (02-01) landed: 4 commits, barrel repoint closed the 16-error tsc baseline (now green), 18 combat-engine tests pass, `TROPHY_LOSS_TODO` mechanism in place. First real code work of the milestone delivered.
+**Recent Trend:** Phase 2 Wave 2 (02-02) delivered the milestone's most visible feature: a playable BattleScreen with defender grid, spell bar, and 15s countdown timer. Class leaderboard live with API route. Type-cycle science tooltip component built. All build+tests green.
 
 *Updated after each plan completion.*
 
