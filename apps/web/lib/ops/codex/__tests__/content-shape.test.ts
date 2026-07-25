@@ -20,6 +20,8 @@ import computerScienceAlgorithms from '../tracks/computer-science-algorithms'
 import dataScienceMlMetrics from '../tracks/data-science-ml-metrics'
 import ecology from '../tracks/ecology'
 import electronicsElectricalEngineering from '../tracks/electronics-electrical-engineering'
+import environmentalEarthScience from '../tracks/environmental-earth-science'
+import epidemiologyMedicine from '../tracks/epidemiology-medicine'
 import gaitBiomechanics from '../tracks/gait-biomechanics'
 
 const ALL_TRACK_MODULES: Record<string, CodexTrack> = {
@@ -32,6 +34,8 @@ const ALL_TRACK_MODULES: Record<string, CodexTrack> = {
   'data-science-ml-metrics': dataScienceMlMetrics,
   'ecology': ecology,
   'electronics-electrical-engineering': electronicsElectricalEngineering,
+  'environmental-earth-science': environmentalEarthScience,
+  'epidemiology-medicine': epidemiologyMedicine,
   'gait-biomechanics': gaitBiomechanics,
 }
 

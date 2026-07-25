@@ -5,6 +5,30 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.33.1] — 2026-07-24
+
+Field Codex content — two whole fields authored via `/codex-pipeline` (one invocation each:
+brief → author → adversarial fact-check → deterministic merge). Content-only; no code changes.
+
+### Added — Environmental / Earth Science (275 lessons)
+Core + 5 branches: water-quality-hydrology, air-quality-atmosphere, soil-land-degradation,
+climate-change-carbon, pollution-remediation-waste (43 units). Every unit cleared the HIGH-only
+fact-check gate; one cross-lesson contradiction (the Exxon Valdez / Bragg et al. 1994
+bioremediation magnitude) was reconciled to a consistent "two to five times, nitrogen-dependent."
+
+### Added — Epidemiology / Medicine (275 lessons)
+Core + 5 branches: outbreak-investigation, infectious-disease-modeling,
+chronic-disease-epidemiology, biostatistics-clinical-trials, public-health-surveillance (43
+units). One HIGH fixed before merge (a Ross "a priori pathometry" date mis-binding — the named
+work is Ross & Hudson 1916-17, not the 1908-11 early work); two Whitehall I contradictions
+reconciled (founder Reid & Rose, not Marmot; cohort ~17,000).
+
+Library now **12 / 29 fields · 72 / 174 segments**; `CODEX_TRACKS` at 12. Both fields pass the
+content-shape and generated-content (zod + checksum) gates. Per-run fact-check logs in
+`.claude/codex-pipeline/reviews/`.
+
+---
+
 ## [0.33.0] — 2026-07-22
 
 Closes both remaining Track A findings from the REFACTOR2 audit and finishes P1-2. No new

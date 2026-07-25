@@ -10,7 +10,7 @@
 > Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
 > Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
 
-**Progress: 10 / 29 fields · 60 / 174 segments.**
+**Progress: 12 / 29 fields · 72 / 174 segments.**
 
 ---
 
@@ -104,25 +104,25 @@
 - [x] rf-antennas
 - [x] sensors-instrumentation
 
-## environmental-earth-science ⬜
+## environmental-earth-science ✅
 *Environmental / Earth Science*
 
-- [ ] Core
-- [ ] air-quality-atmosphere
-- [ ] climate-change-carbon
-- [ ] pollution-remediation-waste
-- [ ] soil-land-degradation
-- [ ] water-quality-hydrology
+- [x] Core
+- [x] air-quality-atmosphere
+- [x] climate-change-carbon
+- [x] pollution-remediation-waste
+- [x] soil-land-degradation
+- [x] water-quality-hydrology
 
-## epidemiology-medicine ⬜
+## epidemiology-medicine ✅
 *Epidemiology / Medicine*
 
-- [ ] Core
-- [ ] biostatistics-clinical-trials
-- [ ] chronic-disease-epidemiology
-- [ ] infectious-disease-modeling
-- [ ] outbreak-investigation
-- [ ] public-health-surveillance
+- [x] Core
+- [x] biostatistics-clinical-trials
+- [x] chronic-disease-epidemiology
+- [x] infectious-disease-modeling
+- [x] outbreak-investigation
+- [x] public-health-surveillance
 
 ## fluid-dynamics-aerodynamics ⬜
 *Fluid Dynamics / Aerodynamics*
