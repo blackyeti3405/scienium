@@ -144,9 +144,10 @@ Also deferred from that batch:
 - **Teacher-initiated lead reassignment.** Kept deliberately separate from "the lead may
   hand over": they are different capabilities and conflating them is how one becomes the
   other. Needs its own authorization.
-- **UI for the three new commands.** `DELETE /api/team/membership`, `POST /api/team/lead`,
-  and `DELETE /api/team/members/[userId]` exist and are tested, but nothing in the app
-  calls them yet.
+- ~~**UI for the three new commands.**~~ **Done in v0.48.1** — `TeamPanel` carries the
+  lead's per-member hand-over/remove actions and a leave flow that states its
+  consequence before it happens. Switching labs needed no UI: entering another lab's
+  join code departs the current one in the same transaction.
 
 ## PatentsView API key (Discovery prior-art lane)
 - **Now:** the "Prior art (patents)" lane in Discovery's Articles tab runs keyless —

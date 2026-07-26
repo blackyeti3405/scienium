@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ModalBackdrop } from '@/components/ui/ModalBackdrop'
-import { Users, Crown, Copy, Check, X, UserPlus, GraduationCap } from 'lucide-react'
+import { Users, Crown, Copy, Check, X, UserPlus, GraduationCap, LogOut, UserMinus } from 'lucide-react'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
@@ -11,9 +11,19 @@ import { BusyButton } from '@/components/ui/BusyButton'
  * Team panel (Feature 1b) — opened from the team name in the status strip. Shows
  * the lab roster + capacity, and lets the lead mint a single-use join code to
  * share. Mirrors the lab's pixel-frame chrome and the dark literature styling.
+ *
+ * Membership lifecycle (REFACTOR2 P1-R8) lives here too: the lead can hand over
+ * the lead role or remove a researcher, and anyone can leave. Leaving states its
+ * consequence BEFORE it happens — handing over the lead, or archiving the lab
+ * when you are the last one out — because those are exactly the outcomes a
+ * student would not predict from the word "leave".
+ *
+ * Switching labs is NOT here: it happens by entering another lab's join code,
+ * which departs this one in the same transaction. One lab at a time.
  */
 
 interface Member {
+  userId: string
   name: string
   role: 'lead' | 'member'
   isYou: boolean
@@ -41,6 +51,10 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
   const [classError, setClassError] = useState<string | null>(null)
   // Set after a successful request that's awaiting the teacher's approval.
   const [classPending, setClassPending] = useState<string | null>(null)
+  /** Which membership action is in flight, so only that row shows a spinner. */
+  const [busyMember, setBusyMember] = useState<string | null>(null)
+  const [confirmLeave, setConfirmLeave] = useState(false)
+  const [leaving, setLeaving] = useState(false)
 
   useEffect(() => {
     fetch('/api/team')
@@ -65,6 +79,62 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
       setError(err instanceof Error ? err.message : 'Could not create a code')
     } finally {
       setMinting(false)
+    }
+  }
+
+  /** Re-read the roster after a membership change rather than patching it locally. */
+  async function refresh() {
+    const d = await fetch('/api/team').then((r) => r.json())
+    if (!d.error) setData(d)
+  }
+
+  async function makeLead(userId: string) {
+    setBusyMember(userId)
+    setError(null)
+    try {
+      const res = await fetch('/api/team/lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toUserId: userId }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error ?? 'Could not hand over the lead role')
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not hand over the lead role')
+    } finally {
+      setBusyMember(null)
+    }
+  }
+
+  async function removeMember(userId: string) {
+    setBusyMember(userId)
+    setError(null)
+    try {
+      const res = await fetch(`/api/team/members/${userId}`, { method: 'DELETE' })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error ?? 'Could not remove that researcher')
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove that researcher')
+    } finally {
+      setBusyMember(null)
+    }
+  }
+
+  async function leaveLab() {
+    setLeaving(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/team/membership', { method: 'DELETE' })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error ?? 'Could not leave the lab')
+      // No active team any more — a full navigation, not a client route change,
+      // so every server component re-resolves against the new state.
+      window.location.href = '/onboarding'
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not leave the lab')
+      setLeaving(false)
     }
   }
 
@@ -106,6 +176,8 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
+  /** Who inherits the lead if the current lead leaves — longest-standing member. */
+  const nextLeadName = data?.members.find((m) => !m.isYou)?.name ?? null
   const full = data ? data.memberCount >= data.maxMembers : false
 
   return (
@@ -167,9 +239,30 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                           you
                         </span>
                       )}
-                      <span className="ml-auto font-pixel text-[6px] text-white/40 uppercase tracking-widest">
-                        {m.role}
-                      </span>
+                      {data.isLead && !m.isYou ? (
+                        <span className="ml-auto flex items-center gap-1.5">
+                          <BusyButton
+                            busy={busyMember === m.userId}
+                            onClick={() => makeLead(m.userId)}
+                            title={`Make ${m.name} the lab lead`}
+                            className="font-pixel text-[6px] uppercase tracking-widest text-white/50 border border-white/15 px-2 py-1 rounded-sm hover:text-[#F5C518] hover:border-[#F5C518]/40 disabled:opacity-40 transition-colors"
+                          >
+                            Make lead
+                          </BusyButton>
+                          <BusyButton
+                            busy={busyMember === m.userId}
+                            onClick={() => removeMember(m.userId)}
+                            title={`Remove ${m.name} from the lab`}
+                            className="font-pixel text-[6px] uppercase tracking-widest text-white/50 border border-white/15 px-2 py-1 rounded-sm hover:text-red-400 hover:border-red-400/40 disabled:opacity-40 transition-colors flex items-center gap-1"
+                          >
+                            <UserMinus size={9} /> Remove
+                          </BusyButton>
+                        </span>
+                      ) : (
+                        <span className="ml-auto font-pixel text-[6px] text-white/40 uppercase tracking-widest">
+                          {m.role}
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -271,6 +364,45 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                   Only the lab lead can invite new researchers.
                 </p>
               )}
+
+              {/* Leave — states the consequence before it happens (P1-R8). */}
+              <div className="border-t border-white/10 pt-4">
+                <h3 className="font-pixel text-[8px] text-white/50 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                  <LogOut size={11} className="text-white/40" /> Leave this lab
+                </h3>
+                <p className="font-pixel text-[7px] text-white/40 leading-loose mb-3">
+                  {data.memberCount === 1
+                    ? 'You are the last researcher here. Leaving archives the lab — its sources, logs and showcase are kept and stay visible to your teacher, but nobody can work in it again.'
+                    : data.isLead
+                      ? `You are the lead, so ${nextLeadName ?? 'the longest-standing researcher'} takes over when you go. Your lab keeps everything you contributed.`
+                      : 'Your lab keeps everything you contributed. You can join another lab with its join code.'}
+                </p>
+                {confirmLeave ? (
+                  <div className="flex items-center gap-2">
+                    <BusyButton
+                      busy={leaving}
+                      onClick={leaveLab}
+                      className="flex-1 font-pixel text-[8px] bg-red-500/85 text-white py-2.5 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all flex items-center justify-center gap-1.5"
+                    >
+                      {data.memberCount === 1 ? 'Leave and archive the lab' : 'Yes, leave the lab'}
+                    </BusyButton>
+                    <button
+                      onClick={() => setConfirmLeave(false)}
+                      disabled={leaving}
+                      className="shrink-0 font-pixel text-[8px] text-white/50 border border-white/20 px-3 py-2.5 rounded-sm hover:text-white/80 hover:border-white/40 disabled:opacity-40 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmLeave(true)}
+                    className="w-full font-pixel text-[8px] text-white/60 border border-white/20 py-2.5 rounded-sm hover:text-red-300 hover:border-red-400/40 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <LogOut size={11} /> Leave lab
+                  </button>
+                )}
+              </div>
             </>
           ) : null}
         </div>

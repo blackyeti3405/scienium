@@ -5,6 +5,36 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.48.1] — 2026-07-26
+
+### Added — the membership commands are reachable (P1-R8 follow-up)
+v0.48.0 shipped `DELETE /api/team/membership`, `POST /api/team/lead`, and
+`DELETE /api/team/members/[userId]` with **no UI**. For a finding whose text was "there is no
+leave command", three endpoints a student cannot click fixed nothing they could observe. That was
+a half-delivery and is corrected here.
+
+`TeamPanel` now carries the lifecycle:
+- **Per-member actions for the lead** — hand over the lead role, or remove a researcher. Never
+  shown against your own row: removing yourself is *leaving*, which has different consequences and
+  must be chosen deliberately rather than reached through the wrong verb.
+- **Leave, for anyone, stating its consequence first.** The copy changes with the situation — the
+  last researcher out is told the lab will be archived and that its sources, logs and showcase are
+  kept and stay visible to their teacher; a departing lead is told by name who takes over. Those
+  are exactly the outcomes a student would not predict from the word "leave". A confirm step
+  follows, and leaving navigates to onboarding since there is no longer an active lab.
+- `GET /api/team` now returns each member's internal `userId`, which the lead's actions target.
+
+**Switching labs needed no new UI** and has none: entering another lab's join code on the existing
+join screen departs the current lab in the same transaction. One lab at a time.
+
+### Verification
+Gates 1–5 pass. Vitest: 115 files / 1,610 tests (unchanged — this is UI over tested services).
+New `e2e/team-membership.spec.ts`, **run against the live dev server: 6 passed, 2 skipped**, and
+the panel was screenshotted in both states to confirm it renders rather than merely compiles. The
+spec is deliberately non-destructive — it never leaves a lab or moves the lead role, because the
+fixture graph is shared with every other spec. Two cases skip cleanly on the solo fixture lab
+rather than seeding a second member and rearranging that graph.
+
 ## [0.48.0] — 2026-07-26
 
 ### Added — team membership finally has a lifecycle (P1-R8)

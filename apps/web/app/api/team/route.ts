@@ -65,6 +65,9 @@ export async function GET(req: NextRequest) {
     researchIdea: team.researchIdea ?? null,
     labType: team.labType ?? null,
     members: team.members.map((m) => ({
+      // The id is needed by the lead's per-member actions (hand over the lead
+      // role, remove a member). Internal `User.id`, never the Clerk id.
+      userId: m.userId,
       name: m.user.name,
       role: m.role,
       isYou: m.userId === ctx.dbUserId,
