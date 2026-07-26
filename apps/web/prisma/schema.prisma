@@ -30,6 +30,7 @@ model User {
   classesTeaching      Class[]                @relation("classTeacher")
   classJoinRequests    ClassJoinRequest[]
   teamMemberships      TeamMember[]
+  membershipEvents     TeamMembershipEvent[]
   projectLogEntries    ProjectLog[]
   projectLogEdits      ProjectLog[]           @relation("projectLogEditor")
   discoveryNodes       DiscoveryNode[]
@@ -292,6 +293,11 @@ model Team {
   // Per-team AI kill switch (REFACTOR2 P1-R3). Set to stop this lab's paid calls
   // without touching anyone else's; the global switch is `AI_KILL_SWITCH`.
   aiDisabledAt     DateTime?    @map("ai_disabled_at")
+  // Set when the LAST member leaves (REFACTOR2 P1-R8). The team's work — papers,
+  // showcase, logs, uploaded PDFs — is the class's product, so a student walking
+  // away must not destroy it. An archived team is read-only, still visible to the
+  // teacher, and cannot be joined.
+  archivedAt       DateTime?    @map("archived_at")
   createdAt        DateTime     @default(now()) @map("created_at")
 
   teamLead              User                   @relation("teamLead", fields: [teamLeadId], references: [id])
@@ -299,6 +305,7 @@ model Team {
   activeUsers           User[]                 @relation("activeTeam")
   members               TeamMember[]
   aiUsage               AiUsage[]
+  membershipEvents      TeamMembershipEvent[]
   currency              TeamCurrency?
   buildings             TeamBuilding[]
   shopBuildings         TeamShopBuilding[]
@@ -356,6 +363,17 @@ model TeamInvite {
   @@map("team_invites")
 }
 
+// LIVE memberships only (REFACTOR2 P1-R8). A departure DELETES the row and
+// appends a `TeamMembershipEvent`, rather than leaving a tombstone behind a
+// `leftAt` flag.
+//
+// That choice is about safety, not tidiness. Teacher visibility is derived from
+// membership — `teacherOwnsTeam`, the roster, showcase moderation — across ~25
+// query sites, several of them nested reads (`team.members.some(...)`) that no
+// Prisma extension can intercept. A soft-delete flag would mean one forgotten
+// `leftAt: null` filter is not untidy data, it is a teacher still able to see a
+// team they no longer teach. Live-only makes every one of those queries correct
+// by construction, and the audit trail lives where an audit trail belongs.
 model TeamMember {
   userId   String     @map("user_id")
   teamId   String     @map("team_id")
@@ -367,6 +385,32 @@ model TeamMember {
   @@id([userId, teamId])
   @@index([teamId])
   @@map("team_members")
+}
+
+/// Append-only membership history (REFACTOR2 P1-R8) — actor, reason, timestamp
+/// for every join, departure, removal, and lead transfer. This is the revocation
+/// record the audit asked for: `TeamMember` says who is on a team NOW, this says
+/// how they got there and who ended it.
+model TeamMembershipEvent {
+  id          String      @id @default(cuid())
+  teamId      String      @map("team_id")
+  userId      String      @map("user_id")
+  /// joined | left | removed | lead_transferred | team_archived
+  event       String
+  /// The role held at the moment of the event, where one applies.
+  role        MemberRole?
+  /// Who caused it: the member themselves on a leave, the lead on a removal,
+  /// null when the system did it (e.g. auto-transfer of a departing lead).
+  actorUserId String?     @map("actor_user_id")
+  /// Free text — `switched_team`, `removed_by_lead`, `last_member_left`.
+  reason      String?
+  createdAt   DateTime    @default(now()) @map("created_at")
+  user        User        @relation(fields: [userId], references: [id])
+  team        Team        @relation(fields: [teamId], references: [id])
+
+  @@index([teamId, createdAt])
+  @@index([userId, createdAt])
+  @@map("team_membership_events")
 }
 
 enum MemberRole {

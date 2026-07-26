@@ -8,6 +8,7 @@ import { normalizeInviteCode } from '@/lib/team/invite'
 import { applySchoolAndClass, resolvePrimaryEmail, syncClerkDisplayName } from '@/lib/onboarding/profile'
 import { logActivityBestEffort } from '@/lib/activity/log'
 import { db } from '@/lib/db'
+import { leaveOtherTeams } from '@/lib/team/membership'
 import { lockAggregate } from '@/lib/db-lock'
 
 const JoinBody = z
@@ -77,10 +78,12 @@ export async function POST(req: NextRequest) {
           id: true,
           classId: true,
           maxMembers: true,
+          archivedAt: true,
           members: { select: { userId: true } },
         },
       })
       if (!team) throw new ApiError('That lab no longer exists', 404)
+      if (team.archivedAt) throw new ApiError('That lab has been archived', 410)
 
       // Already on this team? Treat as success (idempotent) and leave the code unused.
       if (team.members.some((m) => m.userId === user.id)) {
@@ -106,7 +109,18 @@ export async function POST(req: NextRequest) {
       })
       if (consumed.count !== 1) throw new ApiError('That join code has already been used', 409)
 
+      // ONE TEAM AT A TIME (REFACTOR2 P1-R8). Joining used to add a second
+      // membership and just point `activeTeamId` at the new lab, leaving the old
+      // membership live forever — and because teacher visibility is derived from
+      // membership, that stale row was stale authorization. Departing the old
+      // team happens in THIS transaction, with its own consequences (lead
+      // handover, archive-if-last) handled by the membership service.
+      await leaveOtherTeams(tx, user.id, team.id)
+
       await tx.teamMember.create({ data: { userId: user.id, teamId: team.id, role: 'member' } })
+      await tx.teamMembershipEvent.create({
+        data: { teamId: team.id, userId: user.id, event: 'joined', role: 'member', actorUserId: user.id, reason: 'invite_code' },
+      })
       await tx.user.update({ where: { id: user.id }, data: { activeTeamId: team.id } })
       return team.id
     })

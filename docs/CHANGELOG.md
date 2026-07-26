@@ -5,6 +5,69 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.48.0] — 2026-07-26
+
+### Added — team membership finally has a lifecycle (P1-R8)
+Two owner decisions, made on 2026-07-26 and encoded in the code rather than left to convention:
+**one team at a time**, and **archive rather than delete** when the last member leaves.
+
+Before this there was no lifecycle at all. `TeamMember` permitted the same user in several teams;
+joining a new team added a membership and repointed `activeTeamId` while leaving the old one live
+forever; and there was no leave, remove, lead-transfer, or disband command anywhere in the app.
+That mattered because **teacher visibility is derived from membership** — a membership nobody ever
+ended was a teacher who could still open a team they no longer taught.
+
+`lib/team/membership.ts` owns every transition, and every one commits in a single transaction
+with its consequences:
+- **One team at a time.** Joining departs every other live membership in the same transaction.
+- **The final lead is protected by handover, not refusal.** A departing lead hands the role to
+  the longest-standing remaining member — a team whose lead left the school must not be stuck.
+- **The last member archives the team.** The work (papers, showcase, logs, uploaded PDFs) is the
+  class's product; a student walking away must not destroy it. Unused invites are retired so an
+  old code cannot resurrect an archived lab.
+- **`activeTeamId` is cleared with the departure**, so a user is never pointed at a team they are
+  no longer on.
+
+New commands: `DELETE /api/team/membership` (leave), `POST /api/team/lead` (hand over),
+`DELETE /api/team/members/[userId]` (lead removes a member). Removing *yourself* through the
+remove route is refused — leaving has different consequences and should be chosen deliberately,
+not reached through the wrong verb.
+
+**`TeamMember` stays live-only.** Departures append to a new `TeamMembershipEvent` log carrying
+actor, reason, and timestamp. A `leftAt` tombstone was the obvious alternative and was rejected:
+it needs a filter at ~25 read sites, several of them nested (`team.members.some(...)`) where no
+Prisma client extension can reach — and one forgotten filter is not untidy data, it is a live
+authorization leak. Live-only makes every one of those queries correct without touching them.
+
+`teacherOwnsTeam` gained an archived-team arm that reads the event log. Without it, archiving a
+team would have dropped it out of the teacher's view entirely and taken the class's work product
+with it — the opposite of what archiving is for. It is deliberately archived-only: a **live** team
+a student left must still fall out of scope, which is the stale-authorization hole this finding
+was about.
+
+### Changed — the destructive-capability matrix is now a recorded decision, not a gap (P1-R1)
+P1-R1's remainder asked who may destroy shared team work. Reviewed: lead-only, lead-plus-teacher
+override, and making a topic change mark papers out-of-scope instead of deleting them. **The owner
+chose to keep today's behaviour — any team member may.** In a three-peer lab a permission gate adds
+friction without matching safety gain, and the destructive paths already sit behind a
+server-issued, single-use, target-bound proposal (v0.38.0) rather than a client assertion.
+
+Recorded as an accepted risk alongside open teacher registration: one student can still delete 25
+papers their team collected, deliberately, through two confirmed steps. That is now a documented
+choice rather than an oversight.
+
+### Still owed
+The **class half of P1-R8 is untouched** — a newly approved class still overwrites `User.classId`,
+older approved join-request history remains, and there is no class transfer/withdraw/revoke
+workflow. Also not built: teacher-initiated lead reassignment (deliberately separate from "the lead
+may hand over"), and any UI for the three new commands.
+
+### Verification
+Gates 1–5 pass. Vitest: **115 files / 1,610 tests passed** (was 114 / 1,591). 16 new tests covering
+the switch, lead handover, archive-if-last, invite retirement, `activeTeamId` clearing, and the
+transfer authorization ladder. Two migrations applied; devlab verified intact, and the backfill
+gave every existing membership a `joined` event.
+
 ## [0.47.0] — 2026-07-25
 
 ### Fixed — content authoring cannot report green after producing nothing (P1-R15)

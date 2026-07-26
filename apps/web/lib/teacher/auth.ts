@@ -126,7 +126,25 @@ export async function teacherOwnsTeam(classIds: string[], teamId: string): Promi
     where: { id: teamId, members: { some: { user: { classId: { in: classIds } } } } },
     select: { id: true },
   })
-  return !!team
+  if (team) return true
+
+  // ARCHIVED TEAMS (REFACTOR2 P1-R8). Scope is derived from LIVE membership, so
+  // a team archived when its last member left would drop out of the teacher's
+  // view entirely — taking the class's work product with it. That is the
+  // opposite of what archiving is for. The membership event log is the record of
+  // who was on it, so a teacher keeps read access to a team a student of theirs
+  // was once on. Deliberately archived-only: a live team a student LEFT must
+  // still fall out of scope, which is the stale-authorization hole this finding
+  // was about in the first place.
+  const archived = await db.team.findFirst({
+    where: {
+      id: teamId,
+      archivedAt: { not: null },
+      membershipEvents: { some: { user: { classId: { in: classIds } } } },
+    },
+    select: { id: true },
+  })
+  return !!archived
 }
 
 /**

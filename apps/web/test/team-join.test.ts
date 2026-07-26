@@ -25,13 +25,18 @@ const mocks = vi.hoisted(() => ({
   txTeamFindUnique: vi.fn(),
   txMemberCreate: vi.fn(() => Promise.resolve({})),
   txUserUpdate: vi.fn(() => Promise.resolve({})),
+  // One-team-at-a-time (P1-R8): the join now departs every other live membership
+  // inside the same transaction, so the mock has to model those reads.
+  txMemberFindMany: vi.fn(() => Promise.resolve([])),
+  txMembershipEventCreate: vi.fn(() => Promise.resolve({})),
 }))
 
 const tx = {
   teamInvite: { findUnique: mocks.txInviteFindUnique, updateMany: mocks.txInviteUpdateMany },
   team: { findUnique: mocks.txTeamFindUnique },
-  teamMember: { create: mocks.txMemberCreate },
-  user: { update: mocks.txUserUpdate },
+  teamMember: { create: mocks.txMemberCreate, findMany: mocks.txMemberFindMany },
+  teamMembershipEvent: { create: mocks.txMembershipEventCreate },
+  user: { update: mocks.txUserUpdate, updateMany: vi.fn(() => Promise.resolve({ count: 0 })) },
 }
 
 vi.mock('@/lib/api/route-context', () => ({ requireUserContext: mocks.requireUserContext }))

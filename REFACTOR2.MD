@@ -264,7 +264,7 @@ a database seeded under the wrong catalog stops serving it. **Still owed before 
 the qualified teacher/SRC review that sets `reviewedBy` and restores applicability guidance,
 plus the season-bound AI-use disclosure contract.
 
-#### P1-R1 — Destructive confirmations are client assertions, not capabilities — **CLOSED (v0.38.0); capability matrix still open**
+#### P1-R1 — Destructive confirmations are client assertions, not capabilities — **CLOSED (v0.38.0); capability matrix ACCEPTED as-is (2026-07-26)**
 
 `POST /api/discovery/topic` accepts `confirmWipe` and arbitrary same-team
 `confirmRemoveIds`. A direct caller can skip both server-proposed phases and delete any ready
@@ -283,9 +283,18 @@ command, exact target ids (SHA-256, order-insensitive, JSON-framed), old/new top
 10-minute expiry; consumption is a single-use CAS on `consumedAt`. Topic removal and the
 discovery tree reset both route through it, and the tree reset is now two-phase where it
 previously had no confirmation at all. `test/topic-removal.test.ts` no longer pins the bypass.
-**Still open:** the member/lead/teacher/admin capability matrix — a product decision about who
-may destroy shared work, deliberately not made here. Also unaddressed: the audit's preferred
-"mark papers out-of-scope instead of deleting" model.
+**Capability matrix — DECIDED, not open (owner, 2026-07-26): ANY MEMBER may destroy shared team
+work, and the current behaviour stands.** The reviewed alternatives were lead-only, lead-plus-
+teacher-override, and making a topic change mark papers out-of-scope rather than delete them.
+The owner chose to keep today's behaviour: in a lab of three peers a permission gate adds
+friction without a corresponding safety gain, and the destructive paths are already behind a
+server-issued, single-use, target-bound proposal (v0.38.0) rather than a client assertion.
+
+This is an ACCEPTED RISK, in the same class as `ACCEPTED-R1` (open teacher registration): one
+student can still delete 25 papers their team collected, deliberately, through two confirmed
+steps. What was a gap is now a documented choice. If it is ever revisited, the two levers are a
+lead check on `DELETE /api/discovery/tree` and the reversibility model — marking papers
+out-of-scope instead of deleting them removes far more blast radius than any permission check.
 
 #### P1-R2 — Paid phase advancement has a race and stale-write path — **CLOSED (v0.41.0)**
 
@@ -390,7 +399,7 @@ link back), time-based expiry (rotation covers revocation; a link dying mid-fair
 usability cost), and edge throttling of unknown tokens (128 bits makes enumeration infeasible,
 not merely slow). **Still open:** enumeration alerting.
 
-#### P1-R8 — Team and class authority has no revocation lifecycle
+#### P1-R8 — Team and class authority has no revocation lifecycle — **CLOSED (v0.48.0), class half still open**
 
 `TeamMember` permits the same user in multiple teams. Direct team join adds another membership
 and switches `activeTeamId`; there is no complete switch, leave, remove, lead-transfer, or
@@ -1336,6 +1345,17 @@ Gates 1–5 pass; Vitest 112 files / 1,581 tests. Migration applied; devlab veri
 | **P1-S15** The browser upload test itself leaks quota/objects | **CLOSED** for the lifecycle; the test-bucket half is blocked | The spec proved an upload was correctly ledgered and then tidied up with `e2eDb.paper.deleteMany` — a direct row delete that skipped the route, leaving the `UploadedAsset` row `attached` to a paper that no longer existed. Cleanup now goes through `DELETE /api/papers/:id` (domain delete + ledger orphan in one transaction), and the spec **asserts the row ends up `orphaned`** — provably queued for the sweep. The team topic, set to null in `beforeAll` and never restored, is now saved and put back in nested `finally` blocks so a failed cleanup cannot skip it. | The audit asks for reclaim to be verified "in a test bucket". **There is no test bucket** — R2 `nova-lab-assets` is shared with production, so deleting objects from a test is not safe and the spec asserts the queue state instead. A separate test bucket is the prerequisite. The spec was rewritten but **not executed** (needs dev server, database, Clerk credentials, and a paid ingestion call). |
 
 Gates 1–5 pass; Vitest 114 files / 1,591 tests. No migration in this batch.
+
+#### v0.48.0 — 2026-07-26 — membership lifecycle, and a decision recorded
+
+Two owner decisions landed on 2026-07-26, one as code and one as an accepted risk.
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P1-R8** Team and class authority has no revocation lifecycle | **CLOSED for teams**; the class half is open | Decisions: **one team at a time**, and **archive rather than delete** when the last member leaves. Joining used to add a second membership and merely repoint `activeTeamId`, leaving the old membership live forever — and because teacher visibility is DERIVED from membership, that stale row was stale authorization, not untidy data. There was no leave, remove, lead-transfer, or disband command in the app at all. `lib/team/membership.ts` now owns every transition in one transaction: departing handles lead handover (to the longest-standing remaining member, so a team whose lead left is never stuck), archive-if-last, invite retirement, and clearing `activeTeamId`. `TeamMember` stays **live-only** and departures append to `TeamMembershipEvent` (actor, reason, timestamp) — a `leftAt` tombstone would have needed a filter at ~25 read sites, several of them nested reads no Prisma extension can reach, and one forgotten filter is a live authorization leak. `teacherOwnsTeam` gained an archived-team arm reading the event log, because archiving otherwise made the class's own work product invisible to its teacher — the opposite of the point. New routes: `DELETE /api/team/membership`, `POST /api/team/lead`, `DELETE /api/team/members/[userId]`. | **The class half is untouched**: a newly approved class still overwrites `User.classId`, older approved join-request history remains, and there is no transfer/withdraw/revoke/archive workflow for class membership. Also not built: a teacher-initiated lead reassignment (deliberately separate from "the lead may hand over" — conflating them is how one becomes the other), and any UI for the three new commands. |
+| **P1-R1** capability matrix | **ACCEPTED as-is** — decided, not closed by code | The owner reviewed lead-only, lead-plus-teacher-override, and the non-destructive "mark papers out-of-scope" model, and chose to keep today's behaviour: any team member may destroy shared work. In a three-peer lab a permission gate adds friction without matching safety gain, and the paths are already behind a server-issued, single-use, target-bound proposal rather than a client assertion. | Recorded as an accepted risk alongside `ACCEPTED-R1`: one student can still delete 25 papers their team collected, deliberately, through two confirmed steps. The reversibility model (out-of-scope instead of delete) remains the higher-value change if it is ever revisited. |
+
+Gates 1–5 pass; Vitest 115 files / 1,610 tests. Two migrations applied; devlab verified intact.
 
 ---
 

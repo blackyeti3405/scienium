@@ -13,6 +13,7 @@ export type ActivityAction =
   | 'source_promoted'
   | 'phase_advanced'
   | 'member_joined'
+  | 'member_left'
   | 'plan_synced'
   | 'plan_reviewed'
   | 'idea_checked'
@@ -142,6 +143,8 @@ export function describeActivity(action: string, payload: Record<string, unknown
       return `advanced the lab to ${payload.toPhase ?? 'the next phase'}${payload.labType ? ` · assigned ${payload.labType}` : ''}`
     case 'member_joined':
       return 'joined the lab'
+    case 'member_left':
+      return 'left the lab'
     case 'plan_synced':
       return 'synced the research plan'
     case 'plan_reviewed':

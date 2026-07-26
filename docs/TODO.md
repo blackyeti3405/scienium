@@ -124,6 +124,30 @@ The rewritten spec has also **not been executed** — it needs the dev server, d
 Clerk credentials, and makes a paid ingestion call. Run
 `pnpm --filter web test:e2e:file e2e/paper-upload.spec.ts` before trusting it.
 
+## Class membership lifecycle — the other half of P1-R8
+
+v0.48.0 gave **team** membership a lifecycle (one team at a time, archive on last
+departure, an append-only event log). **Class membership was not touched** and has the
+same shape of problem:
+
+- A newly approved `ClassJoinRequest` overwrites `User.classId` outright.
+- Older approved join-request history stays behind, so a student's record shows several
+  approved classes with no indication which is current.
+- There is no transfer, withdraw, revoke, or archive command for class membership.
+
+Teacher scope is class-derived (`teacherOwnsTeam` matches on `user.classId`), so the
+same principle applies: stale class membership is stale authorization. The team half's
+answer — live-only state plus an append-only event log carrying actor, reason and
+timestamp — should transfer directly.
+
+Also deferred from that batch:
+- **Teacher-initiated lead reassignment.** Kept deliberately separate from "the lead may
+  hand over": they are different capabilities and conflating them is how one becomes the
+  other. Needs its own authorization.
+- **UI for the three new commands.** `DELETE /api/team/membership`, `POST /api/team/lead`,
+  and `DELETE /api/team/members/[userId]` exist and are tested, but nothing in the app
+  calls them yet.
+
 ## PatentsView API key (Discovery prior-art lane)
 - **Now:** the "Prior art (patents)" lane in Discovery's Articles tab runs keyless —
   it degrades to a single Google Patents search link-out card instead of live

@@ -1382,6 +1382,32 @@ enforces this and requires any exemption to state its reason, and
 `pnpm --filter web verify:migration-preflights` proves each preflight against a
 real PostgreSQL instance inside a rolled-back transaction.
 
+### Team membership — one team, live-only, archived not deleted
+
+`lib/team/membership.ts` owns every membership transition (REFACTOR2 P1-R8), and
+each commits in one transaction with its consequences. Two decisions are encoded
+rather than left to convention: **one team at a time** (joining departs every
+other live membership) and **archive rather than delete** when the last member
+leaves, because the team's work is the class's product.
+
+A departing lead hands the role to the longest-standing remaining member — the
+final lead is protected by handover, not by refusing the departure, so a team
+whose lead left is never stuck. `activeTeamId` is cleared with the departure and
+unused invites are retired when a team archives.
+
+**`TeamMember` holds LIVE memberships only.** Departures append to
+`TeamMembershipEvent` (actor, reason, timestamp), which is also the revocation
+record. The alternative — a `leftAt` tombstone — was rejected because teacher
+visibility is derived from membership across ~25 query sites, several of them
+nested reads (`team.members.some(...)`) that no Prisma client extension can
+intercept; one forgotten `leftAt: null` is a live authorization leak, not untidy
+data. `teacherOwnsTeam` has an archived-team arm reading the event log, so
+archiving does not hide a class's own work from its teacher — deliberately
+archived-only, since a **live** team a student left must still fall out of scope.
+
+Commands: `DELETE /api/team/membership`, `POST /api/team/lead`,
+`DELETE /api/team/members/[userId]`.
+
 ### Activity feed — two contracts, named
 
 `lib/activity/log.ts` exposes `recordActivity(tx, …)` and
