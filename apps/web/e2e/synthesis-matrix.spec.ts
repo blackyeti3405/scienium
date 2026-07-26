@@ -28,11 +28,13 @@ import { api, withSeedPage, withRateLimitRetry } from './api'
  *  AC12 — Team-scoped (IDOR): GET/PATCH/DELETE/check 404 on a foreign matrix
  *         id; POST create 400s on a foreign paperId and creates nothing.
  *  AC13 — Rate cap present (static: requireTeamContext(req, { tier: 'ai' })).
- *  AC14 — Cost shape (static): exactly one `anthropic().messages.create(` call
+ *  AC14 — Cost shape (static): exactly one `aiCreate('synthesis_check'` call
  *         site + one `cache_control: { type: 'ephemeral' }`; no import of
  *         paperTextBlock/paperTextContext/PAPER_TEXT_SLICE_CHARS.
  *  AC15 — Pixel aesthetic: column headers + check button carry font-pixel +
  *         the gold accent; cell textarea body text does NOT carry font-pixel.
+ *  AC16 — (REFACTOR2 P1-R13) A check clicked WITHOUT blurring first grades the
+ *         cell on screen, not the previous saved value.
  *
  * Determinism seam: E2E_SKIP_LLM=1 (already set in apps/web/.env.local) makes
  * the check route build a deterministic verdict FROM the matrix's own ids
@@ -484,7 +486,7 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
   })
 
   // ── AC14 ─────────────────────────────────────────────────────────────────
-  test('AC14 (static): cost shape — one Anthropic call site, one cache_control block, no paperTextBlock/paperTextContext import', async () => {
+  test('AC14 (static): cost shape — one paid call site, one cache_control block, no paperTextBlock/paperTextContext import', async () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
     const routePath = path.join(__dirname, '..', 'app', 'api', 'literature', 'synthesis', '[id]', 'check', 'route.ts')
@@ -494,8 +496,15 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
     // otherwise double-count as a second "call site" / "cache block".
     const codeOnly = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
 
-    const callSites = codeOnly.match(/anthropic\(\)\.messages\.create\(/g) ?? []
+    // v0.45.0 replaced the direct `anthropic().messages.create(` with the
+    // `aiCreate` registry door, and this assertion was never updated — it had
+    // been matching zero call sites (and so failing) ever since. Pinning
+    // `aiCreate('synthesis_check'` is also stricter: it proves the call still
+    // goes through the one door that carries the kill switch and spend
+    // accounting, not just that there is exactly one of it.
+    const callSites = codeOnly.match(/aiCreate\('synthesis_check'/g) ?? []
     expect(callSites).toHaveLength(1)
+    expect(codeOnly).not.toMatch(/anthropic\(\)\.messages\./)
 
     const cacheBlocks = codeOnly.match(/cache_control:\s*\{\s*type:\s*'ephemeral'\s*\}/g) ?? []
     expect(cacheBlocks).toHaveLength(1)
@@ -521,6 +530,62 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
     const cell = page.getByTestId(`synthesis-cell-${paperIds[0]}-device`)
     const cellClass = (await cell.getAttribute('class')) ?? ''
     expect(cellClass).not.toMatch(/font-pixel/)
+  })
+
+  // ── AC16 (REFACTOR2 P1-R13) ──────────────────────────────────────────────
+  test('AC16: a check clicked without blurring first grades the CELL ON SCREEN, not the previous saved value', async ({ page }) => {
+    await openSynthesisPanel(page)
+    await page.getByTestId(`synthesis-matrix-${matrixId}`).click()
+    await expect(page.getByTestId('synthesis-grid')).toBeVisible()
+
+    // THE BUG THIS PINS: cells save on blur, and the click that starts a check
+    // blurs the textarea in the same gesture. The check used to fire without
+    // waiting, so the server graded the PREVIOUS value and cached a verdict for
+    // it. Type and click — deliberately no explicit blur, no waiting.
+    const unique = `Flush-barrier probe ${Date.now()}`
+    await page.getByTestId(`synthesis-cell-${paperIds[0]}-device`).fill(unique)
+
+    const first = await withRateLimitRetry(async () => {
+      const [response] = await Promise.all([
+        page.waitForResponse((r) => r.url().includes(`/api/literature/synthesis/${matrixId}/check`)),
+        page.getByTestId('synthesis-check').click(),
+      ])
+      const status = response.status()
+      return {
+        status,
+        retryAfterSeconds: Number(response.headers()['retry-after'] ?? 60),
+        result: { body: status === 200 ? await response.json() : null, request: response.request().postData() },
+      }
+    }, 'synthesis-matrix spec')
+
+    // The client tells the server which grid it means (the P1-R13 contract).
+    expect(first.request).toContain('expectedHash')
+    expect(first.body).not.toBeNull()
+    expect(first.body.cached).toBe(false)
+    expect(first.body.stale).toBe(false)
+
+    // The edit reached the server as part of the check, not after it.
+    const saved = await (await api.get(page, `/api/literature/synthesis/${matrixId}`)).json()
+    expect(saved.cells.find((c: { columnId: string }) => c.columnId === 'device')?.text).toBe(unique)
+
+    // THE PROOF. A second check of the untouched grid replays from cache, which
+    // can only happen if what the first check stored describes THIS grid. Had
+    // it graded the pre-edit value, its stored digest would name that older
+    // grid and this call would pay for a fresh verdict instead.
+    const second = await withRateLimitRetry(async () => {
+      const [response] = await Promise.all([
+        page.waitForResponse((r) => r.url().includes(`/api/literature/synthesis/${matrixId}/check`)),
+        page.getByTestId('synthesis-check').click(),
+      ])
+      const status = response.status()
+      return {
+        status,
+        retryAfterSeconds: Number(response.headers()['retry-after'] ?? 60),
+        result: status === 200 ? await response.json() : null,
+      }
+    }, 'synthesis-matrix spec')
+    expect(second).not.toBeNull()
+    expect(second.cached).toBe(true)
   })
 
   // ── XSS (extra, from the tester playbook's core-assertion list) ───────────

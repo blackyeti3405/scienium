@@ -5,6 +5,67 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.50.0] — 2026-07-26
+
+### Fixed — "Check my synthesis" could grade cells the student could not see (P1-R13)
+Synthesis cells save asynchronously on blur, and the click that starts a check blurs the textarea
+in the same gesture. `runCheck` fired immediately with no flush barrier and no way to say *which*
+grid it meant, so the paid server check could read the **previous** database value — return a
+verdict for it, cache that verdict as the matrix's standing check, and mint KP for content that
+was not on screen. That is a KP-minting correctness bug, not a cosmetic race.
+
+Four things now bind one check to one snapshot:
+
+- **Saves are serialized.** Cell PATCHes go through one promise chain, so two overlapping saves
+  can no longer resolve out of order and leave an *unsaved* cell looking saved.
+- **The check flushes first.** `runCheck` awaits that chain, then PATCHes everything still dirty
+  in **one** request, and refuses to spend at all if anything remains unsaved — a failed save
+  stops the paid call instead of being graded around. Dirty cells are **derived** from
+  `matrix.cells` (refreshed by every successful PATCH response) rather than tracked in a
+  hand-maintained registry: a saved cell leaves the set on its own, and a failed save stays in it.
+- **The client says which grid it means.** `toMatrixView` now returns a server-issued `inputHash`
+  on every create/get/patch; the check echoes back the last one it received, and the server
+  **409s before any spend** if its own grid no longer hashes to it. Server-issued rather than
+  client-computed — the same echoed-digest CAS the showcase moderation decision uses, and it keeps
+  sha256 out of the browser. The client reloads the matrix on a 409 so the next click carries a
+  hash the server agrees with.
+- **The commit re-checks.** The paid call takes seconds and a teammate can edit during it, so the
+  transaction re-reads the whole matrix — cells *and* columns *and* papers — and re-hashes. If the
+  grid moved, the verdict is still returned (it is true of what was submitted) but **nothing is
+  cached and no KP is minted**, and the panel says so.
+
+`runAiOperation` now wraps the call as well: the existing `lastCheckJson` replay cache only ever
+helped *sequential* re-checks — two concurrent clicks both read it before either wrote, and both
+paid. The loser now replays or is told to ask again.
+
+### Fixed — a static E2E assertion that had been failing silently since v0.45.0
+`synthesis-matrix.spec.ts` AC14 asserted "exactly one `anthropic().messages.create(` call site".
+v0.45.0 moved the call behind the `aiCreate` registry door and never updated it, so the regex had
+been matching **zero** ever since — the spec had simply not been run. It now pins
+`aiCreate('synthesis_check'` and additionally asserts no direct `anthropic().messages.` call, which
+is the stronger invariant: the money still goes through the one door that carries the kill switch
+and spend accounting.
+
+### Changed
+- Ownership is now checked **before** body validation on the check route, so a foreign matrix id
+  404s whatever the body says and a caller cannot tell "malformed" from "not yours".
+
+### Verification
+Gates 1–5 pass. Vitest: **119 files / 1,640 tests** (+1 file, +7). New
+`test/synthesis-stale-check.test.ts` pins the attack, not the shape — the stale grid is refused
+before `runAiOperation` or `aiCreate` is reached, a mid-call edit stores nothing and mints nothing
+(cell text *and* column changes), an omitted hash is a 400, and a concurrent identical check does
+not pay twice. **Negative control run:** with both guards disabled, three of those tests fail; with
+them restored, all pass. `e2e/synthesis-matrix.spec.ts` **run against the live dev server: 18
+passed**, including the new AC16, which fills a cell, clicks check *without* blurring, and then
+proves the graded snapshot was the on-screen one by asserting an immediate re-check replays from
+cache — which can only happen if the first check's stored digest describes the current grid.
+
+**Not visually exercised:** the stale-verdict banner. Rendering it needs a teammate edit landing
+mid-call; an attempt to force it with a rewritten response failed for reasons of its own and was
+reverted rather than left in the suite. Its markup is one `<span>` beside the already-covered
+"cached" notice.
+
 ## [0.49.0] — 2026-07-26
 
 ### Added — export and erasure become system behaviour (P1-R9)

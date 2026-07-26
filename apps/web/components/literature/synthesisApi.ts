@@ -49,6 +49,8 @@ const matrixSchema = z.object({
   columns: z.array(columnSchema),
   papers: z.array(paperRefSchema),
   cells: z.array(cellSchema),
+  /** Server-issued digest of the grid this response describes (P1-R13). */
+  inputHash: z.string(),
   lastCheck: verdictSchema.nullable(),
   lastCheckedAt: z.string().nullable(),
   kpAwarded: z.number(),
@@ -70,6 +72,8 @@ const checkResultSchema = z.object({
   verdict: verdictSchema,
   cached: z.boolean(),
   kpEarned: z.number(),
+  /** The grid changed while Vega was reading: verdict shown, nothing stored. */
+  stale: z.boolean(),
 })
 
 export type SynthesisMatrixResponse = z.infer<typeof matrixSchema>
@@ -106,8 +110,15 @@ export function patchMatrix(id: string, patch: MatrixPatch) {
   })
 }
 
-export function checkMatrix(id: string) {
+/**
+ * `expectedHash` is the digest the server last handed us for this matrix. The
+ * server refuses (409) if its own grid no longer hashes to it, so a paid check
+ * can only grade the snapshot the student was actually looking at (P1-R13).
+ */
+export function checkMatrix(id: string, expectedHash: string) {
   return requestJson(`/api/literature/synthesis/${id}/check`, checkResultSchema, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expectedHash }),
   })
 }

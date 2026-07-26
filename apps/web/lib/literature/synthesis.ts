@@ -380,6 +380,7 @@ export function toMatrixView(matrix: SynthesisMatrixRow, papers: SynthesisPaperR
     .filter((p): p is SynthesisPaperRow => p !== undefined)
     .map((p) => ({ id: p.id, title: p.title, authors: p.authors }))
   const stored = StoredCheckSchema.safeParse(matrix.lastCheckJson)
+  const cellViews = cells.map((c) => ({ paperId: c.paperId, columnId: c.columnId, text: c.text }))
 
   return {
     id: matrix.id,
@@ -387,7 +388,13 @@ export function toMatrixView(matrix: SynthesisMatrixRow, papers: SynthesisPaperR
     templateId: matrix.templateId,
     columns,
     papers: orderedPapers,
-    cells: cells.map((c) => ({ paperId: c.paperId, columnId: c.columnId, text: c.text })),
+    cells: cellViews,
+    // The grid the SERVER holds, digested (REFACTOR2 P1-R13). The client echoes
+    // it back when asking for a check, so a paid check can only ever grade the
+    // snapshot the student was actually looking at. Server-issued rather than
+    // client-computed — the same echoed-digest CAS the showcase moderation
+    // decision uses, and it keeps sha256 out of the browser.
+    inputHash: matrixInputHash(matrix.templateId, columns, matrix.paperIds, cellViews),
     lastCheck: stored.success ? stored.data.verdict : null,
     lastCheckedAt: matrix.lastCheckedAt ? matrix.lastCheckedAt.toISOString() : null,
     kpAwarded: matrix.kpAwarded,

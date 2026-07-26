@@ -927,6 +927,20 @@ elsewhere in the app (§10):
   unchanged grid (hash of columns/paperIds/cell text) replays the persisted
   verdict instead of paying for a new call (mirrors the Research Plan review
   replay in §8.3).
+  **One check grades exactly one snapshot** (REFACTOR2 P1-R13). Cells save on
+  blur and the click that starts a check blurs the textarea, so the check used
+  to race the save it had just triggered and grade the previous value. The hash
+  above is now also handed to the client on every create/get/patch as
+  `inputHash`; the check echoes it back and the server 409s **before any spend**
+  if its grid no longer matches. Client-side, cell PATCHes are serialized
+  through one promise chain and `runCheck` flushes every dirty cell in one
+  request first, refusing to spend while anything is unsaved — dirty is derived
+  from the last confirmed `matrix.cells`, never a hand-maintained flag. The
+  commit transaction re-reads and re-hashes the whole row, so an edit that lands
+  during the multi-second call leaves the verdict returned but nothing cached
+  and no KP minted. `runAiOperation` wraps the call for the concurrent case the
+  replay cache cannot cover: two simultaneous clicks both read the cache before
+  either writes, and used to both pay.
 - **Vocabulary Builder** (`api/literature/vocab/`, `lib/literature/vocab.ts` +
   `srs.ts`): zero-LLM end to end. Terms are extracted mechanically (Schwartz-
   Hearst acronym pairing → authored-dictionary hits → repeated-ngram fallback,

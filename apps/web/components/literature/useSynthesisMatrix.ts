@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useLabCurrency } from '@/components/lab/labCurrency'
 import { findTemplate } from '@/content/literature/synthesis-templates'
 import { ApiError } from '@/lib/api/client'
@@ -20,6 +20,21 @@ import { cellKey, slugifyColumnLabel as slugify } from './synthesisSlug'
  * column edits (rename/add/remove), the check flow, and applying a suggested
  * column. Modeled on `useExplainBack`/`usePapers` — called for exactly one
  * matrix id at a time.
+ *
+ * ## The check is bound to a snapshot (REFACTOR2 P1-R13)
+ *
+ * Cells save asynchronously on blur, and the click that starts a check blurs
+ * the textarea in the same gesture. `runCheck` used to fire immediately, so the
+ * paid server check could read the PREVIOUS database value — returning and
+ * caching a verdict for work the student could not see, and awarding KP for it.
+ *
+ * Three things fix that here, and one on the server:
+ *  - Saves are SERIALIZED through `saveChain`, so responses cannot land out of
+ *    order and make an unsaved cell look saved.
+ *  - `runCheck` awaits that chain, then FLUSHES whatever is still dirty in one
+ *    PATCH, and refuses to spend if the flush failed.
+ *  - It sends the server-issued `inputHash` of the grid it just confirmed, and
+ *    the server refuses (409) to grade anything else.
  */
 export function useSynthesisMatrix(matrixId: string | null) {
   const { addCurrency } = useLabCurrency()
@@ -32,6 +47,18 @@ export function useSynthesisMatrix(matrixId: string | null) {
   const [checkError, setCheckError] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<SynthesisCheckResult | null>(null)
 
+  /**
+   * The latest matrix, readable AFTER an await. React state read through a
+   * closure is frozen at render time, and `runCheck` awaits twice before it
+   * needs the current `inputHash` — reading a stale one would 409 every check
+   * that followed a successful blur-save.
+   */
+  const matrixRef = useRef<SynthesisMatrixResponse | null>(null)
+  const applyMatrix = useCallback((m: SynthesisMatrixResponse | null) => {
+    matrixRef.current = m
+    setMatrix(m)
+  }, [])
+
   const resetDraftsFrom = useCallback((m: SynthesisMatrixResponse) => {
     const next: Record<string, string> = {}
     for (const c of m.cells) next[cellKey(c.paperId, c.columnId)] = c.text
@@ -40,7 +67,7 @@ export function useSynthesisMatrix(matrixId: string | null) {
 
   useEffect(() => {
     if (!matrixId) {
-      setMatrix(null)
+      applyMatrix(null)
       setLoading(false)
       return
     }
@@ -52,9 +79,9 @@ export function useSynthesisMatrix(matrixId: string | null) {
       try {
         const m = await getMatrix(matrixId)
         if (cancelled) return
-        setMatrix(m)
+        applyMatrix(m)
         resetDraftsFrom(m)
-        if (m.lastCheck) setLastResult({ verdict: m.lastCheck, cached: true, kpEarned: 0 })
+        if (m.lastCheck) setLastResult({ verdict: m.lastCheck, cached: true, kpEarned: 0, stale: false })
       } catch (err) {
         if (!cancelled) setError(err instanceof ApiError ? err.message : 'Failed to load this matrix')
       } finally {
@@ -64,7 +91,7 @@ export function useSynthesisMatrix(matrixId: string | null) {
     return () => {
       cancelled = true
     }
-  }, [matrixId, resetDraftsFrom])
+  }, [matrixId, applyMatrix, resetDraftsFrom])
 
   function cellText(paperId: string, columnId: string): string {
     return drafts[cellKey(paperId, columnId)] ?? ''
@@ -74,18 +101,50 @@ export function useSynthesisMatrix(matrixId: string | null) {
     setDrafts((prev) => ({ ...prev, [cellKey(paperId, columnId)]: text }))
   }
 
+  /**
+   * Cells whose draft differs from what the server last confirmed.
+   *
+   * DERIVED from `matrix.cells`, not a hand-maintained registry: every
+   * successful PATCH response refreshes those cells, so a saved cell leaves this
+   * set on its own and a save that FAILED stays in it. A registry would be one
+   * more thing to clear correctly, and clearing it wrongly means paying to grade
+   * text the server never received.
+   */
+  function dirtyCells(): { paperId: string; columnId: string; text: string }[] {
+    const current = matrixRef.current
+    if (!current) return []
+    const saved = new Map(current.cells.map((c) => [cellKey(c.paperId, c.columnId), c.text]))
+    return Object.entries(drafts)
+      .filter(([key, text]) => text !== (saved.get(key) ?? ''))
+      .map(([key, text]) => {
+        const [paperId = '', columnId = ''] = key.split(':')
+        return { paperId, columnId, text }
+      })
+  }
+
+  /**
+   * Serializes cell PATCHes. Two overlapping saves could otherwise resolve out
+   * of order and let an older response's matrix overwrite a newer one — which
+   * would make an unsaved cell look saved.
+   */
+  const saveChain = useRef<Promise<void>>(Promise.resolve())
+
   /** Save-on-blur: PATCHes only the one changed cell. */
-  async function saveCell(paperId: string, columnId: string) {
-    if (!matrix) return
+  function saveCell(paperId: string, columnId: string): Promise<void> {
+    if (!matrix) return Promise.resolve()
+    const matrixId = matrix.id
     const text = cellText(paperId, columnId)
-    try {
-      const updated = await patchMatrix(matrix.id, { cells: [{ paperId, columnId, text }] })
-      // Keep drafts (the student may be actively typing another cell) — only
-      // refresh the server-authoritative metadata/columns/papers.
-      setMatrix(updated)
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not save that cell')
-    }
+    saveChain.current = saveChain.current.then(async () => {
+      try {
+        const updated = await patchMatrix(matrixId, { cells: [{ paperId, columnId, text }] })
+        // Keep drafts (the student may be actively typing another cell) — only
+        // refresh the server-authoritative metadata/columns/papers.
+        applyMatrix(updated)
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Could not save that cell')
+      }
+    })
+    return saveChain.current
   }
 
   async function addColumn(label: string, hint?: string) {
@@ -97,7 +156,7 @@ export function useSynthesisMatrix(matrixId: string | null) {
     setError(null)
     try {
       const updated = await patchMatrix(matrix.id, { columns: nextColumns })
-      setMatrix(updated)
+      applyMatrix(updated)
       resetDraftsFrom(updated)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not add that column')
@@ -113,7 +172,7 @@ export function useSynthesisMatrix(matrixId: string | null) {
     setError(null)
     try {
       const updated = await patchMatrix(matrix.id, { columns: nextColumns })
-      setMatrix(updated)
+      applyMatrix(updated)
       resetDraftsFrom(updated)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not rename that column')
@@ -130,7 +189,7 @@ export function useSynthesisMatrix(matrixId: string | null) {
     setError(null)
     try {
       const updated = await patchMatrix(matrix.id, { columns: nextColumns })
-      setMatrix(updated)
+      applyMatrix(updated)
       resetDraftsFrom(updated)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not remove that column')
@@ -144,21 +203,71 @@ export function useSynthesisMatrix(matrixId: string | null) {
     await addColumn(label, hint)
   }
 
-  const canCheck = Object.values(drafts).some((t) => t.trim().length > 0)
+  const canCheck = Object.values(drafts).some((t) => t.trim().length > 0) && !busy
+
+  /**
+   * Flush every unsaved cell, then check the grid the server confirms it holds.
+   *
+   * Returns the confirmed hash, or throws if anything is still unsaved — a
+   * failed save must stop the paid call, not be graded around.
+   */
+  async function flushBeforeCheck(): Promise<string> {
+    // The click that started this blurred a textarea, so a save is almost
+    // always already in flight. Let it land before deciding what is dirty.
+    await saveChain.current
+
+    const pending = dirtyCells()
+    if (pending.length > 0) {
+      // ONE PATCH for the whole backlog, not one per cell.
+      const updated = await patchMatrix(matrixRef.current!.id, { cells: pending })
+      applyMatrix(updated)
+    }
+
+    const current = matrixRef.current
+    if (!current) throw new ApiError('This matrix is no longer open', 409)
+    if (dirtyCells().length > 0) {
+      throw new ApiError('Some cells could not be saved — fix that before checking', 409)
+    }
+    return current.inputHash
+  }
 
   async function runCheck() {
     if (!matrix || checking) return
+    const id = matrix.id
     setChecking(true)
     setCheckError(null)
     try {
-      const result = await checkMatrix(matrix.id)
+      const expectedHash = await flushBeforeCheck()
+      const result = await checkMatrix(id, expectedHash)
       setLastResult(result)
-      setMatrix((prev) =>
-        prev ? { ...prev, lastCheck: result.verdict, kpAwarded: prev.kpAwarded || result.kpEarned } : prev,
-      )
+      // A stale verdict was NOT stored server-side; do not present it as the
+      // matrix's standing check either.
+      if (!result.stale) {
+        const current = matrixRef.current
+        if (current) {
+          applyMatrix({
+            ...current,
+            lastCheck: result.verdict,
+            kpAwarded: current.kpAwarded || result.kpEarned,
+          })
+        }
+      }
       if (result.kpEarned > 0) addCurrency({ kp: result.kpEarned })
     } catch (err) {
-      setCheckError(err instanceof ApiError ? err.message : 'Vega could not check your synthesis — try again')
+      if (err instanceof ApiError && err.status === 409) {
+        // The grid moved (a teammate's edit, or a save that never landed).
+        // Reload it so the next click carries a hash the server agrees with.
+        setCheckError(err.message)
+        try {
+          const fresh = await getMatrix(id)
+          applyMatrix(fresh)
+          resetDraftsFrom(fresh)
+        } catch {
+          // Leave the message standing; the student can reopen the matrix.
+        }
+      } else {
+        setCheckError(err instanceof ApiError ? err.message : 'Vega could not check your synthesis — try again')
+      }
     } finally {
       setChecking(false)
     }

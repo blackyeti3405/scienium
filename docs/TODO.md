@@ -124,6 +124,21 @@ to prune" — including turning `showcase_view` back off.
   log survives their erasure. That is the runbook's team-artifact policy applied consistently;
   confirm it is the policy the school expects.
 
+## Synthesis Matrix — a column edit still discards an unsaved cell draft
+
+Left open by v0.50.0 (REFACTOR2 P1-R13), and pre-existing to it. `addColumn`, `renameColumn` and
+`removeColumn` all call `resetDraftsFrom(updated)`, which rebuilds every cell draft from the
+server's cells — so a cell the student has typed into but not yet blurred loses its text when they
+add or rename a column.
+
+That is **data loss, not mis-grading**: the check itself can no longer grade a draft the server has
+not seen (it flushes first and refuses to spend while anything is unsaved). But it is now the only
+path by which a draft vanishes without being saved or graded. The fix is to flush dirty cells in
+the same PATCH that changes the columns, or to merge the response's cells into the drafts rather
+than replacing them.
+
+Also owed from that batch: the 409 tells the student their grid changed but not **what** changed.
+
 ## Activity durability — 11 events still outside a transaction (REFACTOR2 P1-R5)
 
 v0.46.0 split activity logging into `recordActivity(tx, …)` (durable, throws, writes

@@ -503,7 +503,7 @@ retire assets first instead of silently destroying the ledger. **Still open:** b
 reconciliation (comparing R2 inventory against the ledger) and stale/terminal alerting — the
 DB-side half (`attached` rows with a dead owner) is done, the bucket-side half is not.
 
-#### P1-R13 — “Check my synthesis” can grade stale cells
+#### P1-R13 — “Check my synthesis” can grade stale cells — **CLOSED (v0.50.0)**
 
 Cells save asynchronously on blur. Clicking the check button blurs the textarea and immediately
 starts `checkMatrix`; there is no pending-write registry or flush barrier. The paid server check
@@ -514,6 +514,13 @@ Track dirty cells and in-flight writes, batch/await a flush before checking, and
 expected matrix version or input digest to the server. The server should atomically snapshot
 the exact cells it grades and bind cache/result/KP to that snapshot. Disable the check while a
 save failed; never treat local non-empty drafts as proof the server has checkable content.
+
+**Closed in v0.50.0.** Saves are serialized, the check flushes and refuses to spend while anything
+is unsaved, a server-issued `inputHash` is echoed back and 409s before any spend, and the commit
+transaction re-hashes so a mid-call edit caches nothing and mints nothing. `runAiOperation` closes
+the concurrent double-pay the replay cache never covered. **Still open:** `addColumn`/`renameColumn`
+still call `resetDraftsFrom`, which discards an unsaved cell draft — pre-existing, a data-loss bug
+rather than a grading one, and now the only way a draft can vanish without being graded or saved.
 
 #### P1-R14 — The “real PostgreSQL” invariant suite silently skips in normal CI
 
@@ -1376,6 +1383,22 @@ record what needs filling in.**
 Gates 1–5 pass; Vitest 118 files / 1,633 tests. Migration applied; devlab verified intact and all
 three new tables confirmed empty. `e2e/data-requests.spec.ts` run against the live dev server
 (4 passed) and the settings section screenshotted.
+
+#### v0.50.0 — 2026-07-26 — one check, one snapshot
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P1-R13** "Check my synthesis" can grade stale cells | **CLOSED** | Cells save on blur and the click that starts a check blurs the textarea in the same gesture, so the paid call raced the save it had just triggered — grading the PREVIOUS database value, caching a verdict for it, and minting KP for content that was not on screen. Four bindings now tie one check to one snapshot. **Serialized saves:** cell PATCHes go through one promise chain, so two overlapping saves cannot resolve out of order and leave an unsaved cell looking saved. **A flush barrier:** `runCheck` awaits that chain, PATCHes everything still dirty in ONE request, and refuses to spend while anything remains unsaved — which is also the audit's "disable the check while a save failed", enforced rather than displayed. Dirty cells are DERIVED from `matrix.cells` (refreshed by every successful PATCH response) instead of a hand-maintained registry: a saved cell leaves the set on its own and a failed save stays in it, so the failure mode of forgetting to clear a flag — paying to grade text the server never received — cannot occur. **An echoed digest:** `toMatrixView` returns a server-issued `inputHash` on every create/get/patch; the check echoes the last one it received and the server 409s BEFORE any spend if its grid no longer hashes to it. Server-issued rather than client-computed, the same CAS shape as the showcase moderation decision, and it keeps sha256 out of the browser. **A commit-time re-hash:** the paid call takes seconds, so the transaction re-reads the whole row — cells, columns AND papers — and re-hashes; a grid that moved gets its verdict returned (it is true of what was submitted) with nothing cached and no KP minted. Separately, `runAiOperation` now wraps the call: the `lastCheckJson` replay cache only ever helped SEQUENTIAL re-checks, because two concurrent clicks both read it before either wrote and both paid. Ownership also moved ahead of body validation, so a foreign matrix id 404s whatever the body says. | `addColumn`/`renameColumn` still call `resetDraftsFrom`, discarding an unsaved cell draft — pre-existing, and now the only path by which a draft vanishes without being saved or graded. It is data loss, not mis-grading, so it is recorded rather than folded in. The 409 tells the student to look again but does not show them WHAT changed; a diff would be kinder. |
+
+Running the spec also surfaced that **AC14 had been failing since v0.45.0** and nobody had noticed:
+it asserted one `anthropic().messages.create(` call site, which the `aiCreate` registry refactor
+removed, so the regex matched zero. It now pins `aiCreate('synthesis_check'` and forbids a direct
+`anthropic().messages.` call — a stricter invariant than the one it replaced. A spec that is never
+run is not coverage.
+
+Gates 1–5 pass; Vitest 119 files / 1,640 tests. No migration in this batch. New
+`test/synthesis-stale-check.test.ts` was **negative-controlled**: with both guards disabled three
+of its tests fail. `e2e/synthesis-matrix.spec.ts` run against the live dev server, 18 passed.
 
 ---
 

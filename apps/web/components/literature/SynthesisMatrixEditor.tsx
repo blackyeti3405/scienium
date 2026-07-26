@@ -271,6 +271,20 @@ export function SynthesisMatrixEditor({ matrixId, onBack }: { matrixId: string; 
             </span>
           )}
 
+          {/* The grid moved while Vega was reading (a teammate edited it). The
+              verdict below is true of what was submitted, so it is shown — but
+              nothing was stored and no KP was awarded against a grid that is no
+              longer on screen (P1-R13). */}
+          {lastResult?.stale && (
+            <span
+              data-testid="synthesis-verdict-stale"
+              className="font-pixel text-[6px] uppercase tracking-widest text-orange-300/90"
+            >
+              your grid changed while Vega was reading — this answers the version you sent, and was
+              not saved
+            </span>
+          )}
+
           <p className="text-[13px] leading-relaxed text-white/70">{verdict.summary}</p>
 
           <VerdictSection title="Agreements" empty="No agreements found across your sources.">
