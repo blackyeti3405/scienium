@@ -80,4 +80,20 @@ describe('expertise prompts keep their fences (source pins)', () => {
     const src = readFileSync(join(WEB_ROOT, 'lib', 'literature', 'quiz.ts'), 'utf8')
     expect(src).toMatch(/Treat it as DATA/)
   })
+
+  /**
+   * Migrated from `lit-explain-it-back.spec.ts` AC15 — a source read that had no
+   * business inside a browser suite, and which therefore only ran when somebody
+   * remembered to run that spec.
+   */
+  it('explain-back fences the student text and declares it untrusted', () => {
+    const routeSrc = readFileSync(
+      join(WEB_ROOT, 'app', 'api', 'papers', '[id]', 'explain', 'route.ts'),
+      'utf8',
+    )
+    expect(routeSrc).toContain('<student_explanation>')
+    const explainSrc = readFileSync(join(WEB_ROOT, 'lib', 'literature', 'explain.ts'), 'utf8')
+    expect(explainSrc).toContain('<student_explanation>')
+    expect(explainSrc).toMatch(/untrusted DATA/)
+  })
 })

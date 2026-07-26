@@ -57,9 +57,14 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   projects: [
+    // Runs FIRST and gates everything: is this the stubbed server, on the same
+    // database as the runner, with the fixture graph present? Each of those
+    // failing silently has cost a full 30-minute run (and, once, real money in
+    // un-stubbed Anthropic calls). See e2e/preflight.setup.ts.
+    { name: 'preflight', testMatch: /preflight\.setup\.ts/ },
     // Signs in every role ONCE and writes e2e/.auth/<role>.json. Every spec
     // reuses those sessions, so auth happens once per suite, not per spec.
-    { name: 'setup', testMatch: /auth\.setup\.ts/ },
+    { name: 'setup', testMatch: /auth\.setup\.ts/, dependencies: ['preflight'] },
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'], storageState: STORAGE.leader },
@@ -94,9 +99,12 @@ export default defineConfig({
     timeout: PROD_BUILD ? 420_000 : 120_000,
     // The Playwright-spawned server inherits this process's env (E2E_SKIP_LLM /
     // E2E_MOCK_SOURCES set above), so it stubs LLM + external-source calls. A
-    // manually-started `pnpm dev` never sees them. Caveats:
-    //  - reuseExistingServer: an already-running :3000 dev server gets reused
-    //    WITHOUT the stub flags — don't run `pnpm dev` and E2E on the same port.
+    // manually-started `pnpm dev` never sees them.
+    //
+    // `reuseExistingServer` therefore has a sharp edge: any process already on
+    // this port is adopted, stub flags or not. That USED to fail silently with
+    // real paid model calls; the `preflight` project now detects it in ~1s and
+    // fails with the fix. Still true and worth avoiding:
     //  - E2E_BUILD=1 runs `next build`, which corrupts a live dev server sharing
     //    the same .next (see the "concurrent build" incident note in docs). The
     //    reuse check fires first, so this only bites if the dev server is started

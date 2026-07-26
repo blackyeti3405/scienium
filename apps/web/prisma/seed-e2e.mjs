@@ -12,11 +12,17 @@
 // Data-only: never touches migrations, never deletes, safe to re-run — the
 // second run reports every node as "found" and performs zero writes.
 //
-// The three User rows themselves are Clerk-owned (created by the app on first
-// authenticated request) and are deliberately NOT fabricated here: a row with
-// a made-up clerkUserId would fork a duplicate identity on real sign-in.
-// If they're missing, run the Playwright auth setup once to materialize them:
+// The three User rows are Clerk-owned. They are never FABRICATED here — a
+// made-up clerkUserId would fork a duplicate identity on real sign-in — but
+// when they are absent they are MATERIALIZED by reading the real ids from the
+// Clerk API (see `materializeFromClerk`). That is what lets the fixture be
+// built into an empty database, which every CI run provisions; before it, the
+// CI E2E lane would have aborted here the moment its secrets were configured.
+// Without CLERK_SECRET_KEY, sign in once instead:
 //   pnpm --filter web exec playwright test --project=setup
+
+// To clear the accumulated content this seeder deliberately never deletes:
+//   pnpm --filter web reset:e2e     (see prisma/reset-e2e.mjs)
 import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
 const { PrismaClient } = require('@prisma/client')
@@ -53,6 +59,51 @@ async function findUser(identifier, fallbackName, roleFilter) {
   return { user: null, via: null }
 }
 
+/**
+ * Materialize a missing user row from Clerk itself.
+ *
+ * The original design refused to create `User` rows at all, on the grounds that
+ * a made-up `clerkUserId` would fork a duplicate identity on real sign-in. That
+ * reasoning is sound and this does not violate it: the id is READ FROM CLERK, so
+ * it is the same id the app would write on first sign-in.
+ *
+ * Without this, the fixture cannot be seeded into an EMPTY database — which is
+ * exactly what CI provisions on every run (a `postgres:16` service). The CI E2E
+ * lane would abort at this step the moment its secrets were configured; it has
+ * simply never been exercised, because the whole job is gated on a secret that
+ * is not set. Requires `CLERK_SECRET_KEY` (already needed by the suite).
+ */
+async function materializeFromClerk(identifier, fallbackName, role) {
+  const secret = process.env.CLERK_SECRET_KEY
+  if (!secret || !identifier) return { user: null, via: null }
+
+  const query = identifier.includes('@')
+    ? `email_address=${encodeURIComponent(identifier)}`
+    : `username=${encodeURIComponent(identifier)}`
+  const res = await fetch(`https://api.clerk.com/v1/users?${query}&limit=1`, {
+    headers: { Authorization: `Bearer ${secret}` },
+  }).catch(() => null)
+  if (!res || !res.ok) return { user: null, via: null }
+
+  const [clerkUser] = await res.json()
+  if (!clerkUser) return { user: null, via: null }
+
+  const email =
+    clerkUser.email_addresses?.find((e) => e.id === clerkUser.primary_email_address_id)
+      ?.email_address ?? clerkUser.email_addresses?.[0]?.email_address
+  if (!email) return { user: null, via: null }
+
+  const user = await db.user.create({
+    data: {
+      clerkUserId: clerkUser.id,
+      name: clerkUser.first_name ?? clerkUser.username ?? fallbackName,
+      email,
+      role,
+    },
+  })
+  return { user, via: `Clerk API (${query.split('=')[0]})` }
+}
+
 try {
   // ── 1. Users (locate-only) ────────────────────────────────────────────────
   // Single-account dev setups can point E2E_STUDENT at the leader (so the user's
@@ -65,26 +116,48 @@ try {
     findUser(process.env.E2E_LEADER_IDENTIFIER, 'E2E Leader', undefined),
     findUser(process.env.E2E_TEACHER_IDENTIFIER, 'DevTeacher', 'teacher'),
   ])
-  const student = studentIsLeader
+  let student = studentIsLeader
     ? leader
     : await findUser(process.env.E2E_STUDENT_IDENTIFIER, 'E2E Student', undefined)
+
+  // Empty database (every CI run provisions one): pull the real ids from Clerk
+  // rather than aborting. See `materializeFromClerk`.
+  const resolved = { leader, student, teacher }
+  for (const [key, identifierEnv, fallbackName, role] of [
+    ['leader', 'E2E_LEADER_IDENTIFIER', 'E2E Leader', 'student'],
+    ['student', 'E2E_STUDENT_IDENTIFIER', 'E2E Student', 'student'],
+    ['teacher', 'E2E_TEACHER_IDENTIFIER', 'DevTeacher', 'teacher'],
+  ]) {
+    if (resolved[key].user) continue
+    resolved[key] = await materializeFromClerk(
+      process.env[identifierEnv],
+      fallbackName,
+      role,
+    )
+    if (resolved[key].user) note(`user: ${fallbackName}`, 'created', 'from the Clerk API')
+  }
+  student = studentIsLeader ? resolved.leader : resolved.student
+
   const missing = [
-    ['E2E leader', leader],
+    ['E2E leader', resolved.leader],
     ['E2E student', student],
-    ['DevTeacher', teacher],
+    ['DevTeacher', resolved.teacher],
   ].filter(([, r]) => !r.user)
   if (missing.length > 0) {
     console.error(
       `ABORT — user row(s) missing: ${missing.map(([label]) => label).join(', ')}.\n` +
-        'These rows are created by the app on first sign-in and cannot be seeded.\n' +
-        'Materialize them with:  pnpm --filter web exec playwright test --project=setup\n' +
+        'They could not be found locally, and the Clerk API lookup did not resolve them.\n' +
+        'Check CLERK_SECRET_KEY and the E2E_*_IDENTIFIER values, or materialize them by\n' +
+        'signing in once:        pnpm --filter web exec playwright test --project=setup\n' +
         'then re-run:            pnpm --filter web seed:e2e',
     )
     process.exit(1)
   }
-  note('user: E2E leader', 'found', `via ${leader.via}`)
+  const leaderRec = resolved.leader
+  const teacherRec = resolved.teacher
+  note('user: E2E leader', 'found', `via ${leaderRec.via}`)
   note('user: E2E student', 'found', `via ${student.via}`)
-  note('user: DevTeacher', 'found', `via ${teacher.via}`)
+  note('user: DevTeacher', 'found', `via ${teacherRec.via}`)
 
   // ── 2. School ─────────────────────────────────────────────────────────────
   let school = await db.school.findUnique({ where: { name: SCHOOL_NAME } })
@@ -98,12 +171,12 @@ try {
   // ── 3. Class owned by DevTeacher ──────────────────────────────────────────
   // Any class owned by the teacher satisfies teacherOwnsTeam; only create when
   // the teacher owns none.
-  let klass = await db.class.findFirst({ where: { teacherId: teacher.user.id } })
+  let klass = await db.class.findFirst({ where: { teacherId: teacherRec.user.id } })
   if (klass) {
     note(`class: ${klass.name}`, 'found')
   } else {
     klass = await db.class.create({
-      data: { schoolId: school.id, name: CLASS_NAME, teacherId: teacher.user.id },
+      data: { schoolId: school.id, name: CLASS_NAME, teacherId: teacherRec.user.id },
     })
     note(`class: ${CLASS_NAME}`, 'created')
   }
@@ -131,7 +204,7 @@ try {
     team = await db.team.create({
       data: {
         name: TEAM_NAME,
-        teamLeadId: leader.user.id,
+        teamLeadId: leaderRec.user.id,
         classId: klass.id,
         phase: FIXTURE_PHASE,
         labType: FIXTURE_LAB_TYPE,
@@ -142,7 +215,7 @@ try {
 
   // ── 5. Memberships ────────────────────────────────────────────────────────
   for (const [label, user, role] of [
-    ['leader', leader.user, 'lead'],
+    ['leader', leaderRec.user, 'lead'],
     ['student', student.user, 'member'],
   ]) {
     const existing = await db.teamMember.findUnique({
@@ -158,7 +231,7 @@ try {
 
   // ── 6. Class/school links on the student users ────────────────────────────
   for (const [label, user] of [
-    ['leader', leader.user],
+    ['leader', leaderRec.user],
     ['student', student.user],
   ]) {
     if (user.classId === klass.id && user.schoolId === school.id) {
@@ -179,7 +252,7 @@ try {
   }
 
   for (const [label, user] of [
-    ['leader', leader.user],
+    ['leader', leaderRec.user],
     ['student', student.user],
   ]) {
     if (user.activeTeamId === team.id) {
@@ -189,10 +262,10 @@ try {
       note(`links: ${label} activeTeamId`, 'updated')
     }
   }
-  if (teacher.user.schoolId === school.id) {
+  if (teacherRec.user.schoolId === school.id) {
     note('links: teacher schoolId', 'found')
   } else {
-    await db.user.update({ where: { id: teacher.user.id }, data: { schoolId: school.id } })
+    await db.user.update({ where: { id: teacherRec.user.id }, data: { schoolId: school.id } })
     note('links: teacher schoolId', 'updated')
   }
 
@@ -228,6 +301,38 @@ try {
     })
     note('currency: KP/clearance baseline', 'created', `kp=${KP_BASELINE} clr=${CLEARANCE_BASELINE}`)
   }
+
+  // ── 8. Gateway layout ─────────────────────────────────────────────────────
+  // The isometric scene's DEFAULT gateway cells sit close enough that one 128px
+  // sprite covers a neighbour's hit area: Playwright then reports "subtree
+  // intercepts pointer events" and cannot click "Open Discovery" at all, failing
+  // specs with nothing to do with buildings. The fixture used to be saved from
+  // this only by whatever positions `placement.spec.ts` happened to leave behind
+  // — i.e. the suite's clickability depended on test execution order.
+  //
+  // Seeding an explicit spread makes it reproducible, and makes the layout
+  // something `reset:e2e` may clear because this restores it.
+  const GATEWAY_LAYOUT = [
+    ['discovery', 1, 3],
+    ['literature_review', -1, 3],
+    ['operations_hub', 3, 3],
+    ['pvp', 3, 1],
+    ['research_plan', -2, 1],
+    ['science_fair', 3, -1],
+    ['showcase', 1, -2],
+  ]
+  let placed = 0
+  for (const [gatewayKey, posX, posY] of GATEWAY_LAYOUT) {
+    const existing = await db.teamGatewayPlacement.findUnique({
+      where: { teamId_gatewayKey: { teamId: team.id, gatewayKey } },
+    })
+    if (existing) continue
+    await db.teamGatewayPlacement.create({
+      data: { teamId: team.id, gatewayKey, posX, posY },
+    })
+    placed++
+  }
+  note('gateway layout', placed === 0 ? 'found' : 'created', `${placed} placement(s)`)
 
   // ── Report ────────────────────────────────────────────────────────────────
   const width = Math.max(...report.map((r) => r.node.length))

@@ -138,7 +138,16 @@ test.describe('topic change — two-phase removal confirmation', () => {
       expect(irrelevantId).toBeTruthy()
 
       const applied = await api.post(page, '/api/discovery/topic', {
-        data: { topic: NEW_TOPIC, confirmWipe: true, confirmRemoveIds: [irrelevantId] },
+        // The `proposalToken` is what makes phase 2 real (REFACTOR2 P1-R1,
+        // v0.38.0): `confirmRemoveIds` alone is a caller-supplied list, and the
+        // route has refused it ever since. This spec still sent the pre-v0.38.0
+        // shape and had been failing — asserting the bypass it exists to prevent.
+        data: {
+          topic: NEW_TOPIC,
+          confirmWipe: true,
+          confirmRemoveIds: [irrelevantId],
+          proposalToken: proposed.proposalToken,
+        },
       })
       expect(applied.ok()).toBeTruthy()
       const result = await applied.json()
@@ -149,7 +158,7 @@ test.describe('topic change — two-phase removal confirmation', () => {
     })
   })
 
-  test('an id the student withheld is never deleted, even if the model wanted it', async ({
+  test('a list the server never proposed is refused outright, and deletes nothing', async ({
     browser,
   }) => {
     test.setTimeout(120_000)
@@ -161,9 +170,15 @@ test.describe('topic change — two-phase removal confirmation', () => {
         data: { topic: NEW_TOPIC, confirmWipe: true },
       })
       expect(proposal.status()).toBe(409)
+      const proposed = await proposal.json()
+      expect(proposed.requiresRemovalConfirmation).toBe(true)
 
-      // Approve an EMPTY-but-present set: a single reef paper the model did not
-      // propose. The route must honour the caller's list, not the model's verdict.
+      // Approve a reef paper the model did NOT propose. Before v0.38.0 the route
+      // honoured whatever list the caller sent, and this spec asserted that it
+      // deleted it — pinning the bypass. P1-R1 bound the token's digest to the
+      // EXACT proposed id set, so a substituted list now fails the digest and the
+      // whole request is refused. That is strictly stronger than what this test
+      // used to claim, and it is what the spec now proves.
       const reefPaper = await e2eDb.paper.findFirst({
         where: { teamId: await e2eTeamId(), title: RELEVANT_A },
         select: { id: true },
@@ -171,14 +186,18 @@ test.describe('topic change — two-phase removal confirmation', () => {
       expect(reefPaper).toBeTruthy()
 
       const applied = await api.post(page, '/api/discovery/topic', {
-        data: { topic: NEW_TOPIC, confirmWipe: true, confirmRemoveIds: [reefPaper!.id] },
+        data: {
+          topic: NEW_TOPIC,
+          confirmWipe: true,
+          confirmRemoveIds: [reefPaper!.id],
+          proposalToken: proposed.proposalToken,
+        },
       })
-      expect(applied.ok()).toBeTruthy()
-      expect((await applied.json()).removedCount).toBe(1)
+      expect(applied.status()).toBe(409)
 
-      // The off-topic paper the MODEL wanted removed is still here, because the
-      // student never approved it.
-      expect(await fixtureTitlesPresent()).toEqual([RELEVANT_B, IRRELEVANT].sort())
+      // Nothing was deleted — not the substituted paper, not the proposed one.
+      expect(await fixtureTitlesPresent()).toEqual([RELEVANT_A, RELEVANT_B, IRRELEVANT].sort())
+
     })
   })
 

@@ -492,9 +492,25 @@ Idempotent — it prints each node as CREATED/FOUND/UPDATED and a second run
 performs zero writes. It also restores the E2E team's currency baseline
 (KP ≥ 100,000, clearance ≥ 3 — never lowered): suite runs spend the fixture
 team's KP, and economy rebalances (e.g. Robotics Bay now requires clearance 3)
-otherwise strand it below what placement/upgrade specs need. The three user rows themselves are created by the app on
-first sign-in; if the script reports them missing, run
-`pnpm --filter web exec playwright test --project=setup` once and re-run.
+otherwise strand it below what placement/upgrade specs need. The three user rows
+are Clerk-owned; when they are absent the seeder materializes them by reading the
+**real** ids from the Clerk API (needs `CLERK_SECRET_KEY`), which is what lets the
+fixture be built into an empty database. Without that key, sign in once with
+`pnpm --filter web exec playwright test --project=setup` and re-run.
+
+**The seeder never deletes**, so the fixture lab accumulates everything the suite
+has ever written to it — measured at 2,119 rows before the 2026-07-26 cleanup, and
+the single largest source of E2E flake. Clear it first:
+
+```bash
+pnpm --filter web reset:e2e     # add --dry to see the plan without writing
+pnpm --filter web seed:e2e
+```
+
+`reset:e2e` is scoped strictly by team id, so it cannot touch `devlab` in the same
+database, and it retires uploaded assets rather than deleting their ledger rows
+(the R2 bucket is shared with production). Full audit of the suite's failure modes:
+[`runbooks/e2e.md`](runbooks/e2e.md).
 
 ### Running one spec instead of the whole suite
 
@@ -522,6 +538,15 @@ server for the fast iteration loop; prefix it with `E2E_BUILD=1` to reproduce
 a full-suite result exactly (pays the ~3-min build). Don't run `pnpm dev` on
 the same port either way — and never start a dev server while the E2E build
 is in progress (shared `.next`).
+
+**A `preflight` project now catches the port clash before any test runs.**
+Playwright reuses whatever is already listening, and a server started any other
+way never saw `E2E_SKIP_LLM` — so the suite would make real, paid Anthropic calls,
+presenting as a schema-mismatch 502 that reads like a route regression. The
+preflight proves stub mode by calling `/api/dev/e2e-health`, a route that only
+exists when `E2E_SKIP_LLM=1`, and also verifies the runner and the server are on
+the same database and that the fixture graph is present. Each failure prints its
+own remedy.
 
 ### Authenticated API calls inside a spec
 

@@ -15,6 +15,14 @@
 #   E2E_LEADER_EMAIL / E2E_LEADER_PASSWORD (+ the other E2E_* creds
 #   .env.local documents — mirror that file into repo secrets)
 #   E2E_ENV_FILE — alternatively, the full .env.local contents as one secret.
+#
+# NOTE (2026-07-26 audit): this lane has never executed. The secret is not
+# configured, so both jobs report "skipped" and pass — and had it been
+# configured, seeding would have aborted, because the service database is empty
+# and `seed:e2e` refused to create the Clerk-backed User rows. That refusal is
+# fixed (the ids are now read from the Clerk API). Adding E2E_ENV_FILE is what
+# turns this from a decorative job into an enforceable gate.
+# See docs/runbooks/e2e.md.
 
 name: E2E
 
@@ -94,6 +102,14 @@ jobs:
         run: |
           cd apps/web
           pnpm exec prisma migrate deploy
+          # The service database is EMPTY on every run, so the Clerk-backed User
+          # rows do not exist. `seed:e2e` materializes them by reading the real
+          # ids from the Clerk API (CLERK_SECRET_KEY); before that it aborted
+          # here, which is why this lane could never have worked.
+          pnpm seed:e2e
+          # No-op on a fresh service DB, but keeps one command sequence between
+          # CI and a local run against the long-lived dev database.
+          pnpm reset:e2e || true
           pnpm seed:e2e
 
       - name: Install Playwright browsers
@@ -174,6 +190,14 @@ jobs:
         run: |
           cd apps/web
           pnpm exec prisma migrate deploy
+          # The service database is EMPTY on every run, so the Clerk-backed User
+          # rows do not exist. `seed:e2e` materializes them by reading the real
+          # ids from the Clerk API (CLERK_SECRET_KEY); before that it aborted
+          # here, which is why this lane could never have worked.
+          pnpm seed:e2e
+          # No-op on a fresh service DB, but keeps one command sequence between
+          # CI and a local run against the long-lived dev database.
+          pnpm reset:e2e || true
           pnpm seed:e2e
 
       - name: Install Playwright browsers

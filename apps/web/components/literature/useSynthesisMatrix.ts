@@ -147,55 +147,64 @@ export function useSynthesisMatrix(matrixId: string | null) {
     return saveChain.current
   }
 
-  async function addColumn(label: string, hint?: string) {
+  /**
+   * Apply a column edit, carrying every unsaved cell draft with it.
+   *
+   * A column PATCH's response resets the drafts (the column set changed, so the
+   * old draft keys may no longer be valid), which used to silently discard
+   * whatever the student had typed but not yet blurred. Sending the dirty cells
+   * in the SAME request means the response already contains them, so the reset
+   * is lossless — and it is one write, not two.
+   *
+   * Cells belonging to a column being REMOVED are dropped rather than sent: the
+   * server validates cells against the post-edit grid and would reject the whole
+   * request, losing the column edit as well as the text.
+   */
+  async function patchColumns(
+    nextColumns: { id: string; label: string; hint?: string }[],
+    failure: string,
+  ) {
     if (!matrix) return
-    const taken = new Set(matrix.columns.map((c) => c.id))
-    const id = slugify(label, taken)
-    const nextColumns = [...matrix.columns, { id, label, hint }]
+    const matrixId = matrix.id
     setBusy(true)
     setError(null)
     try {
-      const updated = await patchMatrix(matrix.id, { columns: nextColumns })
+      // Let any blur-triggered save land first, so it cannot resolve after this
+      // write and reinstate a pre-edit column set.
+      await saveChain.current
+      const surviving = new Set(nextColumns.map((c) => c.id))
+      const pending = dirtyCells().filter((c) => surviving.has(c.columnId))
+      const updated = await patchMatrix(matrixId, {
+        columns: nextColumns,
+        ...(pending.length > 0 ? { cells: pending } : {}),
+      })
       applyMatrix(updated)
       resetDraftsFrom(updated)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not add that column')
+      setError(err instanceof ApiError ? err.message : failure)
     } finally {
       setBusy(false)
     }
   }
 
+  async function addColumn(label: string, hint?: string) {
+    if (!matrix) return
+    const taken = new Set(matrix.columns.map((c) => c.id))
+    const id = slugify(label, taken)
+    await patchColumns([...matrix.columns, { id, label, hint }], 'Could not add that column')
+  }
+
   async function renameColumn(columnId: string, label: string) {
     if (!matrix) return
     const nextColumns = matrix.columns.map((c) => (c.id === columnId ? { ...c, label } : c))
-    setBusy(true)
-    setError(null)
-    try {
-      const updated = await patchMatrix(matrix.id, { columns: nextColumns })
-      applyMatrix(updated)
-      resetDraftsFrom(updated)
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not rename that column')
-    } finally {
-      setBusy(false)
-    }
+    await patchColumns(nextColumns, 'Could not rename that column')
   }
 
   async function removeColumn(columnId: string) {
     if (!matrix) return
     const nextColumns = matrix.columns.filter((c) => c.id !== columnId)
     if (nextColumns.length === 0) return
-    setBusy(true)
-    setError(null)
-    try {
-      const updated = await patchMatrix(matrix.id, { columns: nextColumns })
-      applyMatrix(updated)
-      resetDraftsFrom(updated)
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not remove that column')
-    } finally {
-      setBusy(false)
-    }
+    await patchColumns(nextColumns, 'Could not remove that column')
   }
 
   /** One click accept of a check-verdict `suggestedColumns` entry. */

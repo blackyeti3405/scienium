@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage, withRateLimitRetry } from './api'
+import { api, withRateLimitRetry } from './api'
+import { createLab, seedPapers, type OwnedLab } from './lab'
+import { e2eDb } from './db'
 
 /**
  * Synthesis Matrix (Literature Review) — one test per acceptance criterion
@@ -51,104 +53,43 @@ import { api, withSeedPage, withRateLimitRetry } from './api'
  * IDOR checks. Every seeded id is tracked and torn down in `afterAll`.
  */
 
-const TEAM_NAME = 'E2E Test Lab'
-const RUN_ID = Date.now()
-
-let teamId: string | null = null
-let teamLeadId: string | null = null
+let lab: OwnedLab
+let foreignLab: OwnedLab
 let paperIds: string[] = []
-let foreignTeamId: string | null = null
 let foreignMatrixId: string | null = null
-const createdMatrixIds: string[] = []
 
 test.describe('Synthesis Matrix (Literature Review)', () => {
   test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      const team = await db.team.findFirst({ where: { name: TEAM_NAME }, select: { id: true, teamLeadId: true } })
-      if (!team) {
-        throw new Error(`E2E team '${TEAM_NAME}' not found — run pnpm --filter web seed:e2e first.`)
-      }
-      teamId = team.id
-      teamLeadId = team.teamLeadId
-      const currentTeamId = team.id
-      const currentTeamLeadId = team.teamLeadId
+    // A lab that exists only for this file (e2e/lab.ts). Before this, the spec
+    // reached into the SHARED fixture team, wiped its matrices to get an empty
+    // list for AC2, and left five papers behind for the next spec to trip over.
+    // A disposable lab is empty by construction and takes its papers with it.
+    lab = await createLab('synthesis')
+    paperIds = await seedPapers(lab, 5, 'synthesis')
 
-      // Clean slate: this team is shared across E2E runs, and the empty-state
-      // assertion (AC2) needs a genuinely empty matrix list.
-      await db.synthesisMatrix.deleteMany({ where: { teamId: currentTeamId } })
-
-      const papers = await Promise.all(
-        Array.from({ length: 5 }).map((_, i) =>
-          db.paper.create({
-            data: {
-              teamId: currentTeamId,
-              title: `[E2E Synthesis] Fixture paper ${RUN_ID}-${i}`,
-              authors: [`Author${i}, E2E`],
-              abstract: `Deterministic E2E fixture abstract ${i} for the synthesis-matrix spec — reports a measured outcome for fixture condition ${i}.`,
-              sourceType: 'pdf',
-              status: 'ready',
-              fullText: `Deterministic E2E fixture full text ${i} for the synthesis-matrix spec.`,
-              contentHash: `e2e-synthesis-${RUN_ID}-${i}`,
-              uploadedByUserId: currentTeamLeadId,
-            },
-            select: { id: true },
-          }),
-        ),
-      )
-      paperIds = papers.map((p) => p.id)
-
-      // Foreign team + matrix for AC12's IDOR checks.
-      const foreignTeam = await db.team.create({
-        data: { name: `[E2E Synthesis foreign] ${RUN_ID}`, teamLeadId: currentTeamLeadId },
-        select: { id: true },
-      })
-      foreignTeamId = foreignTeam.id
-      const foreignMatrix = await db.synthesisMatrix.create({
-        data: {
-          teamId: foreignTeam.id,
-          templateId: 'general',
-          columnsJson: [{ id: 'x', label: 'X' }],
-          paperIds: [],
-          createdByUserId: currentTeamLeadId,
-        },
-        select: { id: true },
-      })
-      foreignMatrixId = foreignMatrix.id
-    } finally {
-      await db.$disconnect()
-    }
+    // A second lab the signed-in leader is NOT active on — the genuine
+    // cross-team target for AC12's IDOR assertions.
+    foreignLab = await createLab('synthesis-foreign', false)
+    const foreignMatrix = await e2eDb.synthesisMatrix.create({
+      data: {
+        teamId: foreignLab.teamId,
+        templateId: 'general',
+        columnsJson: [{ id: 'x', label: 'X' }],
+        paperIds: [],
+        createdByUserId: foreignLab.leaderUserId,
+      },
+      select: { id: true },
+    })
+    foreignMatrixId = foreignMatrix.id
   })
 
-  test.afterAll(async ({ browser }) => {
-    await withSeedPage(browser, 'leader', async (page) => {
-      for (const id of createdMatrixIds) {
-        const res = await api.delete(page, `/api/literature/synthesis/${id}`)
-        if (!res.ok()) console.warn(`synthesis-matrix afterAll: cleanup DELETE matrix ${id} returned ${res.status()}`)
-      }
-      for (const id of paperIds) {
-        const res = await api.delete(page, `/api/papers/${id}`)
-        if (!res.ok()) console.warn(`synthesis-matrix afterAll: cleanup DELETE paper ${id} returned ${res.status()}`)
-      }
-    })
-
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      if (foreignTeamId) {
-        await db.synthesisMatrix.deleteMany({ where: { teamId: foreignTeamId } })
-        await db.team.delete({ where: { id: foreignTeamId } }).catch(() => {})
-      }
-      if (teamId) {
-        // Defensive: any matrix a mid-run failure left behind.
-        await db.synthesisMatrix.deleteMany({ where: { teamId } })
-      }
-    } finally {
-      await db.$disconnect()
-    }
+  test.afterAll(async () => {
+    // No hand-written teardown: disposal runs the same ordered inventory
+    // `reset:e2e` uses, so nothing can be forgotten here and drift from there.
+    await foreignLab?.dispose()
+    await lab?.dispose()
   })
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -214,7 +155,6 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
     expect(response.status()).toBe(201)
     const body = await response.json()
     matrixId = body.id as string
-    createdMatrixIds.push(matrixId)
 
     await expect(page.getByTestId('synthesis-grid')).toBeVisible()
     await expect(page.locator('[data-testid="synthesis-grid"] tbody tr')).toHaveCount(2)
@@ -251,7 +191,6 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
       page.getByTestId('synthesis-create-submit').click(),
     ])
     const body = await response.json()
-    createdMatrixIds.push(body.id)
 
     await expect(page.getByTestId('synthesis-grid')).toBeVisible()
     const csHeaders = page.locator('[data-testid="synthesis-column-header"]')
@@ -267,7 +206,6 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
     // Delete this second matrix immediately — the rest of the spec only
     // drives the AC3 matrix, and MAX_MATRICES_PER_TEAM is a hard cap of 5.
     await api.delete(page, `/api/literature/synthesis/${body.id}`)
-    createdMatrixIds.splice(createdMatrixIds.indexOf(body.id), 1)
   })
 
   // ── AC5 ──────────────────────────────────────────────────────────────────
@@ -476,43 +414,10 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
     expect(afterCount).toBe(beforeCount)
   })
 
-  // ── AC13 ─────────────────────────────────────────────────────────────────
-  test('AC13 (static): the check route enforces the "ai" rate-limit tier', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.join(__dirname, '..', 'app', 'api', 'literature', 'synthesis', '[id]', 'check', 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
-    expect(source).toMatch(/requireTeamContext\(req,\s*\{\s*tier:\s*'ai'\s*\}\)/)
-  })
-
-  // ── AC14 ─────────────────────────────────────────────────────────────────
-  test('AC14 (static): cost shape — one paid call site, one cache_control block, no paperTextBlock/paperTextContext import', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.join(__dirname, '..', 'app', 'api', 'literature', 'synthesis', '[id]', 'check', 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
-    // Strip comments before matching: the route's own JSDoc block quotes both
-    // patterns verbatim as documentation of this exact invariant, which would
-    // otherwise double-count as a second "call site" / "cache block".
-    const codeOnly = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
-
-    // v0.45.0 replaced the direct `anthropic().messages.create(` with the
-    // `aiCreate` registry door, and this assertion was never updated — it had
-    // been matching zero call sites (and so failing) ever since. Pinning
-    // `aiCreate('synthesis_check'` is also stricter: it proves the call still
-    // goes through the one door that carries the kill switch and spend
-    // accounting, not just that there is exactly one of it.
-    const callSites = codeOnly.match(/aiCreate\('synthesis_check'/g) ?? []
-    expect(callSites).toHaveLength(1)
-    expect(codeOnly).not.toMatch(/anthropic\(\)\.messages\./)
-
-    const cacheBlocks = codeOnly.match(/cache_control:\s*\{\s*type:\s*'ephemeral'\s*\}/g) ?? []
-    expect(cacheBlocks).toHaveLength(1)
-
-    expect(codeOnly).not.toMatch(/paperTextBlock/)
-    expect(codeOnly).not.toMatch(/paperTextContext/)
-    expect(codeOnly).not.toMatch(/PAPER_TEXT_SLICE_CHARS/)
-  })
+  // AC13-AC14 (static source assertions) MOVED to vitest — see
+  // `test/ai-route-cost-shape.test.ts`. AC14 pinned `anthropic().messages.create(`
+  // and had been matching zero call sites since v0.45.0; nothing reported it
+  // because this suite is not run on every commit.
 
   // ── AC15 ─────────────────────────────────────────────────────────────────
   test('AC15: pixel aesthetic — headers/check button carry font-pixel + gold accent; cell text does not', async ({ page }) => {

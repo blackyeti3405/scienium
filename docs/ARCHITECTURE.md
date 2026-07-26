@@ -137,10 +137,11 @@ apps/web/
 |-- prisma/
 |   |-- schema.prisma             database schema
 |   |-- migrations/               ordered production migrations
-|   `-- seed-e2e.mjs              idempotent E2E fixture graph
+|   |-- seed-e2e.mjs              idempotent E2E fixture graph (additive; never deletes)
+|   `-- reset-e2e.mjs             purges the fixture lab's accumulated content
 |-- public/sprites/               generated runtime sprite assets
 |-- stores/discoveryStore.ts      Discovery's client interaction store
-|-- e2e/                          Playwright setup, roles, and feature specs
+|-- e2e/                          Playwright preflight, auth setup, disposable labs, specs
 |-- test/                         cross-feature unit tests
 |-- scripts/                      data/sprite/upload maintenance scripts
 |-- middleware.ts                 Clerk route protection
@@ -1497,7 +1498,16 @@ separate browser-test gate: a bounded production-build smoke lane
 (`e2e/F1.spec.ts`, real pointer input) on every PR, plus the full Playwright
 suite on a nightly schedule and on demand. Both lanes report a passing
 "skipped" status when the `E2E_ENV_FILE` repository secret is not configured,
-so the gate becomes enforceable the moment that secret is set.
+so the gate becomes enforceable the moment that secret is set — which, as of the
+2026-07-26 audit, means it has **never actually executed**.
+
+The browser suite has its own runbook, [`runbooks/e2e.md`](runbooks/e2e.md),
+covering what made it flaky and the four mechanisms that answer it: a
+`preflight` project that refuses to run against a non-stubbed server or a
+mismatched database, `reset:e2e` for the fixture lab the seeder never clears,
+`e2e/lab.ts` disposable per-spec labs, and the migration of all source-reading
+assertions out of Playwright into vitest (where they run every commit rather
+than nightly — three of them had silently matched nothing for five versions).
 
 Vitest covers pure policy, guides/content integrity, parsing, rate limiting,
 economy, phase gates, citations, credibility, showcase policy, sprites, Codex,

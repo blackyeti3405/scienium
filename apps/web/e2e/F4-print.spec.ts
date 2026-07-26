@@ -61,6 +61,8 @@ const RUN_ID = Date.now().toString(36)
 /** Shared across serial tests. */
 let showcaseId: string | null = null
 let showcaseSlug: string | null = null
+/** `/showcase/<slug>` or `/showcase/<shareToken>`, per the privacy level. */
+let showcaseShareUrl: string | null = null
 
 /** Ids of assets seeded directly via Prisma (not through any exposed API) — torn
  * down explicitly in afterAll since the API-only cleanup path (DELETE
@@ -125,6 +127,11 @@ test.describe('F4-print — Showcase one-pager print export', () => {
       const { showcase } = await putRes.json()
       showcaseId = showcase.id
       showcaseSlug = showcase.slug
+      // The URL the app actually hands out. Since P1-R7 (v0.35.1) a `link_only`
+      // showcase is reachable ONLY through its 128-bit share token, so the slug
+      // is no longer what the print link points at — this spec asserted the slug
+      // and had been failing ever since without anyone noticing.
+      showcaseShareUrl = showcase.shareUrl
 
       // 2. Board PDF (required to publish).
       const boardRes = await api.post(page, '/api/showcase/asset', {
@@ -242,15 +249,19 @@ test.describe('F4-print — Showcase one-pager print export', () => {
   })
 
   // ── AC2 ───────────────────────────────────────────────────────────────────────
-  test('AC2: the control is an anchor whose href ends with ?print=1 and targets /showcase/<slug>', async ({
+  test('AC2: the control is an anchor whose href ends with ?print=1 and targets the shareable URL', async ({
     page,
   }) => {
-    if (!showcaseSlug) throw new Error('Showcase slug not set — beforeAll failed')
+    if (!showcaseShareUrl) throw new Error('Showcase share URL not set — beforeAll failed')
     await gotoFresh(page, '/showcase/edit')
 
     const link = page.getByRole('link', { name: /Print one-pager/i })
     await expect(link).toBeVisible({ timeout: 8000 })
-    await expect(link).toHaveAttribute('href', `/showcase/${showcaseSlug}?print=1`)
+    // Asserted against the server's own `shareUrl`, not a hardcoded slug: this
+    // showcase is `link_only`, so that URL carries the 128-bit share token
+    // (P1-R7). Following the server's answer keeps the assertion true whichever
+    // privacy level the fixture uses.
+    await expect(link).toHaveAttribute('href', `${showcaseShareUrl}?print=1`)
   })
 
   // ── AC3 ───────────────────────────────────────────────────────────────────────
@@ -404,36 +415,41 @@ test.describe('F4-print — Showcase one-pager print export', () => {
     // instructions) so the leader session is fresh before the mutate below.
     await gotoFresh(page, '/showcase/edit')
 
-    // Switch privacy to 'private' — the teacher (not a team member) can never
-    // qualify under canViewShowcase for a private showcase, print or not.
+    // Switch privacy to 'private'. NOTE: the viewer below must be SIGNED OUT,
+    // not the seeded teacher. Since P0-R3 (v0.35.0) `canViewShowcase` grants the
+    // team's own teacher every revision in every state (`moderatorTeamIds`), and
+    // the seed makes that teacher own this leader's class — so asserting 404 for
+    // them now pins the very moderator-preview that P0-R3 added. A signed-out
+    // visitor is the genuine stranger, the same correction `F4.spec.ts` AC3
+    // already carries.
     const privRes = await api.put(page, '/api/showcase', { data: { privacyLevel: 'private' } })
     expect(privRes.ok()).toBe(true)
     expect((await privRes.json()).showcase.privacyLevel).toBe('private')
 
+    const anonContext = await browser.newContext()
     try {
-      // Teacher is a DIFFERENT role than this test's leader page — make the
-      // role-gate GETs from a fresh teacher-authed page so its Clerk token can't
-      // go stale mid-suite.
-      await withSeedPage(browser, 'teacher', async (teacherPage) => {
+      const visitor = await anonContext.newPage()
+      await (async (visitorPage) => {
         // The slug page streams behind its loading.tsx, so Next can flush a
         // 200 shell before notFound() runs — the HTTP status is a render-speed
         // race. Assert the rendered privacy outcome (not-found UI, zero
         // content) instead of the status code.
-        await teacherPage.goto(`/showcase/${showcaseSlug}?print=1`)
-        await expect(teacherPage.getByText('This page could not be found.')).toBeVisible({
+        await visitorPage.goto(`/showcase/${showcaseSlug}?print=1`)
+        await expect(visitorPage.getByText('This page could not be found.')).toBeVisible({
           timeout: 10000,
         })
-        await expect(teacherPage.getByText(SHORT_TITLE)).toHaveCount(0)
+        await expect(visitorPage.getByText(SHORT_TITLE)).toHaveCount(0)
 
         // Same viewer, same showcase, no ?print=1 — denied identically (the
         // flag grants no extra access).
-        await teacherPage.goto(`/showcase/${showcaseSlug}`)
-        await expect(teacherPage.getByText('This page could not be found.')).toBeVisible({
+        await visitorPage.goto(`/showcase/${showcaseSlug}`)
+        await expect(visitorPage.getByText('This page could not be found.')).toBeVisible({
           timeout: 10000,
         })
-        await expect(teacherPage.getByText(SHORT_TITLE)).toHaveCount(0)
-      })
+        await expect(visitorPage.getByText(SHORT_TITLE)).toHaveCount(0)
+      })(visitor)
     } finally {
+      await anonContext.close()
       // Restore to link_only for the remaining tests (AC11, AC12). Re-navigate
       // first for the same session-freshness reason as above.
       await gotoFresh(page, '/showcase/edit')

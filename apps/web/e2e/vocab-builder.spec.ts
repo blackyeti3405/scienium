@@ -605,45 +605,8 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
     }
   })
 
-  // ── AC12 ─────────────────────────────────────────────────────────────────
-  // The vocab pipeline was originally zero-LLM; curation (vocab-curate.ts) is
-  // now the ONE deliberate LLM touchpoint (selection + definitions), and the
-  // build route honestly registers the paid `ai` tier for it. The invariant
-  // that survives: extraction, dictionaries, scheduling, and every read/review
-  // route stay mechanical — only build+curate may touch the model.
-  test('AC12: LLM containment — only build/curate touch the model; extraction, deck, review, and SRS stay mechanical', async ({ page }) => {
-    await page.goto('/literature/review')
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const root = path.join(__dirname, '..')
-
-    const mechanicalFiles = [
-      'app/api/literature/vocab/deck/route.ts',
-      'app/api/literature/vocab/review/route.ts',
-      'app/api/literature/vocab/cards/[id]/route.ts',
-      'lib/literature/vocab.ts',
-      'lib/literature/vocab-dictionary.ts',
-      'lib/literature/vocab-stopwords.json',
-      'lib/literature/srs.ts',
-    ]
-    for (const rel of mechanicalFiles) {
-      const src = fs.readFileSync(path.join(root, rel), 'utf8')
-      expect(src).not.toContain('@anthropic-ai/sdk')
-      expect(src).not.toContain("from '@/lib/anthropic'")
-      expect(src).not.toContain('ANTHROPIC_API_KEY')
-      expect(src).not.toMatch(/tier:\s*'ai'/)
-    }
-
-    // The build route reaches the model only through the curation module, and
-    // must declare the paid tier (the paid-work sweep in test/paid-work-guard
-    // .test.ts enforces the same rule repo-wide).
-    const buildSrc = fs.readFileSync(path.join(root, 'app/api/literature/vocab/build/route.ts'), 'utf8')
-    expect(buildSrc).not.toContain('@anthropic-ai/sdk')
-    expect(buildSrc).toMatch(/tier:\s*'ai'/)
-    expect(buildSrc).toContain("from '@/lib/literature/vocab-curate'")
-
-    const curateSrc = fs.readFileSync(path.join(root, 'lib/literature/vocab-curate.ts'), 'utf8')
-    expect(curateSrc).toContain("from '@/lib/anthropic'")
-    expect(curateSrc).toContain('E2E_SKIP_LLM')
-  })
+  // AC12 (static: LLM containment across the vocab pipeline) MOVED to vitest —
+  // see `test/ai-route-cost-shape.test.ts` → "modules that must stay free". It
+  // asserted `curateSrc` imports `@/lib/anthropic`, which v0.45.0's `aiCreate`
+  // registry replaced, so it had been failing here unnoticed.
 })

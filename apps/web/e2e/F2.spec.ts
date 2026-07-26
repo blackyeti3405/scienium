@@ -259,6 +259,14 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
 
   // ── AC10 ────────────────────────────────────────────────────────────────────
   test('AC10: Exceeding the per-team daily cap (10/day) returns 429', async ({ page }) => {
+    // ~21 sequential authenticated round trips when the day's quota is EMPTY.
+    // It used to fit the 30s default only because the shared fixture lab arrived
+    // with the cap already filled by previous runs — `neededToFill` was 0 and the
+    // loop never ran. Once `reset:e2e` started clearing that accumulated state
+    // the test did its actual work for the first time and timed out. A test that
+    // passes only because of leftovers is not passing.
+    test.setTimeout(120_000)
+
     // Strategy:
     // 1. Count how many followups the team has already generated today.
     // 2. Seed just enough entries to push the count to 10, calling POST /followup

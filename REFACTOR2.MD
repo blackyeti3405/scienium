@@ -1400,6 +1400,37 @@ Gates 1–5 pass; Vitest 119 files / 1,640 tests. No migration in this batch. Ne
 `test/synthesis-stale-check.test.ts` was **negative-controlled**: with both guards disabled three
 of its tests fail. `e2e/synthesis-matrix.spec.ts` run against the live dev server, 18 passed.
 
+#### v0.51.0 — 2026-07-26 — the E2E pipeline, audited and rebuilt
+
+Not a finding from the register: the owner asked why the browser suite had been consistently
+flaky and slow. A full baseline measured it — **326 tests, 263 passed, 10 failed, 5 skipped, 48
+"did not run", 13.6 minutes** — and classifying the ten failures answered the question. **Six were
+the harness, not the product.**
+
+| Flaw | Evidence | What changed |
+| --- | --- | --- |
+| **Assertions that had silently stopped asserting** | Three specs pinned `anthropic().messages.create(`, which v0.45.0's `aiCreate` registry removed. They had matched ZERO call sites for five versions. A fourth — `resetTree` in `discovery-helpers.ts` — ignored its own response status, so when v0.38.0 made `DELETE /api/discovery/tree` two-phase it deleted NOTHING and burned a 15s poll instead, failing three specs. A fifth — `topic-removal-confirm` phase 2 — still sent `confirmRemoveIds` without the `proposalToken` P1-R1 made mandatory, so it had been asserting the bypass it exists to prevent. | All 21 source-reading assertions moved to vitest (`test/ai-route-cost-shape.test.ts`, `test/prompt-injection-pins.test.ts`), where they run in gate 3 on every commit. The table carries a **completeness** guard (a new paid module with no entry fails) and a **vacuity** guard (a scan that finds nothing fails) — the second is the direct lesson of this batch. `resetTree` now performs the two-phase delete and asserts every status. `topic-removal-confirm`'s second case was rewritten to the current contract, which is strictly stronger: a substituted id list fails the digest and deletes nothing. |
+| **One shared fixture lab, never reset** | 1,732 activity-feed rows, 152 notifications, 49 project logs, 123 uploaded assets accumulated on the fixture team — none seeded. `seed-e2e.mjs` is additive by design and nothing ever cleared it. | `pnpm --filter web reset:e2e` purges through one ordered inventory, scoped by team id so it cannot touch `devlab` in the same database, sweeping stray `[E2E …]` teams too. Removed 2,119 rows on first use. Uploaded assets are **retired, not deleted** (P1-R12: the row is the only proof an object exists, and the bucket is shared with production). |
+| **Serial mode multiplies every failure** | 23 of 32 files are `mode: 'serial'` *because of* the shared lab. Ten failures cost **48 further tests that never ran** — 15% of the suite, invisible in the summary. | `e2e/lab.ts`: `createLab()` builds a team that exists only for one spec file and disposes it through the **same** inventory `reset:e2e` uses, so the two cannot drift into a teardown FK error. `synthesis-matrix.spec.ts` converted as the worked example — its hand-rolled fixture graph, its wipe of the shared team, and its whole `afterAll` disappear. |
+| **`reuseExistingServer` adopts any process on the port** | Including one without `E2E_SKIP_LLM` — the suite then makes real paid Anthropic calls, presenting as a schema-mismatch 502 that reads like a route regression. Cost a debugging session and real money on 2026-07-26. | A `preflight` project every other project depends on. It proves stub mode via `/api/dev/e2e-health` — **a route that only exists when `E2E_SKIP_LLM=1`**, so presence is evidence rather than self-report — plus `E2E_MOCK_SOURCES`, a same-database fingerprint check (runner and server hash their own DB identity), and the fixture graph. Verified both ways: green against Playwright's server, failing in 3.4s with the remedy against a hand-started `pnpm dev`. |
+| **The CI lane could never have worked** | Both jobs provision an empty `postgres:16`, then run `seed:e2e`, which ABORTED when the Clerk-backed `User` rows were absent — always, in an empty database. Nobody noticed: the job is gated on an `E2E_ENV_FILE` secret that is not set, so it reports "skipped" and passes. | The seeder materializes those rows by reading the **real** ids from the Clerk API. The original refusal was right about the risk (a fabricated `clerkUserId` forks an identity) and wrong about the remedy. |
+
+**Measured result: 263 → 292 passed, 10 → 2 failed, 48 → 13 "did not run" (13.6 → 15.5 min — the suite got SLOWER because 35 more tests now actually execute).** The two that remain
+(`F4` AC3, `F4-print` AC10) are left RED with a written diagnosis rather than skipped. The product
+gate under them was verified correct OUTSIDE Playwright, against both a dev server and a
+production build: an anonymous request for a `published + public + pending_review` showcase renders
+the not-found page, as does a `private` one, and the route builds dynamic so no cached render is
+involved. What is not understood is why the specs' own anonymous contexts see the page.
+
+**Still owed.** Parallelism: `User.activeTeamId` is singular, so one account owns one lab at a time
+and the suite still runs one worker — going parallel needs one Clerk account per worker, which
+provisions accounts in the owner's instance and is therefore their call. The other 31 specs still
+use the shared lab; the primitive and the migration path are documented. `F4` AC3 remains open
+(two spec files drive one `@unique` per-team showcase row). And the CI lane is still gated on a
+secret that is not configured, so none of this is enforceable until it is added.
+
+Full audit: `docs/runbooks/e2e.md`.
+
 ---
 
 ---

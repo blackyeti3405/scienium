@@ -380,79 +380,11 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
     expect(getRes.status()).toBe(404)
   })
 
-  // ── AC12 (static) ────────────────────────────────────────────────────────
-  test('AC12 (static): the POST handler enforces the \'ai\' rate-limit tier', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.join(__dirname, '..', 'app', 'api', 'papers', '[id]', 'explain', 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
-    const postSection = source.slice(source.indexOf('export async function POST'))
-    expect(postSection).toMatch(/requireTeamContext\(req,\s*\{\s*tier:\s*'ai'\s*\}\)/)
-  })
-
-  // ── AC13 (static) ────────────────────────────────────────────────────────
-  test('AC13 (static): exactly one Anthropic call, using the shared cached paperTextBlock prefix', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.join(__dirname, '..', 'app', 'api', 'papers', '[id]', 'explain', 'route.ts')
-    const source = fs.readFileSync(routePath, 'utf8')
-
-    const callSites = source.match(/anthropic\(\)\.messages\.create\(/g) ?? []
-    expect(callSites.length).toBe(1)
-    expect(source).toMatch(/import\s*\{[^}]*paperTextBlock[^}]*\}\s*from\s*['"]@\/lib\/literature\/grading['"]/)
-    expect(source).toContain('paperTextBlock(paper.fullText)')
-    // The route adds no cache_control of its own — the call's one ephemeral
-    // cache block comes solely from paperTextBlock (grading.ts).
-    expect(source).not.toContain('cache_control')
-
-    const gradingPath = path.join(__dirname, '..', 'lib', 'literature', 'grading.ts')
-    const gradingSource = fs.readFileSync(gradingPath, 'utf8')
-    const fnStart = gradingSource.indexOf('export function paperTextBlock')
-    expect(fnStart).toBeGreaterThan(-1)
-    const fnBody = gradingSource.slice(fnStart, fnStart + 400)
-    // paperTextBlock's TS return-type annotation legitimately repeats the
-    // `cache_control: { type: 'ephemeral' }` shape as a TYPE (not a value) —
-    // scope the "exactly one" count to the RUNTIME return object only, which
-    // is what actually reaches the Anthropic call.
-    const returnStart = fnBody.indexOf('return {')
-    expect(returnStart).toBeGreaterThan(-1)
-    const returnBody = fnBody.slice(returnStart)
-    const cacheControlOccurrences = returnBody.match(/cache_control:\s*\{\s*type:\s*'ephemeral'\s*\}/g) ?? []
-    expect(cacheControlOccurrences.length).toBe(1)
-  })
-
-  // ── AC14 (static) ────────────────────────────────────────────────────────
-  test('AC14 (static): KP is only ever written as the flat EXPLAIN_KP_AWARD constant; scores pass through clampScore', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.join(__dirname, '..', 'app', 'api', 'papers', '[id]', 'explain', 'route.ts')
-    const routeSource = fs.readFileSync(routePath, 'utf8')
-
-    expect(routeSource).toContain('kp_awarded = ${EXPLAIN_KP_AWARD}')
-    expect(routeSource).toContain('kp: EXPLAIN_KP_AWARD')
-    expect(routeSource).toContain('kp: { increment: EXPLAIN_KP_AWARD }')
-    // No write path derives kp from the model/verdict output.
-    expect(routeSource).not.toMatch(/kp(_awarded)?\s*[:=]\s*verdict/)
-
-    const explainLibPath = path.join(__dirname, '..', 'lib', 'literature', 'explain.ts')
-    const explainSource = fs.readFileSync(explainLibPath, 'utf8')
-    expect(explainSource).toContain('accuracy: clampScore(raw.accuracy)')
-    expect(explainSource).toContain('completeness: clampScore(raw.completeness)')
-  })
-
-  // ── AC15 (static) ────────────────────────────────────────────────────────
-  test('AC15 (static): the prompt wraps the student text in <student_explanation> and declares both blocks untrusted data', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.join(__dirname, '..', 'app', 'api', 'papers', '[id]', 'explain', 'route.ts')
-    const routeSource = fs.readFileSync(routePath, 'utf8')
-    expect(routeSource).toContain('<student_explanation>')
-
-    const explainLibPath = path.join(__dirname, '..', 'lib', 'literature', 'explain.ts')
-    const explainSource = fs.readFileSync(explainLibPath, 'utf8')
-    expect(explainSource).toContain('<student_explanation>')
-    expect(explainSource).toMatch(/untrusted DATA/)
-  })
+  // AC12-AC15 (static source assertions) MOVED to vitest — `test/ai-route-cost-shape.test.ts`
+  // and `test/prompt-injection-pins.test.ts`. They read route source and need no
+  // browser; living here meant they only ran when somebody remembered to run this
+  // 30-minute suite, and AC13's `anthropic().messages.create(` pattern had been
+  // matching zero call sites since v0.45.0 moved the call behind `aiCreate`.
 
   // ── AC16 ─────────────────────────────────────────────────────────────────
   test('AC16: no HTML injection — an <img> payload renders as literal text, no <img> element is created', async ({

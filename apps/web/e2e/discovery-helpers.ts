@@ -17,14 +17,44 @@ export async function openDiscovery(page: Page): Promise<void> {
 
 /**
  * Reset this team's discovery tree to a known-empty state via the API, and CONFIRM
- * it's empty before the test proceeds. Confirmation matters here: these serial
- * tests share one team, and under this env's 4-7s Supabase latency a prior test's
- * late tree POST can otherwise land after the DELETE — leaving rows a stale hydrate
- * would load, which then de-dupes the next search-result add (no POST) and drifts
- * node-count deltas. Polling the GET until empty makes each test start clean.
+ * it's empty before the test proceeds.
+ *
+ * ## This helper was silently doing nothing
+ *
+ * v0.38.0 (REFACTOR2 P1-R1) made `DELETE /api/discovery/tree` two-phase: the
+ * first call returns **409 with a single-use `proposalToken`** bound to the exact
+ * node ids, and only a second call carrying that token deletes anything. This
+ * helper ignored the response entirely and went straight to polling — so from
+ * v0.38.0 onward it deleted NOTHING, the poll burned its full 15 seconds, and
+ * three specs failed for a reason that looked like latency. Their `mode: 'serial'`
+ * files then reported the rest of their tests as "did not run".
+ *
+ * The response status is now asserted at every step. A reset that cannot reset
+ * must say so immediately, not time out looking like a slow database.
  */
 export async function resetTree(page: Page): Promise<void> {
-  await api.delete(page, '/api/discovery/tree')
+  const first = await api.delete(page, '/api/discovery/tree')
+
+  if (first.status() === 409) {
+    // Phase 1 handed back a proposal for the nodes that exist right now.
+    const { proposalToken } = (await first.json()) as { proposalToken?: string }
+    expect(proposalToken, 'tree reset returned 409 with no proposalToken').toBeTruthy()
+    const confirmed = await api.delete(
+      page,
+      `/api/discovery/tree?token=${encodeURIComponent(proposalToken!)}`,
+    )
+    expect(
+      confirmed.ok(),
+      `tree reset confirmation failed: ${confirmed.status()} ${await confirmed.text()}`,
+    ).toBe(true)
+  } else {
+    // 200 with `removedCount: 0` is the documented no-op for an empty tree.
+    expect(first.ok(), `tree reset failed: ${first.status()} ${await first.text()}`).toBe(true)
+  }
+
+  // Still polled, for the reason the original comment gives: a prior test's late
+  // tree POST can land after the DELETE, and a stale hydrate would then de-dupe
+  // the next add and drift the node-count deltas.
   await expect
     .poll(() => treeNodeCount(page), { timeout: 15000, intervals: [200, 400, 800] })
     .toBe(0)

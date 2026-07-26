@@ -25,6 +25,12 @@ const PUBLIC_ALLOWLIST: Record<string, RegExp> = {
   'app/api/dev/backfill-me/route.ts': /NODE_ENV\s*===\s*'production'/,
   // Deliberately public gallery asset: privacy enforced by canViewShowcase.
   'app/api/showcase/public/asset/route.ts': /canViewShowcase/,
+  // E2E preflight probe. Unauthenticated ON PURPOSE — it is what the Playwright
+  // preflight calls to prove it is talking to a stub-mode server before any test
+  // runs. Its compensating control is stronger than a guard: the route only
+  // EXISTS when `E2E_SKIP_LLM=1`, so a production process 404s it, and it
+  // returns no secret — a hash of the database identity, never the URL.
+  'app/api/dev/e2e-health/route.ts': /E2E_SKIP_LLM\s*!==\s*'1'/,
 }
 
 const collectRoutes = (dir: string): string[] =>

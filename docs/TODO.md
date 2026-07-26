@@ -124,20 +124,28 @@ to prune" — including turning `showcase_view` back off.
   log survives their erasure. That is the runbook's team-artifact policy applied consistently;
   confirm it is the policy the school expects.
 
-## Synthesis Matrix — a column edit still discards an unsaved cell draft
+## E2E — what the 2026-07-26 rebuild left open
 
-Left open by v0.50.0 (REFACTOR2 P1-R13), and pre-existing to it. `addColumn`, `renameColumn` and
-`removeColumn` all call `resetDraftsFrom(updated)`, which rebuilds every cell draft from the
-server's cells — so a cell the student has typed into but not yet blurred loses its text when they
-add or rename a column.
+The audit and the changes are in [`runbooks/e2e.md`](runbooks/e2e.md). Remaining:
 
-That is **data loss, not mis-grading**: the check itself can no longer grade a draft the server has
-not seen (it flushes first and refuses to spend while anything is unsaved). But it is now the only
-path by which a draft vanishes without being saved or graded. The fix is to flush dirty cells in
-the same PATCH that changes the columns, or to merge the response's cells into the drafts rather
-than replacing them.
-
-Also owed from that batch: the 409 tells the student their grid changed but not **what** changed.
+- **Parallelism (the only remaining runtime lever).** The suite runs one worker because
+  `User.activeTeamId` is singular — one signed-in account owns one lab at a time. Going parallel
+  needs **one Clerk test account per worker**, which provisions accounts in your Clerk instance
+  and is therefore your call, not something to do silently. Everything else in the rebuild is the
+  half that needs no new accounts, and it is the half that removes the flakes.
+- **Migrating the other 31 specs to `createLab`.** The primitive exists (`e2e/lab.ts`) and
+  `synthesis-matrix.spec.ts` is the worked example. Each migration deletes a `beforeAll` full of
+  `deleteMany` calls and removes one more reason for `mode: 'serial'`.
+- **`F4` AC3.** `Showcase.teamId` is `@unique`, so `F4` and `F4-print` drive one row from two
+  files. Per-spec labs are the fix; it needs both files migrated together.
+- **The auth recovery ladder** in `e2e/api.ts` (~150 lines of escalating Clerk session recovery)
+  **fired zero times** in the production-build baseline. It exists for the `next dev` lane. Worth
+  deleting if a few dev-lane runs agree.
+- **`E2E_ENV_FILE` is still not configured**, so both CI jobs report "skipped: secrets not
+  configured" and pass. Until it is set, none of this is an enforceable gate — that one secret is
+  what turns the whole lane on.
+- **The synthesis 409** tells the student their grid changed but not **what** changed. A diff
+  would be kinder.
 
 ## Activity durability — 11 events still outside a transaction (REFACTOR2 P1-R5)
 

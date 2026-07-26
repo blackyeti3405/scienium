@@ -9,6 +9,10 @@ const isPublicRoute = createRouteMatcher([
   '/api/showcase/public/(.*)', // Privacy-checked public asset streaming
   '/api/cron/(.*)', // Scheduled jobs — authenticated by CRON_SECRET, not a session
   '/monitoring(.*)', // Sentry tunnel route — browser error reports arrive pre-auth too
+  // E2E preflight probe. The route itself 404s unless the process was started
+  // with E2E_SKIP_LLM=1, so it does not exist in production; it has to be
+  // reachable pre-auth because the preflight runs before any sign-in.
+  '/api/dev/e2e-health',
 ])
 
 export default clerkMiddleware(async (auth, req) => {

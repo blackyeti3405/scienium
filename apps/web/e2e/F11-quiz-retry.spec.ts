@@ -463,27 +463,8 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
     expect(retryOnAlreadyPassed.status()).toBe(409)
   })
 
-  // ── AC10 ─────────────────────────────────────────────────────────────────
-  test('AC10 (static): the retry route enforces the "ai" rate-limit tier', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.join(
-      __dirname,
-      '..',
-      'app',
-      'api',
-      'papers',
-      '[id]',
-      'quiz',
-      'retry',
-      'route.ts',
-    )
-    const source = fs.readFileSync(routePath, 'utf8')
-    const occurrences = source.match(/requireTeamContext\(req,\s*\{\s*tier:\s*'ai'\s*\}\)/g) ?? []
-    // Both the GET (idempotent generation) and POST (grading) handlers enforce
-    // the 'ai' tier — a superset of "the retry route enforces 'ai'", not a gap.
-    expect(occurrences.length).toBeGreaterThanOrEqual(1)
-  })
+  // AC10 (static: the retry route's 'ai' rate tier) MOVED to vitest — see
+  // `test/ai-route-cost-shape.test.ts`.
 
   // ── AC11 ─────────────────────────────────────────────────────────────────
   test('AC11: after a passing retry, reloading the Q&A panel shows the pass state and full question set', async ({
@@ -542,42 +523,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   })
 
   // ── AC13 ─────────────────────────────────────────────────────────────────
-  // The retry workflow lives in the application service (Track-B extraction);
-  // the route is a thin adapter. Assert the invariant where the calls now are:
-  // ONE generation call site (direct create) + ONE grading call site (via the
-  // shared gradeAnswers helper), both composing the cached paper block, and no
-  // Anthropic usage left in the route file itself.
-  test('AC13 (static): retry makes at most one generation + one grading call, both paper-cached', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const servicePath = path.join(__dirname, '..', 'lib', 'literature', 'quiz-retry.ts')
-    const source = fs.readFileSync(servicePath, 'utf8')
-
-    // Exactly one generation call site through the shared lazy Anthropic
-    // client; grading goes through gradeAnswers (one call site) whose payload
-    // reuses the cached paper block.
-    const messagesCreateCalls = source.match(/anthropic\(\)\.messages\.create\(/g) ?? []
-    expect(messagesCreateCalls.length).toBe(1) // the one-time new-question generation
-
-    const gradeCalls = source.match(/gradeAnswers</g) ?? []
-    expect(gradeCalls.length).toBe(1) // the single retry grading call
-
-    // Both calls compose the byte-identical cached paper block (PERF-8):
-    // generation via paperTextBlock in its system array, grading via
-    // paperTextContext in its context block.
-    expect(source).toContain('paperTextBlock(paper.fullText)')
-    expect(source).toContain('paperTextContext(session.paper.fullText)')
-
-    // No full 5-question regenerate helper is referenced from the service.
-    expect(source).not.toMatch(/QUIZ_QUESTION_COUNT\s*\}\s*questions/)
-    expect(source).toContain('ensureNewQuestion')
-
-    // And the route file is a thin adapter: no Anthropic client usage at all.
-    const routeSource = fs.readFileSync(
-      path.join(__dirname, '..', 'app', 'api', 'papers', '[id]', 'quiz', 'retry', 'route.ts'),
-      'utf8',
-    )
-    expect(routeSource).not.toContain('anthropic')
-    expect(routeSource).not.toContain("from '@/lib/db'")
-  })
+  // AC13 (static source assertion) MOVED to vitest — see
+  // `test/ai-route-cost-shape.test.ts` (call-site counts, cache prefix) and its
+  // "thin adapter" case for the route file.
 })

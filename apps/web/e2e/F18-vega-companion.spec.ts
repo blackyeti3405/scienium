@@ -253,29 +253,8 @@ test.describe('F18 — Study with Vega', () => {
     expect(body.reply.toLowerCase()).toMatch(/can't write|cannot write|let's work through|together/)
   })
 
-  // ── AC6 ──────────────────────────────────────────────────────────────────
-  test('AC6 (static): the POST route enforces the "ai" rate-limit tier', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routeSrc = fs.readFileSync(
-      path.join(__dirname, '..', 'app', 'api', 'ops', 'vega-study', 'route.ts'),
-      'utf8',
-    )
-    const occurrences = routeSrc.match(/requireTeamContext\(req,\s*\{\s*tier:\s*'ai'\s*\}\)/g) ?? []
-    expect(occurrences.length).toBeGreaterThanOrEqual(1)
-  })
-
-  // ── AC7 ──────────────────────────────────────────────────────────────────
-  test('AC7 (static): the project-context system block is prompt-cached with cache_control: ephemeral', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routeSrc = fs.readFileSync(
-      path.join(__dirname, '..', 'app', 'api', 'ops', 'vega-study', 'route.ts'),
-      'utf8',
-    )
-    expect(routeSrc).toMatch(/cache_control:\s*\{\s*type:\s*'ephemeral'\s*\}/)
-    expect(routeSrc).toContain('STUDY_INSTRUCTIONS')
-  })
+  // AC6-AC7 (static source assertions) MOVED to vitest — see
+  // `test/ai-route-cost-shape.test.ts` (rate tier, cache-block count).
 
   // ── AC8 ──────────────────────────────────────────────────────────────────
   test('AC8: a message over 8000 chars is rejected 400 before reaching Claude', async ({ page }) => {

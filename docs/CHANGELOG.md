@@ -5,6 +5,118 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.51.0] — 2026-07-26
+
+### Fixed — a column edit no longer discards an unsaved cell draft (P1-R13 follow-up)
+`addColumn` / `renameColumn` / `removeColumn` each PATCHed the column set and then rebuilt every
+cell draft from the response, silently throwing away text the student had typed but not yet
+blurred. All three now route through one `patchColumns` helper that awaits the save chain and
+sends the dirty cells **in the same request** — so the response already contains them and the
+reset is lossless, in one write instead of two. Cells belonging to a column being removed are
+dropped rather than sent, because the server validates cells against the post-edit grid and would
+reject the whole request.
+
+### E2E — an audit, and the rebuild it called for
+
+A full baseline run before any change: **326 tests, 263 passed, 10 failed, 5 skipped, 48 "did not
+run", 13.6 minutes.** Classifying the ten failures is the finding: **six were the harness, not the
+product**, and they took 48 more tests down with them.
+
+| Class | n | What it was |
+| --- | --- | --- |
+| Rotted static assertions | 3 | `readFileSync` source checks inside browser tests. v0.45.0 moved every provider call behind `aiCreate`; three specs still pinned `anthropic().messages.create(` and had matched **zero** call sites ever since. |
+| Shared-fixture pollution | 3 | `resetTree()` timing out on a previous spec's leftover discovery nodes. |
+| Cross-spec ordering | 2 | A destructive-proposal token bound to a node set another spec had changed. |
+| Stale expectation | 1 | `F4-print` AC2 asserting a slug URL for a `link_only` showcase — v0.35.1 made those reachable only through a 128-bit share token. |
+| Still open | 1 | `F4` AC3; `Showcase.teamId` is `@unique`, so two spec files drive one row. |
+
+Five structural flaws behind them, and what changed:
+
+**1. One shared fixture lab that was never reset.** `seed-e2e.mjs` is additive by design, so the
+lab accumulated everything the suite ever wrote — measured at **1,732 activity-feed rows, 152
+notifications, 49 project logs, 123 uploaded assets**, none of it seeded. Specs coped with private
+`deleteMany` calls in `beforeAll`, which made one spec's cleanup the next one's missing
+precondition. New: `pnpm --filter web reset:e2e` purges the lab through one ordered inventory,
+scoped strictly by team id so it cannot touch `devlab` in the same database, and sweeps the stray
+`[E2E …]` teams failed specs abandon. It removed **2,119 rows** on first use. Uploaded assets are
+**retired, not deleted** — the row is the only proof an R2 object exists (P1-R12) and that bucket
+is shared with production.
+
+**2. Serial mode turns one failure into a dozen.** 23 of 32 files use `mode: 'serial'` *because of*
+flaw 1. New: `e2e/lab.ts` — `createLab()` builds a team that exists only for one spec file, points
+`activeTeamId` at it, and disposes it through the **same** inventory `reset:e2e` uses, so the two
+cannot drift into a teardown foreign-key error. `synthesis-matrix.spec.ts` is converted as the
+worked example: its hand-rolled fixture graph, its wipe of the shared team's matrices, and its
+entire `afterAll` teardown all disappear.
+
+**3. Source assertions in a browser suite.** 21 tests across 6 files read route source. They need
+no browser, they gate nothing (the suite is nightly), and three had silently stopped asserting.
+Moved to `test/ai-route-cost-shape.test.ts` — one table covering per-module call-site counts,
+registry operation names, cache-block counts, forbidden/required cache prefixes and rate tiers,
+plus the reward-never-comes-from-the-model pins — and `test/prompt-injection-pins.test.ts` for the
+fencing. They now run in **gate 3, on every commit, in milliseconds**. Two guards keep the table
+honest: a **completeness check** (a new module calling `aiCreate`/`aiStream` with no entry fails)
+and a **vacuity check** (a scan that discovers nothing is a failure — silently matching zero is
+exactly what went wrong).
+
+**4. `reuseExistingServer` adopts any process on the port**, including one with no stub flags,
+which means real paid Anthropic calls presenting as a schema-mismatch 502. New: a `preflight`
+Playwright project every other project depends on. It proves the server is stub-mode by calling
+`/api/dev/e2e-health` — **a route that only exists when `E2E_SKIP_LLM=1`**, so its presence is the
+evidence rather than a self-report — checks `E2E_MOCK_SOURCES`, verifies the runner and the server
+hash to the **same database**, and verifies the fixture graph. Each failure prints its own remedy.
+Verified both ways: green against Playwright's own server, and against a hand-started `pnpm dev` it
+fails in 3.4s with the fix.
+
+**5. The CI E2E lane could never have worked.** Both jobs provision an empty `postgres:16` and then
+run `seed:e2e`, which *aborted* when the Clerk-backed `User` rows were missing — which they always
+are in an empty database. Nobody noticed because the whole job is gated on an `E2E_ENV_FILE` secret
+that is not configured, so it reports "skipped" and passes. The seeder now materializes those rows
+by reading the **real** ids from the Clerk API. The original refusal was right about the risk (a
+fabricated `clerkUserId` forks an identity) and wrong about the remedy.
+
+**Two things the audit found only by running it.** Clearing the fixture exposed a test that had
+been passing *because* of the pollution — `F2` AC10 fills a 10/day cap, and it only fit the 30s
+default because previous runs had already filled it, so its loop never ran; it now carries a
+budget matching the ~21 round trips it actually makes. And clearing `team_gateway_placements`
+broke specs with nothing to do with buildings: without them the isometric scene falls back to its
+default cells, where one 128px sprite covers a neighbour's hit area and Playwright cannot click
+"Open Discovery" at all. The suite's clickability had been depending on whatever positions
+`placement.spec.ts` last left behind — `seed:e2e` now seeds an explicit spread, so the layout is
+reproducible for the first time, and the reset leaves layout rows alone.
+
+Also fixed, all the same class of rot as the static assertions — a check that stopped checking and
+said nothing:
+
+- **`resetTree` had been deleting nothing since v0.38.0.** P1-R1 made `DELETE /api/discovery/tree`
+  two-phase (409 + a single-use `proposalToken`); the helper ignored the response and went straight
+  to polling, so it burned a full 15s and left the tree intact. That is three of the ten baseline
+  failures. It now performs both phases and asserts every status.
+- **`topic-removal-confirm` phase 2 was asserting the bypass it exists to prevent** — it still sent
+  `confirmRemoveIds` with no `proposalToken`. Its second case was rewritten to the current
+  contract, which is strictly stronger: a substituted id list fails the token's digest and deletes
+  nothing.
+- **`F4-print` AC2** asserted a slug URL for a `link_only` showcase; v0.35.1 made those reachable
+  only through a 128-bit share token. It now follows the server's own `shareUrl`.
+
+Full audit, run commands, and what is still open: **`docs/runbooks/e2e.md`**.
+
+### Verification
+Gates 1–5 pass. Vitest **120 files / 1,734 tests** (+1 file, +94 — the migrated static assertions
+now run per commit). The route-guard sweep correctly flagged the new dev route and it was
+allowlisted with its compensating control, not exempted. The preflight was negative-controlled
+both ways: green against Playwright's own server, failing in 3.4s with its remedy against a
+hand-started `pnpm dev`.
+
+**Suite: 263 → 292 passed, 10 → 2 failed, 48 → 13 "did not run" (13.6 → 15.5 min — the suite got SLOWER because 35 more tests now actually execute).** The two that remain are `F4`
+AC3 and `F4-print` AC10, left RED with a written diagnosis rather than skipped. **The product gate
+under them is correct** — verified outside Playwright against both a dev server and a production
+build: an anonymous request for a `published + public + pending_review` showcase renders the
+not-found page, as does a `private` one, and `/showcase/[slug]` builds dynamic so no cached render
+is in play. What is not yet understood is why the specs' own anonymous contexts see the page.
+`Showcase.teamId` is `@unique`, so both files drive one row; migrating them to `createLab()` is
+the change that would settle it.
+
 ## [0.50.0] — 2026-07-26
 
 ### Fixed — "Check my synthesis" could grade cells the student could not see (P1-R13)
