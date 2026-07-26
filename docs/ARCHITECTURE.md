@@ -454,6 +454,12 @@ the multi-paper comparison cheap instead of mixing the two.
 - `api/cron/notifications`: fair-deadline/project-urgency notifications, run
   across a 15-minute-interval morning window rather than once daily (§12).
 - `api/cron/papers`: retry pending, failed, or stale paper jobs.
+- `api/cron/data-requests`: GET runs approved export/erasure requests and the
+  retention prune; POST is the operator's approve/reject decision. Both behind
+  `assertCron` — the operator is whoever holds `CRON_SECRET`.
+- `api/data-requests`: the subject's own export/erasure requests. The one
+  authenticated route that is deliberately NOT team-scoped: a student who has
+  left their lab must still be able to ask for a copy or an erasure.
 - `api/data-terminal/`: experiment CRUD; the list returns measurement counts and
   `[id]/measurements` GET lazy-loads one experiment's points on selection.
 - `api/dev/`: development-only backfill and paper-fill helpers.
@@ -543,6 +549,17 @@ Feature-owned library folders:
   handlers so they are unit-testable without a request.
 - `clearance/`: expertise context, rubric, authored rubric prompt, and scoring.
 - `cron/`: cron bearer authentication.
+- `data-requests/`: export and erasure (REFACTOR2 P1-R9). `inventory.ts` is the
+  ONE list of per-student models — export reads it, erasure deletes it, so the
+  two cannot drift; a schema-parsing test fails if it names a model or column
+  that no longer exists. `workflow.ts` files requests idempotently, holds the
+  operator CAS, and runs a fenced, leased claim over per-external-system step
+  rows (Clerk → storage → PostgreSQL). Erasure tombstones the `users` row rather
+  than dropping it, because team-shared authored work holds required FKs to it.
+- `retention/`: `policies.ts` declares which models may be pruned and how. The
+  `retention_policies` table holds the day counts and SHIPS EMPTY — no row and no
+  registry default means never pruned. One endorsed default: `showcase_view` at
+  90 days.
 - `uploads/`: uploaded-asset lifecycle (`assets.ts`) — `reserveUploadAsset`
   commits a `temporary` `UploadedAsset` ledger row, under a per-team advisory
   lock that atomically checks the storage-quota ceiling, BEFORE any byte

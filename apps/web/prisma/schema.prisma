@@ -21,6 +21,13 @@ model User {
   role         UserRole @default(student)
   isMinor      Boolean  @default(true) @map("is_minor")
   createdAt    DateTime @default(now()) @map("created_at")
+  /// Erasure tombstone (REFACTOR2 P1-R9). The row is NOT dropped: team-shared
+  /// work the student authored — project logs, discovery nodes, the synthesis
+  /// matrix, purchased buildings — carries a required FK to it, and the runbook's
+  /// policy is that team artifacts stay with the team. So erasure deletes the
+  /// per-student rows, blanks `name`/`email`/`clerkUserId` to non-routable
+  /// placeholders, and stamps this. See lib/data-requests/inventory.ts.
+  deletedAt    DateTime? @map("deleted_at")
 
   school               School?                @relation(fields: [schoolId], references: [id])
   class                Class?                 @relation(fields: [classId], references: [id])
@@ -243,6 +250,94 @@ enum AiOperationStatus {
   failed
 
   @@map("ai_operation_status")
+}
+
+// ─── Data requests and retention (REFACTOR2 P1-R9) ───────────────────────────
+
+/// A subject's request for a copy of their data, or for its erasure.
+///
+/// Filing a request is NOT the erasure. Nothing destructive runs until an
+/// operator approves (`POST /api/cron/data-requests`), because in a school
+/// setting the authority to erase a minor's record belongs to the school, not
+/// to whoever is signed in. The request is the durable record that the ask
+/// happened and what was done about it.
+///
+/// **No foreign key to `users`, on purpose.** This row has to outlive the row it
+/// erased — the same reason `NotificationRunTeam` carries a bare `team_id`.
+/// `subjectClerkUserId` and `subjectEmail` are snapshotted for the same reason:
+/// after the `postgres` step runs there is no readable identity left to look up.
+model DataRequest {
+  id                 String    @id @default(cuid())
+  /// `export` | `delete`
+  kind               String
+  subjectUserId      String    @map("subject_user_id")
+  subjectClerkUserId String    @map("subject_clerk_user_id")
+  subjectEmail       String    @map("subject_email")
+  /// Who filed it. The subject themself today; a teacher or operator later.
+  requestedByUserId  String    @map("requested_by_user_id")
+  /// JSON-framed digest of {kind, subjectUserId, utcDay}. Re-clicking the button
+  /// replays the same row instead of queueing a second erasure.
+  requestKey         String    @unique @map("request_key")
+  /// `requested` | `approved` | `running` | `completed` | `failed` | `rejected`
+  status             String    @default("requested")
+  decidedAt          DateTime? @map("decided_at")
+  decidedNote        String?   @map("decided_note")
+  /// Fences the worker claim, same shape as the paper-job and outbox leases.
+  claimToken         String?   @map("claim_token")
+  claimedAt          DateTime? @map("claimed_at")
+  completedAt        DateTime? @map("completed_at")
+  attempts           Int       @default(0)
+  lastError          String?   @map("last_error")
+  /// Export only: the object key of the bundle and its per-model row counts.
+  resultJson         Json?     @map("result_json")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  steps DataRequestStep[]
+
+  @@index([status, claimedAt])
+  @@index([subjectUserId])
+  @@map("data_requests")
+}
+
+/// One row per external system a request has to touch — the outbox that makes
+/// the workflow resumable. Clerk, storage, and PostgreSQL fail independently;
+/// without a per-target record, a crash after the Clerk delete would re-run it
+/// (404) or, worse, a crash before the storage step would silently skip it.
+/// `(requestId, target)` unique is what makes a re-run idempotent.
+model DataRequestStep {
+  id          String      @id @default(cuid())
+  requestId   String      @map("request_id")
+  /// `export_bundle` | `clerk` | `storage` | `postgres`
+  target      String
+  /// `pending` | `done` | `failed`
+  status      String      @default("pending")
+  attempts    Int         @default(0)
+  /// What the step actually did — row counts, object keys. Evidence, not a log.
+  detail      Json?
+  lastError   String?     @map("last_error")
+  completedAt DateTime?   @map("completed_at")
+  request     DataRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, target])
+  @@map("data_request_steps")
+}
+
+/// Per-model retention windows. **Ships empty, on purpose.**
+///
+/// Every number that belongs here needs qualified FERPA/COPPA input this project
+/// does not have (docs/TODO.md → "Retention windows"). The registry in
+/// `lib/retention/policies.ts` declares which models CAN be pruned and how; a row
+/// here is the number that turns one on. No row and no registry default means
+/// that model is never pruned — the fail-safe direction is "keep".
+model RetentionPolicy {
+  /// Registry key from `lib/retention/policies.ts`, e.g. `showcase_view`.
+  key        String   @id
+  /// Null parks the model explicitly: reviewed, decided not to prune.
+  retainDays Int?     @map("retain_days")
+  note       String?
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("retention_policies")
 }
 
 enum ClassJoinRequestStatus {

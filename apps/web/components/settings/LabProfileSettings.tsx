@@ -8,6 +8,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { PROJECT_TYPES } from '@/lib/research-plan/types'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
+import { MyDataSection } from './MyDataSection'
 
 interface SettingsData {
   name: string | null
@@ -562,6 +563,9 @@ export function LabProfileSettings() {
         </div>
       </div>
       )}
+
+      {/* ── Your data — export / erasure requests (REFACTOR2 P1-R9) ──────────── */}
+      <MyDataSection />
     </div>
   )
 }

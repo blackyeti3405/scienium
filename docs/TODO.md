@@ -79,6 +79,51 @@ date-automatic: a server-clock-driven price switch is a landmine.
 - `runAiOperation` (the replay ledger) still does not wrap
   `phase_advance_classify`, so that call has a claim but no replay.
 
+## Retention windows — every number here needs qualified input (REFACTOR2 P1-R9)
+
+v0.49.0 built the **mechanism**: `retention_policies` (a per-model table), the registry in
+`lib/retention/policies.ts` that declares what can be pruned and how, and a nightly pass
+(`GET /api/cron/data-requests`). The table **ships empty on purpose**. Filling in a window is
+now an `INSERT`, not a project — which is exactly why the numbers were left out rather than
+guessed at.
+
+**None of the numbers below are ours or the owner's to decide.** FERPA/COPPA and the school
+contract govern them; `docs/SECURITY.md` already flags that as needing a lawyer. Bring this
+table to that review.
+
+| `key` | What a row is | Days | Notes for the reviewer |
+| --- | --- | --- | --- |
+| `showcase_view` | Pseudonymous visitor fingerprint (salted hash of IP + UA + day) | **90 — SHIPPED as the registry default** | The one endorsed number, and **still unconfirmed**. Unbounded growth, no product use past the daily-count aggregate it already fed. Confirm or change it. |
+| `activity_feed` | Per-student progression events | — | Feeds the dashboard feed and teacher reports. Probably wants to survive a school year. |
+| `notification` | In-app notifications | — | Working state, not history. A short window is likely safe. |
+| `notification_email` | Delivered outbox rows: recipient address + subject | — | These hold an email address. Resend also keeps its own copy on its own schedule. |
+| `paper_chat_message` | Vega paper-chat transcripts | — | **Student-written text.** The densest content in this list. |
+| `vega_study_message` | Study-with-Vega transcripts | — | Same. |
+| `ai_operation` | Replay ledger — provider results cached verbatim | — | May contain generated content about a student's work. Pruning costs replay, not correctness. |
+| `ai_usage` | Token counts and cost | — | No content. Pruning it destroys the cost history the "AI cost review" section depends on — coordinate the two. |
+| `teacher_feedback` | Teacher feedback on student work | — | Arguably an educational record with its own statutory retention. Ask specifically about this one. |
+
+A `NULL` `retain_days` row is meaningful and is the right way to record "reviewed, decided not
+to prune" — including turning `showcase_view` back off.
+
+### Also owed from that batch
+
+- **Approval has no UI, by design, and therefore no audit trail beyond `decided_note`.** The
+  operator is whoever holds `CRON_SECRET`; the request row records *that* a decision was made,
+  not *who* made it. A teacher- or admin-facing approval queue with a real actor id is the
+  natural next step, and needs the class-membership half of P1-R8 to scope it.
+- **Nothing verifies who is asking.** A student can file a deletion request for themselves; a
+  parent or school cannot file one through the app at all. Identity checks happen out of band
+  before approval.
+- **The erasure is a tombstone, not a row drop.** Team-shared authored work holds required FKs
+  to `users`. A true row-level delete needs those columns to become nullable or to point at a
+  shared tombstone user — a migration across eight tables, deliberately not done here.
+- **Not rehearsed against production-like data.** The audit asked for a drill. The workflow is
+  unit-tested and the UI is E2E-tested, but no erasure has been run against a realistic corpus.
+- **`attached` uploads stay with the team**, so a student's photo inside a teammate's project
+  log survives their erasure. That is the runbook's team-artifact policy applied consistently;
+  confirm it is the policy the school expects.
+
 ## Activity durability — 11 events still outside a transaction (REFACTOR2 P1-R5)
 
 v0.46.0 split activity logging into `recordActivity(tx, …)` (durable, throws, writes

@@ -413,7 +413,7 @@ state with actor, reason, timestamps, and revocation. Protect the final lead, up
 selection transactionally, retire invitations, recompute teacher scope, and pin cross-class/
 cross-team lifecycle matrices.
 
-#### P1-R9 — Account deletion, export, and retention are procedures, not system behavior
+#### P1-R9 — Account deletion, export, and retention are procedures, not system behavior — **CLOSED for the mechanism (v0.49.0); the numbers and the drill are open**
 
 The deletion/export runbook explicitly describes a manual post-pilot process. No durable
 runtime workflow reconciles Clerk identity, database rows, R2 objects, notification addresses,
@@ -423,6 +423,13 @@ notification, AI/chat, and teacher-history records lack one reviewed retention c
 Add an authenticated request and idempotent operator workflow backed by a deletion/export
 operation and outbox. Publish model-by-model retention/legal-hold rules, make cleanup survive
 parent deletion, and rehearse both export and deletion against production-like data.
+
+**Closed in v0.49.0 for everything that is an engineering decision.** `DataRequest` +
+`DataRequestStep` are the operation and outbox; one inventory drives both export and erasure;
+`retention_policies` is the per-model table, shipping empty with one endorsed default. **Still
+open:** the retention numbers themselves (qualified FERPA/COPPA input — `docs/TODO.md` →
+"Retention windows"), the production-like drill the audit asked for, an approval surface with a
+real actor id, and the row-level `users` delete the tombstone stands in for.
 
 #### P1-R10 — The discovery tree accepts foreign parents and cyclic graphs — **CLOSED (v0.34.1)**
 
@@ -1356,6 +1363,19 @@ Two owner decisions landed on 2026-07-26, one as code and one as an accepted ris
 | **P1-R1** capability matrix | **ACCEPTED as-is** — decided, not closed by code | The owner reviewed lead-only, lead-plus-teacher-override, and the non-destructive "mark papers out-of-scope" model, and chose to keep today's behaviour: any team member may destroy shared work. In a three-peer lab a permission gate adds friction without matching safety gain, and the paths are already behind a server-issued, single-use, target-bound proposal rather than a client assertion. | Recorded as an accepted risk alongside `ACCEPTED-R1`: one student can still delete 25 papers their team collected, deliberately, through two confirmed steps. The reversibility model (out-of-scope instead of delete) remains the higher-value change if it is ever revisited. |
 
 Gates 1–5 pass; Vitest 115 files / 1,610 tests. Two migrations applied; devlab verified intact.
+
+#### v0.49.0 — 2026-07-26 — erasure, export, and a retention table with no numbers in it
+
+Per the owner's decision of 2026-07-26: **build the mechanism, leave the numbers blank, and
+record what needs filling in.**
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P1-R9** Account deletion, export, and retention are procedures, not system behavior | **CLOSED for the mechanism**; the numbers and the drill are open | The runbook was the implementation: an operator, psql, a table list, and the hope of getting the order right. `DataRequest` is the operation — filing is idempotent per subject/kind/UTC day on a JSON-framed digest, so a double click is one erasure; approval is a CAS held by whoever has `CRON_SECRET`, with **no in-app approve button** because the authority to erase a minor's record is the school's; the worker claim is fenced with a token and a 10-minute lease so two overlapping crons cannot both erase. `DataRequestStep` is the outbox: `(requestId, target)` unique per external system, so a run that dies after deleting the Clerk identity resumes at the NEXT step instead of re-deleting it or silently skipping storage retirement — the thing a psql procedure structurally cannot do. Erasure order is Clerk (auth dies first), then unbound uploads flipped to `orphaned` for the existing sweep — never a direct object delete, preserving the single-physical-delete-site rule from P1-S8/P1-R12 — then one transaction that departs every live membership through the REAL `departTeam` command (a raw `teamMember.deleteMany` would leave `teams.team_lead_id` pointing at a tombstone and skip last-member archiving), deletes the per-student inventory, and tombstones `users`. **The tombstone is the design, not a shortcut:** team-shared authored work — project logs, discovery nodes, the synthesis matrix, experiments, buildings — carries a *required* FK to `users`, and the standing policy is that team artifacts stay with the team, so the row must survive; what makes it an erasure is that `name`/`email`/`clerkUserId` are overwritten with values that identify nobody and route nowhere. **One inventory drives both directions**, so export and deletion cannot drift apart — the failure every pair of hand-written procedures eventually reaches — and `test/data-inventory-drift.test.ts` parses `schema.prisma`, fails on a model or column that no longer exists, and pins the KEEP list by name so moving one into the erasure set is a deliberate edit. **Retention:** `retention_policies` is a per-model table that ships EMPTY; `lib/retention/policies.ts` declares what can be pruned and how; no row and no registry default means never pruned, and a test pins that a 400-day-old row in an unreviewed model survives. One default ships because one was endorsed — `showcase_view` at 90 days. Building the real inventory against the schema also found **three errors in the runbook's own list**: `discovery_source_visits` is the team's once-ever KP claim (P1-S14), not per-student, and `DiscoveryKpDay`/`PvpTrophies`/`PvpRaidQuota` carry no user id at all. | **The numbers.** Eight models' windows are blank and the endorsed 90 is unconfirmed — all of it needs qualified FERPA/COPPA input (`docs/TODO.md` → "Retention windows"). **The drill:** the audit asked for a rehearsal against production-like data; this is unit-tested and E2E-tested, but no erasure has run against a realistic corpus. **Identity of the asker:** nothing proves a request came from a parent or the school rather than the student; that check is out of band, before approval. **The approver has no recorded identity** — the request row records that a decision was made, not who made it; a real approval queue needs the class half of P1-R8 to scope it. **The row-level delete** the tombstone stands in for: eight tables' attribution columns would have to become nullable or point at a shared tombstone user first. **`attached` uploads stay with the team**, so a student's photo inside a teammate's log survives their erasure — consistent with the team-artifact policy, and worth confirming with the school. |
+
+Gates 1–5 pass; Vitest 118 files / 1,633 tests. Migration applied; devlab verified intact and all
+three new tables confirmed empty. `e2e/data-requests.spec.ts` run against the live dev server
+(4 passed) and the settings section screenshotted.
 
 ---
 

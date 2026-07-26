@@ -1,0 +1,380 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+/**
+ * REFACTOR2 P1-R9 — export and erasure as a durable workflow.
+ *
+ * The replaced procedure was a runbook: an operator, psql, and a list of tables
+ * to get right every time. These tests pin the three properties that make this a
+ * workflow instead:
+ *
+ *  - Filing is IDEMPOTENT per subject/kind/day, so a double click is one erasure.
+ *  - The claim is FENCED, so two overlapping crons cannot both erase.
+ *  - Each external system is a STEP, so a resumed run does not re-delete a Clerk
+ *    identity it already deleted, and cannot silently skip storage retirement.
+ *
+ * Plus the property the whole design turns on: erasure TOMBSTONES the `users`
+ * row rather than dropping it, because team-shared work carries a required FK to
+ * it — and a tombstone that leaves the name and email behind is not an erasure.
+ */
+
+interface RequestRow {
+  id: string
+  kind: string
+  subjectUserId: string
+  subjectClerkUserId: string
+  subjectEmail: string
+  requestedByUserId: string
+  requestKey: string
+  status: string
+  claimToken: string | null
+  claimedAt: Date | null
+  completedAt: Date | null
+  decidedAt: Date | null
+  decidedNote: string | null
+  attempts: number
+  lastError: string | null
+  resultJson: unknown
+  createdAt: Date
+}
+
+interface StepRow {
+  id: string
+  requestId: string
+  target: string
+  status: string
+  attempts: number
+  detail: unknown
+  lastError: string | null
+  completedAt: Date | null
+}
+
+let requests: RequestRow[]
+let steps: StepRow[]
+let users: { id: string; clerkUserId: string; email: string; name: string; deletedAt: Date | null }[]
+let memberships: { teamId: string; userId: string }[]
+let assets: { id: string; userId: string; status: string }[]
+let clerkDeletes: string[]
+let departures: { teamId: string; userId: string; reason: string }[]
+let deletedRows: string[]
+let putObjects: { key: string; bytes: number }[]
+let clerkError: { status?: number } | null
+
+vi.mock('server-only', () => ({}))
+vi.mock('@/lib/observability/log', () => ({ logEvent: vi.fn() }))
+
+vi.mock('@clerk/nextjs/server', () => ({
+  clerkClient: async () => ({
+    users: {
+      deleteUser: async (id: string) => {
+        if (clerkError) throw clerkError
+        clerkDeletes.push(id)
+      },
+    },
+  }),
+}))
+
+vi.mock('@/lib/storage', () => ({
+  putObject: async (key: string, body: Buffer) => {
+    putObjects.push({ key, bytes: body.byteLength })
+  },
+}))
+
+vi.mock('@/lib/team/membership', () => ({
+  departTeam: async (_tx: unknown, input: { teamId: string; userId: string; reason: string }) => {
+    departures.push(input)
+    memberships = memberships.filter(
+      (m) => !(m.teamId === input.teamId && m.userId === input.userId),
+    )
+    return { archived: false, newLeadUserId: null }
+  },
+}))
+
+vi.mock('@/lib/data-requests/inventory', () => ({
+  collectSubjectRows: async (userId: string) => ({ vocab_cards: [{ id: 'c1', userId }] }),
+  deleteSubjectRows: async (_tx: unknown, userId: string) => {
+    deletedRows.push(userId)
+    return { vocab_cards: 1 }
+  },
+}))
+
+let nextId = 0
+const newId = () => `id${++nextId}`
+
+function selectable(r: RequestRow, staleBefore: Date): boolean {
+  if (r.attempts >= 3) return false
+  if (r.status === 'approved') return true
+  return r.status === 'running' && r.claimedAt !== null && r.claimedAt < staleBefore
+}
+
+/** Applies the exact `{OR:[{status:'approved'},{status:'running',claimedAt:{lt}}]}` shape. */
+function matchesRequest(r: RequestRow, where: any): boolean {
+  if (where.id?.in && !where.id.in.includes(r.id)) return false
+  if (typeof where.id === 'string' && r.id !== where.id) return false
+  if (where.status !== undefined && r.status !== where.status) return false
+  if (where.claimToken !== undefined && r.claimToken !== where.claimToken) return false
+  if (where.attempts?.lt !== undefined && !(r.attempts < where.attempts.lt)) return false
+  if (where.OR) return selectable(r, where.OR[1].claimedAt.lt)
+  return true
+}
+
+vi.mock('@/lib/db', () => {
+  const db = {
+    dataRequest: {
+      findUnique: async ({ where }: any) =>
+        requests.find((r) => (where.id ? r.id === where.id : r.requestKey === where.requestKey)) ??
+        null,
+      create: async ({ data }: any) => {
+        if (requests.some((r) => r.requestKey === data.requestKey)) throw new Error('P2002')
+        const row: RequestRow = {
+          id: newId(),
+          status: 'requested',
+          claimToken: null,
+          claimedAt: null,
+          completedAt: null,
+          decidedAt: null,
+          decidedNote: null,
+          attempts: 0,
+          lastError: null,
+          resultJson: null,
+          createdAt: new Date(),
+          ...data,
+        }
+        requests.push(row)
+        return row
+      },
+      findMany: async ({ where, take }: any) => {
+        const hits = requests.filter((r) => matchesRequest(r, where))
+        return (take ? hits.slice(0, take) : hits).map((r) => ({ ...r }))
+      },
+      updateMany: async ({ where, data }: any) => {
+        const hits = requests.filter((r) => matchesRequest(r, where))
+        for (const r of hits) {
+          for (const [k, v] of Object.entries(data)) {
+            if (v && typeof v === 'object' && 'increment' in v) {
+              ;(r as any)[k] += (v as any).increment
+            } else {
+              ;(r as any)[k] = v
+            }
+          }
+        }
+        return { count: hits.length }
+      },
+    },
+    dataRequestStep: {
+      upsert: async ({ where, create }: any) => {
+        const key = where.requestId_target
+        let row = steps.find((s) => s.requestId === key.requestId && s.target === key.target)
+        if (!row) {
+          row = {
+            id: newId(),
+            status: 'pending',
+            attempts: 0,
+            detail: null,
+            lastError: null,
+            completedAt: null,
+            ...create,
+          }
+          steps.push(row!)
+        }
+        return { ...row! }
+      },
+      update: async ({ where, data }: any) => {
+        const row = steps.find((s) => s.id === where.id)!
+        for (const [k, v] of Object.entries(data)) {
+          if (v && typeof v === 'object' && 'increment' in v) {
+            ;(row as any)[k] += (v as any).increment
+          } else {
+            ;(row as any)[k] = v
+          }
+        }
+        return { ...row }
+      },
+    },
+    user: {
+      findUnique: async ({ where }: any) => users.find((u) => u.id === where.id) ?? null,
+      update: async ({ where, data }: any) => {
+        const u = users.find((x) => x.id === where.id)!
+        Object.assign(u, data)
+        return { ...u }
+      },
+    },
+    teamMember: {
+      findMany: async ({ where }: any) => memberships.filter((m) => m.userId === where.userId),
+    },
+    uploadedAsset: {
+      updateMany: async ({ where, data }: any) => {
+        const hits = assets.filter((a) => a.userId === where.userId && a.status === where.status)
+        for (const a of hits) a.status = data.status
+        return { count: hits.length }
+      },
+    },
+    $transaction: async (fn: any) => fn(db),
+  }
+  return { db }
+})
+
+const { fileDataRequest, decideDataRequest, requestKeyFor, runDataRequests } = await import(
+  '@/lib/data-requests/workflow'
+)
+
+const SUBJECT = { id: 'u1', clerkUserId: 'clerk_u1', email: 'a@example.com' }
+
+async function file(kind: 'export' | 'delete', now?: Date) {
+  return fileDataRequest({ kind, subject: SUBJECT, requestedByUserId: SUBJECT.id, now })
+}
+
+beforeEach(() => {
+  requests = []
+  steps = []
+  users = [{ ...SUBJECT, name: 'Ada', deletedAt: null }]
+  memberships = [{ teamId: 't1', userId: 'u1' }]
+  assets = [
+    { id: 'a-temp', userId: 'u1', status: 'temporary' },
+    { id: 'a-attached', userId: 'u1', status: 'attached' },
+  ]
+  clerkDeletes = []
+  departures = []
+  deletedRows = []
+  putObjects = []
+  clerkError = null
+  nextId = 0
+})
+
+describe('filing a request', () => {
+  it('is idempotent within a UTC day and distinct across days and kinds', async () => {
+    const day1 = new Date('2026-07-26T01:00:00Z')
+    const first = await file('delete', day1)
+    const again = await file('delete', new Date('2026-07-26T23:00:00Z'))
+    expect(again.id).toBe(first.id)
+    expect(requests).toHaveLength(1)
+
+    await file('delete', new Date('2026-07-27T01:00:00Z'))
+    await file('export', day1)
+    expect(requests).toHaveLength(3)
+
+    expect(requestKeyFor('delete', 'u1', day1)).not.toBe(requestKeyFor('export', 'u1', day1))
+    expect(requestKeyFor('delete', 'u1', day1)).not.toBe(requestKeyFor('delete', 'u2', day1))
+  })
+
+  it('files as `requested`, not approved — nothing runs until an operator says so', async () => {
+    const filed = await file('delete')
+    expect(filed.status).toBe('requested')
+
+    await runDataRequests(10)
+
+    expect(clerkDeletes).toEqual([])
+    expect(deletedRows).toEqual([])
+    expect(users[0]!.deletedAt).toBeNull()
+  })
+
+  it('a decision is a CAS — the second operator loses instead of overwriting', async () => {
+    const filed = await file('delete')
+    expect(await decideDataRequest(filed.id, 'approve')).toBe(true)
+    expect(await decideDataRequest(filed.id, 'reject')).toBe(false)
+    expect(requests[0]!.status).toBe('approved')
+  })
+})
+
+describe('the worker', () => {
+  it('fences the claim: a concurrent run finds nothing to take', async () => {
+    const filed = await file('delete')
+    await decideDataRequest(filed.id, 'approve')
+
+    const [a, b] = await Promise.all([runDataRequests(10), runDataRequests(10)])
+
+    expect(a.completed + b.completed).toBe(1)
+    expect(clerkDeletes).toEqual(['clerk_u1'])
+    expect(deletedRows).toEqual(['u1'])
+  })
+
+  it('erases: identity blanked, membership departed, per-student rows deleted', async () => {
+    const filed = await file('delete')
+    await decideDataRequest(filed.id, 'approve')
+
+    await runDataRequests(10)
+
+    const user = users[0]!
+    expect(user.deletedAt).not.toBeNull()
+    expect(user.name).toBe('Deleted student')
+    expect(user.email).not.toContain('a@example.com')
+    expect(user.clerkUserId).not.toBe('clerk_u1')
+    // The real departure command runs, so lead handover and archiving still happen.
+    expect(departures).toEqual([
+      { teamId: 't1', userId: 'u1', event: 'removed', actorUserId: null, reason: 'data_erasure' },
+    ])
+    expect(requests[0]!.status).toBe('completed')
+  })
+
+  it('retires unbound uploads only — attached assets stay with the team', async () => {
+    const filed = await file('delete')
+    await decideDataRequest(filed.id, 'approve')
+
+    await runDataRequests(10)
+
+    expect(assets.find((a) => a.id === 'a-temp')!.status).toBe('orphaned')
+    expect(assets.find((a) => a.id === 'a-attached')!.status).toBe('attached')
+  })
+
+  it('resumes without re-running a finished step', async () => {
+    const filed = await file('delete')
+    await decideDataRequest(filed.id, 'approve')
+
+    // First pass dies after Clerk: the postgres step throws.
+    const { db } = (await import('@/lib/db')) as any
+    const realUpdate = db.user.update
+    db.user.update = async () => {
+      throw new Error('connection reset')
+    }
+    await runDataRequests(10)
+    expect(clerkDeletes).toEqual(['clerk_u1'])
+    expect(requests[0]!.status).toBe('approved') // released for another run
+    db.user.update = realUpdate
+
+    await runDataRequests(10)
+
+    // Clerk was NOT deleted a second time; the erasure still completed.
+    expect(clerkDeletes).toEqual(['clerk_u1'])
+    expect(users[0]!.deletedAt).not.toBeNull()
+    expect(requests[0]!.status).toBe('completed')
+  })
+
+  it('treats an already-absent Clerk identity as done, not as a failure', async () => {
+    const filed = await file('delete')
+    await decideDataRequest(filed.id, 'approve')
+    clerkError = { status: 404 }
+
+    const result = await runDataRequests(10)
+
+    expect(result.completed).toBe(1)
+    expect(users[0]!.deletedAt).not.toBeNull()
+  })
+
+  it('parks a request after the attempt cap rather than retrying forever', async () => {
+    const filed = await file('export')
+    await decideDataRequest(filed.id, 'approve')
+    const { db } = (await import('@/lib/db')) as any
+    const realFind = db.user.findUnique
+    db.user.findUnique = async () => {
+      throw new Error('nope')
+    }
+    try {
+      for (let i = 0; i < 4; i++) await runDataRequests(10)
+    } finally {
+      db.user.findUnique = realFind
+    }
+    expect(requests[0]!.status).toBe('failed')
+    expect(requests[0]!.attempts).toBe(3)
+  })
+
+  it('writes the export bundle to storage rather than handing it to the browser', async () => {
+    const filed = await file('export')
+    await decideDataRequest(filed.id, 'approve')
+
+    await runDataRequests(10)
+
+    expect(putObjects).toHaveLength(1)
+    expect(putObjects[0]!.key).toBe(`data-exports/${filed.id}.json`)
+    expect(clerkDeletes).toEqual([])
+    expect(users[0]!.deletedAt).toBeNull() // an export erases nothing
+  })
+})

@@ -1,8 +1,10 @@
-# Runbook: Student/class data export and deletion
+# Runbook: Student data export and deletion
 
-_Pilot-minimum inventory + manual procedure (PILOT-6). There is no self-serve
-export/delete endpoint yet; requests are handled by an operator with database
-access. Automating this is post-pilot work._
+_As of v0.49.0 this is **mostly system behaviour**, not a manual procedure
+(REFACTOR2 P1-R9). A student files a request in the app; an operator approves it;
+a scheduled worker executes it durably and idempotently. What remains manual is
+the approval decision, the delivery of an export bundle, and the whole-class
+teardown at the end of a pilot._
 
 ## Where personal data lives
 
@@ -10,49 +12,153 @@ access. Automating this is post-pilot work._
 | --- | --- | --- |
 | Supabase Postgres | Everything below | — |
 | Clerk | Auth identity: name, email, credentials, sessions | Clerk user id ↔ `users.clerk_user_id` |
-| Cloudflare R2 | Uploaded PDFs, showcase/log images | Object keys referenced by `papers.pdf_key`, `uploaded_assets.key`, showcase assets |
+| Cloudflare R2 | Uploaded PDFs, showcase/log images, export bundles under `data-exports/` | Object keys referenced by `papers.pdf_key`, `uploaded_assets.key`, showcase assets |
 | Anthropic | No retention relied upon; prompts may include student-written text (see [llm-cost.md](llm-cost.md)) | — |
 | Resend | Notification email addresses + subjects in their delivery logs | — |
 | Upstash | Rate-limit counters keyed by Clerk user id (TTL ≤ 1 min — self-expires) | — |
 | Vercel logs | Structured events with **opaque ids only** (no names/emails/content), platform request logs | retention per plan |
 
-## Data inventory by subject
+## The workflow
 
-**Per-student rows** (FK on `user_id` / the student's `User.id`):
-`User`, `TeamMember`, `ClassJoinRequest`, `PaperProficiency`, `PaperExplanationAttempt`, `PaperChatMessage`, `PaperQuizSession`/`PaperQuizAttempt`, `ExpertiseExam`/`ExpertiseAttempt`, `VocabCard`/`VocabKpDay`, `CodexLessonProgress`/`CodexKpDay`, `DiscoverySourceVisit`/`DiscoveryKpDay`, `ActivityFeed`, `Notification`/`NotificationPref`, `RubricSelfAssessment`, `FairUserAssociation`, `VegaStudyMessage`, PvP rows (`PvpTrophies`, `PvpRaidQuota`), `LabCreditClaim`, `TeacherFeedback` (as subject), `UploadedAsset` (as uploader).
+```
+student files            operator approves           cron executes
+POST /api/data-requests → POST /api/cron/data-requests → GET /api/cron/data-requests
+   status: requested          status: approved            status: completed
+```
 
-**Team-shared rows** (owned by the team, not one student — deleting one student must NOT delete these):
-`Team`, `TeamCurrency`, `Paper` + processing/citation rows, `SynthesisMatrix`/`SynthesisCell`, `ResearchPlan`/`IdeaCheck`, `Experiment`/`Measurement`, `ProjectLog`(+followups/references), buildings/economy rows, `Showcase`(+assets/views), fair/rubric/form rows, `TeamStudyPlan`, `DiscoveryNode` tree.
+**Filing erases nothing.** The request is a durable row (`data_requests`) with a
+JSON-framed idempotency key, so a double click is one request. Approval is a
+compare-and-set by an operator holding `CRON_SECRET`; the authority to erase a
+minor's record belongs to the school, so there is deliberately no in-app approve
+button. Execution is a fenced, leased claim — two overlapping crons cannot both
+erase — and each external system is its own `data_request_steps` row, so a run
+that dies partway resumes at the first step that is not yet `done`.
 
-**Class rows**: `Class`, `ClassJoinRequest`, via `users.class_id` membership.
+### Approving or rejecting
 
-## Export (a parent/school asks for a student's data)
+```bash
+curl -X POST "$APP_URL/api/data-requests" -H "Authorization: Bearer $CRON_SECRET" \
+  -H 'Content-Type: application/json' \
+  -d '{"requestId":"<id>","action":"approve","note":"parent request, verified by phone"}'
+```
 
-1. Identify the student: Clerk dashboard → email → `clerk_user_id`; then `select id from users where clerk_user_id = '...'`.
-2. Dump the per-student tables above filtered by that id (`psql \copy ... to csv`). Include their authored team content (papers they uploaded, log entries they wrote) but not teammates' individual data.
-3. Fetch R2 objects they uploaded (`papers.pdf_key` where uploader, `uploaded_assets` where `user_id`).
-4. Deliver via the school's agreed channel — never email attachments of student data to unverified addresses.
+(Path is `/api/cron/data-requests`; `action` is `approve` or `reject`.) A second
+decision on the same request loses the CAS and returns 409 with the standing
+state. The nightly cron then runs it; to run it immediately, `GET` the same path
+with the same bearer token.
 
-## Deletion (right-to-erasure / end of pilot)
+### What a deletion actually does
 
-Order matters — FKs are mostly required without cascade:
+Steps run in this order, each recorded and idempotent:
 
-1. **Clerk**: delete the user (kills auth + sessions). Their `users` row remains until step 2.
-2. **Postgres, per-student rows**: delete the per-student tables above for that `user_id`, then the `users` row. If they lead a team (`teams.team_lead_id`), transfer lead to another member first or delete the whole team (below).
-3. **Team-shared content authored by them**: policy decision with the teacher — team artifacts belong to the team; default is to keep them (they're the team's work product), removing only the student's name where it appears in per-student rows.
-4. **R2**: delete their `uploaded_assets` objects and any papers only they uploaded (after team confirmation).
-5. **Resend**: no action needed beyond their log retention window; do not re-email.
+1. **`clerk`** — delete the Clerk user. Auth and sessions die first, so an
+   approved erasure stops admitting the account even if the database half needs
+   another run. An identity that is already gone counts as done.
+2. **`storage`** — flip the subject's **`temporary`** uploaded assets to
+   `orphaned`, handing them to the reclaim sweep, which is the only place in the
+   system that physically deletes an object. `attached` assets are **not** touched
+   — they are images inside team project logs (see the policy below).
+3. **`postgres`** — in ONE transaction: depart every live team membership through
+   the real `departTeam` command (so a departing lead still hands over and a last
+   member still archives the lab), delete every row in the per-student inventory,
+   and tombstone the `users` row.
 
-**Whole-class teardown** (end of pilot): delete teams of that class's students (team-shared rows by `team_id`), then students (per-student rows), then the `Class`. Take a final backup first ([restore.md](restore.md)) and record the school's sign-off.
+**The `users` row is tombstoned, not dropped.** Team-shared work the student
+authored — project logs, discovery nodes, the synthesis matrix, experiments,
+purchased buildings — carries a *required* foreign key to it, and the policy
+below keeps that work with the team. So the row survives with `name`, `email`
+and `clerk_user_id` overwritten by non-routable placeholders and `deleted_at`
+stamped. Nothing personal remains readable through it.
+
+### What an export does
+
+One step, **`export_bundle`**: every row in the per-student inventory plus the
+user's own profile fields, written as JSON to R2 under
+`data-exports/<requestId>.json`. It is deliberately **not** downloadable from the
+app and never emailed — an export bundle is the densest personal artifact this
+system can produce. Fetch it from R2 and deliver through the school's agreed
+channel.
+
+## Policy: what erasure keeps, and why
+
+The inventory lives in `apps/web/lib/data-requests/inventory.ts`; one list drives
+both export and deletion, and `test/data-inventory-drift.test.ts` fails if it
+names a model or column the schema no longer has.
+
+**Erased** (per-student rows): quiz sessions/attempts, explain-back
+explanations/attempts, paper proficiencies, paper chat, relevance notes,
+expertise exams/attempts, vocabulary cards and KP days, Codex progress and KP
+days, lab-credit claims, notifications and notification prefs, activity feed,
+Study-with-Vega messages, fair associations, rubric self-assessments, class join
+requests. Live `team_members` rows go through `departTeam` rather than a raw
+delete.
+
+**Kept, deliberately** — each is a team or system record that happens to carry a
+user id:
+
+| Kept | Why |
+| --- | --- |
+| `project_logs`, `discovery_nodes`, `synthesis_matrices`, `experiments`, `team_shop_buildings`, `team_rubric_scores` | The team's work product. Deleting one member's contributions guts their teammates' project. |
+| `discovery_source_visits` | The team's **once-ever KP claim** for a source (P1-S14). Deleting it lets the same source be farmed for KP again. *Correction: earlier versions of this runbook listed it as per-student.* |
+| `uploaded_assets` | The ledger proving an R2 object exists. Deleting the row strands the object permanently (P1-R12). |
+| `team_membership_events` | Append-only authorization log; after the tombstone it names a user with no personal fields. |
+| `teacher_feedback` | The teacher's record, not the student's row. |
+| `ai_usage` | Token counts and cost, no content; attribution is nullable. |
+
+*Two further corrections to earlier versions:* `DiscoveryKpDay`, `PvpTrophies`
+and `PvpRaidQuota` are **team**-scoped and carry no user id at all — they were
+listed under per-student rows in error.
+
+## Retention
+
+`retention_policies` is a per-model table that **ships empty**.
+`apps/web/lib/retention/policies.ts` declares which models *can* be pruned; a row
+in the table is the number of days that turns one on. No row and no registry
+default means the model is never pruned — the fail-safe direction is keep.
+
+Exactly one default ships, because exactly one was endorsed: `showcase_view` at
+**90 days** (pseudonymous visitor fingerprints, unbounded growth, no product use
+beyond the daily-count aggregate). Every other number needs qualified
+FERPA/COPPA input — see [`../TODO.md`](../TODO.md) → "Retention windows".
+
+To set one:
+
+```sql
+INSERT INTO retention_policies (key, retain_days, note, updated_at)
+VALUES ('paper_chat_message', 365, 'reviewed 2026-09-01 by <name>', now())
+ON CONFLICT (key) DO UPDATE SET retain_days = excluded.retain_days,
+  note = excluded.note, updated_at = now();
+```
+
+A `NULL` `retain_days` is meaningful: *reviewed, decided not to prune*. It also
+overrides a registry default, so it is how `showcase_view` gets turned back off.
+
+## Still manual
+
+- **Verifying who is asking.** Nothing in the app proves a request came from a
+  parent or the school rather than the student. That check happens before you
+  approve, out of band.
+- **Delivering the export bundle** through the school's channel — never as an
+  email attachment to an unverified address.
+- **Whole-class teardown** (end of pilot): delete teams of that class's students
+  (team-shared rows by `team_id`), then students, then the `Class`. Take a final
+  backup first ([restore.md](restore.md)) and record the school's sign-off. Note
+  that `uploaded_assets.team_id` is `ON DELETE RESTRICT` — retire the team's
+  assets through the reclaim sweep before deleting the team.
+- **Resend log retention** — no action beyond their window; do not re-email.
 
 ## Verification
 
-After a deletion, confirm zero rows remain:
+After a deletion completes, the request row is its own evidence:
 
 ```sql
-select 'users' t, count(*) from users where id = '<id>'
-union all select 'team_members', count(*) from team_members where user_id = '<id>';
--- extend over the inventory tables
+SELECT status, completed_at, result_json FROM data_requests WHERE id = '<id>';
+SELECT target, status, detail FROM data_request_steps WHERE request_id = '<id>';
 ```
 
-and that sign-in with the deleted account fails.
+`result_json` carries the per-model row counts actually deleted. Confirm the
+tombstone landed and sign-in fails:
+
+```sql
+SELECT deleted_at, name, email, clerk_user_id FROM users WHERE id = '<subject id>';
+```

@@ -5,6 +5,93 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.49.0] — 2026-07-26
+
+### Added — export and erasure become system behaviour (P1-R9)
+The deletion/export runbook described a manual post-pilot process: an operator, psql, a list of
+tables, and the hope of getting the order right every time. Nothing reconciled Clerk identity
+against database rows, a half-finished erasure left no record of how far it got, and
+`ShowcaseView` fingerprints accumulated forever with no schedule of any kind.
+
+**The workflow.** A student files a request in Settings → *Your data*; an operator approves it;
+a nightly worker executes it. The shape reuses what this codebase already trusts for work that
+must not run twice and must not stop halfway:
+- **Filing is idempotent** per subject/kind/UTC day, on a JSON-framed digest — a double click is
+  one erasure (`AiOperation`'s shape).
+- **Approval is a compare-and-set** by whoever holds `CRON_SECRET`. There is deliberately **no
+  in-app approve button**: the authority to erase a minor's record belongs to the school, and
+  putting that button in the product is how it gets clicked by accident.
+- **The claim is fenced** with a token and a 10-minute lease, so two overlapping crons cannot
+  both erase (`PaperProcessingJob`'s shape).
+- **Each external system is a step row**, `(request_id, target)` unique — so a run that dies
+  after deleting the Clerk identity resumes at the *next* step rather than re-deleting it or
+  silently skipping storage retirement (`NotificationEmail`'s outbox shape).
+
+**Erasure, in order:** Clerk identity (auth dies first), then unbound uploads flipped to
+`orphaned` for the existing reclaim sweep — never a direct object delete — then, in one
+transaction, every live membership departed through the real `departTeam` command (so a leaving
+lead still hands over and a last member still archives the lab), every per-student row deleted,
+and the `users` row **tombstoned**.
+
+**Why tombstoned rather than dropped.** Team-shared work the student authored — project logs,
+discovery nodes, the synthesis matrix, experiments, purchased buildings — carries a *required*
+FK to `users`. The runbook's standing policy is that team artifacts stay with the team, so the
+row has to survive; what makes it an erasure is that `name`, `email` and `clerk_user_id` are
+overwritten with values that identify nobody and route nowhere, and `deleted_at` is stamped. A
+true row-level delete would need eight tables' attribution columns to become nullable first, and
+that is recorded as owed rather than done.
+
+**One inventory, both directions.** `lib/data-requests/inventory.ts` is the single list that
+export reads and erasure deletes, so the two can never disagree about what "this student's data"
+means — the drift that eventually breaks every pair of hand-written procedures.
+`test/data-inventory-drift.test.ts` parses `schema.prisma` and fails if the list names a model or
+column that no longer exists, and pins the **keep** decisions by name so moving one into the
+erasure set is a deliberate edit with a test to update.
+
+**Exports go to storage, not to the browser.** `data-exports/<requestId>.json` in R2, fetched and
+delivered through the school's channel. An export bundle is the densest personal artifact this
+system can produce; it must never leave through an unverified channel, which is what the runbook
+already said and what the UI now says too.
+
+### Added — a retention mechanism that ships with no numbers in it
+`retention_policies` is a per-model table that is **empty on purpose**. `lib/retention/policies.ts`
+declares which models can be pruned and how; a row in the table is the number of days that turns
+one on. **No row and no registry default means never pruned** — the fail-safe direction is keep,
+and the tests pin that a 400-day-old row in an unreviewed model survives.
+
+Exactly one default ships, because exactly one was endorsed: `showcase_view` at **90 days**. Those
+rows are pseudonymous visitor fingerprints with unbounded growth and no product use past the
+daily-count aggregate they already fed. The 90 is flagged in `docs/TODO.md` → "Retention windows"
+as still needing confirmation, alongside the eight models whose windows are blank because
+FERPA/COPPA input the project does not have is what decides them.
+
+### Added — routes, UI, schedule
+- `GET`/`POST /api/data-requests` — the subject's own requests. Deliberately **not** behind
+  `requireTeamContext`: a student who has just left their lab is exactly the person most likely
+  to want a copy or an erasure, and gating on having a team would lock out the case it exists
+  for.
+- `GET`/`POST /api/cron/data-requests` — the scheduled pass and the operator decision, both
+  behind the existing `assertCron` shared-secret guard.
+- Settings → **Your data**: two asks, a two-step deletion that states its consequence before the
+  second click, and a status list. The copy is explicit that a copy is delivered through the
+  school rather than downloaded, and that the lab's shared work stays with the team either way.
+- `vercel.json` gains a nightly `03:30` cron.
+
+### Fixed — three errors in the deletion runbook's inventory
+Corrected while building the real list against the schema: `discovery_source_visits` is **not**
+per-student (it is the team's once-ever KP claim for a source — deleting it lets the source be
+farmed for KP again, per P1-S14), and `DiscoveryKpDay`, `PvpTrophies` and `PvpRaidQuota` carry no
+user id at all — they are team-scoped and were listed under per-student rows in error.
+
+### Verification
+Gates 1–5 pass. Vitest: **118 files / 1,633 tests** (+3 files, +23). Migration
+`20260726200000_data_requests_and_retention` applied to the local dev database; devlab verified
+intact afterwards (25 papers, 11 discovery nodes, 25 quiz sessions, 25 proficiencies, 12 vocab
+cards) and all three new tables confirmed empty. New `e2e/data-requests.spec.ts` **run against
+the live dev server: 4 passed**, and the section was screenshotted rather than inferred from a
+passing typecheck. The spec is non-destructive: it files an export request, asserts the account
+is untouched and that a re-click replays the same row, and deletes the request afterwards.
+
 ## [0.48.1] — 2026-07-26
 
 ### Added — the membership commands are reachable (P1-R8 follow-up)

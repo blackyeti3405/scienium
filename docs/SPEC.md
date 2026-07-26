@@ -875,7 +875,31 @@ gold, message textarea in the body font).
   `docs/runbooks/incident-response.md`.
 - *(Planned)* optional email and push delivery.
 
-### 13.8 Technical Implementation
+### 13.9 Your Data — export & erasure requests — *implemented*
+
+Settings → **Your data** lets a student ask for a copy of their data or for its erasure.
+Neither happens on the click.
+
+- **Filing is an ask, not an action.** The request is recorded and queued for review; nothing is
+  exported or deleted until an operator approves it. In a school setting the authority to erase
+  a minor's record belongs to the school, so there is deliberately no in-app approve button —
+  approval is an operator command behind the cron secret.
+- **Deletion is two-step in the UI** and states its consequence before the second click: the
+  account and everything personal in it (quizzes, proficiencies, vocabulary, chats,
+  notifications) go; **the lab's shared work — papers, logs, the showcase — stays with the team**,
+  because those artifacts belong to the whole team (§10.3 attribution).
+- **A copy is delivered through the school**, never downloaded from the page or emailed. The
+  bundle is written to private storage for the operator to hand over.
+- Re-clicking the same day replays the same request rather than queueing another.
+- Erasure blanks the student's name, email, and sign-in identity; the account row itself is
+  retained as a tombstone so their teammates' shared work does not break.
+- Age-based cleanup of pseudonymous and operational records is governed by a per-model retention
+  table. It ships with one window set (showcase visitor fingerprints, 90 days); the rest await
+  qualified FERPA/COPPA review — see `docs/TODO.md` → "Retention windows".
+
+Operator procedure: `docs/runbooks/data-export-delete.md`.
+
+### 13.10 Technical Implementation
 
 **Data sources (as built):**
 - **Fair dataset** in `content/fairs/dataset.json` (behind a thin typed `dataset.ts` wrapper) scraped from the Society for Science affiliated-fair directory: 1 ISEF + 40 state + 227 regional fairs. Every entry has `websiteUrl` (linked directly from the directory), city-level `latitude`/`longitude` (184 Nominatim-geocoded, 60 manually fixed), a stable `seed_key`, and the year's event/deadline dates where available. `ensureFairsSeeded()` in `lib/fairs/match.ts` reconciles idempotently on the first `GET /api/fairs/match` of each process, gated on a digest of the authored edition — so a correction that does not change the number of fairs still lands. A fair dropped from a later edition is retired and stops being matched (its history rows stay), and a fair whose dates a Firecrawl sync has corrected keeps them: the static dataset only refreshes rows that are still untouched defaults
