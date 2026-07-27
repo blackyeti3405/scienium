@@ -5,6 +5,69 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.66.0] — 2026-07-27
+
+### Fixed — a stale hang comment, two duplicated name fields, and a hardcoded pass mark
+
+Twentieth through twenty-second of REFACTOR2 §0.7's file dispositions —
+`components/fair/ScienceFairFeature.tsx`, `app/(onboarding)/onboarding/page.tsx`, and
+`components/literature/QuizPanel.tsx` — reported as the least defect-bearing rows left on the
+list, and mostly declined rather than padded out with unearned splits.
+
+- **`ScienceFairFeature.tsx`'s "800 sequential query" comment was checked against the current
+  code, not taken on faith, and turned out to be stale.** `lib/fairs/match.ts`'s `ensureFairsSeeded()`
+  already carries the `EDITION_DIGEST` short-circuit from P1-R16 (shipped before this audit's
+  2026-07-23 date) — a reconciled process now costs zero queries on repeat calls. This
+  component's own comment still described that hang as an unresolved, present-tense production
+  issue; trimmed to say it was fixed elsewhere, keeping the (still-true) explanation of why
+  Self-check/Forms mount ahead of the Overview tab's own loading state. **The proposed
+  fair-card/countdown/rubric split was declined** — those are already separate, non-duplicated
+  functions in this file; nothing about them is a defect, only length.
+- **`onboarding/page.tsx`'s student and teacher forms rendered byte-for-byte identical
+  "Your name"/"High school" `<input>` markup twice** — confirmed by diffing the two blocks
+  directly, not assumed from the verdict's wording. One `NameAndSchoolFields` component (colocated
+  in the same file, matching `ScienceFairFeature`'s own `FairCard` pattern) now backs both forms;
+  behavior, validation, and both submit handlers are unchanged. **The "large recovery
+  commentary" half of the verdict was declined** — the recovery-latch effect is shared, not
+  duplicated, and its size is explanatory comment, not extractable logic. **Teacher
+  self-registration stays exactly as accepted (§0.3 ACCEPTED-R1)**: no gate, approval step, or
+  warning was added — the teacher form's fields simply render through the shared component.
+- **`QuizPanel.tsx` hardcoded the pass-mark display as a bare `70` in three places**, duplicating
+  `QUIZ_PASS_THRESHOLD` from `lib/literature/quiz.ts` — checked directly whether the numbers
+  disagree today: they do not, both are `70`. The risk was drift, not a live bug:
+  `lib/literature/quiz.ts` reads its grading rubric off the filesystem at module load and cannot
+  be imported into this client component, which is exactly why `quizDerive.ts` already carries a
+  client-safe mirror, `DEFAULT_PASS_THRESHOLD`. QuizPanel now imports that existing mirror instead
+  of a fourth bare `70`, and its score-color "pass" tier now reads the graded session's own
+  `results.threshold` directly rather than a hardcoded number, so the color can never disagree
+  with what the server actually graded against. **The question-form/result-row split was
+  declined** — the quiz, results, and retry views are structurally similar but not duplicated
+  (only retry carries the prior answer, a "New" badge, and an extra question), and the one truly
+  shared piece (`QAExplain`) was already its own function before this batch.
+
+None of the three fixes introduce a new branch to negative-control — a comment edit, a
+byte-for-byte JSX dedupe, and a literal-to-import substitution with an unchanged value both
+before and after. No test was added for any of the three (a comment; React JSX/props unreachable
+from this repo's node-only Vitest) — recorded as unpinned rather than padded with a test that
+would only restate the fix.
+
+### Verification
+Gates 1–4 pass. Vitest **133 files / 1,846 tests** (unchanged — no test added or removed).
+Gate 5 (`next build`) and gate 6 (E2E) are the orchestrator's to run. E2E likely relevant, not
+run: `e2e/F4.spec.ts` / `e2e/F4-print.spec.ts` (Science Fair Hub), `e2e/F11.spec.ts` /
+`e2e/F11-quiz-retry.spec.ts` (quiz + retry). No E2E spec drives `/onboarding`'s teacher branch or
+either form's field UI directly — checked, none found.
+
+---
+
+**E2E not completed for this batch, and that is stated rather than glossed.** The quiz spec was
+started three times and each run was destroyed by the orchestrator's own port-3000 cleanup
+(SIGTERM / a failed `preflight` after the shared dev server was killed) — a tooling mistake, not
+a code signal. The three changes are behaviour-neutral by inspection: a comment edit, a JSX
+extraction whose two source branches were verified byte-identical (same `required`, `maxLength`
+and placeholder on both), and a constant that resolves to the same `70` it replaced. Gates 1–5
+all pass. **`F11-quiz-retry` should be run before this branch merges.**
+
 ## [0.65.0] — 2026-07-27
 
 ### Fixed — a connected research plan could vanish on reload, and a stale audit finding was closed

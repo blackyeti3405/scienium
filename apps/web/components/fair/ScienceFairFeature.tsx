@@ -179,16 +179,14 @@ export function ScienceFairFeature() {
         tab's `/api/fairs/match` load. Gating it behind that unrelated fetch
         (as `forms`/`categories` still do below, pre-existing/out of scope)
         meant Self-check could never mount — or fetch, or render — while the
-        Overview fetch was pending, PRODUCTION-OBSERVED to actually hang for
-        minutes (a separate, pre-existing performance issue in
-        lib/fairs/match.ts's fair-reseeding loop — 266 fairs vs. only 70
-        currently seeded means ensureFairsSeeded() re-runs its full ~800
-        sequential-round-trip upsert loop on every call instead of
-        short-circuiting; see the changes report). This fix does not touch
-        that route or FormsChecklist/CategoryBrowser (both out of scope) — it
-        only decouples the mount ordering for the tab this feature owns, so
-        Self-check mounts and fetches the instant its tab is selected, exactly
-        like the standalone /fair-hub/rubric route.
+        Overview fetch was pending. (The old `ensureFairsSeeded()` reseed loop
+        that once made that Overview fetch itself hang for minutes was fixed
+        separately by the digest-based short-circuit in lib/fairs/match.ts —
+        REFACTOR2 P1-R16 — so it no longer applies here.) This fix does not
+        touch that route or FormsChecklist/CategoryBrowser (both out of
+        scope) — it only decouples the mount ordering for the tab this
+        feature owns, so Self-check mounts and fetches the instant its tab is
+        selected, exactly like the standalone /fair-hub/rubric route.
       */}
       {tab === 'selfcheck' ? (
         <div className="flex-1 overflow-y-auto">

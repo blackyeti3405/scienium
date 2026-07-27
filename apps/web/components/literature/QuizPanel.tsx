@@ -4,6 +4,7 @@ import { Award, RotateCcw, MessageSquare } from 'lucide-react'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
 import { BusyButton } from '@/components/ui/BusyButton'
+import { DEFAULT_PASS_THRESHOLD } from './quizDerive'
 import type { usePaperQuiz } from './usePaperQuiz'
 
 /**
@@ -84,7 +85,7 @@ export function QuizPanel({
           >
             <p className="font-pixel text-[7px] text-white/40 leading-loose">
               Answer in your own words to demonstrate you understood this paper. Pass mark:{' '}
-              {results?.threshold ?? 70}%.
+              {results?.threshold ?? DEFAULT_PASS_THRESHOLD}%.
             </p>
             {quiz?.questions.map((q, i) => (
               <div key={q.id} className="flex flex-col gap-2">
@@ -170,7 +171,7 @@ export function QuizPanel({
                     </p>
                     <span
                       className={`font-pixel text-[8px] shrink-0 ${
-                        (r?.score ?? 0) >= 70
+                        (r?.score ?? 0) >= (results.threshold ?? DEFAULT_PASS_THRESHOLD)
                           ? 'text-green-400'
                           : (r?.score ?? 0) >= 40
                             ? 'text-yellow-400'

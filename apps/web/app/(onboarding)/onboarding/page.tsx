@@ -7,6 +7,53 @@ import { useUser } from '@clerk/nextjs'
 type Mode = 'create' | 'join'
 type AccountType = 'student' | 'teacher'
 
+/** "Your name" + "High school" fields — identical in the student and teacher
+ *  forms below. Shared so the placeholder/maxLength/styling can't drift
+ *  between the two branches. */
+function NameAndSchoolFields({
+  name,
+  setName,
+  highSchool,
+  setHighSchool,
+}: {
+  name: string
+  setName: (v: string) => void
+  highSchool: string
+  setHighSchool: (v: string) => void
+}) {
+  return (
+    <>
+      <div className="space-y-1.5">
+        <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
+          Your name
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          placeholder="Rig Saini"
+          className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
+          High school
+        </label>
+        <input
+          type="text"
+          value={highSchool}
+          onChange={(e) => setHighSchool(e.target.value)}
+          placeholder="Santa Clara High School"
+          maxLength={120}
+          className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
+        />
+      </div>
+    </>
+  )
+}
+
 export default function OnboardingPage() {
   const { user } = useUser()
   const router = useRouter()
@@ -175,33 +222,12 @@ export default function OnboardingPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-1.5">
-              <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-                Your name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                placeholder="Rig Saini"
-                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-                High school
-              </label>
-              <input
-                type="text"
-                value={highSchool}
-                onChange={(e) => setHighSchool(e.target.value)}
-                placeholder="Santa Clara High School"
-                maxLength={120}
-                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
-              />
-            </div>
+            <NameAndSchoolFields
+              name={name}
+              setName={setName}
+              highSchool={highSchool}
+              setHighSchool={setHighSchool}
+            />
 
             <div className="space-y-1.5">
               <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
@@ -285,33 +311,12 @@ export default function OnboardingPage() {
         </>
       ) : (
         <form onSubmit={handleTeacherSubmit} className="space-y-5">
-          <div className="space-y-1.5">
-            <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-              Your name
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              placeholder="Rig Saini"
-              className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-              High school
-            </label>
-            <input
-              type="text"
-              value={highSchool}
-              onChange={(e) => setHighSchool(e.target.value)}
-              placeholder="Santa Clara High School"
-              maxLength={120}
-              className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
-            />
-          </div>
+          <NameAndSchoolFields
+            name={name}
+            setName={setName}
+            highSchool={highSchool}
+            setHighSchool={setHighSchool}
+          />
 
           {error && <p className="font-pixel text-[8px] text-red-400">{error}</p>}
 
