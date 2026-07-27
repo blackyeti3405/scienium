@@ -9,6 +9,7 @@ import { requirePlanText } from '@/lib/research-plan/require-plan-text'
 import { claimPlanWork } from '@/lib/research-plan/claim'
 import { createNdjsonStream } from '@/lib/ndjson'
 import { logEvent } from '@/lib/observability/log'
+import { isSafeHttpUrl } from '@/lib/showcase'
 
 /**
  * Idea-check application service (Track B P1-2, §3.2 E) — "Has this idea been
@@ -33,6 +34,29 @@ import { logEvent } from '@/lib/observability/log'
 export interface IdeaCheckPrincipal {
   teamId: string
   dbUserId: string
+}
+
+interface PriorWorkItem {
+  title?: string
+  url?: string
+  note?: string
+}
+
+/**
+ * `priorWork[].url` is verbatim JSON the MODEL wrote — not a provider tool
+ * result (that's `emitSources` below), and not our own data. It gets the same
+ * http(s)-only gate the render side (`IdeaCheckView`'s `SafeExternalLink`)
+ * enforces a second time: an unsafe url (`javascript:`, `data:`, ...) is
+ * dropped, not the whole entry — the title/note still stand alone, matching
+ * how the component already renders a `priorWork` item with no url. Exported
+ * (rather than inline in the streaming closure below) so this transform is
+ * reachable from node-only vitest without mocking the Anthropic stream.
+ */
+export function sanitizePriorWork(list: PriorWorkItem[]): PriorWorkItem[] {
+  return list.map((pw) => ({
+    ...pw,
+    url: pw.url && isSafeHttpUrl(pw.url) ? pw.url : undefined,
+  }))
 }
 
 export type IdeaCheckResult =
@@ -188,7 +212,12 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
       function emitSources(content: Array<Record<string, any>>) {
         const items: { title: string; url: string }[] = []
         for (const r of content) {
-          if (r.type === 'web_search_result' && r.url && !seen.has(r.url)) {
+          // A live web-search result is provider output, not our own data
+          // (house rule: never cast provider output). Anything not a plain
+          // http(s) URL — a `javascript:`/`data:` scheme the model or a
+          // crafted result page slipped in — is dropped here, before it can
+          // ever reach the stream or the DB row this becomes.
+          if (r.type === 'web_search_result' && r.url && isSafeHttpUrl(r.url) && !seen.has(r.url)) {
             seen.add(r.url)
             const item = { title: r.title ?? r.url, url: r.url }
             sources.push(item)
@@ -240,7 +269,7 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
         : 'refine'
       const findings = {
         summary: parsed.summary ?? '',
-        priorWork: Array.isArray(parsed.priorWork) ? parsed.priorWork.slice(0, 8) : [],
+        priorWork: Array.isArray(parsed.priorWork) ? sanitizePriorWork(parsed.priorWork.slice(0, 8)) : [],
         differentiation: parsed.differentiation ?? '',
         recommendation: parsed.recommendation ?? '',
         citations: sources.slice(0, 10),
@@ -303,7 +332,7 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
 interface ParsedVerdict {
   verdict: string
   summary?: string
-  priorWork?: { title?: string; url?: string; note?: string }[]
+  priorWork?: PriorWorkItem[]
   differentiation?: string
   recommendation?: string
 }

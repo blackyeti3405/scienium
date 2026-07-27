@@ -141,14 +141,16 @@ stated reason has already been fixed another way.
 `components/teacher/TeacherRubricScoring.tsx` (v0.57.0 — E2E F10 re-run 16/16),
 `components/ops/CodexTab.tsx` (v0.58.0),
 `components/literature/LiteratureFeature.tsx` (v0.59.0),
-`components/discovery/SourceReader.tsx` (v0.60.0 — save path only; URL-scheme validation still open),
+`components/discovery/SourceReader.tsx` (v0.60.0 — save path; URL-scheme validation CLOSED v0.64.0),
 `lib/teacher/student-overview.ts` (v0.60.1 — pairing verified closed by v0.48.0; query split declined),
 `lib/hooks/usePlotBuildings.ts` (v0.61.0 — stale-resync + swallowed-error + duplicated-prediction all fixed; reducer split declined),
 `components/lab/LabScene.tsx` (v0.61.0 — overlap CONFIRMED reachable via `ActivityPanel`'s missing backdrop; one `Overlay` union replaces six flags),
 `lib/fairs/zip.ts` (v0.62.0 — 1 req/s queue + cache + response schema/cap all added; the triplicated `coords ?? state-centroid` fallback consolidated into `resolveTeamPoint()`; "special ZIPs repeat" did not hold — zero duplicate table keys; data/lookup/transport split declined),
 `lib/discovery/articles.ts` (v0.62.0 — byte cap on `res.text()` added via the shared `readCapped`; host/content-type validation declined — every feed url is a literal, not request/provider data, and content-type gaps were measured to already degrade safely; licensing review still owed),
 `components/ops/data-terminal/ExperimentDetail.tsx` (v0.63.0 — duplicate `(x, series)` chart collisions now counted and disclosed beside the chart, without touching the student's recorded table data; load-retry added; chart/input/table split declined),
-`components/teacher/TeacherRoster.tsx` (v0.63.0 — approval now bridges to a roster re-fetch; the shared `useCopyToClipboard` hook fixed at its source to stop swallowing a clipboard failure; pending-join-request list capped, roster list left deliberately uncapped; split/pagination declined).
+`components/teacher/TeacherRoster.tsx` (v0.63.0 — approval now bridges to a roster re-fetch; the shared `useCopyToClipboard` hook fixed at its source to stop swallowing a clipboard failure; pending-join-request list capped, roster list left deliberately uncapped; split/pagination declined),
+`components/lab/LabPlot.tsx` (v0.64.0 — real keyboard pick-up/placement added, sharing the pointer path's own `onDrop`/`isPlaceable` check; interaction-controller split declined — the pure math was already in `lib/plot.ts`),
+`components/research-plan/IdeaCheckView.tsx` (v0.64.0 — `SafeExternalLink`/`ResultHeading` primitives extracted; model/provider urls gated by `isSafeHttpUrl` at both write and render).
 
 **Deliberately deprioritised** (verdict is structural only, no named defect): `app/globals.css`
 (3,051 lines) and `prisma/schema.prisma` (now 2,282). Both are real cleanups with real risk and
@@ -160,6 +162,28 @@ landed, so the remaining work is cosmetic: `lib/discovery/tree-service.ts` (P1-R
 `components/fair/FormsChecklist.tsx` (P0-R4), `lib/literature/synthesis.ts` and
 `components/literature/SynthesisMatrixEditor.tsx` (P1-R13),
 `lib/ops/codex/complete-service.ts`, `app/(public)/showcase/[slug]/page.tsx` (P0-R3/P1-R7).
+
+## E2E — `F3-plan-paste` AC9/AC10 are FLAKY (found 2026-07-27)
+
+`e2e/F3-plan-paste.spec.ts` fails intermittently, and **which** test fails moves between runs.
+Measured across four runs of the same spec:
+
+| Tree | Result |
+| --- | --- |
+| HEAD (no changes) run 1 | 14 passed |
+| working tree (v0.64.0) run 1 | AC9 failed — after "Update text" + reload the textarea still showed the pre-edit value |
+| working tree (v0.64.0) run 2 | **AC10** failed — the character counter never rendered the expected total |
+| HEAD (no changes) run 2 | **AC10** failed — identical to the line above |
+
+A failure that moves between tests, and that reproduces on an unmodified tree, is spec
+flakiness — not a regression. The two are almost certainly the same root cause: the file is
+`mode: 'serial'` and each test inherits the plan text the previous one saved, so a save that
+lands late (or a `fill` that races the debounced counter) shifts the failure to whichever test
+reads that state next. This is the mutable-shared-fixture fragility the E2E audit already
+flagged; the fix is per-test plan state (`createLab()`-style isolation), not a longer timeout.
+
+Note the cost: `mode: 'serial'` means the failing test also prevents every later test in the
+file from executing — 14 ran when it passed, 11 when it failed.
 
 ## E2E — `upgrades` AC12 is RED (found 2026-07-27)
 

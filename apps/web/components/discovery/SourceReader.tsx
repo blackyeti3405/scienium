@@ -9,6 +9,7 @@ import { PixelSpinner } from '@/components/ui/PixelSpinner'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { useResizablePanel } from '@/lib/hooks/useResizablePanel'
 import { createSaveQueue } from '@/lib/save-queue'
+import { isSafeHttpUrl } from '@/lib/showcase'
 
 interface Props {
   /** The open source node, or null while nothing is selected. */
@@ -240,7 +241,15 @@ export function SourceReader({
           >
             {node.starred ? '★' : '☆'}
           </button>
-          {node.sourceUrl && (
+          {/* §0.7 deferred item (v0.60.0): `sourceUrl` is provider data (an
+              adapter-built or provider-returned link — openalex.ts, articles.ts,
+              patents.ts, ...), not our own — the same "never cast provider
+              output" rule the fetch layer already applies to the JSON body
+              applies here to the URL it hands back. `isSafeHttpUrl` (also
+              reused by IdeaCheckView, lib/validation.ts's named generic gate)
+              refuses anything but a plain http(s) URL before it becomes an
+              `href`. */}
+          {node.sourceUrl && isSafeHttpUrl(node.sourceUrl) && (
             <a
               href={node.sourceUrl}
               target="_blank"

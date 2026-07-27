@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,6 +10,60 @@ import {
 } from 'lucide-react'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
 import { fmtDate } from '@/lib/format'
+import { isSafeHttpUrl } from '@/lib/showcase'
+
+/**
+ * Renders `href` only for a plain http(s) URL (`isSafeHttpUrl` — the same gate
+ * `lib/validation.ts` points every generic link consumer at). `priorWork`/
+ * `citations`/live-search sources all ultimately come from an LLM's own JSON
+ * output (§0.7): the model is not a trusted caller, and a scheme like
+ * `javascript:` landing directly in an `<a href>` is a live XSS, not a
+ * hypothetical one. The service layer already filters these before they are
+ * stored (idea-check-service.ts); this is the second, independent gate at the
+ * render boundary — a legacy row saved before that filter existed must not
+ * get a free pass.
+ */
+function SafeExternalLink({
+  href,
+  className,
+  children,
+}: {
+  href?: string
+  className: string
+  children: ReactNode
+}) {
+  if (href && isSafeHttpUrl(href)) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+        {children}
+      </a>
+    )
+  }
+  return <span className={className}>{children}</span>
+}
+
+/**
+ * The student/teacher heading pair repeated once per section (prior work,
+ * differentiation, recommendation, citations) — same text, same two variant
+ * styles, only the colour tone and student-side bottom margin ever changed.
+ */
+function ResultHeading({
+  teacher,
+  tone = 'text-white/40',
+  marginBottom = 'mb-1.5',
+  children,
+}: {
+  teacher: boolean
+  tone?: string
+  marginBottom?: string
+  children: string
+}) {
+  return teacher ? (
+    <p className={`font-pixel text-[9px] ${tone} uppercase tracking-widest`}>{children}</p>
+  ) : (
+    <h4 className={`font-pixel text-[7px] ${tone} uppercase tracking-widest ${marginBottom}`}>{children}</h4>
+  )
+}
 
 // ─── Types (shared by the student panel and the teacher StudentDetail view) ───
 
@@ -100,15 +155,7 @@ export function IdeaCheckView({
       {/* Prior work */}
       {priorWork.length > 0 && (
         <div className={teacher ? 'space-y-1.5' : undefined}>
-          {teacher ? (
-            <p className="font-pixel text-[9px] text-white/40 uppercase tracking-widest">
-              Prior work
-            </p>
-          ) : (
-            <h4 className="font-pixel text-[7px] text-white/40 uppercase tracking-widest mb-2">
-              Prior work
-            </h4>
-          )}
+          <ResultHeading teacher={teacher} marginBottom="mb-2">Prior work</ResultHeading>
           <ul className={teacher ? 'space-y-2' : 'flex flex-col gap-2'}>
             {priorWork.map((pw, i) => (
               <li
@@ -120,26 +167,17 @@ export function IdeaCheckView({
                 }
               >
                 {pw.url ? (
-                  teacher ? (
-                    <a
-                      href={pw.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-blue-300 hover:text-blue-200 transition-colors inline-flex items-center gap-1"
-                    >
-                      {pw.title ?? pw.url}
-                      <ExternalLink size={10} className="shrink-0" />
-                    </a>
-                  ) : (
-                    <a
-                      href={pw.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[13px] text-blue-300 hover:text-blue-200 underline flex items-center gap-1"
-                    >
-                      {pw.title ?? pw.url} <ExternalLink size={9} className="shrink-0" />
-                    </a>
-                  )
+                  <SafeExternalLink
+                    href={pw.url}
+                    className={
+                      teacher
+                        ? 'text-sm text-blue-300 hover:text-blue-200 transition-colors inline-flex items-center gap-1'
+                        : 'text-[13px] text-blue-300 hover:text-blue-200 underline flex items-center gap-1'
+                    }
+                  >
+                    {pw.title ?? pw.url}
+                    <ExternalLink size={teacher ? 10 : 9} className="shrink-0" />
+                  </SafeExternalLink>
                 ) : (
                   <span className={teacher ? 'text-sm text-white/80' : 'text-[13px] text-white/80'}>
                     {pw.title}
@@ -165,15 +203,9 @@ export function IdeaCheckView({
       {/* How it could differ */}
       {idea.findings?.differentiation && (
         <div className={teacher ? 'space-y-1' : undefined}>
-          {teacher ? (
-            <p className="font-pixel text-[9px] text-white/40 uppercase tracking-widest">
-              How it could differ
-            </p>
-          ) : (
-            <h4 className="font-pixel text-[7px] text-white/40 uppercase tracking-widest mb-1.5">
-              How you could differ
-            </h4>
-          )}
+          <ResultHeading teacher={teacher}>
+            {teacher ? 'How it could differ' : 'How you could differ'}
+          </ResultHeading>
           <p className={`${teacher ? 'text-sm' : 'text-[13px]'} text-white/65 leading-relaxed`}>
             {idea.findings.differentiation}
           </p>
@@ -189,15 +221,9 @@ export function IdeaCheckView({
               : 'px-3 py-2.5 bg-[#F5C518]/5 border border-[#F5C518]/25 rounded-sm'
           }
         >
-          {teacher ? (
-            <p className="font-pixel text-[9px] text-[#F5C518]/70 uppercase tracking-widest">
-              Recommendation
-            </p>
-          ) : (
-            <h4 className="font-pixel text-[7px] text-[#F5C518]/70 uppercase tracking-widest mb-1">
-              Recommendation
-            </h4>
-          )}
+          <ResultHeading teacher={teacher} tone="text-[#F5C518]/70" marginBottom="mb-1">
+            Recommendation
+          </ResultHeading>
           <p className={`${teacher ? 'text-sm' : 'text-[13px]'} text-white/75 leading-relaxed`}>
             {idea.findings.recommendation}
           </p>
@@ -207,43 +233,31 @@ export function IdeaCheckView({
       {/* Citations */}
       {citations.length > 0 && (
         <div className={teacher ? 'space-y-1.5' : undefined}>
-          {teacher ? (
-            <p className="font-pixel text-[9px] text-white/40 uppercase tracking-widest">
-              Sources
-            </p>
-          ) : (
-            <h4 className="font-pixel text-[7px] text-white/40 uppercase tracking-widest mb-1.5">
-              Sources
-            </h4>
-          )}
+          <ResultHeading teacher={teacher}>Sources</ResultHeading>
           {teacher ? (
             <ul className="space-y-1">
               {citations.map((c, i) => (
                 <li key={i}>
-                  <a
+                  <SafeExternalLink
                     href={c.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs text-white/40 hover:text-white/70 transition-colors"
                   >
                     <ExternalLink size={9} className="shrink-0" />
                     {c.title}
-                  </a>
+                  </SafeExternalLink>
                 </li>
               ))}
             </ul>
           ) : (
             <div className="flex flex-col gap-1">
               {citations.map((c, i) => (
-                <a
+                <SafeExternalLink
                   key={i}
                   href={c.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="text-[12px] text-white/40 hover:text-white/70 truncate flex items-center gap-1"
                 >
                   <ExternalLink size={8} className="shrink-0" /> {c.title}
-                </a>
+                </SafeExternalLink>
               ))}
             </div>
           )}
@@ -299,14 +313,12 @@ export function IdeaActivity({ activity }: { activity: IdeaCheckActivity }) {
           <ul className="flex flex-col gap-1 mt-1.5">
             {activity.sources.slice(-8).map((s, i) => (
               <li key={i}>
-                <a
+                <SafeExternalLink
                   href={s.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="text-[12px] text-white/45 hover:text-white/70 truncate flex items-center gap-1"
                 >
                   <ExternalLink size={8} className="shrink-0" /> {s.title}
-                </a>
+                </SafeExternalLink>
               </li>
             ))}
           </ul>

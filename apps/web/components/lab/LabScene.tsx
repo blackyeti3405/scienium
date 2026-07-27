@@ -259,7 +259,11 @@ function LabSceneContent({
               : arrangeMode
                 ? 'Arrange mode — click a building to move or delete'
                 : null
-          return banner ? <div className="plot-banner font-pixel">{banner}</div> : null
+          return banner ? (
+            <div className="plot-banner font-pixel" aria-live="polite">
+              {banner}
+            </div>
+          ) : null
         })()}
 
         {/* Arrange mode: while an economy building is picked up, the only action is

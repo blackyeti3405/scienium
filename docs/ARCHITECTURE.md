@@ -765,7 +765,13 @@ economy buildings, gateway overrides, phase progress, and the requested panel.
 - live currency reconciliation through `components/lab/labCurrency.tsx`.
 
 `LabPlot` owns isometric input and rendering. Grid math is shared with the server
-through `lib/plot.ts`. Sprite lookup is centralized in
+through `lib/plot.ts`. Pick-up/placement is keyboard-operable, not just
+pointer-driven (REFACTOR2 §0.7, v0.64.0): a `detail === 0` check on the building
+button's own `onClick` distinguishes a keyboard Enter/Space activation from the
+pointer path (which picks up on `pointerdown`), and one focusable roving cursor
+button — arrow keys move it, Enter/Space commits — reaches the same
+`onDrop`/`isPlaceable` check a pointer drop uses, so legality never diverges by
+input method. Sprite lookup is centralized in
 `lib/sprites/manifest.ts`; generated anchors live in
 `lib/sprites/anchors.generated.ts`. The nature-scatter background layer
 (`DecorationLayer`) follows the same shape: its slot→sprite placement math

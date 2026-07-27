@@ -5,6 +5,74 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.64.0] — 2026-07-27
+
+### Fixed — a keyboard user could never place a building, and a model's own JSON went straight into `href`
+
+Sixteenth and seventeenth of REFACTOR2 §0.7's file dispositions (`components/lab/LabPlot.tsx`,
+`components/research-plan/IdeaCheckView.tsx`), plus the URL-safety half of `SourceReader.tsx`
+deferred from v0.60.0.
+
+- **A keyboard user could enter Arrange mode and Tab to a building, but could never pick it up,
+  and had no way to choose a destination cell even if they could.** Every building is a real
+  `<button>` (already focusable, already correctly named), but pick-up ran only on `pointerdown`,
+  and the button's own `onClick` explicitly no-opped in arrange mode ("pointer-down picks up
+  immediately") — so pressing Enter/Space on a focused building did nothing. Both E2E specs that
+  exercise pick-up (`upgrades.spec.ts`, `placement.spec.ts`) drive it with
+  `dispatchEvent('pointerdown', ...)`, which bypasses Playwright's real hit-testing entirely and
+  never touches the keyboard at all — confirming the verdict's "forced clicks likely mask it."
+  Past pick-up, the destination grid was a raw `onClick` reading `clientX/clientY` off the
+  container plus non-focusable, `aria-hidden` SVG polygons: there was no keyboard path onto the
+  grid regardless of mode. Fixed with (1) a keyboard branch on the existing building button's
+  `onClick` — a native button fires a `click` with `detail === 0` when activated by Enter/Space
+  (no preceding `pointerdown`), which is exactly the signal needed to tell a keyboard activation
+  from the pointer path already handled — and (2) one real, focusable "cursor" `<button>` (a
+  roving target, not 49 individually-tabbable cells) that arrow keys move across the SAME
+  `(gx, gy)` grid and Enter/Space commits through the SAME `onDrop`/`isPlaceable` check a pointer
+  drop uses, so a cell can never be legal by one input method and not the other. Its accessible
+  name states the destination ("Place Robotics Bay at column 3, row 2"), and the top-of-screen
+  mode banner (`.plot-banner`) is now `aria-live="polite"`. Visible focus comes free from the
+  app-wide `:focus-visible` rule — no new CSS for that part. A stray `window.setTimeout` guarding
+  a pointer/click race was never cleared on unmount; it now is.
+- **Model and provider JSON went straight into `href`.** `IdeaCheckView`'s prior-work links,
+  citation links, and live-search source links all render a `url` that ultimately comes from
+  either a live web-search tool result or the LLM's own JSON verdict — neither is a trusted
+  caller, and a `javascript:` URL landing in an `<a href>` from either is a real XSS, not a
+  hypothetical one. Fixed at both ends, reusing `isSafeHttpUrl` (`lib/showcase.ts`) rather than
+  writing a second checker — `lib/validation.ts` already names it as the generic http(s) gate.
+  Server-side, `idea-check-service.ts` drops any web-search result whose `url` isn't a plain
+  http(s) link before it can reach the stream or the row this becomes, and a new
+  `sanitizePriorWork` does the same for the model's own `priorWork[].url` (dropping the url, not
+  the whole entry — title/note still stand alone). Client-side, a new `SafeExternalLink`
+  primitive is the one thing all five link call sites in the file now render through — it also
+  absorbed the file's actual disposition ("extract result primitives... ternary-heavy duplicated
+  markup"): a `ResultHeading` primitive replaced the four repeated teacher/student heading
+  ternaries. `SourceReader.tsx`'s `node.sourceUrl` — the same defect class, deferred from v0.60.0
+  ("§0.11 records it as owed") — gets the identical client-side gate; its server-side write path
+  already had one (`tree-service.ts`'s `isHttpUrl`, from an earlier batch not in this one).
+
+`lib/research-plan/idea-check-service.test.ts` (4 new cases) pins `sanitizePriorWork` directly —
+reachable from node-only vitest without mocking the Anthropic stream, unlike the rest of the
+streaming service. **Negative-controlled:** reverting the guard to a bare `url: pw.url` fails the
+two malicious-URL cases; restored and re-verified green. The `isSafeHttpUrl` predicate itself was
+already tested (`test/showcase.test.ts`) before this batch; `emitSources`' one added condition
+reuses it without a second dedicated test — pulling that closure out of the streaming loop for one
+boolean would be disproportionate, and is recorded as unpinned rather than padded with a test that
+can't fail on its own.
+
+Gates 1–4 pass; Vitest 132 files / 1,841 tests (was 131/1,837).
+
+---
+
+**E2E:** `placement` **5/5**, `F3` **11/11** (a first run failed in Clerk's `auth.setup`, passed
+on re-run), `upgrades` **9 passed / 1 failed — identical to HEAD**, and `F3-plan-paste`
+**11 passed / 1 failed**.
+
+Both E2E failures were **attributed by stash-and-compare, not assumed**. `upgrades` AC12 is the
+known pre-existing dev-overlay failure. `F3-plan-paste` is **flaky**: across four runs the
+failing test *moved* (AC9 on one, AC10 on the next) and the same AC10 failure reproduces on an
+**unmodified** tree. Neither is caused by this batch; both are now written up in `docs/TODO.md`.
+
 ## [0.63.0] — 2026-07-27
 
 ### Fixed — a chart that quietly disagreed with its own table, and a roster an approval couldn't update

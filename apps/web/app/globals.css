@@ -463,6 +463,18 @@
   0%, 100% { transform: rotate(-1.5deg); }
   50% { transform: rotate(1.5deg); }
 }
+/* Keyboard placement cursor — a real, invisible-until-focused <button> moved
+   across cells by arrow keys. Sized to one cell's diamond bounding box and
+   positioned like the grid polygons/ghost preview above. Its visible focus
+   ring comes from the app-wide `:focus-visible` rule further down this file. */
+.plot-cursor {
+  position: absolute;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
 /* The translucent building attached to the cursor while placing/moving.
    Anchored at the sprite's top-left (JS-computed), matching placed buildings. */
 .plot-ghost {
