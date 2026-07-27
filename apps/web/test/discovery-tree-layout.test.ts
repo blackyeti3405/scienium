@@ -115,19 +115,20 @@ describe('it scales', () => {
 
   it('is linear, not quadratic, on a deep chain', () => {
     // The old `subtreeW` walked the whole subtree and was called once per node
-    // AND once per child, so doubling the depth quadrupled the work. Timing is
-    // noisy, so this asserts the SHAPE of the growth with a generous factor:
-    // quadratic would be ~4x, and anything under 3x cannot be quadratic.
-    const time = (n: number) => {
-      const nodes = chain(n)
-      const start = performance.now()
-      computeLayout(nodes)
-      return performance.now() - start + 0.01
-    }
-    time(1_000) // warm up, so JIT does not masquerade as complexity
-    const small = time(2_000)
-    const large = time(4_000)
-    expect(large / small).toBeLessThan(3)
+    // AND once per child, so doubling the depth quadrupled the work.
+    //
+    // This asserted a 2,000 vs 4,000 RATIO under 3x, and flaked: both runs are
+    // single-digit milliseconds, where scheduler jitter is larger than the
+    // signal. An absolute budget at a size quadratic cannot reach is stable
+    // instead — 100,000 nodes is ~130ms linear (measured), while quadratic is
+    // 5e9 node visits and cannot finish in a second on any machine.
+    const nodes = chain(100_000)
+    const start = performance.now()
+    const laid = computeLayout(nodes)
+    const elapsed = performance.now() - start
+
+    expect(laid).toHaveLength(100_000)
+    expect(elapsed).toBeLessThan(2_000)
   })
 
   it('lays a wide star out left to right without overlap', () => {

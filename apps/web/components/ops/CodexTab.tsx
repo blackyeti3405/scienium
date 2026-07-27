@@ -10,29 +10,16 @@ import { CODEX_TRACKS, loadTrack } from '@/lib/ops/codex/index'
 import { unitUnlocked, fluencyTier } from '@/lib/ops/codex/engine'
 import type { CodexTrack, Lesson, Segment } from '@/lib/ops/codex/types'
 import { LessonExperience } from './codex/LessonExperience'
+import { fetchCodexProgress, type CodexProgressPayload } from './codex/codexApi'
+import { ApiError } from '@/lib/api/client'
 
 // ─── Server payload shapes ──────────────────────────────────────────────────
 
-interface ProgressRow {
-  trackSlug: string
-  lessonId: string
-  completed: boolean
-  bestScore: number
-  kpAwarded: number
-  completedAt: string | null
-}
-
-interface RecommendedTrackPayload {
-  trackSlug: string
-  branchSlugs: string[]
-  rationale: string
-}
-
-interface ProgressPayload {
-  progress: ProgressRow[]
-  dailyCap: { limit: number; completedToday: number }
-  studyPlan: { tracks: RecommendedTrackPayload[]; manualTrackSlugs: string[]; generatedAt: string } | null
-}
+// Derived from the runtime schema in ./codex/codexApi, so the types cannot drift
+// from what is actually validated at the boundary.
+type ProgressPayload = CodexProgressPayload
+type ProgressRow = ProgressPayload['progress'][number]
+type RecommendedTrackPayload = NonNullable<ProgressPayload['studyPlan']>['tracks'][number]
 
 const FLUENCY_LABEL: Record<string, string> = {
   novice: 'Novice',
@@ -133,17 +120,35 @@ function CodexHome({
   const manualSlugs = studyPlan?.manualTrackSlugs ?? []
   const memberSlugs = Array.from(new Set([...recommendedSlugs, ...manualSlugs]))
 
+  /**
+   * `Promise.all` was all-or-nothing: ONE slug the bundle no longer knows — a
+   * study plan holds slugs, and a Codex merge can rename a track — rejected the
+   * whole batch, so EVERY card stayed a pulsing skeleton forever. Reproduced
+   * against the original: three slugs, one bad, zero tracks loaded. Settle each
+   * one on its own; a track that cannot load simply does not appear.
+   */
   useEffect(() => {
     const slugsToLoad = browseAll ? CODEX_TRACKS.map((t) => t.slug) : memberSlugs
     const missing = slugsToLoad.filter((slug) => !loadedTracks[slug])
     if (missing.length === 0) return
-    Promise.all(missing.map((slug) => loadTrack(slug).then((track) => [slug, track] as const))).then((entries) => {
+    let cancelled = false
+    Promise.all(
+      missing.map((slug) =>
+        loadTrack(slug)
+          .then((track) => [slug, track] as const)
+          .catch(() => null),
+      ),
+    ).then((entries) => {
+      if (cancelled) return
       setLoadedTracks((prev) => {
         const next = { ...prev }
-        for (const [slug, track] of entries) next[slug] = track
+        for (const entry of entries) if (entry) next[entry[0]] = entry[1]
         return next
       })
     })
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [browseAll, memberSlugs.join(',')])
 
@@ -360,23 +365,52 @@ export function CodexTab() {
   const [payload, setPayload] = useState<ProgressPayload | null>(null)
   const [view, setView] = useState<View>({ kind: 'home' })
   const [activeTrack, setActiveTrack] = useState<CodexTrack | null>(null)
+  /** A track that could not be opened — an error with a way BACK, not a spinner. */
+  const [trackError, setTrackError] = useState<string | null>(null)
   const [generatingPlan, setGeneratingPlan] = useState(false)
   const [planError, setPlanError] = useState<string | null>(null)
 
-  const refresh = useCallback(() => {
-    return fetch('/api/ops/codex/progress')
-      .then((r) => r.json())
-      .then((d: ProgressPayload) => setPayload(d))
-      .catch(() => setLoadError('Could not load the Field Codex. Please refresh.'))
+  const refresh = useCallback(async () => {
+    try {
+      setPayload(await fetchCodexProgress())
+      setLoadError(null)
+    } catch (err) {
+      // The status IS checked now (see codexApi) — an error body used to be
+      // committed as the payload and the tab threw on the next render.
+      setLoadError(
+        err instanceof ApiError ? err.message : 'Could not load the Field Codex. Please refresh.',
+      )
+    }
   }, [])
 
   useEffect(() => {
     refresh().finally(() => setLoading(false))
   }, [refresh])
 
+  /**
+   * Load the track behind the current view.
+   *
+   * Two failures the original had, both ending in a spinner with no way out:
+   * `loadTrack` REJECTS on a slug it does not know (study-plan rows persist
+   * slugs, so a renamed or removed track is exactly that) and there was no
+   * `.catch`; and two loads in flight could resolve oldest-last, leaving
+   * `activeTrack` pointing at the track the student had already left while the
+   * render guard `activeTrack.slug !== view.slug` held the loader up for good —
+   * nothing re-triggers the effect. `cancelled` retires the loser.
+   */
   useEffect(() => {
-    if (view.kind === 'track' || view.kind === 'lesson') {
-      loadTrack(view.slug).then(setActiveTrack)
+    if (view.kind !== 'track' && view.kind !== 'lesson') return
+    let cancelled = false
+    setTrackError(null)
+    loadTrack(view.slug)
+      .then((track) => {
+        if (!cancelled) setActiveTrack(track)
+      })
+      .catch(() => {
+        if (!cancelled) setTrackError('This track could not be opened. It may have been renamed.')
+      })
+    return () => {
+      cancelled = true
     }
   }, [view])
 
@@ -419,6 +453,22 @@ export function CodexTab() {
         planError={planError}
         onOpenTrack={(slug) => setView({ kind: 'track', slug })}
       />
+    )
+  }
+
+  if (trackError) {
+    return (
+      <div className="ops-tab-body items-center justify-center text-center gap-3">
+        <BookOpen size={20} className="text-white/40" />
+        <span className="font-pixel text-[8px] text-white/40 max-w-[280px]">{trackError}</span>
+        <button
+          type="button"
+          onClick={() => setView({ kind: 'home' })}
+          className="font-pixel text-[8px] text-[#F5C518] hover:brightness-125"
+        >
+          Back to the Codex
+        </button>
+      </div>
     )
   }
 

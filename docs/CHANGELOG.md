@@ -5,6 +5,54 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.58.0] — 2026-07-26
+
+### Fixed — one rate-limited refresh blanked the whole Field Codex
+
+Sixth of REFACTOR2 §0.7's file dispositions: `components/ops/CodexTab.tsx`. All three readings
+were correct and **reproduced against the pre-fix tab**; two of them are worse than described,
+and a fourth defect the verdict does not name turned up alongside them.
+
+- **"Refresh ignores non-OK responses" ends in a crash, not a stale view.** `refresh` did
+  `fetch(...).then(r => r.json()).then((d: ProgressPayload) => setPayload(d))`. On any non-2xx
+  the route's `{ error: "…" }` body was committed **as the payload**; the guard after it is
+  `if (loadError || !payload)`, and an error object is truthy, so it passed and `CodexHome` read
+  `payload.progress.filter(...)` on `undefined`. Reproduced verbatim with a 429 body: *"Cannot
+  read properties of undefined (reading 'filter')"* — the tab gone. `refresh()` also runs after
+  **every completed lesson**, so finishing one lesson too many in a minute was enough to do it.
+  The payload is now fetched through `requestJson` against a runtime schema.
+- **"A track load error leaves an endless loader" — with no way back.** The effect was
+  `loadTrack(view.slug).then(setActiveTrack)` with no `.catch`, and `loadTrack` **rejects** on a
+  slug it does not know. Study plans persist slugs, so a track renamed by a Codex merge is
+  exactly that: the student lands on a spinner with no Back button and no other control. There
+  is now an error state with a way out.
+- **"Rapid navigation can commit a stale track" strands the loader permanently.** Two loads in
+  flight can resolve oldest-last, and the render guard `activeTrack.slug !== view.slug` then
+  holds the loader up **forever**, because nothing re-triggers the effect. The effect cleanup
+  retires the loser.
+- **Not in the verdict: one bad slug froze the entire home screen.** The bulk track load was a
+  `Promise.all` with no `.catch`, so a single unknown slug rejected the whole batch and **every**
+  track card stayed a pulsing skeleton. Reproduced: three slugs, one bad, zero tracks loaded.
+  Each slug settles on its own now.
+
+### Also — a flaky test from v0.53.0
+`discovery-tree-layout`'s linearity check compared a 2,000-node run against a 4,000-node run and
+asserted the ratio was under 3x. Both are single-digit milliseconds, where scheduler jitter is
+larger than the signal; it failed on 2 of 8 consecutive runs. It now lays out **100,000** nodes
+against an absolute 2 s budget — ~130 ms linear (measured), and unreachable for a quadratic
+implementation. Stable across 5 consecutive full runs.
+
+### Verification
+Gates 1–5 pass. Vitest **127 files / 1,812 tests** (+1 file, +4).
+**E2E `F13-codex` re-run: 16/16 pass** — including AC11, which drives the study-plan route to a
+real **429**, the exact status that used to blank the tab.
+`components/ops/codex/codexApi.test.ts` pins the payload contract against a real local server.
+Negative-controlled: swapping `requestJson` back for the pre-fix `fetch().then(r => r.json())`
+cast fails 3 of the 4. **Two tests were written and then deleted** — they restated the two
+effect-ordering rules rather than exercising `CodexTab`, so they could not have failed if it
+regressed. Those two guards are recorded as unpinned in §0.11 rather than covered by a test that
+proves nothing.
+
 ## [0.57.0] — 2026-07-26
 
 ### Fixed — clearing a teacher's score box recorded a real zero
