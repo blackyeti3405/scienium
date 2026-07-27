@@ -7,6 +7,19 @@ import { classJoinCodeExpiry, generateInviteCode } from '@/lib/team/invite'
 import { db } from '@/lib/db'
 
 /**
+ * Cap on pending join requests returned per class (§0.7: "responses are
+ * unbounded"). Unlike the roster's per-teacher student list — bounded in
+ * practice by real classroom enrollment, a teacher's own students — a class's
+ * join code is semi-public until revoked, so the pending-request count is
+ * bounded only by how many accounts try it before a teacher notices and
+ * regenerates it (SEC2-003). `@@unique([classId, userId])` already caps one
+ * user to one row, but distinct accounts are not capped at all. Ordered
+ * oldest-first, so a teacher still sees (and can act on) the longest-waiting
+ * requests first if a class is ever at the cap.
+ */
+const MAX_PENDING_REQUESTS_PER_CLASS = 500
+
+/**
  * GET /api/teacher/class — the teacher's classrooms, their reusable join codes,
  * and each class's PENDING join requests (students awaiting approval).
  */
@@ -27,6 +40,7 @@ export async function GET(req: NextRequest) {
       joinRequests: {
         where: { status: 'pending' },
         orderBy: { createdAt: 'asc' },
+        take: MAX_PENDING_REQUESTS_PER_CLASS,
         select: {
           id: true,
           createdAt: true,

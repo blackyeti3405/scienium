@@ -13,20 +13,33 @@ import { Search, ChevronDown } from 'lucide-react'
  * unaffected. Each panel keeps its own layout order, copy, and filter call.
  */
 
-/** Copy-to-clipboard state for a guide box's "Copy" code button — clears the
- *  "Copied" state after 1.5s, swallows a blocked/denied clipboard silently. */
+/**
+ * Copy-to-clipboard state for a "Copy" button — clears the "Copied" state
+ * after 1.5s.
+ *
+ * `navigator.clipboard.writeText` rejects on an insecure context (no
+ * `Clipboard` object at all — the optional chaining below then short-circuits
+ * before `.writeText` is even called) and when the user/browser denies the
+ * permission (the promise itself rejects). Both used to be swallowed with no
+ * caller-visible signal at all: a click that silently did nothing, with no
+ * way to tell "it worked" from "it didn't". `error` surfaces that failure so
+ * a caller can show it instead of leaving the student/teacher guessing.
+ */
 export function useCopyToClipboard() {
   const [copied, setCopied] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   async function copy(text: string) {
     try {
+      if (!navigator.clipboard) throw new Error('Clipboard unavailable')
       await navigator.clipboard.writeText(text)
       setCopied(true)
+      setError(null)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      /* clipboard blocked — no-op */
+      setError('Could not copy — copy it manually.')
     }
   }
-  return { copied, copy }
+  return { copied, copy, error }
 }
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {

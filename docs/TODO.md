@@ -146,7 +146,9 @@ stated reason has already been fixed another way.
 `lib/hooks/usePlotBuildings.ts` (v0.61.0 — stale-resync + swallowed-error + duplicated-prediction all fixed; reducer split declined),
 `components/lab/LabScene.tsx` (v0.61.0 — overlap CONFIRMED reachable via `ActivityPanel`'s missing backdrop; one `Overlay` union replaces six flags),
 `lib/fairs/zip.ts` (v0.62.0 — 1 req/s queue + cache + response schema/cap all added; the triplicated `coords ?? state-centroid` fallback consolidated into `resolveTeamPoint()`; "special ZIPs repeat" did not hold — zero duplicate table keys; data/lookup/transport split declined),
-`lib/discovery/articles.ts` (v0.62.0 — byte cap on `res.text()` added via the shared `readCapped`; host/content-type validation declined — every feed url is a literal, not request/provider data, and content-type gaps were measured to already degrade safely; licensing review still owed).
+`lib/discovery/articles.ts` (v0.62.0 — byte cap on `res.text()` added via the shared `readCapped`; host/content-type validation declined — every feed url is a literal, not request/provider data, and content-type gaps were measured to already degrade safely; licensing review still owed),
+`components/ops/data-terminal/ExperimentDetail.tsx` (v0.63.0 — duplicate `(x, series)` chart collisions now counted and disclosed beside the chart, without touching the student's recorded table data; load-retry added; chart/input/table split declined),
+`components/teacher/TeacherRoster.tsx` (v0.63.0 — approval now bridges to a roster re-fetch; the shared `useCopyToClipboard` hook fixed at its source to stop swallowing a clipboard failure; pending-join-request list capped, roster list left deliberately uncapped; split/pagination declined).
 
 **Deliberately deprioritised** (verdict is structural only, no named defect): `app/globals.css`
 (3,051 lines) and `prisma/schema.prisma` (now 2,282). Both are real cleanups with real risk and

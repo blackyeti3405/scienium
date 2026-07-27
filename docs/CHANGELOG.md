@@ -5,6 +5,81 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.63.0] — 2026-07-27
+
+### Fixed — a chart that quietly disagreed with its own table, and a roster an approval couldn't update
+
+Fourteenth and fifteenth of REFACTOR2 §0.7's file dispositions: `components/ops/data-terminal/ExperimentDetail.tsx`
+and `components/teacher/TeacherRoster.tsx`.
+
+- **A student could log two measurements at the same x for the same series** (a second trial,
+  re-typing an already-entered row, a pasted spreadsheet with a repeat) — nothing in the UI or the
+  API stopped it. The chart's row-per-x, column-per-series shape can only hold ONE y per (x,
+  series): the later point silently overwrote the earlier one in the drawn line, while the table
+  underneath — reading the same measurements array directly — kept both rows. Reproduced: three
+  points, x=5/"Trial A"/y=10 then x=5/"Trial A"/y=40 then x=6/y=12 — the table shows all 3, the
+  chart draws 2 points and plots y=40 (not y=10) at x=5, with no indication anything was dropped
+  from the picture. The fix does **not** invent a de-duplication rule that would change a
+  student's recorded data — every point stays in the table exactly as entered. Instead, the chart
+  now counts these collisions and says so beside itself: "N points share the same x and series
+  with another point below — the chart can only draw one y per point... All points are kept in the
+  table."
+- **A failed measurement load had no way back.** The fetch that lazy-loads a selected experiment's
+  points had a `.catch` that only set an error string — no retry, so a flaky connection or a rate
+  limit meant reselecting the experiment (which remounts the component and refetches) was the only
+  recovery. The load is now one re-runnable function; the error state renders a "Try again" button
+  next to the message.
+- **Approving a class join request could leave the roster showing an outdated class.** Approval
+  enrols the student server-side and the class card's own count/pending-list update locally — but
+  the actual student roster table lives in a sibling component fed by a separate `/api/teacher/roster`
+  fetch that nothing ever re-ran. A newly-approved student was enrolled and invisible in the roster
+  until a manual page reload. One `onApproved` callback now re-fetches the roster after a successful
+  approval, with its own failure surfaced as a dismissable, retryable banner (a failed background
+  refresh no longer blanks the whole panel the teacher just successfully used).
+- **The initial roster/class load had no retry either.** Same shape as the measurement load above:
+  the fetch is now one re-runnable function, and the shared `TeacherPanelState` component gained an
+  optional `onRetry` button (opt-in — `TeacherReports`, its other consumer, is unaffected).
+- **Copying a class join code could silently do nothing.** `navigator.clipboard?.writeText(code).then(...)`
+  had no `.catch` — a rejected write (permission denied) became an unhandled promise rejection with
+  zero visible signal, and a truly absent `Clipboard` API (insecure context) short-circuited to a
+  no-op click. The shared `useCopyToClipboard` hook (`components/ops/guide-chrome.tsx`, already used
+  by two guide panels) itself only swallowed the same failure with a comment admitting it — fixed
+  at its one shared source rather than re-implemented locally: it now surfaces `error`, and
+  `TeacherRoster` is the first caller to display it.
+- **"Responses are unbounded" was two different claims, and only one held.** The roster's
+  per-teacher student list has no `take` — but every row is a real student a school assigned to
+  that teacher (a few hundred at the outside for a multi-section pilot), so capping it would
+  silently hide some of a teacher's own class, the same reasoning `student-overview` (v0.60.1)
+  already recorded for declining a query cap — left uncapped, on purpose, and said so in the code.
+  The pending-join-requests list per class, by contrast, is bounded only by however many distinct
+  accounts try a semi-public join code before it's revoked — a real, if bounded-by-total-users,
+  exposure. That one now has a `take` cap (500, oldest-first so a teacher facing it still sees the
+  longest-waiting requests).
+- **Both proposed file splits were declined.** `ExperimentDetail`'s chart/table/input are three
+  views of one owned `measurements` array with one write path (`syncMeasurements`) — splitting them
+  would just prop-drill the same state between files, the same shape §0.7 already flagged as a red
+  flag elsewhere (`discoveryStore`, v0.56.0). `TeacherRoster`'s two components (`ClassManager`,
+  roster table) already communicate only through typed props — same conclusion `ShowcaseEditor`
+  reached: it already delegates reasonably, and the real defect was the missing bridge between two
+  established owners, not the file boundary. **Pagination was explicitly out of scope for this
+  batch** and was not attempted, the same way `student-overview`'s lazy-load sections were left open
+  in v0.60.1 — it is a first-paint product decision, not a defect fix.
+
+### Verification
+Gates 1–5 pass. Vitest **131 files / 1,837 tests** (+5: `lib/data-terminal/chart.test.ts`, pinning
+the exact duplicate-point reproduction above against the extracted, DOM-free chart-shaping logic).
+Negative-controlled: disabling the duplicate-collision guard in `buildChartData` fails 3 of the 5
+new cases (the exact ones asserting a nonzero `duplicateCount`), restoring it passes all 5. The
+retry wiring, roster-refresh callback, and clipboard error surfacing are React-only and not
+reachable from this repo's node-only Vitest (no jsdom/`renderHook`) — recorded as unpinned rather
+than backed by a test that would only restate the fix.
+
+---
+
+**E2E `F9` re-run: 13/13** — it covers the roster load/nudge UI. Note honestly that it does
+**not** exercise `ClassManager`, so the new approval→roster bridge and the clipboard error path
+are not covered by any browser spec; `ExperimentDetail` has no E2E coverage at all.
+
 ## [0.62.0] — 2026-07-27
 
 ### Fixed — a geocoding policy nobody enforced, and a feed body nobody capped

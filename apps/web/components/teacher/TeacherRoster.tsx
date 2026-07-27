@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
   Plus,
@@ -19,6 +19,7 @@ import {
 import { PHASE_INFO, PHASE_ORDER, type Phase } from '@/lib/phase'
 import { StatTile } from '@/components/ui/Card'
 import { BusyButton } from '@/components/ui/BusyButton'
+import { useCopyToClipboard } from '@/components/ops/guide-chrome'
 import { TeacherPanelState } from './TeacherPanelState'
 
 interface RosterStudent {
@@ -67,13 +68,28 @@ export function TeacherRoster() {
   // shares the team as "Nudged" for the rest of the session.
   const [nudged, setNudged] = useState<Record<string, 'idle' | 'sending' | 'done'>>({})
   const [nudgeError, setNudgeError] = useState<Record<string, string | undefined>>({})
+  // A class-join approval enrols the student server-side, but that student
+  // still won't appear in `students` below until the roster is re-fetched —
+  // ClassManager only ever patched its OWN `classes` state (the count/pending
+  // list), never this component's roster. Surfaced separately from the
+  // full-page `loadError` so one failed background refresh after an approval
+  // doesn't blank the whole panel that was just successfully used.
+  const [rosterRefreshError, setRosterRefreshError] = useState<string | null>(null)
 
-  useEffect(() => {
-    Promise.all([
-      fetch('/api/teacher/roster').then((r) => {
-        if (!r.ok) throw new Error('roster fetch failed')
-        return r.json() as Promise<RosterResponse>
-      }),
+  async function fetchRoster(): Promise<RosterResponse> {
+    const r = await fetch('/api/teacher/roster')
+    if (!r.ok) throw new Error('roster fetch failed')
+    return r.json()
+  }
+
+  // Extracted so a failed initial load has a real retry (not just a dead-end
+  // message), same shape as LiteratureFeature's (v0.59.0) and CodexTab's
+  // (v0.58.0) load failures.
+  const load = useCallback(() => {
+    setLoading(true)
+    setLoadError(null)
+    return Promise.all([
+      fetchRoster(),
       fetch('/api/teacher/class').then((r) => {
         if (!r.ok) throw new Error('class fetch failed')
         return r.json()
@@ -87,6 +103,25 @@ export function TeacherRoster() {
       })
       .catch(() => setLoadError('Could not load your roster. Try refreshing the page.'))
       .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const refreshRosterAfterApproval = useCallback(() => {
+    setRosterRefreshError(null)
+    return fetchRoster()
+      .then((roster) => {
+        setStudents(roster.students ?? [])
+        setPhaseCounts(roster.phaseCounts ?? {})
+        setAttentionCount(roster.attentionCount ?? 0)
+      })
+      .catch(() =>
+        setRosterRefreshError(
+          'Approved — but the roster below may be out of date. Try again to see the new student.',
+        ),
+      )
   }, [])
 
   const hasAttention = (s: RosterStudent) =>
@@ -112,13 +147,26 @@ export function TeacherRoster() {
   }
 
   if (loading || loadError) {
-    return <TeacherPanelState loading={loading} error={loadError} skeletonRows={5} />
+    return <TeacherPanelState loading={loading} error={loadError} skeletonRows={5} onRetry={load} />
   }
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
+      {rosterRefreshError && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-2.5">
+          <span className="text-sm text-amber-300">{rosterRefreshError}</span>
+          <button
+            type="button"
+            onClick={() => void refreshRosterAfterApproval()}
+            className="shrink-0 text-sm text-white/60 border border-white/20 rounded-md px-3 py-1 hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
       {/* Classes manager */}
-      <ClassManager classes={classes} setClasses={setClasses} />
+      <ClassManager classes={classes} setClasses={setClasses} onApproved={refreshRosterAfterApproval} />
 
       {/* Overview stat tiles */}
       {students.length > 0 && (
@@ -299,15 +347,21 @@ export function TeacherRoster() {
 function ClassManager({
   classes,
   setClasses,
+  onApproved,
 }: {
   classes: ClassRow[]
   setClasses: React.Dispatch<React.SetStateAction<ClassRow[]>>
+  /** Called after a join request is APPROVED — the roster (owned by the
+   *  parent) needs its own re-fetch, since approval only enrols the student
+   *  server-side and this component only ever patches its own `classes`. */
+  onApproved: () => void
 }) {
   const [name, setName] = useState('')
   const [schoolName, setSchoolName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState<string | null>(null)
+  const { copied, copy, error: clipboardError } = useCopyToClipboard()
+  const [copiedCode, setCopiedCode] = useState<string | null>(null)
   const [regenerating, setRegenerating] = useState<string | null>(null)
   // Requests currently being decided, so their buttons disable individually.
   const [deciding, setDeciding] = useState<Set<string>>(new Set())
@@ -333,11 +387,12 @@ function ClassManager({
     }
   }
 
-  function copy(code: string) {
-    navigator.clipboard?.writeText(code).then(() => {
-      setCopied(code)
-      setTimeout(() => setCopied(null), 1500)
-    })
+  // `copied`/`clipboardError` are shared across every code button in this list
+  // (one hook instance), so `copiedCode` tracks WHICH code was last attempted —
+  // otherwise every card's checkmark/error would light up together.
+  function handleCopy(code: string) {
+    setCopiedCode(code)
+    void copy(code)
   }
 
   // Regenerate a class's join code — instantly revokes the old (leaked) code.
@@ -385,6 +440,11 @@ function ClassManager({
             : c,
         ),
       )
+      // Approval enrols the student server-side, but this component only just
+      // patched ITS OWN `classes` state above — the parent's roster (the
+      // actual student list/table) is a separate fetch and would otherwise
+      // stay stale until a page reload.
+      if (decision === 'approve') onApproved()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update request')
     } finally {
@@ -418,29 +478,34 @@ function ClassManager({
                   </span>
                 </div>
                 {c.joinCode && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => copy(c.joinCode!)}
-                      className="inline-flex items-center gap-1.5 text-sm font-medium text-[#F5C518] tracking-widest hover:brightness-110 transition-all cursor-pointer"
-                      title="Copy class code"
-                    >
-                      {c.joinCode}
-                      {copied === c.joinCode ? (
-                        <Check size={13} className="text-emerald-400" />
-                      ) : (
-                        <Copy size={13} />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => regenerate(c.id)}
-                      disabled={regenerating === c.id}
-                      className="text-white/40 hover:text-[#F5C518] disabled:opacity-40 transition-colors cursor-pointer"
-                      title="Regenerate code (revokes the current one)"
-                    >
-                      <RefreshCw size={13} className={regenerating === c.id ? 'animate-spin' : ''} />
-                    </button>
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(c.joinCode!)}
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-[#F5C518] tracking-widest hover:brightness-110 transition-all cursor-pointer"
+                        title="Copy class code"
+                      >
+                        {c.joinCode}
+                        {copied && copiedCode === c.joinCode ? (
+                          <Check size={13} className="text-emerald-400" />
+                        ) : (
+                          <Copy size={13} />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => regenerate(c.id)}
+                        disabled={regenerating === c.id}
+                        className="text-white/40 hover:text-[#F5C518] disabled:opacity-40 transition-colors cursor-pointer"
+                        title="Regenerate code (revokes the current one)"
+                      >
+                        <RefreshCw size={13} className={regenerating === c.id ? 'animate-spin' : ''} />
+                      </button>
+                    </div>
+                    {clipboardError && copiedCode === c.joinCode && (
+                      <span className="text-[11px] text-red-400">{clipboardError}</span>
+                    )}
                   </div>
                 )}
               </div>

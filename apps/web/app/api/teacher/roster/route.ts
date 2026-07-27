@@ -30,6 +30,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ students: [], hasClasses: false })
   }
 
+  // No `take` here, deliberately (§0.7: "responses are unbounded" — checked,
+  // and this one is NOT unbounded in any practical sense). Every row is a real
+  // student a school assigned to this teacher; a cap here would silently hide
+  // some of a teacher's own class from them once enrollment passed it — the
+  // same reasoning student-overview's (v0.60.1) declined query cap already
+  // recorded. A real deployment tops out at a few hundred students per
+  // teacher (several sections), not an attacker-influenced number — unlike
+  // `/api/teacher/class`'s pending-join-requests list, which a leaked join
+  // code can inflate and which IS capped below.
   const students = await db.user.findMany({
     where: { classId: { in: ctx.classIds }, role: 'student' },
     orderBy: { name: 'asc' },

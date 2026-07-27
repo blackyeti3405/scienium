@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   LineChart,
   Line,
@@ -14,6 +14,7 @@ import {
 import { Plus, Trash2, ChevronLeft, Download, FileImage } from 'lucide-react'
 import { parsePastedPoints, toCsv } from '@/lib/data-terminal/csv'
 import { downloadBlob, downloadChartPng, slugify } from '@/lib/data-terminal/export'
+import { buildChartData } from '@/lib/data-terminal/chart'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
 import type { Experiment, Measurement } from './types'
@@ -43,8 +44,12 @@ export function ExperimentDetail({
   const [measurements, setMeasurements] = useState<Measurement[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  useEffect(() => {
+  // Extracted so a failed load has a real retry, not just a message — same
+  // shape as LiteratureFeature's (v0.59.0) and CodexTab's (v0.58.0) load
+  // failures: one function the effect runs once and a button can re-run.
+  const loadMeasurements = useCallback(() => {
     let cancelled = false
+    setLoadError(null)
     listMeasurements(experiment.id)
       .then((d) => {
         if (!cancelled) setMeasurements(d.measurements)
@@ -56,6 +61,8 @@ export function ExperimentDetail({
       cancelled = true
     }
   }, [experiment.id])
+
+  useEffect(() => loadMeasurements(), [loadMeasurements])
 
   // Keep the list's point count honest whenever the loaded set changes.
   function syncMeasurements(next: Measurement[]) {
@@ -80,20 +87,10 @@ export function ExperimentDetail({
 
   const chartRef = useRef<HTMLDivElement>(null)
 
-  const { chartData, seriesNames } = useMemo(() => {
-    const points = measurements ?? []
-    const names = Array.from(new Set(points.map((m) => m.series || 'series')))
-    const byX = new Map<number, Record<string, number>>()
-    for (const m of points) {
-      const row = byX.get(m.x) ?? { x: m.x }
-      row[m.series || 'series'] = m.y
-      byX.set(m.x, row)
-    }
-    return {
-      chartData: Array.from(byX.values()).sort((a, b) => a.x - b.x),
-      seriesNames: names,
-    }
-  }, [measurements])
+  const { chartData, seriesNames, duplicateCount } = useMemo(
+    () => buildChartData(measurements ?? []),
+    [measurements],
+  )
 
   async function addPoint() {
     const xn = Number(x)
@@ -199,7 +196,16 @@ export function ExperimentDetail({
           <h3 className="text-base text-white font-medium">{experiment.title}</h3>
 
           {loadError ? (
-            <p className="font-pixel text-[8px] text-red-400">{loadError}</p>
+            <div className="flex items-center gap-3 py-6">
+              <p className="font-pixel text-[8px] text-red-400">{loadError}</p>
+              <button
+                type="button"
+                onClick={loadMeasurements}
+                className="font-pixel text-[8px] border border-white/20 text-white/60 px-3 py-1.5 hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+              >
+                Try again
+              </button>
+            </div>
           ) : (
             <LabeledLoader fill="inline" label="Loading data points…" className="items-start py-6" />
           )}
@@ -263,6 +269,13 @@ export function ExperimentDetail({
             </ResponsiveContainer>
           )}
         </div>
+        {duplicateCount > 0 && (
+          <p className="font-pixel text-[7px] text-[#F5C518]/70 leading-relaxed">
+            {duplicateCount} point{duplicateCount !== 1 ? 's' : ''} share the same {experiment.xLabel} and
+            series with another point below — the chart can only draw one y per point, so it shows the
+            latest value. All points are kept in the table.
+          </p>
+        )}
 
         {/* Export buttons */}
         <div className="flex gap-2">
