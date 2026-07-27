@@ -2,16 +2,16 @@
 
 _Audit + rebuild, 2026-07-26 (v0.51.0). Measured, one worker, production build:_
 
-| | baseline | after |
-| --- | --- | --- |
-| passed | 263 | **292** |
-| failed | 10 | **2** |
-| never ran (serial cascade) | 48 | **13** |
-| wall clock | 13.6 min | 15.5 min |
+| | baseline | after the harness rebuild | after migrating F4 + F4-print |
+| --- | --- | --- | --- |
+| passed | 263 | 292 | **307** |
+| failed | 10 | 2 | **0** |
+| never ran (serial cascade) | 48 | 13 | **0** |
+| wall clock | 13.6 min | 15.5 min | 14.8 min |
 
-_The suite got **slower**, and that is the point: 35 tests that used to be skipped
-by a `mode: 'serial'` cascade now actually execute. A fast run that silently
-skipped 15% of itself was not a faster suite._
+_**44 more tests now actually execute** than at the baseline, and the suite is
+green. Note it briefly got SLOWER: a run that silently skipped 15% of itself was
+not a faster suite._
 
 ## Run it
 
@@ -44,7 +44,7 @@ and they took 48 more tests down with them.
 | **Shared-fixture pollution** | 3 | `resetTree()` timing out because a previous spec's discovery nodes would not clear. The fixture lab is never emptied, so it had accumulated 1,732 activity-feed rows, 152 notifications, 49 project logs and 123 uploaded assets. |
 | **Cross-spec ordering** | 2 | `topic-removal-confirm` failing on a proposal token bound to a node set another spec had changed. |
 | **Stale expectation** | 1 | `F4-print` AC2 asserting a slug URL for a `link_only` showcase, which v0.35.1 (P1-R7) made reachable only through its 128-bit share token. The app was right; the spec was five versions out of date. |
-| **Known-failing, diagnosed** | 2 | `F4` AC3 and `F4-print` AC10 — see below. |
+| **A false premise in the test** | 2 | `F4` AC3 and `F4-print` AC10 asserted that a "signed-out" viewer is denied — using a viewer that was not signed out. See "the anonymous-viewer trap". |
 
 ### The five structural flaws behind them
 
@@ -145,7 +145,48 @@ bucket shared with production. Disposal therefore **reassigns** any remaining
 assets to the shared fixture team, still `orphaned`: the object stays tracked
 for the reclaim sweep and the disposable lab becomes deletable.
 
-### 5. The seeder can build from an empty database
+### 5. The anonymous-viewer trap
+
+Three tests asserted "a signed-out visitor is denied". None of them had a
+signed-out visitor, and settling that took three wrong turns worth recording:
+
+- **`browser.newContext()` is not signed out** against a Clerk **development**
+  instance. Loading any app page runs the dev-browser handshake and restores a
+  session from `__clerk_db_jwt`; dumping the cookies showed the "anonymous"
+  context holding `__session`/`__client_uat` **as the leader**, who owns the
+  showcase under test. `canViewShowcase` correctly returned true and the page
+  correctly rendered. The product was never leaking.
+- **`clerk.signOut()` on that context is worse than useless.** It revokes the
+  session it just restored — the shared leader session — and every later test in
+  the file times out.
+- **`playwrightRequest.newContext({ baseURL })` still carries a storage state.**
+  `storageState: undefined` has to be passed explicitly. (One case in
+  `F4.spec.ts` already did this; the idiom was there to copy and nobody had.)
+
+The working shape is a request context with `storageState: undefined`, asserting
+the **not-found copy is present** rather than the title absent — the page streams
+behind its `loading.tsx`, so the raw body legitimately carries suspended-boundary
+payload. Verified out of band against a production build: a truly anonymous fetch
+of a pending showcase returns the not-found copy and none of the showcase's
+title, abstract or assets.
+
+### 6. What migrating F4 and F4-print actually found
+
+Both files drive one `Showcase` row (`teamId` is `@unique`), so they were moved
+to their own disposable labs. Isolation alone did **not** turn them green — but
+running them past their first failure surfaced four more dead assertions, every
+one of them hidden by the serial cascade:
+
+- `AC4` (link_only opens only at its share token) had the same anonymous-viewer
+  bug and **had never once run** — AC3 failed before it in every session.
+- `AC7`, `AC10` and `AC12` POST moderation decisions without the `digest` that
+  P0-R3 (v0.35.0) made mandatory. Dead for five versions, never reported.
+
+That is the clearest possible evidence for the audit's central claim: a failure
+in a serial file does not cost you one test, it costs you everything after it,
+and what it hides is more dead assertions.
+
+### 7. The seeder can build from an empty database
 
 `seed-e2e.mjs` now materializes a missing `User` row by reading the **real**
 Clerk id from the Clerk API, rather than aborting. The original refusal was
@@ -162,29 +203,10 @@ is what makes the CI lane possible at all.
   change that would move the 13.6-minute runtime materially. Everything above
   is the half that does not need new accounts — and it is the half that removes
   the flakes.
-- **Migrating the 32 existing specs to `withLab`.** The primitive exists and is
-  documented; the specs still use the shared lab.
-- **`F4` AC3 and `F4-print` AC10.** Both assert that a viewer who should not see a
-  showcase gets the not-found page, and both fail. **The product gate is correct** —
-  verified directly, outside Playwright, against a `next dev` server and a `next
-  start` production build: an anonymous request for a `published + public +
-  pending_review` showcase renders "This page could not be found", and so does a
-  `private` one. `canViewShowcase` returns false for a null viewer in every
-  non-live case, and `/showcase/[slug]` builds as `ƒ` (dynamic), so no cached
-  render is being served.
-
-  What is NOT yet understood is why the spec's own anonymous context sees the page
-  when a hand-rolled one does not, and why the `PUT /api/showcase` responses these
-  tests assert on disagree with the row afterwards. `Showcase.teamId` is `@unique`,
-  so both files drive ONE row — the leading hypothesis remains contention, and
-  migrating both to `createLab()` is the change that would settle it. Recorded as
-  failing rather than skipped: a red test with a written diagnosis is worth more
-  than a green one that proves nothing.
-
-  `F4-print` AC10 additionally had a genuinely wrong premise, now fixed: it used
-  the seeded **teacher** as the "non-owner who can never qualify", but P0-R3
-  (v0.35.0) gave the team's own teacher moderator preview of every revision. It
-  uses a signed-out visitor now, matching the correction `F4` AC3 already carried.
+- **Migrating the remaining specs to `createLab`.** Three are done
+  (`synthesis-matrix`, `F4`, `F4-print`); the rest still use the shared lab. Each
+  migration deletes a `beforeAll` full of `deleteMany` calls and removes one more
+  reason for `mode: 'serial'`.
 - **The auth recovery ladder** in `e2e/api.ts` (~150 lines of escalating Clerk
   session recovery) **never fired once** in the production-build baseline. It
   exists for the `next dev` lane, where an idle page's frozen `storageState`

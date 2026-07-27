@@ -1077,6 +1077,14 @@ The teacher approval that *does* exist is **class enrolment**. Because class mem
 
 Once a student is in a teacher's class, that teacher can see the student's individual work *and* any lab the student is on (shared team artifacts are visible to every teacher who owns a member); a teammate's personal pages stay private to that teammate's own teacher.
 
+**Enrolment can end** — *implemented v0.52.0*. Because teacher visibility is derived from class membership, ending the membership is what ends the access, and all three ways of doing it clear both together:
+
+- **The student withdraws** a pending request they filed by mistake (it can no longer sit in a teacher's queue forever). A withdrawal cannot undo a decision the teacher already made.
+- **The student leaves** the class from the Team panel. They keep their lab and all of their work; their teacher simply stops seeing it. The panel says exactly that before the second click.
+- **The teacher removes** a student, from the student's detail page. The student keeps their lab and work and leaves the roster; the teacher loses access until the student joins one of their classes again. This is deliberately a separate command from *denying* a request — denying something already approved and removing an enrolled student are different acts.
+
+Every transition — request, approve, deny, withdraw, revoke, supersede — is written to an append-only class-membership log with who did it and when. The request row itself is live state (a re-request resets its decision fields), so it can say where a student stands but never what happened.
+
 ### 15.7 Feedback & Annotations
 
 Teachers can leave inline feedback that students see in their own view:

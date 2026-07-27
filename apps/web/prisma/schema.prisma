@@ -11,16 +11,16 @@ datasource db {
 // ─── Users & Org ─────────────────────────────────────────────────────────────
 
 model User {
-  id           String   @id @default(cuid())
-  clerkUserId  String   @unique @map("clerk_user_id")
+  id           String    @id @default(cuid())
+  clerkUserId  String    @unique @map("clerk_user_id")
   name         String
-  email        String   @unique
-  schoolId     String?  @map("school_id")
-  classId      String?  @map("class_id")
-  activeTeamId String?  @map("active_team_id")
-  role         UserRole @default(student)
-  isMinor      Boolean  @default(true) @map("is_minor")
-  createdAt    DateTime @default(now()) @map("created_at")
+  email        String    @unique
+  schoolId     String?   @map("school_id")
+  classId      String?   @map("class_id")
+  activeTeamId String?   @map("active_team_id")
+  role         UserRole  @default(student)
+  isMinor      Boolean   @default(true) @map("is_minor")
+  createdAt    DateTime  @default(now()) @map("created_at")
   /// Erasure tombstone (REFACTOR2 P1-R9). The row is NOT dropped: team-shared
   /// work the student authored — project logs, discovery nodes, the synthesis
   /// matrix, purchased buildings — carries a required FK to it, and the runbook's
@@ -29,39 +29,40 @@ model User {
   /// placeholders, and stamps this. See lib/data-requests/inventory.ts.
   deletedAt    DateTime? @map("deleted_at")
 
-  school               School?                @relation(fields: [schoolId], references: [id])
-  class                Class?                 @relation(fields: [classId], references: [id])
-  activeTeam           Team?                  @relation("activeTeam", fields: [activeTeamId], references: [id], onDelete: SetNull)
-  schoolsAdministered  School[]               @relation("schoolAdmin")
-  teamsLed             Team[]                 @relation("teamLead")
-  classesTeaching      Class[]                @relation("classTeacher")
-  classJoinRequests    ClassJoinRequest[]
-  teamMemberships      TeamMember[]
-  membershipEvents     TeamMembershipEvent[]
-  projectLogEntries    ProjectLog[]
-  projectLogEdits      ProjectLog[]           @relation("projectLogEditor")
-  discoveryNodes       DiscoveryNode[]
-  expertiseAttempts    ExpertiseAttempt[]
-  expertiseExams       ExpertiseExam[]
-  shopPurchases        TeamShopBuilding[]
-  labCreditClaims      LabCreditClaim[]
-  rubricAssessments    RubricSelfAssessment[]
-  teamRubricScores     TeamRubricScore[]
-  activityFeedEntries  ActivityFeed[]
-  paperProficiencies   PaperProficiency[]
-  paperExplanations    PaperExplanation[]
-  teacherFeedbackGiven TeacherFeedback[]      @relation("teacherFeedbackAuthor")
-  notifications        Notification[]
-  notificationPref     NotificationPref?
-  experiments          Experiment[]           @relation("experimentAuthor")
-  codexLessonProgress  CodexLessonProgress[]
-  codexKpDays          CodexKpDay[]
-  vegaStudyMessages    VegaStudyMessage[]
-  uploadedAssets       UploadedAsset[]
-  synthesisMatrices    SynthesisMatrix[]
-  vocabCards           VocabCard[]
-  vocabKpDays          VocabKpDay[]
-  vocabPaperCurations  VocabPaperCuration[]
+  school                School?                @relation(fields: [schoolId], references: [id])
+  class                 Class?                 @relation(fields: [classId], references: [id])
+  activeTeam            Team?                  @relation("activeTeam", fields: [activeTeamId], references: [id], onDelete: SetNull)
+  schoolsAdministered   School[]               @relation("schoolAdmin")
+  teamsLed              Team[]                 @relation("teamLead")
+  classesTeaching       Class[]                @relation("classTeacher")
+  classJoinRequests     ClassJoinRequest[]
+  classMembershipEvents ClassMembershipEvent[]
+  teamMemberships       TeamMember[]
+  membershipEvents      TeamMembershipEvent[]
+  projectLogEntries     ProjectLog[]
+  projectLogEdits       ProjectLog[]           @relation("projectLogEditor")
+  discoveryNodes        DiscoveryNode[]
+  expertiseAttempts     ExpertiseAttempt[]
+  expertiseExams        ExpertiseExam[]
+  shopPurchases         TeamShopBuilding[]
+  labCreditClaims       LabCreditClaim[]
+  rubricAssessments     RubricSelfAssessment[]
+  teamRubricScores      TeamRubricScore[]
+  activityFeedEntries   ActivityFeed[]
+  paperProficiencies    PaperProficiency[]
+  paperExplanations     PaperExplanation[]
+  teacherFeedbackGiven  TeacherFeedback[]      @relation("teacherFeedbackAuthor")
+  notifications         Notification[]
+  notificationPref      NotificationPref?
+  experiments           Experiment[]           @relation("experimentAuthor")
+  codexLessonProgress   CodexLessonProgress[]
+  codexKpDays           CodexKpDay[]
+  vegaStudyMessages     VegaStudyMessage[]
+  uploadedAssets        UploadedAsset[]
+  synthesisMatrices     SynthesisMatrix[]
+  vocabCards            VocabCard[]
+  vocabKpDays           VocabKpDay[]
+  vocabPaperCurations   VocabPaperCuration[]
 
   @@index([activeTeamId])
   @@index([classId])
@@ -98,18 +99,19 @@ model School {
 // days — see lib/team/invite.ts); resolveClass treats an expired or
 // missing-expiry code as not-found, and regeneration renews.
 model Class {
-  id                String             @id @default(cuid())
-  schoolId          String             @map("school_id")
+  id                String                 @id @default(cuid())
+  schoolId          String                 @map("school_id")
   name              String
-  teacherId         String             @map("teacher_id")
-  joinCode          String?            @unique @map("join_code")
-  joinCodeExpiresAt DateTime?          @map("join_code_expires_at")
-  createdAt         DateTime           @default(now()) @map("created_at")
-  school            School             @relation(fields: [schoolId], references: [id])
-  teacher           User               @relation("classTeacher", fields: [teacherId], references: [id])
+  teacherId         String                 @map("teacher_id")
+  joinCode          String?                @unique @map("join_code")
+  joinCodeExpiresAt DateTime?              @map("join_code_expires_at")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  school            School                 @relation(fields: [schoolId], references: [id])
+  teacher           User                   @relation("classTeacher", fields: [teacherId], references: [id])
   users             User[]
   teams             Team[]
   joinRequests      ClassJoinRequest[]
+  membershipEvents  ClassMembershipEvent[]
 
   @@index([teacherId])
   @@map("classes")
@@ -349,8 +351,44 @@ enum ClassJoinRequestStatus {
   /// be a contradiction: one of them no longer describes reality (P1-S2).
   /// Distinct from `denied`, which means a teacher actually refused.
   superseded
+  /// The STUDENT withdrew their own pending request (P1-R8, class half).
+  /// Distinct from `denied`: nobody refused them.
+  withdrawn
+  /// The TEACHER un-enrolled an approved student, or the student left. The
+  /// enrolment happened and then ended — which `denied` would misstate.
+  revoked
 
   @@map("class_join_request_status")
+}
+
+/// Append-only log of every class-membership transition (REFACTOR2 P1-R8, class
+/// half) — the class counterpart of `TeamMembershipEvent`.
+///
+/// `ClassJoinRequest` is LIVE STATE: it mutates in place, and a re-request even
+/// resets `decidedAt`/`decidedByUserId`. So the row answers "where does this
+/// student stand" and nothing answers "what happened, when, and who did it".
+/// That matters because teacher scope is derived from `User.classId`: a
+/// membership that ended is an authorization that ended, and there was no record
+/// of it ending.
+model ClassMembershipEvent {
+  id          String   @id @default(cuid())
+  classId     String   @map("class_id")
+  userId      String   @map("user_id")
+  /// requested | approved | denied | withdrawn | revoked | superseded | left
+  event       String
+  /// Who caused it: the student on a request/withdraw/leave, the teacher on a
+  /// decision or revocation, null when the system did it (a supersede).
+  actorUserId String?  @map("actor_user_id")
+  /// Free text — `approved_into_another_class`, `removed_by_teacher`.
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  class Class @relation(fields: [classId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([classId, createdAt])
+  @@index([userId, createdAt])
+  @@map("class_membership_events")
 }
 
 // ─── Teams ───────────────────────────────────────────────────────────────────

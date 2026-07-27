@@ -51,6 +51,8 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
   const [classError, setClassError] = useState<string | null>(null)
   // Set after a successful request that's awaiting the teacher's approval.
   const [classPending, setClassPending] = useState<string | null>(null)
+  const [leavingClass, setLeavingClass] = useState(false)
+  const [confirmLeaveClass, setConfirmLeaveClass] = useState(false)
   /** Which membership action is in flight, so only that row shows a spinner. */
   const [busyMember, setBusyMember] = useState<string | null>(null)
   const [confirmLeave, setConfirmLeave] = useState(false)
@@ -144,6 +146,28 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     })
+  }
+
+  /**
+   * Leave the class (REFACTOR2 P1-R8, class half). Until this existed there was
+   * no way out of a class from the student's side — a wrong-class enrolment, and
+   * the teacher visibility it grants, was permanent.
+   */
+  async function leaveClass() {
+    if (leavingClass) return
+    setLeavingClass(true)
+    setClassError(null)
+    try {
+      const res = await fetch('/api/class/membership', { method: 'DELETE' })
+      const out = await res.json()
+      if (!res.ok) throw new Error(out.error ?? 'Could not leave that class')
+      setData((prev) => (prev ? { ...prev, myClass: null } : prev))
+      setConfirmLeaveClass(false)
+    } catch (err) {
+      setClassError(err instanceof Error ? err.message : 'Could not leave that class')
+    } finally {
+      setLeavingClass(false)
+    }
   }
 
   async function joinClass(e: FormEvent) {
@@ -274,10 +298,47 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                   <GraduationCap size={11} className="text-[#F5C518]" /> Your teacher&apos;s class
                 </h3>
                 {data.myClass ? (
-                  <p className="font-pixel text-[7px] text-white/40 leading-loose">
-                    Connected to <span className="text-[#F5C518]">{data.myClass.name}</span> — your
-                    teacher can see this lab&apos;s progress.
-                  </p>
+                  <>
+                    <p className="font-pixel text-[7px] text-white/40 leading-loose">
+                      Connected to <span className="text-[#F5C518]">{data.myClass.name}</span> — your
+                      teacher can see this lab&apos;s progress.
+                    </p>
+                    {confirmLeaveClass ? (
+                      <div className="flex flex-col gap-2 mt-2">
+                        <p className="font-pixel text-[7px] text-orange-300 leading-loose">
+                          Leave {data.myClass.name}? You keep your lab and all of your work — your
+                          teacher just stops seeing it.
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <BusyButton
+                            busy={leavingClass}
+                            busyLabel="Leaving…"
+                            onClick={leaveClass}
+                            data-testid="leave-class-confirm"
+                            className="font-pixel text-[7px] bg-red-500/80 text-white px-3 py-1.5 rounded-sm hover:brightness-110 disabled:opacity-40 transition-all"
+                          >
+                            Confirm leave
+                          </BusyButton>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmLeaveClass(false)}
+                            className="font-pixel text-[7px] text-white/40 hover:text-white/70 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmLeaveClass(true)}
+                        data-testid="leave-class"
+                        className="mt-2 font-pixel text-[7px] text-white/40 hover:text-white/70 border border-white/15 rounded-sm px-2.5 py-1 transition-colors"
+                      >
+                        Leave this class
+                      </button>
+                    )}
+                  </>
                 ) : classPending ? (
                   <p className="font-pixel text-[7px] text-amber-300/80 leading-loose">
                     Request sent to <span className="text-[#F5C518]">{classPending}</span> — waiting

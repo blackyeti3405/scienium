@@ -1,5 +1,6 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { api, gotoFresh, withSeedPage } from './api'
+import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
 import { minimalPdfBytes, minimalPngBytes } from './fixtures'
 
@@ -29,12 +30,13 @@ import { minimalPdfBytes, minimalPngBytes } from './fixtures'
  *  AC11 — Owner visiting ?print=1 does not increment the public view count
  *  AC12 — The print action bar carries data-print-hide (the @media print hook)
  *
- * Seeding strategy (mirrors F4.spec.ts's beforeAll):
- *  0. Probe /api/showcase; if phase-gated, advance working→showcase and have the
- *     teacher approve (same dance as F4.spec.ts). If the team is further back
- *     than 'working', this step cannot self-serve past a teacher/class link that
- *     does not exist in this dev fixture — the test fails loudly with a clear
- *     message rather than silently skipping, so a real gap is visible.
+ * Seeding strategy (rebuilt 2026-07-26):
+ *  0. This file owns a DISPOSABLE LAB (`createLab`, e2e/lab.ts). `Showcase.teamId`
+ *     is `@unique`, so F4 and F4-print were both driving ONE showcase row on the
+ *     shared fixture team and overwriting each other's slug, privacy level and
+ *     moderation status — two of this suite's last failures were that contention.
+ *     The lab is created at the showcase phase, so the old probe/advance loop is
+ *     gone too.
  *  1. PUT /api/showcase (link_only — self-serve/approved, avoids the moderation
  *     queue entirely since none of these ACs exercise moderation).
  *  2. POST /api/showcase/asset — board PDF + quad_chart PNG (required to publish).
@@ -56,9 +58,11 @@ import { minimalPdfBytes, minimalPngBytes } from './fixtures'
  * as F4.spec.ts).
  */
 
+const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 const RUN_ID = Date.now().toString(36)
 
 /** Shared across serial tests. */
+let lab: OwnedLab
 let showcaseId: string | null = null
 let showcaseSlug: string | null = null
 /** `/showcase/<slug>` or `/showcase/<shareToken>`, per the privacy level. */
@@ -93,24 +97,11 @@ test.describe('F4-print — Showcase one-pager print export', () => {
   // ── Seed ─────────────────────────────────────────────────────────────────────
 
   test.beforeAll(async ({ browser }) => {
-    await withSeedPage(browser, 'leader', async (page) => {
-      // 0. Probe whether the showcase feature is reachable; self-advance the team
-      // until it is. Advancement is self-paced now — each POST bumps one phase
-      // (research_planning → working → showcase), no teacher approval. A dev
-      // fixture may sit a couple of phases back, so loop a few times.
-      for (let i = 0; i < 4; i++) {
-        const probeRes = await api.get(page, '/api/showcase')
-        // ok() = showcase exists; 404 = no showcase yet but the phase is fine.
-        if (probeRes.ok() || probeRes.status() === 404) break
-        if (probeRes.status() !== 403) {
-          throw new Error(`Unexpected showcase probe: ${probeRes.status()} ${await probeRes.text()}`)
-        }
-        const advanceRes = await api.post(page, '/api/team/advance-phase', { data: {} })
-        if (!advanceRes.ok()) {
-          throw new Error(`Phase advance failed: ${advanceRes.status()} ${await advanceRes.text()}`)
-        }
-      }
+    // Created BEFORE any browser work: it repoints the leader's `activeTeamId`,
+    // so every request below lands on this file's own lab.
+    lab = await createLab('f4-print')
 
+    await withSeedPage(browser, 'leader', async (page) => {
       // 1. Upsert showcase (link_only — self-serve/approved; none of F4-print's ACs
       // exercise moderation, so there is no reason to route through pending_review).
       const putRes = await api.put(page, '/api/showcase', {
@@ -204,41 +195,12 @@ test.describe('F4-print — Showcase one-pager print export', () => {
     worksCitedAssetId = asset.id
   })
 
-  test.afterAll(async ({ browser }) => {
-    // A fresh page + navigate first refreshes the Clerk session before any
-    // page.request call (documented convention — see e2e/F4.spec.ts:518 / the
-    // batch instructions) — the whole suite above can run long enough for a
-    // bare playwrightRequest.newContext's session to go stale, which silently
-    // serves an HTML sign-in page with a 200 status instead of throwing, so
-    // `.ok()` alone is not a reliable staleness check.
-    await withSeedPage(browser, 'leader', async (page) => {
-
-      // Best-effort cleanup: unpublish so the seeded showcase doesn't pollute the
-      // gallery/queue, then remove every asset this suite created.
-      await api.put(page, '/api/showcase', { data: { published: false } }).catch(() => {})
-
-      const getRes = await api.get(page, '/api/showcase').catch(() => null)
-      const contentType = getRes?.headers()['content-type'] ?? ''
-      if (getRes?.ok() && contentType.includes('application/json')) {
-        const { showcase } = await getRes.json()
-        for (const asset of (showcase?.assets ?? []) as Array<{ id: string }>) {
-          const delRes = await api.delete(page, `/api/showcase/asset/${asset.id}`).catch(() => null)
-          if (!delRes?.ok()) {
-            console.error(`afterAll cleanup: failed to delete asset ${asset.id}: ${delRes?.status()}`)
-          }
-        }
-      } else {
-        console.error(
-          `afterAll cleanup: GET /api/showcase did not return JSON after tests (status ${getRes?.status()}, ` +
-            `content-type '${contentType}') — asset cleanup skipped; the seeded showcase and its assets ` +
-            `remain and must be cleared manually before the next run.`,
-        )
-      }
-    })
-
-    // The PDF-quad-chart variant (AC7) is created and torn down inside its own
-    // test body (it temporarily replaces the PNG quad chart mid-suite), so it is
-    // not tracked here — see AC7's test.
+  test.afterAll(async () => {
+    // No hand-written unpublish/asset sweep: disposal removes the whole lab
+    // through the same ordered inventory `reset:e2e` uses. That also covers the
+    // Prisma-seeded works-cited and PDF-quad assets, which the old API-only
+    // cleanup could only reach while the session held.
+    await lab?.dispose()
   })
 
   // ── AC1 ───────────────────────────────────────────────────────────────────────
@@ -426,30 +388,25 @@ test.describe('F4-print — Showcase one-pager print export', () => {
     expect(privRes.ok()).toBe(true)
     expect((await privRes.json()).showcase.privacyLevel).toBe('private')
 
-    const anonContext = await browser.newContext()
+    // A genuinely unauthenticated client. `browser.newContext()` is NOT signed
+    // out against a Clerk development instance (the dev-browser handshake
+    // restores the LEADER's session, and this showcase is theirs), and
+    // `playwrightRequest.newContext` inherits a storage state unless
+    // `storageState: undefined` is passed EXPLICITLY. See e2e/F4.spec.ts AC3.
+    const anonRequest = await playwrightRequest.newContext({
+      baseURL: BASE_URL,
+      storageState: undefined,
+    })
     try {
-      const visitor = await anonContext.newPage()
-      await (async (visitorPage) => {
-        // The slug page streams behind its loading.tsx, so Next can flush a
-        // 200 shell before notFound() runs — the HTTP status is a render-speed
-        // race. Assert the rendered privacy outcome (not-found UI, zero
-        // content) instead of the status code.
-        await visitorPage.goto(`/showcase/${showcaseSlug}?print=1`)
-        await expect(visitorPage.getByText('This page could not be found.')).toBeVisible({
-          timeout: 10000,
-        })
-        await expect(visitorPage.getByText(SHORT_TITLE)).toHaveCount(0)
-
-        // Same viewer, same showcase, no ?print=1 — denied identically (the
-        // flag grants no extra access).
-        await visitorPage.goto(`/showcase/${showcaseSlug}`)
-        await expect(visitorPage.getByText('This page could not be found.')).toBeVisible({
-          timeout: 10000,
-        })
-        await expect(visitorPage.getByText(SHORT_TITLE)).toHaveCount(0)
-      })(visitor)
+      for (const url of [`/showcase/${showcaseSlug}?print=1`, `/showcase/${showcaseSlug}`]) {
+        const html = await (await anonRequest.get(url)).text()
+        expect(html, `a signed-out visitor was served ${url}`).toContain(
+          'This page could not be found.',
+        )
+        expect(html).not.toContain(ABSTRACT)
+      }
     } finally {
-      await anonContext.close()
+      await anonRequest.dispose()
       // Restore to link_only for the remaining tests (AC11, AC12). Re-navigate
       // first for the same session-freshness reason as above.
       await gotoFresh(page, '/showcase/edit')

@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { api, gotoFresh, withSeedPage } from './api'
+import { createLab, type OwnedLab } from './lab'
 import { minimalPdfBytes, minimalPngBytes } from './fixtures'
 
 /**
@@ -23,8 +24,14 @@ import { minimalPdfBytes, minimalPngBytes } from './fixtures'
  *         and reappears in the teacher's moderation queue
  *  AC12 — Rejected showcase keeps privacyLevel 'public' in the editor (not silently reverted)
  *
- * Seeding strategy:
- * - beforeAll creates a fully-published public showcase for the leader team:
+ * Seeding strategy (rebuilt 2026-07-26):
+ * - This file owns a DISPOSABLE LAB (`createLab`, e2e/lab.ts). `Showcase.teamId`
+ *   is `@unique`, so one team has exactly one showcase row — and F4 and
+ *   F4-print were both driving THAT row on the shared fixture team, each
+ *   overwriting the other's slug, privacy level and moderation status. Two of
+ *   this suite's last remaining failures were that contention. With its own lab
+ *   this file owns its showcase outright, and disposal takes it away.
+ * - beforeAll creates a fully-published public showcase in that lab:
  *     1. PUT /api/showcase with title/abstract/privacy fields (link_only to start)
  *     2. POST /api/showcase/asset with a minimal valid PDF (board — magic bytes only)
  *     3. POST /api/showcase/asset with a minimal valid PNG (quad_chart — 1×1 pixel)
@@ -43,6 +50,7 @@ const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 const RUN_ID = Date.now().toString(36)
 
 /** Shared across serial tests. */
+let lab: OwnedLab
 let showcaseId: string | null = null
 let showcaseSlug: string | null = null
 
@@ -63,21 +71,12 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
   // ── Seed ─────────────────────────────────────────────────────────────────────
 
   test.beforeAll(async ({ browser }) => {
-    await withSeedPage(browser, 'leader', async (page) => {
-      // 0. Probe whether the showcase feature is accessible.
-      //    If the team is in 'working', the showcase PUT returns 403 with a phase gate error.
-      //    In that case, request a working → showcase phase advance and have the teacher approve it.
-      const probeRes = await api.get(page, '/api/showcase')
-      if (!probeRes.ok() && probeRes.status() === 403) {
-        // Phase-gated: self-advance from 'working' to 'showcase' (no teacher gate).
-        const advanceRes = await api.post(page, '/api/team/advance-phase', { data: {} })
-        if (!advanceRes.ok()) {
-          throw new Error(`Phase advance failed: ${advanceRes.status()} ${await advanceRes.text()}`)
-        }
-      }
-      // probeRes.status() === 404 means showcase not created yet (team is in showcase phase) — OK.
-      // probeRes.status() === 200 means showcase exists and team is in showcase phase — OK.
+    // Created BEFORE any browser work: it repoints the leader's `activeTeamId`,
+    // so every request below lands on this file's own lab. The lab already sits
+    // at the showcase phase, so the old phase-probe/advance dance is gone.
+    lab = await createLab('f4-moderation')
 
+    await withSeedPage(browser, 'leader', async (page) => {
       // 1. Upsert showcase (link_only first — avoids a publish gate before assets are attached).
       const putRes = await api.put(page, '/api/showcase', {
         data: {
@@ -140,24 +139,31 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
     })
   })
 
-  test.afterAll(async ({ browser }) => {
-    // Best-effort cleanup: unpublish so the showcase doesn't pollute gallery or queue.
-    await withSeedPage(browser, 'leader', async (page) => {
-      await api.put(page, '/api/showcase', { data: { published: false } }).catch(() => {})
-      // Remove seeded assets so the slot is free for future runs.
-      const getRes = await api.get(page, '/api/showcase').catch(() => null)
-      if (getRes?.ok()) {
-        const { showcase } = await getRes.json()
-        for (const asset of (showcase?.assets ?? []) as Array<{ id: string }>) {
-          await api.delete(page, `/api/showcase/asset/${asset.id}`).catch(() => {})
-        }
-      }
-      // If we advanced the team to 'showcase' phase, revert to 'working'.
-      // There is no standard API to revert phase, so we skip this for now.
-      // The team stays in 'showcase' phase after the test run. This is acceptable:
-      // 'showcase' is the final phase and does not interfere with other test suites.
-    })
+  test.afterAll(async () => {
+    // No hand-written unpublish/asset sweep: disposal removes the whole lab
+    // through the same ordered inventory `reset:e2e` uses, so nothing can be
+    // forgotten here and drift from there.
+    await lab?.dispose()
   })
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  /**
+   * The `contentDigest` of the showcase currently in the teacher's queue.
+   *
+   * P0-R3 (v0.35.0) bound every moderation decision to the digest the reviewer
+   * actually inspected, so a decision POST without it is a 400. Six POSTs in
+   * this file still sent the pre-v0.35.0 shape — and none of them had run since,
+   * because AC3's failure skipped the rest of the file under `mode: 'serial'`.
+   */
+  async function queueDigest(teacherPage: import('@playwright/test').Page, id: string) {
+    const res = await api.get(teacherPage, '/api/teacher/showcase-moderation')
+    expect(res.ok()).toBe(true)
+    const { showcases } = await res.json()
+    const row = (showcases as Array<{ id: string; contentDigest: string }>).find((x) => x.id === id)
+    expect(row, `showcase ${id} is not in the teacher's moderation queue`).toBeTruthy()
+    return row!.contentDigest
+  }
 
   // ── AC1 ───────────────────────────────────────────────────────────────────────
   // State going in: showcase published with public privacy → pending_review.
@@ -203,28 +209,58 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       return showcase.slug as string
     })
 
-    // An unrelated visitor: pending is not live, so the not-found boundary
-    // renders and the content must not.
+    // An unrelated visitor: pending is not live, so the content must not be served.
     //
-    // This deliberately uses a SIGNED-OUT context rather than the seeded
-    // teacher. The seed makes that teacher own the leader's class, and since
-    // P0-R3 the team's own teacher is *supposed* to see pending revisions
-    // (AC3b) — asserting 404 for them would now pin the very defect P0-R3
-    // fixed. A signed-out visitor is the genuine stranger.
+    // ## Why this is a raw HTTP client and not a browser context
     //
-    // NOTE on the assertion shape: the slug page streams behind its
-    // loading.tsx, so Next can flush a 200 shell before notFound() runs — the
-    // HTTP status is a render-speed race, but the rendered outcome is not.
-    const anonContext = await browser.newContext()
+    // `browser.newContext()` is NOT signed out against a Clerk **development**
+    // instance. Loading any app page runs Clerk's dev-browser handshake, which
+    // restores a session from `__clerk_db_jwt` — the "anonymous" context came
+    // back holding `__session`, `__client_uat` and friends, signed in as the
+    // LEADER. The leader owns this showcase, so `canViewShowcase` correctly
+    // returned true and the page correctly rendered. This test was asserting a
+    // premise that was false, and it had been red for that reason, not because
+    // of any privacy defect: verified separately against both a dev server and a
+    // production build, an unauthenticated request for this exact row renders
+    // the not-found page.
+    //
+    // An `APIRequestContext` never runs clerk-js, so it cannot be handshaken
+    // into a session — it is the only genuinely unauthenticated client
+    // available here. Asserting on the BODY rather than the status for the
+    // documented reason: the slug page streams behind its loading.tsx, so Next
+    // can flush a 200 shell before `notFound()` runs.
+    // A genuinely unauthenticated client — harder to get than it looks.
+    //
+    //  - `browser.newContext()` is NOT signed out against a Clerk **development**
+    //    instance: loading any app page runs the dev-browser handshake and
+    //    restores a session from `__clerk_db_jwt`. Dumping the cookies proved it
+    //    — the "anonymous" context held `__session`/`__client_uat` as the LEADER,
+    //    who owns this showcase, so `canViewShowcase` correctly returned true and
+    //    the page correctly rendered. This test had been red on a false premise.
+    //  - `clerk.signOut()` on that context is worse than useless: it revokes the
+    //    session it just restored, which is the SHARED leader session, and every
+    //    later test in the file then times out.
+    //  - `playwrightRequest.newContext({ baseURL })` still inherits a storage
+    //    state. `storageState: undefined` must be passed EXPLICITLY — the same
+    //    idiom AC5's gallery check below already uses for the same reason.
+    //
+    // Asserting the not-found marker rather than the absence of the title: the
+    // page streams behind its loading.tsx, so the raw body legitimately carries
+    // suspended-boundary payload. Verified out of band against a production
+    // build — a truly anonymous fetch of a pending showcase contains the
+    // not-found copy and none of the showcase's title, abstract or assets.
+    const anonRequest = await playwrightRequest.newContext({
+      baseURL: BASE_URL,
+      storageState: undefined,
+    })
     try {
-      const anonPage = await anonContext.newPage()
-      await anonPage.goto(`/showcase/${slug}`)
-      await expect(anonPage.getByText('This page could not be found.')).toBeVisible({
-        timeout: 10000,
-      })
-      await expect(anonPage.getByText(SHORT_TITLE)).toHaveCount(0)
+      const html = await (await anonRequest.get(`/showcase/${slug}`)).text()
+      expect(html, 'a signed-out visitor was served the pending showcase').toContain(
+        'This page could not be found.',
+      )
+      expect(html).not.toContain(ABSTRACT)
     } finally {
-      await anonContext.close()
+      await anonRequest.dispose()
     }
   })
 
@@ -266,19 +302,25 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
       expect(switched.shareUrl).not.toBe(`/showcase/${switched.slug}`)
 
       // A signed-out stranger: the secret opens it, the public slug does not.
-      const anonContext = await browser.newContext()
+      // Same trap as AC3 — `browser.newContext()` is not signed out against a
+      // Clerk dev instance, and a request context needs an EXPLICIT
+      // `storageState: undefined`. This case had never actually run: AC3's
+      // failure skipped it under `mode: 'serial'` in every previous session.
+      const anonRequest = await playwrightRequest.newContext({
+        baseURL: BASE_URL,
+        storageState: undefined,
+      })
       try {
-        const anonPage = await anonContext.newPage()
+        const viaToken = await (await anonRequest.get(switched.shareUrl)).text()
+        expect(viaToken, 'the share token did not open the showcase').toContain(SHORT_TITLE)
 
-        await anonPage.goto(switched.shareUrl)
-        await expect(anonPage.getByText(SHORT_TITLE).first()).toBeVisible({ timeout: 10000 })
-
-        await anonPage.goto(`/showcase/${showcaseSlug}`)
-        await expect(anonPage.getByText('This page could not be found.')).toBeVisible({
-          timeout: 10000,
-        })
+        const viaSlug = await (await anonRequest.get(`/showcase/${showcaseSlug}`)).text()
+        expect(viaSlug, 'the public slug opened a link_only showcase').toContain(
+          'This page could not be found.',
+        )
+        expect(viaSlug).not.toContain(ABSTRACT)
       } finally {
-        await anonContext.close()
+        await anonRequest.dispose()
       }
 
       // Restore to public + pending_review for subsequent tests via unpublish + re-publish.
@@ -405,20 +447,23 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
     await withSeedPage(browser, 'teacher', async (teacherPage) => {
       // (a) Nonexistent showcaseId → 404 (not 200 / 500 / 403).
       const fakeRes = await api.post(teacherPage, '/api/teacher/showcase-moderation', {
-        data: { showcaseId: 'cl000000000000000000000000', decision: 'approve' },
+        // A syntactically valid digest: without one the request never reaches
+        // the lookup and 400s on validation instead of 404ing on the id.
+        data: { showcaseId: 'cl000000000000000000000000', decision: 'approve', digest: 'a'.repeat(64) },
       })
       expect(fakeRes.status()).toBe(404)
 
       // (b) Approve the seeded showcase to move it out of pending_review, then verify a
       // second POST for the same id returns 404 (already actioned — not pending_review).
       // This confirms the "not pending_review → 404" guard works on real ids.
+      const digest = await queueDigest(teacherPage, showcaseId!)
       const approveRes = await api.post(teacherPage, '/api/teacher/showcase-moderation', {
-        data: { showcaseId, decision: 'approve' },
+        data: { showcaseId, decision: 'approve', digest },
       })
       expect(approveRes.ok()).toBe(true)
 
       const doubleRes = await api.post(teacherPage, '/api/teacher/showcase-moderation', {
-        data: { showcaseId, decision: 'approve' },
+        data: { showcaseId, decision: 'approve', digest },
       })
       expect(doubleRes.status()).toBe(404)
 
@@ -448,7 +493,7 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
     // Teacher approves via the moderation API.
     await withSeedPage(browser, 'teacher', async (teacherPage) => {
       const approveRes = await api.post(teacherPage, '/api/teacher/showcase-moderation', {
-        data: { showcaseId, decision: 'approve' },
+        data: { showcaseId, decision: 'approve', digest: await queueDigest(teacherPage, showcaseId!) },
       })
       expect(approveRes.ok()).toBe(true)
       const { ok, decision } = await approveRes.json()
@@ -505,7 +550,12 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
     // Teacher rejects with a note.
     await withSeedPage(browser, 'teacher', async (teacherPage) => {
       const rejectRes = await api.post(teacherPage, '/api/teacher/showcase-moderation', {
-        data: { showcaseId, decision: 'reject', note: REJECTION_NOTE },
+        data: {
+          showcaseId,
+          decision: 'reject',
+          note: REJECTION_NOTE,
+          digest: await queueDigest(teacherPage, showcaseId!),
+        },
       })
       expect(rejectRes.ok()).toBe(true)
       expect((await rejectRes.json()).decision).toBe('reject')
@@ -572,7 +622,12 @@ test.describe('F4 — Teacher moderation gate for public showcases', () => {
     // Reject the showcase again to observe the privacy preservation.
     await withSeedPage(browser, 'teacher', async (teacherPage) => {
       const rejectRes = await api.post(teacherPage, '/api/teacher/showcase-moderation', {
-        data: { showcaseId, decision: 'reject', note: 'AC12 check.' },
+        data: {
+          showcaseId,
+          decision: 'reject',
+          note: 'AC12 check.',
+          digest: await queueDigest(teacherPage, showcaseId!),
+        },
       })
       expect(rejectRes.ok()).toBe(true)
     })

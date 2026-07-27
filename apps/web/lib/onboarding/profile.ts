@@ -4,6 +4,7 @@ import type { ClassJoinRequestStatus } from '@prisma/client'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
 import { normalizeInviteCode } from '@/lib/team/invite'
+import { recordClassEvent } from '@/lib/onboarding/class-membership'
 
 type ClerkUser = Awaited<ReturnType<typeof currentUser>>
 
@@ -109,10 +110,20 @@ export async function requestClassJoin(
   const user = await db.user.findUnique({ where: { id: dbUserId }, select: { classId: true } })
   if (user?.classId === classId) return null // already enrolled — nothing to request
 
-  await db.classJoinRequest.upsert({
-    where: { classId_userId: { classId, userId: dbUserId } },
-    create: { classId, userId: dbUserId, status: 'pending' },
-    update: { status: 'pending', decidedAt: null, decidedByUserId: null },
+  // The upsert RESETS `decidedAt`/`decidedByUserId`, so the request row cannot
+  // carry history — which is why the event log exists (P1-R8, class half).
+  await db.$transaction(async (tx) => {
+    await tx.classJoinRequest.upsert({
+      where: { classId_userId: { classId, userId: dbUserId } },
+      create: { classId, userId: dbUserId, status: 'pending' },
+      update: { status: 'pending', decidedAt: null, decidedByUserId: null },
+    })
+    await recordClassEvent(tx, {
+      classId,
+      userId: dbUserId,
+      event: 'requested',
+      actorUserId: dbUserId,
+    })
   })
   return classId
 }
@@ -198,11 +209,34 @@ export async function decideClassJoin(
 
       // `User.classId` holds one class, so a prior approval elsewhere no longer
       // describes reality. Mark it superseded — not denied; no teacher refused it.
+      const displaced = await tx.classJoinRequest.findMany({
+        where: { userId: request.userId, status: 'approved', id: { not: requestId } },
+        select: { classId: true },
+      })
       await tx.classJoinRequest.updateMany({
         where: { userId: request.userId, status: 'approved', id: { not: requestId } },
         data: { status: 'superseded', decidedAt: new Date(), decidedByUserId },
       })
+      // Each displaced enrolment ENDED — and an authorization that ended with no
+      // record of ending is exactly what P1-R8 is about. Null actor: the system
+      // displaced it, no teacher chose to.
+      for (const prior of displaced) {
+        await recordClassEvent(tx, {
+          classId: prior.classId,
+          userId: request.userId,
+          event: 'superseded',
+          actorUserId: null,
+          reason: 'approved_into_another_class',
+        })
+      }
     }
+
+    await recordClassEvent(tx, {
+      classId: request.classId,
+      userId: request.userId,
+      event: decision === 'approve' ? 'approved' : 'denied',
+      actorUserId: decidedByUserId,
+    })
 
     return { committed: true, decision }
   })

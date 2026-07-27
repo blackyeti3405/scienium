@@ -22,15 +22,22 @@ const mocks = vi.hoisted(() => ({
   classFindUniqueOrThrow: vi.fn(),
   userUpdate: vi.fn(() => Promise.resolve({})),
   lockAggregate: vi.fn(() => Promise.resolve()),
+  // P1-R8 (class half): every transition now appends to the event log inside
+  // the same transaction, and an approval reads the enrolments it displaces so
+  // each one can be logged as ended.
+  requestFindMany: vi.fn(() => Promise.resolve([])),
+  eventCreate: vi.fn(() => Promise.resolve({})),
 }))
 
 const tx = {
   classJoinRequest: {
     findUnique: mocks.requestFindUnique,
+    findMany: mocks.requestFindMany,
     updateMany: mocks.requestUpdateMany,
   },
   class: { findUniqueOrThrow: mocks.classFindUniqueOrThrow },
   user: { update: mocks.userUpdate },
+  classMembershipEvent: { create: mocks.eventCreate },
 }
 
 vi.mock('server-only', () => ({}))

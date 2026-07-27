@@ -192,30 +192,19 @@ The rewritten spec has also **not been executed** — it needs the dev server, d
 Clerk credentials, and makes a paid ingestion call. Run
 `pnpm --filter web test:e2e:file e2e/paper-upload.spec.ts` before trusting it.
 
-## Class membership lifecycle — the other half of P1-R8
+## Class membership — what v0.52.0 left open
 
-v0.48.0 gave **team** membership a lifecycle (one team at a time, archive on last
-departure, an append-only event log). **Class membership was not touched** and has the
-same shape of problem:
+The class half of P1-R8 shipped: withdraw, leave, and teacher removal, each clearing the derived
+authorization in the same transaction, plus `ClassMembershipEvent` as the append-only log. What is
+still owed:
 
-- A newly approved `ClassJoinRequest` overwrites `User.classId` outright.
-- Older approved join-request history stays behind, so a student's record shows several
-  approved classes with no indication which is current.
-- There is no transfer, withdraw, revoke, or archive command for class membership.
-
-Teacher scope is class-derived (`teacherOwnsTeam` matches on `user.classId`), so the
-same principle applies: stale class membership is stale authorization. The team half's
-answer — live-only state plus an append-only event log carrying actor, reason and
-timestamp — should transfer directly.
-
-Also deferred from that batch:
-- **Teacher-initiated lead reassignment.** Kept deliberately separate from "the lead may
-  hand over": they are different capabilities and conflating them is how one becomes the
-  other. Needs its own authorization.
-- ~~**UI for the three new commands.**~~ **Done in v0.48.1** — `TeamPanel` carries the
-  lead's per-member hand-over/remove actions and a leave flow that states its
-  consequence before it happens. Switching labs needed no UI: entering another lab's
-  join code departs the current one in the same transaction.
+- **Teacher-initiated lead reassignment.** Unchanged from the team half, and deliberately so:
+  "the lead may hand over" and "a teacher may reassign" are different capabilities, and conflating
+  them is how one becomes the other. It needs its own authorization.
+- **No notification when a teacher removes a student.** They discover it by looking. The
+  notification machinery exists (`lib/notifications/`); this is a `dedupeKey` and a template.
+- **The event log has no reader.** Nothing surfaces class history to a teacher, so the record
+  exists but nobody can see it. A class-history panel on the roster is the natural home.
 
 ## PatentsView API key (Discovery prior-art lane)
 - **Now:** the "Prior art (patents)" lane in Discovery's Articles tab runs keyless —

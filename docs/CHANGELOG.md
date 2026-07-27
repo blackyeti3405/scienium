@@ -5,6 +5,61 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.52.0] — 2026-07-26
+
+### Added — class membership can end (P1-R8, the class half)
+The team half shipped in v0.48.0. This is the same problem one level up, and the last structural
+piece of P1-R8.
+
+Teacher authorization is **derived** from `User.classId` — `teacherOwnsTeam` matches teams with a
+member in a class the teacher owns — so an enrolment that should have ended but did not is a
+teacher who can still open a student's work. There was no way to end one: no withdraw, no leave,
+no removal. A student could only ever be moved by being approved somewhere else.
+
+`lib/onboarding/class-membership.ts` owns three commands, each clearing the derived authorization
+in the **same transaction** as the state change (a `revoked` request with `classId` still set
+reads as ended and behaves as live):
+
+- **`withdrawClassRequest`** — the student cancels their own pending request. Ownership is in the
+  WRITE predicate, not a pre-read, so a guessed id belonging to a classmate matches nothing; and
+  it CASes on `pending`, so a withdrawal can never undo a decision a teacher already made.
+- **`leaveClass`** — the student leaves. Until now a wrong-class enrolment, and the teacher
+  visibility it grants, was permanent from the student's side.
+- **`removeFromClass`** — the teacher un-enrols. `decideClassJoin` deliberately refused to do
+  this, because denying an already-approved request and removing an enrolled student are
+  different acts and conflating them is how one becomes the other.
+
+**The interleave that matters:** the route proves the student is in a class this teacher owns,
+then `removeFromClass` re-checks that same class id **inside** its transaction, under the
+`class-membership:<userId>` lock `decideClassJoin` already takes. If an approval elsewhere lands
+in between, the removal is refused rather than executed on an authorization that no longer
+applies. A still-pending request is retired alongside the approved one, so a removal cannot be
+silently undone by a request that predates it.
+
+**`ClassMembershipEvent`** is the append-only log. `ClassJoinRequest` is live state that mutates
+in place — a re-request even resets `decidedAt`/`decidedByUserId` — so the row could say where a
+student stands but never what happened, who did it, or when. Same reasoning as
+`TeamMembershipEvent`, same shape, and every existing transition (request, approve, deny,
+supersede) now writes one.
+
+Two new statuses, because `denied` was being asked to mean three things: **`withdrawn`** (the
+student cancelled; nobody refused them) and **`revoked`** (the enrolment happened, and then
+ended).
+
+### Added — the UI, in the same batch
+- **Student:** "Leave this class" in `TeamPanel`, stating its consequence first — you keep your
+  lab and all of your work, your teacher just stops seeing it.
+- **Teacher:** "Remove from class" on the student detail page. Deliberately **not** on the roster
+  row: that row is a `<Link>`, so a destructive control inside it would be a nested interactive
+  element, and removing a student is not a thing to do in passing from a list.
+
+### Verification
+Gates 1–5 pass. Vitest **122 files / 1,757 tests** (+2 files, +19). Migration
+`20260726210000_class_membership_lifecycle` applied; devlab verified intact. The three attack
+tests were **negative-controlled**: with the ownership predicate, the pending CAS and the
+in-transaction class re-check disabled, exactly those three fail. `test/class-membership-policy.ts`
+adds the four-case authorization matrix through the real guards.
+
 ## [0.51.0] — 2026-07-26
 
 ### Fixed — a column edit no longer discards an unsaved cell draft (P1-R13 follow-up)
@@ -108,7 +163,7 @@ allowlisted with its compensating control, not exempted. The preflight was negat
 both ways: green against Playwright's own server, failing in 3.4s with its remedy against a
 hand-started `pnpm dev`.
 
-**Suite: 263 → 292 passed, 10 → 2 failed, 48 → 13 "did not run" (13.6 → 15.5 min — the suite got SLOWER because 35 more tests now actually execute).** The two that remain are `F4`
+**Suite: 263 → 292 passed, 10 → 2 failed, 48 → 13 "did not run" (13.6 → 15.5 min — the suite got SLOWER because 35 more tests now actually execute). Migrating F4 and F4-print in v0.52.0 finished the job: **307 passed, 0 failed, 0 never ran**.** The two that remain are `F4`
 AC3 and `F4-print` AC10, left RED with a written diagnosis rather than skipped. **The product gate
 under them is correct** — verified outside Playwright against both a dev server and a production
 build: an anonymous request for a `published + public + pending_review` showcase renders the

@@ -399,7 +399,7 @@ link back), time-based expiry (rotation covers revocation; a link dying mid-fair
 usability cost), and edge throttling of unknown tokens (128 bits makes enumeration infeasible,
 not merely slow). **Still open:** enumeration alerting.
 
-#### P1-R8 — Team and class authority has no revocation lifecycle — **CLOSED (v0.48.0), class half still open**
+#### P1-R8 — Team and class authority has no revocation lifecycle — **CLOSED (teams v0.48.0, classes v0.52.0)**
 
 `TeamMember` permits the same user in multiple teams. Direct team join adds another membership
 and switches `activeTeamId`; there is no complete switch, leave, remove, lead-transfer, or
@@ -412,6 +412,13 @@ Choose and enforce one-team or multi-team semantics. Model class/team membership
 state with actor, reason, timestamps, and revocation. Protect the final lead, update active
 selection transactionally, retire invitations, recompute teacher scope, and pin cross-class/
 cross-team lifecycle matrices.
+
+**Class half closed in v0.52.0.** Three commands that END a membership
+(`withdrawClassRequest`, `leaveClass`, `removeFromClass`), each clearing the derived
+authorization in the same transaction as the state change; `ClassMembershipEvent` as the
+append-only log; `withdrawn`/`revoked` so the status stops misstating what happened. **Still
+owed:** teacher-initiated lead reassignment (unchanged from the team half — a deliberately
+separate capability), and a notification to the student when a teacher removes them.
 
 #### P1-R9 — Account deletion, export, and retention are procedures, not system behavior — **CLOSED for the mechanism (v0.49.0); the numbers and the drill are open**
 
@@ -1415,7 +1422,7 @@ the harness, not the product.**
 | **`reuseExistingServer` adopts any process on the port** | Including one without `E2E_SKIP_LLM` — the suite then makes real paid Anthropic calls, presenting as a schema-mismatch 502 that reads like a route regression. Cost a debugging session and real money on 2026-07-26. | A `preflight` project every other project depends on. It proves stub mode via `/api/dev/e2e-health` — **a route that only exists when `E2E_SKIP_LLM=1`**, so presence is evidence rather than self-report — plus `E2E_MOCK_SOURCES`, a same-database fingerprint check (runner and server hash their own DB identity), and the fixture graph. Verified both ways: green against Playwright's server, failing in 3.4s with the remedy against a hand-started `pnpm dev`. |
 | **The CI lane could never have worked** | Both jobs provision an empty `postgres:16`, then run `seed:e2e`, which ABORTED when the Clerk-backed `User` rows were absent — always, in an empty database. Nobody noticed: the job is gated on an `E2E_ENV_FILE` secret that is not set, so it reports "skipped" and passes. | The seeder materializes those rows by reading the **real** ids from the Clerk API. The original refusal was right about the risk (a fabricated `clerkUserId` forks an identity) and wrong about the remedy. |
 
-**Measured result: 263 → 292 passed, 10 → 2 failed, 48 → 13 "did not run" (13.6 → 15.5 min — the suite got SLOWER because 35 more tests now actually execute).** The two that remain
+**Measured result: 263 → 292 passed, 10 → 2 failed, 48 → 13 "did not run" (13.6 → 15.5 min — the suite got SLOWER because 35 more tests now actually execute). v0.52.0 finished it: 307 passed, 0 failed, 0 never ran.** The two that remain
 (`F4` AC3, `F4-print` AC10) are left RED with a written diagnosis rather than skipped. The product
 gate under them was verified correct OUTSIDE Playwright, against both a dev server and a
 production build: an anonymous request for a `published + public + pending_review` showcase renders
@@ -1430,6 +1437,16 @@ use the shared lab; the primitive and the migration path are documented. `F4` AC
 secret that is not configured, so none of this is enforceable until it is added.
 
 Full audit: `docs/runbooks/e2e.md`.
+
+#### v0.52.0 — 2026-07-26 — class membership can end
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P1-R8** class half | **CLOSED** | Teacher authorization is DERIVED from `User.classId` (`teacherOwnsTeam` matches teams with a member in a class the teacher owns), so an enrolment that should have ended but did not is a teacher who can still open a student's work. There was no way to end one: no withdraw, no leave, no removal — a student could only be moved by being approved somewhere else. `lib/onboarding/class-membership.ts` owns three commands, each of which clears the derived authorization in the SAME transaction as the state change, because a `revoked` request with `classId` still set reads as ended and behaves as live. `withdrawClassRequest` is scoped by putting `userId` in the WRITE predicate rather than a pre-read, so a guessed id matches nothing, and CASes on `pending` so a withdrawal cannot undo a teacher's decision. `removeFromClass` re-checks the class id INSIDE its transaction under the same `class-membership:<userId>` lock `decideClassJoin` takes — the route proves the student is in the teacher's class, and if an approval elsewhere lands in between, the removal is refused rather than executed on an authorization that no longer applies. A still-pending request is retired alongside the approved one, so a removal cannot be silently undone by a request that predates it. `ClassMembershipEvent` is the append-only log: `ClassJoinRequest` is live state that mutates in place — a re-request even resets `decidedAt`/`decidedByUserId` — so the row could say where a student stands but never what happened, which is the same reasoning `TeamMembershipEvent` answers for teams. Two new statuses stop `denied` meaning three things: `withdrawn` (nobody refused) and `revoked` (it happened, then ended). UI in the same batch per the house rule: the student gets a consequence-stating "Leave this class" in `TeamPanel`, and the teacher gets "Remove from class" on the student detail page — deliberately not on the roster row, which is a `<Link>`, and not a thing to do in passing from a list. | Teacher-initiated lead reassignment, unchanged from the team half — a deliberately separate capability. No notification to the student when a teacher removes them; they discover it by looking. The event log has no reader: nothing surfaces class history to a teacher yet. |
+
+Gates 1–5 pass; Vitest 122 files / 1,757 tests. Migration applied; devlab verified intact. The
+three attack tests were **negative-controlled**: with the ownership predicate, the pending CAS and
+the in-transaction class re-check disabled, exactly those three fail.
 
 ---
 

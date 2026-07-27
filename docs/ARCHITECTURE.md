@@ -1440,6 +1440,36 @@ archived-only, since a **live** team a student left must still fall out of scope
 Commands: `DELETE /api/team/membership`, `POST /api/team/lead`,
 `DELETE /api/team/members/[userId]`.
 
+### Class membership — the same lifecycle, one level up
+
+`lib/onboarding/class-membership.ts` is the class counterpart (REFACTOR2 P1-R8,
+class half). It matters for the same reason: teacher authorization is **derived**
+from `User.classId`, so an enrolment that should have ended but did not is a
+teacher who can still open a student's work — and until v0.52.0 there was no
+command to end one.
+
+Three commands, each clearing the derived authorization in the **same
+transaction** as the state change (a `revoked` request with `classId` still set
+reads as ended and behaves as live):
+
+- `withdrawClassRequest` — the student cancels their own pending request.
+  Ownership is in the WRITE predicate, not a pre-read, and it CASes on `pending`
+  so a withdrawal cannot undo a teacher's decision.
+- `leaveClass` — the student leaves.
+- `removeFromClass` — the teacher un-enrols. The class id the route authorized
+  against is **re-checked inside the transaction**, under the same
+  `class-membership:<userId>` advisory lock `decideClassJoin` takes, so a student
+  who moved in between is not removed on a stale authorization.
+
+`ClassJoinRequest` is live state that mutates in place — a re-request resets
+`decidedAt`/`decidedByUserId` — so `ClassMembershipEvent` carries the history,
+exactly as `TeamMembershipEvent` does for teams. Statuses `withdrawn` (nobody
+refused) and `revoked` (it happened, then ended) stop `denied` meaning three
+different things.
+
+Commands: `DELETE /api/class/membership`, `DELETE /api/class/requests/[id]`,
+`DELETE /api/teacher/class/students/[id]`.
+
 ### Activity feed — two contracts, named
 
 `lib/activity/log.ts` exposes `recordActivity(tx, …)` and

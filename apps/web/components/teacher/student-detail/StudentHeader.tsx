@@ -9,6 +9,7 @@ import {
   type LabType,
 } from '@/lib/phase'
 import { fmtDate } from '@/lib/format'
+import { RemoveFromClass } from './RemoveFromClass'
 import type { Overview } from './types'
 
 // ─── Student Identity Header ───────────────────────────────────────────────────
@@ -91,6 +92,16 @@ export function StudentHeader({ overview }: { overview: Overview }) {
               </span>
             )}
           </div>
+          {/* Class membership can now END (REFACTOR2 P1-R8, class half). */}
+          {student.class && (
+            <div className="pt-1">
+              <RemoveFromClass
+                studentId={student.id}
+                studentName={student.name}
+                className={student.class.name}
+              />
+            </div>
+          )}
         </div>
       </div>
 
