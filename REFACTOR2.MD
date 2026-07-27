@@ -1922,6 +1922,13 @@ stale.
 
 Vitest 1,769 → **1,852**. Gates 1–5 green on every batch in the tranche.
 
+**Closing E2E sweep** (run after the last batch, with the working tree at the final state):
+`F11-quiz-retry` **13/13**, `F4` **16/16**, `synthesis-matrix` **17/17**, `F13-codex` **16/16**,
+`F9` **13/13**, `F5-bell` **12/12**, `placement` **5/5**, `F3` **11/11**, `papers-tab` 16 passed
+(3 documented skips), `issue-6` **10/10**, `F10-teacher-rubric` **16/16**. The only red specs are
+the two pre-existing ones recorded above — `upgrades` AC12 and the flaky `F3-plan-paste` — both
+of which reproduce at HEAD without any of this tranche's changes.
+
 ---
 
 ---

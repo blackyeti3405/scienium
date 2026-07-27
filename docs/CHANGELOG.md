@@ -233,13 +233,14 @@ either form's field UI directly — checked, none found.
 
 ---
 
-**E2E not completed for this batch, and that is stated rather than glossed.** The quiz spec was
-started three times and each run was destroyed by the orchestrator's own port-3000 cleanup
-(SIGTERM / a failed `preflight` after the shared dev server was killed) — a tooling mistake, not
-a code signal. The three changes are behaviour-neutral by inspection: a comment edit, a JSX
+**E2E — resolved after the fact: `F11-quiz-retry` 13/13.** At the time of this batch the quiz
+spec was started three times and each run was destroyed by the orchestrator's own port-3000
+cleanup (SIGTERM / a failed `preflight` after the shared dev server was killed) — a tooling
+mistake, not a code signal. It was re-run cleanly at the close of the tranche and passes 13/13,
+so the gap this entry originally flagged is closed. The three changes are behaviour-neutral by inspection: a comment edit, a JSX
 extraction whose two source branches were verified byte-identical (same `required`, `maxLength`
 and placeholder on both), and a constant that resolves to the same `70` it replaced. Gates 1–5
-all pass. **`F11-quiz-retry` should be run before this branch merges.**
+all pass, and `F11-quiz-retry` has since been run: **13/13**.
 
 ## [0.65.0] — 2026-07-27
 
