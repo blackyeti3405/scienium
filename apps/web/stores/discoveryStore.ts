@@ -83,10 +83,25 @@ interface DiscoveryStore {
    */
   kpAward: { amount: number; nonce: number }
   /**
+   * The last write that did not reach the server, plus a monotonic nonce so a
+   * repeat failure re-fires the toast.
+   *
+   * Every mutation here is optimistic: the node appears, then the POST goes out.
+   * When that POST failed, the store re-hydrated — which is correct, the server
+   * is authoritative — and the student's node simply **vanished**, with nothing
+   * anywhere saying why. `loadError` covers a failed *read* only. Reproduced
+   * against the original: a failed `startExploration` left `nodes: []` and
+   * `loadError: false`.
+   */
+  writeError: { message: string; nonce: number } | null
+  dismissWriteError: () => void
+  /**
    * #11: set by `startNewTree()`; consumed (cleared) by the FIRST of
-   * `startExploration` / `addYouTubeVideo` / `addSourceNode` that fires next —
-   * that create forces `parentId: null` (a new root/tree) regardless of the
-   * current selection. `navigateToNode` does NOT consume it.
+   * `startExploration` / `addYouTubeVideo` / `addSourceNode` / `addArticleNode`
+   * that fires next — that create forces `parentId: null` (a new root/tree)
+   * regardless of the current selection. `navigateToNode` does NOT consume it,
+   * and neither does a create whose write FAILED (`commitOptimistic` gives the
+   * flag back, so an intent is never spent on something that did not happen).
    */
   newTreePending: boolean
 
@@ -137,21 +152,80 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
    * The repeated optimistic-update idiom: apply the local state change, fire
    * the persistence call, and re-hydrate on a failed write so the UI
    * reconciles with the DB-authoritative tree.
+   *
+   * A failed write now also (a) SAYS SO — re-hydrating silently is how a
+   * student's node disappeared with no explanation — and (b) gives back
+   * `newTreePending`. That flag is the student's "start a new tree" intent, and
+   * it was cleared inside the optimistic apply, so a create that never happened
+   * still spent it: they pressed "new tree", the create failed, the node
+   * vanished, and the next source they opened attached to the old tree instead.
    */
-  const commitOptimistic = (apply: () => void, persist: () => Promise<boolean>): Promise<void> => {
+  // Monotonic across the store's lifetime. Reading it back off `writeError`
+  // would restart at 1 every time, because the same function clears the field
+  // before it applies — so a second failure would never re-fire the toast.
+  let writeErrorNonce = 0
+
+  const commitOptimistic = (
+    apply: () => void,
+    persist: () => Promise<boolean>,
+    failure: string,
+  ): Promise<void> => {
+    const pendingBefore = get().newTreePending
+    set({ writeError: null })
     apply()
     return persist().then((ok) => {
-      if (!ok) return get().hydrate()
+      if (ok) return
+      set({
+        writeError: { message: failure, nonce: ++writeErrorNonce },
+        newTreePending: pendingBefore,
+      })
+      return get().hydrate()
     })
   }
 
   /** Optimistic-create variant: POST the new nodes and report any KP award. */
-  const commitCreate = (apply: () => void, nodes: NewNode[]): Promise<void> =>
-    commitOptimistic(apply, async () => {
-      const result = await persistCreate(nodes)
-      if (result.ok) reportKp(result.kp)
-      return result.ok
-    })
+  const commitCreate = (apply: () => void, nodes: NewNode[], failure: string): Promise<void> =>
+    commitOptimistic(
+      apply,
+      async () => {
+        const result = await persistCreate(nodes)
+        if (result.ok) reportKp(result.kp)
+        return result.ok
+      },
+      failure,
+    )
+
+  /**
+   * The ONE create path for a single node attached to the current selection.
+   *
+   * `addSourceNode` and `addArticleNode` were near-identical sixty-line copies of
+   * this, and `addYouTubeVideo` a third — §0.7 names the duplication. Everything
+   * outside `build` is the same for all three: where a new node attaches (the
+   * current selection, unless a new tree was requested), the parent's depth,
+   * marking that parent explored, and clearing the selection state.
+   */
+  const attachOne = (
+    build: (id: string, parentId: string | null, depth: number) => { node: DiscoveryNode; row: NewNode },
+    failure: string,
+  ): string => {
+    const { currentNodeId, nodes, newTreePending } = get()
+    const parentId = newTreePending ? null : currentNodeId ?? null
+    const parent = parentId ? nodes.find((n) => n.id === parentId) : null
+    const id = crypto.randomUUID()
+    const { node, row } = build(id, parentId, parent ? parent.depth + 1 : 0)
+    void commitCreate(
+      () =>
+        set((state) => ({
+          nodes: [...state.nodes.map((n) => (n.id === parentId ? { ...n, explored: true } : n)), node],
+          currentNodeId: id,
+          pendingLinks: [],
+          newTreePending: false,
+        })),
+      [row],
+      failure,
+    )
+    return id
+  }
 
   return {
     nodes: [],
@@ -160,7 +234,10 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
     hydrated: false,
     loadError: false,
     kpAward: { amount: 0, nonce: 0 },
+    writeError: null,
     newTreePending: false,
+
+    dismissWriteError: () => set({ writeError: null }),
 
     hydrate: async () => {
       set({ loadError: false })
@@ -207,6 +284,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
             newTreePending: false,
           })),
         [{ id, title, parentId: null, source: 'wikipedia' }],
+        'Could not start that topic — check your connection and try again.',
       )
     },
 
@@ -225,30 +303,22 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
         set({ currentNodeId: existing.id, newTreePending: false })
         return
       }
-      const parent = targetParentId ? nodes.find((n) => n.id === targetParentId) : null
-      const id = crypto.randomUUID()
-      void commitCreate(
-        () =>
-          set((state) => ({
-            nodes: [
-              ...state.nodes.map((n) => (n.id === targetParentId ? { ...n, explored: true } : n)),
-              {
-                id,
-                title,
-                source: 'youtube',
-                videoId,
-                parentId: targetParentId,
-                depth: parent ? parent.depth + 1 : 0,
-                starred: false,
-                explored: false,
-                addedAt: Date.now(),
-              },
-            ],
-            currentNodeId: id,
-            pendingLinks: [],
-            newTreePending: false,
-          })),
-        [{ id, title, parentId: targetParentId, source: 'youtube', videoId }],
+      attachOne(
+        (id, parentId, depth) => ({
+          node: {
+            id,
+            title,
+            source: 'youtube',
+            videoId,
+            parentId,
+            depth,
+            starred: false,
+            explored: false,
+            addedAt: Date.now(),
+          },
+          row: { id, title, parentId, source: 'youtube', videoId },
+        }),
+        'Could not save that video — check your connection and try again.',
       )
     },
 
@@ -256,7 +326,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
     // — and a cross-source bridge if the current node is wiki/youtube), or as a new
     // root when nothing is selected. Server re-derives host+tier before persisting.
     addSourceNode: (resolved) => {
-      const { currentNodeId, nodes, newTreePending } = get()
+      const { nodes } = get()
       // De-dupe by externalId (the DB @@unique is team-wide; mirror it locally).
       // Correct even when starting a new tree — a work already in the forest is
       // navigated to (existing behavior), which also consumes the pending flag.
@@ -266,44 +336,32 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
         return existing.id
       }
       // #11: a pending "new tree" request ignores the current selection — the
-      // source becomes a fresh root (parentId: null, depth: 0).
-      const targetParentId = newTreePending ? null : currentNodeId ?? null
-      const parent = targetParentId ? nodes.find((n) => n.id === targetParentId) : null
-      const id = crypto.randomUUID()
-      const node: DiscoveryNode = {
-        id,
-        title: resolved.title,
-        source: 'source',
-        parentId: targetParentId,
-        depth: parent ? parent.depth + 1 : 0,
-        starred: false,
-        explored: false,
-        addedAt: Date.now(),
-        externalId: resolved.externalId,
-        platform: resolved.platform,
-        sourceUrl: resolved.url,
-        sourceHost: resolved.host,
-        credibilityTier: resolved.tier,
-        abstract: resolved.abstract ?? undefined,
-        authors: resolved.authors,
-        publishedAt: resolved.publishedAt ?? undefined,
-      }
-      void commitCreate(
-        () =>
-          set((state) => ({
-            nodes: [
-              ...state.nodes.map((n) => (n.id === targetParentId ? { ...n, explored: true } : n)),
-              node,
-            ],
-            currentNodeId: id,
-            pendingLinks: [],
-            newTreePending: false,
-          })),
-        [
-          {
+      // source becomes a fresh root (parentId: null, depth: 0). `attachOne` owns
+      // that rule for every single-node create.
+      return attachOne(
+        (id, parentId, depth) => ({
+          node: {
             id,
             title: resolved.title,
-            parentId: targetParentId,
+            source: 'source',
+            parentId,
+            depth,
+            starred: false,
+            explored: false,
+            addedAt: Date.now(),
+            externalId: resolved.externalId,
+            platform: resolved.platform,
+            sourceUrl: resolved.url,
+            sourceHost: resolved.host,
+            credibilityTier: resolved.tier,
+            abstract: resolved.abstract ?? undefined,
+            authors: resolved.authors,
+            publishedAt: resolved.publishedAt ?? undefined,
+          },
+          row: {
+            id,
+            title: resolved.title,
+            parentId,
             source: 'source',
             platform: resolved.platform,
             externalId: resolved.externalId,
@@ -313,9 +371,9 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
             abstract: resolved.abstract ?? undefined,
             publishedAt: resolved.publishedAt ?? undefined,
           },
-        ],
+        }),
+        'Could not save that paper — check your connection and try again.',
       )
-      return id
     },
 
     // Add a resolved article (The Conversation/journalism). Attaches under the
@@ -323,7 +381,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
     // wiki/youtube/source), or as a new root when nothing is selected. Server
     // re-derives the sanitized `html` before persisting.
     addArticleNode: (resolved) => {
-      const { currentNodeId, nodes, newTreePending } = get()
+      const { nodes } = get()
       // De-dupe by externalId (the DB @@unique is team-wide; mirror it locally).
       const existing = nodes.find((n) => n.externalId === resolved.externalId)
       if (existing) {
@@ -332,44 +390,31 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
       }
       // #11: a pending "new tree" request ignores the current selection — the
       // article becomes a fresh root (parentId: null, depth: 0).
-      const targetParentId = newTreePending ? null : currentNodeId ?? null
-      const parent = targetParentId ? nodes.find((n) => n.id === targetParentId) : null
-      const id = crypto.randomUUID()
-      const node: DiscoveryNode = {
-        id,
-        title: resolved.title,
-        source: 'article',
-        parentId: targetParentId,
-        depth: parent ? parent.depth + 1 : 0,
-        starred: false,
-        explored: false,
-        addedAt: Date.now(),
-        externalId: resolved.externalId,
-        provider: resolved.provider,
-        renderMode: resolved.renderMode,
-        sourceName: resolved.sourceName,
-        articleUrl: resolved.url,
-        excerpt: resolved.excerpt ?? undefined,
-        articleHtml: resolved.html ?? undefined,
-        articleAuthor: resolved.author ?? undefined,
-        articlePublishedAt: resolved.publishedAt ?? undefined,
-      }
-      void commitCreate(
-        () =>
-          set((state) => ({
-            nodes: [
-              ...state.nodes.map((n) => (n.id === targetParentId ? { ...n, explored: true } : n)),
-              node,
-            ],
-            currentNodeId: id,
-            pendingLinks: [],
-            newTreePending: false,
-          })),
-        [
-          {
+      return attachOne(
+        (id, parentId, depth) => ({
+          node: {
             id,
             title: resolved.title,
-            parentId: targetParentId,
+            source: 'article',
+            parentId,
+            depth,
+            starred: false,
+            explored: false,
+            addedAt: Date.now(),
+            externalId: resolved.externalId,
+            provider: resolved.provider,
+            renderMode: resolved.renderMode,
+            sourceName: resolved.sourceName,
+            articleUrl: resolved.url,
+            excerpt: resolved.excerpt ?? undefined,
+            articleHtml: resolved.html ?? undefined,
+            articleAuthor: resolved.author ?? undefined,
+            articlePublishedAt: resolved.publishedAt ?? undefined,
+          },
+          row: {
+            id,
+            title: resolved.title,
+            parentId,
             source: 'article',
             externalId: resolved.externalId,
             provider: resolved.provider,
@@ -381,9 +426,9 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
             articleAuthor: resolved.author ?? undefined,
             publishedAt: resolved.publishedAt ?? undefined,
           },
-        ],
+        }),
+        'Could not save that article — check your connection and try again.',
       )
-      return id
     },
 
     // The native citation surf: resolve each selected chip (≤2) via the resolve
@@ -458,6 +503,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
             pendingLinks: [],
           })),
         toPersist,
+        'Could not save those citations — check your connection and try again.',
       )
     },
 
@@ -506,6 +552,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
             pendingLinks: [],
           })),
         newNodes.map((n) => ({ id: n.id, title: n.title, parentId: n.parentId, source: 'wikipedia' as const })),
+        'Could not save that branch — check your connection and try again.',
       )
     },
 
@@ -541,6 +588,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
             }),
           })),
         () => persistStar(nodeId, nextStarred),
+        'Could not save that star — check your connection and try again.',
       )
     },
 
@@ -553,6 +601,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
             nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, interestLevel: level } : n)),
           })),
         () => persistInterest(nodeId, level),
+        'Could not save that interest tier — check your connection and try again.',
       )
     },
 
@@ -563,13 +612,32 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
       void commitOptimistic(
         () =>
           set((state) => {
-            // Collect the target node and all descendants via BFS
-            const toDelete = new Set<string>()
+            // Collect the target node and all descendants.
+            //
+            // This used to rescan every node per queue entry AND never check
+            // whether a child was already queued, so it had two problems the
+            // audit named as one. The quadratic scan is real but cheap (48ms on
+            // a 2,000-node chain, measured). The missing visited-check is not:
+            // a self-parented row or a two-node cycle **never terminated** — the
+            // browser tab hangs. `tree-service.ts` has stopped writing those
+            // since v0.34.1 and its own `depthOf` still defends against rows
+            // written before that guard existed; this path did not.
+            const childrenOf = new Map<string, string[]>()
+            for (const n of state.nodes) {
+              if (!n.parentId) continue
+              const siblings = childrenOf.get(n.parentId)
+              if (siblings) siblings.push(n.id)
+              else childrenOf.set(n.parentId, [n.id])
+            }
+            const toDelete = new Set<string>([nodeId])
             const queue = [nodeId]
-            while (queue.length > 0) {
-              const id = queue.shift()!
-              toDelete.add(id)
-              state.nodes.filter((n) => n.parentId === id).forEach((n) => queue.push(n.id))
+            // Index walk, not `shift()` — which is itself O(n) on an array.
+            for (let i = 0; i < queue.length; i++) {
+              for (const childId of childrenOf.get(queue[i]!) ?? []) {
+                if (toDelete.has(childId)) continue
+                toDelete.add(childId)
+                queue.push(childId)
+              }
             }
 
             const remaining = state.nodes.filter((n) => !toDelete.has(n.id))
@@ -592,6 +660,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
           }),
         // Server cascades the subtree delete from this id.
         () => persistDelete(nodeId),
+        'Could not delete that branch — it has been restored.',
       )
     },
 
@@ -599,6 +668,7 @@ export const useDiscoveryStore = create<DiscoveryStore>()((set, get) => {
       void commitOptimistic(
         () => set({ nodes: [], currentNodeId: null, pendingLinks: [], newTreePending: false }),
         persistReset,
+        'Could not clear your discovery tree — it has been restored.',
       )
     },
   }

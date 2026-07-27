@@ -5,6 +5,51 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.56.0] — 2026-07-26
+
+### Fixed — a discovery node could vanish with nothing to explain it, and deleting could hang the tab
+
+Fourth of REFACTOR2 §0.7's file dispositions: `stores/discoveryStore.ts`. All four defects
+below were **reproduced against the pre-fix store**, and one of them is worse than the verdict
+says while another is milder.
+
+- **A failed write silently erased the student's action.** Every tree mutation is optimistic:
+  the node appears, then the POST goes out, and a failed POST re-hydrates from the server. The
+  rollback is right — the server is authoritative — but nothing anywhere said it had happened.
+  `loadError` covers a failed *read* only. Reproduced: a failed `startExploration` left
+  `nodes: []` and `loadError: false`. A `writeError` now carries a per-action message to the
+  existing error Toast, so a rolled-back node is explained rather than just gone.
+- **A failed create still spent `newTreePending`.** The flag is the student's "start a new tree"
+  intent, and it was cleared inside the optimistic apply — so they pressed *New tree*, the
+  create failed, the node vanished, **and the next source they opened attached to the old tree
+  anyway**. A failed write now hands the flag back.
+- **Deleting a subtree could hang the browser tab.** The BFS never checked whether a child was
+  already queued, so a self-parented row or a two-node cycle looped forever. `tree-service.ts`
+  has refused to *write* those since v0.34.1 and its own `depthOf` still defends against rows
+  written before that guard existed — this path did not. Both shapes now terminate.
+- **The quadratic delete is real but was the least of it.** The audit led with O(n²); measured,
+  a 2,000-node chain took **48 ms**. Fixed anyway (one children index, an index walk instead of
+  `Array.shift()`, which was a second hidden O(n)), because it fell out of the loop guard.
+
+`addSourceNode` and `addArticleNode` were near-identical sixty-line copies of one insert path,
+with `addYouTubeVideo` a third — the duplication §0.7 names. All three now go through one
+`attachOne`, which owns where a new node attaches, the parent's depth, marking that parent
+explored, and clearing the selection state. `startExploration` deliberately stays out: it always
+creates a root, so it does not share the rule.
+
+**The file got longer, not shorter** — 605 to 675 lines. Removing the duplicated inserts saved
+about seventy; the guards and the reasoning behind them added more than that. §0.7's own rule
+is that line count is a diagnostic, not the goal.
+
+### Verification
+Gates 1–5 pass. Vitest **126 files / 1,800 tests** (+8).
+Negative-controlled four ways: removing the visited-check hangs both cycle tests (4.2 s each
+before the runner gave up), restoring the per-node rescan fails the linearity test, dropping
+`writeError` fails 3, and dropping the `newTreePending` restore fails 1. One bug was caught by
+its own test while being written: reading the toast nonce back off `writeError` restarted it at
+1 every time, because the same function clears the field first — so a second failure would
+never have re-fired the toast.
+
 ## [0.55.0] — 2026-07-26
 
 ### Fixed — OpenAlex could tell this server where to send its API key

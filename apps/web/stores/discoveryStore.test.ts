@@ -54,6 +54,7 @@ function seedTree(current: string | null = 'c') {
     hydrated: true,
     loadError: false,
     kpAward: { amount: 0, nonce: 0 },
+    writeError: null,
     newTreePending: false,
   })
 }
@@ -289,5 +290,104 @@ describe('branchSources', () => {
     expect(created?.parentId).toBe('c')
     expect(created?.depth).toBe(3)
     expect(useDiscoveryStore.getState().currentNodeId).toBe(created?.id)
+  })
+})
+
+/**
+ * REFACTOR2 §0.7. Each of these was REPRODUCED against the pre-fix store before
+ * it was changed — the numbers in the comments are measured, not estimated.
+ */
+describe('a write that never landed (§0.7)', () => {
+  it('a failed create SAYS SO — it used to just erase the node', async () => {
+    useDiscoveryStore.setState({ nodes: [], currentNodeId: null })
+    api.persistCreate.mockResolvedValue({ ok: false, kp: 0 })
+    api.fetchTree.mockResolvedValue([])
+
+    useDiscoveryStore.getState().startExploration('Photosynthesis')
+    await flush()
+
+    const s = useDiscoveryStore.getState()
+    expect(s.nodes).toEqual([]) // the rollback itself is correct and unchanged
+    expect(s.loadError).toBe(false) // the READ was fine; this was a write
+    expect(s.writeError?.message).toMatch(/Could not start that topic/)
+  })
+
+  it('gives back newTreePending — an intent is not spent on a create that failed', async () => {
+    useDiscoveryStore.setState({ nodes: [], currentNodeId: null, newTreePending: true })
+    api.persistCreate.mockResolvedValue({ ok: false, kp: 0 })
+    api.fetchTree.mockResolvedValue([])
+
+    useDiscoveryStore.getState().startExploration('Photosynthesis')
+    await flush()
+
+    expect(useDiscoveryStore.getState().newTreePending).toBe(true)
+  })
+
+  it('keeps newTreePending consumed when the create SUCCEEDS', async () => {
+    useDiscoveryStore.setState({ nodes: [], currentNodeId: null, newTreePending: true })
+    useDiscoveryStore.getState().startExploration('Photosynthesis')
+    await flush()
+    expect(useDiscoveryStore.getState().newTreePending).toBe(false)
+    expect(useDiscoveryStore.getState().writeError).toBeNull()
+  })
+
+  it('a repeat failure re-fires the toast via a bumped nonce', async () => {
+    api.persistStar.mockResolvedValue(false)
+    useDiscoveryStore.getState().toggleStar('a')
+    await flush()
+    const first = useDiscoveryStore.getState().writeError!.nonce
+
+    useDiscoveryStore.getState().toggleStar('a')
+    await flush()
+    expect(useDiscoveryStore.getState().writeError!.nonce).toBe(first + 1)
+  })
+
+  it('a successful write clears a standing writeError', async () => {
+    api.persistStar.mockResolvedValue(false)
+    useDiscoveryStore.getState().toggleStar('a')
+    await flush()
+    expect(useDiscoveryStore.getState().writeError).not.toBeNull()
+
+    api.persistStar.mockResolvedValue(true)
+    useDiscoveryStore.getState().toggleStar('a')
+    await flush()
+    expect(useDiscoveryStore.getState().writeError).toBeNull()
+  })
+})
+
+describe('deleteSubtree on a corrupted graph (§0.7)', () => {
+  it('TERMINATES on a self-parented row — the original never did', async () => {
+    useDiscoveryStore.setState({
+      nodes: [node('a'), node('loop', { parentId: 'loop' })],
+      currentNodeId: 'a',
+    })
+    useDiscoveryStore.getState().deleteSubtree('loop')
+    await flush()
+    expect(useDiscoveryStore.getState().nodes.map((n) => n.id)).toEqual(['a'])
+  })
+
+  it('TERMINATES on a two-node cycle, and removes both', async () => {
+    useDiscoveryStore.setState({
+      nodes: [node('a'), node('x', { parentId: 'y' }), node('y', { parentId: 'x' })],
+      currentNodeId: 'a',
+    })
+    useDiscoveryStore.getState().deleteSubtree('x')
+    await flush()
+    expect(useDiscoveryStore.getState().nodes.map((n) => n.id)).toEqual(['a'])
+  })
+
+  it('is linear — a 20,000-node chain deletes well inside the old quadratic cost', async () => {
+    const chain = Array.from({ length: 20_000 }, (_, i) =>
+      node(`n${i}`, { parentId: i === 0 ? null : `n${i - 1}`, depth: i }),
+    )
+    useDiscoveryStore.setState({ nodes: chain, currentNodeId: 'n0' })
+
+    const started = Date.now()
+    useDiscoveryStore.getState().deleteSubtree('n0')
+    await flush()
+
+    // The original took 48ms for 2,000 nodes; quadratic puts 20,000 near 5s.
+    expect(Date.now() - started).toBeLessThan(1000)
+    expect(useDiscoveryStore.getState().nodes).toEqual([])
   })
 })

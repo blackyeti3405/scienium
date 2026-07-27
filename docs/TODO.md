@@ -136,14 +136,14 @@ stated reason has already been fixed another way.
 
 **Done:** `components/discovery/DiscoveryTree.tsx` (v0.53.0),
 `components/ops/ExpertisePanel.tsx` (v0.54.0 — defect closed, view split deliberately left),
-`lib/discovery/openalex.ts` (v0.55.0 — hardened; split declined with a reason).
+`lib/discovery/openalex.ts` (v0.55.0 — hardened; split declined with a reason),
+`stores/discoveryStore.ts` (v0.56.0 — defects closed; split declined with a reason).
 
 **Highest value remaining**, by the defect each verdict names — every one is a live behaviour
 problem, not a size complaint:
 
 | File | The defect the verdict names |
 | --- | --- |
-| `stores/discoveryStore.ts` | Fire-and-forget writes and `newTreePending` can lose state; `addSourceNode`/`addArticleNode` duplicate a large insert path; deletion is O(n²). |
 | `components/teacher/TeacherRubricScoring.tsx` | Track switching discards unsaved state; blur/click autosaves race; blank numeric input becomes zero. |
 | `components/ops/CodexTab.tsx` | Refresh ignores non-OK responses; a track load error leaves an endless loader; rapid navigation can commit a stale track. |
 | `lib/teacher/student-overview.ts` | ~18 queries per detail request, and the selected team can be paired with a *different* membership's role/join time. |
@@ -186,6 +186,8 @@ The audit and the changes are in [`runbooks/e2e.md`](runbooks/e2e.md). Remaining
   what turns the whole lane on.
 - **The synthesis 409** tells the student their grid changed but not **what** changed. A diff
   would be kinder.
+- **No E2E asserts the discovery write-failure toast** (v0.56.0). Pinned in vitest only; a
+  spec would need `page.route` to fail `POST /api/discovery/tree`.
 - **The clearance panel has no E2E at all** — it is the only ops tab without one. v0.54.0's
   refusal-to-exit-on-unsaved-progress path is pinned in vitest
   (`components/ops/expertiseProgress.test.ts`) but never driven in a browser. A spec would need

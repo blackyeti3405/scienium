@@ -797,7 +797,11 @@ topic locking.
 
 `stores/discoveryStore.ts` owns cursor/tree interaction but the database remains
 authoritative. Mutations update optimistically; failed HTTP responses trigger a
-rehydration instead of leaving unsaved local state. External scholarly metadata
+rehydration instead of leaving unsaved local state — and, since v0.56.0, SAY so
+(`writeError` → the error Toast) and hand back the `newTreePending` intent the
+failed create had already consumed. Every single-node create goes through one
+`attachOne`; the subtree delete builds a children index once and refuses to
+revisit a node, so a legacy self-parented or cyclic row cannot loop forever. External scholarly metadata
 is fetched through OpenAlex, sanitized, and cached in `ExternalWork`. Citation
 traversal uses factual edges, not algorithmic related-work recommendations.
 

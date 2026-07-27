@@ -41,6 +41,8 @@ export function DiscoveryFeature() {
     kpAward,
     hydrated,
     loadError,
+    writeError,
+    dismissWriteError,
     hydrate,
     startExploration,
     addYouTubeVideo,
@@ -120,6 +122,12 @@ export function DiscoveryFeature() {
   // a wifi blip must never fail silently (UX-1).
   const [sourceAddError, setSourceAddError] = useState<{ nonce: number } | null>(null)
   useAutoDismiss(sourceAddError, () => setSourceAddError(null), 4000)
+
+  // Store-side write failures. Every tree mutation is optimistic and re-hydrates
+  // when the POST fails — which used to make the student's node vanish with no
+  // explanation at all. Same Toast primitive, longer dwell: this one is telling
+  // them something they can SEE went wrong.
+  useAutoDismiss(writeError, dismissWriteError, 6000)
 
   // Papers search → resolve the picked work (server-authoritative host/tier) →
   // add it as a new source node (root, or a child of the current node).
@@ -324,6 +332,7 @@ export function DiscoveryFeature() {
       <DiscoveryModals
         kpPill={kpPill}
         sourceAddError={sourceAddError}
+        writeError={writeError}
         topicConfirm={topicConfirm}
         topicRemovalConfirm={topicRemovalConfirm}
         savingTopic={savingTopic}

@@ -45,6 +45,7 @@ function DismissBanner({
 export function DiscoveryModals({
   kpPill,
   sourceAddError,
+  writeError,
   topicConfirm,
   topicRemovalConfirm,
   savingTopic,
@@ -62,6 +63,8 @@ export function DiscoveryModals({
 }: {
   kpPill: { amount: number; nonce: number } | null
   sourceAddError: { nonce: number } | null
+  /** A tree write that never reached the server (discoveryStore). */
+  writeError: { message: string; nonce: number } | null
   topicConfirm: { newTopic: string; paperCount: number } | null
   topicRemovalConfirm: {
     newTopic: string
@@ -97,6 +100,13 @@ export function DiscoveryModals({
       {sourceAddError && (
         <Toast tone="error" nonce={sourceAddError.nonce}>
           Couldn&apos;t add that paper — check your connection and try again
+        </Toast>
+      )}
+      {/* A tree write that was applied locally and then rolled back. Without
+          this the node just disappeared (REFACTOR2 §0.7). */}
+      {writeError && (
+        <Toast tone="error" nonce={writeError.nonce}>
+          {writeError.message}
         </Toast>
       )}
       {/* Topic-change / topic-removal confirm modals — shared with the Lab
