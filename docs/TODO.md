@@ -139,7 +139,8 @@ stated reason has already been fixed another way.
 `lib/discovery/openalex.ts` (v0.55.0 — hardened; split declined with a reason),
 `stores/discoveryStore.ts` (v0.56.0 — defects closed; split declined with a reason),
 `components/teacher/TeacherRubricScoring.tsx` (v0.57.0 — E2E F10 re-run 16/16),
-`components/ops/CodexTab.tsx` (v0.58.0).
+`components/ops/CodexTab.tsx` (v0.58.0),
+`components/literature/LiteratureFeature.tsx` (v0.59.0).
 
 **Highest value remaining**, by the defect each verdict names — every one is a live behaviour
 problem, not a size complaint:
@@ -147,7 +148,6 @@ problem, not a size complaint:
 | File | The defect the verdict names |
 | --- | --- |
 | `lib/teacher/student-overview.ts` | ~18 queries per detail request, and the selected team can be paired with a *different* membership's role/join time. |
-| `components/literature/LiteratureFeature.tsx` | Boolean views can overlap; the team-phase fetch ignores status and **can hide advancement forever**. |
 | `components/discovery/SourceReader.tsx` | Blur/button saves can duplicate or land after the selection changed. |
 | `lib/hooks/usePlotBuildings.ts` | No abort/resync; refresh errors swallowed; duplicated optimistic economy prediction. |
 | `components/lab/LabScene.tsx` | Six booleans permit overlapping off-path panels. |

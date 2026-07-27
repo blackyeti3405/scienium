@@ -5,6 +5,42 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.59.0] — 2026-07-26
+
+### Fixed — one failed request could hide the "advance your lab" gate forever
+
+Seventh of REFACTOR2 §0.7's file dispositions: `components/literature/LiteratureFeature.tsx`.
+
+- **The gate could vanish, permanently.** The team fetch was
+  `fetch('/api/team').then(r => r.json())` with no `r.ok`, and a `.catch` commenting *"degrade
+  gracefully — leave both null and fall through to first-time path"*. There is no first-time
+  path. On any non-2xx the route's `{ error: "…" }` body was read, `d.phase` came back
+  `undefined`, and the gate condition
+  `locked && (phase === 'literature_review' || !!researchIdea || !!ideaResult)` went **false** —
+  so a team with 25/25 sources, sitting in `literature_review` with no idea submitted, had **no
+  way to advance at all**. The effect's `[]` deps meant nothing retried; only a full page reload
+  recovered. Reproduced against the original with a 429 body. It is parsed now
+  (`getTeamPhase`), and a failure renders a retry where the gate would have been — this student
+  is precisely the one who must not be left with nothing.
+- **The `setTimeout(router.refresh, 2200)` after a successful advance is cleared on unmount.**
+- Three hard-coded `25`s sat next to an imported `TOTAL_SLOTS`. They use the constant now.
+
+### Changed — one subview state instead of four booleans
+§0.7 asked for this and it is done, with an honest caveat: **the overlap it warns about is not
+reachable today.** Each of `showCitations`/`showGuide`/`showSynthesis`/`showVocab` is set only by
+a header button, and the header does not render once any view is open, so a second can never be
+turned on. Had two ever been true, the fixed check order would render the first and strand the
+second — its close button lives inside the view that never renders. This removes the class
+structurally rather than fixing a live defect, and is recorded as such.
+
+### Verification
+Gates 1–5 pass. Vitest **128 files / 1,816 tests** (+1 file, +4).
+**E2E `synthesis-matrix` re-run: 17/17 pass** — it drives the Literature header buttons and the
+subview state that was replaced.
+`components/literature/api.test.ts` pins the gate condition verbatim against a real local server.
+Negative-controlled: swapping `requestJson` for the pre-fix `fetch().then(r => r.json())` cast
+fails 2 of the 4 — including the case that asserts an undefined phase used to hide the gate.
+
 ## [0.58.0] — 2026-07-26
 
 ### Fixed — one rate-limited refresh blanked the whole Field Codex

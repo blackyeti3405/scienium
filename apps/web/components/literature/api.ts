@@ -90,3 +90,34 @@ export function submitExplanation(paperId: string, text: string) {
     body: JSON.stringify({ text }),
   })
 }
+
+/**
+ * The slice of `/api/team` the Literature Review needs to decide whether to
+ * offer the literature_review → research_planning gate.
+ *
+ * ## Why this is parsed and not cast
+ *
+ * The effect was `fetch('/api/team').then(r => r.json()).then(d => …)` with no
+ * `r.ok` and a `.catch` commenting "degrade gracefully — leave both null and
+ * fall through to first-time path". There is no first-time path here. On any
+ * non-2xx the route's `{ error: "…" }` body was read, `d.phase` came back
+ * `undefined`, and the gate condition
+ * `locked && (phase === 'literature_review' || !!researchIdea || !!ideaResult)`
+ * evaluated **false** — so a team with 25/25 sources, sitting in
+ * `literature_review` with no idea submitted yet, saw **no way to advance at
+ * all**. The effect has `[]` deps, so nothing retried; only a full page reload
+ * recovered. Reproduced against the original with a 429 body.
+ *
+ * Extra keys (members, invite, myClass…) are ignored rather than declared —
+ * this is a read of one part of a larger response, and re-declaring the rest
+ * would be a second contract to keep in step for no defect.
+ */
+export const teamPhaseSchema = z.object({
+  phase: z.string(),
+  researchIdea: z.string().nullish(),
+  labType: z.string().nullish(),
+})
+
+export function getTeamPhase() {
+  return requestJson('/api/team', teamPhaseSchema)
+}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { X, FlaskConical, Lock, Quote, BookOpen, Grid3x3, Brain } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { LAB_TYPE_LABELS, type LabType, type Phase } from '@/lib/phase'
@@ -14,6 +14,7 @@ import { type Paper, TOTAL_SLOTS } from './types'
 import { PaperSlot } from './PaperSlot'
 import { QAPanel } from './QAPanel'
 import { usePapers } from './usePapers'
+import { getTeamPhase } from './api'
 
 // Code-split: the guide bundles a ~68KB static glossary but only renders when
 // the student toggles it open, so it loads on first open (featureRegistry pattern).
@@ -71,10 +72,19 @@ export function LiteratureFeature() {
   // undefined = still loading; the idea gate stays hidden until we know the
   // phase, so it can never flash for a team that cannot advance.
   const [phase, setPhase] = useState<Phase | undefined>(undefined)
-  const [showCitations, setShowCitations] = useState(false)
-  const [showGuide, setShowGuide] = useState(false)
-  const [showSynthesis, setShowSynthesis] = useState(false)
-  const [showVocab, setShowVocab] = useState(false)
+  /** The phase read failed — the gate cannot be decided, so SAY so and offer a retry. */
+  const [teamLoadFailed, setTeamLoadFailed] = useState(false)
+  /**
+   * ONE subview, per §0.7's "use one subview state".
+   *
+   * It was four independent booleans checked in a fixed order, so two of them
+   * true would render the first and strand the second — its close button lives
+   * inside the view that never renders. Honest caveat: that is **not reachable**
+   * today. Each is set only by a header button, and the header is not rendered
+   * once any view is open, so a second can never be turned on. This is the
+   * class removed structurally, not a defect fixed.
+   */
+  const [subview, setSubview] = useState<'citations' | 'guide' | 'synthesis' | 'vocab' | null>(null)
 
   useEffect(() => {
     fetch('/api/discovery/topic')
@@ -89,18 +99,39 @@ export function LiteratureFeature() {
       })
   }, [])
 
-  useEffect(() => {
-    fetch('/api/team')
-      .then((r) => r.json())
-      .then((d: { researchIdea?: string | null; labType?: string | null; phase?: string }) => {
-        setResearchIdea(d.researchIdea ?? null)
-        setLabType((d.labType as LabType | null) ?? null)
-        setPhase(d.phase as Phase | undefined)
-      })
-      .catch(() => {
-        // degrade gracefully — leave both null and fall through to first-time path
-      })
+  /**
+   * Load the team's phase — the thing the advance gate is decided on.
+   *
+   * The old version had no `r.ok` and a `.catch` that claimed to "fall through
+   * to first-time path". There is no first-time path: on any non-2xx, `d.phase`
+   * came back `undefined`, the gate condition went false, and a team with 25/25
+   * sources sitting in `literature_review` saw **no way to advance at all** —
+   * with `[]` deps, nothing retried. Reproduced against the original with a 429.
+   * Now it is parsed, and a failure is something the student can retry.
+   */
+  const loadTeamPhase = useCallback(async () => {
+    setTeamLoadFailed(false)
+    try {
+      const d = await getTeamPhase()
+      setResearchIdea(d.researchIdea ?? null)
+      setLabType((d.labType as LabType | null) ?? null)
+      setPhase(d.phase as Phase)
+    } catch {
+      setTeamLoadFailed(true)
+    }
   }, [])
+
+  useEffect(() => {
+    void loadTeamPhase()
+  }, [loadTeamPhase])
+
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current)
+    },
+    [],
+  )
 
   async function advancePhase() {
     if (!idea.trim()) { setIdeaError('Describe your research idea first.'); return }
@@ -115,47 +146,25 @@ export function LiteratureFeature() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Could not advance')
       setIdeaResult({ labTypeLabel: data.labTypeLabel, rationale: data.rationale })
-      setTimeout(() => router.refresh(), 2200)
+      // Cleared on unmount — the student can close the feature inside the beat.
+      refreshTimer.current = setTimeout(() => router.refresh(), 2200)
     } catch (err) {
       setIdeaError(err instanceof Error ? err.message : 'Could not advance')
       setIdeaBusy(false)
     }
   }
 
-  // Citations library — full-screen sub-view (#13)
-  if (showCitations) {
+  // Full-screen sub-views. One state, so exactly one can be open by construction:
+  // citations (#13), the research guide (F1), the synthesis matrix, and the
+  // zero-LLM vocabulary deck.
+  if (subview) {
+    const close = () => setSubview(null)
     return (
       <div className="h-full bg-[#0d1b2e] text-white">
-        <CitationsPanel onClose={() => setShowCitations(false)} />
-      </div>
-    )
-  }
-
-  // Research Guide — glossary + anatomy-of-a-paper reference, full-screen sub-view (F1)
-  if (showGuide) {
-    return (
-      <div className="h-full bg-[#0d1b2e] text-white">
-        <ResearchGuidePanel onClose={() => setShowGuide(false)} />
-      </div>
-    )
-  }
-
-  // Synthesis Matrix — discipline-adaptive comparison grid across 2-4 sources,
-  // full-screen sub-view.
-  if (showSynthesis) {
-    return (
-      <div className="h-full bg-[#0d1b2e] text-white">
-        <SynthesisPanel onClose={() => setShowSynthesis(false)} labType={labType} />
-      </div>
-    )
-  }
-
-  // Vocabulary Builder — spaced-repetition deck of terms extracted from the
-  // team's own sources, full-screen sub-view. ZERO LLM.
-  if (showVocab) {
-    return (
-      <div className="h-full bg-[#0d1b2e] text-white">
-        <VocabPanel onClose={() => setShowVocab(false)} />
+        {subview === 'citations' && <CitationsPanel onClose={close} />}
+        {subview === 'guide' && <ResearchGuidePanel onClose={close} />}
+        {subview === 'synthesis' && <SynthesisPanel onClose={close} labType={labType} />}
+        {subview === 'vocab' && <VocabPanel onClose={close} />}
       </div>
     )
   }
@@ -193,21 +202,21 @@ export function LiteratureFeature() {
             </p>
           ) : (
             <p className="font-pixel text-[7px] text-white/40 mt-1">
-              Upload and review 25 sources to advance your lab
+              Upload and review {TOTAL_SLOTS} sources to advance your lab
             </p>
           )}
         </div>
         <div className="flex items-center gap-4">
           <button
             data-testid="research-guide-open"
-            onClick={() => setShowGuide(true)}
+            onClick={() => setSubview('guide')}
             title="Research vocabulary glossary and paper anatomy reference"
             className="flex items-center gap-1.5 font-pixel text-[7px] border border-white/20 text-white/50 px-2.5 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
           >
             <BookOpen size={10} /> Research Guide
           </button>
           <button
-            onClick={() => setShowCitations(true)}
+            onClick={() => setSubview('citations')}
             title="View your citation library"
             className="flex items-center gap-1.5 font-pixel text-[7px] border border-white/20 text-white/50 px-2.5 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
           >
@@ -215,7 +224,7 @@ export function LiteratureFeature() {
           </button>
           <button
             data-testid="synthesis-open"
-            onClick={() => setShowSynthesis(true)}
+            onClick={() => setSubview('synthesis')}
             title="Compare 2-4 sources in a discipline-adaptive synthesis matrix"
             className="flex items-center gap-1.5 font-pixel text-[7px] border border-white/20 text-white/50 px-2.5 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
           >
@@ -223,7 +232,7 @@ export function LiteratureFeature() {
           </button>
           <button
             data-testid="vocab-open"
-            onClick={() => setShowVocab(true)}
+            onClick={() => setSubview('vocab')}
             title="Spaced-repetition deck of key terms from your own sources"
             className="flex items-center gap-1.5 font-pixel text-[7px] border border-white/20 text-white/50 px-2.5 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
           >
@@ -233,7 +242,7 @@ export function LiteratureFeature() {
             <span className="font-pixel text-[18px] text-[#F5C518]">
               {papersLoaded ? readyCount : '—'}
             </span>
-            <span className="font-pixel text-[10px] text-white/40"> / 25</span>
+            <span className="font-pixel text-[10px] text-white/40"> / {TOTAL_SLOTS}</span>
           </div>
         </div>
       </div>
@@ -315,6 +324,25 @@ export function LiteratureFeature() {
         )
       })()}
 
+      {/* The gate could not be decided. Sources are all in, so this student is
+          exactly the one who needs to advance — never leave them with nothing. */}
+      {locked && teamLoadFailed && (
+        <div
+          data-testid="lit-phase-load-failed"
+          className="mx-6 mt-4 mb-4 rounded-sm border border-red-400/30 bg-red-500/10 px-5 py-4 flex items-center justify-between gap-3"
+        >
+          <span className="font-pixel text-[8px] text-red-300 leading-relaxed">
+            Couldn&apos;t check your lab status — you may have a research idea to submit.
+          </span>
+          <button
+            onClick={() => void loadTeamPhase()}
+            className="shrink-0 font-pixel text-[8px] border border-white/20 text-white/60 px-3 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
       {/* No-topic warning — only shown when not yet locked AND the topic fetch
           genuinely returned "no topic set" (a fetch failure must not nag) */}
       {!locked && topic === null && !topicLoadFailed && (
@@ -346,7 +374,7 @@ export function LiteratureFeature() {
       ) : locked ? (
         <div className="flex items-center gap-2 px-6 py-3 bg-white/[0.02] border-t border-white/8 shrink-0">
           <Lock size={10} className="text-white/40 shrink-0" />
-          <span className="font-pixel text-[7px] text-green-300/70">Sources locked — 25/25</span>
+          <span className="font-pixel text-[7px] text-green-300/70">Sources locked — {TOTAL_SLOTS}/{TOTAL_SLOTS}</span>
           <div className="flex-1 h-1.5 rounded-full bg-green-400 ml-2" />
         </div>
       ) : (

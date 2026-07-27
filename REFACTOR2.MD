@@ -720,7 +720,7 @@ not a reason to split it; it does not erase separately listed correctness findin
 | `components/literature/VocabPanel.tsx` | 480 | **Mostly keep; extract repeated views.** Size is driven by several clear modes. Consolidate form/result chrome and move state transitions into the vocabulary hook/reducer; no unique security defect found in this file. |
 | `components/teacher/TeacherRubricScoring.tsx` | 423 | **Refactor draft lifecycle.** Track switching can discard unsaved state, blur/click autosaves can race, blank numeric input becomes zero, and success timers are not cleaned up. Use explicit dirty/version/save state. — **DONE (v0.57.0).** "Blank numeric input becomes zero" is the worst of these and is understated: it did not just display zero, the **blur autosave PUT it**, so clearing a stored 15 recorded a real 0 with "Last scored by <teacher>" vouching for it. The "race" is a silent DROP — `if (saving) return` meant two blurs produced one PUT carrying the *empty* notes. "Track switching discards unsaved state" is **not right as written**: the toggle click blurs first, so the save is already in flight and `applySave` correctly drops its stale result; what the remount discards is the FAILURE message. Fixed by a text-backed input + `parseScoreInput`/`clampScore` (clamp at send time, never while typing), the shared `lib/save-queue.ts`, and failure reporting hoisted to the panel. E2E F10 re-run: **16/16**. |
 | `components/ops/data-terminal/ExperimentDetail.tsx` | 420 | **Split chart/input/table.** Load errors offer no functional retry. Duplicate `(x, series)` points overwrite visually although the table retains them, so the chart can misrepresent data. |
-| `components/literature/LiteratureFeature.tsx` | 409 | **Use one subview state.** Boolean views can overlap. Team-phase fetch ignores status and can hide advancement forever; timers are not cleaned; hard-coded slot count duplicates domain constants. |
+| `components/literature/LiteratureFeature.tsx` | 409 | **Use one subview state.** Boolean views can overlap. Team-phase fetch ignores status and can hide advancement forever; timers are not cleaned; hard-coded slot count duplicates domain constants. — **DONE (v0.59.0).** The phase reading is right and is the batch: no `r.ok`, so a non-2xx body left `phase` undefined and the gate condition went false — a team at 25/25 in `literature_review` with no idea submitted had **no way to advance**, and `[]` deps meant nothing retried. Reproduced with a 429. Parsed now, with a retry rendered where the gate would be. **"Boolean views can overlap" is NOT reachable**: each is set only by a header button and the header is gone once any view is open. The union shipped anyway (it was the requested scope) but is recorded as a class removed, not a defect fixed. |
 | `lib/literature/synthesis.ts` | 396 | **Keep algorithm; strengthen ownership.** Cohesive service. Schema must normalize matrix-paper ownership; check operation must bind an exact version/snapshot. |
 | `lib/discovery/articles.ts` | 390 | **Split provider adapter/domain mapping.** Feed URLs and provider bodies need canonical host/content-type/byte validation. Licensing assumptions need a current human review. |
 | `lib/buildings/service.ts` | 384 | **Keep.** Cohesive command service with transaction/policy ownership. Refactor only shared result helpers if another command genuinely shares them. |
@@ -1555,6 +1555,21 @@ failed 2 of 8 consecutive runs. It now lays out **100,000** nodes against an abs
 runs green.
 
 Gates 1–5 pass; Vitest 127 files / 1,812 tests.
+
+#### v0.59.0 — 2026-07-26 — the gate that could disappear
+
+| File | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| `components/literature/LiteratureFeature.tsx` | **DONE** | (1) **"Can hide advancement forever" is the batch, and it is exact.** `fetch('/api/team').then(r => r.json())` with no `r.ok`, and a `.catch` whose comment — *"degrade gracefully — leave both null and fall through to first-time path"* — describes a path that does not exist. On any non-2xx the `{ error: "…" }` body was read, `d.phase` came back `undefined`, and `locked && (phase === 'literature_review' || !!researchIdea || !!ideaResult)` went **false**: a team with 25/25 sources in `literature_review` and no idea submitted saw **nothing at all** where the advance box belongs. `[]` deps, so no retry; only a full reload recovered. Reproduced against the original with a 429 body. `getTeamPhase` in the feature's own `api.ts` parses it now, and a failure renders a retry **in the gate's place** — leaving the student who has finished the work with an empty screen is the failure mode, so the fix has to occupy that space. (2) The `setTimeout(router.refresh, 2200)` after a successful advance is cleared on unmount. (3) Three hard-coded `25`s sat beside an imported `TOTAL_SLOTS`. (4) **"Boolean views can overlap" is NOT reachable and the register should say so.** Each of the four is set only by a header button, and the header does not render once any view is open, so a second can never be turned on; had two been true, the fixed check order would render the first and strand the second, whose close button lives in the view that never renders. The single `subview` union shipped because §0.7 asked for it and it is the requested scope — but it removes a class, it does not fix a live defect. | No E2E drives the failed-phase retry (`lit-phase-load-failed` has a testid and no assertion). The topic fetch above it still uses a hand-rolled `r.ok` check rather than the same parsed helper — correct, but two idioms in one file. `advancePhase` still reads `await res.json()` before checking `res.ok`. |
+
+`components/literature/api.test.ts` (4) pins the gate condition **verbatim** against a real local
+server, including the pre-fix outcome as a stated contrast. **Negative-controlled**: swapping
+`requestJson` back for the cast fails 2 of the 4.
+
+**E2E `synthesis-matrix` re-run: 17/17** — it opens the Literature header's Synthesis button, so
+it exercises the replaced subview state end to end.
+
+Gates 1–5 pass; Vitest 128 files / 1,816 tests.
 
 ---
 
