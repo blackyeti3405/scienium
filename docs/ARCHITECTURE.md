@@ -524,6 +524,13 @@ Top-level infrastructure and policy files:
   go through it, so a client-sent boolean can no longer authorize a delete.
 - `economy.ts`, `shop.ts`, `plot.ts`, `phase.ts`, `showcase.ts`: pure domain
   policy.
+- `save-queue.ts`: `createSaveQueue` — the shared client autosave discipline.
+  Serializes writes (a save requested mid-flight is QUEUED, never refused —
+  `if (saving) return` silently dropped a teacher's rubric notes), coalesces a
+  burst into one request, holds the unconfirmed snapshot as the record of
+  failure, and exposes a `flush()` barrier callers refuse to proceed past.
+  Consumed by `components/ops/expertiseProgress.ts` and
+  `components/teacher/TeacherRubricScoring.tsx`.
 - `fetch-retry.ts`: `fetchWithRetry` — 429/5xx retry-after backoff bounded by a
   `Promise.race` timeout (aborting a stalled OS-level connect doesn't reliably
   unblock it) — plus the one shared `sleep`, replacing five copy-pasted

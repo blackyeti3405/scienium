@@ -1,14 +1,20 @@
 import { describe, it, expect } from 'vitest'
-import { createProgressSaver, type ExamProgress } from './expertiseProgress'
+import { createSaveQueue } from './save-queue'
+import type { ExamProgress } from '@/components/ops/expertiseProgress'
 
 /**
- * These pin the three defects that were REPRODUCED against the pre-fix panel
- * (REFACTOR2 §0.7, `components/ops/ExpertisePanel.tsx`), where progress was
- * written with `fetch(...).catch(() => {})` and the exit button never awaited it:
+ * These pin defects REPRODUCED against two different pre-fix surfaces
+ * (REFACTOR2 §0.7). The snapshot type is the clearance exam's, because that is
+ * where the queue started, but every rule here is why the teacher rubric now
+ * uses it too:
  *
- *  1. a rejected PATCH left the UI clean and the server empty;
- *  2. exit proceeded while the write was in flight;
- *  3. two overlapping saves could commit oldest-last.
+ *  1. a rejected write left the UI clean and the server empty
+ *     (`components/ops/ExpertisePanel.tsx` — `fetch(...).catch(() => {})`);
+ *  2. exit proceeded while the write was in flight (same file);
+ *  3. two overlapping saves could commit oldest-last;
+ *  4. a save requested while one was in flight was DROPPED, not queued
+ *     (`components/teacher/TeacherRubricScoring.tsx` — `if (saving) return`),
+ *     which is the "coalesces, never refuses" case below.
  */
 
 function progress(n: number): ExamProgress {
@@ -46,10 +52,10 @@ function fakeRoute() {
   }
 }
 
-describe('createProgressSaver', () => {
+describe('createSaveQueue', () => {
   it('reports the server holds the latest after a successful save', async () => {
     const route = fakeRoute()
-    const saver = createProgressSaver(route.patch)
+    const saver = createSaveQueue(route.patch)
 
     await saver.save(progress(1))
 
@@ -61,7 +67,7 @@ describe('createProgressSaver', () => {
   it('stays dirty when the save fails — the pre-fix code reported nothing', async () => {
     const route = fakeRoute()
     route.failNext(1)
-    const saver = createProgressSaver(route.patch)
+    const saver = createSaveQueue(route.patch)
 
     await saver.save(progress(1))
 
@@ -72,7 +78,7 @@ describe('createProgressSaver', () => {
   it('does not reject, so one failure cannot poison later saves', async () => {
     const route = fakeRoute()
     route.failNext(1)
-    const saver = createProgressSaver(route.patch)
+    const saver = createSaveQueue(route.patch)
 
     await expect(saver.save(progress(1))).resolves.toBeUndefined()
     await saver.save(progress(2))
@@ -84,7 +90,7 @@ describe('createProgressSaver', () => {
   it('flush retries a failed save and then confirms', async () => {
     const route = fakeRoute()
     route.failNext(1)
-    const saver = createProgressSaver(route.patch)
+    const saver = createSaveQueue(route.patch)
     await saver.save(progress(1))
     expect(saver.unsaved).toBe(true)
 
@@ -95,7 +101,7 @@ describe('createProgressSaver', () => {
   it('flush reports FALSE when the retry also fails — exit must be refused', async () => {
     const route = fakeRoute()
     route.failNext(2)
-    const saver = createProgressSaver(route.patch)
+    const saver = createSaveQueue(route.patch)
     await saver.save(progress(1))
 
     expect(await saver.flush()).toBe(false)
@@ -105,7 +111,7 @@ describe('createProgressSaver', () => {
 
   it('flush waits for a write that is still in flight (the "save & exit" defect)', async () => {
     const route = fakeRoute()
-    const saver = createProgressSaver(route.patch)
+    const saver = createSaveQueue(route.patch)
 
     route.pause()
     saver.save(progress(1)) // fired from submitAnswer, not awaited by the caller
@@ -118,9 +124,27 @@ describe('createProgressSaver', () => {
     expect(route.committed).toEqual([progress(1)])
   })
 
+  it('QUEUES a save requested mid-flight — `if (saving) return` dropped it', async () => {
+    // Reproduced against the pre-fix teacher rubric card: a teacher types a
+    // score, tabs to the notes box (blur → save starts), types notes, clicks
+    // away (blur → refused because a save was in flight). Two blurs, ONE PUT,
+    // and the one that went out carried the EMPTY notes.
+    const route = fakeRoute()
+    const saver = createSaveQueue(route.patch)
+
+    route.pause()
+    const first = saver.save(progress(1)) // score only
+    const second = saver.save(progress(2)) // score + notes
+    route.release()
+    await Promise.all([first, second])
+
+    expect(route.committed).not.toEqual([progress(1)]) // the pre-fix outcome
+    expect(route.committed.at(-1)).toEqual(progress(2))
+  })
+
   it('serializes overlapping saves so the newest snapshot is what the server holds', async () => {
     const route = fakeRoute()
-    const saver = createProgressSaver(route.patch)
+    const saver = createSaveQueue(route.patch)
 
     route.pause()
     const first = saver.save(progress(1))
@@ -136,7 +160,7 @@ describe('createProgressSaver', () => {
 
   it('a snapshot queued during an in-flight save stays dirty until it lands', async () => {
     const route = fakeRoute()
-    const saver = createProgressSaver(route.patch)
+    const saver = createSaveQueue(route.patch)
 
     route.pause()
     const first = saver.save(progress(1))

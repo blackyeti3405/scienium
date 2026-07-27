@@ -5,6 +5,49 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.57.0] — 2026-07-26
+
+### Fixed — clearing a teacher's score box recorded a real zero
+
+Fifth of REFACTOR2 §0.7's file dispositions: `components/teacher/TeacherRubricScoring.tsx`.
+Both of the sharp readings were **reproduced against the pre-fix card**; the third is more
+precisely a different bug than the verdict describes.
+
+- **A blank score box became a zero, and the autosave wrote it.** The input did
+  `Number(e.target.value)` on every keystroke. `Number('') === 0`, so selecting a stored 15 and
+  deleting it made the local score a real 0 — which differed from 15, so blur autosave PUT
+  `{ score: 0 }` and *"Last scored by <teacher>"* then vouched for it. On a grading surface that
+  is a wrong mark on a student's record, not a UI wobble. The box now holds text;
+  `parseScoreInput` returns `null` for a blank one, which is not a score and is not saved, and
+  the stored value is restored on blur rather than leaving a blank the server disagrees with.
+- **A blur while a save was in flight was silently dropped.** `save()` opened with
+  `if (saving) return`. Reproduced: a teacher types a score, tabs to the notes box (blur → save
+  starts), types notes, clicks away (blur → refused). **Two blurs, one PUT, and the one that went
+  out carried the empty notes.** Saves are queued now, not refused.
+- **"Track switching discards unsaved state" — not in the ordinary path.** Clicking the track
+  toggle blurs the field first, so the autosave is already in flight and `applySave` correctly
+  drops its stale result. What the switch discards is the **failure**: it remounts every card
+  under new `row.key`s, so a card whose save then rejects sets an error on a component that no
+  longer exists. The teacher's typed feedback is gone and nothing said so. Failures are reported
+  up to the panel, which survives the switch.
+- The 2 s "Saved" badge timer is cleared on re-save and on unmount.
+
+`createSaveQueue` moved to [`lib/save-queue.ts`](../apps/web/lib/save-queue.ts) — it was written
+for the clearance exam in v0.54.0 and deliberately left local while there was one consumer. The
+rubric is the second, and it needed the same two rules: serialize rather than refuse, and treat
+the unconfirmed snapshot as the record of failure.
+
+Clamping moved to send time. Clamping while typing makes a typed 99 equal a stored 10, and then
+the save that would correct it never fires — which is exactly what E2E F10 AC7 asserts must
+happen.
+
+### Verification
+Gates 1–5 pass. Vitest **126 files / 1,808 tests** (+8).
+**E2E `F10-teacher-rubric` re-run against the rewired card: 16/16 pass**, including AC7's
+99 → clamp-to-10 and AC3/AC5/AC6's save-and-reload persistence.
+Negative-controlled three ways: treating a blank box as 0 fails the parse test, clamping inside
+the parser fails 2, and refusing instead of queueing fails 3 save-queue tests.
+
 ## [0.56.0] — 2026-07-26
 
 ### Fixed — a discovery node could vanish with nothing to explain it, and deleting could hang the tab

@@ -137,14 +137,14 @@ stated reason has already been fixed another way.
 **Done:** `components/discovery/DiscoveryTree.tsx` (v0.53.0),
 `components/ops/ExpertisePanel.tsx` (v0.54.0 — defect closed, view split deliberately left),
 `lib/discovery/openalex.ts` (v0.55.0 — hardened; split declined with a reason),
-`stores/discoveryStore.ts` (v0.56.0 — defects closed; split declined with a reason).
+`stores/discoveryStore.ts` (v0.56.0 — defects closed; split declined with a reason),
+`components/teacher/TeacherRubricScoring.tsx` (v0.57.0 — E2E F10 re-run 16/16).
 
 **Highest value remaining**, by the defect each verdict names — every one is a live behaviour
 problem, not a size complaint:
 
 | File | The defect the verdict names |
 | --- | --- |
-| `components/teacher/TeacherRubricScoring.tsx` | Track switching discards unsaved state; blur/click autosaves race; blank numeric input becomes zero. |
 | `components/ops/CodexTab.tsx` | Refresh ignores non-OK responses; a track load error leaves an endless loader; rapid navigation can commit a stale track. |
 | `lib/teacher/student-overview.ts` | ~18 queries per detail request, and the selected team can be paired with a *different* membership's role/join time. |
 | `components/literature/LiteratureFeature.tsx` | Boolean views can overlap; the team-phase fetch ignores status and **can hide advancement forever**. |

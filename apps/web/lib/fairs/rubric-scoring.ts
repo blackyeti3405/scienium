@@ -71,3 +71,31 @@ export function totalMaxFor(track: RubricTrackKey): number {
 export function sumReadiness(scores: { score: number }[]): number {
   return scores.reduce((sum, s) => sum + s.score, 0)
 }
+
+/**
+ * Parse what a scorer typed into a score box. `null` means "no score", which is
+ * NOT the same as zero.
+ *
+ * The teacher card used to do `Number(e.target.value)` straight into state.
+ * `Number('') === 0`, so selecting a 15 and deleting it made the local score a
+ * real 0 — and because 0 differed from the stored 15, the blur autosave then
+ * PUT it. Reproduced against the original: clearing the box on a criterion
+ * scored 15 sent `{ score: 0 }`, and "Last scored by <teacher>" vouched for it.
+ * A cleared box means the scorer is mid-edit or gave up; it never means zero.
+ *
+ * Deliberately does NOT clamp. Dirtiness is decided against what the scorer
+ * typed, and clamping happens at the moment of sending — clamping first makes
+ * 99 equal to a stored 10, and then the save that would have corrected it never
+ * fires.
+ */
+export function parseScoreInput(text: string): number | null {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+  const n = Number(trimmed)
+  return Number.isFinite(n) ? n : null
+}
+
+/** Clamp a parsed score to `[0, maxScore]` at send time. The server re-checks. */
+export function clampScore(score: number, maxScore: number): number {
+  return Math.max(0, Math.min(Math.round(score), maxScore))
+}
