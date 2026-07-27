@@ -15,7 +15,7 @@ import { AnswerItem, buildGradingPayload, gradeAnswers } from '@/lib/literature/
 import { aggregateOverQuestions } from '@/lib/literature/quiz'
 import { getProjectContext, renderProjectContext } from '@/lib/clearance/context'
 import { clampScore } from '@/lib/economy'
-import { logActivityBestEffort } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 
 /** A grading claim older than this is treated as abandoned and may be re-taken. */
 const STALE_CLAIM_MS = 5 * 60 * 1000
@@ -168,6 +168,16 @@ export async function POST(req: NextRequest) {
         where: { teamId: ctx.teamId },
         select: { clearanceLevel: true },
       })
+      // Durable (REFACTOR2 P1-R5): the clearance raise and its record commit
+      // together — this `raise.count > 0` guard is the same one that decides
+      // whether the KP bonus itself landed.
+      if (raise.count > 0) {
+        await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'clearance_raised', {
+          level: exam.targetLevel,
+          title: levelInfo(exam.targetLevel)?.title,
+          score: aggregate,
+        })
+      }
       return { raised: raise.count > 0, newClearance: cur?.clearanceLevel ?? 0 }
     })
   } catch (err) {
@@ -180,14 +190,6 @@ export async function POST(req: NextRequest) {
 
   const raised = committed.raised
   const kpEarned = raised ? kpBonus : 0
-
-  if (raised) {
-    logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'clearance_raised', {
-      level: exam.targetLevel,
-      title: levelInfo(exam.targetLevel)?.title,
-      score: aggregate,
-    }).catch(console.error)
-  }
 
   return NextResponse.json({
     score: aggregate,

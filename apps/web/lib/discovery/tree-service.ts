@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { hostToTier } from '@/lib/discovery/credibility'
 import { sanitizeAbstract, ARTICLE_SANITIZE_OPTS } from '@/lib/discovery/sanitize'
 import { awardDiscoveryVisit } from '@/lib/discovery/awardVisit'
+import { recordActivity } from '@/lib/activity/log'
 
 /**
  * Discovery-tree service: the read (hydrate) and write (create) algorithms
@@ -266,8 +267,9 @@ export async function hydrateTree(teamId: string) {
 
 /**
  * Creates one or more nodes (root or branch children) for the team.
- * Returns the KP credited on this request plus the wiki/youtube node count
- * (for the route's activity log).
+ * Returns the KP credited on this request. Each node's KP mint and its
+ * teacher-visible activity record commit in that node's own transaction
+ * (REFACTOR2 P1-R5) — there is no per-request activity row to return here.
  */
 export async function createTreeNodes({
   teamId,
@@ -277,7 +279,7 @@ export async function createTreeNodes({
   teamId: string
   userId: string
   nodes: IncomingTreeNode[]
-}): Promise<{ kpAwarded: number; plainCount: number }> {
+}): Promise<{ kpAwarded: number }> {
   // Prove the whole proposed graph is a same-team forest before ANY write.
   await assertValidTreeGraph(teamId, nodes)
 
@@ -318,9 +320,20 @@ export async function createTreeNodes({
     // roll back another's credit. Wiki/youtube nodes carry no tier.
     for (const n of plain) {
       try {
-        const { kpAwarded: got } = await db.$transaction((tx) =>
-          awardDiscoveryVisit(tx, { teamId, userId, nodeId: n.id, tier: null }),
-        )
+        // Durable (REFACTOR2 P1-R5): the KP mint and its teacher-visible
+        // record commit together, in this node's own transaction — the same
+        // isolation the visit award already relies on (one capped/dup node
+        // can't roll back another's credit).
+        const { kpAwarded: got } = await db.$transaction(async (tx) => {
+          const res = await awardDiscoveryVisit(tx, { teamId, userId, nodeId: n.id, tier: null })
+          if (res.kpAwarded > 0) {
+            await recordActivity(tx, teamId, userId, 'discovery_kp_awarded', {
+              kp: res.kpAwarded,
+              nodeCount: 1,
+            })
+          }
+          return res
+        })
         kpAwarded += got
       } catch (err) {
         console.error('[discovery/tree] visit award skipped:', err)
@@ -436,7 +449,16 @@ export async function createTreeNodes({
             publishedAt: Number.isNaN(publishedAt?.getTime()) ? null : publishedAt,
           },
         })
-        return awardDiscoveryVisit(tx, { teamId, userId, nodeId: n.id, tier: null })
+        const res = await awardDiscoveryVisit(tx, { teamId, userId, nodeId: n.id, tier: null })
+        // Durable (REFACTOR2 P1-R5): same-transaction record as the plain-node
+        // branch above.
+        if (res.kpAwarded > 0) {
+          await recordActivity(tx, teamId, userId, 'discovery_kp_awarded', {
+            kp: res.kpAwarded,
+            nodeCount: 1,
+          })
+        }
+        return res
       })
       kpAwarded += got
     } catch (err) {
@@ -444,5 +466,5 @@ export async function createTreeNodes({
     }
   }
 
-  return { kpAwarded, plainCount: plain.length + articles.length }
+  return { kpAwarded }
 }

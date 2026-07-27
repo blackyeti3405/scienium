@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   classifyLabType: vi.fn(),
   getLiteratureAdvanceProgress: vi.fn(),
   isSelfAdvance: vi.fn(),
-  logActivityBestEffort: vi.fn(() => Promise.resolve()),
+  recordActivity: vi.fn(() => Promise.resolve()),
   teamUpdate: vi.fn(() => Promise.resolve({})),
   teamUpdateMany: vi.fn(() => Promise.resolve({ count: 1 })),
 }))
@@ -27,10 +27,14 @@ vi.mock('@/lib/team/advance', () => ({
   isSelfAdvance: mocks.isSelfAdvance,
   SELF_ADVANCE_TRANSITIONS: { research_planning: 'working', working: 'showcase' },
 }))
-vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
-vi.mock('@/lib/db', () => ({
-  db: { team: { update: mocks.teamUpdate, updateMany: mocks.teamUpdateMany } },
-}))
+vi.mock('@/lib/activity/log', () => ({ recordActivity: mocks.recordActivity }))
+vi.mock('@/lib/db', () => {
+  const db = {
+    team: { update: mocks.teamUpdate, updateMany: mocks.teamUpdateMany },
+    $transaction: vi.fn((cb: (tx: unknown) => unknown) => cb(db)),
+  }
+  return { db }
+})
 
 import { POST } from '@/app/api/team/advance-phase/route'
 

@@ -18,7 +18,7 @@ import {
   QUIZ_GRADING_PROMPT_INTRO,
 } from '@/lib/literature/grading'
 import { clampScore, computeQuizAward } from '@/lib/economy'
-import { logActivityBestEffort } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 import { lockAggregate } from '@/lib/db-lock'
 
 // Server-side only; the Anthropic key never reaches the browser.
@@ -182,15 +182,18 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         update: { kp: { increment: award.kpEarned } },
       })
     }
+    // Durable (REFACTOR2 P1-R5): the session's grade commit and its record
+    // land together — gated on THIS call being the one that actually graded
+    // the session (we already bailed above with `return 0` if a concurrent
+    // request won the race), so a race loser never double-records a pass.
+    if (passed) {
+      await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'quiz_passed', {
+        paperTitle: session.paper.title,
+        score: aggregate,
+      })
+    }
     return award.kpEarned
   })
-
-  if (passed) {
-    logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'quiz_passed', {
-      paperTitle: session.paper.title,
-      score: aggregate,
-    }).catch(console.error)
-  }
 
   return NextResponse.json({
     score: aggregate,

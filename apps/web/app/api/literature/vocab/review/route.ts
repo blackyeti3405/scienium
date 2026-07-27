@@ -11,7 +11,7 @@ import {
   VOCAB_KP_PER_TERM,
   VOCAB_DAILY_KP_CAP,
 } from '@/lib/literature/srs'
-import { logActivityBestEffort } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 import { todayUtc } from '@/lib/date'
 
 const ReviewBody = z
@@ -127,6 +127,10 @@ export async function POST(req: NextRequest) {
           create: { teamId: ctx.teamId, kp: VOCAB_KP_PER_TERM },
           update: { kp: { increment: VOCAB_KP_PER_TERM } },
         })
+        // Durable (REFACTOR2 P1-R5): the once-ever mastery KP and its record
+        // commit together — if the cap slot above didn't fire, we never reach
+        // here (the CapSlotUnavailable throw rolls this back with everything else).
+        await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'vocab_term_mastered', { term: card.term })
       })
     } catch (err) {
       if (!(err instanceof CapSlotUnavailable)) throw err
@@ -135,7 +139,6 @@ export async function POST(req: NextRequest) {
 
     if (outcome === 'paid') {
       kpEarned = VOCAB_KP_PER_TERM
-      logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'vocab_term_mastered', { term: card.term }).catch(console.error)
     } else if (outcome === 'cap') {
       capReached = true
     }

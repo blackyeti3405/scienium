@@ -348,7 +348,7 @@ shape, every element's `error`, and the numeric `INCR` result, and throws
 `rate_limit.store_error`. **Still open:** the circuit breaker and the single
 deployment-guaranteed client-IP header.
 
-#### P1-R5 — Background work is durable only in parts — **CLOSED (v0.46.0); activity-migration remainder tracked**
+#### P1-R5 — Background work is durable only in parts — **CLOSED (v0.46.0 + v0.72.0)**
 
 - Notifications materialize every checked team ID for the day, restart roster scanning from
   the beginning, and mark completion after processing. Overlapping runs can process/email the
@@ -1403,7 +1403,7 @@ Gates 1–5 pass; Vitest 110 files / 1,564 tests. Migration applied; devlab veri
 
 | Finding | Status | What actually changed | Still owed |
 | --- | --- | --- | --- |
-| **P1-R5** Background work is durable only in parts | **CLOSED** for two of three bullets; the third is mechanism-complete with a pinned migration list | **Notifications:** the ledger row was written AFTER processing, so two overlapping runs read the same unchecked roster, both processed, and both emailed — `dedupe_key` kept the notification ROW singular but not the SEND, which was driven by a run's in-memory "fresh" list. Teams are now claimed first, fenced by a `claimToken`, with a 5-minute lease so a crashed run's teams are retried rather than stranded; failed and budget-skipped teams are RELEASED rather than made to wait it out. Claim/complete/release are batched per page, keeping the run's query count page-scaled. **Email outbox:** notification rows and outbox entries commit in one transaction, and `(dedupeKey, recipient)` unique makes at-most-once delivery a database property; delivery is a separate claimed pass with a lease, batch bound, attempt cap, and a `failed` parking state. **Paper cron:** the 30-wide `Promise.all` is now four at a time through a shared `lib/concurrency.ts`. **Activity:** `logActivity` served both progression evidence and feed noise while swallowing every failure; split into `recordActivity(tx, …)` (writes in the caller's transaction, THROWS) and `logActivityBestEffort(…)` (named for what it is, at all 30 sites), with `DURABLE_ACTIVITY_ACTIONS` classifying which is which. Migrated: building purchase/sale/upgrade, quiz-retry pass, Codex lesson completion. | Eleven durable-class activity events still write outside a transaction — route handlers whose payload is only known after the domain write, so each is a per-site restructure rather than a rename. `test/activity-durability.test.ts` asserts that list EXACTLY, so it can only shrink deliberately. Outbox delivery is at-most-once, not exactly-once: a crash between provider acceptance and the `sent` write retries. |
+| **P1-R5** Background work is durable only in parts | **CLOSED** for two of three bullets; the third is mechanism-complete with a pinned migration list | **Notifications:** the ledger row was written AFTER processing, so two overlapping runs read the same unchecked roster, both processed, and both emailed — `dedupe_key` kept the notification ROW singular but not the SEND, which was driven by a run's in-memory "fresh" list. Teams are now claimed first, fenced by a `claimToken`, with a 5-minute lease so a crashed run's teams are retried rather than stranded; failed and budget-skipped teams are RELEASED rather than made to wait it out. Claim/complete/release are batched per page, keeping the run's query count page-scaled. **Email outbox:** notification rows and outbox entries commit in one transaction, and `(dedupeKey, recipient)` unique makes at-most-once delivery a database property; delivery is a separate claimed pass with a lease, batch bound, attempt cap, and a `failed` parking state. **Paper cron:** the 30-wide `Promise.all` is now four at a time through a shared `lib/concurrency.ts`. **Activity:** `logActivity` served both progression evidence and feed noise while swallowing every failure; split into `recordActivity(tx, …)` (writes in the caller's transaction, THROWS) and `logActivityBestEffort(…)` (named for what it is, at all 30 sites), with `DURABLE_ACTIVITY_ACTIONS` classifying which is which. Migrated: building purchase/sale/upgrade, quiz-retry pass, Codex lesson completion. | Eleven durable-class activity events still write outside a transaction — route handlers whose payload is only known after the domain write, so each is a per-site restructure rather than a rename. `test/activity-durability.test.ts` asserts that list EXACTLY, so it can only shrink deliberately. — **CLOSED (v0.72.0):** all eleven migrated; see §0.11's v0.72.0 entry. Outbox delivery is at-most-once, not exactly-once: a crash between provider acceptance and the `sent` write retries. |
 
 Gates 1–5 pass; Vitest 112 files / 1,581 tests. Migration applied; devlab verified intact.
 
@@ -1928,6 +1928,32 @@ Vitest 1,769 → **1,852**. Gates 1–5 green on every batch in the tranche.
 (3 documented skips), `issue-6` **10/10**, `F10-teacher-rubric` **16/16**. The only red specs are
 the two pre-existing ones recorded above — `upgrades` AC12 and the flaky `F3-plan-paste` — both
 of which reproduce at HEAD without any of this tranche's changes.
+
+#### v0.72.0 — 2026-07-27 — the last eleven activity events become durable
+
+P1-R5's tracked remainder: eleven durable-class activity events (a teacher's only evidence a
+student did graded work, or that KP was genuinely minted) were still written with
+`logActivityBestEffort` after their domain write committed, so a crash or dropped write between
+the two could leave KP moved with no record it happened.
+
+| File | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| `papers/[id]/quiz/grade`, `papers/[id]/explain`, `expertise/grade`, `literature/vocab/review` | **CLOSED** | Each already ran its KP claim inside a transaction with everything the payload needs in scope; `recordActivity(tx, …)` now sits next to the claim, gated on the identical "did this actually pay" condition already used for the KP write. | Quiz grade also now skips the record (not just the KP) on the race-loser path where a concurrent request already graded the session — a duplicate/no-op request no longer mints a false "quiz passed" row; this is a correction, not a behavior regression. |
+| `discovery/topic` (`topic_locked`), `discovery/sources/[id]/reflection` (`discovery_kp_awarded`) | **CLOSED** | Same shape: the once-ever bonus / visit-KP transaction already existed, now carries its own record inside the same P2002-guarded block. | None. |
+| `discovery/tree` (`discovery_kp_awarded`) | **CLOSED** | No per-request transaction exists here by design — each node's KP mint is its own transaction so one capped/dup node can't roll back another's credit. The record now lives in that same per-node transaction instead of one best-effort summary logged after the whole batch. | The activity feed now gets one row per node instead of one summary row per POST. In practice a POST is almost always one node (`discoveryStore.ts`'s `attachOne`), so this is a wash in the common case; a genuine multi-node batch now produces N feed rows instead of 1 — more entries, each individually accurate, none lost. |
+| `team/advance-phase` (`phase_advanced`, both call sites), `team/join` (`member_joined`) | **CLOSED** | Neither had a wrapping transaction at all — a bare `updateMany` or a plain insert followed by a best-effort log. Introduced `db.$transaction` around each write + its record; the paid-classify site opens its transaction only after `classifyLabType` (the Anthropic call) returns, never around it. | `team/join`'s idempotent "already a member" path no longer logs a false re-join; only the branch that actually inserts a `TeamMember` row does. |
+| `showcase/route.ts` (`showcase_published`) | **CLOSED** | Had no transaction either — create/update, `syncShowcaseRevision`, the moderation event, and the best-effort log were four independent commits. No network/paid call happens in this handler, so all four now run inside one `db.$transaction`. | None. |
+
+`test/activity-durability.test.ts`'s exact-list assertion is now empty. Negative-controlled: reverting
+`quiz/grade`'s migration back to `logActivityBestEffort` reproduces the exact failure the list
+is built to catch, then restored. Five existing unit tests (`showcase-write-policy`, `team-join`,
+`advance-phase-claim`, `advance-phase-paid-gate`, `explain-monotonic`) needed their
+`@/lib/activity/log` mock updated from `logActivityBestEffort` to `recordActivity` (plus a
+`db.$transaction` passthrough on the two routes that gained one); no domain-behavior assertion
+changed.
+
+Gates 1–4 pass; Vitest **134 files / 1,852 tests** (unchanged — this batch restructures existing
+call sites and mocks rather than adding new specs). P1-R5 is now fully closed.
 
 ---
 

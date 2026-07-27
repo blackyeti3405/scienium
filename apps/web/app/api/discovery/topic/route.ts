@@ -7,7 +7,7 @@ import { db } from '@/lib/db'
 import { consumeDestructive, proposeDestructive } from '@/lib/api/destructive-proposal'
 import { orphanObjectKey } from '@/lib/uploads/assets'
 import { batchCheckRelevance } from '@/lib/literature/relevance'
-import { logActivityBestEffort } from '@/lib/activity/log'
+import { logActivityBestEffort, recordActivity } from '@/lib/activity/log'
 import { TOPIC_LOCK_KP } from '@/lib/discovery/economy'
 import { matchInterests } from '@/lib/discovery/interest-match'
 
@@ -222,9 +222,12 @@ export async function POST(req: NextRequest) {
           create: { teamId: ctx.teamId, kp: TOPIC_LOCK_KP },
           update: { kp: { increment: TOPIC_LOCK_KP } },
         })
+        // Durable (REFACTOR2 P1-R5): the once-ever bonus and its record commit
+        // together, inside the same guard the P2002 catch below relies on — a
+        // duplicate award (caught below) never gets a duplicate record either.
+        await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'topic_locked', { kp: TOPIC_LOCK_KP })
       })
       topicBonusKp = TOPIC_LOCK_KP
-      logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'topic_locked', { kp: TOPIC_LOCK_KP }).catch(console.error)
     } catch (err) {
       // P2002 → bonus already granted for this team; award nothing (topicBonusKp 0).
       if (!(typeof err === 'object' && err !== null && 'code' in err && (err as { code?: string }).code === 'P2002')) {

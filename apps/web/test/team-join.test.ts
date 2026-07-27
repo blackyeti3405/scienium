@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   currentUser: vi.fn(),
   applySchoolAndClass: vi.fn(() => Promise.resolve()),
   syncClerkDisplayName: vi.fn(() => Promise.resolve()),
-  logActivityBestEffort: vi.fn(() => Promise.resolve()),
+  recordActivity: vi.fn(() => Promise.resolve()),
   lockAggregate: vi.fn(() => Promise.resolve()),
   userFindUnique: vi.fn(),
   userCreate: vi.fn(),
@@ -49,7 +49,7 @@ vi.mock('@/lib/onboarding/profile', () => ({
     u?.emailAddresses?.[0]?.emailAddress ??
     null,
 }))
-vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
+vi.mock('@/lib/activity/log', () => ({ recordActivity: mocks.recordActivity }))
 vi.mock('@/lib/db-lock', () => ({ lockAggregate: mocks.lockAggregate }))
 vi.mock('@/lib/db', () => ({
   db: {

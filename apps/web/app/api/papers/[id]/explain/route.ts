@@ -8,7 +8,7 @@ import { aiCreate } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import { paperTextBlock } from '@/lib/literature/grading'
 import { extractJson } from '@/lib/literature/quiz'
-import { logActivityBestEffort } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 import { lockAggregate } from '@/lib/db-lock'
 import { aiIdempotencyKey, runAiOperation } from '@/lib/ai/operation'
 import {
@@ -250,19 +250,16 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       create: { teamId: paper.teamId, kp: EXPLAIN_KP_AWARD },
       update: { kp: { increment: EXPLAIN_KP_AWARD } },
     })
-    return { attemptNo, overall, passed, kpEarned: EXPLAIN_KP_AWARD }
-  })
-
-  // "First pass" and "KP minted" coincide by construction (kpEligible requires
-  // priorKp === 0, and priorKp only ever becomes non-zero on a passing KP
-  // claim) — so gating the activity log on kpEarned > 0 is exactly "on a
-  // first pass", per the plan.
-  if (passed && kpEarned > 0) {
-    logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'explanation_passed', {
+    // Durable (REFACTOR2 P1-R5): the once-ever flat KP claim and its record
+    // commit together. "First pass" and "KP minted" coincide by construction
+    // (kpEligible requires priorKp === 0, and priorKp only ever becomes
+    // non-zero on a passing KP claim), so this IS "on a first pass".
+    await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'explanation_passed', {
       paperTitle: paper.title,
       score: overall,
-    }).catch(console.error)
-  }
+    })
+    return { attemptNo, overall, passed, kpEarned: EXPLAIN_KP_AWARD }
+  })
 
   return NextResponse.json({
     attemptNo,

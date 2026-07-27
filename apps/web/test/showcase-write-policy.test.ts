@@ -20,23 +20,31 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   eventCreate: vi.fn(() => Promise.resolve({})),
   syncShowcaseRevision: vi.fn(() => Promise.resolve({ digest: 'd'.repeat(64), invalidated: false })),
-  logActivityBestEffort: vi.fn(() => Promise.resolve()),
+  recordActivity: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTeamContext }))
-vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
+vi.mock('@/lib/activity/log', () => ({ recordActivity: mocks.recordActivity }))
 vi.mock('@/lib/showcase-server', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/showcase-server')>()),
   syncShowcaseRevision: mocks.syncShowcaseRevision,
 }))
-vi.mock('@/lib/db', () => ({
-  db: {
-    showcase: { findUnique: mocks.findUnique, update: mocks.update, create: mocks.create },
-    showcaseModerationEvent: { create: mocks.eventCreate },
+vi.mock('@/lib/db', () => {
+  const showcase = { findUnique: mocks.findUnique, update: mocks.update, create: mocks.create }
+  const showcaseModerationEvent = { create: mocks.eventCreate }
+  // The route's PUT now runs the write + sync + moderation-event + activity
+  // record inside one `db.$transaction` (REFACTOR2 P1-R5) — the mocked tx
+  // client is just `db` itself, since these tests assert against the same
+  // delegate mocks either way.
+  const db = {
+    showcase,
+    showcaseModerationEvent,
     team: { findUnique: vi.fn() },
-  },
-}))
+    $transaction: vi.fn((cb: (tx: unknown) => unknown) => cb(db)),
+  }
+  return { db }
+})
 
 import { PUT } from '@/app/api/showcase/route'
 

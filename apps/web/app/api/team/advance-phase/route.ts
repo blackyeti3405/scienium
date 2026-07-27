@@ -10,7 +10,7 @@ import {
 } from '@/lib/team/advance'
 import { classifyLabType } from '@/lib/lab-type/classify'
 import { enforceRateLimit } from '@/lib/rate-limit'
-import { logActivityBestEffort } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
 /** A dead advance claim is taken over after this, so a crash cannot wedge a team. */
@@ -46,16 +46,21 @@ export async function POST(req: NextRequest) {
   // clicks from skipping a phase.
   if (isSelfAdvance(ctx.phase)) {
     const toPhase = SELF_ADVANCE_TRANSITIONS[ctx.phase]!
-    const { count } = await db.team.updateMany({
-      where: { id: ctx.teamId, phase: ctx.phase },
-      data: { phase: toPhase },
+    // Durable (REFACTOR2 P1-R5): the compare-and-set phase bump and its
+    // record commit together — no paid call on this path, so one transaction
+    // costs nothing.
+    await db.$transaction(async (tx) => {
+      const { count } = await tx.team.updateMany({
+        where: { id: ctx.teamId, phase: ctx.phase },
+        data: { phase: toPhase },
+      })
+      if (count > 0) {
+        await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'phase_advanced', {
+          fromPhase: ctx.phase,
+          toPhase,
+        })
+      }
     })
-    if (count > 0) {
-      logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'phase_advanced', {
-        fromPhase: ctx.phase,
-        toPhase,
-      }).catch(console.error)
-    }
     return NextResponse.json({ phase: toPhase, phaseLabel: PHASE_INFO[toPhase].label })
   }
 
@@ -134,9 +139,24 @@ export async function POST(req: NextRequest) {
   // seconds; without the `phase` predicate a response arriving after another
   // transition would stamp `research_planning` over whatever the team had moved
   // on to — a later result rolling the lab BACKWARDS through the arc.
-  const advanced = await db.team.updateMany({
-    where: { id: ctx.teamId, phase: 'literature_review' },
-    data: { phase: 'research_planning', labType, researchIdea, advanceClaimedAt: null },
+  //
+  // The classify call already happened above — this transaction opens only
+  // now, so it never holds a DB transaction across the paid Anthropic call
+  // (REFACTOR2 P1-R5). The write and its durable record commit together.
+  const advanced = await db.$transaction(async (tx) => {
+    const result = await tx.team.updateMany({
+      where: { id: ctx.teamId, phase: 'literature_review' },
+      data: { phase: 'research_planning', labType, researchIdea, advanceClaimedAt: null },
+    })
+    if (result.count === 1) {
+      await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'phase_advanced', {
+        fromPhase: 'literature_review',
+        toPhase: 'research_planning',
+        labType: LAB_TYPE_LABELS[labType],
+        researchIdea,
+      })
+    }
+    return result
   })
   if (advanced.count !== 1) {
     // Someone else advanced while we were classifying. Report where the team
@@ -153,13 +173,6 @@ export async function POST(req: NextRequest) {
       alreadyAdvanced: true,
     })
   }
-
-  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'phase_advanced', {
-    fromPhase: 'literature_review',
-    toPhase: 'research_planning',
-    labType: LAB_TYPE_LABELS[labType],
-    researchIdea,
-  }).catch(console.error)
 
   return NextResponse.json({
     phase: 'research_planning',

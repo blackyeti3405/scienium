@@ -6,7 +6,7 @@ import { ApiError } from '@/lib/api/with-route'
 import { parseJson } from '@/lib/validation'
 import { normalizeInviteCode } from '@/lib/team/invite'
 import { applySchoolAndClass, resolvePrimaryEmail, syncClerkDisplayName } from '@/lib/onboarding/profile'
-import { logActivityBestEffort } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 import { leaveOtherTeams } from '@/lib/team/membership'
 import { lockAggregate } from '@/lib/db-lock'
@@ -122,6 +122,11 @@ export async function POST(req: NextRequest) {
         data: { teamId: team.id, userId: user.id, event: 'joined', role: 'member', actorUserId: user.id, reason: 'invite_code' },
       })
       await tx.user.update({ where: { id: user.id }, data: { activeTeamId: team.id } })
+      // Durable (REFACTOR2 P1-R5): the membership write and its record commit
+      // together. This branch is the actual join — the idempotent "already a
+      // member" return above never reaches here, so a re-POST of the same
+      // code never mints a second "joined the lab" record.
+      await recordActivity(tx, team.id, user.id, 'member_joined', { name: user.name })
       return team.id
     })
 
@@ -129,7 +134,6 @@ export async function POST(req: NextRequest) {
     // their own class (or requests their own teacher's class separately); the
     // teacher sees the lab because they own ≥1 member (teacherOwnsTeam).
 
-    logActivityBestEffort(teamId, user.id, 'member_joined', { name: user.name }).catch(console.error)
     return NextResponse.json({ teamId })
   } catch (err) {
     if (err instanceof ApiError) {

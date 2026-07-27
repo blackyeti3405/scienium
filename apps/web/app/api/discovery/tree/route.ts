@@ -5,7 +5,6 @@ import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { hydrateTree, createTreeNodes, TreeGraphError } from '@/lib/discovery/tree-service'
 import { consumeDestructive, proposeDestructive } from '@/lib/api/destructive-proposal'
-import { logActivityBestEffort } from '@/lib/activity/log'
 
 // Bounded batch of client-generated nodes; `.strict()` rejects extra fields.
 // `source` nodes (Discovery v2 Papers tab) carry external metadata fields that the
@@ -67,11 +66,12 @@ export async function POST(req: NextRequest) {
   if (error) return error
 
   let kpAwarded: number
-  let plainCount: number
   try {
     // Rejects foreign-team parents and cycles before any write (P1-R10). A
     // failed node is now an error, not a logged exception behind `{ ok: true }`.
-    ;({ kpAwarded, plainCount } = await createTreeNodes({
+    // Activity recording happens INSIDE createTreeNodes now, in the same
+    // transaction as each node's KP mint (REFACTOR2 P1-R5) — see tree-service.ts.
+    ;({ kpAwarded } = await createTreeNodes({
       teamId: ctx.teamId,
       userId: ctx.dbUserId,
       nodes: data.nodes,
@@ -81,13 +81,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }
     throw err
-  }
-
-  if (kpAwarded > 0) {
-    logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'discovery_kp_awarded', {
-      kp: kpAwarded,
-      nodeCount: plainCount,
-    }).catch(console.error)
   }
 
   return NextResponse.json({ ok: true, kpAwarded })

@@ -106,27 +106,10 @@ describe('migration status — honest about what is still best-effort', () => {
       }
     }
 
-    // These are the durable-class events still on the best-effort path, tracked
-    // in docs/TODO.md. The list is asserted EXACTLY so it can only shrink on
-    // purpose — a new one cannot be added quietly, and removing one from the
-    // code without updating this list fails too.
-    expect(remaining.sort()).toEqual(
-      [
-        'app/api/discovery/source/[id]/promote/route.ts:source_promoted',
-        'app/api/discovery/sources/[id]/reflection/route.ts:discovery_kp_awarded',
-        'app/api/discovery/topic/route.ts:topic_locked',
-        'app/api/discovery/tree/route.ts:discovery_kp_awarded',
-        'app/api/expertise/grade/route.ts:clearance_raised',
-        'app/api/literature/vocab/review/route.ts:vocab_term_mastered',
-        'app/api/papers/[id]/explain/route.ts:explanation_passed',
-        'app/api/papers/[id]/quiz/grade/route.ts:quiz_passed',
-        'app/api/showcase/route.ts:showcase_published',
-        // Twice: the route logs one on the self-advance path and one on the
-        // paid classify path.
-        'app/api/team/advance-phase/route.ts:phase_advanced',
-        'app/api/team/advance-phase/route.ts:phase_advanced',
-        'app/api/team/join/route.ts:member_joined',
-      ].sort(),
-    )
+    // v0.72.0 migrated all 11 formerly-remaining durable-class events into
+    // their domain transaction via `recordActivity`. The list is asserted
+    // EXACTLY (now empty) so it can only shrink on purpose — a new
+    // best-effort write of a durable-class action fails this test immediately.
+    expect(remaining.sort()).toEqual([])
   })
 })

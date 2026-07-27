@@ -21,21 +21,25 @@ const mocks = vi.hoisted(() => ({
   teamFindUnique: vi.fn(),
   classifyLabType: vi.fn(),
   getLiteratureAdvanceProgress: vi.fn(),
-  logActivityBestEffort: vi.fn(() => Promise.resolve()),
+  recordActivity: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTeamContext }))
 vi.mock('@/lib/rate-limit', () => ({ enforceRateLimit: mocks.enforceRateLimit }))
 vi.mock('@/lib/lab-type/classify', () => ({ classifyLabType: mocks.classifyLabType }))
-vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
+vi.mock('@/lib/activity/log', () => ({ recordActivity: mocks.recordActivity }))
 vi.mock('@/lib/team/advance', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/team/advance')>()),
   getLiteratureAdvanceProgress: mocks.getLiteratureAdvanceProgress,
 }))
-vi.mock('@/lib/db', () => ({
-  db: { team: { updateMany: mocks.teamUpdateMany, findUnique: mocks.teamFindUnique } },
-}))
+vi.mock('@/lib/db', () => {
+  const db = {
+    team: { updateMany: mocks.teamUpdateMany, findUnique: mocks.teamFindUnique },
+    $transaction: vi.fn((cb: (tx: unknown) => unknown) => cb(db)),
+  }
+  return { db }
+})
 
 import { POST } from '@/app/api/team/advance-phase/route'
 
@@ -150,13 +154,14 @@ describe('a late result can never roll the lab backwards', () => {
     expect(res.status).toBe(200)
     expect(body).toMatchObject({ phase: 'showcase', alreadyAdvanced: true })
     // And it did NOT claim to have advanced the team itself.
-    expect(mocks.logActivityBestEffort).not.toHaveBeenCalled()
+    expect(mocks.recordActivity).not.toHaveBeenCalled()
   })
 
   it('logs the advance only when the transition actually committed', async () => {
     await POST(advanceReq())
 
-    expect(mocks.logActivityBestEffort).toHaveBeenCalledWith(
+    expect(mocks.recordActivity).toHaveBeenCalledWith(
+      expect.anything(),
       'team_1',
       'user_1',
       'phase_advanced',

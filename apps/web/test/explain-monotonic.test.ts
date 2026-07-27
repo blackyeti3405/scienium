@@ -24,7 +24,7 @@ const mocks = vi.hoisted(() => ({
   queryRaw: vi.fn((): Promise<unknown[]> => Promise.resolve([])),
   currencyUpsert: vi.fn(() => Promise.resolve({})),
   lockAggregate: vi.fn(() => Promise.resolve()),
-  logActivityBestEffort: vi.fn(() => Promise.resolve()),
+  recordActivity: vi.fn(() => Promise.resolve()),
   // Replay ledger (P1-S6 remainder) — the real grading path runs through it.
   aiOpCreate: vi.fn(
     (_args: { data: { idempotencyKey: string } }): Promise<{ id: string }> =>
@@ -46,7 +46,7 @@ const tx = {
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTeamContext }))
 vi.mock('@/lib/db-lock', () => ({ lockAggregate: mocks.lockAggregate }))
-vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: mocks.logActivityBestEffort }))
+vi.mock('@/lib/activity/log', () => ({ recordActivity: mocks.recordActivity }))
 vi.mock('@/lib/anthropic', () => ({
   anthropic: () => ({ messages: { create: mocks.anthropicCreate } }),
 }))

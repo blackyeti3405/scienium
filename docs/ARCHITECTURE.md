@@ -1527,8 +1527,11 @@ P1-R5). Progression and teacher-history events — a passed quiz, a Codex lesson
 a KP-moving purchase — write inside the caller's transaction and **throw**, so
 the change and the evidence of it cannot land separately. Everything else is
 ambient feed noise and says so in its name. `DURABLE_ACTIVITY_ACTIONS` is the
-classification; `test/activity-durability.test.ts` pins the list of durable-class
-events still on the best-effort path so it can only shrink deliberately.
+classification; every action it lists now writes through `recordActivity` in
+the same transaction as its domain change (v0.72.0 closed the last eleven).
+`test/activity-durability.test.ts` pins that list against the codebase so a
+durable-class action added on the best-effort path fails immediately, rather
+than pinning a fixed set of remaining call sites.
 
 ### AI spend — one door, measured
 

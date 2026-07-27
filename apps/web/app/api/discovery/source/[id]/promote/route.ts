@@ -7,7 +7,7 @@ import { db } from '@/lib/db'
 import { checkPaperRelevance } from '@/lib/literature/relevance'
 import { buildCitations, parseYear } from '@/lib/literature/citation'
 import { lockAggregate } from '@/lib/db-lock'
-import { logActivityBestEffort } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 
 // ── POST /api/discovery/source/[id]/promote (#13 Citation Manager) ────────────
 // Promote a starred Discovery `source` node into a real team Paper. External
@@ -137,6 +137,14 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       })
     }
 
+    // Durable (REFACTOR2 P1-R5): the record and the promotion it describes
+    // commit together, so a crash between them can't leave a Paper with no
+    // teacher-visible evidence it was promoted.
+    await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'source_promoted', {
+      title: es.sourceTitle,
+      paperId: paper.id,
+    })
+
     return { paperId: paper.id, existing: false as const }
   })
 
@@ -147,11 +155,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     )
   }
   const paperId = promoted.paperId
-
-  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'source_promoted', {
-    title: es.sourceTitle,
-    paperId,
-  }).catch(console.error)
 
   return NextResponse.json(
     {

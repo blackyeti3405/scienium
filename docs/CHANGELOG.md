@@ -5,6 +5,80 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.72.0] — 2026-07-27
+
+### Fixed — the last 11 durable-class activity events could go missing while the KP they describe still landed (REFACTOR2 P1-R5)
+
+v0.46.0 split activity logging into `recordActivity(tx, …)` (writes inside the caller's
+transaction, throws) and `logActivityBestEffort(…)` (swallows failures, explicitly optional) —
+but only migrated 5 events. These 11 remained on the best-effort path despite being
+durable-class (a teacher's only evidence a student did graded work, or that KP was actually
+minted): `quiz_passed`, `explanation_passed`, `clearance_raised`, `phase_advanced` (two call
+sites), `member_joined`, `showcase_published`, `topic_locked`, `discovery_kp_awarded` (two call
+sites), `source_promoted`, `vocab_term_mastered`. In every one, a crash or a dropped write
+between the KP mint and the `.catch(console.error)` best-effort log meant the currency moved with
+zero teacher-visible record it happened — exactly the gap `recordActivity` exists to close.
+
+**All 11 are now migrated** — each restructured so the domain write (the KP claim, the
+compare-and-set, the once-ever bonus) and `recordActivity(tx, …)` commit in the SAME transaction:
+
+- `quiz/grade`, `expertise/grade`, `papers/[id]/explain`, `literature/vocab/review`: the KP claim
+  already ran inside a transaction with all the data the payload needs (title/score/level were
+  already in scope) — moved the record next to the claim, gated on the exact same "did this
+  actually pay" condition.
+- `discovery/topic` (`topic_locked`), `discovery/sources/[id]/reflection`: same shape — the
+  once-ever bonus / visit-KP transaction already existed, now carries its own record.
+- `discovery/tree` (`discovery_kp_awarded`): no single request-level transaction exists here —
+  each node's KP mint is deliberately its own transaction so one capped/dup node can't roll back
+  another's credit (unchanged). The record now lives in that SAME per-node transaction instead of
+  as one best-effort summary after the whole batch. In practice one POST is almost always one
+  node (`attachOne` in `discoveryStore.ts`), so this is a wash in the common case and strictly
+  more correct for a real batch.
+- `team/advance-phase` (`phase_advanced`, both sites) and `team/join` (`member_joined`): these had
+  **no transaction at all** — a bare `updateMany` or a single insert followed by a best-effort
+  log. Introduced a `db.$transaction` around each write + its record. The paid-classify site opens
+  its transaction only AFTER `classifyLabType` (the Anthropic call) returns, never around it.
+- `showcase/route.ts` (`showcase_published`): also had no wrapping transaction (create/update →
+  `syncShowcaseRevision` → moderation event → best-effort log, four independent commits). No
+  network call happens in this handler, so all four now run inside one `db.$transaction`.
+
+**Two side effects, both intentional and more correct than before, not regressions:**
+- `quiz/grade` and `team/join` each had a path where the activity log fired even though the
+  domain write did nothing that request (a race loser whose session was already graded by a
+  concurrent request; re-POSTing a join code for a team you're already on). Moving the record
+  inside the same transaction as the actual write naturally drops these — a duplicate/no-op
+  request no longer mints a duplicate/false activity row.
+
+`test/activity-durability.test.ts`'s exact-list assertion is now **empty** — the list can only
+grow again if a new durable-class event is added on the best-effort path, which fails the test
+immediately. Negative-controlled: reverting `quiz/grade`'s migration back to
+`logActivityBestEffort` reproduces the exact failure the test is built to catch (`quiz_passed`
+reappears in the list), then restored clean.
+
+Five existing unit test files needed their `@/lib/activity/log` mock updated from
+`logActivityBestEffort` to `recordActivity` (and a `db.$transaction` passthrough added where the
+route previously had none): `showcase-write-policy`, `team-join`, `advance-phase-claim`,
+`advance-phase-paid-gate`, `explain-monotonic`. No assertion on domain behavior changed — only the
+mock shape, to match the new call site.
+
+### Verification
+Gates 1–4 pass; Vitest **134 files / 1,852 tests** — unchanged from v0.71.0, since this batch
+restructures existing call sites and updates existing mocks rather than adding new specs.
+`check:integrity` and `lint` clean.
+
+---
+
+**E2E:** `F11-quiz-retry` **13/13** — the `quiz_passed` path, the riskiest of the eleven because
+it mints KP inside the race-winning branch. `F13-codex` (`clearance_raised`) and
+`lit-explain-it-back` (`explanation_passed`) were started and **hung at Clerk auth setup without
+producing a result** — a stalled runner, not a failure, and the same instability tracked in
+`docs/TODO.md`. Both should be run before this branch merges.
+
+The transaction-boundary risk was checked directly rather than assumed: every `$transaction`
+block in the six touched paid/write routes was parsed for `aiCreate`/`anthropic`/`fetch`/S3 calls
+in its body — **zero**. The `phase_advanced` classify path in particular opens its transaction
+only *after* the Anthropic call returns.
+
 ## [0.71.0] — 2026-07-27
 
 ### Changed — "one team at a time" is now enforced by the database

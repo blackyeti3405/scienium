@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { logActivityBestEffort } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 import {
   SHORT_TITLE_MAX,
   TITLE_MAX,
@@ -194,60 +194,68 @@ export async function PUT(req: NextRequest) {
     }
   }
 
-  const sc = existing
-    ? await db.showcase.update({
-        where: { teamId: ctx.teamId },
-        data: {
-          ...(data.shortTitle !== undefined ? { shortTitle: nextShort } : {}),
-          ...(data.title !== undefined ? { title: nextTitle } : {}),
-          ...(data.abstract !== undefined ? { abstract: nextAbstract } : {}),
-          ...(data.privacyLevel !== undefined ? { privacyLevel: nextPrivacy } : {}),
-          // Rotation is the revocation mechanism: there is no way to un-share a
-          // link that has already been copied, only to invalidate it. Also
-          // back-fills a token for a showcase created before P1-R7.
-          ...(data.rotateShareToken || !existing.shareToken
-            ? { shareToken: makeShareToken() }
-            : {}),
-          ...(publishFields ?? {}),
-        },
-        include: includeFull,
+  // One transaction (REFACTOR2 P1-R5): the showcase write, its revision sync,
+  // the moderation event, and (on publish) the durable activity record all
+  // commit together. No paid/network call happens in here — everything above
+  // this point (validation, the `existing` read) already ran.
+  const sc = await db.$transaction(async (tx) => {
+    const saved = existing
+      ? await tx.showcase.update({
+          where: { teamId: ctx.teamId },
+          data: {
+            ...(data.shortTitle !== undefined ? { shortTitle: nextShort } : {}),
+            ...(data.title !== undefined ? { title: nextTitle } : {}),
+            ...(data.abstract !== undefined ? { abstract: nextAbstract } : {}),
+            ...(data.privacyLevel !== undefined ? { privacyLevel: nextPrivacy } : {}),
+            // Rotation is the revocation mechanism: there is no way to un-share a
+            // link that has already been copied, only to invalidate it. Also
+            // back-fills a token for a showcase created before P1-R7.
+            ...(data.rotateShareToken || !existing.shareToken
+              ? { shareToken: makeShareToken() }
+              : {}),
+            ...(publishFields ?? {}),
+          },
+          include: includeFull,
+        })
+      : await tx.showcase.create({
+          data: {
+            teamId: ctx.teamId,
+            slug: makeSlug(nextShort || nextTitle),
+            shareToken: makeShareToken(),
+            shortTitle: nextShort,
+            title: nextTitle,
+            abstract: nextAbstract,
+            privacyLevel: nextPrivacy,
+            ...(publishFields ?? {}),
+          },
+          include: includeFull,
+        })
+
+    // Re-derive the content digest and, if this edit moved an approved showcase
+    // away from the revision a teacher signed off, return it to review (P0-R3).
+    const { digest } = await syncShowcaseRevision(tx, saved.id, ctx.dbUserId)
+
+    // Record the submission against the exact revision being submitted, so the
+    // moderation history can always be traced to reviewed content.
+    if (publishFields?.moderationStatus === 'pending_review') {
+      await tx.showcaseModerationEvent.create({
+        data: { showcaseId: saved.id, digest, action: 'submitted', actorUserId: ctx.dbUserId },
       })
-    : await db.showcase.create({
-        data: {
-          teamId: ctx.teamId,
-          slug: makeSlug(nextShort || nextTitle),
-          shareToken: makeShareToken(),
-          shortTitle: nextShort,
-          title: nextTitle,
-          abstract: nextAbstract,
-          privacyLevel: nextPrivacy,
-          ...(publishFields ?? {}),
-        },
-        include: includeFull,
+    } else if (data.published === false) {
+      await tx.showcaseModerationEvent.create({
+        data: { showcaseId: saved.id, digest, action: 'unpublished', actorUserId: ctx.dbUserId },
       })
+    }
 
-  // Re-derive the content digest and, if this edit moved an approved showcase
-  // away from the revision a teacher signed off, return it to review (P0-R3).
-  const { digest } = await syncShowcaseRevision(db, sc.id, ctx.dbUserId)
+    if (data.published === true) {
+      await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'showcase_published', {
+        title: saved.shortTitle || saved.title,
+        slug: saved.slug,
+      })
+    }
 
-  // Record the submission against the exact revision being submitted, so the
-  // moderation history can always be traced to reviewed content.
-  if (publishFields?.moderationStatus === 'pending_review') {
-    await db.showcaseModerationEvent.create({
-      data: { showcaseId: sc.id, digest, action: 'submitted', actorUserId: ctx.dbUserId },
-    })
-  } else if (data.published === false) {
-    await db.showcaseModerationEvent.create({
-      data: { showcaseId: sc.id, digest, action: 'unpublished', actorUserId: ctx.dbUserId },
-    })
-  }
-
-  if (data.published === true) {
-    logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'showcase_published', {
-      title: sc.shortTitle || sc.title,
-      slug: sc.slug,
-    }).catch(console.error)
-  }
+    return saved
+  })
 
   // Re-read so the client sees the post-sync moderation state rather than the
   // pre-sync one it would otherwise render as "still approved".
