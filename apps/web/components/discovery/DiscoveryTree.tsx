@@ -5,92 +5,20 @@ import type { DiscoveryNode } from '@/stores/discoveryStore'
 import { TIER_META } from '@/lib/discovery/credibility'
 import { type InterestLevel, INTEREST_META, nextInterest } from '@/lib/discovery/interest'
 
-// ── Layout constants ────────────────────────────────────────────────────────
-const NODE_W = 170
-const NODE_H = 40
-const H_GAP = 14
-const V_GAP = 54
-const PAD = 16
-
-export interface LayoutNode extends DiscoveryNode {
-  x: number
-  y: number
-}
-
-// ── Tree layout ─────────────────────────────────────────────────────────────
-// Exported so other views (the #11 full-window Discovery Tree tab, the topic
-// list) can reuse the SAME multi-root layout instead of re-deriving it.
-export function computeLayout(nodes: DiscoveryNode[]): LayoutNode[] {
-  if (nodes.length === 0) return []
-
-  const byId: Record<string, DiscoveryNode> = {}
-  const childrenOf: Record<string, string[]> = {}
-  const roots: string[] = []
-
-  for (const n of nodes) {
-    byId[n.id] = n
-    if (!n.parentId) roots.push(n.id)
-    else (childrenOf[n.parentId] ??= []).push(n.id)
-  }
-
-  function subtreeW(id: string): number {
-    const ch = childrenOf[id] ?? []
-    if (ch.length === 0) return NODE_W
-    const childTotal = ch.reduce((sum, cid) => sum + subtreeW(cid) + H_GAP, -H_GAP)
-    return Math.max(NODE_W, childTotal)
-  }
-
-  const result: LayoutNode[] = []
-
-  function layout(id: string, left: number, top: number) {
-    const sw = subtreeW(id)
-    const cx = left + sw / 2
-    result.push({ ...byId[id], x: cx - NODE_W / 2, y: top })
-    const ch = childrenOf[id] ?? []
-    let childLeft = left
-    for (const cid of ch) {
-      layout(cid, childLeft, top + NODE_H + V_GAP)
-      childLeft += subtreeW(cid) + H_GAP
-    }
-  }
-
-  let rootLeft = PAD
-  for (const rid of roots) {
-    layout(rid, rootLeft, PAD)
-    rootLeft += subtreeW(rid) + H_GAP * 2
-  }
-
-  return result
-}
-
-// ── #11: which "tree" (root-derived forest) each node belongs to ────────────
-// Walks `parentId` up to the root for every node, then assigns a stable 0-based
-// index by root order (first-seen order in `nodes`, matching the layout's
-// left-to-right root order). Used by `DiscoveryTopicList`'s color-major/
-// tree-minor grouping — kept here so root-walking logic lives in one place.
-export function nodeTreeIndices(nodes: DiscoveryNode[]): Map<string, number> {
-  const byId = new Map(nodes.map((n) => [n.id, n]))
-  const rootIndexById = new Map<string, number>()
-  let nextRootIndex = 0
-
-  function rootOf(id: string): string {
-    let cur = byId.get(id)
-    const seen = new Set<string>()
-    while (cur?.parentId && byId.has(cur.parentId) && !seen.has(cur.id)) {
-      seen.add(cur.id)
-      cur = byId.get(cur.parentId)
-    }
-    return cur?.id ?? id
-  }
-
-  const result = new Map<string, number>()
-  for (const n of nodes) {
-    const rid = rootOf(n.id)
-    if (!rootIndexById.has(rid)) rootIndexById.set(rid, nextRootIndex++)
-    result.set(n.id, rootIndexById.get(rid)!)
-  }
-  return result
-}
+// The layout algorithm now lives in `lib/discovery/tree-layout.ts` (REFACTOR2
+// §0.7). It is a pure graph algorithm with real failure modes — it could hang
+// the tab on a cyclic graph, was quadratic, and silently dropped nodes whose
+// parent was missing — and none of that was reachable by a unit test while it
+// sat inside a `.tsx`. Re-exported here so existing importers keep working.
+export {
+  computeLayout,
+  nodeTreeIndices,
+  NODE_W,
+  NODE_H,
+  PAD,
+  type LayoutNode,
+} from '@/lib/discovery/tree-layout'
+import { computeLayout, NODE_W, NODE_H, PAD } from '@/lib/discovery/tree-layout'
 
 // ── Props ───────────────────────────────────────────────────────────────────
 interface Props {
@@ -106,6 +34,41 @@ interface Props {
   /** Node id currently mid-promote — the pill shows "Promoting…" and ignores clicks. */
   promotingId?: string | null
 }
+
+/**
+ * Make an SVG `<g>` a real button.
+ *
+ * Every control in this tree was `role="button"` with a click handler and no
+ * `tabIndex` or key handler (REFACTOR2 §0.7: "graph buttons are pointer-only SVG
+ * groups without focus/key handlers"). That is worse than leaving the role off:
+ * a screen reader announces a button, and it cannot be focused or activated.
+ * Delete, star, promote and interest were all unreachable without a mouse.
+ *
+ * `<g>` is not natively focusable, so `tabIndex` is what puts it in the tab
+ * order; Enter and Space are what a button is expected to answer to.
+ */
+function svgButton(label: string, onActivate: () => void, enabled = true) {
+  if (!enabled) return { 'aria-hidden': true as const }
+  const activate = (e: { stopPropagation: () => void; preventDefault?: () => void }) => {
+    e.stopPropagation()
+    e.preventDefault?.()
+    onActivate()
+  }
+  return {
+    role: 'button' as const,
+    tabIndex: 0,
+    'aria-label': label,
+    style: { cursor: 'pointer', outlineOffset: 2 },
+    onClick: activate,
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') activate(e)
+    },
+  }
+}
+
+/** Menu box used for the viewport clamp; matches the rendered min-width/height. */
+const MENU_W = 200
+const MENU_H = 84
 
 interface ContextMenu {
   nodeId: string
@@ -222,15 +185,13 @@ export function DiscoveryTree({
             return (
               <g
                 key={n.id}
-                onClick={() => onNavigate(n.id)}
+                {...svgButton(`Navigate to ${n.title}`, () => onNavigate(n.id))}
                 onContextMenu={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
                   setContextMenu({ nodeId: n.id, nodeTitle: n.title, x: e.clientX, y: e.clientY })
                 }}
                 className="cursor-pointer group"
-                role="button"
-                aria-label={`Navigate to ${n.title}`}
               >
                 {/* Hover ring */}
                 <rect
@@ -249,9 +210,10 @@ export function DiscoveryTree({
 
                 {/* ── Star toggle button (always visible, left side) ── */}
                 <g
-                  onClick={(e) => { e.stopPropagation(); onToggleStar(n.id) }}
-                  style={{ cursor: 'pointer' }}
-                  aria-label={n.starred ? 'Unstar' : 'Star'}
+                  {...svgButton(
+                    n.starred ? `Unstar ${n.title}` : `Star ${n.title}`,
+                    () => onToggleStar(n.id),
+                  )}
                 >
                   {/* Invisible hit area for easier clicking */}
                   <rect
@@ -271,10 +233,7 @@ export function DiscoveryTree({
 
                 {/* ── Delete button (always visible, next to the star) ── */}
                 <g
-                  onClick={(e) => { e.stopPropagation(); onDelete(n.id) }}
-                  style={{ cursor: 'pointer' }}
-                  role="button"
-                  aria-label={`Delete ${n.title} and all children`}
+                  {...svgButton(`Delete ${n.title} and all children`, () => onDelete(n.id))}
                   className={`transition-colors ${isCurrent ? 'text-[#0d1b2e] hover:text-red-700' : 'text-white/40 hover:text-red-400'}`}
                 >
                   {/* Invisible hit area for easier clicking */}
@@ -315,13 +274,11 @@ export function DiscoveryTree({
                   const currentLabel = meta ? meta.label : 'unmarked'
                   return (
                     <g
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onSetInterest?.(n.id, upcoming)
-                      }}
-                      style={{ cursor: onSetInterest ? 'pointer' : 'default' }}
-                      role="button"
-                      aria-label={`Set interest for "${n.title}" (currently ${currentLabel.toLowerCase()})`}
+                      {...svgButton(
+                        `Set interest for "${n.title}" (currently ${currentLabel.toLowerCase()}) — activates ${upcomingLabel.toLowerCase()}`,
+                        () => onSetInterest?.(n.id, upcoming),
+                        !!onSetInterest,
+                      )}
                       data-node-id={n.id}
                       data-interest={level ?? 'none'}
                     >
@@ -410,14 +367,10 @@ export function DiscoveryTree({
                     nodes not yet promoted. A small gold pill under the node. ── */}
                 {canPromote && (
                   <g
-                    onClick={(e) => {
-                      e.stopPropagation()
+                    {...svgButton(`Promote ${n.title} to Literature Review`, () => {
                       if (!isPromotingThis) onPromote!(n.id)
-                    }}
-                    style={{ cursor: isPromotingThis ? 'default' : 'pointer' }}
-                    role="button"
+                    })}
                     aria-busy={isPromotingThis}
-                    aria-label={`Promote ${n.title} to Literature Review`}
                   >
                     <rect
                       x={n.x + NODE_W - 78} y={n.y + NODE_H - 1}
@@ -461,7 +414,16 @@ export function DiscoveryTree({
       {/* ── Context menu ── */}
       {contextMenu && (
         <div
-          style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 9999 }}
+          // Clamped to the viewport (REFACTOR2 §0.7: "context menu is not
+          // viewport-clamped"). Opened near the right or bottom edge — which the
+          // tree's horizontal scroll makes ordinary — it rendered partly
+          // offscreen with its only action unreachable.
+          style={{
+            position: 'fixed',
+            left: Math.min(contextMenu.x, Math.max(8, window.innerWidth - MENU_W - 8)),
+            top: Math.min(contextMenu.y, Math.max(8, window.innerHeight - MENU_H - 8)),
+            zIndex: 9999,
+          }}
           onClick={(e) => e.stopPropagation()}
           className="bg-[#0f1320] border border-white/15 rounded-sm shadow-xl py-1 min-w-[200px]"
         >

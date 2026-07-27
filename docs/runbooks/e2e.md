@@ -4,12 +4,12 @@ _Audit + rebuild, 2026-07-26 (v0.51.0). Measured, one worker, production build:_
 
 | | baseline | after the harness rebuild | after migrating F4 + F4-print |
 | --- | --- | --- | --- |
-| passed | 263 | 292 | **307** |
+| passed | 263 | 292 | **309** |
 | failed | 10 | 2 | **0** |
 | never ran (serial cascade) | 48 | 13 | **0** |
 | wall clock | 13.6 min | 15.5 min | 14.8 min |
 
-_**44 more tests now actually execute** than at the baseline, and the suite is
+_**46 more tests now actually execute** than at the baseline, and the suite is
 green. Note it briefly got SLOWER: a run that silently skipped 15% of itself was
 not a faster suite._
 

@@ -5,6 +5,51 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.53.0] — 2026-07-26
+
+### Fixed — the Discovery tree lost nodes, and nobody could reach it by keyboard
+
+First of REFACTOR2 §0.7's file dispositions, a tranche that **had never been started**: every
+file on that 44-row list was still at or above its audited size. The correctness findings *inside*
+those files were closed by the P1 batches; the structural verdicts were not.
+
+`computeLayout` moved out of `DiscoveryTree.tsx` into `lib/discovery/tree-layout.ts`. The split
+has a reason beyond length: it is a graph algorithm with no DOM that was living where only a
+browser test could reach it — which is why its defects survived.
+
+**The audit's "cycle-unsafe" reading was wrong, and running the original proved it.** A node has
+exactly one `parentId`, so a node inside a cycle points *into* the cycle and is a child of nothing
+outside it — a cycle can never be reached from a root, and the recursion never entered one.
+Measured against the original, the three real defects were:
+
+- **It silently dropped nodes.** An orphan whose parent was absent was never drawn, and a pure
+  two-node cycle rendered an **empty tree**. The rows existed; the UI said otherwise. This is the
+  failure that mattered, and the "hang" framing was hiding it.
+- **It overflowed the stack.** A 5,000-node chain — the exact shape a student builds by clicking
+  through sources — threw `RangeError` on the mutually recursive layout.
+- **It was quadratic.** `subtreeW` walked each subtree once per node and again per child.
+
+The rewrite is iterative with memoized widths, and treats orphans and cycle members as additional
+roots so a corrupted graph renders *displaced* rather than *invisible*. `nodeTreeIndices` shares
+the same graph build, so the topic list's colour grouping and the drawn tree can no longer
+disagree about which tree a node belongs to.
+
+### Fixed — every Discovery tree control is now keyboard-operable
+All five (navigate, star, delete, interest, promote) carried `role="button"` on an SVG `<g>` with
+no `tabIndex` and no key handler. That is worse than omitting the role: a screen reader announces
+a button that cannot be focused or activated, so the entire tree was mouse-only. One `svgButton`
+helper gives them focus, Enter/Space and an accessible name. The context menu is clamped to the
+viewport — opened near an edge, which the tree's horizontal scroll makes ordinary, it rendered
+partly offscreen with its only action unreachable.
+
+### Verification
+Gates 1–5 pass. Vitest **123 files / 1,769 tests** (+1 file, +12).
+`test/discovery-tree-layout.test.ts` pins each measured defect, and the **original implementation
+was run against every one of those shapes** to confirm they were real rather than assumed. The
+accessibility half is pinned by a new `a11y.spec.ts` case that seeds its own disposable lab — the
+first version of it skipped on the empty shared fixture, and a skipped accessibility test proves
+nothing. Negative-controlled: removing `tabIndex` fails it in both viewport projects.
+
 ## [0.52.0] — 2026-07-26
 
 ### Added — class membership can end (P1-R8, the class half)
@@ -163,7 +208,7 @@ allowlisted with its compensating control, not exempted. The preflight was negat
 both ways: green against Playwright's own server, failing in 3.4s with its remedy against a
 hand-started `pnpm dev`.
 
-**Suite: 263 → 292 passed, 10 → 2 failed, 48 → 13 "did not run" (13.6 → 15.5 min — the suite got SLOWER because 35 more tests now actually execute). Migrating F4 and F4-print in v0.52.0 finished the job: **307 passed, 0 failed, 0 never ran**.** The two that remain are `F4`
+**Suite: 263 → 292 passed, 10 → 2 failed, 48 → 13 "did not run" (13.6 → 15.5 min — the suite got SLOWER because 35 more tests now actually execute). Migrating F4 and F4-print in v0.52.0 finished the job: **307 passed, 0 failed, 0 never ran** (309 as of v0.53.0).** The two that remain are `F4`
 AC3 and `F4-print` AC10, left RED with a written diagnosis rather than skipped. **The product gate
 under them is correct** — verified outside Playwright against both a dev server and a production
 build: an anonymous request for a `published + public + pending_review` showcase renders the

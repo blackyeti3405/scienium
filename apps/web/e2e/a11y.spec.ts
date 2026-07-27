@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
+import { withLab } from './lab'
+import { e2eDb } from './db'
 
 /**
  * Accessibility smoke (A9) — the automated floor, not a full audit:
@@ -8,7 +10,11 @@ import AxeBuilder from '@axe-core/playwright'
  *      violations (missing accessible names, broken ARIA, nested-interactive);
  *   2. a real keyboard flow: Tab to a gateway, Enter opens its panel, focus
  *      lands inside, Tab CYCLES inside (the useModalA11y trap), Escape closes
- *      and focus RETURNS to the trigger.
+ *      and focus RETURNS to the trigger;
+ *   3. the Discovery tree's SVG controls are operable by keyboard (REFACTOR2
+ *      §0.7) — they carried `role="button"` with no `tabIndex` or key handler,
+ *      which announces a button to a screen reader that cannot then be focused
+ *      or activated.
  *
  * Runs on Desktop Chrome and, via the `tablet-a11y` project, an iPad
  * viewport. Serious-but-not-critical findings (e.g. contrast on decorative
@@ -81,5 +87,63 @@ test.describe('accessibility floor (A9)', () => {
         () => document.activeElement?.getAttribute('aria-label') ?? '',
       ),
     ).toBe('Open Operations Hub')
+  })
+
+  test('discovery tree nodes are focusable and operable by keyboard', async ({ page }) => {
+    // A disposable lab with a KNOWN tree. Seeding rather than skipping is the
+    // point: the first version of this test skipped on the empty shared fixture,
+    // and a skipped accessibility test proves exactly nothing — which is the
+    // false-skip pattern the E2E audit called out.
+    await withLab('a11y-tree', async (lab) => {
+      const root = await e2eDb.discoveryNode.create({
+        data: {
+          teamId: lab.teamId,
+          sourceType: 'wikipedia',
+          wikipediaTitle: 'Photosynthesis',
+          visitedByUserId: lab.leaderUserId,
+        },
+        select: { id: true },
+      })
+      await e2eDb.discoveryNode.create({
+        data: {
+          teamId: lab.teamId,
+          parentId: root.id,
+          sourceType: 'wikipedia',
+          wikipediaTitle: 'Chlorophyll',
+          visitedByUserId: lab.leaderUserId,
+        },
+      })
+
+      await page.goto('/discovery')
+      await page.getByRole('button', { name: /Continue Exploring|Start Exploring/ }).click()
+
+      const controls = page.locator('svg[aria-label="Discovery tree"] g[role="button"]')
+      await expect(controls.first()).toBeAttached({ timeout: 15000 })
+
+      // Focusable at all: `<g>` is not natively focusable, so this passes only
+      // because the control sets `tabIndex`.
+      await controls.first().focus()
+      expect(
+        await page.evaluate(() => document.activeElement?.getAttribute('role')),
+        'a tree control must be able to hold focus',
+      ).toBe('button')
+
+      // And every control announces itself.
+      expect(
+        await page
+          .locator('svg[aria-label="Discovery tree"] g[role="button"]:not([aria-label])')
+          .count(),
+        'every tree control needs an accessible name',
+      ).toBe(0)
+
+      // Enter reaches the handler. Navigate is the safe one to actually fire;
+      // delete and promote mutate the tree.
+      const navNode = page
+        .locator('svg[aria-label="Discovery tree"] g[role="button"][aria-label^="Navigate to"]')
+        .first()
+      await navNode.focus()
+      await page.keyboard.press('Enter')
+      await expect(page.locator('svg[aria-label="Discovery tree"]')).toBeVisible()
+    })
   })
 })

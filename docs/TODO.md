@@ -124,6 +124,45 @@ to prune" — including turning `showcase_view` back off.
   log survives their erasure. That is the runbook's team-artifact policy applied consistently;
   confirm it is the policy the school expects.
 
+## Large-file dispositions (REFACTOR2 §0.7) — the tranche that had never been started
+
+§0.7 lists 44 authored files over 300 lines with a manual verdict each. Until v0.53.0 **none of
+the structural verdicts had been acted on** — the correctness findings inside those files were
+closed by the P1 batches, but every file was still at or above its audited size.
+
+Its own rule applies: *line count is a diagnostic, not a refactoring goal.* Work these by the
+defect they carry, not by length, and be willing to record "the split is not worth it" where the
+stated reason has already been fixed another way.
+
+**Done:** `components/discovery/DiscoveryTree.tsx` (v0.53.0).
+
+**Highest value remaining**, by the defect each verdict names — every one is a live behaviour
+problem, not a size complaint:
+
+| File | The defect the verdict names |
+| --- | --- |
+| `components/ops/ExpertisePanel.tsx` | Progress saving is fire-and-forget and **"save and exit" does not await it** — a student can lose exam progress on a graded surface. Timer/fetch cancellation is incomplete. |
+| `stores/discoveryStore.ts` | Fire-and-forget writes and `newTreePending` can lose state; `addSourceNode`/`addArticleNode` duplicate a large insert path; deletion is O(n²). |
+| `lib/discovery/openalex.ts` | Provider JSON is asserted rather than parsed; **`cited_by_api_url` is fetched with no host enforcement** and bodies are uncapped — the SSRF-shaped one. |
+| `components/teacher/TeacherRubricScoring.tsx` | Track switching discards unsaved state; blur/click autosaves race; blank numeric input becomes zero. |
+| `components/ops/CodexTab.tsx` | Refresh ignores non-OK responses; a track load error leaves an endless loader; rapid navigation can commit a stale track. |
+| `lib/teacher/student-overview.ts` | ~18 queries per detail request, and the selected team can be paired with a *different* membership's role/join time. |
+| `components/literature/LiteratureFeature.tsx` | Boolean views can overlap; the team-phase fetch ignores status and **can hide advancement forever**. |
+| `components/discovery/SourceReader.tsx` | Blur/button saves can duplicate or land after the selection changed. |
+| `lib/hooks/usePlotBuildings.ts` | No abort/resync; refresh errors swallowed; duplicated optimistic economy prediction. |
+| `components/lab/LabScene.tsx` | Six booleans permit overlapping off-path panels. |
+
+**Deliberately deprioritised** (verdict is structural only, no named defect): `app/globals.css`
+(3,051 lines) and `prisma/schema.prisma` (now 2,282). Both are real cleanups with real risk and
+no behaviour attached; they are the least valuable thing on this list until something breaks.
+
+**Already answered another way** — the split was proposed as a vehicle for a fix that has since
+landed, so the remaining work is cosmetic: `lib/discovery/tree-service.ts` (P1-R10),
+`lib/uploads/assets.ts` (P1-R12), `lib/fairs/match.ts` (P1-R16), `lib/fairs/forms.ts` +
+`components/fair/FormsChecklist.tsx` (P0-R4), `lib/literature/synthesis.ts` and
+`components/literature/SynthesisMatrixEditor.tsx` (P1-R13),
+`lib/ops/codex/complete-service.ts`, `app/(public)/showcase/[slug]/page.tsx` (P0-R3/P1-R7).
+
 ## E2E — what the 2026-07-26 rebuild left open
 
 The audit and the changes are in [`runbooks/e2e.md`](runbooks/e2e.md). Remaining:

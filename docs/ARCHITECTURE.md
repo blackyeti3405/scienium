@@ -1440,6 +1440,22 @@ archived-only, since a **live** team a student left must still fall out of scope
 Commands: `DELETE /api/team/membership`, `POST /api/team/lead`,
 `DELETE /api/team/members/[userId]`.
 
+### Discovery tree layout — a graph algorithm, not a view concern
+
+`lib/discovery/tree-layout.ts` owns `computeLayout` and `nodeTreeIndices`
+(REFACTOR2 §0.7). They were inside `DiscoveryTree.tsx`, where only a browser
+test could reach them — which is why three defects survived: an orphan or a
+cycle member was **never drawn** (a pure two-node cycle rendered an empty tree),
+a 5,000-node chain overflowed the stack, and subtree widths were recomputed at
+every level.
+
+The rewrite is iterative with memoized widths, and treats orphans and cycle
+members as additional roots so a corrupted graph renders *displaced* rather than
+*invisible*. Both functions share one `buildGraph`, so the topic list's colour
+grouping and the drawn tree cannot disagree about which tree a node is in. Note
+the audit's "cycle-unsafe" framing was wrong and the code says so: a node has one
+`parentId`, so a cycle is never reachable from a root.
+
 ### Class membership — the same lifecycle, one level up
 
 `lib/onboarding/class-membership.ts` is the class counterpart (REFACTOR2 P1-R8,

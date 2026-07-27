@@ -716,7 +716,7 @@ not a reason to split it; it does not erase separately listed correctness findin
 | `lib/fairs/zip.ts` | 501 | **Split data from geocoding.** Static ZIP approximation, lookup, and Nominatim transport are different owners. Hard-coded special ZIPs repeat; runtime geocoding has no deployment-wide 1 req/s queue/cache and no runtime response schema/cap. |
 | `components/discovery/DiscoveryFeature.tsx` | 499 | **Extract controller.** Too many hooks and modes, patch-history comments, and unawaited destructive calls. Keep orchestration in one hook/reducer and views in sections. |
 | `components/ops/CodexTab.tsx` | 487 | **Split loader/navigation state.** Refresh ignores non-OK responses; track loading errors can leave an endless loader; rapid navigation can commit a stale track. Use abort/versioned requests and one discriminated load state. |
-| `components/discovery/DiscoveryTree.tsx` | 484 | **Refactor algorithm/accessibility.** Recursive layout is cycle-unsafe and can be O(n²); graph buttons are pointer-only SVG groups without focus/key handlers; context menu is not viewport-clamped. Memoized adjacency layout plus real keyboard controls. |
+| `components/discovery/DiscoveryTree.tsx` | 484 | **Refactor algorithm/accessibility.** Recursive layout is cycle-unsafe and can be O(n²); graph buttons are pointer-only SVG groups without focus/key handlers; context menu is not viewport-clamped. Memoized adjacency layout plus real keyboard controls. — **DONE (v0.53.0).** Layout extracted to `lib/discovery/tree-layout.ts`; all five controls keyboard-operable; menu clamped. The "cycle-unsafe" reading was **wrong** and is corrected in the close-out: a node has one `parentId`, so a cycle is never root-reachable and the recursion never entered one. Measured against the original, the real defects were silent node LOSS (an orphan was not drawn; a pure 2-cycle rendered an EMPTY tree), a `RangeError` on a 5,000-node chain, and the quadratic width recomputation. |
 | `components/literature/VocabPanel.tsx` | 480 | **Mostly keep; extract repeated views.** Size is driven by several clear modes. Consolidate form/result chrome and move state transitions into the vocabulary hook/reducer; no unique security defect found in this file. |
 | `components/teacher/TeacherRubricScoring.tsx` | 423 | **Refactor draft lifecycle.** Track switching can discard unsaved state, blur/click autosaves can race, blank numeric input becomes zero, and success timers are not cleaned up. Use explicit dirty/version/save state. |
 | `components/ops/data-terminal/ExperimentDetail.tsx` | 420 | **Split chart/input/table.** Load errors offer no functional retry. Duplicate `(x, series)` points overwrite visually although the table retains them, so the chart can misrepresent data. |
@@ -728,7 +728,7 @@ not a reason to split it; it does not erase separately listed correctness findin
 | `components/lab/LabScene.tsx` | 379 | **Replace overlay booleans with a union.** Six booleans permit overlapping off-path panels; the component imports and coordinates too many overlays. Keep spatial shell, move overlay controller to one state machine. |
 | `app/(public)/showcase/[slug]/page.tsx` | 374 | **Split rendering and cache request load.** Metadata and page repeat showcase/viewer work; generic metadata casts bypass runtime validation. Validate every outgoing URL/embed scheme at render time. |
 | `lib/fairs/rubric-anchors.ts` | 356 | **Keep as reviewed content, not code truth.** Cohesive authored dataset. It needs edition/source/reviewer provenance and subject-matter review; shape tests cannot certify it. |
-| `lib/discovery/tree-service.ts` | 348 | **Fix graph invariant before splitting.** Accepts foreign/cyclic parents, can hang in `depthOf`, catches broad create errors as success, and performs repeated scans. Validate same-team DAG and use adjacency maps. |
+| `lib/discovery/tree-service.ts` | 348 | **Fix graph invariant before splitting.** (Invariant fixed in v0.34.1; the split itself is still open.) Accepts foreign/cyclic parents, can hang in `depthOf`, catches broad create errors as success, and performs repeated scans. Validate same-team DAG and use adjacency maps. |
 | `lib/teacher/student-overview.ts` | 347 | **Split/lazy-load query sections.** About 18 queries per detail request; selected team can be paired with the latest *other* membership's role/join time. Use one selected membership and bounded sections/view models. |
 | `lib/hooks/usePlotBuildings.ts` | 346 | **Reducer/state machine.** More than ten coupled state values, no abort/resync, refresh errors swallowed, and duplicated optimistic economy prediction. Keep server authoritative and reconcile visibly. |
 | `components/discovery/SourceReader.tsx` | 344 | **Split readers/reflection control.** Sanitized HTML is a central invariant worth retaining. Blur/button saves can duplicate or complete after selection changes; bind requests to node/version and validate every source URL scheme. |
@@ -1447,6 +1447,28 @@ Full audit: `docs/runbooks/e2e.md`.
 Gates 1–5 pass; Vitest 122 files / 1,757 tests. Migration applied; devlab verified intact. The
 three attack tests were **negative-controlled**: with the ownership predicate, the pending CAS and
 the in-transaction class re-check disabled, exactly those three fail.
+
+#### v0.53.0 — 2026-07-26 — the file-disposition tranche opens
+
+**§0.7's 44-file disposition had never been started.** Every file listed there was still at or
+above its audited size. The correctness findings *inside* those files were closed by the P1
+batches — that is what most of this log is — but the structural verdicts were untouched, and
+nothing in §0.11 had ever claimed otherwise. This batch opens that tranche, highest-defect-first
+rather than longest-first, per §0.7's own instruction that line count is a diagnostic and not a
+goal.
+
+| File | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| `components/discovery/DiscoveryTree.tsx` | **DONE** | The layout moved to `lib/discovery/tree-layout.ts` — a split with a real justification, not a line count: a graph algorithm with no DOM had been living where only a browser test could reach it, which is why its defects survived. **The audit's "cycle-unsafe" reading was wrong, and running the original proved it:** a node has exactly one `parentId`, so a node in a cycle points *into* the cycle and is a child of nothing outside it — a cycle is never reachable from a root and the recursion never entered one. The three real defects, each measured against the original before the rewrite: it **silently dropped nodes** (an orphan whose parent was absent was never drawn; a pure two-node cycle rendered an EMPTY tree — the rows existed and the UI said otherwise); it **overflowed the stack** on a 5,000-node chain, the exact shape a student builds by clicking through sources (`RangeError`); and it was **quadratic**, `subtreeW` walking each subtree once per node and again per child. The rewrite is iterative with memoized widths and treats orphans and cycle members as extra roots, so a corrupted graph renders displaced rather than invisible. `nodeTreeIndices` shares the same graph build, so the colour grouping and the drawing can no longer disagree. **Accessibility:** all five controls (navigate, star, delete, interest, promote) carried `role="button"` with no `tabIndex` and no key handler — worse than no role, since a screen reader announces a button that cannot be focused or operated. One `svgButton` helper gives them focus, Enter/Space, and a name. The context menu is clamped to the viewport. | The component is still 480 lines and still mixes node chrome with the SVG shell; that part of the disposition is cosmetic and was left. |
+
+`test/discovery-tree-layout.test.ts` (12 tests) pins each measured defect, and the ORIGINAL
+implementation was run against every one of those shapes to confirm they are real. The
+accessibility half is pinned by a new `a11y.spec.ts` case that seeds its own disposable lab —
+the first version skipped on the empty shared fixture, and a skipped accessibility test proves
+nothing, which is the false-skip pattern the E2E audit had just finished calling out.
+Negative-controlled: removing `tabIndex` fails it in both viewport projects.
+
+Gates 1–5 pass; Vitest 123 files / 1,769 tests.
 
 ---
 
