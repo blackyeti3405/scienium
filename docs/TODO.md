@@ -144,14 +144,9 @@ stated reason has already been fixed another way.
 `components/discovery/SourceReader.tsx` (v0.60.0 — save path only; URL-scheme validation still open),
 `lib/teacher/student-overview.ts` (v0.60.1 — pairing verified closed by v0.48.0; query split declined),
 `lib/hooks/usePlotBuildings.ts` (v0.61.0 — stale-resync + swallowed-error + duplicated-prediction all fixed; reducer split declined),
-`components/lab/LabScene.tsx` (v0.61.0 — overlap CONFIRMED reachable via `ActivityPanel`'s missing backdrop; one `Overlay` union replaces six flags).
-
-**Highest value remaining**, by the defect each verdict names — every one is a live behaviour
-problem, not a size complaint:
-
-| File | The defect the verdict names |
-| --- | --- |
-| `lib/discovery/articles.ts` | Feed URLs and provider bodies need canonical host/content-type/byte validation. `readCapped` now exists (v0.55.0) — this is where it lands next. |
+`components/lab/LabScene.tsx` (v0.61.0 — overlap CONFIRMED reachable via `ActivityPanel`'s missing backdrop; one `Overlay` union replaces six flags),
+`lib/fairs/zip.ts` (v0.62.0 — 1 req/s queue + cache + response schema/cap all added; the triplicated `coords ?? state-centroid` fallback consolidated into `resolveTeamPoint()`; "special ZIPs repeat" did not hold — zero duplicate table keys; data/lookup/transport split declined),
+`lib/discovery/articles.ts` (v0.62.0 — byte cap on `res.text()` added via the shared `readCapped`; host/content-type validation declined — every feed url is a literal, not request/provider data, and content-type gaps were measured to already degrade safely; licensing review still owed).
 
 **Deliberately deprioritised** (verdict is structural only, no named defect): `app/globals.css`
 (3,051 lines) and `prisma/schema.prisma` (now 2,282). Both are real cleanups with real risk and

@@ -1,3 +1,7 @@
+import { z } from 'zod'
+import { readJsonCapped, sleep } from '@/lib/fetch-retry'
+import { LruCache } from '@/lib/lru'
+
 /**
  * US ZIP-code geography helpers (Feature 3, US-only).
  *
@@ -6,6 +10,14 @@
  * USPS prefix ranges below — enough to find a team's state fair and the regional
  * fairs in their state. Distance ordering then uses the state centroid as the
  * team's approximate location (precise ZIP centroids can be layered in later).
+ *
+ * REFACTOR2 §0.7 asked to split the static tables, the lookup, and the
+ * Nominatim transport into separate files. Declined: the tables and lookups are
+ * pure and already independently testable (`zip.test.ts` exercises them with no
+ * network involved), and the transport's actual defects — no throttle, no
+ * cache, no response cap/schema — all live inside `geocodeZip` and don't need
+ * the file split to fix. Moving 350 lines of data to a second file would not
+ * change any of that.
  */
 
 // First-3-digit ZIP prefix ranges → state. Ordered, non-overlapping (USPS).
@@ -462,6 +474,70 @@ export function zipToApproxCoords(
 }
 
 /**
+ * A team's location point for distance ordering: their own geocoded coords
+ * if known, else their state's centroid. This exact fallback chain used to be
+ * written out independently at three call sites (`lib/fairs/match.ts` twice,
+ * `app/api/team/momentum/route.ts` once — the latter's own comment says so:
+ * "exactly like `const teamPoint = coords ?? STATE_CENTROIDS[state] ?? null`
+ * in lib/fairs/match.ts"). One export, so a future change to the fallback rule
+ * can't drift between copies.
+ */
+export function resolveTeamPoint(
+  coords: readonly [number, number] | null | undefined,
+  state: string | null,
+): readonly [number, number] | null {
+  return coords ?? (state ? (STATE_CENTROIDS[state] ?? null) : null) ?? null
+}
+
+// Nominatim's usage policy caps this deployment at 1 request/second, globally
+// — not per call. Before this queue existed there was NOTHING enforcing it:
+// two concurrent geocode calls (two teams onboarding at once) fired back to
+// back with no gap at all (measured: <5ms apart). One module-level queue
+// serializes every call through this process and waits out the remainder of
+// the second before the next request leaves.
+//
+// ponytail: this is a SINGLE-PROCESS guarantee. A multi-instance deployment
+// still exceeds 1 req/s in aggregate (each instance keeps its own queue) —
+// upgrade path is a shared token bucket (the same Upstash store lib/rate-limit.ts
+// already wires up) if/when this app runs more than one instance.
+const NOMINATIM_MIN_INTERVAL_MS = 1000
+let nominatimQueue: Promise<void> = Promise.resolve()
+let lastNominatimRequestAt = 0
+
+function throttleNominatim<T>(fn: () => Promise<T>): Promise<T> {
+  const run = nominatimQueue.then(async () => {
+    const wait = lastNominatimRequestAt + NOMINATIM_MIN_INTERVAL_MS - Date.now()
+    if (wait > 0) await sleep(wait)
+    lastNominatimRequestAt = Date.now()
+    return fn()
+  })
+  // Keep the chain alive even if this call throws, so one failed geocode
+  // doesn't jam every request behind it forever. Each caller still gets its
+  // own rejection via `run`.
+  nominatimQueue = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
+}
+
+// A ZIP's coordinates never change — cache hits avoid both the network call
+// and the 1 req/s wait for the (common) case of two students in the same
+// school/ZIP. Failures are NOT cached: a transient Nominatim outage shouldn't
+// keep returning null for a day once it recovers.
+const GEOCODE_CACHE_MAX = 2000
+const GEOCODE_CACHE_TTL_MS = 1000 * 60 * 60 * 24
+const geocodeCache = new LruCache<readonly [number, number]>(GEOCODE_CACHE_MAX, GEOCODE_CACHE_TTL_MS)
+
+// Nominatim's `/search` response for `format=json&limit=1` is a short JSON
+// array; a few KB at most. 64 KB is generous headroom, not a real ceiling on
+// legitimate traffic.
+const MAX_BODY_BYTES = 64 * 1024
+
+const NominatimResult = z.object({ lat: z.string(), lon: z.string() }).passthrough()
+const NominatimResponse = z.array(NominatimResult)
+
+/**
  * Geocode a US ZIP code to approximate [lat, lng] via Nominatim.
  * Returns null on failure. Subject to Nominatim's 1 req/s ToS — only call
  * this at onboarding / explicit location updates, never on every page load.
@@ -469,22 +545,32 @@ export function zipToApproxCoords(
 export async function geocodeZip(
   zip: string,
 ): Promise<readonly [number, number] | null> {
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(zip)}&countrycodes=us&format=json&limit=1`
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'scienium/1.0 (science fair matching)' },
-      signal: AbortSignal.timeout(6000),
-    })
-    if (!res.ok) return null
-    const results = await res.json()
-    if (!Array.isArray(results) || results.length === 0) return null
-    const lat = parseFloat(results[0].lat)
-    const lng = parseFloat(results[0].lon)
-    if (Number.isNaN(lat) || Number.isNaN(lng)) return null
-    return [lat, lng] as const
-  } catch {
-    return null
-  }
+  const cached = geocodeCache.get(zip)
+  if (cached) return cached
+
+  const result = await throttleNominatim(async () => {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(zip)}&countrycodes=us&format=json&limit=1`
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'scienium/1.0 (science fair matching)' },
+        signal: AbortSignal.timeout(6000),
+      })
+      if (!res.ok) return null
+      // PARSED, never cast — the pre-fix `results[0].lat` read straight off
+      // whatever `res.json()` handed back with no shape check at all.
+      const parsed = NominatimResponse.safeParse(await readJsonCapped(res, MAX_BODY_BYTES))
+      if (!parsed.success || parsed.data.length === 0) return null
+      const lat = parseFloat(parsed.data[0]!.lat)
+      const lng = parseFloat(parsed.data[0]!.lon)
+      if (Number.isNaN(lat) || Number.isNaN(lng)) return null
+      return [lat, lng] as const
+    } catch {
+      return null
+    }
+  })
+
+  if (result) geocodeCache.set(zip, result)
+  return result
 }
 
 /** Great-circle distance between two [lat, lng] points, in miles. */

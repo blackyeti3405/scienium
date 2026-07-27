@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { zipToApproxCoords } from './zip'
+import { zipToApproxCoords, resolveTeamPoint, STATE_CENTROIDS } from './zip'
 
 /**
  * ZIP → approximate coordinates (drives "nearest regional fair" ordering).
@@ -39,5 +39,24 @@ describe('zipToApproxCoords', () => {
 
   it('unknown prefix falls back to the state centroid, then null', () => {
     expect(zipToApproxCoords('00000', null)).toBeNull()
+  })
+})
+
+describe('resolveTeamPoint', () => {
+  // Pins the fallback chain that used to be written independently at three
+  // call sites (lib/fairs/match.ts twice, app/api/team/momentum/route.ts once)
+  // as `coords ?? STATE_CENTROIDS[state] ?? null`.
+  it('prefers the team\'s own geocoded coords over the state centroid', () => {
+    const coords: readonly [number, number] = [1, 2]
+    expect(resolveTeamPoint(coords, 'CT')).toEqual(coords)
+  })
+
+  it('falls back to the state centroid when coords are absent', () => {
+    expect(resolveTeamPoint(null, 'CT')).toEqual(STATE_CENTROIDS.CT)
+    expect(resolveTeamPoint(undefined, 'CT')).toEqual(STATE_CENTROIDS.CT)
+  })
+
+  it('is null when there is neither coords nor a state', () => {
+    expect(resolveTeamPoint(null, null)).toBeNull()
   })
 })

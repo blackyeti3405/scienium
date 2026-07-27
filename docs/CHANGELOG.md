@@ -5,6 +5,63 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.62.0] — 2026-07-27
+
+### Fixed — a geocoding policy nobody enforced, and a feed body nobody capped
+
+Twelfth and thirteenth of REFACTOR2 §0.7's file dispositions: `lib/fairs/zip.ts` and
+`lib/discovery/articles.ts`.
+
+- **Nothing enforced Nominatim's 1 request/second policy.** Two teams onboarding within the same
+  minute could fire geocode requests back to back — measured at ~1ms apart, not the second the
+  ToS requires. A module-level queue now serializes every geocode call through this process and
+  waits out the remainder of the second before the next one leaves. (Documented plainly: this is
+  a single-process guarantee — a multi-instance deployment would still exceed it in aggregate.)
+- **The same ZIP was geocoded over the network every single time.** A repeated lookup — several
+  students in the same school, a settings page re-saved — cost a fresh Nominatim round trip and a
+  fresh second of the throttle above. A 24-hour cache now answers repeats instantly; failures are
+  never cached, so a brief outage doesn't keep saying no for a day.
+- **The geocode response was read with no shape check at all.** `results[0].lat` came straight off
+  whatever `res.json()` returned — a numeric `lat`/`lon` (never real Nominatim output, which
+  always encodes as JSON strings) would have sailed through unnoticed. It's parsed with a schema
+  now, and the body itself goes through the shared byte-capped reader instead of a bare `res.json()`.
+- **The same `coords ?? state-centroid ?? null` fallback was written out three times** across
+  `lib/fairs/match.ts` and the momentum route — one of the three literally commented "exactly
+  like" the other. One exported `resolveTeamPoint()` now.
+- **A discovery article feed's XML body had no byte ceiling** — the twin of the OpenAlex adapter's
+  v0.55.0 fix, left "still owed" at the time. `res.text()` on six third-party RSS/Atom feeds is
+  now read through the same capped reader OpenAlex uses.
+- **Two findings from the same audit did NOT hold up under measurement, and are recorded as
+  such rather than silently dropped.** "Hard-coded special ZIPs repeat" — checked programmatically,
+  zero duplicate keys in either static ZIP table. "Feed URLs need canonical host validation" — every
+  feed URL is a literal in the file, never request/provider data, so there is nothing dynamic to
+  allowlist (unlike OpenAlex's provider-chosen `cited_by_api_url`). Content-type was measured too:
+  a non-XML body degrades to an empty list and an XXE probe is refused by the parser itself, both
+  already caught by the existing error handling.
+- **Both files' proposed data/transport splits were declined**, with reasons recorded inline in
+  REFACTOR2.MD §0.7 — the static ZIP tables and pure lookups are already independently testable
+  with no network involved, and every defect in both files lived inside the one transport function
+  that needed fixing, not in how the file was organized.
+- Licensing-assumptions review for `articles.ts` remains a human/legal call and is still owed —
+  not resolved here.
+
+### Verification
+Gates 1–5 pass. Vitest **130 files / 1,832 tests** (+11: `geocode.test.ts` ×6, `articles.test.ts`
+×2, `resolveTeamPoint` ×3).
+Negative-controlled six ways: disabling the geocode cache, bypassing the throttle queue, reverting
+the zod parse to a raw cast, reverting the geocode byte cap, reverting the feed byte cap, and
+swapping `resolveTeamPoint`'s fallback order each failed exactly the test built to catch it — and
+no other. The feed byte-cap test caught its own near-miss: with the cap removed, the naive
+`toEqual([])` assertion still passed (garbage bytes parse to no entries either way), so only the
+log-message assertion actually pins the guard — the "empty is also the healthy answer" trap the
+method warns about, caught rather than shipped.
+E2E: none run (not required for this batch); `e2e/F10.spec.ts` and
+`e2e/rubric-self-assessment.spec.ts` touch the changed `resolveTeamPoint` call sites at the
+shape/status level only, and `e2e/disco-article-sources.spec.ts` runs entirely under
+`E2E_MOCK_SOURCES=1`, never reaching the changed `fetchFeed` path.
+
+---
+
 ## [0.61.0] — 2026-07-27
 
 ### Fixed — a paid building could vanish from your plot, and two lab panels could pile up

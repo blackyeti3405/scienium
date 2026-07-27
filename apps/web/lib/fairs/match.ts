@@ -2,7 +2,7 @@ import 'server-only'
 import { createHash } from 'crypto'
 import { db } from '@/lib/db'
 import { FAIRS, type SeedFairLevel } from '@/content/fairs/dataset'
-import { STATE_CENTROIDS, zipToApproxCoords, haversineMiles } from '@/lib/fairs/zip'
+import { resolveTeamPoint, zipToApproxCoords, haversineMiles } from '@/lib/fairs/zip'
 import { logEvent } from '@/lib/observability/log'
 import type { FairLevel, Prisma } from '@prisma/client'
 
@@ -349,7 +349,7 @@ export function matchFairRowsFromIndex(
   coords?: readonly [number, number] | null,
 ): { regional: FairWithEvents | null; stateFair: FairWithEvents | null; isef: FairWithEvents | null } {
   if (!state) return { regional: null, stateFair: null, isef: index.isef }
-  const teamPoint = coords ?? STATE_CENTROIDS[state] ?? null
+  const teamPoint = resolveTeamPoint(coords, state)
   const regionals = [...(index.regionalsByState.get(state) ?? [])].sort((a, b) => {
     const dist = (f: FairWithEvents) =>
       teamPoint && f.latitude != null && f.longitude != null
@@ -382,7 +382,7 @@ export async function matchFairs(
   }
 
   // Prefer geocoded coords (stored on team at onboarding) > state centroid fallback.
-  const teamPoint = coords ?? STATE_CENTROIDS[state] ?? null
+  const teamPoint = resolveTeamPoint(coords, state)
 
   const [stateRow, regionalRows] = await Promise.all([
     db.fair.findFirst({ where: { level: 'state', state, retiredAt: null }, include: fairInclude }),

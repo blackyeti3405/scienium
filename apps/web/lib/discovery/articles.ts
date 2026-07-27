@@ -1,5 +1,5 @@
 import 'server-only'
-import { fetchWithRetry } from '@/lib/fetch-retry'
+import { fetchWithRetry, readCapped } from '@/lib/fetch-retry'
 import { createHash } from 'crypto'
 import sanitizeHtml from 'sanitize-html'
 import { XMLParser } from 'fast-xml-parser'
@@ -27,6 +27,17 @@ import {
 // Hard per-request cap: Node's fetch has no default timeout, so a slow/stalled
 // feed would hang the Articles tab forever. Abort after 8s → fail fast.
 const FETCH_TIMEOUT_MS = 8000
+
+// `res.text()` buffers whatever a feed sends with no ceiling — REFACTOR2 §0.7
+// named this, and v0.55.0 left it as "still owed" alongside medlineplus.ts.
+// Every FEEDS url is a literal in this file (never user/team data), so unlike
+// openalex's `cited_by_api_url` there is no per-request host to validate —
+// these six hosts are fixed at deploy time by us, not chosen by a request.
+// The genuine exposure is the byte ceiling: any of the six is a third party we
+// don't control, and an unbounded `res.text()` would buffer whatever they
+// sent. `readCapped` is the shared ceiling (`lib/fetch-retry.ts`); a real feed
+// page is a few hundred KB at most, so 8 MB is headroom, not a live limit.
+const FEED_MAX_BODY_BYTES = 8 * 1024 * 1024
 
 // Cache the parsed feed (all entries) — 60-min TTL, keyed by feed id. A feed
 // updates at most a few times a day, so this is generous, not stale.
@@ -295,6 +306,15 @@ function toSearchResult(a: ResolvedArticle): ArticleSearchResult {
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
+/**
+ * Content-type is not checked before parsing. Measured rather than assumed: a
+ * non-XML body (an HTML error/WAF page, say) parses to an object with no
+ * `feed.entry`/`rss.channel.item`, so `parseAtomFeed`/`parseRssFeed` return []
+ * exactly as if the feed were merely empty — no crash, nothing to render. A
+ * DOCTYPE-based XXE attempt throws inside `fast-xml-parser` itself ("External
+ * entities are not supported") and is caught below like any other parse
+ * failure. There is no gap a content-type check would close here.
+ */
 async function fetchFeed(feedId: string): Promise<ParsedEntry[]> {
   const config = FEEDS[feedId]
   if (!config) return []
@@ -304,7 +324,7 @@ async function fetchFeed(feedId: string): Promise<ParsedEntry[]> {
   try {
     const res = await articlesFetch(config.url)
     if (!res.ok) return []
-    const xml = await res.text()
+    const xml = await readCapped(res, FEED_MAX_BODY_BYTES)
     const entries = config.provider === 'the_conversation' ? parseAtomFeed(xml) : parseRssFeed(xml)
     feedCache.set(feedId, entries)
     return entries

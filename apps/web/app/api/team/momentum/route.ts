@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client'
 import { differenceInCalendarDays } from 'date-fns'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { FAIRS, type SeedFair } from '@/content/fairs/dataset'
-import { STATE_CENTROIDS, haversineMiles } from '@/lib/fairs/zip'
+import { resolveTeamPoint, haversineMiles } from '@/lib/fairs/zip'
 import { db } from '@/lib/db'
 
 /**
@@ -118,8 +118,9 @@ export async function GET(req: NextRequest) {
  * the SAME row this route reads for `locationState` — set once at
  * onboarding/location-update via a network geocode, never re-geocoded per
  * request) and fall back to the state centroid
- * (`STATE_CENTROIDS[state]`) exactly like `const teamPoint = coords ??
- * STATE_CENTROIDS[state] ?? null` in lib/fairs/match.ts. All regionals in the
+ * state centroid via the shared `resolveTeamPoint(coords, state)` — the same
+ * helper `lib/fairs/match.ts` calls, so the fallback rule can't drift between
+ * the two copies it used to be. All regionals in the
  * team's state are then sorted by `haversineMiles` ascending and only the
  * first (nearest) is kept as a candidate — `otherRegionals` are intentionally
  * discarded, matching the hub's candidate set.
@@ -145,7 +146,7 @@ function nextFairFromDataset(
 
     // Prefer geocoded coords (stored on the team) > state centroid fallback —
     // same fallback chain as matchFairs().
-    const teamPoint = coords ?? STATE_CENTROIDS[state] ?? null
+    const teamPoint = resolveTeamPoint(coords, state)
     const regionals = FAIRS.filter((f) => f.level === 'regional' && f.state === state)
     const nearestRegional = teamPoint
       ? [...regionals].sort(
