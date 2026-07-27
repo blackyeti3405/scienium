@@ -68,11 +68,18 @@ restructures existing call sites and updates existing mocks rather than adding n
 
 ---
 
-**E2E:** `F11-quiz-retry` **13/13** — the `quiz_passed` path, the riskiest of the eleven because
-it mints KP inside the race-winning branch. `F13-codex` (`clearance_raised`) and
-`lit-explain-it-back` (`explanation_passed`) were started and **hung at Clerk auth setup without
-producing a result** — a stalled runner, not a failure, and the same instability tracked in
-`docs/TODO.md`. Both should be run before this branch merges.
+**E2E: all three green — `F11-quiz-retry` 13/13, `F13-codex` 16/16,
+`lit-explain-it-back` 17/17**, covering `quiz_passed` (the riskiest of the eleven, since it mints
+KP inside the race-winning branch), `clearance_raised` and `explanation_passed`.
+
+*Correction to an earlier draft of this entry:* the first attempt at the latter two was reported
+as having "hung without producing a result". That was wrong twice over. They did produce results,
+and they **failed** — `F13-codex` AC1 with `net::ERR_EMPTY_RESPONSE` and `lit-explain-it-back` at
+Clerk auth setup. Both failures were **self-inflicted**: the orchestrator's own `pkill` tore down
+the shared dev server while those runs were still in flight, the same mistake made once already
+in v0.66.0. Re-run against a server that stayed up, both pass clean. The lesson is recorded here
+rather than quietly overwritten, because a "hung runner" and a killed one look identical in a log
+and only one of them is the code's fault.
 
 The transaction-boundary risk was checked directly rather than assumed: every `$transaction`
 block in the six touched paid/write routes was parsed for `aiCreate`/`anthropic`/`fetch`/S3 calls
