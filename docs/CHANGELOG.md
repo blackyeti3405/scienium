@@ -5,6 +5,36 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.70.0] — 2026-07-27
+
+### Changed — the §0.7 file-disposition tranche is complete
+
+The 44-file disposition that v0.53.0 opened now has an outcome on every row, and each says which
+of three it is: **fixed**, **verified already closed**, or **deliberately not done, with why**.
+
+- **22 rows: live defects fixed** (v0.53.0–v0.68.0), every one reproduced against the current
+  code before being written about.
+- **10 rows: verified already closed** by a later batch, citing the specific guard checked.
+- **9 rows: explicit "Keep"** in the audit — untouched, because length alone was never a reason.
+- **3 rows: no action, deliberately** — `app/globals.css` and `prisma/schema.prisma` carry no
+  behaviour and real regression risk, and `VocabPanel.tsx`'s own verdict found no defect.
+- **73 dev-only art generators**: out of scope by §0.7's own classification.
+
+**Nine of the audit's readings were wrong or overstated**, and were corrected in place rather
+than worked around — the cycle-safety claim, the credential that travelled with the SSRF, an
+infinite loop hiding behind an O(n²) complaint, two "overlapping panels" claims that came out
+opposite ways, a benign duplicate save, a pairing defect that a later batch had already closed,
+and one row classified as answered that turned out to hold a reproduced lost update.
+
+**Three things were attempted and stopped rather than forced**: the `ApiError` rename (reverted,
+it broke `synthesis-matrix`), and two product decisions about first paint that were declined as
+out of scope for a refactor. Two E2E problems found along the way are tracked rather than papered
+over — `upgrades` AC12 is RED at HEAD, and `F3-plan-paste` is flaky. The handoff's
+"309 passed / 0 failed" baseline is stale.
+
+### Verification
+Gates 1–5 green on every batch. Vitest **1,769 → 1,852 tests**.
+
 ## [0.69.0] — 2026-07-27
 
 ### Changed — dead code deleted, and unused-local checking is now enforced

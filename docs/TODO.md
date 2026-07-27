@@ -134,38 +134,15 @@ Its own rule applies: *line count is a diagnostic, not a refactoring goal.* Work
 defect they carry, not by length, and be willing to record "the split is not worth it" where the
 stated reason has already been fixed another way.
 
-**Done:** `components/discovery/DiscoveryTree.tsx` (v0.53.0),
-`components/ops/ExpertisePanel.tsx` (v0.54.0 — defect closed, view split deliberately left),
-`lib/discovery/openalex.ts` (v0.55.0 — hardened; split declined with a reason),
-`stores/discoveryStore.ts` (v0.56.0 — defects closed; split declined with a reason),
-`components/teacher/TeacherRubricScoring.tsx` (v0.57.0 — E2E F10 re-run 16/16),
-`components/ops/CodexTab.tsx` (v0.58.0),
-`components/literature/LiteratureFeature.tsx` (v0.59.0),
-`components/discovery/SourceReader.tsx` (v0.60.0 — save path; URL-scheme validation CLOSED v0.64.0),
-`lib/teacher/student-overview.ts` (v0.60.1 — pairing verified closed by v0.48.0; query split declined),
-`lib/hooks/usePlotBuildings.ts` (v0.61.0 — stale-resync + swallowed-error + duplicated-prediction all fixed; reducer split declined),
-`components/lab/LabScene.tsx` (v0.61.0 — overlap CONFIRMED reachable via `ActivityPanel`'s missing backdrop; one `Overlay` union replaces six flags),
-`lib/fairs/zip.ts` (v0.62.0 — 1 req/s queue + cache + response schema/cap all added; the triplicated `coords ?? state-centroid` fallback consolidated into `resolveTeamPoint()`; "special ZIPs repeat" did not hold — zero duplicate table keys; data/lookup/transport split declined),
-`lib/discovery/articles.ts` (v0.62.0 — byte cap on `res.text()` added via the shared `readCapped`; host/content-type validation declined — every feed url is a literal, not request/provider data, and content-type gaps were measured to already degrade safely; licensing review still owed),
-`components/ops/data-terminal/ExperimentDetail.tsx` (v0.63.0 — duplicate `(x, series)` chart collisions now counted and disclosed beside the chart, without touching the student's recorded table data; load-retry added; chart/input/table split declined),
-`components/teacher/TeacherRoster.tsx` (v0.63.0 — approval now bridges to a roster re-fetch; the shared `useCopyToClipboard` hook fixed at its source to stop swallowing a clipboard failure; pending-join-request list capped, roster list left deliberately uncapped; split/pagination declined),
-`components/lab/LabPlot.tsx` (v0.64.0 — real keyboard pick-up/placement added, sharing the pointer path's own `onDrop`/`isPlaceable` check; interaction-controller split declined — the pure math was already in `lib/plot.ts`),
-`components/research-plan/IdeaCheckView.tsx` (v0.64.0 — `SafeExternalLink`/`ResultHeading` primitives extracted; model/provider urls gated by `isSafeHttpUrl` at both write and render),
-`components/discovery/DiscoveryFeature.tsx` (v0.65.0 — "unawaited destructive calls" reproduced FALSE against the current tree, closed by the v0.56.0 `discoveryStore` fix this file already wires to its Toast; one doc-drift comment §0.8 had already flagged was corrected; controller split declined — 8 views/3 hooks already extracted),
-`components/settings/LabProfileSettings.tsx` (v0.65.0 — silent research-plan load failure fixed via a new feature-local `api.ts` + `requestJson`/zod + a "Try again" retry; domain split declined — profile/lab share one authority, and every domain in the file already owns its own failure state),
-`components/fair/ScienceFairFeature.tsx` (v0.66.0 — "800 sequential query" comment confirmed STALE against `lib/fairs/match.ts`'s already-shipped digest short-circuit, trimmed; fair-card/countdown/rubric split declined — already-separated, non-duplicated functions),
-`app/(onboarding)/onboarding/page.tsx` (v0.66.0 — literal duplicate "Your name"/"High school" fields across the student and teacher forms deduped into one colocated `NameAndSchoolFields`; recovery-effect split declined — not duplicated; ACCEPTED-R1 untouched),
-`components/literature/QuizPanel.tsx` (v0.66.0 — three hardcoded `70` pass-mark fallbacks replaced with the existing client-safe `DEFAULT_PASS_THRESHOLD` mirror / the graded session's own `results.threshold`; no live disagreement found; question-form/result-row split declined),
-`lib/ops/codex/scripts/merge-codex-segments.mjs` (v0.67.0 — VERIFIED, not re-fixed: P1-R15's atomic install already restores every touched file on any failure, negative-controlled with a throwaway script; the hand-maintained `SHAPE_KEYS` schema mirror still exists but drift is now a red test, negative-controlled by drifting `types.ts` and watching it fail),
-`lib/discovery/tree-service.ts` (v0.67.0 — VERIFIED, P1-R10's graph invariant closed; the adjacency-map split is confirmed still not done, bounded and non-urgent, left open),
-`lib/uploads/assets.ts` (v0.67.0 — VERIFIED, P1-R12's crash-durable deletion lifecycle intact; bucket-vs-ledger reconciliation and stale/terminal alerting confirmed still missing, as already documented),
-`lib/fairs/match.ts` (v0.67.0 — VERIFIED, P1-R16's digest-based seeding intact and the patch-history comment already reads past-tense; the edition-sync/query file split confirmed still not done),
-`lib/fairs/forms.ts` + `components/fair/FormsChecklist.tsx` (v0.67.0 — VERIFIED, P0-R4's corrected ISEF catalog untouched per instruction; `FormsChecklist.tsx`'s own unchecked-GET-status and swallowed-PATCH-failure defects confirmed still live — see the new item below, not part of P0-R4's scope),
-`lib/literature/synthesis.ts` + `components/literature/SynthesisMatrixEditor.tsx` (v0.67.0 — VERIFIED, P1-R13's snapshot-bound check intact; corrected a stale §0.3 note — the dirty-draft-loss item it still listed as open was actually closed in v0.51.0, one commit after v0.50.0, and never back-filled),
-`app/(public)/showcase/[slug]/page.tsx` (v0.67.0 — VERIFIED, P0-R3/P1-R7's authorization model correctly wired; the file's own duplicate-load and missing render-time URL-scheme check confirmed still live — see the new item below),
-`lib/literature/quiz-retry.ts` (v0.67.0 — VERIFIED, P1-R11's pre-call claim and result replay intact; SVC-1's reward-minting consolidation confirmed still open, matching the Executive Verdict's existing P2 listing),
-`lib/ops/codex/complete-service.ts` (v0.68.0 — a re-pass no longer overwrites `completedAt`; the failed-attempt `bestScore` write is now a `GREATEST`-gated `ON CONFLICT` instead of a racy read-then-write; `test/codex-complete-monotonic.test.ts` pins both attacks with negative controls);
-§0.7's closing diagnostic paragraph — `noUnusedLocals`/`noUnusedParameters` cleanup and the `ApiError` naming collision (v0.69.0 — 5 named runtime dead imports/params, 1 fair-match import, 4 E2E fixtures/constants deleted after re-confirming each against current code; 2 compile-time test aliases exported instead of deleted, since they're deliberate `tsc`-time drift guards, not dead code; both flags now on in `apps/web/tsconfig.json`, one shared config — measured noise was 18 diagnostics total, not enough to justify a separate test config; `lib/api/with-route.ts`'s `ApiError` renamed to `RouteError`, the smaller of the two by call-site count (6 vs. 24), leaving `lib/api/client.ts`'s `ApiError` untouched).
+**The §0.7 tranche is COMPLETE (v0.70.0).** All 44 rows have an outcome — 22 defects fixed,
+10 verified already closed, 9 explicit Keeps untouched, 3 deliberately not done, 73 dev-only art
+generators out of scope. See `REFACTOR2.MD` §0.11's v0.70.0 close-out for the full table and for
+the nine audit readings that turned out wrong.
+
+**Still open from §0.7, with evidence attached:** the `ApiError` rename (attempted in v0.69.0 and
+reverted — it broke `synthesis-matrix`), `showcase/[slug]/page.tsx`'s duplicated metadata+page
+load and missing render-time URL check, and `FormsChecklist`'s unchecked GET / swallowed PATCH.
+
 
 **Deliberately deprioritised** (verdict is structural only, no named defect): `app/globals.css`
 (3,051 lines) and `prisma/schema.prisma` (now 2,282). Both are real cleanups with real risk and
