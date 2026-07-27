@@ -58,7 +58,6 @@ import { dismissHome, openDiscovery, resetTree, treeHasExternalId } from './disc
  */
 
 const SEARCH_ARXIV_QUERY = 'attention'
-const SEARCH_PUBMED_QUERY = 'fixture'
 const ARXIV_SEED_ID = 'arxiv:2401.00001'
 const PUBMED_SEED_ID = 'pmid:99900001'
 

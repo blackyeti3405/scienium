@@ -31,10 +31,6 @@ interface EditionInfo {
 
 const STATUS_CYCLE: FormStatus[] = ['not_started', 'in_progress', 'complete']
 
-const HAZARD_LABELS: Record<HazardClassKey, string> = Object.fromEntries(
-  HAZARD_CLASSES.map((h) => [h.key, h.label]),
-) as Record<HazardClassKey, string>
-
 export function FormsChecklist() {
   const [forms, setForms] = useState<FormItem[]>([])
   const [edition, setEdition] = useState<EditionInfo | null>(null)

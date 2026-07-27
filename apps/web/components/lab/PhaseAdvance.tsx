@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Lock, FlaskConical } from 'lucide-react'
-import { LAB_TYPE_LABELS } from '@/lib/phase'
 import type { AdvanceProgress } from '@/lib/team/advance'
 import { BusyButton } from '@/components/ui/BusyButton'
 

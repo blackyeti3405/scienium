@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { ModalBackdrop } from '@/components/ui/ModalBackdrop'
 import { Settings, X } from 'lucide-react'
 import { LabProfileSettings } from './LabProfileSettings'

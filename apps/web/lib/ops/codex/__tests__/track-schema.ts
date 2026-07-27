@@ -105,5 +105,8 @@ export type TrackSchemaType = z.infer<typeof TrackSchema>
 // If these fail `tsc`, the zod schema and `CodexTrack` (types.ts) have diverged —
 // reconcile them rather than casting past the error.
 type AssertExtends<A extends B, B> = A
-type _SchemaIsATrack = AssertExtends<TrackSchemaType, CodexTrack>
-type _TrackMatchesSchema = AssertExtends<CodexTrack, TrackSchemaType>
+// Exported (never imported anywhere) solely so `noUnusedLocals` doesn't flag a
+// deliberately-unused compile-time check — TS only reports unused LOCALS, not
+// exports, which are part of a module's public surface.
+export type _SchemaIsATrack = AssertExtends<TrackSchemaType, CodexTrack>
+export type _TrackMatchesSchema = AssertExtends<CodexTrack, TrackSchemaType>

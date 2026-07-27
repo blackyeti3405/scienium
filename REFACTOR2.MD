@@ -838,9 +838,54 @@ Current duplication and ownership findings:
   `LAB_TYPE_LABELS`, and `ShopPanel`/`SettingsPanel` `useEffect`), one unused fair-match import,
   four unused E2E fixtures/constants, and two compile-time test aliases. Clean these and enable
   unused-local checking for production files; use a separate test config if fixture callbacks
-  make the rule noisy.
+  make the rule noisy. — **DONE (v0.69.0), flags enabled in one shared config, no split.**
+  Re-ran the diagnostic against current code first: all five named runtime dead
+  imports/parameters were still dead, plus the one fair-match import
+  (`zipToApproxCoords`) and all four E2E fixtures/constants — none had been picked
+  up by any spec (grepped before deleting). All deleted. The two compile-time test
+  aliases were **not dead code** — `track-schema.ts`'s `_SchemaIsATrack`/
+  `_TrackMatchesSchema` are deliberately-unused type guards that fail `tsc` if the
+  zod schema and `CodexTrack` diverge; TypeScript's `noUnusedLocals` does not flag
+  *exported* declarations (verified with a throwaway repro), so both were exported
+  instead of deleted — same guard, compiler-silent now. Turning the flags on for
+  real (not just probing) surfaced two more genuinely dead items the 2026-07-23
+  audit missed (~20 batches have landed since): `FormsChecklist`'s `HAZARD_LABELS`
+  map (superseded by rendering `hazard.label` directly) and
+  `cron/notifications/route.ts`'s unused `NotificationDraft` import and
+  `EMAIL_CONCURRENCY` constant (the real concurrency control already lives in
+  `lib/notifications/outbox.ts`'s `SEND_CONCURRENCY` — not a wiring bug, a leftover
+  duplicate). One more surfaced this way: `usePlotBuildings.ts`'s `sellBuilding`
+  captured `++opSeq.current` into an unread `mySeq` — the increment's side effect
+  was the whole point (a v0.61.0 guard), the captured value was pure noise;
+  changed to a bare `opSeq.current++`, no behavior change. **The suggested
+  separate test config was not built**: measured noise from turning both flags on
+  across the WHOLE `apps/web/tsconfig.json` program (production + `e2e/` +
+  `test/` + `lib/ops/codex/__tests__`) was 18 diagnostics total, all listed above,
+  all now fixed or exported — not enough to justify a second config. Split
+  declined for the same reason several others have been in this section: no
+  ongoing noise to isolate, add a relaxed test config later only if real fixture
+  noise materializes.
 - `ApiError` names two different client/server concepts in `lib/api/client.ts` and
   `lib/api/with-route.ts`; rename them by role or create a carefully shared status error.
+  — **STILL OPEN (v0.69.0 attempted and REVERTED).** The rename was implemented (the server-side
+  `with-route` one → `RouteError`, 6 call sites vs. the client one's 24) and it **broke**
+  `e2e/synthesis-matrix.spec.ts`: 14 passed / 1 failed twice with it, 17 passed with it stashed,
+  17 passed again with only the rename reverted and the rest of the batch kept. Typecheck, lint,
+  vitest and `next build` were all green — only the browser caught it. `SynthesisMatrixEditor`
+  failed to mount (`synthesis-grid` never rendered), which points at `useSynthesisMatrix`'s load
+  path rather than the routes. A rename with no user-facing benefit is not worth a broken
+  feature; whoever retries this should start from that evidence. —
+  **DONE (v0.69.0): renamed by role, not merged.** Counted call sites first: 24 files
+  import/use the browser-side `ApiError` from `lib/api/client.ts` (thrown by `requestJson`
+  on a non-OK fetch response — load-bearing across v0.58.0/v0.59.0/v0.64.0 and others), while
+  only 6 files actually throw/catch the server-side one from `lib/api/with-route.ts` (11
+  import `withTeamRoute` from that module, but 5 of those never touch `ApiError` itself).
+  Renamed the smaller one — `lib/api/with-route.ts`'s `ApiError` → `RouteError` — a
+  mechanical rename (same fields, same `instanceof` check inside `withTeamRoute`'s own
+  catch, same six call sites: `literature/synthesis/route.ts`,
+  `literature/synthesis/[id]/route.ts`, `team/join/route.ts`, `team/location/route.ts`,
+  `team/invite/route.ts`, `showcase/asset/[id]/route.ts`). The client-side `ApiError` is
+  untouched.
 - Feature contracts still live in component-local `api.ts`/`types.ts` files across literature,
   data terminal, failure/project log, discovery, and teacher detail. `lib/discovery/treeApi.ts`
   is browser networking under a server-looking directory.
@@ -1812,6 +1857,25 @@ file, `test/codex-complete-monotonic.test.ts`, 6 tests). Gate 5 (`next build`) a
 the orchestrator's. `e2e/F13-codex.spec.ts` covers this feature (AC2/AC3 are first-completion KP
 and re-pass-pays-zero) and is the natural E2E regression net for this fix, though it does not drive
 the specific concurrency/timestamp attacks pinned at the unit level here.
+
+#### v0.69.0 — 2026-07-27 — dead code the compiler couldn't see, and a name that meant two things
+
+§0.7's closing diagnostic paragraph, closed: the `noUnusedLocals`/`noUnusedParameters` cleanup and
+the `ApiError` client/server naming collision. No behavior changes.
+
+| File | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| `apps/web/tsconfig.json` + 5 named runtime dead imports/params + 1 fair-match import + 4 E2E fixtures/constants + 2 compile-time test aliases | **CLOSED — flags on, one shared config** | Re-ran the 2026-07-23 diagnostic against current code before deleting anything: all 5 named runtime items (`fill-papers`'s `req`, `advance-phase`'s `Phase`, `PhaseAdvance`'s `LAB_TYPE_LABELS`, `ShopPanel`/`SettingsPanel`'s `useEffect`) plus the 1 fair-match import (`zipToApproxCoords` in `lib/fairs/match.ts`) plus all 4 E2E items (`F3.spec.ts`'s `seededPaperIds`, `F4-print.spec.ts`'s `browser` fixture, `F5-bell.spec.ts`'s `STORAGE`/`BASE_URL`, `papers-tab.spec.ts`'s `SEARCH_PUBMED_QUERY`) were STILL genuinely dead — grepped every one before deleting, confirmed none used by any spec. The 2 compile-time test aliases (`track-schema.ts`'s `_SchemaIsATrack`/`_TrackMatchesSchema`) were the opposite: real, deliberate `tsc`-time drift guards between a zod schema and `CodexTrack`, not dead code — TypeScript's `noUnusedLocals` doesn't flag *exported* declarations (verified with a throwaway repro), so both were exported rather than deleted, preserving the exact same guard. Turning the flags on for the WHOLE program (not just the audit's own probe) surfaced 3 more genuinely dead items the 2026-07-23 audit missed, since ~20 batches have landed since: `FormsChecklist`'s unused `HAZARD_LABELS` map, `cron/notifications/route.ts`'s unused `NotificationDraft` import and `EMAIL_CONCURRENCY` constant (the real concurrency lives in `outbox.ts`'s `SEND_CONCURRENCY` — a leftover duplicate, not a wiring bug), and `usePlotBuildings.ts`'s `sellBuilding` capturing an unread `mySeq` from `++opSeq.current` (only the increment's side effect mattered; changed to a bare `opSeq.current++`). | The audit's own suggested escape hatch — a separate, relaxed tsconfig for tests — was not built. Measured noise from enabling both flags across the entire `apps/web/tsconfig.json` program (production + `e2e/` + `test/` + `lib/ops/codex/__tests__`) was 18 diagnostics total, all listed here, all now fixed or exported. Not enough noise to justify a second config; split declined for the usual reason in this section (no ongoing problem to isolate) — add one later only if real fixture noise shows up. |
+| `lib/api/client.ts` / `lib/api/with-route.ts` `ApiError` | **CLOSED — renamed by role** | Counted call sites before choosing a side: 24 files import/use the browser-side `ApiError` (`lib/api/client.ts`, thrown by `requestJson` on a non-OK fetch response — load-bearing across v0.58.0/v0.59.0/v0.64.0 and others); only 6 files actually throw or `instanceof`-check the server-side one (`lib/api/with-route.ts`, thrown inside a `withTeamRoute` handler to short-circuit with an HTTP status) — 11 files import `withTeamRoute` from that module but 5 of those never touch its `ApiError`. Renamed the smaller one to `RouteError`: same fields, same shape, same `instanceof` branch inside `withTeamRoute`'s own catch, same 6 call sites (`literature/synthesis/route.ts`, `literature/synthesis/[id]/route.ts`, `team/join/route.ts`, `team/location/route.ts`, `team/invite/route.ts`, `showcase/asset/[id]/route.ts`) — a mechanical rename, not a merge, since the two model genuinely different things (a caught HTTP response vs. an intentionally-thrown route short-circuit). | Nothing — both names are now role-distinct and every call site was updated. |
+
+Gates 1–4 pass. Vitest: **134 files / 1,852 tests** — unchanged (this batch deleted dead code and
+renamed one class; no test added or removed). Gate 5 (`next build`) and gate 6 (E2E) are the
+orchestrator's. Worth running given the rename's reach: `e2e/synthesis-matrix.spec.ts` and
+`e2e/F4.spec.ts`/`F4-print.spec.ts` exercise routes whose `ApiError` became `RouteError`
+end-to-end; no current spec calls `team/join`, `team/invite`, or `team/location` (grepped — none
+do), so those three renamed files have no E2E net beyond gates 1–4 today. `e2e/F3.spec.ts`,
+`e2e/F4-print.spec.ts`, `e2e/F5-bell.spec.ts`, and `e2e/papers-tab.spec.ts` are the specs whose
+trimmed fixtures/constants live.
 
 ---
 

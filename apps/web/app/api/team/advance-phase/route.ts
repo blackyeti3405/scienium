@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { LAB_TYPE_LABELS, PHASE_INFO, type Phase } from '@/lib/phase'
+import { LAB_TYPE_LABELS, PHASE_INFO } from '@/lib/phase'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import {

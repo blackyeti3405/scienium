@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { assertCron } from '@/lib/cron/auth'
 import { mapWithConcurrency } from '@/lib/concurrency'
 import { loadFairIndex, matchFairRowsFromIndex, type FairIndex } from '@/lib/fairs/match'
-import { computeNotifications, type FairDeadlineInput, type NotificationDraft } from '@/lib/notifications/compute'
+import { computeNotifications, type FairDeadlineInput } from '@/lib/notifications/compute'
 import { emailConfigured } from '@/lib/notifications/email'
 import { deliverNotificationEmails } from '@/lib/notifications/outbox'
 import { logEvent } from '@/lib/observability/log'
@@ -24,8 +24,6 @@ const MAX_TEAMS_PER_RUN = 1000
  *  work serializes anyway — the win is overlapping the network-bound email
  *  sends of different teams. */
 const TEAM_CONCURRENCY = 5
-/** Email sends in flight at once within one team's batch. */
-const EMAIL_CONCURRENCY = 5
 /** Soft deadline: stop cleanly (stoppedEarly) with time to respond, instead of
  *  the 60s serverless cap killing the run mid-team. */
 const RUN_BUDGET_MS = 50_000

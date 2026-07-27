@@ -5,6 +5,52 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.69.0] — 2026-07-27
+
+### Changed — dead code deleted, and unused-local checking is now enforced
+
+The last code items in REFACTOR2 §0.7's closing diagnostic paragraph.
+
+**`noUnusedLocals` and `noUnusedParameters` are now ON** in `apps/web/tsconfig.json`, with
+typecheck clean. Turning them on for real produced 18 diagnostics — the ground truth this batch
+worked from, rather than the audit's 2026-07-23 list. All five named runtime dead items, the
+unused fair-match import and all four named E2E fixtures were still dead and are gone. Three
+more the audit missed surfaced only by enabling the flags: `FormsChecklist`'s `HAZARD_LABELS`,
+`cron/notifications`'s `NotificationDraft`/`EMAIL_CONCURRENCY`, and an unread `mySeq` binding in
+`usePlotBuildings` (the `++opSeq.current` side effect that v0.61.0's guard depends on is
+preserved — only the unused binding went).
+
+**The audit was wrong about one item.** The "two compile-time test aliases" in
+`lib/ops/codex/__tests__/track-schema.ts` are not dead — they are deliberate `tsc`-time drift
+guards between a zod schema and a type. Exported rather than deleted.
+
+The separate test tsconfig the audit suggested was **declined**: measured noise was 18
+diagnostics, not the anticipated fixture-callback flood, so one shared config enforces the rule
+everywhere.
+
+### NOT done — the `ApiError` rename, reverted after it broke the synthesis matrix
+
+§0.7 also asks to rename one of the two `ApiError` classes. It was implemented (the server-side
+`lib/api/with-route.ts` one → `RouteError`, the smaller of the two at 6 call sites vs. 24) and
+then **reverted, because it broke `e2e/synthesis-matrix.spec.ts`**:
+
+| Tree | Result |
+| --- | --- |
+| with the rename | **14 passed / 1 failed** (AC15 — the grid never rendered), twice |
+| HEAD, rename stashed | **17 passed** |
+| rename reverted, rest of the batch kept | **17 passed** |
+
+Typecheck, lint, vitest and `next build` were all green with the rename in place — only the
+browser caught it. The mechanism was not identified, and shipping a rename with no user-facing
+benefit that measurably breaks a feature is not a trade worth making. The row stays open in §0.7
+with this evidence attached; whoever picks it up should start from the fact that
+`SynthesisMatrixEditor` failed to mount, which points at `useSynthesisMatrix`'s load path rather
+than at the routes themselves.
+
+### Verification
+Gates 1–5 pass. Vitest **134 files / 1,852 tests** (unchanged — only dead code removed).
+**E2E `synthesis-matrix` 17/17** with the reverted state, matching HEAD exactly.
+
 ## [0.68.0] — 2026-07-27
 
 ### Fixed — a Codex re-pass could erase a student's first-completion time, and a race could lower a best score (REFACTOR2 §0.7/§0.9)

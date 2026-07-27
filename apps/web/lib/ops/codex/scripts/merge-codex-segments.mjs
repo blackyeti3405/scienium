@@ -287,8 +287,8 @@ function scanOrphanPremises(lesson, at, warnings) {
   }
 }
 
-/** @param {any} lesson @param {string} where @param {string[]} problems @param {string[]} warnings */
-function validateLesson(lesson, where, problems, warnings) {
+/** @param {any} lesson @param {string} where @param {string[]} problems */
+function validateLesson(lesson, where, problems) {
   if (!lesson || typeof lesson !== 'object') {
     problems.push(`${where}: lesson is not an object`)
     return
@@ -368,7 +368,7 @@ function readUnit(planUnit, segId, problems, consumed, warnings) {
       problems.push(`${pl.path}: invalid JSON — ${err instanceof Error ? err.message : String(err)}`)
       continue
     }
-    validateLesson(lesson, pl.path, problems, warnings)
+    validateLesson(lesson, pl.path, problems)
     scanOrphanPremises(lesson, `lesson "${lesson?.id ?? '?'}"`, warnings)
     if (lesson?.id && pl.id && lesson.id !== pl.id) {
       problems.push(`${pl.path}: lesson id "${lesson.id}" does not match the plan's "${pl.id}"`)

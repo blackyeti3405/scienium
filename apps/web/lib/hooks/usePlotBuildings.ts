@@ -274,7 +274,7 @@ export function usePlotBuildings({
   async function sellBuilding(key: string) {
     if (sellingKey) return
     setSellingKey(key)
-    const mySeq = ++opSeq.current
+    opSeq.current++
     try {
       const data = await post('/api/buildings/sell', { key })
       setEconomy((prev) => prev.filter((e) => e.key !== key))

@@ -328,7 +328,9 @@ and reads pass through.
 
 `lib/api/with-route.ts` provides `withTeamRoute({ tier, feature, body }, handler)` —
 a wrapper that composes `requireTeamContext` + `parseJson` and maps a thrown
-`ApiError` to a response, so a mutating route becomes
+`RouteError` to a response (renamed from `ApiError` in v0.69.0 to distinguish it
+from the unrelated browser-side `ApiError` in `lib/api/client.ts`), so a mutating
+route becomes
 `export const POST = withTeamRoute(..., async ({ ctx, data }) => …)` instead of
 copying the four-line guard prelude. It is additive (`requireTeamContext` is
 unchanged); the `buildings/*` routes are the adopted exemplar and other routes

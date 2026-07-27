@@ -32,7 +32,6 @@ import { e2eDb, e2eTeamId } from './db'
 const RUN_ID = Date.now().toString(36)
 
 // ── Seeded resource ids (set in beforeAll, cleaned up in afterAll) ─────────────
-let seededPaperIds: string[] = []
 let seededProjectLogId: string | null = null
 let seededFailureId: string | null = null
 
@@ -113,12 +112,6 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
           uploadedByUserId: uploader.userId,
         })),
       })
-      seededPaperIds = (
-        await e2eDb.paper.findMany({
-          where: { teamId, title: { startsWith: `[E2E-F3-${RUN_ID}]` } },
-          select: { id: true },
-        })
-      ).map((p) => p.id)
 
       // 3. Seed one project-log entry. The POST requires at least one attachmentUrl
       //    (a genuine upload — team-prefixed key + `temporary` ledger row; a fabricated
@@ -268,8 +261,8 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
   test('AC4: clicking confirm closes dialog and removes the paper from the list', async ({
     page,
   }) => {
-    // Use the first paper id tracked in seededPaperIds for this test.
-    // The paper was filled via /api/dev/fill-papers so it has a known title pattern.
+    // Use the first delete button in the list — the DB-seeded fixture papers
+    // (RUN_ID-tagged, see beforeAll) guarantee at least one is present.
     await openLiteratureReview(page)
 
     const deleteBtns = page.getByTitle('Delete source')

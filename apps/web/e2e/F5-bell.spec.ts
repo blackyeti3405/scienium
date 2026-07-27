@@ -1,5 +1,4 @@
 import { test, expect, type Page } from '@playwright/test'
-import { STORAGE } from './roles'
 import { api, withSeedPage, resolveTeamId } from './api'
 
 /**
@@ -40,9 +39,6 @@ const SEED_BODY = '[E2E F5 seed] Nice progress on your literature review!'
 
 /** Seeded notification id (set in beforeAll, read in tests, cleaned up in afterAll). */
 let seededNotificationId: string | null = null
-
-/** Student base URL for API calls in beforeAll/afterAll. */
-const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 
 /** The five canonical kinds the map must cover — mirrors the schema comment at prisma/schema.prisma:917. */
 const CANONICAL_KINDS = ['fair_deadline', 'urgency', 'teacher_feedback', 'phase_reviewed', 'showcase_reviewed']

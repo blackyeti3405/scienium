@@ -369,7 +369,6 @@ test.describe('F4-print — Showcase one-pager print export', () => {
   // used for the actual assertion (GET-only — never observed to fail in that role here).
   test('AC10: a non-owner viewer for whom the showcase is not published+approved gets 404 at ?print=1', async ({
     page,
-    browser,
   }) => {
     if (!showcaseSlug) throw new Error('Showcase slug not set')
 

@@ -2,7 +2,7 @@ import 'server-only'
 import { createHash } from 'crypto'
 import { db } from '@/lib/db'
 import { FAIRS, type SeedFairLevel } from '@/content/fairs/dataset'
-import { resolveTeamPoint, zipToApproxCoords, haversineMiles } from '@/lib/fairs/zip'
+import { resolveTeamPoint, haversineMiles } from '@/lib/fairs/zip'
 import { logEvent } from '@/lib/observability/log'
 import type { FairLevel, Prisma } from '@prisma/client'
 
