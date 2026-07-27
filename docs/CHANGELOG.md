@@ -5,6 +5,38 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.60.1] — 2026-07-26
+
+### Changed — the teacher's student overview picks one membership, not two
+
+Ninth of REFACTOR2 §0.7's file dispositions: `lib/teacher/student-overview.ts`. **This one is
+mostly a verification, and the honest result is that half of it is already closed and the other
+half was not worth doing.**
+
+- **"The selected team can be paired with a different membership's role/join time" was true when
+  the audit was written, and is not any more.** The team came from `pickActiveTeam` while the
+  role and join date came from `teamMemberships[0]` (most recently joined) — with two live
+  memberships a teacher would read *"Lead, joined 20 July"* beside a different team's papers,
+  logs and scores. **v0.48.0** (one team at a time, three days after the audit) closed it:
+  `leaveOtherTeams` runs inside the join transaction, so a second live row cannot be created.
+  Verified against the dev database — **no user holds more than one `team_members` row.**
+  The pairing is now derived from a single membership anyway. Two lines, and it costs nothing to
+  make the agreement structural rather than inherited from an invariant enforced three files
+  away: the schema still only carries `@@id([userId, teamId])`, so nothing at the database level
+  forbids a second row.
+- **"~18 queries per detail request" is real, and slightly understated — it is 20–21.** One
+  student lookup, one or two in `teacherOwnsTeam`, and 18 in the fan-out. They all run in
+  parallel, so this is one round trip of latency and a load question, not a correctness one.
+  **The lazy-loaded sections the disposition asks for were not built**: deciding which sections a
+  teacher gets on first paint is a product change, not a refactor, and it is recorded as open
+  rather than half-done.
+
+### Verification
+Gates 1–5 pass. Vitest **128 files / 1,819 tests** (+2).
+`lib/team/active-team.test.ts` feeds the resolver the disagreeing two-membership shape and
+asserts the role follows the team. Negative-controlled: restoring the independent pairing fails
+it. **E2E `issue-6` re-run: 10/10** — it drives the whole student drill-down this module feeds.
+
 ## [0.60.0] — 2026-07-26
 
 ### Fixed — a source reflection could be overwritten by its own save

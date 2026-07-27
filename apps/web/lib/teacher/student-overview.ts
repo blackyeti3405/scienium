@@ -67,11 +67,30 @@ export async function loadStudentOverview(
 
   if (!student) return NOT_FOUND
 
-  const membership = student.teamMemberships[0] ?? null
-  // Resolve through membership (never a bare activeTeam), matching
-  // teacher/student/[id]/route.ts — a stale activeTeamId must not pick a team
-  // the student has since left.
-  const teamId = pickActiveTeam(student.activeTeamId, student.teamMemberships)?.id ?? null
+  /**
+   * ONE membership decides both the team and the role/join date shown with it.
+   *
+   * These used to be picked independently: `teamMemberships[0]` (most recently
+   * joined) supplied the role and join date, while `pickActiveTeam` supplied the
+   * team whose work is rendered below — so with two live memberships a teacher
+   * would read "Lead, joined 20 July" beside a different team's papers, logs and
+   * scores. §0.7 filed that as a live defect on 2026-07-23 and **it is not one
+   * any more**: v0.48.0 made membership one-team-at-a-time, and `leaveOtherTeams`
+   * runs inside the join transaction, so a second live row cannot be created
+   * (verified: zero users hold more than one `team_members` row).
+   *
+   * Kept anyway because it costs two lines and makes the agreement STRUCTURAL
+   * rather than inherited from an invariant enforced three files away — the
+   * schema still only has `@@id([userId, teamId])`, so nothing at the database
+   * level forbids a second row. Passing the membership as `pickActiveTeam`'s
+   * payload reuses the existing, unit-tested selection rule instead of
+   * restating it.
+   */
+  const membership = pickActiveTeam(
+    student.activeTeamId,
+    student.teamMemberships.map((m) => ({ teamId: m.teamId, team: m })),
+  )
+  const teamId = membership?.teamId ?? null
 
   const studentSection = {
     id: student.id,
