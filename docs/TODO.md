@@ -150,7 +150,9 @@ stated reason has already been fixed another way.
 `components/ops/data-terminal/ExperimentDetail.tsx` (v0.63.0 — duplicate `(x, series)` chart collisions now counted and disclosed beside the chart, without touching the student's recorded table data; load-retry added; chart/input/table split declined),
 `components/teacher/TeacherRoster.tsx` (v0.63.0 — approval now bridges to a roster re-fetch; the shared `useCopyToClipboard` hook fixed at its source to stop swallowing a clipboard failure; pending-join-request list capped, roster list left deliberately uncapped; split/pagination declined),
 `components/lab/LabPlot.tsx` (v0.64.0 — real keyboard pick-up/placement added, sharing the pointer path's own `onDrop`/`isPlaceable` check; interaction-controller split declined — the pure math was already in `lib/plot.ts`),
-`components/research-plan/IdeaCheckView.tsx` (v0.64.0 — `SafeExternalLink`/`ResultHeading` primitives extracted; model/provider urls gated by `isSafeHttpUrl` at both write and render).
+`components/research-plan/IdeaCheckView.tsx` (v0.64.0 — `SafeExternalLink`/`ResultHeading` primitives extracted; model/provider urls gated by `isSafeHttpUrl` at both write and render),
+`components/discovery/DiscoveryFeature.tsx` (v0.65.0 — "unawaited destructive calls" reproduced FALSE against the current tree, closed by the v0.56.0 `discoveryStore` fix this file already wires to its Toast; one doc-drift comment §0.8 had already flagged was corrected; controller split declined — 8 views/3 hooks already extracted),
+`components/settings/LabProfileSettings.tsx` (v0.65.0 — silent research-plan load failure fixed via a new feature-local `api.ts` + `requestJson`/zod + a "Try again" retry; domain split declined — profile/lab share one authority, and every domain in the file already owns its own failure state).
 
 **Deliberately deprioritised** (verdict is structural only, no named defect): `app/globals.css`
 (3,051 lines) and `prisma/schema.prisma` (now 2,282). Both are real cleanups with real risk and

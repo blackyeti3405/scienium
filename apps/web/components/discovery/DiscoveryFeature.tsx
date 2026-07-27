@@ -30,8 +30,7 @@ const DEFAULT_PANEL = 320
  * Topic Discovery feature — the Wikipedia explorer + branching tree.
  *
  * Fills its parent (`h-full`) so it can mount inside the gateway overlay panel
- * (FeaturePanel) as well as the standalone /discovery route. This is the real,
- * fully-built feature; the other gateways currently open placeholder panels.
+ * (FeaturePanel) as well as the standalone /discovery route.
  */
 export function DiscoveryFeature() {
   const {

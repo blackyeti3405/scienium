@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useFinalTopic } from '@/components/discovery/hooks/useFinalTopic'
 import { TopicConfirmModals } from '@/components/discovery/TopicConfirmModals'
 import { RefreshCw, Link2 } from 'lucide-react'
@@ -9,6 +9,7 @@ import { PROJECT_TYPES } from '@/lib/research-plan/types'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { MyDataSection } from './MyDataSection'
+import { getResearchPlanSummary } from './api'
 
 interface SettingsData {
   name: string | null
@@ -71,6 +72,12 @@ export function LabProfileSettings() {
   const [savingPlan, setSavingPlan] = useState(false)
   const [planError, setPlanError] = useState<string | null>(null)
   const [planLoaded, setPlanLoaded] = useState(false)
+  // A failed load is distinct from "loaded, no plan connected yet" — the old
+  // `.catch(() => {})` (and a non-2xx body, which never even reached the catch
+  // since `d.plan` just came back undefined) made a network blip look exactly
+  // like a team that had never connected a doc, silently discarding whatever
+  // was already synced from the form (§0.7).
+  const [planLoadError, setPlanLoadError] = useState(false)
 
   // ── Load settings ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -92,10 +99,11 @@ export function LabProfileSettings() {
   }, [])
 
   // ── Load research plan (independent of settings fetch) ──────────────────────
-  useEffect(() => {
-    fetch('/api/research-plan')
-      .then((r) => r.json())
-      .then((d: { plan?: { googleDocUrl?: string | null; projectType?: string | null; projectSubtype?: string | null; lastSyncedAt?: string | null; hasText?: boolean } }) => {
+  const loadPlan = useCallback(() => {
+    setPlanLoaded(false)
+    setPlanLoadError(false)
+    return getResearchPlanSummary()
+      .then((d) => {
         if (d.plan) {
           setPlanDocUrl(d.plan.googleDocUrl ?? '')
           setPlanType(d.plan.projectType ?? null)
@@ -104,9 +112,15 @@ export function LabProfileSettings() {
           setPlanHasText(d.plan.hasText ?? false)
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        setPlanLoadError(true)
+      })
       .finally(() => setPlanLoaded(true))
   }, [])
+
+  useEffect(() => {
+    void loadPlan()
+  }, [loadPlan])
 
   // ── Save profile / lab ───────────────────────────────────────────────────────
   async function save() {
@@ -472,6 +486,21 @@ export function LabProfileSettings() {
           <PixelSkeleton variant="line" h="h-4" w="w-32" />
           <PixelSkeleton variant="box" h="h-9" w="w-full" />
           <PixelSkeleton variant="box" h="h-9" w="w-full" />
+        </div>
+      ) : planLoadError ? (
+        <div className="flex flex-col gap-3" data-testid="settings-plan-load-error">
+          <h3 className="font-pixel text-[9px] text-white/90 uppercase tracking-widest border-b border-white/10 pb-2">
+            Research plan
+          </h3>
+          <p className="font-pixel text-[7px] text-red-400 leading-loose">
+            Couldn&apos;t load your research plan — check your connection.
+          </p>
+          <button
+            onClick={() => void loadPlan()}
+            className="self-start font-pixel text-[7px] text-white/40 hover:text-white/70 border border-white/15 rounded-sm px-3 py-1.5 transition-colors"
+          >
+            Try again
+          </button>
         </div>
       ) : (
       <div className="flex flex-col gap-4">

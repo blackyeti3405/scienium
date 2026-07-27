@@ -391,3 +391,50 @@ describe('deleteSubtree on a corrupted graph (§0.7)', () => {
     expect(useDiscoveryStore.getState().nodes).toEqual([])
   })
 })
+
+/**
+ * REFACTOR2 §0.7's `DiscoveryFeature.tsx` row names "unawaited destructive
+ * calls" — `deleteSubtree`/`reset` are fired from the component without an
+ * `await`, backing DELETE /api/discovery/tree[/:id]. Reproduced against the
+ * CURRENT store (post v0.56.0): both already route through the same
+ * `commitOptimistic` → `writeError` → re-hydrate path as every other
+ * mutation, so a failed destroy is reported and rolled back, not silently
+ * treated as done. These two pin that so a future edit can't quietly
+ * reintroduce a bypass of the shared error channel.
+ */
+describe('destructive calls report failure, not just optimistic success (§0.7)', () => {
+  it('a failed reset() restores the tree and sets writeError', async () => {
+    // hydrate() (the rollback path) reads from the server, not local state —
+    // give it back the same tree the optimistic apply just cleared.
+    api.fetchTree.mockResolvedValue([
+      node('a'),
+      node('b', { parentId: 'a', depth: 1 }),
+      node('c', { parentId: 'b', depth: 2 }),
+      node('r'),
+    ])
+    api.persistReset.mockResolvedValue(false)
+    useDiscoveryStore.getState().reset()
+    // Optimistic apply is synchronous — the tree is already cleared locally.
+    expect(useDiscoveryStore.getState().nodes).toEqual([])
+    await flush()
+    const s = useDiscoveryStore.getState()
+    expect(s.writeError?.message).toMatch(/Could not clear/)
+    expect(s.nodes.map((n) => n.id)).toEqual(['a', 'b', 'c', 'r']) // restored via hydrate
+  })
+
+  it('a failed deleteSubtree restores the deleted branch and sets writeError', async () => {
+    api.fetchTree.mockResolvedValue([
+      node('a'),
+      node('b', { parentId: 'a', depth: 1 }),
+      node('c', { parentId: 'b', depth: 2 }),
+      node('r'),
+    ])
+    api.persistDelete.mockResolvedValue(false)
+    useDiscoveryStore.getState().deleteSubtree('b') // kills b and c optimistically
+    expect(useDiscoveryStore.getState().nodes.map((n) => n.id)).toEqual(['a', 'r'])
+    await flush()
+    const s = useDiscoveryStore.getState()
+    expect(s.writeError?.message).toMatch(/Could not delete/)
+    expect(s.nodes.map((n) => n.id)).toEqual(['a', 'b', 'c', 'r']) // restored via hydrate
+  })
+})

@@ -5,6 +5,64 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.65.0] — 2026-07-27
+
+### Fixed — a connected research plan could vanish on reload, and a stale audit finding was closed
+
+Eighteenth and nineteenth of REFACTOR2 §0.7's file dispositions: `components/settings/LabProfileSettings.tsx`
+and `components/discovery/DiscoveryFeature.tsx`.
+
+- **A team that had already connected a Google Doc research plan could reload the Settings page
+  and see the Research Plan section as if they never had.** The load was
+  `fetch('/api/research-plan').then(r => r.json()).then(d => { if (d.plan) {…} }).catch(() => {})`.
+  A rejected fetch was swallowed by the `.catch` — but a non-2xx response (a rate limit, a flaky
+  session) never even reached it: `.json()` parses fine, `d.plan` comes back `undefined`, the
+  populating branch is skipped, and `planLoaded` is set `true` regardless. Nothing anywhere said
+  the load had failed. Fixed the same shape as CodexTab (v0.58.0) and LiteratureFeature's
+  team-phase read (v0.59.0): a new feature-local `components/settings/api.ts` (none existed)
+  parses the response through `requestJson` + a zod schema scoped to the fields this panel
+  displays, the load is now a re-runnable callback, and a failed load renders "Couldn't load your
+  research plan" with a "Try again" button — matching the independent skeleton/error state the
+  profile, lab, and topic sections in this same file already had. **The proposed domain split was
+  declined**: profile and lab/location share one fetch, one form, and one save — gated only by an
+  `isLead` flag on already-rendered fields, not two authorities — and topic (already extracted to
+  the shared `useFinalTopic` hook) and research-plan were already failing independently in one
+  file. Once every load owns its own failure state, splitting the file would only relocate that
+  same independence into three files — the identical reasoning CodexTab's v0.58.0 close-out used
+  to decline its own split.
+- **"Unawaited destructive calls" in `DiscoveryFeature.tsx` does not reproduce against the
+  current tree — it was already closed.** `reset()` ("Start over") and `deleteSubtree()` (the
+  per-node delete) are indeed still fired without an `await`, exactly as the 2026-07-23 audit
+  says. But both already route through `discoveryStore`'s `commitOptimistic` → `writeError` →
+  re-hydrate sequencing, added in v0.56.0 — which this file already wires into its Toast, also
+  from v0.56.0. A vitest reproduction with `persistReset`/`persistDelete` mocked to fail confirms
+  it: the optimistic clear happens locally and synchronously, then on failure a visible
+  `writeError` message is set and the tree is restored via `hydrate()` — the UI never treats a
+  failed destroy as done. This audit finding predates the store fix that closed it; recorded
+  closed-by-precedent here, with two new store tests pinning it against a future regression. One
+  genuine doc-drift comment — "the other gateways currently open placeholder panels," already
+  named by REFACTOR2 §0.8's counter-audit as false (every non-PvP gateway maps to a real
+  component) — was corrected. The proposed controller split was declined: the file already
+  delegates 8 view components and 3 hooks; what remains is genuinely cross-cutting orchestration
+  (which view/source/node is active affects the header, body, and side panel together), not
+  duplicated authority.
+
+`stores/discoveryStore.test.ts` gained 2 cases pinning that a failed `reset()`/`deleteSubtree()`
+still restores state and sets `writeError`. `components/settings/api.test.ts` (new) pins the new
+`researchPlanSummarySchema` against a real local HTTP server, mirroring `components/literature/api.test.ts`'s
+model. **Negative-controlled two ways:** reverting `commitOptimistic`'s failure branch to skip
+`writeError` fails the 2 new destructive-call cases plus 4 pre-existing ones; narrowing the new
+schema's `googleDocUrl`/`hasText` types fails the "reads a connected plan" case with the exact
+zod mismatch. Both restored and re-verified green.
+
+### Verification
+Gates 1–4 pass. Vitest **133 files / 1,846 tests** (+5).
+
+**E2E relevant to this batch (not run by this batch):** `e2e/disco-article-sources.spec.ts`
+drives `DiscoveryFeature.tsx` (articles tab/source flows). `e2e/F2.spec.ts` — suggested as
+possibly relevant — is actually the Failure Log's "dig deeper" flow and does not touch Discovery
+at all; checked directly rather than assumed. No spec exercises `LabProfileSettings.tsx` today.
+
 ## [0.64.0] — 2026-07-27
 
 ### Fixed — a keyboard user could never place a building, and a model's own JSON went straight into `href`
