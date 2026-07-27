@@ -516,6 +516,20 @@ model TeamMember {
   team     Team       @relation(fields: [teamId], references: [id])
 
   @@id([userId, teamId])
+  // ONE TEAM AT A TIME, enforced by the database (REFACTOR2 §0.7, v0.71.0).
+  //
+  // The rule has been true since v0.48.0 but only in application code:
+  // `leaveOtherTeams` runs inside the join transaction, so the app never writes
+  // a second row. Everything downstream assumes it — `pickActiveTeam`, the
+  // teacher roster, and `lib/teacher/student-overview.ts`, whose §0.7 defect was
+  // exactly a team and a role read from two different membership rows.
+  //
+  // `@@id([userId, teamId])` permits a second row; only this does not. Adding it
+  // means a bug, a manual fix, or a future migration cannot quietly reintroduce
+  // the state four call sites are written against. It is deliberately a
+  // COMMITMENT: a student can never belong to two labs, and adding that back
+  // would need this constraint dropped on purpose rather than by accident.
+  @@unique([userId])
   @@index([teamId])
   @@map("team_members")
 }

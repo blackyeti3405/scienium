@@ -5,6 +5,44 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.71.0] — 2026-07-27
+
+### Changed — "one team at a time" is now enforced by the database
+
+`TeamMember` was `@@id([userId, teamId])`, which permits a user to hold two live memberships.
+The rule has been true since v0.48.0 but only in **application code** — `leaveOtherTeams` runs
+inside the join transaction — while four call sites are written against it: `pickActiveTeam`, the
+teacher roster, teacher analytics, and `lib/teacher/student-overview.ts`, whose §0.7 defect was
+precisely a team and a role read from two *different* membership rows.
+
+`@@unique([userId])` makes it structural. It is deliberately a **commitment**: a student can
+never belong to two labs, and restoring that would need the constraint dropped on purpose rather
+than reintroduced by accident.
+
+**The migration does a real preflight, not an assertion.** P1-S14's policy is that a unique index
+on a pre-existing table must first remove the rows the old schema permitted — the defect landed
+four times before, twice with a comment *asserting* no duplicates existed. So the migration:
+
+1. Keeps one membership per user via a `ROW_NUMBER()` window ordered by
+   `(team_id = active_team_id) DESC, joined_at DESC` — `pickActiveTeam`'s own rule expressed in
+   SQL, so the surviving row is the one every read path already treated as authoritative.
+2. Repairs any `teams.team_lead_id` the delete stranded (the column is `NOT NULL`, so a team
+   could otherwise be led by a non-member), handing it to the earliest remaining member —
+   `leaveTeam`'s succession rule.
+
+**One step was written and then removed.** Archiving teams the delete emptied looked right and
+matched `leaveTeam` — but the predicate cannot tell a team *this* migration emptied from one that
+was already empty, and running it archived **11 pre-existing member-less teams** that have
+nothing to do with this constraint. A migration's job is to make the index safe, not to
+retro-apply an archival policy to historical rows.
+
+### Verification
+Gates 1–4 pass; Vitest **134 files / 1,852 tests**. The preflight was exercised rather than
+trusted: a duplicate membership was seeded inside a transaction, the migration body run verbatim,
+and the result checked — 1 row removed, 0 violators, 0 stranded leads, 0 teams archived — then
+rolled back. Applied to the local dev database; **devlab verified intact** (25 papers, 11
+discovery nodes, 2 memberships, 0 teams archived).
+
 ## [0.70.0] — 2026-07-27
 
 ### Changed — the §0.7 file-disposition tranche is complete
