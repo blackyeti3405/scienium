@@ -531,8 +531,11 @@ Top-level infrastructure and policy files:
   `if (saving) return` silently dropped a teacher's rubric notes), coalesces a
   burst into one request, holds the unconfirmed snapshot as the record of
   failure, and exposes a `flush()` barrier callers refuse to proceed past.
-  Consumed by `components/ops/expertiseProgress.ts` and
-  `components/teacher/TeacherRubricScoring.tsx`.
+  Consumed by `components/ops/expertiseProgress.ts`,
+  `components/teacher/TeacherRubricScoring.tsx`, and
+  `components/discovery/SourceReader.tsx` — the last builds one queue PER NODE,
+  because coalescing is right for repeated edits to one reflection and wrong
+  across two.
 - `fetch-retry.ts`: `fetchWithRetry` — 429/5xx retry-after backoff bounded by a
   `Promise.race` timeout (aborting a stalled OS-level connect doesn't reliably
   unblock it) — plus the one shared `sleep`, replacing five copy-pasted

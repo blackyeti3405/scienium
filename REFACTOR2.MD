@@ -731,7 +731,7 @@ not a reason to split it; it does not erase separately listed correctness findin
 | `lib/discovery/tree-service.ts` | 348 | **Fix graph invariant before splitting.** (Invariant fixed in v0.34.1; the split itself is still open.) Accepts foreign/cyclic parents, can hang in `depthOf`, catches broad create errors as success, and performs repeated scans. Validate same-team DAG and use adjacency maps. |
 | `lib/teacher/student-overview.ts` | 347 | **Split/lazy-load query sections.** About 18 queries per detail request; selected team can be paired with the latest *other* membership's role/join time. Use one selected membership and bounded sections/view models. |
 | `lib/hooks/usePlotBuildings.ts` | 346 | **Reducer/state machine.** More than ten coupled state values, no abort/resync, refresh errors swallowed, and duplicated optimistic economy prediction. Keep server authoritative and reconcile visibly. |
-| `components/discovery/SourceReader.tsx` | 344 | **Split readers/reflection control.** Sanitized HTML is a central invariant worth retaining. Blur/button saves can duplicate or complete after selection changes; bind requests to node/version and validate every source URL scheme. |
+| `components/discovery/SourceReader.tsx` | 344 | **Split readers/reflection control.** Sanitized HTML is a central invariant worth retaining. Blur/button saves can duplicate or complete after selection changes; bind requests to node/version and validate every source URL scheme. — **DONE for the save path (v0.60.0); split not attempted.** Both readings reproduced. The duplicate is real but **benign**: the visit ledger's `@@unique` keeps the KP award idempotent per node, so it was a wasted write, not an exploit — worth stating rather than overstating. "Complete after selection changes" is right and the fix is two-part: the snapshot carries its own node id (so a queued save cannot be written to whichever source is open when it runs) and the badge/spinner are bound to the node that was saved. A **third** defect not in the verdict: the draft-reset effect depended on `node?.reflection`, which the parent updates on a successful save, so typing that continued during a save was replaced by the older saved text. |
 | `components/lab/LabPlot.tsx` | 337 | **Add keyboard placement.** Pointer-centric pick-up/placement is not accessible; forced browser clicks likely mask it. Extract interaction controller and clean timers. |
 | `components/fair/FormsChecklist.tsx` | 336 | **Content-blocked, then split rows/hazard guide.** GET status is unchecked and update failures are swallowed. More importantly, it presents the incorrect unversioned form catalog in P0-R4. |
 | `app/(onboarding)/onboarding/page.tsx` | 329 | **Split role forms/recovery.** Duplicate school/name fields and large recovery commentary. Open teacher self-registration remains explicitly accepted/optional; do not accidentally convert that choice into a blocker. |
@@ -1570,6 +1570,21 @@ server, including the pre-fix outcome as a stated contrast. **Negative-controlle
 it exercises the replaced subview state end to end.
 
 Gates 1–5 pass; Vitest 128 files / 1,816 tests.
+
+#### v0.60.0 — 2026-07-26 — a reflection overwritten by its own save
+
+| File | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| `components/discovery/SourceReader.tsx` | **Save path DONE; split not attempted** | (1) **A defect the verdict does not name, and the worst of the three.** The draft-reset effect depended on `[nodeId, node?.reflection]`, and the parent calls `setNodeReflection` on a successful save — so a student who clicked back into the box and kept typing while the save was in flight had their newer text **replaced by the older saved text** as it landed. Keyed on `nodeId` alone now: a draft belongs to the student, and only changing source replaces it. (2) **"Blur/button saves can duplicate" is real and benign.** Clicking Save blurs the textarea first (mousedown → blur → mouseup → click) and both handlers called the same function with no in-flight guard — one click, two PATCHes. Reproduced. But no KP is double-paid: `awardDiscoveryVisit` is idempotent per node through the visit ledger's `@@unique`, so this was a wasted write and not the exploit the phrasing suggests. `createSaveQueue` coalesces them. (3) **"or complete after the selection changed" is right**, and it needed two fixes, not one: the snapshot carries its OWN node id (reading the current selection inside the writer would write one source's reflection onto another), and the "✓ saved" badge is bound to the node that was saved — it used to appear over whichever source happened to be open when the save returned. Reproduced. (4) A failed reflection did **nothing at all** — no badge, no message, the hint still reading "Saves when you click away". It says so now, matching the write-failure rule applied in v0.56.0 and v0.57.0. The queue is rebuilt **per node**: coalescing is correct for repeated edits to one reflection and wrong across two, since a shared queue would let a save for the source just left be replaced by one for the source just opened. | The disposition's "split readers/reflection control" was not attempted; the file is ~390 lines and the reflection control now has one owner inside it. **"Validate every source URL scheme" was NOT done** — `node.sourceUrl` still reaches an `href` unvalidated here, the same class as `IdeaCheckView`'s open row in §0.7. The per-node queue and the reset-effect deps are **not pinned by a test**: vitest here is node-only, and a test restating them could not fail on a regression. |
+
+`lib/save-queue.test.ts` gains the case that pins **why** the per-node queue is necessary — two
+entities through one queue and the first never goes out. That is the part a node-only test can
+actually hold.
+
+**E2E `papers-tab` re-run: 16 passed / 3 pre-existing documented skips.** AC6 is "reflection
+persists across reload (PATCH round-trips)" — the rewritten path, driven end to end.
+
+Gates 1–5 pass; Vitest 128 files / 1,817 tests.
 
 ---
 

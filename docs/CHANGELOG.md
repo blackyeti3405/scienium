@@ -5,6 +5,46 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.60.0] — 2026-07-26
+
+### Fixed — a source reflection could be overwritten by its own save
+
+Eighth of REFACTOR2 §0.7's file dispositions: `components/discovery/SourceReader.tsx`. Three
+defects, all **reproduced against the original**.
+
+- **Continued typing was discarded by the save that preceded it.** The draft-reset effect
+  depended on `[nodeId, node?.reflection]`, and the parent updates `node.reflection` on a
+  successful save. A student who clicked back into the box and kept typing while the save was in
+  flight had their newer text **replaced by the older saved text** the moment it landed. The
+  reset is keyed on the node alone now — a draft is the student's, and only changing source
+  replaces it.
+- **One "Save" click sent two PATCHes.** Clicking the button blurs the textarea first
+  (mousedown → blur → mouseup → click), and both handlers called the same function with no
+  in-flight guard. Coalesced through `createSaveQueue` now. **Honest scope:** no KP was
+  double-paid — the visit ledger's `@@unique` makes the award idempotent per node — so this was
+  a wasted write, not an exploit.
+- **The "✓ saved" badge landed on whichever source was open by then.** The save captured its
+  node id correctly but the state it set afterwards did not, so surfing to another source mid-save
+  showed a save confirmation over a source that had never been saved. Both the badge and the
+  spinner are now bound to the node that was actually saved.
+- **A failed reflection failed in silence** — no badge, no message, and the hint still read
+  "Saves when you click away". It says so now.
+
+The queue is rebuilt **per node**. Coalescing is right for repeated edits to one reflection and
+wrong across two: a single shared queue would let a save for the source the student just left be
+replaced by one for the source they opened, and it would never be written. The snapshot also
+carries its own node id, so a queued save cannot be written to whichever source is open when it
+finally runs.
+
+### Verification
+Gates 1–5 pass. Vitest **128 files / 1,817 tests** (+1).
+**E2E `papers-tab` re-run: 16 passed** (3 pre-existing documented skips) — AC6 is *"reflection
+persists across reload (PATCH round-trips)"*, the exact path rewritten here.
+The new `save-queue` case pins the cross-node coalescing that makes the per-node queue necessary.
+The two component-level guards (per-node queue, reset-effect deps) are **not** pinned by a test —
+vitest here is node-only, and a test that restates them could not fail on a regression. Recorded
+as unpinned in §0.11 rather than covered by something that proves nothing.
+
 ## [0.59.0] — 2026-07-26
 
 ### Fixed — one failed request could hide the "advance your lab" gate forever

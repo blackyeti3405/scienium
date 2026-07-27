@@ -8,6 +8,7 @@ import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { useResizablePanel } from '@/lib/hooks/useResizablePanel'
+import { createSaveQueue } from '@/lib/save-queue'
 
 interface Props {
   /** The open source node, or null while nothing is selected. */
@@ -76,6 +77,8 @@ export function SourceReader({
   const [reflectionDraft, setReflectionDraft] = useState('')
   const [savingReflection, setSavingReflection] = useState(false)
   const [reflectionSaved, setReflectionSaved] = useState(false)
+  /** The reflection PATCH did not land — say so; it used to fail in silence. */
+  const [reflectionError, setReflectionError] = useState(false)
   const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // ── Resizable / collapsible citations panel ──
@@ -89,11 +92,22 @@ export function SourceReader({
 
   const nodeId = node?.id ?? null
 
-  // Reset the reflection draft from the node when the selection changes.
+  /**
+   * Reset the reflection draft when the SELECTION changes — and only then.
+   *
+   * This also depended on `node?.reflection`, which the parent updates on a
+   * successful save (`setNodeReflection`). So a student who clicked back into
+   * the box and kept typing while the save was in flight had their newer text
+   * **replaced by the older saved text** the moment it landed. Reproduced
+   * against the original. A draft is the student's; only a change of node
+   * replaces it.
+   */
   useEffect(() => {
     setReflectionDraft(node?.reflection ?? '')
     setReflectionSaved(false)
-  }, [nodeId, node?.reflection])
+    setReflectionError(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeId])
 
   useEffect(() => () => clearTimeout(savedTimer.current), [])
 
@@ -103,16 +117,70 @@ export function SourceReader({
 
   const selectedIds = useMemo(() => new Set(pendingLinks), [pendingLinks])
 
+  /**
+   * One writer for the reflection, shared by the blur and the Save button.
+   *
+   * Clicking Save blurs the textarea first (mousedown → blur → mouseup →
+   * click), and both handlers called this directly with no in-flight guard —
+   * so one click produced TWO PATCHes of the same text. Reproduced against the
+   * original. (No KP was double-paid: the visit ledger's `@@unique` makes the
+   * award idempotent per node. It was a wasted write, not an exploit — worth
+   * saying plainly rather than overstating.) The queue coalesces them into one.
+   *
+   * `latest` keeps the writer off first-render props; the node changes under
+   * this component as the student surfs.
+   */
+  const latest = useRef({ nodeId, onSaveReflection })
+  useEffect(() => {
+    latest.current = { nodeId, onSaveReflection }
+  })
+
+  // The snapshot carries its OWN node id. Reading the current selection inside
+  // the writer would let a save queued for one source be written to whichever
+  // source the student had opened by the time it ran.
+  const makeQueue = () =>
+    createSaveQueue<{ nodeId: string; text: string }>(async ({ nodeId: id, text }) => {
+      const ok = await latest.current.onSaveReflection(id, text)
+      if (!ok) throw new Error('reflection save failed')
+    })
+
+  /**
+   * ONE QUEUE PER NODE, rebuilt when the selection changes.
+   *
+   * The queue coalesces: a snapshot queued while another is in flight replaces
+   * it, which is exactly right for repeated edits to one reflection and exactly
+   * WRONG across two. A single shared queue would let a save for the source the
+   * student just left be silently replaced by a save for the one they opened.
+   */
+  const queue = useRef(makeQueue())
+  useEffect(() => {
+    queue.current = makeQueue()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeId])
+
   async function saveReflection() {
     if (!nodeId) return
+    const savingFor = nodeId
     setSavingReflection(true)
-    const ok = await onSaveReflection(nodeId, reflectionDraft.trim())
+    setReflectionError(false)
+    const q = queue.current
+    await q.save({ nodeId: savingFor, text: reflectionDraft.trim() })
+
+    // The student may have surfed to another source while this was out. The
+    // spinner always clears — nothing is in flight for the node now shown — but
+    // the "✓ saved" badge belongs to the node that was SAVED. It used to appear
+    // over whichever node happened to be open by then.
     setSavingReflection(false)
-    if (ok) {
-      setReflectionSaved(true)
-      clearTimeout(savedTimer.current)
-      savedTimer.current = setTimeout(() => setReflectionSaved(false), 1800)
+    if (latest.current.nodeId !== savingFor) return
+    if (q.unsaved) {
+      // A failed reflection used to do nothing at all: no badge, no message,
+      // and the hint still read "Saves when you click away".
+      setReflectionError(true)
+      return
     }
+    setReflectionSaved(true)
+    clearTimeout(savedTimer.current)
+    savedTimer.current = setTimeout(() => setReflectionSaved(false), 1800)
   }
 
   if (!node) {
@@ -231,7 +299,13 @@ export function SourceReader({
           />
           <div className="flex items-center justify-between mt-1.5">
             <span className="font-pixel text-[7px] text-white/40">
-              {reflectionSaved ? <span className="text-green-400">✓ saved</span> : 'Saves when you click away'}
+              {reflectionError ? (
+                <span className="text-red-400">Couldn&apos;t save — try again</span>
+              ) : reflectionSaved ? (
+                <span className="text-green-400">✓ saved</span>
+              ) : (
+                'Saves when you click away'
+              )}
             </span>
             <BusyButton
               busy={savingReflection}

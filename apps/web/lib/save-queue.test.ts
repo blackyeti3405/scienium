@@ -158,6 +158,23 @@ describe('createSaveQueue', () => {
     expect(saver.unsaved).toBe(false)
   })
 
+  it('coalescing is per QUEUE — two entities need two queues', async () => {
+    // `SourceReader` reuses one component across sources. A single shared queue
+    // would let a reflection queued for the source the student just left be
+    // replaced by one for the source they opened, and it would never be written.
+    // The reader builds a fresh queue per node; this pins why.
+    const route = fakeRoute()
+    const shared = createSaveQueue(route.patch)
+
+    route.pause()
+    const a = shared.save({ examId: 'A', answers: { q1: 'left behind' }, progressIndex: 1 })
+    const b = shared.save({ examId: 'B', answers: { q1: 'opened next' }, progressIndex: 1 })
+    route.release()
+    await Promise.all([a, b])
+
+    expect(route.committed.map((c) => c.examId)).toEqual(['B']) // A never went out
+  })
+
   it('a snapshot queued during an in-flight save stays dirty until it lands', async () => {
     const route = fakeRoute()
     const saver = createSaveQueue(route.patch)
