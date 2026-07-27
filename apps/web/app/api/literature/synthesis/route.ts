@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { withTeamRoute, ApiError } from '@/lib/api/with-route'
+import { withTeamRoute, RouteError } from '@/lib/api/with-route'
 import { db } from '@/lib/db'
 import { findTemplate, templateForLabType } from '@/content/literature/synthesis-templates'
 import { CreateBody, MAX_MATRICES_PER_TEAM, toMatrixView } from '@/lib/literature/synthesis'
@@ -35,7 +35,7 @@ export const POST = withTeamRoute(
   async ({ ctx, data }) => {
     const existingCount = await db.synthesisMatrix.count({ where: { teamId: ctx.teamId } })
     if (existingCount >= MAX_MATRICES_PER_TEAM) {
-      throw new ApiError(
+      throw new RouteError(
         `You can have at most ${MAX_MATRICES_PER_TEAM} synthesis matrices — delete one to make room.`,
         409,
       )
@@ -49,7 +49,7 @@ export const POST = withTeamRoute(
       select: { id: true, title: true, authors: true },
     })
     if (papers.length !== data.paperIds.length) {
-      throw new ApiError('Pick 2–4 of your own ready sources', 400)
+      throw new RouteError('Pick 2–4 of your own ready sources', 400)
     }
 
     const template = (data.templateId ? findTemplate(data.templateId) : undefined) ?? templateForLabType(ctx.labType)

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { withTeamRoute, ApiError } from '@/lib/api/with-route'
+import { withTeamRoute, RouteError } from '@/lib/api/with-route'
 import { db } from '@/lib/db'
 import { PatchBody, parseColumns, toMatrixView } from '@/lib/literature/synthesis'
 
@@ -15,7 +15,7 @@ import { PatchBody, parseColumns, toMatrixView } from '@/lib/literature/synthesi
  */
 export const GET = withTeamRoute({ tier: 'read', feature: 'literature' }, async ({ ctx, params }) => {
   const matrix = await db.synthesisMatrix.findFirst({ where: { id: params.id, teamId: ctx.teamId } })
-  if (!matrix) throw new ApiError('Not found', 404)
+  if (!matrix) throw new RouteError('Not found', 404)
 
   const [papers, cells] = await Promise.all([
     db.paper.findMany({
@@ -32,7 +32,7 @@ export const PATCH = withTeamRoute(
   { tier: 'mutate', feature: 'literature', body: PatchBody },
   async ({ ctx, data, params }) => {
     const existing = await db.synthesisMatrix.findFirst({ where: { id: params.id, teamId: ctx.teamId } })
-    if (!existing) throw new ApiError('Not found', 404)
+    if (!existing) throw new RouteError('Not found', 404)
 
     // Resolve what the columns/paperIds set will be ONCE this PATCH lands —
     // used both to write the row and to validate any `cells` in this SAME
@@ -56,7 +56,7 @@ export const PATCH = withTeamRoute(
         select: { id: true },
       })
       if (validPapers.length !== data.paperIds.length) {
-        throw new ApiError('Pick 2–4 of your own ready sources', 400)
+        throw new RouteError('Pick 2–4 of your own ready sources', 400)
       }
       droppedPaperIds = nextPaperIds.filter((id) => !data.paperIds!.includes(id))
       nextPaperIds = data.paperIds
@@ -65,7 +65,7 @@ export const PATCH = withTeamRoute(
     const nextPaperIdSet = new Set(nextPaperIds)
     for (const cell of data.cells ?? []) {
       if (!nextPaperIdSet.has(cell.paperId) || !nextColumnIds.has(cell.columnId)) {
-        throw new ApiError('A cell referenced a paper or column not in this matrix', 400)
+        throw new RouteError('A cell referenced a paper or column not in this matrix', 400)
       }
     }
 
@@ -116,7 +116,7 @@ export const DELETE = withTeamRoute({ tier: 'mutate', feature: 'literature' }, a
     where: { id: params.id, teamId: ctx.teamId },
     select: { id: true },
   })
-  if (!existing) throw new ApiError('Not found', 404)
+  if (!existing) throw new RouteError('Not found', 404)
 
   await db.synthesisMatrix.delete({ where: { id: existing.id } })
 

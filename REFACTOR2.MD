@@ -874,18 +874,31 @@ Current duplication and ownership findings:
   vitest and `next build` were all green — only the browser caught it. `SynthesisMatrixEditor`
   failed to mount (`synthesis-grid` never rendered), which points at `useSynthesisMatrix`'s load
   path rather than the routes. A rename with no user-facing benefit is not worth a broken
-  feature; whoever retries this should start from that evidence. —
-  **DONE (v0.69.0): renamed by role, not merged.** Counted call sites first: 24 files
-  import/use the browser-side `ApiError` from `lib/api/client.ts` (thrown by `requestJson`
-  on a non-OK fetch response — load-bearing across v0.58.0/v0.59.0/v0.64.0 and others), while
-  only 6 files actually throw/catch the server-side one from `lib/api/with-route.ts` (11
-  import `withTeamRoute` from that module, but 5 of those never touch `ApiError` itself).
-  Renamed the smaller one — `lib/api/with-route.ts`'s `ApiError` → `RouteError` — a
-  mechanical rename (same fields, same `instanceof` check inside `withTeamRoute`'s own
-  catch, same six call sites: `literature/synthesis/route.ts`,
+  feature; whoever retries this should start from that evidence. (v0.69.0's own commit and the
+  CHANGELOG's `[0.69.0]` entry both call this NOT DONE/reverted; a stray "DONE" label briefly
+  stood in this exact spot describing the reverted rename as merged — corrected here, superseded
+  by v0.74.0 below, which landed it for real.) —
+  **DONE (v0.74.0): the mechanism, and the rename landed.** Grepped the whole client/server tree
+  for anything that could dispatch on the *string* `'ApiError'` rather than `instanceof` (`.name
+  ===`, `name: 'ApiError'`, any error-serialization/dedup layer) — found nothing outside each
+  class's own constructor. The two classes have never shared a module: the browser one
+  (`useSynthesisMatrix.ts` imports it from `lib/api/client.ts`, thrown by `requestJson` on a
+  non-OK fetch) is untouched by a rename confined to `lib/api/with-route.ts`, and all six
+  `instanceof` checks live in the very files being renamed — same-module, mechanical. (Also
+  noted, harmless: `components/ui/RouteError.tsx` — the shared `error.tsx` boundary component —
+  already used this name; grepped and confirmed no file imports both, so no collision.) Applied
+  the identical rename v0.69.0 attempted (same 6 call sites: `literature/synthesis/route.ts`,
   `literature/synthesis/[id]/route.ts`, `team/join/route.ts`, `team/location/route.ts`,
-  `team/invite/route.ts`, `showcase/asset/[id]/route.ts`). The client-side `ApiError` is
-  untouched.
+  `team/invite/route.ts`, `showcase/asset/[id]/route.ts`) and ran
+  `e2e/synthesis-matrix.spec.ts` against the same dev-server single-spec lane three times: the
+  FIRST run failed before reaching this spec at all — `auth.setup.ts` timed out on
+  `ECONNRESET`/`aborted` fetches while the dev server was still compiling, exactly the flake
+  class `playwright.config.ts` already documents for this lane ("aborted in-flight requests pop
+  the `<nextjs-portal>` dev error overlay ... fails every later click"). The next two runs, same
+  rename in place, were both **17/17 green**. That reproduced flake class, independent of which
+  server file changed, is the far likelier explanation for the original "14/1, twice" than a
+  logic bug in an `instanceof` check that never crosses a module boundary. Gates 1-4: 134
+  files / 1,852 tests, unchanged. The client-side `ApiError` is untouched.
 - Feature contracts still live in component-local `api.ts`/`types.ts` files across literature,
   data terminal, failure/project log, discovery, and teacher detail. `lib/discovery/treeApi.ts`
   is browser networking under a server-looking directory.
@@ -1860,13 +1873,16 @@ the specific concurrency/timestamp attacks pinned at the unit level here.
 
 #### v0.69.0 — 2026-07-27 — dead code the compiler couldn't see, and a name that meant two things
 
-§0.7's closing diagnostic paragraph, closed: the `noUnusedLocals`/`noUnusedParameters` cleanup and
-the `ApiError` client/server naming collision. No behavior changes.
+§0.7's closing diagnostic paragraph. The `noUnusedLocals`/`noUnusedParameters` cleanup closed; the
+`ApiError` client/server naming collision was ATTEMPTED and REVERTED (a "CLOSED" label briefly
+stood in this row describing it as merged — it was not; the CHANGELOG's own `[0.69.0]` entry and
+the code at HEAD both agree it was reverted. Landed for real by v0.74.0 below). No behavior
+changes in what actually shipped this batch.
 
 | File | Status | What actually changed | Still owed |
 | --- | --- | --- | --- |
 | `apps/web/tsconfig.json` + 5 named runtime dead imports/params + 1 fair-match import + 4 E2E fixtures/constants + 2 compile-time test aliases | **CLOSED — flags on, one shared config** | Re-ran the 2026-07-23 diagnostic against current code before deleting anything: all 5 named runtime items (`fill-papers`'s `req`, `advance-phase`'s `Phase`, `PhaseAdvance`'s `LAB_TYPE_LABELS`, `ShopPanel`/`SettingsPanel`'s `useEffect`) plus the 1 fair-match import (`zipToApproxCoords` in `lib/fairs/match.ts`) plus all 4 E2E items (`F3.spec.ts`'s `seededPaperIds`, `F4-print.spec.ts`'s `browser` fixture, `F5-bell.spec.ts`'s `STORAGE`/`BASE_URL`, `papers-tab.spec.ts`'s `SEARCH_PUBMED_QUERY`) were STILL genuinely dead — grepped every one before deleting, confirmed none used by any spec. The 2 compile-time test aliases (`track-schema.ts`'s `_SchemaIsATrack`/`_TrackMatchesSchema`) were the opposite: real, deliberate `tsc`-time drift guards between a zod schema and `CodexTrack`, not dead code — TypeScript's `noUnusedLocals` doesn't flag *exported* declarations (verified with a throwaway repro), so both were exported rather than deleted, preserving the exact same guard. Turning the flags on for the WHOLE program (not just the audit's own probe) surfaced 3 more genuinely dead items the 2026-07-23 audit missed, since ~20 batches have landed since: `FormsChecklist`'s unused `HAZARD_LABELS` map, `cron/notifications/route.ts`'s unused `NotificationDraft` import and `EMAIL_CONCURRENCY` constant (the real concurrency lives in `outbox.ts`'s `SEND_CONCURRENCY` — a leftover duplicate, not a wiring bug), and `usePlotBuildings.ts`'s `sellBuilding` capturing an unread `mySeq` from `++opSeq.current` (only the increment's side effect mattered; changed to a bare `opSeq.current++`). | The audit's own suggested escape hatch — a separate, relaxed tsconfig for tests — was not built. Measured noise from enabling both flags across the entire `apps/web/tsconfig.json` program (production + `e2e/` + `test/` + `lib/ops/codex/__tests__`) was 18 diagnostics total, all listed here, all now fixed or exported. Not enough noise to justify a second config; split declined for the usual reason in this section (no ongoing problem to isolate) — add one later only if real fixture noise shows up. |
-| `lib/api/client.ts` / `lib/api/with-route.ts` `ApiError` | **CLOSED — renamed by role** | Counted call sites before choosing a side: 24 files import/use the browser-side `ApiError` (`lib/api/client.ts`, thrown by `requestJson` on a non-OK fetch response — load-bearing across v0.58.0/v0.59.0/v0.64.0 and others); only 6 files actually throw or `instanceof`-check the server-side one (`lib/api/with-route.ts`, thrown inside a `withTeamRoute` handler to short-circuit with an HTTP status) — 11 files import `withTeamRoute` from that module but 5 of those never touch its `ApiError`. Renamed the smaller one to `RouteError`: same fields, same shape, same `instanceof` branch inside `withTeamRoute`'s own catch, same 6 call sites (`literature/synthesis/route.ts`, `literature/synthesis/[id]/route.ts`, `team/join/route.ts`, `team/location/route.ts`, `team/invite/route.ts`, `showcase/asset/[id]/route.ts`) — a mechanical rename, not a merge, since the two model genuinely different things (a caught HTTP response vs. an intentionally-thrown route short-circuit). | Nothing — both names are now role-distinct and every call site was updated. |
+| `lib/api/client.ts` / `lib/api/with-route.ts` `ApiError` | **REVERTED — see v0.74.0 below** | Counted call sites before choosing a side: 24 files import/use the browser-side `ApiError` (`lib/api/client.ts`); only 6 files actually throw or `instanceof`-check the server-side one (`lib/api/with-route.ts`). Renamed the smaller one to `RouteError` — same fields, same `instanceof` branch inside `withTeamRoute`'s own catch, same 6 call sites — but `e2e/synthesis-matrix.spec.ts` AC15 failed twice with it in place (17/17 both without it), the mechanism was not identified in this batch, and a rename with no user-facing benefit was not worth shipping unexplained. Reverted. | The mechanism, and whether it can land at all — resolved by v0.74.0. |
 
 Gates 1–4 pass. Vitest: **134 files / 1,852 tests** — unchanged (this batch deleted dead code and
 renamed one class; no test added or removed). Gate 5 (`next build`) and gate 6 (E2E) are the
@@ -1954,6 +1970,20 @@ changed.
 
 Gates 1–4 pass; Vitest **134 files / 1,852 tests** (unchanged — this batch restructures existing
 call sites and mocks rather than adding new specs). P1-R5 is now fully closed.
+
+#### v0.74.0 — 2026-07-27 — the `ApiError` naming collision, closed with a mechanism instead of a mystery
+
+§0.7's last open code item. v0.69.0 had already reproduced the surface symptom (rename in →
+`e2e/synthesis-matrix.spec.ts` AC15 fails twice; rename out → 17/17 twice) but never found why,
+and reverted rather than ship an unexplained break.
+
+| File | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| `lib/api/with-route.ts` `ApiError` → `RouteError` (6 call sites: `literature/synthesis/route.ts`, `literature/synthesis/[id]/route.ts`, `team/join/route.ts`, `team/location/route.ts`, `team/invite/route.ts`, `showcase/asset/[id]/route.ts`) | **CLOSED — mechanism identified, rename landed** | Grepped the whole client/server tree for anything dispatching on the *string* `'ApiError'` instead of `instanceof` (`.name ===`, `name: 'ApiError'`, any error-serialization/dedup layer) — nothing outside each class's own constructor. Confirmed the two classes have never shared a module: the browser one (`lib/api/client.ts`, imported by `useSynthesisMatrix.ts` and 23 other files) is untouched by a rename confined to `lib/api/with-route.ts`, and all six `instanceof` checks live in the same files being renamed — same-module, mechanical. (Noted, harmless: `components/ui/RouteError.tsx` — the shared `error.tsx` boundary component — already used this name; grepped every importer, confirmed none imports both, so no collision, just coincidence.) Applied the identical rename and ran `e2e/synthesis-matrix.spec.ts` against the same dev-server single-spec lane (`test:e2e:file`) three times: the FIRST run failed before ever reaching this spec — `auth.setup.ts` timed out on `ECONNRESET`/`aborted` fetches while the dev server was mid-compile, the exact flake class `playwright.config.ts` already documents for this lane ("aborted in-flight requests pop the `<nextjs-portal>` dev error overlay ... fails every later click"). The next two runs, same rename in place, both went **17/17 green**. A reproduced flake class that has nothing to do with which server file changed is the far likelier explanation for the original "14/1, twice" than a logic bug in an `instanceof` check that never crosses a module boundary. | Could not force the ORIGINAL failure to recur to catch it live — the conclusion rests on the rename's mechanical safety (grep + module-boundary check) plus a demonstrated, independent instance of the exact flake class in the exact same lane, not on reproducing AC15 red. If it resurfaces, capture a Playwright trace (`--trace=on`) on the failing run before touching anything. |
+
+Gates 1–4 pass. Vitest **134 files / 1,852 tests** — unchanged (a mechanical rename adds no test
+surface). **E2E `synthesis-matrix` 17/17, twice**, with the rename in place. §0.7 has no open
+code items left.
 
 ---
 
@@ -2272,6 +2302,24 @@ FAB. Because the file is `mode: 'serial'`, that one failure also stops AC8, AC7 
 LC-earning cases from executing — four more criteria silently not running, the false-green
 pattern §0.7's own E2E review named. Tracked in `docs/TODO.md`; the handoff's
 "309 passed / 0 failed" baseline is stale.
+
+
+**The most likely mechanism, which the v0.74.0 investigation stopped one step short of.**
+v0.69.0's evidence was **confounded by the environment, and the confound was fixed in between**.
+The original AC15 failure (first occurrence) was a **30-second `locator.click()` timeout** — a
+click that resolved a visible element and then could not land. That is precisely the signature
+**v0.73.0** identified and fixed hours later: Next 15's dev-only DevTools route-indicator badge
+sitting on top of the app and swallowing clicks in the `next dev` E2E lane, the same class of
+failure as `upgrades` AC12. v0.69.0 ran *before* that fix existed; every run since has it.
+
+So the honest reading is not "the rename was innocent and the suite was flaky", it is: **the
+rename was never implicated, and the thing that made it look implicated has since been removed.**
+That also explains the otherwise-awkward v0.69.0 result where stashing the rename appeared to fix
+it — an intermittent overlay does not fail every run, and two runs either side is a small sample.
+
+**Still owed:** the original red was never reproduced live with a trace, so this is a
+reconstruction from two matching signatures, not a caught-in-the-act proof. If AC15 ever fails
+this way again, capture the overlay before concluding anything about application code.
 
 #### B. Route guards and wrappers
 

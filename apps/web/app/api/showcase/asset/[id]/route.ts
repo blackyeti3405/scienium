@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { withTeamRoute, ApiError } from '@/lib/api/with-route'
+import { withTeamRoute, RouteError } from '@/lib/api/with-route'
 import { orphanObjectKey } from '@/lib/uploads/assets'
 import { syncShowcaseRevision } from '@/lib/showcase-server'
 import { db } from '@/lib/db'
@@ -13,7 +13,7 @@ export const DELETE = withTeamRoute(
       where: { id: params.id, showcase: { teamId: ctx.teamId } },
       select: { id: true, assetType: true, fileUrl: true, showcaseId: true },
     })
-    if (!asset) throw new ApiError('Not found', 404)
+    if (!asset) throw new RouteError('Not found', 404)
 
     // Domain delete, revision re-derivation, and the ledger transition commit
     // TOGETHER (REFACTOR2 P1-S8). Split across commits, a crash after the row

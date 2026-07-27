@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { withTeamRoute, ApiError } from '@/lib/api/with-route'
+import { withTeamRoute, RouteError } from '@/lib/api/with-route'
 import { zipString } from '@/lib/validation'
 import { zipToState, geocodeZip } from '@/lib/fairs/zip'
 import { db } from '@/lib/db'
@@ -16,7 +16,7 @@ export const POST = withTeamRoute(
   async ({ ctx, data }) => {
     const { zip } = data
     const state = zipToState(zip)
-    if (!state) throw new ApiError("That ZIP doesn't map to a US state we recognize", 400)
+    if (!state) throw new RouteError("That ZIP doesn't map to a US state we recognize", 400)
 
     const coords = await geocodeZip(zip)
 

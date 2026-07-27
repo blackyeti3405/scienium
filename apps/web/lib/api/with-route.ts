@@ -27,18 +27,18 @@ import { parseJson } from '@/lib/validation'
  *   )
  *
  * Dynamic-segment routes receive `params` exactly as Next provides them.
- * Handlers may `throw new ApiError(message, status)` anywhere in their call
+ * Handlers may `throw new RouteError(message, status)` anywhere in their call
  * tree instead of threading error responses back up.
  *
  * Additive: `requireTeamContext` is unchanged and remains directly callable for
  * routes with non-standard preludes.
  */
-export class ApiError extends Error {
+export class RouteError extends Error {
   readonly status: number
 
   constructor(message: string, status = 400) {
     super(message)
-    this.name = 'ApiError'
+    this.name = 'RouteError'
     this.status = status
   }
 }
@@ -87,7 +87,7 @@ export function withTeamRoute<TBody = undefined>(
       const params = ((await route.params) ?? {}) as Record<string, string>
       return await handler({ req, ctx, data, params })
     } catch (err) {
-      if (err instanceof ApiError) {
+      if (err instanceof RouteError) {
         return NextResponse.json({ error: err.message }, { status: err.status })
       }
       throw err

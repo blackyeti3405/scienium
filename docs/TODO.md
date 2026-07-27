@@ -139,9 +139,19 @@ stated reason has already been fixed another way.
 generators out of scope. See `REFACTOR2.MD` §0.11's v0.70.0 close-out for the full table and for
 the nine audit readings that turned out wrong.
 
-**Still open from §0.7, with evidence attached:** the `ApiError` rename (attempted in v0.69.0 and
-reverted — it broke `synthesis-matrix`), `showcase/[slug]/page.tsx`'s duplicated metadata+page
-load and missing render-time URL check, and `FormsChecklist`'s unchecked GET / swallowed PATCH.
+**The `ApiError` rename is DONE (v0.74.0).** v0.69.0 had reproduced the break
+(`synthesis-matrix.spec.ts` AC15 failed twice with the server-side `ApiError` renamed to
+`RouteError`, passed 17/17 without it) but never found why. v0.74.0 identified the mechanism —
+grepped for name-string dispatch (none found; the rename is a same-module `instanceof` check with
+no cross-boundary interaction) and reproduced an unrelated dev-server-mode flake in the exact same
+`test:e2e:file` lane (an `auth.setup.ts` timeout on aborted fetches, the class
+`playwright.config.ts` already documents) — the likelier explanation for the original failure than
+the rename's logic. Landed the identical rename; `synthesis-matrix` ran 17/17 twice with it in
+place. See `REFACTOR2.MD` §0.11's v0.74.0 close-out.
+
+**Still open from §0.7, with evidence attached:** `showcase/[slug]/page.tsx`'s duplicated
+metadata+page load and missing render-time URL check, and `FormsChecklist`'s unchecked GET /
+swallowed PATCH.
 
 
 **Deliberately deprioritised** (verdict is structural only, no named defect): `app/globals.css`

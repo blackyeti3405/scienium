@@ -5,6 +5,58 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.74.0] — 2026-07-27
+
+### Changed — the `ApiError` client/server rename lands; the "AC15 mystery" was a dev-server flake, not the rename
+
+REFACTOR2 §0.7's last open code item. v0.69.0 attempted the same mechanical rename (the
+server-side `lib/api/with-route.ts` `ApiError` → `RouteError`, the smaller of the two at 6 call
+sites vs. the browser-side one's 24 in `lib/api/client.ts`) and reverted it after
+`e2e/synthesis-matrix.spec.ts` failed AC15 (`synthesis-grid` never rendered) twice with the
+rename in place, while HEAD and "rename reverted" both ran 17/17 — with the mechanism never
+identified. Users don't lose anything from either state; this is entirely a code-clarity item.
+
+**The mechanism, from measurement, not theory.** Grepped the whole client and server tree for
+anything that could still care about the *string* `'ApiError'` after a rename changed `.name` —
+`.name ===`, `name: 'ApiError'`, any error-serialization/dedup layer — and found nothing outside
+each class's own constructor. The two classes have never shared a module or an import: the
+browser one (`useSynthesisMatrix.ts` imports it from `lib/api/client.ts`, thrown by `requestJson`
+on a non-OK fetch) is untouched by a rename confined to `lib/api/with-route.ts`, and all six
+`instanceof RouteError` checks live in the very files being renamed — a same-module mechanical
+rename, not a cross-module one. There is also, unrelated but worth recording, an *existing*
+`components/ui/RouteError` (the shared `error.tsx` boundary component) — confirmed via grep that
+no file imports both, so no collision, just a coincidental second use of the name.
+
+Applied the identical rename and ran gates 1–4: **134 files / 1,852 tests**, matching v0.69.0's
+own numbers exactly (no behavior change beyond the rename). Then ran
+`e2e/synthesis-matrix.spec.ts` against the dev-server single-spec lane (`test:e2e:file`, the same
+lane the original finding used) three times: the *first* run failed before ever reaching this
+spec — `auth.setup.ts` timed out on `ECONNRESET`/`aborted` fetches while the dev server was still
+compiling, the exact class of instability `playwright.config.ts` already documents for this lane
+("aborted in-flight requests pop the `<nextjs-portal>` dev error overlay ... fails every later
+click"). The next two runs, with the rename still in place and nothing else changed, were both
+**17/17 green**. That is a demonstrated, reproducible flake class in this lane that has nothing
+to do with which server file changed — the far more likely explanation for the original
+"14 passed / 1 failed, twice" than a logic bug in an `instanceof` rename that never crosses a
+module boundary.
+
+**Landed:** `lib/api/with-route.ts`'s `ApiError` → `RouteError`, and its six call sites
+(`literature/synthesis/route.ts`, `literature/synthesis/[id]/route.ts`, `team/join/route.ts`,
+`team/location/route.ts`, `team/invite/route.ts`, `showcase/asset/[id]/route.ts`). The
+browser-side `ApiError` in `lib/api/client.ts` is untouched.
+
+### Verification
+Gates 1–4 pass. Vitest **134 files / 1,852 tests** (unchanged — a mechanical rename adds no test
+surface). **E2E `synthesis-matrix` 17/17, twice**, with the rename in place.
+
+**Why v0.69.0's evidence pointed the wrong way.** That attempt's first AC15 failure was a
+**30-second `click()` timeout** — a visible element that would not accept a click. That is
+exactly the signature **v0.73.0** later traced to Next 15's dev-only DevTools route-indicator
+badge covering the app in the `next dev` E2E lane (the same cause as `upgrades` AC12), and
+v0.69.0 predates that fix. The rename was never implicated; the thing that made it look
+implicated has since been removed. Recorded because "it was flaky" and "there was an environment
+bug we have now fixed" are different claims, and only the second one is checkable.
+
 ## [0.73.0] — 2026-07-27
 
 ### Fixed — E2E health: `upgrades` AC12 red, `F3-plan-paste` AC9/AC10 flaky, and a silent `createLab()` regression
