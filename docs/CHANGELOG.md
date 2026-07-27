@@ -5,6 +5,64 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.67.0] — 2026-07-27
+
+### Verified — nine §0.7 rows closed by earlier batches, and one that a student could still be losing history to
+
+A verification batch by design: reproduce each named defect against the CURRENT code before
+writing anything down, and change only what is genuinely still broken.
+
+- **`lib/ops/codex/scripts/merge-codex-segments.mjs`'s "half-merged tree on failure" is CLOSED
+  (v0.47.0) and was re-verified, not re-fixed.** Every file this build script can touch — the
+  content JSON, all three registries, every generated track wrapper, and the checksum manifest —
+  is wrapped in one `atomically()` that snapshots first and restores everything on any failure,
+  including its own final `--check` verification. Proved with a throwaway script (deleted after
+  use): a forced failure mid-install left the tree fully restored; the same scenario with the
+  restore loop removed left a real half-merged tree (new content, orphaned wrapper) — confirming
+  the guard is load-bearing. The hand-maintained schema mirror (`SHAPE_KEYS`) still exists, but
+  drift is now a red test (`codex-schema-drift.test.ts`), confirmed by adding a throwaway field to
+  `types.ts` and watching it fail with the exact diff. No code changed.
+- **Seven more rows verified closed, unchanged**: `lib/discovery/tree-service.ts` (P1-R10's graph
+  invariant — the structural split alone is still open, as already recorded),
+  `lib/uploads/assets.ts` (P1-R12's crash-durable deletion lifecycle), `lib/fairs/match.ts`
+  (P1-R16's digest-based seeding), `lib/fairs/forms.ts` (P0-R4's corrected ISEF catalog — content
+  untouched per instruction), `lib/literature/synthesis.ts` + `SynthesisMatrixEditor.tsx` (P1-R13's
+  snapshot-bound check), and `lib/literature/quiz-retry.ts` (P1-R11's pre-call claim and result
+  replay — SVC-1's reward-minting consolidation is still open, as already documented).
+- **One stale "still open" note was corrected rather than left wrong.** §0.3's P1-R13 entry said
+  `addColumn`/`renameColumn` could still discard an unsaved cell draft. That was true when written
+  but was actually fixed one commit later, in v0.51.0's "finish P1-R13" — `patchColumns` now sends
+  dirty cells in the same PATCH as the column edit — and the doc was never updated to say so.
+- **`lib/ops/codex/complete-service.ts` is NOT closed, and a source doc calling it answered was
+  wrong.** Re-reading the current code found both named defects still live, with no test covering
+  either: a student who **replays a passed Codex lesson silently overwrites their own
+  first-completion timestamp** every time (`completedAt: new Date()` fires unconditionally on a
+  re-pass, no concurrency needed to see it), and two concurrent **failed** attempts can race a
+  **lower** score into `bestScore` because the read-then-write isn't atomic and doesn't use
+  `GREATEST` — the exact pattern the passing-completion path a few lines below already gets right.
+  Per this batch's own rule for a verification pass, **this was reported rather than fixed** —
+  growing a verification batch into a silent code change is how scope gets lost. Left for a
+  dedicated future fix: a `GREATEST`-gated atomic write matching the existing first-completion
+  pattern, and a `completedAt` that only sets on first completion.
+- **`app/(public)/showcase/[slug]/page.tsx`: the authorization half is fine, the file's own three
+  listed defects are not.** P0-R3/P1-R7's revision-bound moderation and share-token access are
+  correctly wired into this page. But its own separately-named issues are still open and were
+  reported, not fixed: `generateMetadata` and the page component each independently re-run the
+  same showcase/viewer queries (no `cache()`), and a resource/repo link's URL renders straight into
+  `href` with no render-time scheme check (safe today only because the sole write path already
+  validates before persisting — a defense-in-depth gap, not a live injection).
+- **`components/fair/FormsChecklist.tsx`: the content defect is closed, its own UI defects are
+  not.** The safety-form catalog itself is corrected (P0-R4) and untouched here. But the load's
+  response status is never checked and a status-update failure is swallowed with no visible
+  signal to the student — both real, both reported for a future batch rather than patched here.
+
+No code was changed in this batch except reading (Part 1's script and Part 2's ten files were
+verification-only, per instruction). Gates 1–4 pass; Vitest 133 files / 1,846 tests — unchanged,
+since no new logic was added and `complete-service.ts`'s genuine defect was deliberately left
+unfixed and unpinned rather than grown into this batch's scope.
+
+---
+
 ## [0.66.0] — 2026-07-27
 
 ### Fixed — a stale hang comment, two duplicated name fields, and a hardcoded pass mark

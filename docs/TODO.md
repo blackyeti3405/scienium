@@ -155,18 +155,63 @@ stated reason has already been fixed another way.
 `components/settings/LabProfileSettings.tsx` (v0.65.0 — silent research-plan load failure fixed via a new feature-local `api.ts` + `requestJson`/zod + a "Try again" retry; domain split declined — profile/lab share one authority, and every domain in the file already owns its own failure state),
 `components/fair/ScienceFairFeature.tsx` (v0.66.0 — "800 sequential query" comment confirmed STALE against `lib/fairs/match.ts`'s already-shipped digest short-circuit, trimmed; fair-card/countdown/rubric split declined — already-separated, non-duplicated functions),
 `app/(onboarding)/onboarding/page.tsx` (v0.66.0 — literal duplicate "Your name"/"High school" fields across the student and teacher forms deduped into one colocated `NameAndSchoolFields`; recovery-effect split declined — not duplicated; ACCEPTED-R1 untouched),
-`components/literature/QuizPanel.tsx` (v0.66.0 — three hardcoded `70` pass-mark fallbacks replaced with the existing client-safe `DEFAULT_PASS_THRESHOLD` mirror / the graded session's own `results.threshold`; no live disagreement found; question-form/result-row split declined).
+`components/literature/QuizPanel.tsx` (v0.66.0 — three hardcoded `70` pass-mark fallbacks replaced with the existing client-safe `DEFAULT_PASS_THRESHOLD` mirror / the graded session's own `results.threshold`; no live disagreement found; question-form/result-row split declined),
+`lib/ops/codex/scripts/merge-codex-segments.mjs` (v0.67.0 — VERIFIED, not re-fixed: P1-R15's atomic install already restores every touched file on any failure, negative-controlled with a throwaway script; the hand-maintained `SHAPE_KEYS` schema mirror still exists but drift is now a red test, negative-controlled by drifting `types.ts` and watching it fail),
+`lib/discovery/tree-service.ts` (v0.67.0 — VERIFIED, P1-R10's graph invariant closed; the adjacency-map split is confirmed still not done, bounded and non-urgent, left open),
+`lib/uploads/assets.ts` (v0.67.0 — VERIFIED, P1-R12's crash-durable deletion lifecycle intact; bucket-vs-ledger reconciliation and stale/terminal alerting confirmed still missing, as already documented),
+`lib/fairs/match.ts` (v0.67.0 — VERIFIED, P1-R16's digest-based seeding intact and the patch-history comment already reads past-tense; the edition-sync/query file split confirmed still not done),
+`lib/fairs/forms.ts` + `components/fair/FormsChecklist.tsx` (v0.67.0 — VERIFIED, P0-R4's corrected ISEF catalog untouched per instruction; `FormsChecklist.tsx`'s own unchecked-GET-status and swallowed-PATCH-failure defects confirmed still live — see the new item below, not part of P0-R4's scope),
+`lib/literature/synthesis.ts` + `components/literature/SynthesisMatrixEditor.tsx` (v0.67.0 — VERIFIED, P1-R13's snapshot-bound check intact; corrected a stale §0.3 note — the dirty-draft-loss item it still listed as open was actually closed in v0.51.0, one commit after v0.50.0, and never back-filled),
+`app/(public)/showcase/[slug]/page.tsx` (v0.67.0 — VERIFIED, P0-R3/P1-R7's authorization model correctly wired; the file's own duplicate-load and missing render-time URL-scheme check confirmed still live — see the new item below),
+`lib/literature/quiz-retry.ts` (v0.67.0 — VERIFIED, P1-R11's pre-call claim and result replay intact; SVC-1's reward-minting consolidation confirmed still open, matching the Executive Verdict's existing P2 listing).
 
 **Deliberately deprioritised** (verdict is structural only, no named defect): `app/globals.css`
 (3,051 lines) and `prisma/schema.prisma` (now 2,282). Both are real cleanups with real risk and
 no behaviour attached; they are the least valuable thing on this list until something breaks.
 
-**Already answered another way** — the split was proposed as a vehicle for a fix that has since
-landed, so the remaining work is cosmetic: `lib/discovery/tree-service.ts` (P1-R10),
-`lib/uploads/assets.ts` (P1-R12), `lib/fairs/match.ts` (P1-R16), `lib/fairs/forms.ts` +
-`components/fair/FormsChecklist.tsx` (P0-R4), `lib/literature/synthesis.ts` and
-`components/literature/SynthesisMatrixEditor.tsx` (P1-R13),
-`lib/ops/codex/complete-service.ts`, `app/(public)/showcase/[slug]/page.tsx` (P0-R3/P1-R7).
+**Not actually answered — verified broken in v0.67.0, reported rather than fixed**:
+`lib/ops/codex/complete-service.ts` was listed here as "already answered another way," which
+turned out to be wrong. See "Codex completion can lose history under a re-pass or a race" below.
+
+## Codex completion can lose history under a re-pass or a race (REFACTOR2 §0.7/§0.9, found live 2026-07-27)
+
+`lib/ops/codex/complete-service.ts` was believed closed; re-reading the current code for v0.67.0's
+verification pass found both of §0.9's named defects still present, unpinned by any test.
+
+1. **A re-pass of an already-completed lesson overwrites the student's first-completion time.**
+   In the `alreadyClaimed` branch, `codexLessonProgress.update` sets
+   `completedAt: new Date()` unconditionally — no concurrency needed, this fires every time a
+   student replays a passed lesson (e.g. to push their best score up).
+2. **Two concurrent FAILED attempts can race a lower score into `bestScore`.** The failed-grade
+   path reads `bestScore` via a plain `findUnique`, computes `Math.max(priorBest, scorePct)` in
+   application code, then writes an absolute value via `upsert` — no transaction, no `GREATEST`.
+   If two failing submissions' writes land out of order, the final stored score can be the LOWER
+   one.
+
+Both are the mirror image of the first-time-completion path a few lines below in the same file,
+which already gets this right via a raw `GREATEST(...) ON CONFLICT` (the v0.37.0/P1-R11 pattern).
+Fix: move the failed-attempt write to the same `GREATEST`-gated raw-update shape, and make
+`completedAt` conditional on first completion (`WHERE completed = false`, or simply omit it on a
+re-pass). Add a test — there is currently none for this service at all.
+
+## Two small UI durability gaps surfaced while verifying already-closed rows (found 2026-07-27)
+
+Neither is part of the P-number that closed the rest of its file; both were confirmed still live
+during v0.67.0's verification pass and left unfixed per that batch's verification-only scope.
+
+- **`components/fair/FormsChecklist.tsx`**: the initial `GET /api/fairs/forms` load never checks
+  `r.ok` before reading the body, and `cycleStatus`'s PATCH failure is a bare
+  `catch { /* leave state unchanged on error */ }` — a rejected status update gives the student no
+  signal at all. Add the status check and surface the PATCH failure (matching the retry-banner
+  shape `LiteratureFeature`/`CodexTab`/`ExperimentDetail` already use).
+- **`app/(public)/showcase/[slug]/page.tsx`**: `generateMetadata` and the page component each
+  independently call `loadShowcase()`/`resolveShowcaseViewer()` — every public showcase view runs
+  the same Prisma queries twice, with no `React.cache()` wrapping either function. Separately,
+  `ResourceLink` renders a repo/supplement asset's `metadataJson.url` straight into `href` with no
+  render-time `isSafeHttpUrl` check — safe today only because the sole write path
+  (`POST /api/showcase/asset/link`) already validates before persisting, but a defense-in-depth gap
+  compared to `SourceReader.tsx`/`IdeaCheckView.tsx` (v0.64.0), which added exactly this second
+  gate at render time for the same class of risk.
 
 ## E2E — `F3-plan-paste` AC9/AC10 are FLAKY (found 2026-07-27)
 
