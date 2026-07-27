@@ -288,6 +288,7 @@ The daily learning pillar (it replaced the retired Field Dispatch — a daily LL
 ### 7.2 Proof of Expertise (~3–5 min) — *implemented*
 - A short **clearance exam** about the team's own project: a small fixed set of free-response questions generated and graded by Vega (Claude Sonnet) against a tunable rubric, using the team's real project context.
 - Exams are tiered; each targets a clearance level, and difficulty escalates as the team advances.
+- **Resumable, and the save is guaranteed.** Each answer is persisted as it is given, so a student can close the panel and pick the exam up later. "Save & exit" **waits** for that write and refuses to leave if the server did not take it, saying so — an exam is graded work, and losing an answer to a dropped connection while the button promised "resume anytime" is not an acceptable failure.
 - **Reward:** raises the team's **Clearance Level** (a high-water mark — a teammate's earlier pass already counts) plus a KP bonus on a genuine raise. Clearance gates which buildings can be purchased (§8).
 
 ### 7.3 Project Log (~2–5 min) — *implemented*

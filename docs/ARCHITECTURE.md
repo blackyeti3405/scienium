@@ -192,7 +192,10 @@ streaming, `keepalive`, or tolerant error handling.
 - `components/ops/`: thin `OperationsHubFeature` tab switch plus `ProjectLogTab`
   (+ `project-log/` subcomponents and `useProjectLog`), `FailureLogTab`
   (+ `failure-log/` and `useFailureLog`), `DataTerminalTab` (+ `data-terminal/`
-  views and `useExperiments`), `CodexTab`, `ExpertisePanel`, `VegaStudyTab`,
+  views and `useExperiments`), `CodexTab`, `ExpertisePanel`
+  (+ `expertiseProgress.ts` — the serialized progress saver and flush barrier
+  for the clearance exam; a DOM-free unit so the save-ordering rule on a graded
+  surface is reachable by vitest, per REFACTOR2 §0.7), `VegaStudyTab`,
   `RichEditor`, `log-shared`, five guide panels, and shared guide chrome
   (`guide-chrome.tsx` also hosts the shared `useCopyToClipboard` hook).
 - `components/research-plan/`: thin `ResearchPlanFeature` plus `useResearchPlan`

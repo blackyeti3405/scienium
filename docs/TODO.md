@@ -134,14 +134,14 @@ Its own rule applies: *line count is a diagnostic, not a refactoring goal.* Work
 defect they carry, not by length, and be willing to record "the split is not worth it" where the
 stated reason has already been fixed another way.
 
-**Done:** `components/discovery/DiscoveryTree.tsx` (v0.53.0).
+**Done:** `components/discovery/DiscoveryTree.tsx` (v0.53.0),
+`components/ops/ExpertisePanel.tsx` (v0.54.0 — defect closed, view split deliberately left).
 
 **Highest value remaining**, by the defect each verdict names — every one is a live behaviour
 problem, not a size complaint:
 
 | File | The defect the verdict names |
 | --- | --- |
-| `components/ops/ExpertisePanel.tsx` | Progress saving is fire-and-forget and **"save and exit" does not await it** — a student can lose exam progress on a graded surface. Timer/fetch cancellation is incomplete. |
 | `stores/discoveryStore.ts` | Fire-and-forget writes and `newTreePending` can lose state; `addSourceNode`/`addArticleNode` duplicate a large insert path; deletion is O(n²). |
 | `lib/discovery/openalex.ts` | Provider JSON is asserted rather than parsed; **`cited_by_api_url` is fetched with no host enforcement** and bodies are uncapped — the SSRF-shaped one. |
 | `components/teacher/TeacherRubricScoring.tsx` | Track switching discards unsaved state; blur/click autosaves race; blank numeric input becomes zero. |
@@ -185,6 +185,11 @@ The audit and the changes are in [`runbooks/e2e.md`](runbooks/e2e.md). Remaining
   what turns the whole lane on.
 - **The synthesis 409** tells the student their grid changed but not **what** changed. A diff
   would be kinder.
+- **The clearance panel has no E2E at all** — it is the only ops tab without one. v0.54.0's
+  refusal-to-exit-on-unsaved-progress path is pinned in vitest
+  (`components/ops/expertiseProgress.test.ts`) but never driven in a browser. A spec would need
+  `page.route` to fail the `PATCH /api/expertise`, plus a stubbed exam so the setup does not
+  make a paid generation call.
 
 ## Activity durability — 11 events still outside a transaction (REFACTOR2 P1-R5)
 

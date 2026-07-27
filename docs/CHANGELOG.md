@@ -5,6 +5,49 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.54.0] — 2026-07-26
+
+### Fixed — a clearance exam could lose a student's answer and say nothing
+
+Second of REFACTOR2 §0.7's file dispositions: `components/ops/ExpertisePanel.tsx`. The verdict
+names it plainly — *"progress saving is fire-and-forget; 'save and exit' does not await it."*
+All three defects below were **reproduced against the pre-fix code** before anything was
+rewritten.
+
+- **A failed save was invisible.** Progress was written with
+  `fetch('/api/expertise', { method: 'PATCH' }).catch(() => {})` — the response status was never
+  read and every failure was swallowed. On a **graded** surface that means a student answers a
+  question, watches it appear in the chat, presses a button labelled *"Save & exit — resume
+  anytime"*, and comes back to find the answer gone, with no message at any point. The PATCH is a
+  `mutate`-tier route, so an ordinary rate-limit or a dropped connection was enough.
+- **"Save & exit" did not wait for the save.** The button fired the status `GET` in the same tick
+  as the still-in-flight `PATCH`. The `GET` could read the pre-save row, so the idle card reported
+  one answer fewer than the student had given and *Resume* handed back the shorter exam — even in
+  the runs where the write did eventually land.
+- **A background status load could evict a live exam.** `loadStatus` set `mode: 'idle'`
+  unconditionally when it resolved, and `finishResult` fires one deliberately in the background.
+  A student who pressed *Begin exam* before that `GET` returned was thrown out of the exam the lab
+  had just **paid Claude to generate**.
+
+The persistence moved into `components/ops/expertiseProgress.ts` — the same reason the discovery
+layout moved out in v0.53.0, not line count: a save-ordering rule on a graded surface was living
+where only a browser could reach it, which is why it was never checked. It serializes writes,
+keeps the unconfirmed snapshot as the record of failure, and its `flush()` retries once and
+reports whether the server actually holds the latest. Exit is **refused** when it does not, and
+the panel says so instead of leaving quietly. This is the same "don't proceed past an unlanded
+write" barrier the synthesis matrix takes before it spends (v0.50.0).
+
+Also in this batch: the status `GET` is latest-wins, so no in-flight load can land on top of a
+live exam; the final answer is flushed **before** grading, because grading stamps `gradedAt` and
+the progress route only matches ungraded exams; and the 650 ms "Vega is thinking" timer is now
+cleared on exit and on unmount.
+
+### Verification
+Gates 1–5 pass. Vitest **124 files / 1,777 tests** (+1 file, +8).
+`components/ops/expertiseProgress.test.ts` pins each reproduced defect. **Negative-controlled**
+three ways — clearing the dirty flag before the write lands fails 3 tests, dropping the flush
+barrier fails 2, and removing serialization fails 1.
+
 ## [0.53.0] — 2026-07-26
 
 ### Fixed — the Discovery tree lost nodes, and nobody could reach it by keyboard

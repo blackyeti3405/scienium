@@ -17,6 +17,7 @@ import {
 import { useLabCurrency } from '@/components/lab/labCurrency'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
 import { OpsTabSkeleton } from '@/components/ui/skeletons/OpsTabSkeleton'
+import { createProgressSaver, patchExamProgress } from './expertiseProgress'
 
 // ─── Types (mirror the /api/expertise responses) ─────────────────────────────
 
@@ -108,17 +109,35 @@ export function ExpertisePanel() {
   const [draft, setDraft] = useState('')
   const [vegaTyping, setVegaTyping] = useState(false)
   const [result, setResult] = useState<GradeResult | null>(null)
+  const [exiting, setExiting] = useState(false)
+  /** The server is not known to hold the latest answer — shown, never swallowed. */
+  const [unsaved, setUnsaved] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  /** The 650ms "Vega is thinking" beat — cleared on exit and unmount. */
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saver = useRef(createProgressSaver(patchExamProgress))
+
+  /**
+   * Latest-wins guard for the status GET. `loadStatus` unconditionally set
+   * `mode: 'idle'` when it resolved, and `finishResult` fires one deliberately
+   * in the background — so a student who pressed "Begin exam" before that GET
+   * came back was thrown out of the exam it had just PAID to generate. Every
+   * transition into an exam bumps this, which retires any load still in flight.
+   */
+  const statusSeq = useRef(0)
 
   async function loadStatus() {
+    const seq = ++statusSeq.current
     try {
       const res = await fetch('/api/expertise')
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to load')
+      if (seq !== statusSeq.current) return
       setStatus(data)
       setMode('idle')
     } catch (err) {
+      if (seq !== statusSeq.current) return
       setError(err instanceof Error ? err.message : 'Failed to load')
       setMode('idle')
     }
@@ -126,6 +145,9 @@ export function ExpertisePanel() {
 
   useEffect(() => {
     loadStatus()
+    return () => {
+      if (typingTimer.current) clearTimeout(typingTimer.current)
+    }
   }, [])
 
   // Keep the chat scrolled to the newest turn.
@@ -135,6 +157,12 @@ export function ExpertisePanel() {
 
   /** Load an exam (fresh or resumed) into the chat, restoring any saved progress. */
   function enterExam(data: StartResponse) {
+    statusSeq.current++ // no in-flight status load may land on top of a live exam
+    // One saver per exam. A snapshot left unsaved by a previous exam would
+    // otherwise be retried against THIS one — the PATCH is scoped to its own
+    // `examId`, so it would 404 forever and block every exit from here on.
+    saver.current = createProgressSaver(patchExamProgress)
+    setUnsaved(false)
     setExam(data)
     setAnswers(data.answers ?? {})
     setIndex(Math.min(data.progressIndex ?? 0, Math.max(0, data.questions.length - 1)))
@@ -145,6 +173,7 @@ export function ExpertisePanel() {
 
   async function beginExam() {
     if (!status?.nextLevel) return
+    statusSeq.current++ // ditto for the paid generation wait
     setError(null)
     setExam(null) // clear any prior exam so the "preparing" spinner shows
     setMode('grading') // reuse spinner overlay while generating
@@ -169,13 +198,33 @@ export function ExpertisePanel() {
     }
   }
 
-  /** Persist progress so the exam can be picked up after closing the panel. */
+  /**
+   * Persist progress so the exam can be picked up after closing the panel.
+   *
+   * Queued rather than awaited — the student should not wait on a write between
+   * questions — but NOT forgotten: the saver stays dirty until the server
+   * confirms, and both the composer and the exit button read that.
+   */
   function saveProgress(examId: string, nextAnswers: Record<string, string>, progressIndex: number) {
-    fetch('/api/expertise', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ examId, answers: nextAnswers, progressIndex }),
-    }).catch(() => {})
+    saver.current
+      .save({ examId, answers: nextAnswers, progressIndex })
+      .then(() => setUnsaved(saver.current.unsaved))
+  }
+
+  /**
+   * Save & exit. The button says "resume anytime", so it must be true: wait for
+   * the write, and refuse to leave if the server did not take it. Leaving with
+   * an unlanded answer is how a graded surface loses work silently.
+   */
+  async function saveAndExit() {
+    setExiting(true)
+    const saved = await saver.current.flush()
+    setExiting(false)
+    setUnsaved(!saved)
+    if (!saved) return
+    if (typingTimer.current) clearTimeout(typingTimer.current)
+    setMode('loading')
+    loadStatus()
   }
 
   function submitAnswer() {
@@ -194,12 +243,21 @@ export function ExpertisePanel() {
     if (!isLast) {
       // Advance with a brief "Vega is thinking" beat for a conversational feel.
       setVegaTyping(true)
-      setTimeout(() => {
+      typingTimer.current = setTimeout(() => {
+        typingTimer.current = null
         setVegaTyping(false)
         setIndex((i) => i + 1)
       }, 650)
     } else {
-      gradeExam(nextAnswers)
+      // Land the final answer BEFORE grading. Grading stamps `gradedAt`, and the
+      // progress PATCH only matches ungraded exams — so a write still in flight
+      // becomes a 404, and if grading then fails the student is handed back an
+      // exam the server has no record of their last answer for.
+      setMode('grading')
+      saver.current.flush().then((saved) => {
+        setUnsaved(!saved)
+        gradeExam(nextAnswers)
+      })
     }
   }
 
@@ -286,8 +344,10 @@ export function ExpertisePanel() {
         <div className="clr-exam__head">
           <button
             className="clr-exam__back"
-            onClick={() => { setMode('loading'); loadStatus() }}
-            title="Save & exit — resume anytime"
+            onClick={saveAndExit}
+            disabled={exiting}
+            aria-label="Save and exit this exam"
+            title={exiting ? 'Saving your progress…' : 'Save & exit — resume anytime'}
           >
             <ChevronLeft size={14} />
           </button>
@@ -353,6 +413,15 @@ export function ExpertisePanel() {
           <div className="ops-error mx-3">
             <AlertTriangle size={11} className="shrink-0" />
             <span className="font-pixel text-[7px]">{error}</span>
+          </div>
+        )}
+
+        {unsaved && (
+          <div className="ops-error mx-3" role="status" data-testid="clr-unsaved">
+            <AlertTriangle size={11} className="shrink-0" />
+            <span className="font-pixel text-[7px]">
+              Your last answer has not reached the lab yet — keep this exam open and try Save &amp; exit again.
+            </span>
           </div>
         )}
 
