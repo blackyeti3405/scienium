@@ -8,6 +8,7 @@ import {
   evaluatePurchase,
   upgradeKpCost,
   upgradeLcCost,
+  teamCostMultiplier,
 } from '@/lib/economy'
 
 describe('clampScore', () => {
@@ -161,6 +162,15 @@ describe('clampScoreGain — anti-injection guard', () => {
   })
   it('never exceeds 100', () => {
     expect(clampScoreGain(100, 95, 50)).toBe(100)
+  })
+})
+
+describe('teamCostMultiplier — the ONE formula shop-server, ShopPanel, and the plot hook now share', () => {
+  it('never drops below 1, even for an empty/mid-transfer team', () => {
+    expect(teamCostMultiplier(0)).toBe(1)
+  })
+  it('scales 1:1 with member count above 1', () => {
+    expect(teamCostMultiplier(4)).toBe(4)
   })
 })
 

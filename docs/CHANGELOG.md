@@ -5,6 +5,53 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.61.0] — 2026-07-27
+
+### Fixed — a paid building could vanish from your plot, and two lab panels could pile up
+
+Tenth and eleventh of REFACTOR2 §0.7's file dispositions: `lib/hooks/usePlotBuildings.ts` and
+`components/lab/LabScene.tsx`.
+
+- **A building you'd already paid for could disappear and never come back.** If one action (say,
+  an upgrade) failed and started a resync of the plot from the server, and — while that resync
+  was still in flight — you placed a *different* building whose purchase succeeded, the resync
+  could land after your placement but before its own confirmation, and its wholesale
+  `setEconomy(data.economy)` would silently erase the just-bought building from your screen. The
+  KP was gone (server-charged, real), the building was gone (client-erased), and nothing said so.
+  Reproduced with a two-request timing simulation before touching the fix. A monotonic sequence
+  number now lets a resync recognize it's answering a question a newer action has already moved
+  past, and skip applying stale data instead of overwriting it.
+- **A failed "confirm the plot" step said nothing at all.** Every place/move/sell/upgrade already
+  showed you its own failure — that part was never silent — but if the *follow-up resync* itself
+  failed (network hiccup), you'd have no idea your local plot might no longer match the server.
+  It now says so: "Could not confirm your plot — reload if it looks out of date."
+- **The team-size building-cost formula (`baseCost × memberCount`) was written independently in
+  three places** — the server's authoritative multiplier, the shop's displayed price, and this
+  hook's optimistic prediction — free to drift apart from each other. One `teamCostMultiplier()`
+  now, in `lib/economy.ts`; the predicted number a student sees is unchanged.
+- **Two lab panels could genuinely be open at once.** Five of the lab's six overlays (Shop, Team,
+  Settings, Feedback, and a gateway Feature) share a full-screen backdrop that blocks every other
+  click while open — but the Activity log panel is a bare side column with no such backdrop, so
+  the team name, the Feedback button, and any gateway building stayed clickable while it was open.
+  Opening Activity, then Team (or Feedback, or a gateway), left both on screen simultaneously.
+  A single overlay state now makes that impossible by construction.
+
+### Verification
+Gates 1–5 pass. Vitest **128 files / 1,821 tests** (+2, `teamCostMultiplier`).
+Negative-controlled: reverting `teamCostMultiplier` to drop its floor fails the new test; deleting
+the resync's sequence-number guard reproduces the vanished-building loss in the throwaway
+simulation, restoring it fixes it. The overlay union's exclusivity is a type-level guarantee, not
+a runtime branch — recorded as such rather than backed by a test asserting the obvious.
+E2E: `F9` **13/13**, `F5-bell` **12/12**, `upgrades` **9 passed / 1 failed**.
+
+**That `upgrades` failure is PRE-EXISTING, not from this batch, and was proven so** rather than
+assumed: `AC12` was re-run with these changes stashed and fails identically at HEAD — same test,
+same 30s timeout, same 9 passed. The Next.js dev **error overlay** (`<nextjs-portal>`) covers the
+page and intercepts the click on the activity FAB, so the click never lands. Because
+`upgrades.spec.ts` is `mode: 'serial'`, that one failure also skips AC8, AC7 and the two
+LC-earning cases. **It is a real red test in the suite and is now tracked in `docs/TODO.md`** —
+the handoff's "309 passed / 0 failed" baseline no longer holds, and saying so is the point.
+
 ## [0.60.1] — 2026-07-26
 
 ### Changed — the teacher's student overview picks one membership, not two

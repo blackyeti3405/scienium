@@ -142,15 +142,15 @@ stated reason has already been fixed another way.
 `components/ops/CodexTab.tsx` (v0.58.0),
 `components/literature/LiteratureFeature.tsx` (v0.59.0),
 `components/discovery/SourceReader.tsx` (v0.60.0 — save path only; URL-scheme validation still open),
-`lib/teacher/student-overview.ts` (v0.60.1 — pairing verified closed by v0.48.0; query split declined).
+`lib/teacher/student-overview.ts` (v0.60.1 — pairing verified closed by v0.48.0; query split declined),
+`lib/hooks/usePlotBuildings.ts` (v0.61.0 — stale-resync + swallowed-error + duplicated-prediction all fixed; reducer split declined),
+`components/lab/LabScene.tsx` (v0.61.0 — overlap CONFIRMED reachable via `ActivityPanel`'s missing backdrop; one `Overlay` union replaces six flags).
 
 **Highest value remaining**, by the defect each verdict names — every one is a live behaviour
 problem, not a size complaint:
 
 | File | The defect the verdict names |
 | --- | --- |
-| `lib/hooks/usePlotBuildings.ts` | No abort/resync; refresh errors swallowed; duplicated optimistic economy prediction. |
-| `components/lab/LabScene.tsx` | Six booleans permit overlapping off-path panels. |
 | `lib/discovery/articles.ts` | Feed URLs and provider bodies need canonical host/content-type/byte validation. `readCapped` now exists (v0.55.0) — this is where it lands next. |
 
 **Deliberately deprioritised** (verdict is structural only, no named defect): `app/globals.css`
@@ -163,6 +163,24 @@ landed, so the remaining work is cosmetic: `lib/discovery/tree-service.ts` (P1-R
 `components/fair/FormsChecklist.tsx` (P0-R4), `lib/literature/synthesis.ts` and
 `components/literature/SynthesisMatrixEditor.tsx` (P1-R13),
 `lib/ops/codex/complete-service.ts`, `app/(public)/showcase/[slug]/page.tsx` (P0-R3/P1-R7).
+
+## E2E — `upgrades` AC12 is RED (found 2026-07-27)
+
+`e2e/upgrades.spec.ts` AC12 ("activity feed records building_upgraded entry after successful
+upgrade") times out after 30s: the Next.js dev **error overlay** (`<nextjs-portal>`) is covering
+the page, so `getByRole('button', { name: 'Open team activity' })` resolves and is visible but
+every click is intercepted. Playwright retries for the full timeout and gives up.
+
+**Confirmed pre-existing**, not caused by v0.61.0 — the same run with that batch stashed fails
+identically at HEAD (9 passed / 1 failed, same test, same timeout). The handoff's
+"309 passed / 0 failed / 9 skipped" baseline is therefore stale.
+
+Because the file is `mode: 'serial'`, this one failure also prevents AC8, AC7, and both
+LC-earning cases from running at all — **four more acceptance criteria are silently not
+executing**, which is exactly the false-green pattern the E2E audit called out.
+
+To diagnose: run `pnpm --filter web test:e2e:file e2e/upgrades.spec.ts --headed`, or capture the
+overlay's text — the underlying client-side error is what needs fixing, not the click.
 
 ## E2E — what the 2026-07-26 rebuild left open
 

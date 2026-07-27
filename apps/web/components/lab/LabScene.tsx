@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { TileBackground } from '@/components/lab/TileBackground'
 import { DecorationLayer } from '@/components/lab/DecorationLayer'
 import { LabPlot } from '@/components/lab/LabPlot'
@@ -61,6 +61,29 @@ export interface LabSceneProps {
 /** localStorage key for the Momentum card's per-ISO-week dismissal (Feature F10). */
 const MOMENTUM_DISMISS_KEY = 'scienium.momentum.dismissed'
 
+/**
+ * The lab's off-path panels — one state, so at most one is ever open. §0.7 named
+ * six independent booleans (`openKey` + five `xOpen` flags) as a reachable
+ * overlap; it is genuinely reachable here (unlike LiteratureFeature's v0.59.0
+ * finding, which turned out not to be): `ActivityPanel` is the one overlay with
+ * no `ModalBackdrop` — it's a bare right-side `position: fixed` column
+ * (`z-index: 1100`, `.activity-panel` in globals.css) with no full-screen scrim
+ * and no click-outside-closes handling of its own. Every OTHER trigger not
+ * physically under that 340px-wide column — the team-name button, the feedback
+ * FAB, a gateway building — stays clickable while it's open, so Activity +
+ * Team/Feedback/Feature could genuinely be open at once. A single union makes
+ * that structurally impossible rather than relying on each trigger to remember
+ * to close the others.
+ */
+type Overlay =
+  | { kind: 'none' }
+  | { kind: 'feature'; key: Gateway['key'] }
+  | { kind: 'shop' }
+  | { kind: 'team' }
+  | { kind: 'settings' }
+  | { kind: 'activity' }
+  | { kind: 'feedback' }
+
 /** Current ISO-week tag, e.g. "2026-W27" — same scheme as lib/notifications/compute.ts. */
 function currentIsoWeekTag(): string {
   const now = new Date()
@@ -90,12 +113,8 @@ function LabSceneContent({
 }: LabSceneProps) {
   const { currency } = useLabCurrency()
 
-  const [openKey, setOpenKey] = useState<Gateway['key'] | null>(null)
-  const [shopOpen, setShopOpen] = useState(false)
-  const [teamOpen, setTeamOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [activityOpen, setActivityOpen] = useState(false)
-  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [overlay, setOverlay] = useState<Overlay>({ kind: 'none' })
+  const closeOverlay = useCallback(() => setOverlay({ kind: 'none' }), [])
   const [unresolvedCount, setUnresolvedCount] = useState(0)
   const [feedbackSnapshot, setFeedbackSnapshot] = useState<{
     items: FeedbackItem[]
@@ -139,7 +158,7 @@ function LabSceneContent({
   } = usePlotBuildings({ placedBuildings, unplacedKeys, gatewayPositions, memberCount })
 
   useEffect(() => {
-    if (initialPanel === 'feedback') setFeedbackOpen(true)
+    if (initialPanel === 'feedback') setOverlay({ kind: 'feedback' })
   }, [initialPanel])
 
   useEffect(() => {
@@ -183,12 +202,13 @@ function LabSceneContent({
 
   const skin: GatewaySkin = (labType ?? 'generic') as GatewaySkin
 
+  const openKey = overlay.kind === 'feature' ? overlay.key : null
   const openGateway = openKey ? (GATEWAYS.find((g) => g.key === openKey) ?? null) : null
   const FeatureComponent = openKey ? FEATURE_COMPONENTS[openKey] : null
 
   /** Shop pick → close the shop, then hand the ghost to the plot hook. */
   function handlePlace(building: ShopBuilding, owned: boolean) {
-    setShopOpen(false)
+    closeOverlay()
     beginPlace(building, owned)
   }
 
@@ -199,8 +219,8 @@ function LabSceneContent({
         phase={phase}
         labType={labType}
         currency={currency}
-        onOpenTeam={() => setTeamOpen(true)}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenTeam={() => setOverlay({ kind: 'team' })}
+        onOpenSettings={() => setOverlay({ kind: 'settings' })}
       />
 
       {advance && <PhaseAdvance progress={advance} />}
@@ -219,7 +239,7 @@ function LabSceneContent({
           economy={plotEconomy}
           arrangeMode={arrangeMode}
           ghost={plotGhost}
-          onOpenGateway={(key) => setOpenKey(key as Gateway['key'])}
+          onOpenGateway={(key) => setOverlay({ kind: 'feature', key: key as Gateway['key'] })}
           onPick={onPick}
           onDrop={onDrop}
           onCancel={cancelGhost}
@@ -283,7 +303,7 @@ function LabSceneContent({
         <button
           type="button"
           className="shop-button font-pixel"
-          onClick={() => setShopOpen(true)}
+          onClick={() => setOverlay({ kind: 'shop' })}
           title="Buildings"
           aria-label="Open buildings shop"
         >
@@ -314,7 +334,7 @@ function LabSceneContent({
         <button
           type="button"
           className="activity-fab font-pixel"
-          onClick={() => setActivityOpen(true)}
+          onClick={() => setOverlay({ kind: 'activity' })}
           title="Team activity"
           aria-label="Open team activity"
         >
@@ -326,7 +346,7 @@ function LabSceneContent({
         <button
           type="button"
           className="feedback-fab font-pixel"
-          onClick={() => setFeedbackOpen(true)}
+          onClick={() => setOverlay({ kind: 'feedback' })}
           title="Teacher feedback"
           aria-label="Open teacher feedback"
         >
@@ -343,12 +363,12 @@ function LabSceneContent({
       </div>
 
       {openGateway && FeatureComponent && (
-        <FeaturePanel title={openGateway.label} onClose={() => setOpenKey(null)}>
+        <FeaturePanel title={openGateway.label} onClose={closeOverlay}>
           <FeatureComponent />
         </FeaturePanel>
       )}
 
-      {shopOpen && (
+      {overlay.kind === 'shop' && (
         <ShopPanel
           currency={currency}
           memberCount={memberCount}
@@ -356,16 +376,16 @@ function LabSceneContent({
           ownedKeys={ownedSet}
           unplacedKeys={unplacedSet}
           onPlace={handlePlace}
-          onClose={() => setShopOpen(false)}
+          onClose={closeOverlay}
         />
       )}
 
-      {teamOpen && <TeamPanel onClose={() => setTeamOpen(false)} />}
-      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
-      {activityOpen && <ActivityPanel onClose={() => setActivityOpen(false)} />}
-      {feedbackOpen && (
+      {overlay.kind === 'team' && <TeamPanel onClose={closeOverlay} />}
+      {overlay.kind === 'settings' && <SettingsPanel onClose={closeOverlay} />}
+      {overlay.kind === 'activity' && <ActivityPanel onClose={closeOverlay} />}
+      {overlay.kind === 'feedback' && (
         <FeedbackPanel
-          onClose={() => setFeedbackOpen(false)}
+          onClose={closeOverlay}
           onUnresolvedCount={setUnresolvedCount}
           initialData={feedbackSnapshot}
           onDataChange={(d) => {

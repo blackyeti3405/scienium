@@ -7,6 +7,7 @@ import 'server-only'
  */
 
 import { db } from '@/lib/db'
+import { teamCostMultiplier } from '@/lib/economy'
 
 export interface ShopState {
   owned: string[]
@@ -33,7 +34,7 @@ export async function loadShopState(teamId: string): Promise<ShopState> {
     kp: currency?.kp ?? 0,
     lc: currency?.lc ?? 0,
     clearanceLevel: currency?.clearanceLevel ?? 0,
-    multiplier: Math.max(1, memberCount),
+    multiplier: teamCostMultiplier(memberCount),
     labType: team?.labType ?? null,
   }
 }

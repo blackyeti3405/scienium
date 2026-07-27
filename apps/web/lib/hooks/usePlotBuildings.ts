@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PlacedItem, PlotGhost } from '@/components/lab/LabPlot'
 import { useLabCurrency } from '@/components/lab/labCurrency'
 import { shopBuilding, type ShopBuilding } from '@/lib/shop'
-import { upgradeKpCost, upgradeLcCost, MAX_BUILDING_LEVEL } from '@/lib/economy'
+import { upgradeKpCost, upgradeLcCost, MAX_BUILDING_LEVEL, teamCostMultiplier } from '@/lib/economy'
 import type { IsoPos } from '@/lib/plot'
 import { useAutoDismiss } from '@/lib/hooks/useAutoDismiss'
 
@@ -73,10 +73,28 @@ export function usePlotBuildings({
   /** Transient green particle burst over a just-upgraded building. */
   const [burst, setBurst] = useState<{ gx: number; gy: number; id: number } | null>(null)
   const burstSeq = useRef(0)
-  const [toast, setToast] = useState<string | null>(null)
+  /** The plot toast — a success confirmation ("Sold X for N KP") or a failure
+   *  message. Shape reused from discoveryStore's `writeError` (v0.56.0): message
+   *  + a monotonic nonce, since `useAutoDismiss` keys off reference identity and
+   *  two identical-text notices in a row would otherwise share one state value
+   *  and never re-arm the dismiss timer for the second. */
+  const [notice, setNoticeState] = useState<{ message: string; nonce: number } | null>(null)
+  const noticeNonce = useRef(0)
+  const setNotice = useCallback((message: string) => {
+    setNoticeState({ message, nonce: ++noticeNonce.current })
+  }, [])
+  const toast = notice?.message ?? null
+
+  // Every place/move/sell/upgrade bumps this before its optimistic apply. A
+  // failed write's follow-up resync (`refreshPlotState`) captures the value at
+  // the moment it starts and re-checks it after the `await`: if a NEWER action
+  // began in the meantime, the resync is answering a question that is no longer
+  // current, and applying it would silently erase whatever that newer action
+  // just did (see the "stale write" case below).
+  const opSeq = useRef(0)
 
   // Auto-dismiss the toast.
-  useAutoDismiss(toast, () => setToast(null), 2600)
+  useAutoDismiss(notice, () => setNoticeState(null), 2600)
 
   // Clear the upgrade particle burst after it plays (rise + small stagger).
   useAutoDismiss(burst, () => setBurst(null), 1100)
@@ -107,17 +125,40 @@ export function usePlotBuildings({
     return data
   }
 
-  async function refreshPlotState() {
+  /**
+   * Re-fetch the DB-authoritative plot after a failed write's rollback, so the
+   * client mirror reconciles with the server rather than trusting its own
+   * rollback math (a concurrent teammate's action in between could have moved
+   * the true state further than a bare local revert accounts for).
+   *
+   * `sinceSeq` is `opSeq.current` as of the moment this was called. If it has
+   * moved by the time the GET resolves, a newer place/move/sell/upgrade started
+   * while this request was in flight and is now the freshest source of truth —
+   * applying this stale response would overwrite whatever that action just did
+   * (reproduced: an optimistic building placed while an unrelated resync was in
+   * flight, and lost when the resync landed after it but before its own POST
+   * confirmed). That newer action does its own resync if it, in turn, fails.
+   */
+  async function refreshPlotState(sinceSeq: number) {
     try {
       const res = await fetch('/api/buildings')
-      if (!res.ok) return
+      if (opSeq.current !== sinceSeq) return // superseded — a newer action owns reconciliation now
+      if (!res.ok) {
+        setNotice('Could not confirm your plot — reload if it looks out of date.')
+        return
+      }
       const data = await res.json()
       setEconomy(data.economy)
       setGateways(data.gateways)
       setUnplaced(data.unplaced)
       setCurrency({ kp: data.kp, lc: data.lc, clearanceLevel: data.clearanceLevel })
     } catch {
-      // Immediate rollback already restored the previous local state.
+      // Previously silent: the rollback restores this action's own optimistic
+      // change, but a failed resync means the mirror is unconfirmed and could
+      // still be wrong (e.g. a teammate's concurrent edit) with nothing said.
+      if (opSeq.current === sinceSeq) {
+        setNotice('Could not confirm your plot — reload if it looks out of date.')
+      }
     }
   }
 
@@ -150,10 +191,11 @@ export function usePlotBuildings({
     const g = ghost
     if (!g || placing) return
     setPlacing(true)
+    const mySeq = ++opSeq.current
 
     if (g.mode === 'new' || g.mode === 'place-owned') {
       const key = g.building.key
-      const predictedCost = g.mode === 'new' ? g.building.cost * Math.max(1, memberCount) : 0
+      const predictedCost = g.mode === 'new' ? g.building.cost * teamCostMultiplier(memberCount) : 0
       setEconomy((prev) => [
         ...prev,
         { key, gx, gy, costPaid: predictedCost, level: 1 },
@@ -180,8 +222,8 @@ export function usePlotBuildings({
         setEconomy((prev) => prev.filter((item) => item.key !== key))
         if (g.mode === 'place-owned') setUnplaced((prev) => [...prev, key])
         if (predictedCost > 0) addCurrency({ kp: predictedCost })
-        setToast(err instanceof Error ? err.message : 'Something went wrong')
-        await refreshPlotState()
+        setNotice(err instanceof Error ? err.message : 'Something went wrong')
+        await refreshPlotState(mySeq)
       } finally {
         setPlacing(false)
       }
@@ -220,8 +262,8 @@ export function usePlotBuildings({
           ),
         )
       }
-      setToast(err instanceof Error ? err.message : 'Something went wrong')
-      await refreshPlotState()
+      setNotice(err instanceof Error ? err.message : 'Something went wrong')
+      await refreshPlotState(mySeq)
     } finally {
       setPlacing(false)
     }
@@ -232,15 +274,20 @@ export function usePlotBuildings({
   async function sellBuilding(key: string) {
     if (sellingKey) return
     setSellingKey(key)
+    const mySeq = ++opSeq.current
     try {
       const data = await post('/api/buildings/sell', { key })
       setEconomy((prev) => prev.filter((e) => e.key !== key))
       setCurrency({ kp: data.kp })
       setGhost(null)
       setSelected(null)
-      setToast(`Sold ${shopBuilding(key)?.name ?? 'building'} for ${data.refund} KP`)
+      setNotice(`Sold ${shopBuilding(key)?.name ?? 'building'} for ${data.refund} KP`)
     } catch (err) {
-      setToast(err instanceof Error ? err.message : 'Could not sell')
+      // Sell never optimistically removes the building, so there's nothing of
+      // its own to roll back or resync here — but bumping `opSeq` above still
+      // matters: it lets a DIFFERENT action's in-flight resync recognize that
+      // this sell (successful or not) is newer and skip stomping over it.
+      setNotice(err instanceof Error ? err.message : 'Could not sell')
     } finally {
       setSellingKey(null)
     }
@@ -255,6 +302,7 @@ export function usePlotBuildings({
     const kpCost = upgradeKpCost(base, b.level + 1)
     const lcCost = upgradeLcCost(b.level + 1)
     setUpgradingKey(key)
+    const mySeq = ++opSeq.current
     const optimisticLevel = b.level + 1
     setEconomy((prev) =>
       prev.map((item) =>
@@ -276,7 +324,7 @@ export function usePlotBuildings({
         ),
       )
       setCurrency({ kp: data.kp, lc: data.lc })
-      setToast(`Upgraded ${shopBuilding(key)?.name ?? 'building'} to L${data.level}`)
+      setNotice(`Upgraded ${shopBuilding(key)?.name ?? 'building'} to L${data.level}`)
     } catch (err) {
       setEconomy((prev) =>
         prev.map((item) =>
@@ -286,8 +334,8 @@ export function usePlotBuildings({
         ),
       )
       addCurrency({ kp: kpCost, lc: lcCost })
-      setToast(err instanceof Error ? err.message : 'Could not upgrade')
-      await refreshPlotState()
+      setNotice(err instanceof Error ? err.message : 'Could not upgrade')
+      await refreshPlotState(mySeq)
     } finally {
       setUpgradingKey(null)
     }

@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { ModalBackdrop } from '@/components/ui/ModalBackdrop'
 import { Lock } from 'lucide-react'
 import { shopBuildingsForLabType, type ShopBuilding } from '@/lib/shop'
+import { teamCostMultiplier } from '@/lib/economy'
 import { clearanceTitle } from '@/lib/clearance/expertise'
 import { Sprite } from '@/components/lab/Sprite'
 import { getBuildingSprite, getGatewaySprite, type GatewaySkin, type SpriteEntry } from '@/lib/sprites/manifest'
@@ -49,7 +50,7 @@ export function ShopPanel({
   onClose: () => void
 }) {
   const closeRef = useRef<HTMLButtonElement>(null)
-  const multiplier = Math.max(1, memberCount)
+  const multiplier = teamCostMultiplier(memberCount)
   const buildings = shopBuildingsForLabType(labType)
   const skin: GatewaySkin = (labType ?? 'generic') as GatewaySkin
 

@@ -182,6 +182,20 @@ export function sellRefund(costPaid: number): number {
   return Math.floor(Math.max(0, costPaid) * SELL_REFUND_RATE)
 }
 
+// ─── Team-size cost multiplier ────────────────────────────────────────────────
+
+/**
+ * Team-size cost multiplier (Feature 1c) — bigger labs pay proportionally more.
+ * The one formula three places computed independently (`lib/shop-server.ts`'s
+ * authoritative `ShopState.multiplier`, `ShopPanel`'s displayed price, and the
+ * plot hook's optimistic prediction before the real cost comes back). Centralized
+ * so a future tuning change can't drift between what a student is shown, what
+ * they're optimistically charged, and what the server actually charges.
+ */
+export function teamCostMultiplier(memberCount: number): number {
+  return Math.max(1, memberCount)
+}
+
 // ─── Building purchase pre-check ──────────────────────────────────────────────
 
 export interface ShopStateLike {
