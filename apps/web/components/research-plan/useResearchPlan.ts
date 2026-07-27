@@ -65,9 +65,17 @@ export function useResearchPlan() {
   const [ideaError, setIdeaError] = useState<string | null>(null)
 
   useEffect(() => {
+    // Guard against a stale response landing after this effect's own cleanup —
+    // React Strict Mode double-invokes mount effects in development, firing two
+    // overlapping GETs; without this flag the first (now-stale) one can resolve
+    // AFTER the user has already started editing (or after a save completed) and
+    // clobber it back to the pre-edit text. Same idiom as every other fetch-on-
+    // mount hook in this codebase (e.g. useSourceLanes, usePaperQuiz).
+    let cancelled = false
     fetch('/api/research-plan')
       .then((r) => r.json())
       .then((d) => {
+        if (cancelled) return
         if (d.plan) {
           setPlan(d.plan)
           setType(d.plan.projectType)
@@ -82,7 +90,12 @@ export function useResearchPlan() {
         }
         if (d.ideaCheck) setQuota(d.ideaCheck)
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   async function sync() {

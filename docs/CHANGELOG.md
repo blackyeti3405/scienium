@@ -5,6 +5,69 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.73.0] — 2026-07-27
+
+### Fixed — E2E health: `upgrades` AC12 red, `F3-plan-paste` AC9/AC10 flaky, and a silent `createLab()` regression
+
+**`upgrades.spec.ts` AC12 was NOT a client-side exception.** The audit's framing ("the Next.js
+dev error overlay is covering the page") was wrong: `page.on('pageerror')` fired zero times
+across the whole run, in both `next dev` and a production build. The actual cause is Next.js
+15's dev-only **DevTools route indicator** — a small badge always mounted bottom-left in
+`next dev` — sitting at the exact same 18px/18px corner as our own `.activity-fab` button
+(screenshot confirmed: the badge visually covers the button). It steals the click; Playwright's
+error correctly reports `<nextjs-portal>` intercepting, which is real, just not an error. Proof
+it never reaches production: a production-build run of the same spec is 14/14 green with
+zero `pageerror`s and no portal div rendered at all — `next start` never mounts this indicator.
+Fixed by disabling it (`devIndicators: false` in `next.config.mjs`) **only** when
+`E2E_SKIP_LLM` is set — i.e. only for the Playwright-managed dev server, never for a normal
+`pnpm dev` and never in production (where it's already off). `upgrades.spec.ts` now runs all
+14 ACs (was 9 passed / 1 failed / 4 never-run under `mode: 'serial'`'s cascade).
+
+**`F3-plan-paste.spec.ts` AC9/AC10 were a real React Strict-Mode race, not a debounce.**
+Reproduced with instrumented mount-effect logging: `useResearchPlan.ts`'s initial
+`GET /api/research-plan` effect has no staleness guard, and React Strict Mode double-invokes
+mount effects in development, firing two overlapping GETs per mount. Whichever duplicate
+resolves LAST wins — including one that resolves *after* the user has typed a fresh value (or
+after a save has landed), silently overwriting it back to the pre-edit text. That is exactly
+what both flakes showed: AC10's oversized fill reverted to the previous save's shorter text,
+and AC9's post-edit reload showed the pre-edit value. Fixed with the same `cancelled` guard
+already used by every other fetch-on-mount hook in this codebase (`useSourceLanes`,
+`usePaperQuiz`, `useExplainBack`, etc.) — React's own documented fix for Strict Mode's double
+invoke. AC9 separately had its own test bug (not fixed by the guard alone): it asserted the
+"synced ... ago" text was visible after clicking Update — but that text was already visible
+from a *previous* save, so the assertion could pass without the click's own POST having
+finished, before immediately reloading. Now waits for that POST's response explicitly, matching
+the pattern AC4 already used correctly.
+
+**Also migrated `F3-plan-paste.spec.ts` to a disposable `createLab()` lab** instead of the
+shared "E2E Test Lab" — its ACs are a genuinely sequential state machine (AC5 reads what AC4
+saved, AC9 edits it, AC11 mutates it further), so `mode: 'serial'` stays, but the ~80-line
+snapshot/restore-on-teardown dance is gone (a fresh lab has no pre-existing plan to preserve),
+and AC7's idea-check quota is now deterministic (always 3/3, never partially consumed by another
+spec sharing the old fixture team).
+
+**Found and fixed along the way: v0.71.0 silently broke `createLab()` for every consumer.**
+`TeamMember.userId` became `@@unique` (one-team-at-a-time) in v0.71.0, but `e2e/lab.ts` was
+never updated — every `createLab()` call unconditionally gave the E2E leader a SECOND
+membership row, which the new constraint rejects outright. Reproduced on a clean, unmodified
+tree: `synthesis-matrix.spec.ts` (an existing `createLab` consumer, untouched by this batch)
+fails at its very first test with `Unique constraint failed on the fields: (user_id)` —
+meaning `synthesis-matrix`, `F4`, and `F4-print` have not actually passed since v0.71.0 shipped,
+despite no gate catching it (E2E is not in the per-commit gate list). Fixed in `e2e/lab.ts`:
+a claimed (`claimActive: true`) lab now vacates the leader's existing membership row with a raw
+`teamMember.delete` before creating the new one (never `leaveOtherTeams`/`departTeam` — those
+run lead-transfer/archive side effects meant for a real student leaving a team, which must never
+fire just because a disposable lab borrowed the leader for one spec file), and `dispose()`
+restores it. A foreign (`claimActive: false`) lab now gets no membership row at all — impossible
+under the new constraint anyway, and unneeded, since an IDOR fixture only needs the team to
+exist. Re-verified clean: `synthesis-matrix` 17/17, `F4` 16/16, both with the leader's original
+membership intact after teardown (checked directly against the DB).
+
+Gates 1-5 pass; `next build` production build green; vitest unchanged (134 files / 1,852 tests).
+`upgrades.spec.ts` 14/14 (2 full runs, dev mode). `F3-plan-paste.spec.ts` 14/14 across 3
+consecutive runs (dev mode, fresh fixture each time). `synthesis-matrix.spec.ts` 17/17 and
+`F4.spec.ts` 16/16 re-verified after the `lab.ts` fix.
+
 ## [0.72.0] — 2026-07-27
 
 ### Fixed — the last 11 durable-class activity events could go missing while the KP they describe still landed (REFACTOR2 P1-R5)

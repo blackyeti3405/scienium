@@ -203,10 +203,22 @@ is what makes the CI lane possible at all.
   change that would move the 13.6-minute runtime materially. Everything above
   is the half that does not need new accounts — and it is the half that removes
   the flakes.
-- **Migrating the remaining specs to `createLab`.** Three are done
-  (`synthesis-matrix`, `F4`, `F4-print`); the rest still use the shared lab. Each
-  migration deletes a `beforeAll` full of `deleteMany` calls and removes one more
-  reason for `mode: 'serial'`.
+- **Migrating the remaining specs to `createLab`.** Four are done
+  (`synthesis-matrix`, `F4`, `F4-print`, `F3-plan-paste` — v0.73.0); the rest
+  still use the shared lab. Each migration deletes a `beforeAll` full of
+  `deleteMany` calls and removes one more reason for CROSS-FILE pollution — it
+  usually does NOT let a file drop `mode: 'serial'` on its own, since most of
+  these files test a genuinely sequential state machine (a later AC reads what
+  an earlier one saved) rather than independent concerns.
+- **v0.71.0 silently broke `createLab()` for every consumer, fixed in v0.73.0.**
+  `TeamMember.userId` became `@@unique` (one-team-at-a-time) in v0.71.0, but
+  `e2e/lab.ts` was never updated for it — every `createLab()` call gave the
+  leader a second membership row, which the new constraint rejects. None of
+  `synthesis-matrix`/`F4`/`F4-print` had been re-run since, so this went
+  undetected for two versions (E2E isn't in the per-commit gate list).
+  `createLab` now vacates the leader's existing membership (raw delete, not
+  `leaveOtherTeams`) before creating the new one and restores it in
+  `dispose()`; a foreign (non-claimed) lab gets no membership row at all.
 - **The auth recovery ladder** in `e2e/api.ts` (~150 lines of escalating Clerk
   session recovery) **never fired once** in the production-build baseline. It
   exists for the `next dev` lane, where an idle page's frozen `storageState`

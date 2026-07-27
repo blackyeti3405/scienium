@@ -14,6 +14,15 @@ const nextConfig = {
   // sharp likewise needs native bindings. Mark both as server-side externals.
   // (Stable name since Next 15 — was experimental.serverComponentsExternalPackages.)
   serverExternalPackages: ['sharp', 'firecrawl'],
+  // The dev-mode DevTools route indicator (a `next dev`-only badge, bottom-left,
+  // ~36px) sits at the exact corner `.activity-fab` occupies (globals.css) and
+  // steals its clicks — reproduced as e2e/upgrades.spec.ts AC12 timing out in the
+  // `next dev` single-spec loop (`test:e2e:file`). Not a client-side exception
+  // (zero `pageerror`s either way) and not a production issue: `next start` never
+  // renders this indicator at all — the production-build run is 14/14 green. Only
+  // the Playwright-managed dev server sees `E2E_SKIP_LLM`, so this disables the
+  // indicator there only; a normal `pnpm dev` keeps it.
+  devIndicators: process.env.E2E_SKIP_LLM ? false : undefined,
   async headers() {
     const isProd = process.env.NODE_ENV === 'production'
 

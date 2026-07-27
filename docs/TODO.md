@@ -167,45 +167,18 @@ during v0.67.0's verification pass and left unfixed per that batch's verificatio
   compared to `SourceReader.tsx`/`IdeaCheckView.tsx` (v0.64.0), which added exactly this second
   gate at render time for the same class of risk.
 
-## E2E — `F3-plan-paste` AC9/AC10 are FLAKY (found 2026-07-27)
+## E2E health — done (v0.73.0)
 
-`e2e/F3-plan-paste.spec.ts` fails intermittently, and **which** test fails moves between runs.
-Measured across four runs of the same spec:
-
-| Tree | Result |
-| --- | --- |
-| HEAD (no changes) run 1 | 14 passed |
-| working tree (v0.64.0) run 1 | AC9 failed — after "Update text" + reload the textarea still showed the pre-edit value |
-| working tree (v0.64.0) run 2 | **AC10** failed — the character counter never rendered the expected total |
-| HEAD (no changes) run 2 | **AC10** failed — identical to the line above |
-
-A failure that moves between tests, and that reproduces on an unmodified tree, is spec
-flakiness — not a regression. The two are almost certainly the same root cause: the file is
-`mode: 'serial'` and each test inherits the plan text the previous one saved, so a save that
-lands late (or a `fill` that races the debounced counter) shifts the failure to whichever test
-reads that state next. This is the mutable-shared-fixture fragility the E2E audit already
-flagged; the fix is per-test plan state (`createLab()`-style isolation), not a longer timeout.
-
-Note the cost: `mode: 'serial'` means the failing test also prevents every later test in the
-file from executing — 14 ran when it passed, 11 when it failed.
-
-## E2E — `upgrades` AC12 is RED (found 2026-07-27)
-
-`e2e/upgrades.spec.ts` AC12 ("activity feed records building_upgraded entry after successful
-upgrade") times out after 30s: the Next.js dev **error overlay** (`<nextjs-portal>`) is covering
-the page, so `getByRole('button', { name: 'Open team activity' })` resolves and is visible but
-every click is intercepted. Playwright retries for the full timeout and gives up.
-
-**Confirmed pre-existing**, not caused by v0.61.0 — the same run with that batch stashed fails
-identically at HEAD (9 passed / 1 failed, same test, same timeout). The handoff's
-"309 passed / 0 failed / 9 skipped" baseline is therefore stale.
-
-Because the file is `mode: 'serial'`, this one failure also prevents AC8, AC7, and both
-LC-earning cases from running at all — **four more acceptance criteria are silently not
-executing**, which is exactly the false-green pattern the E2E audit called out.
-
-To diagnose: run `pnpm --filter web test:e2e:file e2e/upgrades.spec.ts --headed`, or capture the
-overlay's text — the underlying client-side error is what needs fixing, not the click.
+Both entries below (`F3-plan-paste` flakiness, `upgrades` AC12 red) are closed. See
+`docs/CHANGELOG.md`'s v0.73.0 entry for the full writeup, including a REGRESSION found and
+fixed along the way: v0.71.0's `TeamMember.userId @@unique` migration silently broke
+`e2e/lab.ts`'s `createLab()` for every consumer (`synthesis-matrix`, `F4`, `F4-print`) — none had
+been re-run since. `upgrades` AC12 was traced to the Next.js dev-mode DevTools indicator
+(not a client-side exception at all), scoped off via `next.config.mjs` only under
+`E2E_SKIP_LLM`. `F3-plan-paste` AC9/AC10 were a real React Strict-Mode double-effect race in
+`useResearchPlan.ts` (fixed with the same `cancelled` guard used elsewhere in the codebase) plus
+a test that didn't wait for its own save's POST before reloading; the file was also migrated to
+a disposable `createLab()` lab.
 
 ## E2E — what the 2026-07-26 rebuild left open
 
@@ -216,9 +189,13 @@ The audit and the changes are in [`runbooks/e2e.md`](runbooks/e2e.md). Remaining
   needs **one Clerk test account per worker**, which provisions accounts in your Clerk instance
   and is therefore your call, not something to do silently. Everything else in the rebuild is the
   half that needs no new accounts, and it is the half that removes the flakes.
-- **Migrating the other 31 specs to `createLab`.** The primitive exists (`e2e/lab.ts`) and
-  `synthesis-matrix.spec.ts` is the worked example. Each migration deletes a `beforeAll` full of
-  `deleteMany` calls and removes one more reason for `mode: 'serial'`.
+- **Migrating the other 30 specs to `createLab`.** The primitive exists (`e2e/lab.ts`) and
+  `synthesis-matrix.spec.ts`/`F4`/`F4-print`/`F3-plan-paste` (v0.73.0) are the worked examples.
+  Each migration deletes a `beforeAll` full of `deleteMany` calls, removes one more reason for
+  cross-file pollution, and — per `F3-plan-paste` — does NOT usually let a file drop
+  `mode: 'serial'` on its own: most of these files test a genuinely sequential state machine
+  (a later AC reads what an earlier one saved), so serial mode stays; it just stops being
+  load-bearing for isolation from OTHER spec files.
 - **`F4` AC3.** `Showcase.teamId` is `@unique`, so `F4` and `F4-print` drive one row from two
   files. Per-spec labs are the fix; it needs both files migrated together.
 - **The auth recovery ladder** in `e2e/api.ts` (~150 lines of escalating Clerk session recovery)

@@ -1,14 +1,20 @@
 import { test, expect, type Page } from '@playwright/test'
-import { STORAGE } from './roles'
 import { api } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * F3 — Research Plan paste-text fallback.
  * One test per acceptance criterion (12 criteria total, per
  * .claude/pipeline/plan-F3.md — the CURRENT, overwritten "paste-text" F3, not
  * the earlier shipped "pixel dialogs" F3 covered by e2e/F3.spec.ts).
- * Runs as the default `chromium` project (authenticated lab leader / devuser1,
- * "E2E Test Lab").
+ * Runs as the default `chromium` project (authenticated lab leader), on a
+ * disposable per-file lab (`createLab`, e2e/lab.ts) rather than the shared
+ * "E2E Test Lab" — this file's own ACs are inherently a sequential state
+ * machine (AC5 reads what AC4 saved, AC8/AC9 reload it, AC10/AC11 mutate it
+ * further), so `mode: 'serial'` stays (no other spec touches
+ * `research_plans`, so this was never cross-spec pollution). A fresh, empty
+ * ResearchPlan row also makes AC7's idea-check quota deterministic (3/3,
+ * never partially consumed by another suite sharing the old fixture team).
  *
  * NOTE: intentionally a DIFFERENT filename from the shipped e2e/F3.spec.ts —
  * this spec never touches that file's routes/fixtures.
@@ -44,10 +50,10 @@ import { api } from './api'
  *   "projectSubtype: Expected string, received null" otherwise) — this is
  *   pre-existing, unconditional validation, not new F3 behavior, so every
  *   save in this suite selects Engineering -> Robotics & Control first.
- * - GET /api/research-plan returned `{ plan: null, ... }` for this team before
- *   any test/discovery mutation ran — confirmed empty, no pre-existing
- *   Google-doc-connected row to preserve. beforeAll re-confirms this and
- *   afterAll restores it (best-effort, since there is no DELETE endpoint).
+ * - The disposable lab's ResearchPlan row starts genuinely absent (`plan: null`)
+ *   — `createLab` seeds no research-plan row — so there is no pre-existing
+ *   Google-doc-connected row to preserve and no restore-on-teardown needed;
+ *   `lab.dispose()` deletes the whole team.
  * - The doc-sync path needs a real, publicly reachable "Anyone with the link"
  *   Google Doc. There is no project fixture for this, so AC11 uses Google's
  *   own official, permanently public "Docs API Quickstart" sample document
@@ -67,8 +73,7 @@ const PASTE_TEXT_V2 = `[E2E-F3-${RUN_ID}-edited] Revised hypothesis: increasing 
 const PUBLIC_DOC_URL =
   'https://docs.google.com/document/d/195j9eDD3ccgjQRttHhJPymLJUCOUjs-jmwTrekvdjFE/edit'
 
-/** Snapshot of the team's plan row before this suite touches it (for restore). */
-let originalPlan: unknown = null
+let lab: OwnedLab
 
 /** Open the Research Plan feature panel from /lab. */
 async function openResearchPlan(page: Page) {
@@ -115,85 +120,18 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
   // run concurrently or later ACs would race earlier ones' saves.
   test.describe.configure({ mode: 'serial' })
 
-  // ── Seed / snapshot ────────────────────────────────────────────────────────
+  // ── Disposable lab ─────────────────────────────────────────────────────────
+  // A fresh team per file run (e2e/lab.ts) instead of the shared "E2E Test
+  // Lab": this file's own ResearchPlan row starts genuinely empty, so there is
+  // no pre-existing state to snapshot/restore, and teardown is just deleting
+  // the team.
 
-  test.beforeAll(async ({ browser }) => {
-    // Navigate first (fresh page) before any page.request call — the stored
-    // Clerk JWT can be stale this early only if a prior suite ran first in the
-    // same worker; a goto forces a session-cookie refresh regardless.
-    const page = await browser.newPage({ storageState: STORAGE.leader })
-    try {
-      await page.goto('/lab')
-      const res = await api.get(page, '/api/research-plan')
-      if (res.status() !== 200) {
-        throw new Error(`beforeAll snapshot GET failed: ${res.status()} ${await res.text()}`)
-      }
-      const body = await res.json()
-      originalPlan = body.plan
-    } finally {
-      await page.close()
-    }
+  test.beforeAll(async () => {
+    lab = await createLab('F3-plan-paste')
   })
 
-  test.afterAll(async ({ browser }) => {
-    // Restore the team's plan row to its pre-suite state. There is no DELETE
-    // endpoint on /api/research-plan, so "restore" means: if the row was
-    // originally empty (plan: null, the case this suite found and is the only
-    // case it can create from scratch), leave a clearly-marked, harmless
-    // paste row rather than the AI-review/idea-check byproducts of this run
-    // is not applicable here (this feature adds no new AI route). If the row
-    // originally had a Google Doc URL, reconnect exactly that URL so the team
-    // ends on the same active source it started with (best-effort — the
-    // route can't literally null out lastSyncedText once ANY row exists).
-    const page = await browser.newPage({ storageState: STORAGE.leader })
-    try {
-      await page.goto('/lab')
-      const original = originalPlan as null | {
-        googleDocUrl: string | null
-        projectType: string | null
-        projectSubtype: string | null
-        activeSource: 'google_doc' | 'paste' | null
-      }
-
-      if (original && original.activeSource === 'google_doc' && original.googleDocUrl) {
-        const res = await api.post(page, '/api/research-plan', {
-          data: {
-            googleDocUrl: original.googleDocUrl,
-            projectType: original.projectType ?? undefined,
-            projectSubtype: original.projectSubtype ?? undefined,
-          },
-        })
-        if (res.status() !== 200) {
-          throw new Error(
-            `afterAll restore (google_doc) failed loudly: ${res.status()} ${await res.text()}`,
-          )
-        }
-      } else if (original === null) {
-        // Genuinely started empty (this suite's own beforeAll confirmed
-        // `plan: null`). There is no way to delete the row this suite's
-        // tests create back to `null` through the public API (no DELETE
-        // endpoint — same limitation e2e/F1.spec.ts documents for
-        // TeacherFeedback). Leave the row in the same benign, clearly
-        // E2E-tagged paste state the suite's own tests already exercise so
-        // a human/teacher glancing at this team's plan sees obviously-fake
-        // E2E content, not silently-orphaned data.
-        const res = await api.post(page, '/api/research-plan', {
-          data: {
-            planText: `[E2E-F3-${RUN_ID}] cleanup marker — this row started empty; the E2E suite could not delete it back to empty (no DELETE endpoint exists).`,
-            projectType: 'engineering',
-            projectSubtype: 'robotics',
-          },
-        })
-        if (res.status() !== 200) {
-          throw new Error(`afterAll cleanup-marker save failed loudly: ${res.status()} ${await res.text()}`)
-        }
-      }
-      // else: original had some other shape (e.g. paste-sourced already) —
-      // nothing further to reconcile; the suite's own last test already left
-      // the row in a valid, non-crashing state.
-    } finally {
-      await page.close()
-    }
+  test.afterAll(async () => {
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────
@@ -351,7 +289,16 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
     await expect(dialog.locator('button', { hasText: 'Save text' })).toHaveCount(0)
 
     await textarea.fill(PASTE_TEXT_V2)
+    // Wait for the update's own POST: the "synced ... ago" text can already be
+    // visible from a prior save, so asserting it alone lets the test race ahead
+    // into "Close" + reopen while THIS save is still in flight — reopening then
+    // reads whatever the server had before the write landed (AC10's own comment
+    // above documents the identical trap for its own save).
+    const postResponse = page.waitForResponse(
+      (res) => res.url().includes('/api/research-plan') && res.request().method() === 'POST',
+    )
     await updateBtn.click()
+    expect((await postResponse).status()).toBe(200)
     await expect(dialog.getByText(/synced .* ago/i)).toBeVisible({ timeout: 8000 })
 
     // Reload (close + reopen the panel) — edit-in-place must persist.

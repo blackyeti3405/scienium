@@ -1,3 +1,4 @@
+import type { MemberRole } from '@prisma/client'
 import { e2eDb } from './db'
 
 /**
@@ -48,6 +49,12 @@ interface Anchor {
   leaderUserId: string
   classId: string | null
   previousActiveTeamId: string | null
+  // The leader's current membership row, so `createLab` can vacate it and
+  // `dispose()` can put it back. `TeamMember.userId` is `@@unique` (v0.71.0,
+  // one-team-at-a-time) — a real membership row, not just `activeTeamId`, so
+  // a disposable lab can hold at most a SECOND one only by giving up the
+  // first for its lifetime.
+  previousMembership: { teamId: string; role: MemberRole } | null
 }
 
 async function resolveAnchor(): Promise<Anchor> {
@@ -63,10 +70,15 @@ async function resolveAnchor(): Promise<Anchor> {
     select: { id: true, classId: true, activeTeamId: true },
   })
   if (!leader) throw new Error('The fixture team has no lead user — run: pnpm --filter web seed:e2e')
+  const membership = await e2eDb.teamMember.findUnique({
+    where: { userId: leader.id },
+    select: { teamId: true, role: true },
+  })
   return {
     leaderUserId: leader.id,
     classId: leader.classId,
     previousActiveTeamId: leader.activeTeamId ?? shared.id,
+    previousMembership: membership,
   }
 }
 
@@ -89,9 +101,29 @@ export interface OwnedLab extends Lab {
  *
  * `activeTeamId` is only repointed when `claimActive` is true (the default).
  * A second, "foreign" lab for an IDOR case must NOT steal the active team.
+ *
+ * `claimActive` also decides whether the leader gets a REAL membership row in
+ * the new team. `TeamMember.userId` is `@@unique` (v0.71.0, one-team-at-a-
+ * time), so a claimed lab must vacate the leader's existing membership first —
+ * a raw delete, not `leaveOtherTeams`/`departTeam`: those run lead-transfer/
+ * archive side effects meant for a real student leaving a team, which must
+ * never fire just because a disposable lab borrowed the leader for one spec
+ * file. `dispose()` restores it. A foreign (non-claimed) lab gets no
+ * membership row at all — impossible anyway under the unique constraint, and
+ * unneeded: an IDOR fixture only needs the team to exist, never a membership
+ * the leader would actually operate through.
  */
 export async function createLab(label: string, claimActive = true): Promise<OwnedLab> {
   const anchor = await resolveAnchor()
+
+  if (claimActive && anchor.previousMembership) {
+    await e2eDb.teamMember.delete({
+      where: {
+        userId_teamId: { userId: anchor.leaderUserId, teamId: anchor.previousMembership.teamId },
+      },
+    })
+  }
+
   const team = await e2eDb.team.create({
     data: {
       name: `[E2E ${label}]`,
@@ -99,7 +131,9 @@ export async function createLab(label: string, claimActive = true): Promise<Owne
       classId: anchor.classId,
       phase: FIXTURE_PHASE,
       labType: FIXTURE_LAB_TYPE,
-      members: { create: { userId: anchor.leaderUserId, role: 'lead' } },
+      ...(claimActive
+        ? { members: { create: { userId: anchor.leaderUserId, role: 'lead' as const } } }
+        : {}),
       currency: { create: { kp: KP_BASELINE, clearanceLevel: CLEARANCE_BASELINE } },
     },
     select: { id: true },
@@ -129,6 +163,26 @@ export async function createLab(label: string, claimActive = true): Promise<Owne
           .catch(() => {})
       }
       await disposeLab(team.id)
+      // disposeLab() already deleted this lab's own membership row above, so
+      // the leader again has zero rows and the unique constraint allows this.
+      if (claimActive && anchor.previousMembership) {
+        await e2eDb.teamMember
+          .upsert({
+            where: {
+              userId_teamId: {
+                userId: anchor.leaderUserId,
+                teamId: anchor.previousMembership.teamId,
+              },
+            },
+            create: {
+              userId: anchor.leaderUserId,
+              teamId: anchor.previousMembership.teamId,
+              role: anchor.previousMembership.role,
+            },
+            update: {},
+          })
+          .catch(() => {})
+      }
     },
   }
 }
