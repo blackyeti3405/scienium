@@ -122,39 +122,32 @@ export async function completeLesson(
         lessonId,
       },
     },
-    select: { bestScore: true, kpAwarded: true, completed: true },
+    select: { kpAwarded: true },
   })
-  const priorBest = existing?.bestScore ?? 0
-  const priorKp = existing?.kpAwarded ?? 0
-  const alreadyClaimed = priorKp > 0
+  const alreadyClaimed = (existing?.kpAwarded ?? 0) > 0
   const scorePct = Math.round(grade.ratio * 100)
-  const newBestScore = Math.max(priorBest, scorePct)
 
   if (!grade.passed) {
     // Persist a non-completing bestScore high-water only — no KP, no cap
     // consumption, completion status unchanged.
-    await db.codexLessonProgress.upsert({
-      where: {
-        userId_teamId_trackSlug_lessonId: {
-          userId: principal.dbUserId,
-          teamId: principal.teamId,
-          trackSlug,
-          lessonId,
-        },
-      },
-      create: {
-        userId: principal.dbUserId,
-        teamId: principal.teamId,
-        trackSlug,
-        lessonId,
-        completed: existing?.completed ?? false,
-        bestScore: newBestScore,
-        kpAwarded: priorKp,
-      },
-      update: {
-        bestScore: newBestScore,
-      },
-    })
+    //
+    // MONOTONIC (v0.68.0 fix — REFACTOR2 §0.7/§0.9). This used to be a plain
+    // `findUnique` + app-computed `Math.max` + an absolute-value `upsert`: two
+    // concurrent failed attempts could interleave so the LOWER score's write
+    // landed last, silently overwriting a higher one (reproduced: two
+    // concurrent 60%/20% submissions left 20% stored). A raw `GREATEST`-gated
+    // `ON CONFLICT` makes the comparison atomic in Postgres instead of in
+    // application code — the same pattern the first-time-completion path
+    // below already uses (v0.37.0/P1-R11). `completed`/`kp_awarded` are only
+    // set on INSERT (a genuinely new row); ON CONFLICT never touches them, so
+    // a failed retry after an earlier pass can never un-complete the lesson.
+    await db.$executeRaw(Prisma.sql`
+      INSERT INTO "codex_lesson_progress" (user_id, team_id, track_slug, lesson_id, completed, best_score, kp_awarded, updated_at)
+      VALUES (${principal.dbUserId}, ${principal.teamId}, ${trackSlug}, ${lessonId}, false, ${scorePct}, 0, now())
+      ON CONFLICT (user_id, team_id, track_slug, lesson_id) DO UPDATE
+        SET best_score = GREATEST("codex_lesson_progress".best_score, ${scorePct}),
+            updated_at = now()
+    `)
     return {
       ok: true,
       passed: false,
@@ -169,16 +162,25 @@ export async function completeLesson(
   // consumes a daily-cap slot — only a first-time completion (!alreadyClaimed)
   // does either.
   if (alreadyClaimed) {
-    await db.codexLessonProgress.update({
+    // MONOTONIC (v0.68.0 fix). This used to unconditionally set
+    // `completedAt: new Date()` on every re-pass, silently overwriting the
+    // student's genuine first-completion time with "now" (reproduced: a
+    // single re-pass moved a fixed timestamp). The first completion time is
+    // never touched again once set — completed/completedAt are simply
+    // omitted here — and bestScore is raised via a conditional `updateMany`
+    // whose WHERE clause carries the monotonic predicate (only write when
+    // the new score is strictly greater), matching this codebase's
+    // conditional-predicate convention (v0.43.0/v0.37.0) rather than a
+    // read-then-write.
+    await db.codexLessonProgress.updateMany({
       where: {
-        userId_teamId_trackSlug_lessonId: {
-          userId: principal.dbUserId,
-          teamId: principal.teamId,
-          trackSlug,
-          lessonId,
-        },
+        userId: principal.dbUserId,
+        teamId: principal.teamId,
+        trackSlug,
+        lessonId,
+        bestScore: { lt: scorePct },
       },
-      data: { bestScore: newBestScore, completed: true, completedAt: new Date() },
+      data: { bestScore: scorePct },
     })
     return {
       ok: true,
@@ -229,10 +231,10 @@ export async function completeLesson(
       // Claim the once-ever lesson payment.
       const claimRows = await tx.$queryRaw<{ kp_awarded: number }[]>(Prisma.sql`
         INSERT INTO "codex_lesson_progress" (user_id, team_id, track_slug, lesson_id, completed, best_score, kp_awarded, completed_at, updated_at)
-        VALUES (${principal.dbUserId}, ${principal.teamId}, ${trackSlug}, ${lessonId}, true, ${newBestScore}, ${award.kpEarned}, now(), now())
+        VALUES (${principal.dbUserId}, ${principal.teamId}, ${trackSlug}, ${lessonId}, true, ${scorePct}, ${award.kpEarned}, now(), now())
         ON CONFLICT (user_id, team_id, track_slug, lesson_id) DO UPDATE
           SET completed = true,
-              best_score = GREATEST("codex_lesson_progress".best_score, ${newBestScore}),
+              best_score = GREATEST("codex_lesson_progress".best_score, ${scorePct}),
               kp_awarded = ${award.kpEarned},
               completed_at = now(),
               updated_at = now()

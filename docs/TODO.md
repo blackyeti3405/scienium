@@ -163,36 +163,12 @@ stated reason has already been fixed another way.
 `lib/fairs/forms.ts` + `components/fair/FormsChecklist.tsx` (v0.67.0 — VERIFIED, P0-R4's corrected ISEF catalog untouched per instruction; `FormsChecklist.tsx`'s own unchecked-GET-status and swallowed-PATCH-failure defects confirmed still live — see the new item below, not part of P0-R4's scope),
 `lib/literature/synthesis.ts` + `components/literature/SynthesisMatrixEditor.tsx` (v0.67.0 — VERIFIED, P1-R13's snapshot-bound check intact; corrected a stale §0.3 note — the dirty-draft-loss item it still listed as open was actually closed in v0.51.0, one commit after v0.50.0, and never back-filled),
 `app/(public)/showcase/[slug]/page.tsx` (v0.67.0 — VERIFIED, P0-R3/P1-R7's authorization model correctly wired; the file's own duplicate-load and missing render-time URL-scheme check confirmed still live — see the new item below),
-`lib/literature/quiz-retry.ts` (v0.67.0 — VERIFIED, P1-R11's pre-call claim and result replay intact; SVC-1's reward-minting consolidation confirmed still open, matching the Executive Verdict's existing P2 listing).
+`lib/literature/quiz-retry.ts` (v0.67.0 — VERIFIED, P1-R11's pre-call claim and result replay intact; SVC-1's reward-minting consolidation confirmed still open, matching the Executive Verdict's existing P2 listing),
+`lib/ops/codex/complete-service.ts` (v0.68.0 — a re-pass no longer overwrites `completedAt`; the failed-attempt `bestScore` write is now a `GREATEST`-gated `ON CONFLICT` instead of a racy read-then-write; `test/codex-complete-monotonic.test.ts` pins both attacks with negative controls).
 
 **Deliberately deprioritised** (verdict is structural only, no named defect): `app/globals.css`
 (3,051 lines) and `prisma/schema.prisma` (now 2,282). Both are real cleanups with real risk and
 no behaviour attached; they are the least valuable thing on this list until something breaks.
-
-**Not actually answered — verified broken in v0.67.0, reported rather than fixed**:
-`lib/ops/codex/complete-service.ts` was listed here as "already answered another way," which
-turned out to be wrong. See "Codex completion can lose history under a re-pass or a race" below.
-
-## Codex completion can lose history under a re-pass or a race (REFACTOR2 §0.7/§0.9, found live 2026-07-27)
-
-`lib/ops/codex/complete-service.ts` was believed closed; re-reading the current code for v0.67.0's
-verification pass found both of §0.9's named defects still present, unpinned by any test.
-
-1. **A re-pass of an already-completed lesson overwrites the student's first-completion time.**
-   In the `alreadyClaimed` branch, `codexLessonProgress.update` sets
-   `completedAt: new Date()` unconditionally — no concurrency needed, this fires every time a
-   student replays a passed lesson (e.g. to push their best score up).
-2. **Two concurrent FAILED attempts can race a lower score into `bestScore`.** The failed-grade
-   path reads `bestScore` via a plain `findUnique`, computes `Math.max(priorBest, scorePct)` in
-   application code, then writes an absolute value via `upsert` — no transaction, no `GREATEST`.
-   If two failing submissions' writes land out of order, the final stored score can be the LOWER
-   one.
-
-Both are the mirror image of the first-time-completion path a few lines below in the same file,
-which already gets this right via a raw `GREATEST(...) ON CONFLICT` (the v0.37.0/P1-R11 pattern).
-Fix: move the failed-attempt write to the same `GREATEST`-gated raw-update shape, and make
-`completedAt` conditional on first completion (`WHERE completed = false`, or simply omit it on a
-re-pass). Add a test — there is currently none for this service at all.
 
 ## Two small UI durability gaps surfaced while verifying already-closed rows (found 2026-07-27)
 

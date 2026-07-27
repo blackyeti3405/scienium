@@ -5,6 +5,45 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.68.0] — 2026-07-27
+
+### Fixed — a Codex re-pass could erase a student's first-completion time, and a race could lower a best score (REFACTOR2 §0.7/§0.9)
+
+v0.67.0's verification pass found both of `lib/ops/codex/complete-service.ts`'s named defects
+still live, with zero test coverage. Both are reproduced and fixed here — no scoring, KP amount,
+pass threshold, or daily cap changed; this is purely about which write wins.
+
+- **A re-pass of an already-completed lesson no longer overwrites `completedAt`.** The
+  `alreadyClaimed` branch used to run `data: { bestScore, completed: true, completedAt: new Date() }`
+  unconditionally — reproduced with a single non-concurrent re-pass: one replay of a passed lesson
+  moved a fixed `2026-01-01` timestamp to "now". The fix omits `completed`/`completedAt` entirely
+  (both are already correct from the first pass) and raises `bestScore` with a conditional
+  `updateMany` whose `WHERE bestScore < newScore` guard IS the monotonic check — the
+  conditional-predicate style this codebase already uses for paid writebacks (v0.43.0/v0.37.0),
+  atomic in the database rather than app code.
+- **A failed attempt's `bestScore` write is now a `GREATEST`-gated `INSERT ... ON CONFLICT`, not a
+  read-then-write.** The old path read `bestScore` via `findUnique`, computed `Math.max` in
+  application code, then wrote an absolute value via `upsert` — reproduced with two genuinely
+  interleaved (`Promise.all`) failed attempts scoring 60% and 20%: the final stored `bestScore`
+  was **20**, the lower value. The fix mirrors the first-time-completion path a few lines below
+  (already correct since v0.37.0/P1-R11): one atomic `INSERT ... ON CONFLICT DO UPDATE SET
+  best_score = GREATEST(...)`. `completed`/`kp_awarded` are only set on a genuine INSERT, so a
+  failed retry after an earlier pass can never un-complete a lesson or touch its KP.
+- KP idempotency (the once-ever claim) was untouched — it lived in a different code path
+  (the in-transaction `WHERE kp_awarded = 0` claim) that already worked correctly and isn't part
+  of either defect; a regression test confirms a re-pass still pays 0 and a genuine first pass
+  still pays 8.
+- New `test/codex-complete-monotonic.test.ts` (6 tests) pins both attacks — a real elapsed-time
+  re-pass for the timestamp bug, a real `Promise.all` interleaving for the score race — rather
+  than restating the fix. Negative-controlled: with the fix reverted, the two attack tests fail on
+  the exact reproduced corruption (`completedAt` moved; `bestScore` stomped to 20); the other four
+  invariant tests still pass unchanged, confirming they aren't accidentally attack-shaped.
+
+---
+
+**E2E `F13-codex` re-run: 16/16** — including AC2/AC3, the first-completion KP award and the
+re-pass-pays-zero rule, which are exactly the semantics this fix touches.
+
 ## [0.67.0] — 2026-07-27
 
 ### Verified — nine §0.7 rows closed by earlier batches, and one that a student could still be losing history to
