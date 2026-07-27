@@ -527,7 +527,11 @@ Top-level infrastructure and policy files:
 - `fetch-retry.ts`: `fetchWithRetry` — 429/5xx retry-after backoff bounded by a
   `Promise.race` timeout (aborting a stalled OS-level connect doesn't reliably
   unblock it) — plus the one shared `sleep`, replacing five copy-pasted
-  discovery-adapter retry loops.
+  discovery-adapter retry loops. Also `readCapped`/`readJsonCapped`: the shared
+  provider byte ceiling (streaming counter, cancels at the limit, throws rather
+  than truncating — `content-length` is optional and a chunked body omits it).
+  `lib/discovery/openalex.ts` uses it; the other adapters are the open half
+  (REFACTOR2 §0.7, `docs/SECURITY.md` §3.8).
 - `shop-server.ts`, `plot-server.ts`, `showcase-server.ts` (+
   `resolveShowcaseViewer` — the signed-in viewer's team/school context, plus the
   teams they teach, for a showcase privacy check; and
@@ -580,7 +584,9 @@ Feature-owned library folders:
 - `data-terminal/`: CSV utilities, chart-guide index, pure PNG/CSV `export.ts`,
   tests, and one chart module per scientific field under `charts/`.
 - `discovery/`: OpenAlex (`openalex.ts` — the sole live scholarly-search/
-  citation adapter; serves both arXiv-preprint and PubMed-indexed works via
+  citation adapter, whose every request is built by `oaUrl()`: `https:` +
+  hostname exactly `api.openalex.org`, enforced BEFORE `mailto`/`api_key` are
+  attached, because `getCitedBy` follows a URL out of the provider's own JSON; serves both arXiv-preprint and PubMed-indexed works via
   `works/arxiv:<id>` / `works/pmid:<id>`, so the standalone `ncbi.ts`
   E-utilities adapter was deleted as dead code and `arxiv.ts` is reduced to
   `normalizeArxivId`, the id-normalization helper OpenAlex and Semantic

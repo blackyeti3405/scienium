@@ -135,7 +135,8 @@ defect they carry, not by length, and be willing to record "the split is not wor
 stated reason has already been fixed another way.
 
 **Done:** `components/discovery/DiscoveryTree.tsx` (v0.53.0),
-`components/ops/ExpertisePanel.tsx` (v0.54.0 — defect closed, view split deliberately left).
+`components/ops/ExpertisePanel.tsx` (v0.54.0 — defect closed, view split deliberately left),
+`lib/discovery/openalex.ts` (v0.55.0 — hardened; split declined with a reason).
 
 **Highest value remaining**, by the defect each verdict names — every one is a live behaviour
 problem, not a size complaint:
@@ -143,7 +144,6 @@ problem, not a size complaint:
 | File | The defect the verdict names |
 | --- | --- |
 | `stores/discoveryStore.ts` | Fire-and-forget writes and `newTreePending` can lose state; `addSourceNode`/`addArticleNode` duplicate a large insert path; deletion is O(n²). |
-| `lib/discovery/openalex.ts` | Provider JSON is asserted rather than parsed; **`cited_by_api_url` is fetched with no host enforcement** and bodies are uncapped — the SSRF-shaped one. |
 | `components/teacher/TeacherRubricScoring.tsx` | Track switching discards unsaved state; blur/click autosaves race; blank numeric input becomes zero. |
 | `components/ops/CodexTab.tsx` | Refresh ignores non-OK responses; a track load error leaves an endless loader; rapid navigation can commit a stale track. |
 | `lib/teacher/student-overview.ts` | ~18 queries per detail request, and the selected team can be paired with a *different* membership's role/join time. |
@@ -151,6 +151,7 @@ problem, not a size complaint:
 | `components/discovery/SourceReader.tsx` | Blur/button saves can duplicate or land after the selection changed. |
 | `lib/hooks/usePlotBuildings.ts` | No abort/resync; refresh errors swallowed; duplicated optimistic economy prediction. |
 | `components/lab/LabScene.tsx` | Six booleans permit overlapping off-path panels. |
+| `lib/discovery/articles.ts` | Feed URLs and provider bodies need canonical host/content-type/byte validation. `readCapped` now exists (v0.55.0) — this is where it lands next. |
 
 **Deliberately deprioritised** (verdict is structural only, no named defect): `app/globals.css`
 (3,051 lines) and `prisma/schema.prisma` (now 2,282). Both are real cleanups with real risk and

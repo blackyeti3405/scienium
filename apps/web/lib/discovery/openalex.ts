@@ -1,5 +1,6 @@
 import 'server-only'
-import { fetchWithRetry } from '@/lib/fetch-retry'
+import { z } from 'zod'
+import { fetchWithRetry, readJsonCapped } from '@/lib/fetch-retry'
 import { LruCache } from '@/lib/lru'
 import { normalizeArxivId } from '@/lib/discovery/arxiv'
 import { sanitizeAbstract } from '@/lib/discovery/sanitize'
@@ -82,18 +83,64 @@ const workByExtCache = new LruCache<NormalizedWork | null>(CACHE_MAX_ENTRIES, CA
 // each arXiv-locatable so the citations route can turn them into branchable chips.
 const MOCK = process.env.E2E_MOCK_SOURCES === '1'
 
-function withMailto(url: URL): URL {
+/** The ONLY host this module may talk to. */
+const OPENALEX_HOST = 'api.openalex.org'
+
+/** Largest OpenAlex response we will buffer. A 50-row `select`ed page is ~1MB. */
+const MAX_BODY_BYTES = 8 * 1024 * 1024
+
+/**
+ * Build an OpenAlex request URL — and enforce that it IS one.
+ *
+ * `getCitedBy` follows `cited_by_api_url` **out of the provider's own JSON**.
+ * Nothing checked it, so a compromised, spoofed, or simply wrong upstream
+ * response could point this server at any host it liked: an SSRF from inside a
+ * request handler, and — because the politeness params are appended *after* the
+ * URL is chosen — it also handed `OPENALEX_API_KEY` to whoever answered. That
+ * was reproduced against the original: a work whose `cited_by_api_url` named a
+ * local server received exactly one request, carrying `api_key=…`.
+ *
+ * So the credential is attached only once the host has been proven, and every
+ * request in this module is built here — there is no second door.
+ */
+function oaUrl(input: string): URL {
+  const url = new URL(input)
+  if (url.protocol !== 'https:' || url.hostname !== OPENALEX_HOST) {
+    throw new Error(`refusing non-OpenAlex URL: ${url.protocol}//${url.hostname}`)
+  }
   url.searchParams.set('mailto', MAILTO)
   if (OPENALEX_API_KEY) url.searchParams.set('api_key', OPENALEX_API_KEY)
   return url
 }
 
-const oaFetch = (url: string) =>
-  fetchWithRetry(url, {
+const oaFetch = (url: URL) =>
+  fetchWithRetry(url.toString(), {
     headers: { 'User-Agent': DISCOVERY_UA, Accept: 'application/json' },
     timeoutMs: 8000,
     timeoutMessage: 'OpenAlex request timed out',
   })
+
+/**
+ * Provider JSON, PARSED — the house rule is `safeParse`, never a cast, and this
+ * module had `as Record<string, unknown>` at every read.
+ *
+ * The schemas are deliberately shallow. The field mappers below (`toWork`,
+ * `toNeighbour`, `toNormalized`) already `typeof`-guard every field they touch,
+ * so they are a hand-written parser that works; re-declaring OpenAlex's ~40-field
+ * Work here would be a second source of truth to keep in step for no defect.
+ * What the casts actually *lied* about is the envelope shape — `results` being an
+ * array of objects — and that is what these pin.
+ */
+const OaObject = z.record(z.unknown())
+const OaList = z.object({ results: z.array(OaObject).optional() })
+
+/** One capped, parsed Work object. */
+const oaWork = async (res: Response): Promise<Record<string, unknown>> =>
+  OaObject.parse(await readJsonCapped(res, MAX_BODY_BYTES))
+
+/** One capped, parsed result page. */
+const oaResults = async (res: Response): Promise<Array<Record<string, unknown>>> =>
+  OaList.parse(await readJsonCapped(res, MAX_BODY_BYTES)).results ?? []
 
 /**
  * Extract the arXiv id (if any) from an OpenAlex Work. arXiv shows up either in a
@@ -130,8 +177,11 @@ function toWork(raw: Record<string, unknown>): OpenAlexWork {
     arxivId: arxivIdFromWork(raw),
     doi: typeof raw.doi === 'string' ? raw.doi : null,
     authors,
+    // `Array.isArray` proved the container, never the ELEMENTS — the `as string[]`
+    // was the lie. A non-string in here reaches `id.replace(...)` in
+    // `getReferences` and throws, taking the whole citation lane down with it.
     referencedWorks: Array.isArray(raw.referenced_works)
-      ? (raw.referenced_works as string[])
+      ? raw.referenced_works.filter((id): id is string => typeof id === 'string')
       : [],
     citedByApiUrl: typeof raw.cited_by_api_url === 'string' ? raw.cited_by_api_url : null,
     citedByCount: typeof raw.cited_by_count === 'number' ? raw.cited_by_count : 0,
@@ -154,15 +204,13 @@ export async function resolveArxivWork(rawArxivId: string): Promise<OpenAlexWork
   if (cached !== undefined) return cached
 
   // arXiv works are registered in OpenAlex under the DataCite DOI 10.48550/arXiv.<id>.
-  const doiUrl = withMailto(
-    new URL(`${OPENALEX_API}/works/https://doi.org/10.48550/arXiv.${arxivId}`),
-  )
+  const doiUrl = oaUrl(`${OPENALEX_API}/works/https://doi.org/10.48550/arXiv.${arxivId}`)
   doiUrl.searchParams.set('select', WORK_SELECT)
 
   try {
-    const res = await oaFetch(doiUrl.toString())
+    const res = await oaFetch(doiUrl)
     if (res.ok) {
-      const work = toWork((await res.json()) as Record<string, unknown>)
+      const work = toWork(await oaWork(res))
       workCache.set(cacheKey, work)
       return work
     }
@@ -185,16 +233,16 @@ export async function resolveOpenalexWork(rawId: string): Promise<OpenAlexWork |
   const cached = workCache.get(cacheKey)
   if (cached !== undefined) return cached
 
-  const url = withMailto(new URL(`${OPENALEX_API}/works/${oaId}`))
+  const url = oaUrl(`${OPENALEX_API}/works/${oaId}`)
   url.searchParams.set('select', WORK_SELECT)
 
   try {
-    const res = await oaFetch(url.toString())
+    const res = await oaFetch(url)
     if (!res.ok) {
       workCache.set(cacheKey, null)
       return null
     }
-    const work = toWork((await res.json()) as Record<string, unknown>)
+    const work = toWork(await oaWork(res))
     workCache.set(cacheKey, work)
     return work
   } catch (err) {
@@ -211,13 +259,13 @@ export async function resolvePubmedWork(rawPmid: string): Promise<OpenAlexWork |
   const cached = workCache.get(cacheKey)
   if (cached !== undefined) return cached
 
-  const url = withMailto(new URL(`${OPENALEX_API}/works/pmid:${pmid}`))
+  const url = oaUrl(`${OPENALEX_API}/works/pmid:${pmid}`)
   url.searchParams.set('select', WORK_SELECT)
 
   try {
-    const res = await oaFetch(url.toString())
+    const res = await oaFetch(url)
     if (res.ok) {
-      const work = toWork((await res.json()) as Record<string, unknown>)
+      const work = toWork(await oaWork(res))
       workCache.set(cacheKey, work)
       return work
     }
@@ -244,16 +292,15 @@ export async function getReferences(work: OpenAlexWork, limit = 6): Promise<Open
 
   // Batch-fetch by OR-ing the OpenAlex ids in a single filter query.
   const shortIds = ids.map((id) => id.replace(`${OPENALEX_API}/`, '').replace('https://openalex.org/', ''))
-  const url = withMailto(new URL(`${OPENALEX_API}/works`))
+  const url = oaUrl(`${OPENALEX_API}/works`)
   url.searchParams.set('filter', `openalex_id:${shortIds.join('|')}`)
   url.searchParams.set('select', NEIGHBOUR_SELECT)
   url.searchParams.set('per-page', String(Math.min(limit, 25)))
 
   try {
-    const res = await oaFetch(url.toString())
+    const res = await oaFetch(url)
     if (!res.ok) return []
-    const data = (await res.json()) as { results?: Array<Record<string, unknown>> }
-    const neighbours = (data.results ?? []).map(toNeighbour)
+    const neighbours = (await oaResults(res)).map(toNeighbour)
     neighboursCache.set(cacheKey, neighbours)
     return neighbours
   } catch (err) {
@@ -273,16 +320,18 @@ export async function getCitedBy(work: OpenAlexWork, limit = 6): Promise<OpenAle
   const cached = neighboursCache.get(cacheKey)
   if (cached) return cached
 
-  const url = withMailto(new URL(work.citedByApiUrl))
-  url.searchParams.set('select', NEIGHBOUR_SELECT)
-  url.searchParams.set('per-page', String(Math.min(limit, 25)))
-  url.searchParams.set('sort', 'cited_by_count:desc')
-
   try {
-    const res = await oaFetch(url.toString())
+    // Inside the try on purpose: `oaUrl` THROWS on a URL that is not OpenAlex's,
+    // and this lane's contract is to degrade to an empty list, not to fail the
+    // student's request. The refusal is logged, so it is a signal and not a shrug.
+    const url = oaUrl(work.citedByApiUrl)
+    url.searchParams.set('select', NEIGHBOUR_SELECT)
+    url.searchParams.set('per-page', String(Math.min(limit, 25)))
+    url.searchParams.set('sort', 'cited_by_count:desc')
+
+    const res = await oaFetch(url)
     if (!res.ok) return []
-    const data = (await res.json()) as { results?: Array<Record<string, unknown>> }
-    const neighbours = (data.results ?? []).slice(0, limit).map(toNeighbour)
+    const neighbours = (await oaResults(res)).slice(0, limit).map(toNeighbour)
     neighboursCache.set(cacheKey, neighbours)
     return neighbours
   } catch (err) {
@@ -341,14 +390,34 @@ export interface NormalizedWork {
   openAlexId: string | null
 }
 
-/** Rebuild plain-text abstract from OpenAlex's inverted index, then sanitize it. */
-function reconstructAbstract(inverted: Record<string, number[]> | null | undefined): string | null {
+/**
+ * Rebuild plain-text abstract from OpenAlex's inverted index, then sanitize it.
+ *
+ * Positions are provider data. The old version wrote them into a plain array —
+ * `slots[pos] = word` — so ONE out-of-range position sized the array to it, and
+ * the following `slots.filter(...)` walked every index. Measured against the
+ * original: a two-word abstract whose second position was 50,000,000 took
+ * **1.8 seconds**, and a search page normalizes up to 50 rows. A `Map` keyed by
+ * position makes the magnitude irrelevant — the cost is the number of words that
+ * are actually there.
+ */
+export function reconstructAbstract(
+  inverted: Record<string, number[]> | null | undefined,
+): string | null {
   if (!inverted || typeof inverted !== 'object') return null
-  const slots: string[] = []
+  const slots = new Map<number, string>()
   for (const [word, positions] of Object.entries(inverted)) {
-    for (const pos of positions) slots[pos] = word
+    if (!Array.isArray(positions)) continue
+    for (const pos of positions) {
+      if (typeof pos === 'number' && Number.isInteger(pos) && pos >= 0) slots.set(pos, word)
+    }
   }
-  const text = slots.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
+  const text = [...slots.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, word]) => word)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
   return text ? sanitizeAbstract(`<p>${text}</p>`) : null
 }
 
@@ -503,7 +572,7 @@ export async function searchWorks({ query, platform, limit = 12 }: SearchWorksPa
   const cached = searchWorksCache.get(cacheKey)
   if (cached) return cached
 
-  const url = withMailto(new URL(`${OPENALEX_API}/works`))
+  const url = oaUrl(`${OPENALEX_API}/works`)
   url.searchParams.set('search', query)
   url.searchParams.set('select', SEARCH_SELECT)
   // Over-fetch: some rows are dropped for lacking a resolvable id.
@@ -518,10 +587,9 @@ export async function searchWorks({ query, platform, limit = 12 }: SearchWorksPa
   )
 
   try {
-    const res = await oaFetch(url.toString())
+    const res = await oaFetch(url)
     if (!res.ok) return []
-    const data = (await res.json()) as { results?: Array<Record<string, unknown>> }
-    const works = (data.results ?? [])
+    const works = (await oaResults(res))
       .map((r) => toNormalized(r, platform === 'oa' ? 'any' : platform))
       .filter((w): w is NormalizedWork => w !== null)
       .slice(0, limit)
@@ -558,17 +626,16 @@ export async function getWorkByExternalId(
       : platform === 'pubmed'
         ? `${OPENALEX_API}/works/pmid:${bareId}`
         : `${OPENALEX_API}/works/${bareId}`
-  const url = withMailto(new URL(path))
+  const url = oaUrl(path)
   url.searchParams.set('select', SEARCH_SELECT)
 
   try {
-    const res = await oaFetch(url.toString())
+    const res = await oaFetch(url)
     if (!res.ok) {
       workByExtCache.set(cacheKey, null)
       return null
     }
-    const raw = (await res.json()) as Record<string, unknown>
-    const work = toNormalized(raw, platform === 'openalex' ? 'any' : platform)
+    const work = toNormalized(await oaWork(res), platform === 'openalex' ? 'any' : platform)
     workByExtCache.set(cacheKey, work)
     return work
   } catch (err) {

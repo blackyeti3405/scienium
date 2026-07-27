@@ -5,6 +5,51 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.55.0] — 2026-07-26
+
+### Fixed — OpenAlex could tell this server where to send its API key
+
+Third of REFACTOR2 §0.7's file dispositions: `lib/discovery/openalex.ts`. All three readings in
+the verdict were correct, and each was **reproduced against the pre-fix code**.
+
+- **The provider chose the host, and got the credential.** `getCitedBy` follows
+  `cited_by_api_url` straight out of the provider's own JSON. Nothing checked it — and the
+  politeness params (`mailto`, **`api_key`**) were appended *after* the URL was chosen, so a
+  compromised, spoofed or simply wrong upstream response could point this server at any host it
+  liked **and hand it `OPENALEX_API_KEY`**. Reproduced: a work whose `cited_by_api_url` named a
+  local server received exactly one request, carrying `api_key=…`. The audit called this a
+  missing host assertion; the credential half is worse than that, and it is why the key is now
+  attached only *after* the host is proven.
+- **One absurd abstract position cost 1.8 seconds.** `abstract_inverted_index` positions are
+  provider data, written straight into a plain array — `slots[pos] = word` — so a single
+  out-of-range position sized the array to it and the following `filter` walked every index.
+  Measured: a **two-word** abstract whose second position was 50,000,000 took 1,813 ms, and a
+  search page normalizes up to 50 rows. It is now a `Map` keyed by position, so magnitude costs
+  nothing.
+- **Bodies were uncapped.** Reproduced with a chunked 40 MB response buffered in full — and
+  `content-length` never appeared, so a header check would not have caught it.
+
+`oaUrl()` is now the only door: every request in the module is built there, requires `https:`
+and hostname exactly `api.openalex.org`, and throws otherwise. `readCapped`/`readJsonCapped` in
+`lib/fetch-retry.ts` are the shared byte ceiling — a streaming counter that cancels at the limit
+and throws rather than truncating, because half a JSON document is not a smaller JSON document.
+Provider bodies are parsed (`z`) instead of cast, and the two casts that actually *lied* —
+`referenced_works` asserted as `string[]` without checking its elements, and inverted-index
+positions asserted as numbers — are now filtered.
+
+**The file was not split.** §0.7 proposed separating transport, schemas, normalization, search
+and citation traversal; the transport rule is exactly what must not be spread out, since the
+whole defect was a request built somewhere the host rule did not reach. One door, one file.
+
+### Verification
+Gates 1–5 pass. Vitest **126 files / 1,792 tests** (+2 files, +15).
+Negative-controlled four ways: deleting the host check fails all 5 refusal tests, restoring the
+sparse-array abstract fails the timing test, and removing the byte counter fails both cap tests.
+The `content-length` shortcut **failed nothing when removed and was deleted** — the streaming
+counter already covers it. The refusal tests assert the refusal itself rather than an empty
+list: an empty list is also the healthy answer, and three of the five passed with the guard
+deleted until that was fixed.
+
 ## [0.54.0] — 2026-07-26
 
 ### Fixed — a clearance exam could lose a student's answer and say nothing

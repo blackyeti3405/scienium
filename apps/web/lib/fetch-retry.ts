@@ -60,3 +60,45 @@ export async function fetchWithRetry(
   }
   return res
 }
+
+/**
+ * Read a provider response body with a hard byte ceiling.
+ *
+ * `res.json()` and `res.text()` buffer whatever arrives. `content-length` is not
+ * a defence — it is optional, and a chunked response simply omits it — so the
+ * count has to come from the bytes themselves. The stream is cancelled the
+ * moment the ceiling is crossed, so an oversized body costs the ceiling and not
+ * the body.
+ *
+ * Throws rather than truncating: half a JSON document is not a smaller JSON
+ * document, and silently parsing a prefix is how a cap becomes a corruption bug.
+ */
+export async function readCapped(res: Response, maxBytes: number): Promise<string> {
+  // No `content-length` shortcut: it did not survive its negative control —
+  // removing it failed nothing, because the streaming counter below already
+  // stops at the ceiling either way. A header check would only be an early exit
+  // for the honest case, and it is not the honest case this defends against.
+  if (!res.body) return ''
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let size = 0
+  let text = ''
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > maxBytes) throw new Error(`response body exceeds ${maxBytes} bytes`)
+      text += decoder.decode(value, { stream: true })
+    }
+  } finally {
+    await reader.cancel().catch(() => {})
+  }
+  return text + decoder.decode()
+}
+
+/** `readCapped` + `JSON.parse`, for JSON providers. Throws on either failure. */
+export async function readJsonCapped(res: Response, maxBytes: number): Promise<unknown> {
+  return JSON.parse(await readCapped(res, maxBytes))
+}
