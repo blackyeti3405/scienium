@@ -5,6 +5,7 @@ import type { ArticleRenderMode, ArticleSearchResult } from '@/lib/discovery/sou
 import { TIER_META } from '@/lib/discovery/credibility'
 import { browseArticles, type ArticleFeedMeta } from '@/components/discovery/api'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
+import { useLatest } from '@/lib/hooks/useLatest'
 
 interface Props {
   /** Resolve + add the picked article to the tree (via the store). */
@@ -24,7 +25,10 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
   const [loading, setLoading] = useState(false)
   const [adding, setAdding] = useState<string | null>(null)
   const [searched, setSearched] = useState(false)
+  // Same failure-vs-empty split as PapersSearch (§0.9 Row C2).
+  const [searchError, setSearchError] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const begin = useLatest()
 
   // Load the feed picker's metadata once on mount (no `feed` param → results: []).
   useEffect(() => {
@@ -37,20 +41,27 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
       .finally(() => setFeedsLoaded(true))
   }, [])
 
-  const runSearch = useCallback(async (feedId: string, q: string) => {
-    setLoading(true)
-    try {
-      const { results: list } = await browseArticles(feedId, q)
-      setResults(list)
-      setSearched(true)
-    } catch {
-      // Browse degrades to empty on any failure — never surfaces an error.
-      setResults([])
-      setSearched(true)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const runSearch = useCallback(
+    async (feedId: string, q: string) => {
+      const stale = begin()
+      setLoading(true)
+      setSearchError(false)
+      try {
+        const { results: list } = await browseArticles(feedId, q)
+        if (stale()) return
+        setResults(list)
+        setSearched(true)
+      } catch {
+        if (stale()) return
+        setResults([])
+        setSearched(true)
+        setSearchError(true)
+      } finally {
+        if (!stale()) setLoading(false)
+      }
+    },
+    [begin],
+  )
 
   // Debounced re-fetch whenever the active feed or keyword filter changes.
   useEffect(() => {
@@ -162,17 +173,31 @@ export function ArticlesBrowse({ onPickArticle }: Props) {
         {results.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-8">
             <span className="text-4xl">📰</span>
-            <p className="font-pixel text-[8px] text-white/50 leading-loose">
+            <p
+              className={`font-pixel text-[8px] leading-loose ${searchError && !loading ? 'text-red-300' : 'text-white/50'}`}
+              role={searchError && !loading ? 'alert' : undefined}
+            >
               {!feedsLoaded || loading
                 ? 'Loading…'
-                : activeIsSearchDriven && !query.trim()
-                  ? activeProvider === 'patents'
-                    ? 'Describe your invention idea to search for prior art'
-                    : 'Type a topic to search MedlinePlus health explainers'
-                  : searched
-                    ? 'No articles found — try another feed or keyword'
-                    : 'Pick a feed to browse'}
+                : searchError
+                  ? 'Couldn’t reach this feed — check your connection and try again.'
+                  : activeIsSearchDriven && !query.trim()
+                    ? activeProvider === 'patents'
+                      ? 'Describe your invention idea to search for prior art'
+                      : 'Type a topic to search MedlinePlus health explainers'
+                    : searched
+                      ? 'No articles found — try another feed or keyword'
+                      : 'Pick a feed to browse'}
             </p>
+            {searchError && !loading && activeFeed && (
+              <button
+                type="button"
+                onClick={() => runSearch(activeFeed, query)}
+                className="font-pixel text-[8px] border border-white/20 text-white/60 px-4 py-2 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+              >
+                Try again
+              </button>
+            )}
           </div>
         ) : (
           <ul className="flex flex-col gap-2">

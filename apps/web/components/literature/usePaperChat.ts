@@ -18,6 +18,7 @@ export function usePaperChat(paper: Paper) {
   ])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const greeting: ChatMessage = {
@@ -35,10 +36,19 @@ export function usePaperChat(paper: Paper) {
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data.messages) && data.messages.length > 0) {
-          setMessages([greeting, ...data.messages])
+          // Apply ONLY while the thread is still pristine (just the greeting).
+          // This GET fires at mount with pre-send data; a student who types
+          // fast can have sent a turn before it resolves, and replacing state
+          // unconditionally clobbered their message and its reply with the
+          // stale snapshot — the message visibly vanished. Their turns are
+          // already persisted server-side, so the next reopen shows them.
+          // Same guard as VegaStudyTab, which is where it was first needed.
+          setMessages((prev) => (prev.length <= 1 ? [greeting, ...data.messages] : prev))
         }
       })
-      .catch(() => {})
+      .catch(() =>
+        setLoadError('Could not load this paper’s chat history. You can still ask questions.'),
+      )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -72,5 +82,5 @@ export function usePaperChat(paper: Paper) {
     }
   }
 
-  return { messages, input, setInput, sending, sendMessage, messagesEndRef }
+  return { messages, input, setInput, sending, sendMessage, messagesEndRef, loadError }
 }

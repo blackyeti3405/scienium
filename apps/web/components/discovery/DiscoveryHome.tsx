@@ -125,6 +125,8 @@ interface Props {
   currentUserId: string | null
   onAddInterest: (text: string) => void
   onRemoveInterest: (id: string) => void
+  interestsLoadError?: boolean
+  onRetryInterests?: () => void
   onSeedInterest: (text: string) => void
 }
 
@@ -146,6 +148,8 @@ export function DiscoveryHome({
   currentUserId,
   onAddInterest,
   onRemoveInterest,
+  interestsLoadError,
+  onRetryInterests,
   onSeedInterest,
 }: Props) {
   const [open, toggle] = useToggleSet<number>()
@@ -263,6 +267,8 @@ export function DiscoveryHome({
             onAdd={onAddInterest}
             onRemove={onRemoveInterest}
             onSeed={onSeedInterest}
+            loadError={interestsLoadError}
+            onRetryLoad={onRetryInterests}
           />
         </div>
 

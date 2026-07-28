@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { z } from 'zod'
 import { requestJson } from '@/lib/api/client'
 import { interpretTopicSaveResponse } from '@/lib/discovery/topic-save'
@@ -33,6 +33,8 @@ export function useFinalTopic({
   // topic" CTA renders for the ~1s the /api/discovery/topic fetch is in flight,
   // even for a team that already has a topic set.
   const [topicLoaded, setTopicLoaded] = useState(false)
+  /** The topic GET failed — distinct from "no topic yet". */
+  const [topicLoadError, setTopicLoadError] = useState(false)
   const [editingTopic, setEditingTopic] = useState(false)
   const [topicDraft, setTopicDraft] = useState('')
   const [savingTopic, setSavingTopic] = useState(false)
@@ -57,15 +59,28 @@ export function useFinalTopic({
     proposalToken: string | null
   } | null>(null)
 
-  useEffect(() => {
+  // A failed GET used to land in `.finally` anyway, so `topicLoaded` flipped
+  // true with no topic and the bar rendered "Choose your final research topic"
+  // to a team that already has one — the exact false prompt the skeleton exists
+  // to prevent (§0.9 Row C2). Now the failure keeps `topicLoaded` false and
+  // shows a retry instead.
+  const loadTopic = useCallback(() => {
+    setTopicLoadError(false)
     requestJson('/api/discovery/topic', topicSchema)
       .then((d) => {
         setFinalTopic(d.topic ?? null)
         setTopicPaperCount(d.paperCount ?? 0)
+        setTopicLoaded(true)
       })
-      .catch(() => {})
-      .finally(() => setTopicLoaded(true))
+      .catch((err) => {
+        console.error('[discovery] load topic failed:', err)
+        setTopicLoadError(true)
+      })
   }, [])
+
+  useEffect(() => {
+    loadTopic()
+  }, [loadTopic])
 
   // Raw fetch (not `requestJson`): the 409 responses are real flows, not
   // errors. The response protocol is interpreted by the SHARED
@@ -149,6 +164,8 @@ export function useFinalTopic({
     finalTopic,
     topicPaperCount,
     topicLoaded,
+    topicLoadError,
+    retryLoadTopic: loadTopic,
     editingTopic,
     setEditingTopic,
     topicDraft,

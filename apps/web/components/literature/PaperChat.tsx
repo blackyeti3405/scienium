@@ -1,6 +1,6 @@
 'use client'
 
-import { CheckCircle2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { ChatComposer, ChatMessageList } from '@/components/ui/ChatThread'
 import type { Paper } from './types'
 import type { usePaperChat } from './usePaperChat'
@@ -18,9 +18,19 @@ export function PaperChat({
   sending,
   sendMessage,
   messagesEndRef,
+  loadError,
 }: { paper: Paper } & ReturnType<typeof usePaperChat>) {
   return (
     <>
+      {/* A history load that failed used to be indistinguishable from a fresh
+          conversation — the student saw only the greeting and assumed their
+          earlier questions had never been saved. */}
+      {loadError && (
+        <div className="mx-3 mt-3 px-3 py-2 bg-red-500/10 border border-red-500/25 rounded-sm flex items-center gap-2 shrink-0">
+          <AlertTriangle size={11} className="text-red-300 shrink-0" />
+          <span className="font-pixel text-[7px] text-red-300">{loadError}</span>
+        </div>
+      )}
       {paper.proficiencyDemonstrated && (
         <div className="mx-3 mt-3 px-3 py-2 bg-green-500/10 border border-green-500/25 rounded-sm flex items-center gap-2 shrink-0">
           <CheckCircle2 size={12} className="text-green-400 shrink-0" />

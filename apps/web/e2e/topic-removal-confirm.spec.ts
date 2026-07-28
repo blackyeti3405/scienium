@@ -240,13 +240,17 @@ test.describe('topic change — two-phase removal confirmation', () => {
       await expect(page.getByText(RELEVANT_A)).toHaveCount(0)
       await expect(page.getByText(RELEVANT_B)).toHaveCount(0)
 
-      // Cancel — nothing may be deleted by a look at the list. Scoped to the
-      // modal: the topic editor now stays open behind it (same as the explorer
-      // surface), so an unscoped 'Cancel' would match its inline cancel too.
-      await page
-        .getByTestId('topic-removal-modal')
-        .getByRole('button', { name: 'Cancel' })
-        .click()
+      // §0.9 Row A: this is a DESTRUCTIVE confirm and it was a bare <div> —
+      // no role, no aria-modal, no focus trap, no Escape. It is now a real
+      // dialog on the modal stack.
+      const removalDialog = page.getByRole('dialog', { name: 'Remove these sources?' })
+      await expect(removalDialog).toBeVisible()
+      await expect(removalDialog).toHaveAttribute('aria-modal', 'true')
+
+      // Cancel — nothing may be deleted by a look at the list. Escape is the
+      // route asserted here because it is the one that did not exist before;
+      // it and the Cancel button share `onCancelTopicRemoval`.
+      await page.keyboard.press('Escape')
       await expect(page.getByText('Remove these sources?')).toHaveCount(0)
       expect(await fixtureTitlesPresent()).toEqual([RELEVANT_A, RELEVANT_B, IRRELEVANT].sort())
     })

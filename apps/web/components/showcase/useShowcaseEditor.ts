@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ABSTRACT_WORD_MAX, SINGLE_SLOT, wordCount, type PrivacyLevel, type ShowcaseAssetType } from '@/lib/showcase'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -104,7 +104,7 @@ export function useShowcaseEditor() {
   const words = wordCount(abstract)
   const overWords = words > ABSTRACT_WORD_MAX
 
-  async function save(
+  async function writeShowcase(
     extra?: { published?: boolean; rotateShareToken?: boolean },
   ): Promise<Showcase | null> {
     setError(null)
@@ -126,6 +126,29 @@ export function useShowcaseEditor() {
     }
     applyShowcase(data.showcase)
     return data.showcase as Showcase
+  }
+
+  /**
+   * Every PUT goes through one chain, so two of them can never be in flight at
+   * once (§0.9 Row C3). `save` PUTs the WHOLE object and `applyShowcase`es
+   * whatever comes back, and five call sites reach it — Save, Publish,
+   * Rotate link, and `ensureSaved` from every FileDrop/LinkAdder. Publishing
+   * while a plain save was still open let the save's older response land last
+   * and flip `published` back to false, on screen, with no error.
+   *
+   * Deliberately NOT `lib/save-queue.ts`: that primitive COALESCES, which is
+   * right for one autosaved snapshot and wrong here — these calls carry
+   * different commands (`{published}`, `{rotateShareToken}`), and coalescing
+   * would silently drop one of them. Serialize only.
+   */
+  const chainRef = useRef<Promise<unknown>>(Promise.resolve())
+
+  function save(
+    extra?: { published?: boolean; rotateShareToken?: boolean },
+  ): Promise<Showcase | null> {
+    const next = chainRef.current.then(() => writeShowcase(extra))
+    chainRef.current = next.catch(() => null)
+    return next
   }
 
   async function onSave() {
@@ -182,8 +205,26 @@ export function useShowcaseEditor() {
   }
 
   async function removeAsset(id: string) {
+    const removed = sc?.assets.find((a) => a.id === id)
     setSc((prev) => (prev ? { ...prev, assets: prev.assets.filter((a) => a.id !== id) } : prev))
-    await fetch(`/api/showcase/asset/${id}`, { method: 'DELETE' }).catch(() => {})
+    try {
+      const res = await fetch(`/api/showcase/asset/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`delete failed (${res.status})`)
+    } catch {
+      // The optimistic removal was a lie: the asset is still on the server and
+      // still on the published board. Put it back and say so — silently
+      // diverging from the server is how a student "removes" a file that their
+      // judges then see (§0.9 Row C3). Keyed re-insert so an upload that
+      // finished during the DELETE survives.
+      if (removed) {
+        setSc((prev) =>
+          prev && !prev.assets.some((a) => a.id === id)
+            ? { ...prev, assets: [...prev.assets, removed] }
+            : prev,
+        )
+      }
+      setError('Could not remove that file. Please try again.')
+    }
   }
 
   const publicUrl = sc?.shareUrl ?? null

@@ -36,52 +36,32 @@ export function usePapers({
   const [loadError, setLoadError] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  const loadPapers = useCallback(() => {
-    setLoadError(false)
-    setPapersLoaded(false)
-    listPapers()
-      .then((data) => {
-        setPapers(
-          data.papers.map((p) => ({
-              id: p.id,
-              title: p.title,
-              authors: p.authors,
-              status: p.status,
-              proficiencyDemonstrated: Boolean(p.proficiencyDemonstrated),
-              fileUrl: p.fileUrl ?? undefined,
-              createdAt: p.createdAt,
-              credibilityTier: (p.credibilityTier as CredibilityTier | null) ?? null,
-            })),
-        )
-      })
-      .catch((err) => {
-        console.error('[papers] failed to load:', err)
-        setLoadError(true)
-      })
-      .finally(() => setPapersLoaded(true))
-  }, [])
-
-  useEffect(() => {
-    loadPapers()
-  }, [loadPapers])
-
   // Live status polls, tracked so unmount clears every in-flight interval —
   // a poll must never keep ticking (and setting state) past the feature (UX-2).
   const pollIntervalsRef = useRef<Set<ReturnType<typeof setInterval>>>(new Set())
+  // Which paper ids already have a poll running. Without it, resuming polls on
+  // every load (below) would stack a second interval on the same paper each
+  // time the student hits Try again.
+  const pollingIdsRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     const intervals = pollIntervalsRef.current
+    const ids = pollingIdsRef.current
     return () => {
       intervals.forEach(clearInterval)
       intervals.clear()
+      ids.clear()
     }
   }, [])
 
   const pollStatus = useCallback((paperId: string) => {
+    if (pollingIdsRef.current.has(paperId)) return
+    pollingIdsRef.current.add(paperId)
     let polls = 0
     const interval = setInterval(async () => {
       const stop = () => {
         clearInterval(interval)
         pollIntervalsRef.current.delete(interval)
+        pollingIdsRef.current.delete(paperId)
       }
       // Capped (UX-2): after MAX_POLLS the paper flips to an actionable error
       // state instead of showing "processing" forever. The backend job keeps
@@ -120,6 +100,42 @@ export function usePapers({
     }, POLL_INTERVAL_MS)
     pollIntervalsRef.current.add(interval)
   }, [])
+
+  const loadPapers = useCallback(() => {
+    setLoadError(false)
+    setPapersLoaded(false)
+    listPapers()
+      .then((data) => {
+        setPapers(
+          data.papers.map((p) => ({
+              id: p.id,
+              title: p.title,
+              authors: p.authors,
+              status: p.status,
+              proficiencyDemonstrated: Boolean(p.proficiencyDemonstrated),
+              fileUrl: p.fileUrl ?? undefined,
+              createdAt: p.createdAt,
+              credibilityTier: (p.credibilityTier as CredibilityTier | null) ?? null,
+            })),
+        )
+        // Resume polling anything the server still reports as processing.
+        // `pollStatus` used to be reachable only from the upload path, so a
+        // reload during ingestion stranded the row on "processing" until the
+        // student reloaded again and got lucky with the timing.
+        data.papers
+          .filter((p) => p.status === 'processing')
+          .forEach((p) => pollStatus(p.id))
+      })
+      .catch((err) => {
+        console.error('[papers] failed to load:', err)
+        setLoadError(true)
+      })
+      .finally(() => setPapersLoaded(true))
+  }, [pollStatus])
+
+  useEffect(() => {
+    loadPapers()
+  }, [loadPapers])
 
   async function handleUpload(file: File) {
     setUploadError(null)
@@ -177,7 +193,16 @@ export function usePapers({
 
   async function handleDelete(paper: Paper) {
     if (!(await confirm({ title: 'Delete source', message: `Delete "${paper.title}"? This removes the source and any quiz progress.`, confirmLabel: 'Delete', tone: 'danger' }))) return
-    const prev = papers
+
+    // A failed upload leaves a placeholder that exists only on this screen.
+    // Sending its `temp-…` id to the API 404s, and the rollback below then
+    // resurrected the dead row plus an error the student can do nothing about.
+    if (paper.id.startsWith('temp-')) {
+      setPapers((cur) => cur.filter((p) => p.id !== paper.id))
+      onPaperDeleted?.(paper.id)
+      return
+    }
+
     // Optimistic removal; close the Q&A view if it was open on this paper
     setPapers((cur) => cur.filter((p) => p.id !== paper.id))
     onPaperDeleted?.(paper.id)
@@ -185,7 +210,9 @@ export function usePapers({
       await deletePaper(paper.id)
     } catch (err) {
       console.error('[papers] delete failed:', err)
-      setPapers(prev) // roll back
+      // Keyed re-insert, not a whole-list snapshot: an upload started during
+      // the DELETE would be wiped by restoring the pre-delete array.
+      setPapers((cur) => (cur.some((p) => p.id === paper.id) ? cur : [...cur, paper]))
       setUploadError('Could not delete the source. Please try again.')
     }
   }

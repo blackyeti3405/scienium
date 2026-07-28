@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { X, Brain, Trash2 } from 'lucide-react'
+import { LoadRetry } from '@/components/ui/LoadRetry'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { BusyButton } from '@/components/ui/BusyButton'
@@ -152,15 +153,10 @@ export function VocabPanel({ onClose }: { onClose: () => void }) {
         {!loaded ? (
           <LabeledLoader label="Loading your deck…" fill="panel" />
         ) : loadError ? (
-          <div className="border border-dashed border-red-400/25 rounded-sm py-10 text-center flex flex-col items-center gap-3">
-            <p className="font-pixel text-[9px] text-red-300">Couldn&apos;t load your deck — check your connection.</p>
-            <button
-              onClick={() => retryLoad()}
-              className="font-pixel text-[8px] border border-white/20 text-white/60 px-4 py-2 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
-            >
-              Try again
-            </button>
-          </div>
+          <LoadRetry
+            message="Couldn't load your deck — check your connection."
+            onRetry={() => retryLoad()}
+          />
         ) : view === 'review' ? (
           <ReviewView
             cards={cards}

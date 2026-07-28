@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import type { useConfirm } from '@/components/ui/ConfirmDialog'
 import { ApiError } from '@/lib/api/client'
 import type { Experiment } from './types'
@@ -29,18 +29,28 @@ export function useExperiments({
   const [loading, setLoading] = useState(true)
   const [locked, setLocked] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  // Everything that is neither 403 nor success used to fall through to the
+  // empty list — a team is shown "No experiments yet" and the button to create
+  // their first one, next to data they have already collected (§0.9 Row C2).
+  const [loadError, setLoadError] = useState(false)
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoadError(false)
+    setLoading(true)
     listExperiments()
       .then((d) => setExperiments(d.experiments))
       .catch((err) => {
-        // 403 = phase-locked (Data Terminal opens at `working`); other
-        // failures fall through to the empty list, matching the old inline
-        // fetch's `.catch(() => {})`.
+        // 403 = phase-locked (Data Terminal opens at `working`) — that is a
+        // real state with its own screen, not a failure.
         if (err instanceof ApiError && err.status === 403) setLocked(true)
+        else setLoadError(true)
       })
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   function upsertExperiment(exp: Experiment) {
     setExperiments((list) => {
@@ -79,6 +89,8 @@ export function useExperiments({
     experiments,
     loading,
     locked,
+    loadError,
+    retryLoad: load,
     deletingId,
     upsertExperiment,
     removeExperiment,

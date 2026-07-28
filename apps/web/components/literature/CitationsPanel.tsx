@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { X, Copy, Download, Check, Quote } from 'lucide-react'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
+import { LoadRetry } from '@/components/ui/LoadRetry'
 import { BusyButton } from '@/components/ui/BusyButton'
 
 // ─── #13 Citation Manager — the team's formatted citation library ──────────────
@@ -39,13 +40,29 @@ export function CitationsPanel({ onClose }: { onClose: () => void }) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportMsg, setExportMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  // A failed GET used to `setRows([])`, which renders "No citations yet" — a
+  // team with a full library is told their bibliography is empty and may go
+  // rebuild it by hand (§0.9 Row C2).
+  const [loadError, setLoadError] = useState(false)
+
+  const load = useCallback(() => {
+    setLoadError(false)
+    setRows(null)
+    fetch('/api/citations')
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`citations failed (${r.status})`)
+        return r.json()
+      })
+      .then((d) => setRows(Array.isArray(d.citations) ? d.citations : []))
+      .catch((err) => {
+        console.error('[citations] failed to load:', err)
+        setLoadError(true)
+      })
+  }, [])
 
   useEffect(() => {
-    fetch('/api/citations')
-      .then((r) => r.json())
-      .then((d) => setRows(Array.isArray(d.citations) ? d.citations : []))
-      .catch(() => setRows([]))
-  }, [])
+    load()
+  }, [load])
 
   // Alphabetical by the chosen style's string — real bibliography order.
   const sorted = rows
@@ -122,7 +139,13 @@ export function CitationsPanel({ onClose }: { onClose: () => void }) {
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        {sorted === null ? (
+        {loadError ? (
+          <LoadRetry
+            message="Couldn't load your citations — check your connection."
+            onRetry={load}
+            testId="citations-retry"
+          />
+        ) : sorted === null ? (
           <div className="h-full">
             <LabeledLoader label="Building your citations…" fill="inline" />
           </div>

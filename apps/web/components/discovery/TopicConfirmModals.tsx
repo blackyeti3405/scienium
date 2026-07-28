@@ -2,6 +2,7 @@
 
 import { BusyButton } from '@/components/ui/BusyButton'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
+import { ModalBackdrop } from '@/components/ui/ModalBackdrop'
 
 /**
  * The topic-change confirm modal and the topic-removal confirm modal — shared
@@ -46,6 +47,20 @@ export function TopicConfirmModals({
       ? 'absolute inset-0 z-50 flex items-center justify-center bg-black/60 rounded-sm'
       : 'absolute inset-0 z-50 flex items-center justify-center bg-black/60'
 
+  // Both of these are rendered INSIDE a FeaturePanel, which is itself a dialog.
+  // They were hand-rolled divs with no role, no focus trap and no Escape — so
+  // an Escape aimed at the destructive confirm closed the panel out from under
+  // it instead (§0.9 Row A). `ModalBackdrop` is the shell the rest of the app
+  // uses, and it puts them on the modal stack so the topmost one wins.
+  // A close is refused while the confirmed work is in flight: the request is
+  // already on the wire and dismissing the modal would hide its outcome.
+  const closeChange = () => {
+    if (!savingTopic) onCancelTopicChange()
+  }
+  const closeRemoval = () => {
+    if (!savingTopic) onCancelTopicRemoval()
+  }
+
   return (
     <>
       {/* Topic-change confirmation. Discovery's confirmed path is a batch LLM
@@ -53,7 +68,11 @@ export function TopicConfirmModals({
           once submitted it shows a Vega labeled loader instead of a
           button-sized spinner. */}
       {topicConfirm && (
-        <div className={backdropClass}>
+        <ModalBackdrop
+          label="Change research topic?"
+          onClose={closeChange}
+          className={backdropClass}
+        >
           <div className="bg-[#0d1b2e] border border-white/20 rounded-sm p-6 max-w-sm w-full mx-4 flex flex-col gap-4">
             {variant === 'discovery' && savingTopic ? (
               <LabeledLoader
@@ -111,14 +130,18 @@ export function TopicConfirmModals({
               </>
             )}
           </div>
-        </div>
+        </ModalBackdrop>
       )}
 
       {/* Second phase: the exact sources proposed for removal. Listing them by
           title is the safeguard — relevance is judged from paper text we don't
           control, so the student is the one who authorizes each removal. */}
       {topicRemovalConfirm && (
-        <div className={backdropClass}>
+        <ModalBackdrop
+          label="Remove these sources?"
+          onClose={closeRemoval}
+          className={backdropClass}
+        >
           <div className="bg-[#0d1b2e] border border-white/20 rounded-sm p-6 max-w-sm w-full mx-4 flex flex-col gap-4" data-testid="topic-removal-modal">
             <h3 className="font-pixel text-[9px] text-white">Remove these sources?</h3>
             <div className="text-[13px] text-white/70 leading-relaxed flex flex-col gap-2">
@@ -188,7 +211,7 @@ export function TopicConfirmModals({
               )}
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </>
   )

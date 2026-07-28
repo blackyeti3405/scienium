@@ -6,6 +6,7 @@ import { TopicConfirmModals } from '@/components/discovery/TopicConfirmModals'
 import { RefreshCw, Link2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { PROJECT_TYPES } from '@/lib/research-plan/types'
+import { LoadRetry } from '@/components/ui/LoadRetry'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { MyDataSection } from './MyDataSection'
@@ -49,6 +50,8 @@ export function LabProfileSettings() {
     finalTopic: topic,
     topicPaperCount,
     topicLoaded,
+    topicLoadError,
+    retryLoadTopic,
     editingTopic: topicEditing,
     setEditingTopic: setTopicEditing,
     topicDraft,
@@ -369,7 +372,15 @@ export function LabProfileSettings() {
       )}
 
       {/* ── Research topic section — independent fetch, own skeleton ─────────── */}
-      {!topicLoaded ? (
+      {topicLoadError ? (
+        // Never fall through to the editor on a failed load: it would show an
+        // empty "Current topic" for a team that has one (§0.9 Row C2).
+        <LoadRetry
+          message="Couldn't load your research topic."
+          onRetry={retryLoadTopic}
+          testId="settings-topic-retry"
+        />
+      ) : !topicLoaded ? (
         <div className="flex flex-col gap-4" data-testid="settings-topic-skeleton">
           <PixelSkeleton variant="line" h="h-4" w="w-32" />
           <PixelSkeleton variant="box" h="h-9" w="w-full" />

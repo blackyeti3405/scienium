@@ -120,8 +120,9 @@ export function ShowcaseEditor() {
 
         {/* ── 1 · Project details ──────────────────────────────────────── */}
         <Card n={1} title="Project details" hint="Titles, abstract, and who can see it">
-          <Field label="Short title" required counter={`${shortTitle.length}/${SHORT_TITLE_MAX}`}>
+          <Field label="Short title" required htmlFor="sc-short-title" counter={`${shortTitle.length}/${SHORT_TITLE_MAX}`}>
             <input
+              id="sc-short-title"
               value={shortTitle}
               onChange={(e) => setShortTitle(e.target.value.slice(0, SHORT_TITLE_MAX))}
               maxLength={SHORT_TITLE_MAX}
@@ -130,8 +131,9 @@ export function ShowcaseEditor() {
             />
           </Field>
 
-          <Field label="Full title" required counter={`${title.length}/${TITLE_MAX}`}>
+          <Field label="Full title" required htmlFor="sc-full-title" counter={`${title.length}/${TITLE_MAX}`}>
             <textarea
+              id="sc-full-title"
               value={title}
               onChange={(e) => setTitle(e.target.value.slice(0, TITLE_MAX))}
               maxLength={TITLE_MAX}
@@ -141,8 +143,9 @@ export function ShowcaseEditor() {
             />
           </Field>
 
-          <Field label="Abstract" required counter={`${words}/${ABSTRACT_WORD_MAX} words`} counterMax={overWords}>
+          <Field label="Abstract" required htmlFor="sc-abstract" counter={`${words}/${ABSTRACT_WORD_MAX} words`} counterMax={overWords}>
             <textarea
+              id="sc-abstract"
               value={abstract}
               onChange={(e) => setAbstract(e.target.value)}
               rows={7}

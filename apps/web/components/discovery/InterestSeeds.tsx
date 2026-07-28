@@ -21,11 +21,22 @@ interface Props {
   onAdd: (text: string) => Promise<void> | void
   onRemove: (id: string) => void
   onSeed: (text: string) => void
+  /** The list failed to load — say so instead of rendering the empty state. */
+  loadError?: boolean
+  onRetryLoad?: () => void
 }
 
 const MAX_PER_USER = 3
 
-export function InterestSeeds({ interests, currentUserId, onAdd, onRemove, onSeed }: Props) {
+export function InterestSeeds({
+  interests,
+  currentUserId,
+  onAdd,
+  onRemove,
+  onSeed,
+  loadError,
+  onRetryLoad,
+}: Props) {
   const [draft, setDraft] = useState('')
   const [adding, setAdding] = useState(false)
 
@@ -87,7 +98,23 @@ export function InterestSeeds({ interests, currentUserId, onAdd, onRemove, onSee
       </div>
 
       {/* Chips */}
-      {interests.length === 0 ? (
+      {loadError && interests.length === 0 ? (
+        // Not "no interests yet": the list never arrived (§0.9 Row C2).
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="font-pixel text-[7px] text-red-300 leading-loose" role="alert">
+            Couldn&apos;t load your team&apos;s interests.
+          </p>
+          {onRetryLoad && (
+            <button
+              type="button"
+              onClick={onRetryLoad}
+              className="font-pixel text-[7px] border border-white/20 text-white/60 px-2.5 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+            >
+              Try again
+            </button>
+          )}
+        </div>
+      ) : interests.length === 0 ? (
         <p className="font-pixel text-[7px] text-white/40 leading-loose">
           No interests yet — add one above to seed your first start.
         </p>

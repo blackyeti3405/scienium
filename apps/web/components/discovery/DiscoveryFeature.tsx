@@ -184,6 +184,8 @@ export function DiscoveryFeature() {
   const {
     finalTopic,
     topicLoaded,
+    topicLoadError,
+    retryLoadTopic,
     editingTopic,
     setEditingTopic,
     topicDraft,
@@ -201,7 +203,14 @@ export function DiscoveryFeature() {
   } = useFinalTopic({ onKpAwarded: showKp, onInterestConnect: setInterestConnectMsg })
 
   // ── Team interests (#2 Activate TopicInterest) ─────────────────────────────
-  const { interests, currentUserId, addInterest, removeInterest } = useTeamInterests()
+  const {
+    interests,
+    currentUserId,
+    addInterest,
+    removeInterest,
+    loadError: interestsLoadError,
+    retryLoad: retryInterests,
+  } = useTeamInterests()
 
   // Documented seam for Feature A's Papers tab: seeding an interest sets this to
   // the phrase so the Papers search box can prefill from it, then clear it. Unused
@@ -305,10 +314,11 @@ export function DiscoveryFeature() {
   const [showHome, setShowHome] = useState(true)
 
   // ── Resizable panel ────────────────────────────────────────────────────────
-  const { size: panelWidth, onDividerMouseDown } = useResizablePanel({
+  const { size: panelWidth, dividerProps } = useResizablePanel({
     min: MIN_PANEL,
     max: MAX_PANEL,
     initial: DEFAULT_PANEL,
+    label: 'Resize the explorer panel',
   })
 
   // One props object for the tree, mounted twice (full-window view + side panel).
@@ -381,6 +391,8 @@ export function DiscoveryFeature() {
             onAddInterest: addInterest,
             onRemoveInterest: removeInterest,
             onSeedInterest: seedFromInterest,
+            interestsLoadError,
+            onRetryInterests: retryInterests,
           }}
         />
       </div>
@@ -426,6 +438,8 @@ export function DiscoveryFeature() {
         onCancelEdit={() => { setEditingTopic(false); setTopicSaveError(null) }}
         chooseDraft={currentNode?.title ?? ''}
         saveError={topicSaveError}
+        loadError={topicLoadError}
+        onRetryLoad={retryLoadTopic}
       />
 
       {/* ── Body ── */}
@@ -475,9 +489,9 @@ export function DiscoveryFeature() {
 
         {/* ── Drag handle ── */}
         <div
-          onMouseDown={onDividerMouseDown}
-          title="Drag to resize"
-          className="w-1.5 shrink-0 cursor-col-resize bg-white/10 hover:bg-[#F5C518]/40 active:bg-[#F5C518]/60 transition-colors flex flex-col items-center justify-center gap-1 group"
+          {...dividerProps}
+          title="Drag to resize — or focus it and use ← →"
+          className="w-1.5 shrink-0 cursor-col-resize bg-white/10 hover:bg-[#F5C518]/40 active:bg-[#F5C518]/60 focus-visible:bg-[#F5C518]/60 focus-visible:outline-none transition-colors flex flex-col items-center justify-center gap-1 group"
         >
           {[0, 1, 2].map((i) => (
             <div key={i} className="w-1 h-1 rounded-full bg-white/30 group-hover:bg-[#F5C518]/60 transition-colors" />

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useId, useRef, useCallback } from 'react'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
+import { useLatest } from '@/lib/hooks/useLatest'
 
 interface Props {
   onSelect: (title: string) => void
@@ -20,16 +21,27 @@ export function TopicSearch({ onSelect, placeholder = 'Search a Wikipedia topic‚
   const [highlighted, setHighlighted] = useState(-1)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const containerRef = useRef<HTMLDivElement>(null)
+  // The arrow/Enter/Escape behaviour below was already correct; what was
+  // missing was any way for a screen reader to know it existed (¬ß0.9 Row B).
+  // These are the standard combobox/listbox attributes ‚Äî no behaviour change.
+  const listId = useId()
+  const optionId = (i: number) => `${listId}-opt-${i}`
+  const begin = useLatest()
 
   const search = useCallback((q: string) => {
     clearTimeout(debounceRef.current)
     if (q.length < 2) { setResults([]); setOpen(false); return }
     debounceRef.current = setTimeout(async () => {
+      // Debouncing is not ordering: two in-flight queries can land newest-first
+      // and repaint the dropdown with results for a prefix the student has
+      // already typed past (¬ß0.9 Row C1).
+      const stale = begin()
       setLoading(true)
       setSearchError(false)
       try {
         const res = await fetch(`/api/discovery/search?q=${encodeURIComponent(q)}`)
         const raw: unknown = await res.json()
+        if (stale()) return
         // A 429/error body is an object, not the expected array ‚Äî rendering it
         // would throw in the results .map (BLK-8). Degrade to "no results".
         const data = Array.isArray(raw) ? (raw as string[]) : []
@@ -37,14 +49,15 @@ export function TopicSearch({ onSelect, placeholder = 'Search a Wikipedia topic‚
         setOpen(data.length > 0)
         setHighlighted(-1)
       } catch {
+        if (stale()) return
         setResults([])
         setOpen(false)
         setSearchError(true)
       } finally {
-        setLoading(false)
+        if (!stale()) setLoading(false)
       }
     }, 280)
-  }, [])
+  }, [begin])
 
   useEffect(() => {
     search(query)
@@ -74,10 +87,12 @@ export function TopicSearch({ onSelect, placeholder = 'Search a Wikipedia topic‚
     if (e.key === 'Escape') setOpen(false)
   }
 
+  const expanded = open && results.length > 0
+
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       <div className="relative flex items-center">
-        <span className="absolute left-3 text-white/40 text-sm">üîç</span>
+        <span className="absolute left-3 text-white/40 text-sm" aria-hidden="true">üîç</span>
         <input
           type="text"
           value={query}
@@ -85,6 +100,14 @@ export function TopicSearch({ onSelect, placeholder = 'Search a Wikipedia topic‚
           onKeyDown={handleKeyDown}
           onFocus={() => results.length > 0 && setOpen(true)}
           placeholder={placeholder}
+          role="combobox"
+          aria-label={placeholder}
+          aria-expanded={expanded}
+          aria-controls={expanded ? listId : undefined}
+          aria-autocomplete="list"
+          aria-activedescendant={
+            expanded && highlighted >= 0 ? optionId(highlighted) : undefined
+          }
           className="w-full rounded-sm border border-white/20 bg-[#0a1628] px-4 py-2 pl-9 text-sm text-white placeholder:text-white/40 focus:outline-none focus:border-[#F5C518]/60"
           autoComplete="off"
         />
@@ -97,11 +120,19 @@ export function TopicSearch({ onSelect, placeholder = 'Search a Wikipedia topic‚
         </p>
       )}
 
-      {open && results.length > 0 && (
-        <ul className="absolute z-20 mt-1 w-full rounded-sm border border-white/15 bg-[#0f1320] shadow-lg overflow-hidden">
+      {expanded && (
+        <ul
+          id={listId}
+          role="listbox"
+          aria-label={placeholder}
+          className="absolute z-20 mt-1 w-full rounded-sm border border-white/15 bg-[#0f1320] shadow-lg overflow-hidden"
+        >
           {results.map((r, i) => (
-            <li key={r}>
+            <li key={r} role="presentation">
               <button
+                id={optionId(i)}
+                role="option"
+                aria-selected={i === highlighted}
                 className={`w-full px-4 py-2.5 text-left text-sm text-white/80 transition-colors ${
                   i === highlighted ? 'bg-white/10' : 'hover:bg-white/5'
                 }`}

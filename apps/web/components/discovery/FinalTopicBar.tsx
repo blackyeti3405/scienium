@@ -20,6 +20,8 @@ export function FinalTopicBar({
   onCancelEdit,
   chooseDraft,
   saveError,
+  loadError,
+  onRetryLoad,
 }: {
   finalTopic: string | null
   topicLoaded: boolean
@@ -34,6 +36,9 @@ export function FinalTopicBar({
   chooseDraft: string
   /** Save failure (rate limit / validation / stale session) — the topic did NOT change. */
   saveError?: string | null
+  /** The topic GET failed — do NOT fall through to the "choose a topic" CTA. */
+  loadError?: boolean
+  onRetryLoad?: () => void
 }) {
   return (
     <div className="border-b border-[#F5C518]/20 bg-[#F5C518]/[0.06] px-4 py-2.5 shrink-0">
@@ -81,6 +86,23 @@ export function FinalTopicBar({
           >
             Change
           </button>
+        </div>
+      ) : loadError ? (
+        // A failed load is NOT "no topic yet" — prompting a team that already
+        // locked a topic to choose one is how a topic gets overwritten.
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="font-pixel text-[7px] text-red-300" role="alert">
+            Couldn&apos;t load your final topic.
+          </p>
+          {onRetryLoad && (
+            <button
+              type="button"
+              onClick={onRetryLoad}
+              className="font-pixel text-[7px] border border-white/20 text-white/60 px-2.5 py-1 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+            >
+              Try again
+            </button>
+          )}
         </div>
       ) : !topicLoaded ? (
         // False-prompt fix: don't show "Choose your final research topic"

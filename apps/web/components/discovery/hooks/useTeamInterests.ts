@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { z } from 'zod'
 import { requestJson } from '@/lib/api/client'
 import type { Interest } from '@/components/discovery/InterestSeeds'
@@ -25,15 +25,27 @@ const interestsListSchema = z.object({
 export function useTeamInterests() {
   const [interests, setInterests] = useState<Interest[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  // A failed load rendered as "no interests yet", which invites the team to
+  // type them all in again — and the POST is idempotent per text, so they end
+  // up staring at a list that refuses to grow (§0.9 Row C2).
+  const [loadError, setLoadError] = useState(false)
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoadError(false)
     requestJson('/api/discovery/interests', interestsListSchema)
       .then((d) => {
         if (Array.isArray(d.interests)) setInterests(d.interests)
         setCurrentUserId(d.currentUserId ?? null)
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error('[discovery] load interests failed:', err)
+        setLoadError(true)
+      })
   }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   async function addInterest(text: string) {
     try {
@@ -57,8 +69,15 @@ export function useTeamInterests() {
   }
 
   async function removeInterest(id: string) {
-    const prev = interests
+    const removed = interests.find((i) => i.id === id)
     setInterests((cur) => cur.filter((i) => i.id !== id)) // optimistic
+    // Keyed re-insert rather than restoring the pre-delete array: a teammate's
+    // interest arriving (or one added locally) while the DELETE is in flight
+    // would otherwise be wiped by the rollback.
+    const rollback = () => {
+      if (!removed) return
+      setInterests((cur) => (cur.some((i) => i.id === id) ? cur : [...cur, removed]))
+    }
     try {
       const d = await requestJson(
         '/api/discovery/interests',
@@ -69,12 +88,12 @@ export function useTeamInterests() {
           body: JSON.stringify({ id }),
         },
       )
-      if (d.deleted === 0) setInterests(prev) // roll back if not owned
+      if (d.deleted === 0) rollback() // roll back if not owned
     } catch (err) {
       console.error('[discovery] remove interest failed:', err)
-      setInterests(prev)
+      rollback()
     }
   }
 
-  return { interests, currentUserId, addInterest, removeInterest }
+  return { interests, currentUserId, addInterest, removeInterest, loadError, retryLoad: load }
 }

@@ -76,7 +76,11 @@ export function ChatComposer({
   onSend,
   sending,
   placeholder,
-  sendAriaLabel,
+  // Defaulted at the seam (§0.9 Row B): the send button is icon-only, so an
+  // omitted label leaves it with no accessible name at all — which is what
+  // VegaStudyTab shipped. A default fixes every consumer, present and future,
+  // in one line; callers still override it where a more specific name helps.
+  sendAriaLabel = 'Send message',
   disableInputWhileSending = false,
 }: {
   input: string

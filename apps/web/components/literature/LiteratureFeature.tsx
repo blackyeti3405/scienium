@@ -8,6 +8,7 @@ import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
 import { BusyButton } from '@/components/ui/BusyButton'
+import { LoadRetry } from '@/components/ui/LoadRetry'
 import { CitationsPanel } from './CitationsPanel'
 import dynamic from 'next/dynamic'
 import { type Paper, TOTAL_SLOTS } from './types'
@@ -398,17 +399,10 @@ export function LiteratureFeature() {
           // A failed load must never render as the empty first-run state — a
           // returning team on flaky wifi would think their sources are gone
           // (and might re-upload, burning relevance checks). Offer a retry.
-          <div className="border border-dashed border-red-400/25 rounded-sm py-10 text-center flex flex-col items-center gap-3">
-            <p className="font-pixel text-[9px] text-red-300">
-              Couldn&apos;t load your sources — check your connection.
-            </p>
-            <button
-              onClick={retryLoad}
-              className="font-pixel text-[8px] border border-white/20 text-white/60 px-4 py-2 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
-            >
-              Try again
-            </button>
-          </div>
+          <LoadRetry
+            message="Couldn't load your sources — check your connection."
+            onRetry={retryLoad}
+          />
         ) : (
           <>
             {papers.map((paper) => (

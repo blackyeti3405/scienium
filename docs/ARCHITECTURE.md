@@ -1704,6 +1704,43 @@ the same transaction as its domain change (v0.72.0 closed the last eleven).
 durable-class action added on the best-effort path fails immediately, rather
 than pinning a fixed set of remaining call sites.
 
+### Client state — four conventions, one place each
+
+Four defect shapes recur across every client surface, so each has exactly one
+mechanism (REFACTOR2 §0.9, v0.75.8). Reach for these before writing a new one.
+
+**Dialogs share a stack.** `components/ui/useModalA11y.ts` keeps a module-level
+stack of open dialogs, and only the topmost one handles Escape or the Tab trap.
+Every dialog listens on `document`, and `stopPropagation` does nothing between
+sibling listeners on the same node — so without the stack one Escape closed a
+feature panel *and* the confirm opened from inside it. `ModalBackdrop` and
+`ConfirmDialog` route through the hook, so a new dialog gets this by using them.
+A dialog built by hand does not: put it in `ModalBackdrop`. A **popover** is not
+modal and stays off the stack — `NotificationBell` answers Escape with a React
+`onKeyDown`, which only fires while focus is inside it.
+
+**A load failure is never an empty state.** A `catch` that leaves the list empty
+tells a student their work is gone, and some of them will redo it. Track the
+failure separately and render `components/ui/LoadRetry.tsx` where the content
+would have been. This applies on the server too: `/lab` may only fall back to
+cold-start defaults during `NEXT_PHASE === 'phase-production-build'`; anything
+else rethrows to `app/(dashboard)/error.tsx`.
+
+**Overlapping reads are ordered by generation, not by debounce.**
+`lib/hooks/useLatest.ts` hands out a `stale()` closure per call; a response that
+is no longer the latest writes nothing. Used by every search box and the
+Wikipedia reader. There is no `AbortController` anywhere in `components/` on
+purpose — every defect in this family was ordering, and a generation token
+answers it without touching the fetch layer.
+
+**Optimistic rollback is keyed, and saves serialize.** Never restore a captured
+array — re-insert the one row by id (`cur.some(r => r.id === id) ? cur : [...cur,
+row]`), or concurrent work is wiped by the rollback. For repeated saves of one
+autosaved snapshot use `lib/save-queue.ts`, which serializes AND coalesces. When
+the calls carry different commands rather than one snapshot — the showcase editor's
+save / publish / rotate-link — serialize through a promise chain instead, because
+coalescing would drop a command.
+
 ### AI spend — one door, measured
 
 Every paid provider call goes through `lib/ai/spend.ts` (`aiCreate` / `aiStream`).

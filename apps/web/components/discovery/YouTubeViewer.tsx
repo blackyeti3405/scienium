@@ -42,7 +42,21 @@ export function YouTubeViewer({ videoId, title, onAddUrl }: Props) {
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const text = e.clipboardData?.getData('text') ?? ''
-      if (looksLikeYouTube(text) && document.activeElement !== inputRef.current) {
+      // Bail on ANY editable target, not just this view's own input (§0.9 Row
+      // B). The handler is on `document` and lives as long as the Discovery
+      // YouTube view is mounted, so guarding only `inputRef` meant a link
+      // pasted into the tree-reflection box, the topic bar or the papers
+      // search was swallowed — preventDefault ate the paste and the URL was
+      // silently added to the tree instead.
+      const el = document.activeElement as HTMLElement | null
+      if (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        el?.isContentEditable
+      ) {
+        return
+      }
+      if (looksLikeYouTube(text)) {
         e.preventDefault()
         add(text)
       }

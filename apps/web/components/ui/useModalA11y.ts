@@ -16,7 +16,46 @@ import { useEffect, useRef } from 'react'
  *   - body scroll is locked.
  * On close/unmount, focus returns to whatever had it before the dialog opened
  * (the trigger button), so keyboard users aren't dumped at the top of the page.
+ *
+ * ## Why there is a stack (§0.9 Row A)
+ *
+ * Every instance listens on `document`, in the same phase. `stopPropagation`
+ * does NOT stop a sibling listener on the SAME node — only
+ * `stopImmediatePropagation` would, and that is registration-order dependent,
+ * which is mount order, which is not intent. So one Escape used to fire
+ * `onClose` on EVERY open dialog: a student who opened Literature Review → a
+ * delete confirm and pressed Escape lost the whole feature panel too.
+ *
+ * The stack is the intent the DOM doesn't carry: only the dialog opened LAST
+ * handles the key. It also gates the Tab trap, so the outer dialog stops
+ * fighting the inner one for focus while the inner one is up.
  */
+
+/**
+ * Open dialogs, oldest first. Module-level on purpose: the ordering is a
+ * property of the PAGE, not of any one component, and every dialog shell in
+ * the app routes through this hook. Exported for `test/modal-stack.test.ts`.
+ */
+const openModals: symbol[] = []
+
+export function pushModal(token: symbol): void {
+  openModals.push(token)
+}
+
+export function popModal(token: symbol): void {
+  const i = openModals.lastIndexOf(token)
+  if (i !== -1) openModals.splice(i, 1)
+}
+
+/** True only for the most recently opened dialog still mounted. */
+export function isTopModal(token: symbol): boolean {
+  return openModals.length > 0 && openModals[openModals.length - 1] === token
+}
+
+/** Test-only: drop every registration so one test can't leak into the next. */
+export function __resetModalStack(): void {
+  openModals.length = 0
+}
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -47,6 +86,8 @@ export function useModalA11y(options: {
     if (!open) return
     const container = containerRef.current
     const previouslyFocused = document.activeElement as HTMLElement | null
+    const token = Symbol('modal')
+    pushModal(token)
 
     const focusables = () =>
       container
@@ -61,6 +102,8 @@ export function useModalA11y(options: {
     document.body.style.overflow = 'hidden'
 
     const onKey = (e: KeyboardEvent) => {
+      // Only the topmost dialog reacts. See the stack note above.
+      if (!isTopModal(token)) return
       if (e.key === 'Escape') {
         e.stopPropagation()
         onCloseRef.current()
@@ -86,6 +129,7 @@ export function useModalA11y(options: {
     document.addEventListener('keydown', onKey)
 
     return () => {
+      popModal(token)
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = prevOverflow
       previouslyFocused?.focus?.()

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
+import { useLatest } from '@/lib/hooks/useLatest'
 
 interface ArticleData {
   title: string
@@ -28,10 +29,16 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
   // article surfaces the API's not-found message with the toggle still visible.
   const [lang, setLang] = useState<'en' | 'simple'>('en')
   const contentRef = useRef<HTMLDivElement>(null)
+  const begin = useLatest()
 
-  // Fetch article whenever the title or reading level changes
+  // Fetch article whenever the title or reading level changes. Guarded:
+  // toggling Simple English twice, or clicking a wiki link mid-load, leaves two
+  // fetches in flight, and the slower one used to paint over the newer article
+  // (§0.9 Row C1) — so the reader showed a different article than the toggle
+  // and the title bar said it was showing.
   useEffect(() => {
     if (!title) return
+    const stale = begin()
     setLoading(true)
     setError(null)
     setArticle(null)
@@ -39,12 +46,17 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
     fetch(`/api/discovery/article?title=${encodeURIComponent(title)}&lang=${lang}`)
       .then((r) => r.json())
       .then((data: ArticleData & { error?: string }) => {
+        if (stale()) return
         if (data.error) throw new Error(data.error)
         setArticle(data)
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [title, lang])
+      .catch((e: Error) => {
+        if (!stale()) setError(e.message)
+      })
+      .finally(() => {
+        if (!stale()) setLoading(false)
+      })
+  }, [title, lang, begin])
 
   const langToggle = (
     <button

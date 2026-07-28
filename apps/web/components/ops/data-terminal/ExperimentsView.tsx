@@ -5,6 +5,7 @@ import { Plus, Trash2, BarChart3 } from 'lucide-react'
 import { OpsTabSkeleton } from '@/components/ui/skeletons/OpsTabSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { LoadRetry } from '@/components/ui/LoadRetry'
 import { useExperiments } from './useExperiments'
 import { NewExperimentForm } from './NewExperimentForm'
 import { ExperimentDetail } from './ExperimentDetail'
@@ -18,7 +19,16 @@ export function ExperimentsView() {
   const { confirm, alert, dialog } = useConfirm()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const { experiments, loading, locked, deletingId, upsertExperiment, removeExperiment } =
+  const {
+    experiments,
+    loading,
+    locked,
+    loadError,
+    retryLoad,
+    deletingId,
+    upsertExperiment,
+    removeExperiment,
+  } =
     useExperiments({
       confirm,
       alert,
@@ -35,6 +45,22 @@ export function ExperimentsView() {
         {dialog}
         <OpsTabSkeleton variant="terminal" />
       </>
+    )
+  }
+
+  if (loadError) {
+    // Not "no experiments yet" — the list never arrived (§0.9 Row C2).
+    return (
+      <div className="ops-tab-body">
+        {dialog}
+        <div className="max-w-2xl mx-auto w-full py-2">
+          <LoadRetry
+            message="Couldn't load your experiments — check your connection."
+            onRetry={retryLoad}
+            testId="experiments-retry"
+          />
+        </div>
+      </div>
     )
   }
 

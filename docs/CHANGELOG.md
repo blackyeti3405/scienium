@@ -5,6 +5,129 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.75.8] — 2026-07-28
+
+REFACTOR2 **§0.9**'s three client families — modal/dialog stack safety, keyboard &
+accessibility names, and stale-read / failure-vs-empty / overlapping-save state. Every row was
+reproduced against the current tree before it was touched, and the fixes are four shared
+mechanisms rather than twenty component patches.
+
+### Fixed — one Escape closes one dialog
+
+Every dialog in the app listens for Escape on `document`. `stopPropagation` does not stop a
+sibling listener on the same node — only `stopImmediatePropagation` would, and that is
+registration-order dependent, which is mount order, which is not intent. So one Escape fired
+`onClose` on **every** open dialog: a student who opened Literature Review, hit delete, and
+pressed Escape to back out lost the confirm *and the whole feature panel*. Reproduced by
+tightening `e2e/F3.spec.ts` AC5's long-standing tolerance into an assertion and watching it
+fail.
+
+`components/ui/useModalA11y.ts` now keeps a module-level stack: each open dialog pushes a
+token, cleanup splices it, and the key handler returns early unless it is topmost. No new
+provider — `ModalBackdrop` and `ConfirmDialog` already route through the hook, so every dialog
+inherited the fix at once. The gate covers the Tab trap too, so an outer dialog no longer
+fights an inner one for focus.
+
+Two components that were outside the primitive are now inside it:
+
+- **`TopicConfirmModals`** — the confirm that permanently deletes sources when a team changes
+  its research topic. It was a bare `<div>`: no `role`, no `aria-modal`, no focus trap, no
+  Escape. Rendered inside the Discovery panel, so Escape closed the *panel* out from under an
+  open destructive confirm. It now renders through `ModalBackdrop`, and refuses to close while
+  the confirmed work is in flight.
+- **`ActivityPanel`** — `role="dialog"` with no Escape, no trap and no focus restore.
+
+`NotificationBell` gained `aria-expanded`, a conditional `aria-controls`, and a React Escape
+handler that returns focus to the bell — deliberately NOT on the modal stack, because a
+popover is not modal.
+
+### Fixed — a load failure no longer renders as a brand-new empty lab
+
+`/lab` wrapped its team query in a bare `catch {}` commented "DB unavailable during
+build/preview". A live database error therefore rendered a student their cold-start defaults:
+team name *"Your Lab"*, discovery phase, 0 KP, 0 LC — their entire project, apparently gone,
+with no error anywhere on screen. The swallow is now narrowed to
+`NEXT_PHASE === 'phase-production-build'`, the one case it was written for; anything else
+rethrows to the route's existing error boundary and its retry.
+
+`loadPlotState` is no longer caught at all. Its fallback is the DEFAULT gateway layout, so
+swallowing a failure there renders a team's purchased and placed buildings as if they had never
+been bought.
+
+The page's data load moved to `app/(dashboard)/lab/loadLab.ts`. That is the only reason for the
+seam: this repo's vitest has no JSX transform, so nothing inside a `.tsx` can be unit-tested.
+`test/lab-page-failure-vs-empty.test.ts` now asserts the load REJECTS on both failures, and
+still returns defaults for a build prerender and for a user with no team.
+
+The same failure-vs-empty pair — a real error surface instead of an empty state — was applied
+to the final research topic (which was prompting teams that already had one to choose a topic),
+team interests, citations, experiments, and the papers/articles searches. The retry banner that
+already existed verbatim in four places is now one `components/ui/LoadRetry.tsx`.
+
+### Fixed — stale reads, lost rollbacks, and overlapping saves
+
+- **Search ordering.** Debouncing is not ordering. `lib/hooks/useLatest.ts` is a six-line
+  generation token, applied to the papers search, topic search, articles browse and the
+  Wikipedia reader — where toggling Simple English twice could paint the first article over
+  the second.
+- **A just-sent chat turn is no longer clobbered.** `usePaperChat`'s mount GET replaced the
+  message list unconditionally, so a student who typed fast watched their own message vanish.
+  It now applies only while the thread is pristine — the guard `VegaStudyTab` already had —
+  and a failed history load says so instead of looking like a fresh conversation.
+- **Keyed rollback.** Paper delete, interest delete and showcase asset removal restored a
+  captured array on failure, wiping anything added in the meantime. All three now re-insert the
+  one row by id. Showcase asset removal also stops swallowing its failure: an asset "removed"
+  only on screen is one the judges still see.
+- **Polling resumes.** A reload during PDF ingestion stranded a paper on "processing" forever;
+  `loadPapers` now restarts the poll for every row the server still reports as processing,
+  deduped by id. A failed upload's `temp-…` placeholder is dropped locally instead of being
+  DELETEd from the API, 404ing, and rolling itself back with an error the student cannot act on.
+- **Showcase saves serialize.** Save, Publish, Rotate link and every `ensureSaved` from a file
+  drop all PUT the whole object and apply whichever response lands last, so publishing during a
+  save could flip `published` back to false on screen. All five now go through one promise
+  chain. Deliberately not `lib/save-queue.ts` — it coalesces, and these carry different
+  commands.
+- **Polls stop overlapping.** `ActivityPanel` (30 s) and `NotificationBell` (60 s) skip a tick
+  while one is in flight.
+
+### Fixed — keyboard and screen-reader defects
+
+- The **Upload source** dropzone was a clickable `<div>`: unreachable and inoperable by
+  keyboard. It is a real `<button>`.
+- The **Vega study composer's** icon-only send button had no accessible name. `sendAriaLabel`
+  is now defaulted at the `ChatThread` seam, which names it for every present and future
+  consumer in one line.
+- The **showcase** Short title / Full title / Abstract controls were named only by their
+  placeholder. `Field` takes an optional `htmlFor` and renders a real `<label>` — deliberately
+  not a blanket wrap, which would have made *Board · PDF* name a hidden file input.
+- The **topic autocomplete** had working arrow/Enter/Escape behaviour that a screen reader
+  could not perceive at all. It now carries the full combobox/listbox/option attribute set. No
+  behaviour changed.
+- The **resize dividers** were mouse-only, unlabelled and unfocusable. `useResizablePanel`
+  returns one `dividerProps` bundle with Pointer Events (touch and pen included),
+  `role="separator"`, a live `aria-valuenow`, `tabIndex` and Arrow-key stepping.
+- The **teacher report charts** were unlabelled SVG. They now carry a `role="img"` summary of
+  the distribution and the same numbers as a `<table>` behind *View as table* — added inside
+  `ReportBarChart`, so both charts got it.
+- The **teacher header** overflowed sideways at ~360px; it wraps.
+- The **YouTube auto-capture paste handler** swallowed any YouTube URL pasted anywhere in the
+  Discovery view — into the tree-reflection box, the topic bar, the papers search — and added
+  it to the tree instead. It now bails on any editable target.
+
+### Added
+
+- `components/ui/LoadRetry.tsx` — the "this didn't load, try again" surface, extracted from
+  four verbatim copies and reused by five more.
+- `lib/hooks/useLatest.ts` — request-generation guard for search-shaped effects.
+- `test/modal-stack.test.ts` (6) and `test/lab-page-failure-vs-empty.test.ts` (5).
+- Four new `e2e/a11y.spec.ts` assertions (dropzone role + focus, Vega send name, combobox
+  contract, divider keyboard resize) and a role/`aria-modal`/Escape assertion on the
+  topic-removal confirm. Negative-controlled: reverting each of the four Row-B fixes reddened
+  exactly those four tests across both viewport projects, and the three pre-existing a11y tests
+  stayed green.
+
+---
+
 ## [0.75.7] — 2026-07-28
 
 REFACTOR2 **P2-6** (test the data lifecycle) and **P1-5** (widen structured observability).

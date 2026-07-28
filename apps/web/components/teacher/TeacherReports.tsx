@@ -120,7 +120,12 @@ export function TeacherReports() {
         <h2 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
           Phase distribution
         </h2>
-        <ReportBarChart data={phaseChartData} xKey="label" barColor={BAR_COLOR} />
+        <ReportBarChart
+          data={phaseChartData}
+          xKey="label"
+          barColor={BAR_COLOR}
+          label="Phase distribution"
+        />
       </section>
 
       {/* Proficiency heat-map */}
@@ -173,7 +178,12 @@ export function TeacherReports() {
         <h2 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
           KP distribution
         </h2>
-        <ReportBarChart data={data.kpDistribution} xKey="label" barColor="#4FD1C5" />
+        <ReportBarChart
+          data={data.kpDistribution}
+          xKey="label"
+          barColor="#4FD1C5"
+          label="KP distribution"
+        />
       </section>
 
       {/* Phase pacing */}

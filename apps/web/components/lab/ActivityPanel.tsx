@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { X, Activity } from 'lucide-react'
 import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
+import { useModalA11y } from '@/components/ui/useModalA11y'
 
 interface FeedEntry {
   id: string
@@ -28,15 +29,25 @@ export function ActivityPanel({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // A 30 s poll with no guard can overlap on a slow connection and let an OLDER
+  // response land last, so the feed jumps backwards (§0.9 Row C1). One boolean
+  // is enough: a skipped tick costs 30 s of staleness, an out-of-order one
+  // costs correctness.
+  const inFlightRef = useRef(false)
+
   const loadFeed = useCallback(async () => {
+    if (inFlightRef.current) return
+    inFlightRef.current = true
     try {
       const res = await fetch('/api/team/activity')
       if (!res.ok) throw new Error('Could not load activity')
       const data = await res.json()
       setFeed(data.feed)
+      setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error')
     } finally {
+      inFlightRef.current = false
       setLoading(false)
     }
   }, [])
@@ -48,8 +59,14 @@ export function ActivityPanel({ onClose }: { onClose: () => void }) {
     return () => clearInterval(interval)
   }, [loadFeed])
 
+  // Escape, focus trap and focus restore, via the shared primitive — this was
+  // a `role="dialog"` with none of the three (§0.9 Row A). It has no backdrop
+  // by design (LabScene renders it as a bare fixed column) but it IS exclusive
+  // via the Overlay union, so `aria-modal` is honest.
+  const containerRef = useModalA11y({ onClose })
+
   return (
-    <div className="activity-panel" role="dialog" aria-label="Team activity">
+    <div ref={containerRef} className="activity-panel" role="dialog" aria-modal="true" aria-label="Team activity">
       <div className="activity-panel__header">
         <span className="font-pixel activity-panel__title">
           <Activity size={12} /> Activity

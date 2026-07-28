@@ -83,11 +83,12 @@ export function SourceReader({
   const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // ── Resizable / collapsible citations panel ──
-  const { size: citHeight, onDividerMouseDown: onHandleMouseDown } = useResizablePanel({
+  const { size: citHeight, dividerProps } = useResizablePanel({
     min: CIT_MIN,
     max: CIT_MAX,
     initial: CIT_DEFAULT,
     axis: 'y',
+    label: 'Resize the citations panel',
   })
   const [citCollapsed, setCitCollapsed] = useState(false)
 
@@ -337,9 +338,9 @@ export function SourceReader({
         {/* Drag handle (grip dots, like the tree bar) — hidden when collapsed */}
         {!citCollapsed && (
           <div
-            onMouseDown={onHandleMouseDown}
-            title="Drag to resize"
-            className="h-2.5 shrink-0 cursor-row-resize bg-white/5 hover:bg-[#F5C518]/30 active:bg-[#F5C518]/50 transition-colors flex items-center justify-center gap-1 group"
+            {...dividerProps}
+            title="Drag to resize — or focus it and use ↑ ↓"
+            className="h-2.5 shrink-0 cursor-row-resize bg-white/5 hover:bg-[#F5C518]/30 active:bg-[#F5C518]/50 focus-visible:bg-[#F5C518]/50 focus-visible:outline-none transition-colors flex items-center justify-center gap-1 group"
           >
             {[0, 1, 2].map((i) => (
               <div key={i} className="w-1 h-1 rounded-full bg-white/30 group-hover:bg-[#F5C518]/60 transition-colors" />

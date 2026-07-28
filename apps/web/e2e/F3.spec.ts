@@ -280,9 +280,14 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
     // The confirm dialog must disappear.
     await expect(dialog).not.toBeVisible()
 
+    // …and ONLY the confirm dialog. One Escape closes the TOPMOST dialog, not
+    // every dialog on the modal stack (§0.9 Row A): the Literature Review panel
+    // the student opened the confirm from must still be there. Before the stack
+    // in `useModalA11y`, both `document` keydown listeners fired on one Escape
+    // and the whole feature panel vanished under the student.
+    await expect(page.locator('.feature-panel__backdrop[role="dialog"]')).toBeVisible()
+
     // The paper was NOT deleted — verify via API that the count is unchanged.
-    // (Escape may also close the FeaturePanel due to both listeners on document;
-    //  we verify the data-level outcome: no paper was removed.)
     const resAfter = await api.get(page, '/api/papers')
     const { papers: papersAfter } = await resAfter.json()
     expect((papersAfter as Array<{ id: string }>).length).toBe(countBefore)
