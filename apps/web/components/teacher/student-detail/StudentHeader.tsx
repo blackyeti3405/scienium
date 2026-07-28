@@ -10,6 +10,7 @@ import {
 } from '@/lib/phase'
 import { fmtDate } from '@/lib/format'
 import { RemoveFromClass } from './RemoveFromClass'
+import { MakeLabLead } from './MakeLabLead'
 import type { Overview } from './types'
 
 // ─── Student Identity Header ───────────────────────────────────────────────────
@@ -92,14 +93,26 @@ export function StudentHeader({ overview }: { overview: Overview }) {
               </span>
             )}
           </div>
-          {/* Class membership can now END (REFACTOR2 P1-R8, class half). */}
-          {student.class && (
-            <div className="pt-1">
-              <RemoveFromClass
-                studentId={student.id}
-                studentName={student.name}
-                className={student.class.name}
-              />
+          {/* Membership authority a teacher can exercise (REFACTOR2 P1-R8):
+              reassigning the lead, and ending the class enrolment. */}
+          {(student.class || student.memberRole === 'member') && (
+            <div className="pt-1 flex flex-wrap items-start gap-2">
+              {student.memberRole === 'member' && (
+                <MakeLabLead
+                  studentId={student.id}
+                  studentName={student.name}
+                  currentLeadName={
+                    team?.members?.find((m) => m.role === 'lead')?.user.name ?? null
+                  }
+                />
+              )}
+              {student.class && (
+                <RemoveFromClass
+                  studentId={student.id}
+                  studentName={student.name}
+                  className={student.class.name}
+                />
+              )}
             </div>
           )}
         </div>

@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type Page, type Locator } from '@playwright/test'
 import { api } from './api'
+import { createLab, type OwnedLab } from './lab'
 import { dismissHome, openDiscovery, resetTree, treeHasExternalId } from './discovery-helpers'
 
 /**
@@ -148,8 +149,22 @@ async function pickFirstResultAndSettle(
   await openPapersTab(page)
 }
 
+let lab: OwnedLab
+
+test.beforeAll(async () => {
+  // One disposable lab for BOTH describes in this file — the discovery tree
+  // they reset between tests is this lab's, not the shared fixture's, so a
+  // crashed run can no longer leave source nodes behind for the next spec.
+  lab = await createLab('paperstab')
+})
+
+test.afterAll(async () => {
+  await lab.dispose()
+})
+
 test.describe('Feature A — Papers tab', () => {
-  // Serial: every test shares the one E2E leader team's discovery tree.
+  // Serial: every test in this file shares ONE discovery tree (the lab is
+  // per-file, not per-test), so the beforeEach reset below still matters.
   test.describe.configure({ mode: 'serial' })
 
   test.beforeEach(async ({ page }) => {

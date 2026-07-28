@@ -1,6 +1,7 @@
 import { test, expect, type Browser } from '@playwright/test'
 import { api, withSeedPage } from './api'
-import { e2eDb, e2eTeamId } from './db'
+import { createLab, type OwnedLab } from './lab'
+import { e2eDb } from './db'
 import { minimalPdfBytes } from './fixtures'
 
 /**
@@ -25,7 +26,12 @@ import { minimalPdfBytes } from './fixtures'
  * transaction, which is also the behaviour worth having under test.
  *
  * It also set `team.topic = null` in `beforeAll` and never put it back, leaking
- * fixture state into every spec that ran afterwards. Restored in `afterAll` now.
+ * fixture state into every spec that ran afterwards. That whole save/restore
+ * dance is gone: this file owns a DISPOSABLE LAB (`createLab`, e2e/lab.ts),
+ * which starts with no topic and no papers and is purged in `afterAll`, so
+ * there is no shared state left to leak. The route-driven cleanup STAYS —
+ * retiring a paper through `DELETE /api/papers/:id` is the behaviour worth
+ * having under test, and `dispose()` is the backstop for anything it missed.
  */
 
 const UPLOADED_TITLE_MARKER = 'E2E Fixture Paper: Thermal Tolerance of Reef Symbionts'
@@ -66,10 +72,11 @@ function pdfWithoutText(): Buffer {
  * ledger is left in the state the app itself would leave it: the row orphaned
  * and queued for the reclaim sweep, not `attached` to a paper that is gone.
  */
+let lab: OwnedLab
+
 async function cleanupFixturePapers(browser: Browser) {
-  const teamId = await e2eTeamId()
   const papers = await e2eDb.paper.findMany({
-    where: { teamId, fullText: { contains: UPLOADED_TITLE_MARKER } },
+    where: { teamId: lab.teamId, fullText: { contains: UPLOADED_TITLE_MARKER } },
     select: { id: true },
   })
   if (papers.length === 0) return
@@ -84,34 +91,20 @@ async function cleanupFixturePapers(browser: Browser) {
 }
 
 test.describe('paper upload — extracted service workflow', () => {
-  /** The team's real topic, put back in `afterAll` (P1-S15). */
-  let savedTopic: string | null = null
-
-  test.beforeAll(async ({ browser }) => {
-    const teamId = await e2eTeamId()
-    // The relevance gate only runs when a topic is committed; keep it out of the
-    // way so these assertions isolate the upload workflow itself. SAVED, because
-    // every other spec shares this fixture team and several of them depend on it.
-    const team = await e2eDb.team.findUnique({ where: { id: teamId }, select: { topic: true } })
-    savedTopic = team?.topic ?? null
-    await e2eDb.team.update({ where: { id: teamId }, data: { topic: null } })
-    await cleanupFixturePapers(browser)
+  test.beforeAll(async () => {
+    // A fresh lab has no topic, so the relevance gate is already out of the way
+    // and these assertions isolate the upload workflow itself — no save, no
+    // restore, and nothing for a crashed run to leave behind.
+    lab = await createLab('paper-upload')
   })
 
   test.afterAll(async ({ browser }) => {
-    // `finally`-shaped: a failed cleanup must not stop the topic being restored,
-    // and neither must stop the client disconnecting.
+    // `finally`-shaped: a failed route-driven cleanup must not stop the lab
+    // being disposed, which is what guarantees the next run starts clean.
     try {
       await cleanupFixturePapers(browser)
     } finally {
-      try {
-        await e2eDb.team.update({
-          where: { id: await e2eTeamId() },
-          data: { topic: savedTopic },
-        })
-      } finally {
-        await e2eDb.$disconnect()
-      }
+      await lab.dispose()
     }
   })
 

@@ -26,6 +26,10 @@ interface RequestRow {
 let requests: RequestRow[]
 let users: { id: string; classId: string | null }[]
 let events: { classId: string; userId: string; event: string; actorUserId: string | null }[]
+/** The student's ONE live team membership (`TeamMember.userId` is `@@unique`). */
+let memberships: { userId: string; teamId: string }[]
+let notifications: Record<string, unknown>[]
+let eventSeq: number
 /** Runs between the advisory lock and the read inside `endEnrolment`. */
 let interleave: (() => void) | null
 
@@ -65,7 +69,28 @@ const tx = {
   },
   classMembershipEvent: {
     create: async ({ data }: any) => {
-      events.push(data)
+      const row = { id: `evt_${++eventSeq}`, ...data }
+      events.push(row)
+      return row
+    },
+  },
+  teamMember: {
+    findUnique: async ({ where }: any) =>
+      memberships.find((m) => m.userId === where.userId) ?? null,
+  },
+  class: {
+    findUnique: async ({ where }: any) =>
+      where.id === CLASS ? { name: 'Period 3 Biology' } : null,
+  },
+  notification: {
+    create: async ({ data }: any) => {
+      if (notifications.some((n) => n.dedupeKey === data.dedupeKey)) {
+        // `dedupeKey` is `@unique`. The write is inside the removal's
+        // transaction, so a collision does not merely lose a notification — it
+        // rolls the removal back.
+        throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' })
+      }
+      notifications.push(data)
       return data
     },
   },
@@ -99,6 +124,9 @@ beforeEach(() => {
     { id: OTHER, classId: null },
   ]
   events = []
+  memberships = [{ userId: STUDENT, teamId: 'team_1' }]
+  notifications = []
+  eventSeq = 0
 })
 
 describe('a student withdrawing their own request', () => {
@@ -197,6 +225,61 @@ describe('ending an approved enrolment', () => {
 
     expect(await leaveClass(STUDENT)).toEqual({ committed: false, reason: 'not_enrolled' })
     expect(events).toEqual([])
+  })
+
+  it('tells the student they were removed, addressed to them alone', async () => {
+    // The gap P1-R8 left open: the removal was logged for the teacher and the
+    // student found out by noticing their teacher could no longer see them.
+    await removeFromClass(CLASS, STUDENT, TEACHER)
+
+    expect(notifications).toHaveLength(1)
+    expect(notifications[0]).toMatchObject({
+      teamId: 'team_1',
+      userId: STUDENT,
+      kind: 'membership_changed',
+      title: 'You were removed from Period 3 Biology',
+    })
+  })
+
+  it('keys the notification to the EVENT, so a second removal is not a constraint failure', async () => {
+    // A key of (student, class) would collide on the second removal — and
+    // because the write is inside the removal's own transaction, that collision
+    // would abort the removal itself.
+    await removeFromClass(CLASS, STUDENT, TEACHER)
+    users[0]!.classId = CLASS
+    requests[0]!.status = 'approved'
+
+    await expect(removeFromClass(CLASS, STUDENT, TEACHER)).resolves.toMatchObject({
+      committed: true,
+    })
+    expect(notifications).toHaveLength(2)
+    expect(notifications[0]!.dedupeKey).not.toBe(notifications[1]!.dedupeKey)
+  })
+
+  it('a student who left is not notified — they know', async () => {
+    await leaveClass(STUDENT)
+    expect(notifications).toEqual([])
+  })
+
+  it('a refused removal writes no notification either', async () => {
+    interleave = () => {
+      users[0]!.classId = 'class_somewhere_else'
+    }
+    await removeFromClass(CLASS, STUDENT, TEACHER)
+    expect(notifications).toEqual([])
+  })
+
+  it('a student with no live team is removed anyway — the bell is team-scoped', async () => {
+    // Documented limitation, not an oversight: `Notification.teamId` is
+    // required and the bell only renders inside a team. The removal must not
+    // fail because there is nowhere to show the notice.
+    memberships = []
+
+    await expect(removeFromClass(CLASS, STUDENT, TEACHER)).resolves.toMatchObject({
+      committed: true,
+    })
+    expect(users[0]!.classId).toBeNull()
+    expect(notifications).toEqual([])
   })
 
   it('serializes against a concurrent decision on the same student', async () => {

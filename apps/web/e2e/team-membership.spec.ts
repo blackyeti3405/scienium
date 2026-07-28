@@ -3,6 +3,14 @@ import { api, withSeedPage } from './api'
 import { e2eDb, e2eTeamId } from './db'
 
 /**
+ * NOT migrated to `createLab()` (e2e/lab.ts), on purpose — and this one is a
+ * hard no, not a cost/benefit call. `createLab` works by deleting and recreating
+ * `TeamMember` rows and repointing `activeTeamId`; those are exactly the rows
+ * and transitions this file exists to test. Seeding the fixture with the
+ * mechanism under test would let a bug in one hide a bug in the other.
+ */
+
+/**
  * Team membership lifecycle UI (REFACTOR2 P1-R8).
  *
  * The service logic is covered by unit tests; what those cannot show is whether

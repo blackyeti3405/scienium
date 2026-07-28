@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
-import { deleteE2eDiscoveryNodes, deleteE2eDiscoveryNodesByTitle } from './db'
 import { api } from './api'
+import { createLab, type OwnedLab } from './lab'
 import { dismissHome, openDiscovery } from './discovery-helpers'
 
 /**
@@ -60,6 +60,8 @@ const DARK_BG_RGB = 'rgb(13, 27, 46)' // #0d1b2e
 // serial run (not yet deleted — cleanup only runs once in afterAll) would
 // otherwise satisfy a `button:has-text(...)` title match ambiguously and
 // silently pick the wrong row for the tree-index assertion.
+let lab: OwnedLab
+
 const WIKI_TOPIC = 'Photosynthesis'
 const WIKI_TOPIC_2 = 'Volcano'
 
@@ -184,17 +186,22 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   // section membership between tests.
   test.describe.configure({ mode: 'serial', timeout: 90_000 })
 
-  // Track every node this spec creates so afterAll can self-clean regardless
-  // of which tests passed/failed (self-cleaning per .claude/PARALLELISM.md).
+  // Still tracked — but for LOGIC, not cleanup: AC14/AC15 identify the root a
+  // test just created by excluding the ones earlier tests made, and a disposable
+  // lab does not answer that question.
   const createdNodeIds: string[] = []
 
   test.beforeAll(async () => {
-    await deleteE2eDiscoveryNodesByTitle(TAG, [WIKI_TOPIC, WIKI_TOPIC_2])
+    // The lab starts with an empty tree, which retires the title-prefix
+    // pre-clean this used to need: nothing can survive from a crashed run,
+    // because the lab a crashed run used is a different lab.
+    lab = await createLab('discotree')
   })
 
   test.afterAll(async () => {
-    await deleteE2eDiscoveryNodes(createdNodeIds)
-    console.log(`[F11 cleanup] afterAll removed ${createdNodeIds.length} seeded node(s).`)
+    // `dispose()` removes the nodes with the lab, including the parent/child
+    // descendants `deleteE2eDiscoveryNodes` had to walk by hand.
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────

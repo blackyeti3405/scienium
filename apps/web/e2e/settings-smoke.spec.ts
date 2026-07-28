@@ -1,6 +1,11 @@
 import { test, expect } from '@playwright/test'
 
 /**
+ * NOT migrated to `createLab()` (e2e/lab.ts), on purpose: read-only smoke. See
+ * the same note in e2e/smoke.spec.ts.
+ */
+
+/**
  * Lab Profile settings smoke — the ONLY browser coverage of this surface.
  * Added when its topic flow moved onto the shared useFinalTopic hook: proves
  * the panel opens, loads real data, and the topic editor round-trips through

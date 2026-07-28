@@ -16,6 +16,7 @@ import { POST as codePOST } from '@/app/api/teacher/class/[id]/code/route'
 import { POST as requestPOST } from '@/app/api/teacher/class/requests/[id]/route'
 import { GET as studentGET } from '@/app/api/teacher/student/[id]/route'
 import { GET as overviewGET } from '@/app/api/teacher/student/[id]/overview/route'
+import { POST as leadPOST } from '@/app/api/teacher/student/[id]/lead/route'
 import { GET as litGET } from '@/app/api/teacher/student/[id]/literature/[paperId]/route'
 import { GET as litFileGET } from '@/app/api/teacher/student/[id]/literature/[paperId]/file/route'
 
@@ -153,6 +154,35 @@ describe('GET /api/teacher/student/[id]/overview', () => {
     h.asTeacherB().get(overviewGET, LONER).expect(404))
   it('403s a signed-in student', () => h.asStudentA().get(overviewGET, LONER).expect(403))
   it('401s signed out', () => h.anonymous().get(overviewGET, LONER).expect(401))
+})
+
+/**
+ * REFACTOR2 P1-R8 — teacher-initiated lead reassignment.
+ *
+ * This route's whole reason to exist is that it authorizes on OWNERSHIP where
+ * `POST /api/team/lead` authorizes on being the lead. The matrix is what stops
+ * either from standing in for the other, so the cross-teacher case asserts the
+ * team is UNCHANGED, not merely that a 404 came back.
+ */
+describe('POST /api/teacher/student/[id]/lead', () => {
+  it('promotes an own-class student in a team this teacher owns', async () => {
+    const body = await h.asTeacherA().post(leadPOST, h.ids.studentA).expect(200)
+    expect(body.teamLeadId).toBe(h.ids.studentA)
+    expect(h.rows('team').find((t) => t.id === h.ids.teamA)?.teamLeadId).toBe(h.ids.studentA)
+  })
+  it("404s ANOTHER teacher's real student, team unchanged", async () => {
+    const before = h.rows('team').find((t) => t.id === h.ids.teamA)?.teamLeadId
+    await h.asTeacherB().post(leadPOST, h.ids.studentA).expect(404)
+    expect(h.rows('team').find((t) => t.id === h.ids.teamA)?.teamLeadId).toBe(before)
+  })
+  it('404s a student with no lab', () => h.asTeacherA().post(leadPOST, LONER).expect(404))
+  it('403s a signed-in student — being ON the team is not authority to reassign it', () =>
+    h.asStudentA().post(leadPOST, h.ids.studentA).expect(403))
+  it('401s signed out', () => h.anonymous().post(leadPOST, h.ids.studentA).expect(401))
+  it('403s cross-origin', () =>
+    h.asTeacherA().crossOrigin().post(leadPOST, h.ids.studentA).expect(403))
+  it('429s over the tier', () =>
+    h.asTeacherA().overLimit().post(leadPOST, h.ids.studentA).expect(429))
 })
 
 describe('GET /api/teacher/student/[id]/literature/[paperId] (+ /file)', () => {

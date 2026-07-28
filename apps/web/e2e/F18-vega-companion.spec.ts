@@ -1,6 +1,6 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
 import { api, withSeedPage } from './api'
-import { e2eDb, e2eTeamId } from './db'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * F18 — "Study with Vega" persistent project-scoped study companion (Ops Hub),
@@ -18,10 +18,12 @@ import { e2eDb, e2eTeamId } from './db'
  * used by the failure-log followup route and the F13/F11 quiz routes. No real
  * LLM call is made anywhere in this spec.
  *
- * Cleanup: this spec's own sent messages are deleted from `VegaStudyMessage`
- * (team-shared table) in afterAll, scoped ONLY to rows created by this run
- * (tracked by exact content string + a run-unique marker), never a blanket
- * delete — the fixture team's thread may carry state from earlier runs.
+ * Fixture: this file owns a DISPOSABLE LAB (`createLab`, e2e/lab.ts) created
+ * WITH co-members, because AC4b's whole claim is that a co-member on the same
+ * team sees the shared thread — the student fixture has to actually be on the
+ * lab the leader is driving. `dispose()` purges the thread, which replaces the
+ * marker-and-requestId reconstruction the old cleanup needed to avoid stranding
+ * assistant replies in a team-shared table (35 had accumulated).
  *
  * Criterion → test mapping (plan's Acceptance criteria):
  *  AC1 — Tab visible; clicking renders the chat panel with a Vega greeting
@@ -57,42 +59,19 @@ async function openVegaTab(page: Page) {
   await page.getByTestId('vega-tab').click()
 }
 
-let teamId: string | null = null
+let lab: OwnedLab
 
 test.describe('F18 — Study with Vega', () => {
   test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
-    teamId = await e2eTeamId()
+    // `true` for co-members: AC4b signs in as the student fixture and asserts
+    // it sees this thread, which is only meaningful if it is on this team.
+    lab = await createLab('vega-study', true, true)
   })
 
   test.afterAll(async () => {
-    if (!teamId) return
-    // Scoped ONLY to this run's own fixture content — never a blanket delete
-    // of the team-shared thread. The RUN_ID marker lives only in USER rows;
-    // deleting by content alone left every run's ASSISTANT replies behind
-    // (35 orphans accumulated), which slowed the history GET until it lost
-    // the race the VegaStudyTab stale-clobber fix now guards. Each reply
-    // shares its user turn's requestId, so resolve marker → requestIds and
-    // delete BOTH roles.
-    const runRows = await e2eDb.vegaStudyMessage.findMany({
-      where: { teamId, content: { contains: `[E2E F18 ${RUN_ID}]` } },
-      select: { requestId: true },
-    })
-    const requestIds = [
-      ...new Set(runRows.map((r) => r.requestId).filter((x): x is string => !!x)),
-    ]
-    await e2eDb.vegaStudyMessage.deleteMany({
-      where: {
-        teamId,
-        OR: [
-          { requestId: { in: requestIds } },
-          // Rows from before requestId existed (or a failed pairing) still
-          // carrying the marker — content match remains the fallback.
-          { content: { contains: `[E2E F18 ${RUN_ID}]` } },
-        ],
-      },
-    })
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────

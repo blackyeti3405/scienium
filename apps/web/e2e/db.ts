@@ -14,51 +14,61 @@ export function e2eTeamId(): Promise<string> {
   return teamIdPromise
 }
 
-export async function deleteE2eBuilding(buildingKey: string): Promise<void> {
+/**
+ * Every helper below takes an optional `teamId`.
+ *
+ * They used to be hardwired to `e2eTeamId()` — the ONE shared fixture — which
+ * made them unusable from a spec that owns a disposable lab: the helper would
+ * write the shared team's currency while the browser read the disposable one,
+ * and the spec would fail on numbers that were never wrong. Defaulting to the
+ * shared lab keeps every existing caller unchanged.
+ */
+export async function deleteE2eBuilding(buildingKey: string, teamId?: string): Promise<void> {
   await e2eDb.teamShopBuilding.deleteMany({
-    where: { teamId: await e2eTeamId(), buildingKey },
+    where: { teamId: teamId ?? (await e2eTeamId()), buildingKey },
   })
 }
 
-export async function setE2eBuildingLevel(buildingKey: string, level: number): Promise<void> {
+export async function setE2eBuildingLevel(
+  buildingKey: string,
+  level: number,
+  teamId?: string,
+): Promise<void> {
   await e2eDb.teamShopBuilding.update({
     where: {
-      teamId_buildingKey: {
-        teamId: await e2eTeamId(),
-        buildingKey,
-      },
+      teamId_buildingKey: { teamId: teamId ?? (await e2eTeamId()), buildingKey },
     },
     data: { level },
   })
 }
 
-export async function setE2eLabCredits(lc: number): Promise<void> {
+export async function setE2eLabCredits(lc: number, teamId?: string): Promise<void> {
   await e2eDb.teamCurrency.update({
-    where: { teamId: await e2eTeamId() },
+    where: { teamId: teamId ?? (await e2eTeamId()) },
     data: { lc },
   })
 }
 
-export async function setE2eKnowledgePoints(kp: number): Promise<void> {
+export async function setE2eKnowledgePoints(kp: number, teamId?: string): Promise<void> {
   await e2eDb.teamCurrency.update({
-    where: { teamId: await e2eTeamId() },
+    where: { teamId: teamId ?? (await e2eTeamId()) },
     data: { kp },
   })
 }
 
-export async function getE2eLabCredits(): Promise<number> {
+export async function getE2eLabCredits(teamId?: string): Promise<number> {
   const currency = await e2eDb.teamCurrency.findUniqueOrThrow({
-    where: { teamId: await e2eTeamId() },
+    where: { teamId: teamId ?? (await e2eTeamId()) },
     select: { lc: true },
   })
   return currency.lc
 }
 
-export async function deleteE2eLabCreditClaimsToday(): Promise<void> {
+export async function deleteE2eLabCreditClaimsToday(teamId?: string): Promise<void> {
   const now = new Date()
   const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
   await e2eDb.labCreditClaim.deleteMany({
-    where: { teamId: await e2eTeamId(), day },
+    where: { teamId: teamId ?? (await e2eTeamId()), day },
   })
 }
 

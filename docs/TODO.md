@@ -149,33 +149,23 @@ no cross-boundary interaction) and reproduced an unrelated dev-server-mode flake
 the rename's logic. Landed the identical rename; `synthesis-matrix` ran 17/17 twice with it in
 place. See `REFACTOR2.MD` §0.11's v0.74.0 close-out.
 
-**Still open from §0.7, with evidence attached:** `showcase/[slug]/page.tsx`'s duplicated
-metadata+page load and missing render-time URL check, and `FormsChecklist`'s unchecked GET /
-swallowed PATCH.
+**Both closed in v0.75.0:** `showcase/[slug]/page.tsx`'s duplicated metadata+page load (both
+resolvers now `cache()`d at the CALL site — a definition-site cache would have broken
+`test/showcase-viewer-resolution.test.ts`, which invokes the resolver repeatedly under different
+Clerk mocks in one process) and its missing render-time URL check (`isSafeHttpUrl`, the
+`SourceReader`/`IdeaCheckView` gate); and `FormsChecklist`'s unchecked GET / swallowed PATCH,
+both now on the shared retry-banner shape.
 
 
 **Deliberately deprioritised** (verdict is structural only, no named defect): `app/globals.css`
 (3,051 lines) and `prisma/schema.prisma` (now 2,282). Both are real cleanups with real risk and
 no behaviour attached; they are the least valuable thing on this list until something breaks.
 
-## Two small UI durability gaps surfaced while verifying already-closed rows (found 2026-07-27)
+## Two small UI durability gaps surfaced while verifying already-closed rows — DONE (v0.75.0)
 
-Neither is part of the P-number that closed the rest of its file; both were confirmed still live
-during v0.67.0's verification pass and left unfixed per that batch's verification-only scope.
-
-- **`components/fair/FormsChecklist.tsx`**: the initial `GET /api/fairs/forms` load never checks
-  `r.ok` before reading the body, and `cycleStatus`'s PATCH failure is a bare
-  `catch { /* leave state unchanged on error */ }` — a rejected status update gives the student no
-  signal at all. Add the status check and surface the PATCH failure (matching the retry-banner
-  shape `LiteratureFeature`/`CodexTab`/`ExperimentDetail` already use).
-- **`app/(public)/showcase/[slug]/page.tsx`**: `generateMetadata` and the page component each
-  independently call `loadShowcase()`/`resolveShowcaseViewer()` — every public showcase view runs
-  the same Prisma queries twice, with no `React.cache()` wrapping either function. Separately,
-  `ResourceLink` renders a repo/supplement asset's `metadataJson.url` straight into `href` with no
-  render-time `isSafeHttpUrl` check — safe today only because the sole write path
-  (`POST /api/showcase/asset/link`) already validates before persisting, but a defense-in-depth gap
-  compared to `SourceReader.tsx`/`IdeaCheckView.tsx` (v0.64.0), which added exactly this second
-  gate at render time for the same class of risk.
+Both were confirmed still live in v0.67.0's verification pass and left unfixed per that batch's
+verification-only scope. Both shipped in v0.75.0; see `docs/CHANGELOG.md` and `REFACTOR2.MD`
+§0.11's v0.75.0 entry.
 
 ## E2E health — done (v0.73.0)
 
@@ -199,15 +189,20 @@ The audit and the changes are in [`runbooks/e2e.md`](runbooks/e2e.md). Remaining
   needs **one Clerk test account per worker**, which provisions accounts in your Clerk instance
   and is therefore your call, not something to do silently. Everything else in the rebuild is the
   half that needs no new accounts, and it is the half that removes the flakes.
-- **Migrating the other 30 specs to `createLab`.** The primitive exists (`e2e/lab.ts`) and
-  `synthesis-matrix.spec.ts`/`F4`/`F4-print`/`F3-plan-paste` (v0.73.0) are the worked examples.
-  Each migration deletes a `beforeAll` full of `deleteMany` calls, removes one more reason for
-  cross-file pollution, and — per `F3-plan-paste` — does NOT usually let a file drop
-  `mode: 'serial'` on its own: most of these files test a genuinely sequential state machine
-  (a later AC reads what an earlier one saved), so serial mode stays; it just stops being
-  load-bearing for isolation from OTHER spec files.
-- **`F4` AC3.** `Showcase.teamId` is `@unique`, so `F4` and `F4-print` drive one row from two
-  files. Per-spec labs are the fix; it needs both files migrated together.
+- **Migrating the other specs to `createLab` — DONE (v0.75.0): 27 of 32.** Five deliberately
+  stay on the shared fixture and say so in-file: `smoke`/`settings-smoke`/`F8-reports` are
+  read-only (and F8's invariant compares reports against the WHOLE roster, which an extra team
+  would change), `DataRequest` is keyed by subject user rather than team so a lab isolates none
+  of it, and `team-membership` is a hard no — `createLab` works by deleting and recreating the
+  very `TeamMember` rows that file exists to test. As predicted, migration did NOT let files drop
+  `mode: 'serial'`: a lab isolates a spec from its NEIGHBOURS, not its own tests from each other.
+  Three infrastructure defects surfaced and were fixed on the way — see §0.11's v0.75.0 entry:
+  disposable labs were inheriting the DEFAULT gateway layout (the one `seed-e2e.mjs` exists to
+  avoid, where a sprite covers a neighbour's hit area), and `reset:e2e` and `disposeLab` kept two
+  incomplete copies of the team-delete inventory, so a lab that recorded codex progress or bought
+  a building could not be deleted by either.
+- **`F4` AC3.** `Showcase.teamId` is `@unique`, so `F4` and `F4-print` drove one row from two
+  files. Both are on per-spec labs now; the shared-row coupling is gone.
 - **The auth recovery ladder** in `e2e/api.ts` (~150 lines of escalating Clerk session recovery)
   **fired zero times** in the production-build baseline. It exists for the `next dev` lane. Worth
   deleting if a few dev-lane runs agree.
@@ -250,13 +245,24 @@ The class half of P1-R8 shipped: withdraw, leave, and teacher removal, each clea
 authorization in the same transaction, plus `ClassMembershipEvent` as the append-only log. What is
 still owed:
 
-- **Teacher-initiated lead reassignment.** Unchanged from the team half, and deliberately so:
-  "the lead may hand over" and "a teacher may reassign" are different capabilities, and conflating
-  them is how one becomes the other. It needs its own authorization.
-- **No notification when a teacher removes a student.** They discover it by looking. The
-  notification machinery exists (`lib/notifications/`); this is a `dedupeKey` and a template.
-- **The event log has no reader.** Nothing surfaces class history to a teacher, so the record
-  exists but nobody can see it. A class-history panel on the roster is the natural home.
+**All three shipped in v0.75.0.** What each still owes:
+
+- **Teacher-initiated lead reassignment** — done as its own export (`reassignLeadAsTeacher`),
+  route and control, deliberately NOT a flag on `transferLead`: the two authorize on different
+  facts, and a shared function with a boolean is one inverted condition from letting either stand
+  in for the other. Owed: the student is not notified they gained or lost the role; the UI says
+  so out loud rather than implying otherwise.
+- **A notification when a teacher removes a student** — done, in the removal's OWN transaction
+  and keyed to the `ClassMembershipEvent` id (a per-(student, class) `dedupeKey` would collide on
+  a second removal and roll the removal itself back). Owed: **a student with no live team gets
+  no row**, because `Notification.teamId` is required and the bell is team-scoped. Making it
+  nullable is a nullable FK, four index changes and an `OR` in the bell's visibility predicate,
+  for a student who has no bell to read it in.
+- **A reader for the event log** — done as `classHistory` on the teacher's student overview
+  (a tab, and also on the no-team branch, since a student with no lab is exactly the one whose
+  class history a teacher needs). Owed: the actor is reported as student/teacher/system rather
+  than by name — `ClassMembershipEvent` has no actor relation and `Class.teacherId` is singular,
+  so "a teacher" IS the class's teacher. Revisit if co-teachers ever land.
 
 ## PatentsView API key (Discovery prior-art lane)
 - **Now:** the "Prior art (patents)" lane in Discovery's Articles tab runs keyless —

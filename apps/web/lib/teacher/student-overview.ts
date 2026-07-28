@@ -67,6 +67,14 @@ export async function loadStudentOverview(
 
   if (!student) return NOT_FOUND
 
+  // Started here, awaited at BOTH return points below. `ClassMembershipEvent`
+  // had no reader at all (REFACTOR2 P1-R8): the log recorded that an enrolment
+  // ended and nothing showed it to the teacher whose access ended with it. It
+  // deliberately does not live in the team fan-out — a student with no team
+  // returns early, and that is exactly the student whose class history a
+  // teacher most needs.
+  const classHistoryPromise = loadClassHistory(studentId, principal.classIds)
+
   /**
    * ONE membership decides both the team and the role/join date shown with it.
    *
@@ -103,7 +111,14 @@ export async function loadStudentOverview(
   }
 
   if (!teamId) {
-    return { ok: true, overview: { student: studentSection, team: null } }
+    return {
+      ok: true,
+      overview: {
+        student: studentSection,
+        team: null,
+        classHistory: await classHistoryPromise,
+      },
+    }
   }
 
   // Belt-and-suspenders: verify team ownership before returning data.
@@ -361,6 +376,59 @@ export async function loadStudentOverview(
       formStatuses,
       activity: activityWithDescriptions,
       feedback,
+      classHistory: await classHistoryPromise,
     },
   }
+}
+
+/** One row of the class-membership log, shaped for the teacher's view. */
+export interface ClassHistoryRow {
+  id: string
+  event: string
+  reason: string | null
+  createdAt: Date
+  className: string
+  /** Who caused it, at the only granularity the schema can answer honestly. */
+  actor: 'student' | 'teacher' | 'system'
+}
+
+/**
+ * This student's class-membership history, scoped to the CALLER's classes.
+ *
+ * The scope is the whole security question. A student's history can include
+ * classes belonging to other teachers — the name of a class this teacher does
+ * not own is not theirs to read, so `classIds` is in the WHERE clause, not
+ * applied after the fetch.
+ *
+ * `actorUserId` has no relation on the model and resolving it to a name would
+ * cost a second query to say something the data cannot support anyway: `Class`
+ * has a single `teacherId`, so "a teacher" is the class's teacher. The three
+ * coarse buckets are what is actually knowable.
+ */
+async function loadClassHistory(
+  studentId: string,
+  classIds: string[],
+): Promise<ClassHistoryRow[]> {
+  if (classIds.length === 0) return []
+  const rows = await db.classMembershipEvent.findMany({
+    where: { userId: studentId, classId: { in: classIds } },
+    orderBy: { createdAt: 'desc' },
+    take: 25,
+    select: {
+      id: true,
+      event: true,
+      reason: true,
+      createdAt: true,
+      actorUserId: true,
+      class: { select: { name: true } },
+    },
+  })
+  return rows.map((r) => ({
+    id: r.id,
+    event: r.event,
+    reason: r.reason,
+    createdAt: r.createdAt,
+    className: r.class.name,
+    actor: r.actorUserId === null ? 'system' : r.actorUserId === studentId ? 'student' : 'teacher',
+  }))
 }

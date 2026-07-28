@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage, resolveTeamId } from './api'
+import { api, withSeedPage } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * F5 — Notification bell: all five kinds first-class.
@@ -37,25 +38,15 @@ import { api, withSeedPage, resolveTeamId } from './api'
 const SEED_TITLE = 'New feedback from your teacher'
 const SEED_BODY = '[E2E F5 seed] Nice progress on your literature review!'
 
-/** Seeded notification id (set in beforeAll, read in tests, cleaned up in afterAll). */
-let seededNotificationId: string | null = null
-
 /** The five canonical kinds the map must cover — mirrors the schema comment at prisma/schema.prisma:917. */
+let lab: OwnedLab
+
 const CANONICAL_KINDS = ['fair_deadline', 'urgency', 'teacher_feedback', 'phase_reviewed', 'showcase_reviewed']
 
 /** POST one extra teacher_feedback notification for the E2E team, via the teacher session. */
 async function seedExtraFeedback(page: Page, bodySuffix: string): Promise<void> {
-  const rosterRes = await api.get(page, '/api/teacher/roster')
-  if (!rosterRes.ok()) {
-    throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
-  }
-  const { students } = await rosterRes.json()
-  const teamId = resolveTeamId(students)
-  if (!teamId) {
-    throw new Error('resolveTeamId found no team in roster for extra-feedback seeding.')
-  }
   const feedRes = await api.post(page, '/api/teacher/feedback', {
-    data: { teamId, targetType: 'team', body: `${SEED_BODY} ${bodySuffix}` },
+    data: { teamId: lab.teamId, targetType: 'team', body: `${SEED_BODY} ${bodySuffix}` },
   })
   if (!feedRes.ok()) {
     throw new Error(`Extra feedback seed failed: ${feedRes.status()} ${await feedRes.text()}`)
@@ -70,25 +61,16 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
   // ── Seed / teardown ───────────────────────────────────────────────────────────
 
   test.beforeAll(async ({ browser }) => {
-    await withSeedPage(browser, 'teacher', async (page) => {
-      const rosterRes = await api.get(page, '/api/teacher/roster')
-      if (!rosterRes.ok()) {
-        throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
-      }
-      const { students } = await rosterRes.json()
-      const teamId = resolveTeamId(students)
-      if (!teamId) {
-        throw new Error(
-          'No team found in teacher roster — E2E teacher account must be linked to the dev class that contains the E2E leader team.',
-        )
-      }
+    // Co-members, so the teacher's scope resolves to this lab. Roster discovery
+    // is gone from both seeding paths — the team is the one this file made.
+    // It also starts with ZERO notifications, which is what makes the bell's
+    // unread-count assertions mean something rather than counting whatever
+    // earlier runs left unread.
+    lab = await createLab('bell', true, true)
 
+    await withSeedPage(browser, 'teacher', async (page) => {
       const feedRes = await api.post(page, '/api/teacher/feedback', {
-        data: {
-          teamId,
-          targetType: 'team',
-          body: SEED_BODY,
-        },
+        data: { teamId: lab.teamId, targetType: 'team', body: SEED_BODY },
       })
       if (!feedRes.ok()) {
         throw new Error(`Feedback seed failed: ${feedRes.status()} ${await feedRes.text()}`)
@@ -112,45 +94,15 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
           'Seeded teacher_feedback notification not found via GET /api/notifications — the feedback route may not have created it.',
         )
       }
-      seededNotificationId = seeded.id
     })
   })
 
-  test.afterAll(async ({ browser }) => {
-    // Cleanup: mark the seeded notification read so it does not remain as
-    // unread badge noise for subsequent runs/specs. There is no DELETE route.
-    if (!seededNotificationId) {
-      console.warn('F5 afterAll: no seededNotificationId to clean up — nothing to mark read.')
-      return
-    }
-    // Use a real page (not a bare API request context) and navigate first, per
-    // the codebase's own Clerk-JWT-expiry guard (see F4.spec.ts:518): by the time
-    // afterAll runs, the leader's saved storageState token can be stale, and a
-    // stale-token API call can come back with an HTML redirect/error page on a
-    // 2xx-range status rather than a clean 401 — res.ok() alone is not a reliable
-    // signal here, so the JSON parse is guarded and failure is reported loudly.
-    await withSeedPage(browser, 'leader', async (page) => {
-      const res = await api.post(page, '/api/notifications', {
-        data: { ids: [seededNotificationId] },
-      })
-      if (!res.ok()) {
-        console.warn(
-          `F5 afterAll cleanup FAILED for notification ${seededNotificationId}: HTTP ${res.status()} — it may remain unread.`,
-        )
-        return
-      }
-      let updated: number | undefined
-      try {
-        updated = (await res.json()).updated
-      } catch (parseErr) {
-        console.warn(
-          `F5 afterAll cleanup FAILED for notification ${seededNotificationId}: response was not JSON (${String(parseErr)}) — it may remain unread.`,
-        )
-        return
-      }
-      // eslint-disable-next-line no-console
-      console.log(`F5 afterAll cleanup: marked ${updated} seeded notification(s) read.`)
-    })
+  test.afterAll(async () => {
+    // The notifications go with the lab. This replaces a teardown that could
+    // only MARK the seeded row read (there is no DELETE route) through a
+    // stale-JWT-prone authenticated POST whose own comment admits `res.ok()`
+    // is not a reliable signal for it.
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────

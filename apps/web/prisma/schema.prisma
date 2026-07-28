@@ -1585,6 +1585,10 @@ enum NotificationKind {
   teacher_feedback
   phase_reviewed
   showcase_reviewed
+  /// A class or team membership of the recipient's ENDED or changed hands
+  /// (REFACTOR2 P1-R8). Its own kind so the bell can render it distinctly and
+  /// retention can be set for it separately from teacher comments.
+  membership_changed
 
   @@map("notification_kind")
 }

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { api, withSeedPage, gotoFresh } from './api'
-import { e2eDb, e2eTeamId } from './db'
+import { createLab, type OwnedLab } from './lab'
+import { e2eDb } from './db'
 
 /**
  * Two-phase confirmation for the topic-change paper wipe (security fix).
@@ -56,46 +57,52 @@ const FIXTURES = [
   },
 ]
 
-async function seedFixturePapers() {
-  const teamId = await e2eTeamId()
-  const uploader = await e2eDb.teamMember.findFirst({ where: { teamId }, select: { userId: true } })
-  if (!uploader) throw new Error('E2E Test Lab has no members. Run pnpm --filter web seed:e2e.')
+let lab: OwnedLab
 
-  await cleanupFixturePapers()
-  await e2eDb.team.update({ where: { id: teamId }, data: { topic: START_TOPIC } })
+/**
+ * Reset the lab to the three fixture papers and the starting topic.
+ *
+ * Called PER TEST, and the wipe is not optional: each test drives a topic
+ * change that deletes papers, so the second test would otherwise seed on top of
+ * the first test's survivors. The lab is per-FILE, not per-test — `dispose()`
+ * isolates this spec from its neighbours, not its own tests from each other.
+ *
+ * The wipe can be unconditional (`deleteMany` with no title filter) precisely
+ * because the lab is disposable: there is nothing in it this spec did not put
+ * there, which is what the old "never touch whatever else the lab holds"
+ * title-matching existed to protect.
+ */
+async function seedFixturePapers() {
+  await e2eDb.paper.deleteMany({ where: { teamId: lab.teamId } })
+  await e2eDb.team.update({ where: { id: lab.teamId }, data: { topic: START_TOPIC } })
   await e2eDb.paper.createMany({
     data: FIXTURES.map((f) => ({
-      teamId,
+      teamId: lab.teamId,
       title: f.title,
       abstract: f.abstract,
       authors: ['E2E Fixture'],
       sourceType: 'pdf' as const,
       status: 'ready' as const,
-      uploadedByUserId: uploader.userId,
+      uploadedByUserId: lab.leaderUserId,
     })),
-  })
-}
-
-/** Remove only OUR fixture rows — never touch whatever else the lab holds. */
-async function cleanupFixturePapers() {
-  await e2eDb.paper.deleteMany({
-    where: { teamId: await e2eTeamId(), title: { in: FIXTURES.map((f) => f.title) } },
   })
 }
 
 async function fixtureTitlesPresent(): Promise<string[]> {
   const rows = await e2eDb.paper.findMany({
-    where: { teamId: await e2eTeamId(), title: { in: FIXTURES.map((f) => f.title) } },
+    where: { teamId: lab.teamId, title: { in: FIXTURES.map((f) => f.title) } },
     select: { title: true },
   })
   return rows.map((r) => r.title).sort()
 }
 
 test.describe('topic change — two-phase removal confirmation', () => {
+  test.beforeAll(async () => {
+    lab = await createLab('topic-removal')
+  })
+
   test.afterAll(async () => {
-    await cleanupFixturePapers()
-    await e2eDb.team.update({ where: { id: await e2eTeamId() }, data: { topic: null } })
-    await e2eDb.$disconnect()
+    await lab.dispose()
   })
 
   test('phase 1 proposes without deleting; phase 2 deletes only what was approved', async ({
@@ -180,7 +187,7 @@ test.describe('topic change — two-phase removal confirmation', () => {
       // whole request is refused. That is strictly stronger than what this test
       // used to claim, and it is what the spec now proves.
       const reefPaper = await e2eDb.paper.findFirst({
-        where: { teamId: await e2eTeamId(), title: RELEVANT_A },
+        where: { teamId: lab.teamId, title: RELEVANT_A },
         select: { id: true },
       })
       expect(reefPaper).toBeTruthy()

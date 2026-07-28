@@ -13,6 +13,7 @@ import {
 } from './synthesisApi'
 
 import { cellKey, slugifyColumnLabel as slugify } from './synthesisSlug'
+import { describeGridChange } from './synthesisDiff'
 
 /**
  * Owns state for ONE open Synthesis Matrix: the loaded grid, per-cell text
@@ -267,10 +268,15 @@ export function useSynthesisMatrix(matrixId: string | null) {
         // The grid moved (a teammate's edit, or a save that never landed).
         // Reload it so the next click carries a hash the server agrees with.
         setCheckError(err.message)
+        // Snapshot BEFORE the reload overwrites it — the two together are the
+        // only place that can say WHAT changed, and neither costs a request.
+        const stale = matrixRef.current
         try {
           const fresh = await getMatrix(id)
           applyMatrix(fresh)
           resetDraftsFrom(fresh)
+          const detail = describeGridChange(stale, fresh)
+          if (detail) setCheckError(`${err.message} ${detail}`)
         } catch {
           // Leave the message standing; the student can reopen the matrix.
         }

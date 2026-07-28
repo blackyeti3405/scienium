@@ -1,6 +1,7 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api, withSeedPage, withRateLimitRetry, openLiteratureReview } from './api'
-import { e2eDb, e2eTeamId } from './db'
+import { api, withRateLimitRetry, openLiteratureReview } from './api'
+import { createLab, type OwnedLab } from './lab'
+import { e2eDb } from './db'
 
 /**
  * lit-explain-it-back — "Explain it back" (Feynman mode) in the Literature
@@ -66,56 +67,43 @@ import { e2eDb, e2eTeamId } from './db'
  * Seeded directly via Prisma (the sanctioned direct-Prisma escape hatch also
  * used by e2e/F11-quiz-retry.spec.ts / e2e/F4-print.spec.ts — there is no
  * POST API that creates a `status: 'ready'` paper without a real PDF upload or
- * a Discovery-source promotion). Every seeded paper id is tracked and deleted
- * in `afterAll` via the app's own `DELETE /api/papers/[id]` route, which
- * cascades `paper_explanation_attempts` / `paper_explanations` (plan step 6) —
- * never touching another team's data. KP minted onto the shared "E2E Test Lab"
- * team's balance during AC7-AC9/AC18 is not reverted (there's no unmint route);
- * assertions on it use a before/after DELTA, never an absolute value, per the
- * shared-team convention documented in e2e/db.ts and e2e/F13-codex.spec.ts.
+ * a Discovery-source promotion).
+ *
+ * This file owns a DISPOSABLE LAB (`createLab`, e2e/lab.ts) rather than seeding
+ * into the shared "E2E Test Lab". That replaces the whole per-paper cleanup
+ * loop: `dispose()` purges the lab through the same ordered inventory
+ * `reset:e2e` uses, so nothing has to be tracked, and a crashed run leaves a
+ * stray `[E2E explain]` lab for the sweep instead of papers in everyone's
+ * fixture. KP minted during AC7-AC9/AC18 no longer leaks either — it dies with
+ * the lab — though the assertions stay DELTA-based, which is correct regardless
+ * of which team they run against.
  */
 
 const RUN_ID = Date.now()
 const EXPLAIN_KP_AWARD = 25 // D3 — flat, once-ever (lib/literature/explain.ts)
 
-const seededPaperIds: string[] = []
-let teamId: string | null = null
-let teamLeadId: string | null = null
+let lab: OwnedLab
 
 test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => {
   test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
-    teamId = await e2eTeamId()
-    const team = await e2eDb.team.findUniqueOrThrow({ where: { id: teamId }, select: { teamLeadId: true } })
-    teamLeadId = team.teamLeadId
+    lab = await createLab('explain')
   })
 
-  test.afterAll(async ({ browser }) => {
-    if (seededPaperIds.length === 0) return
-    // Self-clean via the app's own delete path (mints no new KP, only tears
-    // down what this spec seeded) — withSeedPage opens a fresh authed page so
-    // clerk-js mints a live token, keeping the DELETE calls off a stale JWT.
-    await withSeedPage(browser, 'leader', async (page) => {
-      for (const id of seededPaperIds) {
-        const res = await api.delete(page, `/api/papers/${id}`)
-        if (!res.ok()) {
-          console.warn(`lit-explain-it-back afterAll: cleanup DELETE /api/papers/${id} returned ${res.status()}`)
-        }
-      }
-    })
+  test.afterAll(async () => {
+    await lab.dispose()
   })
 
   // ── Seeding helper ─────────────────────────────────────────────────────────
 
   let paperCounter = 0
   async function seedFreshPaper(): Promise<{ id: string; title: string }> {
-    if (!teamId || !teamLeadId) throw new Error('beforeAll did not resolve the E2E team')
     paperCounter += 1
     const title = `[E2E explain] fixture ${RUN_ID}-${paperCounter}`
     const paper = await e2eDb.paper.create({
       data: {
-        teamId,
+        teamId: lab.teamId,
         title,
         authors: ['E2E, Fixture'],
         abstract: 'Deterministic E2E fixture paper for the lit-explain-it-back spec.',
@@ -123,11 +111,10 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
         status: 'ready',
         fullText: 'This is a deterministic E2E fixture paper body for the lit-explain-it-back spec.',
         contentHash: `e2e-explain-${RUN_ID}-${paperCounter}`,
-        uploadedByUserId: teamLeadId,
+        uploadedByUserId: lab.leaderUserId,
       },
       select: { id: true },
     })
-    seededPaperIds.push(paper.id)
     return { id: paper.id, title }
   }
 
@@ -331,7 +318,7 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
   test('AC9: once-ever KP — a third passing submission on the same paper earns 0 more KP', async ({ page }) => {
     const { paper } = await seedAndReachPassingVerdict(page)
 
-    const kpBefore = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpBefore = await e2eDb.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
 
     const thirdText =
       'A further revision restating the same specific quantitative result and why it matters for the field.'
@@ -341,7 +328,7 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
     expect(body?.passed).toBe(true)
     expect(body?.kpEarned).toBe(0)
 
-    const kpAfter = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpAfter = await e2eDb.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
     expect((kpAfter?.kp ?? 0) - (kpBefore?.kp ?? 0)).toBe(0)
   })
 

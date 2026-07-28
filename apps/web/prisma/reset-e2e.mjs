@@ -148,6 +148,64 @@ export async function purgeTeam(db, teamId) {
   return counts
 }
 
+/**
+ * Delete a DISPOSABLE team outright — `purgeTeam` plus everything else that
+ * holds a foreign key to it.
+ *
+ * The two lists differ deliberately. `purgeTeam` clears accumulated CONTENT and
+ * spares the lab's LAYOUT: stripping `team_gateway_placements` from the shared
+ * fixture drops the scene back to the DEFAULT cells, where one 128px sprite
+ * covers a neighbour's hit area and Playwright cannot click "Open Discovery" at
+ * all. A disposable team has no such exemption — it is going away entirely, so
+ * layout, economy and per-user-per-team progress go with it.
+ *
+ * ONE owner for that list, because there were two and both were incomplete the
+ * same way: the stray sweep below and `e2e/lab.ts`'s `disposeLab`. A team that
+ * had recorded codex progress or bought a building could not be deleted by
+ * either (`P2003`), so a crashed run left a `[E2E …]` team that no later
+ * `reset:e2e` could ever clear.
+ *
+ * Returns null on success, or the error — the caller decides how loud to be.
+ */
+export async function retireDisposableTeam(db, teamId, reassignAssetsTo) {
+  await purgeTeam(db, teamId).catch(() => {})
+
+  // `uploaded_assets.team_id` is ON DELETE RESTRICT (P1-R12) and the rows are
+  // never deleted — they are the only record that an object exists in a bucket
+  // shared with production. Reassign them (still `orphaned`, so the normal
+  // reclaim sweep retires them) rather than blocking the delete forever.
+  if (reassignAssetsTo) {
+    await db.uploadedAsset.updateMany({
+      where: { teamId },
+      data: { teamId: reassignAssetsTo, status: 'orphaned' },
+    })
+  }
+
+  await db.teamGatewayPlacement.deleteMany({ where: { teamId } })
+  await db.teamShopBuilding.deleteMany({ where: { teamId } })
+  await db.teamBuilding.deleteMany({ where: { teamId } })
+  await db.labCreditClaim.deleteMany({ where: { teamId } })
+  await db.codexLessonProgress.deleteMany({ where: { teamId } })
+  await db.codexKpDay.deleteMany({ where: { teamId } })
+  await db.topicInterest.deleteMany({ where: { teamId } })
+  await db.discoveryTopicBonus.deleteMany({ where: { teamId } })
+  await db.destructiveProposal.deleteMany({ where: { teamId } })
+  await db.pvpTrophies.deleteMany({ where: { teamId } })
+  await db.pvpRaidQuota.deleteMany({ where: { teamId } })
+  await db.teamMember.deleteMany({ where: { teamId } })
+  await db.teamMembershipEvent.deleteMany({ where: { teamId } })
+  await db.teamInvite.deleteMany({ where: { teamId } })
+  await db.teamCurrency.deleteMany({ where: { teamId } })
+  await db.user.updateMany({ where: { activeTeamId: teamId }, data: { activeTeamId: null } })
+
+  try {
+    await db.team.delete({ where: { id: teamId } })
+    return null
+  } catch (err) {
+    return err
+  }
+}
+
 // ─── CLI ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -194,24 +252,12 @@ async function main() {
     }
 
     for (const stray of strays) {
-      await purgeTeam(db, stray.id).catch(() => {})
-      // `uploaded_assets.team_id` is ON DELETE RESTRICT (P1-R12) and the rows are
-      // never deleted (they prove an object exists in a bucket shared with
-      // production), so a stray holding assets is undeletable until they are
-      // reassigned. They stay `orphaned` for the reclaim sweep either way.
-      await db.uploadedAsset.updateMany({
-        where: { teamId: stray.id },
-        data: { teamId: team.id, status: 'orphaned' },
-      })
-      await db.teamMember.deleteMany({ where: { teamId: stray.id } })
-      await db.teamMembershipEvent.deleteMany({ where: { teamId: stray.id } })
-      await db.teamInvite.deleteMany({ where: { teamId: stray.id } })
-      await db.teamCurrency.deleteMany({ where: { teamId: stray.id } })
-      await db.user.updateMany({ where: { activeTeamId: stray.id }, data: { activeTeamId: null } })
-      await db.team
-        .delete({ where: { id: stray.id } })
-        .then(() => console.log(`  ${'stray team removed'.padEnd(30)} ${stray.name}`))
-        .catch((err) => console.warn(`  stray team ${stray.name} not removable: ${err.code ?? err}`))
+      const err = await retireDisposableTeam(db, stray.id, team.id)
+      if (err) {
+        console.warn(`  stray team ${stray.name} not removable: ${err.code ?? err}`)
+      } else {
+        console.log(`  ${'stray team removed'.padEnd(30)} ${stray.name}`)
+      }
     }
 
     console.log(`\n${total} row(s) removed. Now run: pnpm --filter web seed:e2e`)

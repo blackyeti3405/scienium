@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test'
-import { deleteE2eBuilding, setE2eKnowledgePoints } from './db'
+import { setE2eKnowledgePoints } from './db'
+import { createLab, type OwnedLab } from './lab'
+
+let lab: OwnedLab
 
 /**
  * Building placement (Clash-of-Clans style) on the lab plot. Exercises the parts
@@ -12,12 +15,16 @@ import { deleteE2eBuilding, setE2eKnowledgePoints } from './db'
 import { STEP_X, STEP_Y, CLUSTER_Y } from '@/lib/plot'
 
 test.beforeAll(async () => {
-  await deleteE2eBuilding('printing_shop')
-  await setE2eKnowledgePoints(100_000)
+  // A disposable lab starts with no shop buildings, so the stale-row delete
+  // this used to open with is gone — and so is the coordination with
+  // upgrades.spec.ts, which placed its Robotics Bay at (-3,3) purely to avoid
+  // colliding with this file's printing_shop at (3,3) on the SHARED plot.
+  lab = await createLab('placement')
+  await setE2eKnowledgePoints(100_000, lab.teamId)
 })
 
 test.afterAll(async () => {
-  await deleteE2eBuilding('printing_shop')
+  await lab.dispose()
 })
 
 test('shop shows gateways as placed and economy buildings as placeable', async ({ page }) => {

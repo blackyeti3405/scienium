@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, ChevronDown, Circle, Clock, ExternalLink } from 'lucide-react'
 import { HAZARD_CLASSES } from '@/lib/fairs/safety'
 import type { HazardClassKey } from '@/lib/fairs/safety'
@@ -37,31 +37,47 @@ export function FormsChecklist() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [updating, setUpdating] = useState<string | null>(null)
+  // The form whose last status write failed. A rejected PATCH used to be a bare
+  // `catch {}`: the icon silently snapped back and the student had no way to
+  // tell "didn't save" from "misclicked".
+  const [writeFailed, setWriteFailed] = useState<FormItem | null>(null)
   const [expandedHazards, toggleHazard] = useToggleSet<HazardClassKey>()
 
-  useEffect(() => {
-    fetch('/api/fairs/forms')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) throw new Error(d.error)
-        setForms(d.forms)
-        setEdition(d.edition)
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false))
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const r = await fetch('/api/fairs/forms')
+      // A non-OK response can still carry a parseable body (`{ error }`) or none
+      // at all — a 307 to the sign-in page returns HTML, and `r.json()` alone
+      // surfaced that as a JSON parse error. Check the status first.
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok || d.error) throw new Error(d.error ?? "Couldn't load your forms.")
+      setForms(d.forms)
+      setEdition(d.edition)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't load your forms.")
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
 
   async function cycleStatus(form: FormItem) {
     const current = STATUS_CYCLE.indexOf(form.status)
     const next = STATUS_CYCLE[(current + 1) % STATUS_CYCLE.length]
     setUpdating(form.id)
+    setWriteFailed(null)
     try {
       const res = await fetch(`/api/fairs/forms/${form.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: next }),
       })
-      const d = await res.json()
+      const d = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(d.error ?? 'Update failed')
       setForms((prev) =>
         prev.map((f) =>
@@ -69,7 +85,9 @@ export function FormsChecklist() {
         ),
       )
     } catch {
-      // leave state unchanged on error
+      // State stays unchanged — but say so, and keep the row so "Try again"
+      // can re-send the exact same transition.
+      setWriteFailed(form)
     } finally {
       setUpdating(null)
     }
@@ -92,7 +110,20 @@ export function FormsChecklist() {
   }
 
   if (error) {
-    return <p className="font-pixel text-[8px] text-red-400 px-6 py-4">{error}</p>
+    return (
+      <div
+        data-testid="forms-load-failed"
+        className="m-6 rounded-sm border border-red-400/30 bg-red-500/10 px-5 py-4 flex items-center justify-between gap-3"
+      >
+        <span className="font-pixel text-[8px] text-red-300 leading-relaxed">{error}</span>
+        <button
+          onClick={() => void load()}
+          className="shrink-0 font-pixel text-[8px] border border-white/20 text-white/60 px-3 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+        >
+          Try again
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -114,6 +145,23 @@ export function FormsChecklist() {
         Click the status icon to cycle Not started → In progress → Complete. This
         is a personal tracker only — it does not submit anything to a fair.
       </p>
+
+      {writeFailed && (
+        <div
+          data-testid="forms-write-failed"
+          className="rounded-sm border border-red-400/30 bg-red-500/10 px-4 py-3 flex items-center justify-between gap-3"
+        >
+          <span className="font-pixel text-[8px] text-red-300 leading-relaxed">
+            Couldn&apos;t save {writeFailed.code} — its status is unchanged.
+          </span>
+          <button
+            onClick={() => void cycleStatus(writeFailed)}
+            className="shrink-0 font-pixel text-[8px] border border-white/20 text-white/60 px-3 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+          >
+            Try again
+          </button>
+        </div>
+      )}
 
       {edition && !edition.reviewed && (
         <div

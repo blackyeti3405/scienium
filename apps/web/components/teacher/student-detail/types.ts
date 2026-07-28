@@ -119,9 +119,23 @@ export interface FeedbackRow {
   createdAt: string
 }
 
+/**
+ * One `ClassMembershipEvent`, scoped server-side to the caller's own classes.
+ * `actor` is coarse on purpose — see `loadClassHistory`.
+ */
+export interface ClassHistoryRow {
+  id: string
+  event: string
+  reason: string | null
+  createdAt: string
+  className: string
+  actor: 'student' | 'teacher' | 'system'
+}
+
 export interface Overview {
   student: OverviewStudent
   team: OverviewTeam | null
+  classHistory: ClassHistoryRow[]
   studentKp: number
   teamBuildings: TeamBuilding[]
   shopBuildings: ShopBuilding[]

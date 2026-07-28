@@ -7,6 +7,7 @@ import {
 } from '@playwright/test'
 import { STORAGE } from './roles'
 import { api, registerPageRole, withSeedPage } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * F10 (this batch) — Teacher-side rubric scoring + comparison + anchor content.
@@ -51,25 +52,15 @@ import { api, registerPageRole, withSeedPage } from './api'
 const RESEARCH_QUESTION_KEY = 'science:I'
 const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 
-/** Team id + a student id inside it, discovered from the teacher roster in beforeAll. */
+let lab: OwnedLab
+
+/** Team id + a student id inside it, resolved in beforeAll. */
 let teamId: string | null = null
 let studentId: string | null = null
 
 async function refreshTeacherSession(page: Page) {
   await page.goto('/teacher')
   await expect(page.getByText('Class Roster')).toBeVisible({ timeout: 20_000 })
-}
-
-async function resetTeacherScore(browser: Browser, teamIdToReset: string) {
-  await withSeedPage(browser, 'teacher', async (page) => {
-    await refreshTeacherSession(page)
-    const res = await api.put(page, '/api/teacher/rubric', {
-      data: { teamId: teamIdToReset, track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 0 },
-    })
-    if (res.status() !== 200) {
-      throw new Error(`resetTeacherScore PUT failed: ${res.status()} ${await res.text()}`)
-    }
-  })
 }
 
 /**
@@ -113,6 +104,10 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   test.beforeEach(({ page }) => registerPageRole(page, 'teacher'))
 
   test.beforeAll(async ({ browser }) => {
+    // Co-members, so the teacher roster resolves to THIS lab.
+    lab = await createLab('f10tscoring', true, true)
+    teamId = lab.teamId
+
     await withSeedPage(browser, 'teacher', async (page) => {
       await refreshTeacherSession(page)
       const rosterRes = await api.get(page, '/api/teacher/roster')
@@ -120,27 +115,26 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
         throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
       }
       const { students } = await rosterRes.json()
-      const withTeam = (
+      const mine = (
         students as Array<{ studentId: string; teamId: string | null }>
-      ).find((s) => s.teamId !== null)
-      if (!withTeam?.teamId) {
+      ).find((s) => s.teamId === lab.teamId)
+      if (!mine) {
         throw new Error(
-          'No team found in teacher roster — E2E teacher account must be linked to the dev class ' +
-            'that contains the E2E leader team. Run `pnpm --filter web seed:e2e` to restore the fixture.',
+          "This file's disposable lab did not appear in the teacher roster — the E2E teacher " +
+            'account must be linked to the dev class that contains the E2E leader. ' +
+            'Run `pnpm --filter web seed:e2e` to restore the fixture.',
         )
       }
-      teamId = withTeam.teamId
-      studentId = withTeam.studentId
+      studentId = mine.studentId
     })
-
-    // Belt-and-suspenders: start from a known-clean teacher score.
-    await resetTeacherScore(browser, teamId!)
+    // The "belt-and-suspenders reset to a known-clean teacher score" is gone: a
+    // fresh lab has no rubric rows, so `science:I` already reads 0.
   })
 
-  test.afterAll(async ({ browser }) => {
-    if (!teamId) return
-    await resetTeacherScore(browser, teamId)
-    await seedStudentScore(browser, 0)
+  test.afterAll(async () => {
+    // Replaces resetting the teacher AND student scores back to 0 — both rows
+    // are team-scoped and go with the lab.
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────

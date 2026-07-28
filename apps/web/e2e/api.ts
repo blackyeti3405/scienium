@@ -312,11 +312,27 @@ export async function withRateLimitRetry<T>(
   }
 }
 
-/** Open the Literature Review feature panel from /lab. */
-export async function openLiteratureReview(page: Page): Promise<void> {
+/**
+ * Open one gateway building from `/lab` and wait for its panel.
+ *
+ * A REAL pointer click, deliberately. The lab is an isometric grid where a
+ * 128px sprite's silhouette can cover a neighbour's centre — in the DEFAULT
+ * gateway cells the Operations Hub sits over Discovery's, and Playwright
+ * (which clicks centres) reports "subtree intercepts pointer events" and never
+ * gets in. The fix is the LAYOUT, not the click: `seed-e2e.mjs` seeds an
+ * explicit spread for the shared fixture and `e2e/lab.ts` now seeds the same
+ * one for every disposable lab. Clicking for real is what keeps that honest —
+ * a `dispatchEvent` would sail through a layout no student could use.
+ */
+export async function openGateway(page: Page, label: string): Promise<void> {
   await page.goto('/lab')
-  await page.getByRole('button', { name: 'Open Literature Review' }).click()
-  await expect(page.getByRole('dialog', { name: 'Literature Review' })).toBeVisible({ timeout: 5000 })
+  await page.getByRole('button', { name: `Open ${label}` }).click({ timeout: 10_000 })
+  await expect(page.getByRole('dialog', { name: label })).toBeVisible({ timeout: 10_000 })
+}
+
+/** Open the Literature Review feature panel from /lab. */
+export function openLiteratureReview(page: Page): Promise<void> {
+  return openGateway(page, 'Literature Review')
 }
 
 // Smallest valid PNG (1×1, transparent). sharp decodes it, so the attachment

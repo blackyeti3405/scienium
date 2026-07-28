@@ -3,6 +3,14 @@ import { STORAGE } from './roles'
 import { api, withSeedPage } from './api'
 
 /**
+ * NOT migrated to `createLab()` (e2e/lab.ts), on purpose. This file writes
+ * nothing, and its central invariant is that `reports.teamCount` equals the
+ * number of distinct teams on the teacher's WHOLE roster. A disposable lab adds
+ * a team to that roster for the duration, which is the one thing that would
+ * make the assertion measure something other than what it means.
+ */
+
+/**
  * F8 — Teacher class-wide analytics / Reports tab.
  * One test per acceptance criterion, per `.claude/pipeline/plan-F8-reports.md`.
  * Zero LLM in this feature — no seams needed. Read-only aggregation: this spec

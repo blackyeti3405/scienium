@@ -1471,7 +1471,34 @@ archiving does not hide a class's own work from its teacher — deliberately
 archived-only, since a **live** team a student left must still fall out of scope.
 
 Commands: `DELETE /api/team/membership`, `POST /api/team/lead`,
-`DELETE /api/team/members/[userId]`.
+`DELETE /api/team/members/[userId]`, `POST /api/teacher/student/[id]/lead`.
+
+That last one is teacher-initiated lead reassignment (v0.75.0), and it is a
+**separate command** from `POST /api/team/lead` on purpose. `transferLead`
+proves the actor IS the lead; `reassignLeadAsTeacher` proves the actor OWNS the
+team. Both delegate the write to a private `applyLead` that performs no
+authorization of its own, so neither entry point can inherit the other's — a
+single function with an `asTeacher` flag would be one inverted condition away
+from letting either check stand in for the other. It is addressed by STUDENT
+rather than team, matching the rest of the teacher API, so there is no team id
+in the request for a caller to swap; the team is derived and then independently
+re-proven with `teacherOwnsTeam`.
+
+Class membership (P1-R8's class half) ends through `lib/onboarding/class-
+membership.ts`. A teacher removal writes a `membership_changed` `Notification`
+to the student inside the SAME transaction as the removal, keyed to the new
+`ClassMembershipEvent` row's id — `Notification.dedupeKey` is globally unique,
+so a (student, class) key would collide the second time a student is removed
+from the same class and, because the write is inside the removal's transaction,
+roll the removal itself back. A student with no live team membership gets no
+row: `Notification.teamId` is required and the bell is team-scoped, so there is
+nowhere to show it; the removal still commits.
+
+`ClassMembershipEvent` is read by `loadClassHistory` in
+`lib/teacher/student-overview.ts`, surfaced as the student detail page's "Class
+history" tab. The caller's `classIds` is in the **WHERE clause**, not a
+post-fetch filter: a student's history can include classes belonging to other
+teachers, and those class names are not this teacher's to read.
 
 ### Discovery tree layout — a graph algorithm, not a view concern
 

@@ -1,4 +1,6 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
+import { createLab, type OwnedLab } from './lab'
+import { e2eDb } from './db'
 
 /**
  * F10 — "Momentum" weekly recap card on the lab.
@@ -41,6 +43,8 @@ import { test, expect, request as playwrightRequest } from '@playwright/test'
  */
 
 const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
+let lab: OwnedLab
+
 const DISMISS_KEY = 'scienium.momentum.dismissed'
 
 interface MomentumResponse {
@@ -87,11 +91,34 @@ test.describe('F10 — Momentum weekly recap card', () => {
   // test's dismiss action bleed into another's "card should be visible" assertion.
   test.describe.configure({ mode: 'serial', timeout: 60_000 })
 
+  test.beforeAll(async () => {
+    // Momentum is computed from the TEAM's recent activity, so on the shared
+    // fixture these counts were whatever the specs that ran earlier happened to
+    // generate. A disposable lab makes them this file's own.
+    lab = await createLab('momentum')
+
+    // The card renders nothing when every stat is zero (`MomentumCard`'s
+    // `quiet` guard — correctly: there is no recap of a week with no work).
+    // On the shared fixture that precondition arrived by accident, from
+    // whatever other specs had written that week. Seed ONE project log so it
+    // is explicit: `logs_written` goes to 1, the card renders, and every
+    // assertion in this file still reads the real route rather than a number
+    // this hook chose.
+    await e2eDb.projectLog.create({
+      data: {
+        teamId: lab.teamId,
+        createdByUserId: lab.leaderUserId,
+        body: '[E2E F10] Seed entry so the weekly recap has something to recap.',
+        entryType: 'progress',
+      },
+    })
+  })
+
   test.afterAll(async ({ browser }) => {
-    // Best-effort: leave the dismiss key cleared so a later run/spec always
-    // starts from "card eligible to show" rather than inheriting this run's
-    // dismissal state. Non-fatal — every AC1-dependent test above already
-    // clears the key itself before asserting, so this is convenience only.
+    await lab.dispose()
+    // Still best-effort, and still browser-side: the dismiss key lives in
+    // localStorage, which no lab owns. Left cleared so a later run starts from
+    // "card eligible to show" rather than inheriting this run's dismissal.
     const context = await browser.newContext({ baseURL: BASE_URL })
     try {
       const page = await context.newPage()

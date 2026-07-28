@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage, withRateLimitRetry, openLiteratureReview } from './api'
+import { api, withRateLimitRetry, openLiteratureReview } from './api'
+import { createLab, type OwnedLab } from './lab'
+import { e2eDb } from './db'
 
 /**
  * F11 — Vega quiz-miss review + targeted retry loop (Literature Review).
@@ -44,52 +46,28 @@ import { api, withSeedPage, withRateLimitRetry, openLiteratureReview } from './a
  * Discovery-source promotion, both of which have side effects/dependencies out
  * of scope for this spec, and re-opening an already-graded paper's Q&A panel
  * shows the past `results` phase directly rather than a fresh quiz form).
- * The team is resolved by its seeded name "E2E Test Lab" (its id is a
- * generated cuid, not a fixed constant — see prisma/seed-e2e.mjs), and
- * `teamLeadId` resolves the leader's internal dbUserId (Team.teamLeadId, per
- * prisma/schema.prisma). Every seeded paper id is tracked and deleted in
- * afterAll via the app's own DELETE /api/papers/[id] route (cascades quiz
- * sessions/attempts/proficiency), never touching another team's data.
+ * This file owns a DISPOSABLE LAB (`createLab`, e2e/lab.ts): the papers, quiz
+ * sessions, attempts and proficiency rows it creates live in a team that exists
+ * only for this file and is purged in `afterAll`. That replaces both the
+ * name-lookup of the shared fixture and the per-paper DELETE cleanup loop —
+ * `dispose()` runs the same ordered inventory `reset:e2e` does, so nothing has
+ * to be tracked and a crash leaves a stray lab for the sweep rather than
+ * fixture papers for the next spec.
  */
 
-const TEAM_NAME = 'E2E Test Lab'
 const RUN_ID = Date.now()
 
-const seededPaperIds: string[] = []
-let teamId: string | null = null
-let teamLeadId: string | null = null
+let lab: OwnedLab
 
 test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      const team = await db.team.findFirst({ where: { name: TEAM_NAME }, select: { id: true, teamLeadId: true } })
-      if (!team) {
-        throw new Error(`E2E team '${TEAM_NAME}' not found — run pnpm --filter web seed:e2e first.`)
-      }
-      teamId = team.id
-      teamLeadId = team.teamLeadId
-    } finally {
-      await db.$disconnect()
-    }
+    lab = await createLab('quiz-retry')
   })
 
-  test.afterAll(async ({ browser }) => {
-    if (seededPaperIds.length === 0) return
-    // Self-clean via the app's own delete path — withSeedPage opens a fresh
-    // authed page so clerk-js mints a live token, keeping the DELETE calls off a
-    // stale JWT (Clerk expiry, see F4.spec.ts).
-    await withSeedPage(browser, 'leader', async (page) => {
-      for (const id of seededPaperIds) {
-        const res = await api.delete(page, `/api/papers/${id}`)
-        if (!res.ok()) {
-          console.warn(`F11 afterAll: cleanup DELETE /api/papers/${id} returned ${res.status()}`)
-        }
-      }
-    })
+  test.afterAll(async () => {
+    await lab.dispose()
   })
 
   // ── Seeding helper ─────────────────────────────────────────────────────────
@@ -97,35 +75,27 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   /**
    * Creates ONE fresh, dedicated `status: 'ready'` Paper for a single test
    * (title unique per call via a counter, so tests never collide) and returns
-   * its id + title. Tracked in `seededPaperIds` for afterAll cleanup.
+   * its id + title. No tracking needed — the disposable lab takes it with it.
    */
   let paperCounter = 0
   async function seedFreshPaper(): Promise<{ id: string; title: string }> {
-    if (!teamId || !teamLeadId) throw new Error('beforeAll did not resolve the E2E team')
     paperCounter += 1
     const title = `[E2E F11] Quiz retry fixture ${RUN_ID}-${paperCounter}`
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      const paper = await db.paper.create({
-        data: {
-          teamId,
-          title,
-          authors: ['E2E, Fixture'],
-          abstract: 'Deterministic E2E fixture paper for the F11 quiz-retry spec.',
-          sourceType: 'pdf',
-          status: 'ready',
-          fullText: 'This is a deterministic E2E fixture paper body for the F11 quiz-retry spec.',
-          contentHash: `e2e-f11-quiz-retry-${RUN_ID}-${paperCounter}`,
-          uploadedByUserId: teamLeadId,
-        },
-        select: { id: true },
-      })
-      seededPaperIds.push(paper.id)
-      return { id: paper.id, title }
-    } finally {
-      await db.$disconnect()
-    }
+    const paper = await e2eDb.paper.create({
+      data: {
+        teamId: lab.teamId,
+        title,
+        authors: ['E2E, Fixture'],
+        abstract: 'Deterministic E2E fixture paper for the F11 quiz-retry spec.',
+        sourceType: 'pdf',
+        status: 'ready',
+        fullText: 'This is a deterministic E2E fixture paper body for the F11 quiz-retry spec.',
+        contentHash: `e2e-f11-quiz-retry-${RUN_ID}-${paperCounter}`,
+        uploadedByUserId: lab.leaderUserId,
+      },
+      select: { id: true },
+    })
+    return { id: paper.id, title }
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────

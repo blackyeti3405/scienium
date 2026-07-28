@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { api, withSeedPage } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * F2 — Failure Log AI "dig deeper" Socratic follow-up.
@@ -27,6 +28,8 @@ import { api, withSeedPage } from './api'
  * - afterAll skips DELETE if the entry has a followup (FK constraint limitation
  *   in the app DELETE route — reported to coder); entry is left in DB.
  */
+
+let lab: OwnedLab
 
 /** The seeded failure entry id (set in beforeAll). */
 let seededId: string | null = null
@@ -62,6 +65,9 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
   // ── Seed / teardown ─────────────────────────────────────────────────────────
 
   test.beforeAll(async ({ browser }) => {
+    // Created BEFORE any browser work: it repoints the leader's `activeTeamId`,
+    // so the seed POST below lands on this file's own lab.
+    lab = await createLab('failure-followup')
     await withSeedPage(browser, 'leader', async (page) => {
       const res = await api.post(page, '/api/failure-log', {
         data: { happened: SEED_HAPPENED, learned: SEED_LEARNED },
@@ -74,14 +80,11 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
     })
   })
 
-  test.afterAll(async ({ browser }) => {
-    if (!seededId) return
-    await withSeedPage(browser, 'leader', async (page) => {
-      // The FK cascade-delete fix (migration 20260621060000_followup_cascade_delete)
-      // means DELETE on a failure entry now also removes any child ProjectLogFollowup
-      // rows. This cleanup is therefore reliable regardless of follow-up state.
-      await api.delete(page, `/api/failure-log/${seededId}`).catch(() => {})
-    })
+  test.afterAll(async () => {
+    // The entry and any `ProjectLogFollowup` children go with the lab, so the
+    // authenticated DELETE this used to depend on — and its "reliable
+    // regardless of follow-up state" caveat — are no longer load-bearing.
+    await lab.dispose()
   })
 
   // ── AC1 ─────────────────────────────────────────────────────────────────────

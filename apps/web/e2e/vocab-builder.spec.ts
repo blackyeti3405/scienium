@@ -1,5 +1,7 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
 import { api, withSeedPage } from './api'
+import { createLab, type OwnedLab } from './lab'
+import { e2eDb } from './db'
 
 /**
  * Vocabulary Builder (Literature Review) — one test per acceptance criterion
@@ -44,7 +46,6 @@ import { api, withSeedPage } from './api'
  * test names below repeat each criterion's number and one-line intent.
  */
 
-const TEAM_NAME = 'E2E Test Lab'
 const RUN_ID = Date.now()
 
 // Single-line, single-spaced prose (no paragraph breaks) so this string is
@@ -88,20 +89,8 @@ interface ReviewResponse {
   remainingDue: number
 }
 
-let teamId: string | null = null
-let leaderUserId: string | null = null
-let paperId: string | null = null
+let lab: OwnedLab
 let studentUserId: string | null = null
-
-async function cleanVocabRows(db: import('@prisma/client').PrismaClient) {
-  if (!leaderUserId) return
-  await db.vocabCard.deleteMany({ where: { userId: leaderUserId } })
-  await db.vocabKpDay.deleteMany({ where: { userId: leaderUserId } })
-  if (studentUserId) {
-    await db.vocabCard.deleteMany({ where: { userId: studentUserId } })
-    await db.vocabKpDay.deleteMany({ where: { userId: studentUserId } })
-  }
-}
 
 async function openVocab(page: Page) {
   await page.goto('/literature/review')
@@ -149,54 +138,37 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
   test.describe.configure({ mode: 'serial', timeout: 180_000 })
 
   test.beforeAll(async () => {
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      const team = await db.team.findFirst({ where: { name: TEAM_NAME }, select: { id: true, teamLeadId: true } })
-      if (!team) throw new Error(`E2E team '${TEAM_NAME}' not found — run pnpm --filter web seed:e2e first.`)
-      teamId = team.id
-      leaderUserId = team.teamLeadId
+    // `true` for co-members: the last criterion signs in as the student fixture
+    // to prove a teammate sees only their OWN cards, which needs them on this
+    // lab. `VocabCard`/`VocabKpDay` are both keyed by teamId and already in
+    // `purgeTeam`'s inventory, so the leftover-row clean this hook used to do
+    // for interrupted runs is now structural.
+    lab = await createLab('vocabdeck', true, true)
 
-      const student = await db.teamMember.findFirst({
-        where: { teamId: team.id, userId: { not: team.teamLeadId } },
-        select: { userId: true },
-      })
-      studentUserId = student?.userId ?? null
+    const student = await e2eDb.teamMember.findFirst({
+      where: { teamId: lab.teamId, userId: { not: lab.leaderUserId } },
+      select: { userId: true },
+    })
+    studentUserId = student?.userId ?? null
 
-      // Clean any leftover state from an earlier interrupted run of THIS spec.
-      await cleanVocabRows(db)
-
-      const paper = await db.paper.create({
-        data: {
-          teamId: team.id,
-          title: FIXTURE_TITLE,
-          authors: [`Researcher, E2E`],
-          abstract: FIXTURE_ABSTRACT,
-          sourceType: 'pdf',
-          status: 'ready',
-          fullText: FIXTURE_FULL_TEXT,
-          contentHash: `e2e-vocab-${RUN_ID}`,
-          uploadedByUserId: team.teamLeadId,
-        },
-        select: { id: true },
-      })
-      paperId = paper.id
-    } finally {
-      await db.$disconnect()
-    }
+    await e2eDb.paper.create({
+      data: {
+        teamId: lab.teamId,
+        title: FIXTURE_TITLE,
+        authors: [`Researcher, E2E`],
+        abstract: FIXTURE_ABSTRACT,
+        sourceType: 'pdf',
+        status: 'ready',
+        fullText: FIXTURE_FULL_TEXT,
+        contentHash: `e2e-vocab-${RUN_ID}`,
+        uploadedByUserId: lab.leaderUserId,
+      },
+      select: { id: true },
+    })
   })
 
   test.afterAll(async () => {
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      await cleanVocabRows(db)
-      if (paperId) {
-        await db.paper.deleteMany({ where: { id: paperId } })
-      }
-    } finally {
-      await db.$disconnect()
-    }
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────
@@ -340,7 +312,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
   test('AC17: the deck remains reachable at the team\'s current (literature_review-or-later) phase', async ({ page }) => {
     const { PrismaClient } = await import('@prisma/client')
     const db = new PrismaClient()
-    const team = await db.team.findUnique({ where: { id: teamId! }, select: { phase: true } })
+    const team = await db.team.findUnique({ where: { id: lab.teamId }, select: { phase: true } })
     await db.$disconnect()
     const reachablePhases = ['literature_review', 'research_planning', 'working', 'showcase']
     expect(reachablePhases).toContain(team?.phase)
@@ -422,8 +394,8 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
     // A clean daily-cap slate for today so this test's own math isn't
     // polluted by AC11's cap-seeding (which runs after this test).
     const today = todayUtc()
-    await db.vocabKpDay.deleteMany({ where: { userId: leaderUserId!, teamId: teamId!, day: today } })
-    const kpBefore = await db.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    await db.vocabKpDay.deleteMany({ where: { userId: lab.leaderUserId, teamId: lab.teamId, day: today } })
+    const kpBefore = await db.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
     await db.$disconnect()
 
     await openVocab(page)
@@ -438,14 +410,14 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
     await expect(page.getByTestId('vocab-kp-earned')).toBeVisible({ timeout: 10000 })
 
     const db2 = new PrismaClient()
-    const kpAfter = await db2.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpAfter = await db2.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
     await db2.$disconnect()
     expect((kpAfter?.kp ?? 0) - (kpBefore?.kp ?? 0)).toBe(3)
 
     // Force the SAME card due again and re-grade — 0 additional KP (once-ever claim holds).
     const db3 = new PrismaClient()
     await db3.vocabCard.update({ where: { id: card!.id }, data: { dueAt: farPast() } })
-    const kpBeforeSecond = await db3.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpBeforeSecond = await db3.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
     await db3.$disconnect()
 
     const res2 = await api.post(page, '/api/literature/vocab/review', { data: { cardId: card!.id, grade: 'good' } })
@@ -454,7 +426,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
     expect(body2.kpEarned).toBe(0)
 
     const db4 = new PrismaClient()
-    const kpAfterSecond = await db4.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpAfterSecond = await db4.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
     await db4.$disconnect()
     expect((kpAfterSecond?.kp ?? 0) - (kpBeforeSecond?.kp ?? 0)).toBe(0)
   })
@@ -475,11 +447,11 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
     await db.vocabCard.update({ where: { id: card!.id }, data: { box: 3, dueAt: past, kpAwarded: 0 } })
     const today = todayUtc()
     await db.vocabKpDay.upsert({
-      where: { userId_teamId_day: { userId: leaderUserId!, teamId: teamId!, day: today } },
-      create: { userId: leaderUserId!, teamId: teamId!, day: today, kpAwarded: 12 },
+      where: { userId_teamId_day: { userId: lab.leaderUserId, teamId: lab.teamId, day: today } },
+      create: { userId: lab.leaderUserId, teamId: lab.teamId, day: today, kpAwarded: 12 },
       update: { kpAwarded: 12 },
     })
-    const kpBefore = await db.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpBefore = await db.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
     await db.$disconnect()
 
     const res = await api.post(page, '/api/literature/vocab/review', { data: { cardId: card!.id, grade: 'good' } })
@@ -490,7 +462,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
     expect(body.box).toBe(4) // the review itself is NOT lost — only the payout is capped
 
     const db2 = new PrismaClient()
-    const kpAfter = await db2.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpAfter = await db2.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
     await db2.$disconnect()
     expect((kpAfter?.kp ?? 0) - (kpBefore?.kp ?? 0)).toBe(0)
   })
@@ -542,7 +514,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
     const { PrismaClient } = await import('@prisma/client')
     const db = new PrismaClient()
     const foreignTeam = await db.team.create({
-      data: { name: `[E2E Vocab foreign] ${RUN_ID}`, teamLeadId: leaderUserId! },
+      data: { name: `[E2E Vocab foreign] ${RUN_ID}`, teamLeadId: lab.leaderUserId },
       select: { id: true },
     })
     const foreignPaper = await db.paper.create({
@@ -554,7 +526,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
         status: 'ready',
         fullText: 'This foreign paper mentions the control group and nothing else of note here.',
         contentHash: `e2e-vocab-foreign-${RUN_ID}`,
-        uploadedByUserId: leaderUserId!,
+        uploadedByUserId: lab.leaderUserId,
       },
       select: { id: true },
     })
@@ -572,7 +544,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
     await db2.$disconnect()
 
     // Co-member scoping: a different team member sees only their OWN cards.
-    if (studentUserId && studentUserId !== leaderUserId) {
+    if (studentUserId && studentUserId !== lab.leaderUserId) {
       await withSeedPage(browser, 'student', async (studentPage) => {
         const studentRes = await api.get(studentPage, '/api/literature/vocab/deck')
         expect(studentRes.status()).toBe(200)

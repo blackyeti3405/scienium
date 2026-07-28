@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage, uploadLogAttachment, openLiteratureReview } from './api'
-import { e2eDb, e2eTeamId } from './db'
+import { api, withSeedPage, uploadLogAttachment, openGateway, openLiteratureReview } from './api'
+import { createLab, type OwnedLab } from './lab'
+import { e2eDb } from './db'
 
 /**
  * F3 — Pixel-native confirm/alert dialogs.
@@ -34,25 +35,19 @@ const RUN_ID = Date.now().toString(36)
 // ── Seeded resource ids (set in beforeAll, cleaned up in afterAll) ─────────────
 let seededProjectLogId: string | null = null
 let seededFailureId: string | null = null
+let lab: OwnedLab
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Open the Operations Hub feature panel from /lab and switch to a given tab. */
 async function openOpsHub(page: Page, tab: 'Project Log' | 'Failure Log') {
-  await page.goto('/lab')
-  await page.getByRole('button', { name: 'Open Operations Hub' }).click()
-  // Wait for the Operations Hub panel to open before clicking the tab.
-  await expect(page.getByRole('dialog', { name: 'Operations Hub' })).toBeVisible({ timeout: 5000 })
+  await openGateway(page, 'Operations Hub')
   await page.getByRole('button', { name: tab }).click()
 }
 
 /** Open the Discovery feature panel from /lab, then click through the home screen. */
 async function openDiscovery(page: Page) {
-  await page.goto('/lab')
-  await page.getByRole('button', { name: 'Open Discovery' }).click()
-  // Wait for the Discovery panel to open.
-  const panel = page.getByRole('dialog', { name: 'Discovery' })
-  await expect(panel).toBeVisible({ timeout: 5000 })
+  await openGateway(page, 'Discovery')
   // Dismiss the home screen (shows "Start Exploring" or "Continue Exploring")
   const continueBtn = page.getByRole('button', { name: /Exploring/i })
   await expect(continueBtn).toBeVisible({ timeout: 5000 })
@@ -65,43 +60,21 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
   test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async ({ browser }) => {
+    lab = await createLab('confirm-dialogs')
     await withSeedPage(browser, 'leader', async (page) => {
-      // 1. Ensure papers exist (dev fill endpoint creates up to 25 fake ones).
-      // 1. Seed ready papers DIRECTLY in the DB. This used to POST the dev-only
-      // /api/dev/fill-papers route, which (a) 403s under the production-build
-      // E2E server (the route is hard-gated on NODE_ENV, correctly), and (b) at
-      // 25 sequential HTTP creates regularly blew the 30s hook budget on a
-      // loaded dev server — F3's chronic 0ms AC1 failure in full-suite runs.
-      // Direct createMany is one query, works in both server modes, and seeds
-      // only run-tagged rows so cleanup can never touch real data.
-      const teamId = await e2eTeamId()
-      const uploader = await e2eDb.teamMember.findFirst({
-        where: { teamId },
-        select: { userId: true },
-      })
-      if (!uploader) throw new Error('E2E Test Lab has no members. Run pnpm --filter web seed:e2e.')
-
-      // Stale rows from a crashed earlier run — clear before counting.
-      await e2eDb.paper.deleteMany({ where: { teamId, title: { startsWith: '[E2E-F3-' } } })
-
-      const existingReady = await e2eDb.paper.count({ where: { teamId, status: 'ready' } })
-      // Delete buttons hide when the library is locked at 25/25 — stay well under,
-      // and AC4 permanently deletes one, so seed enough to keep every AC ≥3.
-      // Guard BOTH bounds: a crashed run elsewhere can leave the shared team at
-      // ≥25 ready papers, which locks the library and would fail AC1-AC5 on an
-      // opaque delete-button visibility timeout instead of this clear error.
-      if (existingReady >= 25) {
-        throw new Error(
-          `E2E team already has ${existingReady} ready papers (library locked at 25) — a crashed run leaked fixtures; clean them up or reseed before running F3.`,
-        )
-      }
-      const toCreate = Math.max(0, Math.min(6, 24 - existingReady))
-      if (existingReady + toCreate < 3) {
-        throw new Error(`Need ≥3 ready papers for F3 tests; can only reach ${existingReady + toCreate}`)
-      }
+      // Seed ready papers DIRECTLY in the DB — the dev-only /api/dev/fill-papers
+      // route 403s under the production-build E2E server (hard-gated on
+      // NODE_ENV, correctly), and 25 sequential HTTP creates regularly blew the
+      // 30s hook budget on a loaded dev server.
+      //
+      // A disposable lab starts with ZERO papers, which deletes the whole
+      // arithmetic this block used to carry: the pre-count, the `24 - existing`
+      // clamp, the "library locked at 25" guard, and the stale-row deleteMany
+      // that had to run before counting. Six papers, every run, no conditions —
+      // AC4 permanently deletes one and every AC still sees ≥3.
       await e2eDb.paper.createMany({
-        data: Array.from({ length: toCreate }, (_, i) => ({
-          teamId,
+        data: Array.from({ length: 6 }, (_, i) => ({
+          teamId: lab.teamId,
           title: `[E2E-F3-${RUN_ID}] Fake Paper ${i + 1}`,
           authors: ['E2E Fixture'],
           abstract: 'Auto-generated F3 fixture paper.',
@@ -109,7 +82,7 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
           status: 'ready' as const,
           fullText: `Placeholder text for F3 confirm-dialog fixture paper ${i + 1}.`,
           contentHash: `e2e-f3-${RUN_ID}-${i}`,
-          uploadedByUserId: uploader.userId,
+          uploadedByUserId: lab.leaderUserId,
         })),
       })
 
@@ -153,24 +126,12 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
     })
   })
 
-  test.afterAll(async ({ browser }) => {
-    // Papers were DB-seeded with a run-tagged title, so cleanup is one tagged
-    // deleteMany (prefix, not RUN_ID — also catches strays from crashed runs)
-    // instead of N sequential HTTP deletes, which used to blow the 30s hook
-    // budget right after the beforeAll did the same.
-    await e2eDb.paper.deleteMany({
-      where: { teamId: await e2eTeamId(), title: { startsWith: '[E2E-F3-' } },
-    })
-
-    await withSeedPage(browser, 'leader', async (page) => {
-      if (seededProjectLogId) {
-        await api.delete(page, `/api/project-log/${seededProjectLogId}`).catch(() => {})
-      }
-
-      if (seededFailureId) {
-        await api.delete(page, `/api/failure-log/${seededFailureId}`).catch(() => {})
-      }
-    })
+  test.afterAll(async () => {
+    // Papers, the project log, the failure entry and the uploaded attachment all
+    // belong to the disposable lab, so one dispose() retires the lot — replacing
+    // a tagged deleteMany plus two authenticated HTTP deletes that each had to
+    // succeed for the next run to start clean.
+    await lab.dispose()
   })
 
   // ── AC1 ───────────────────────────────────────────────────────────────────────

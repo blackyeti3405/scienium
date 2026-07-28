@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
 import { api, withSeedPage } from './api'
+import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
 import { findLessonLocation } from '../lib/ops/codex/engine'
 
@@ -79,7 +80,6 @@ import { findLessonLocation } from '../lib/ops/codex/engine'
  */
 
 const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
-const TEAM_NAME = 'E2E Test Lab'
 const CODEX_KP_PER_LESSON = 8
 
 // The real, shipped Core Unit 1 ("gaitcore-foundations-gait-cycle") lessons
@@ -201,70 +201,27 @@ async function answerCurrentWrong(page: Page) {
   for (let i = 0; i < n; i++) await selects.nth(i).selectOption({ index: 1 })
 }
 
-let leaderUserId: string | null = null
-let teamId: string | null = null
-/** Whether a TeamStudyPlan row already existed before this spec ran — if so,
- *  we must restore it (not delete it) in afterAll. */
-let priorStudyPlan: { tracksJson: unknown; sourceHash: string; runsToday: number; runsDay: Date | null; manualTrackSlugs: string[] } | null = null
-
-async function cleanLessonAndCapRows() {
-  if (!leaderUserId) return
-  await e2eDb.codexLessonProgress.deleteMany({
-    where: { userId: leaderUserId, lessonId: { in: [...UNIT1_LESSON_IDS, UNIT2_FIRST_LESSON_ID] } },
-  })
-  const today = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()))
-  await e2eDb.codexKpDay.deleteMany({ where: { userId: leaderUserId, day: today } })
-}
+let lab: OwnedLab
 
 test.describe('F13 — Field Codex', () => {
   test.describe.configure({ mode: 'serial', timeout: 180_000 })
 
   test.beforeAll(async () => {
-    const team = await e2eDb.team.findFirst({ where: { name: TEAM_NAME }, select: { id: true, teamLeadId: true } })
-    if (!team) throw new Error(`E2E team '${TEAM_NAME}' not found — run pnpm --filter web seed:e2e first.`)
-    teamId = team.id
-    leaderUserId = team.teamLeadId
-
-    // Clean any leftover state from an earlier interrupted run of THIS spec
-    // (recycled feature IDs / partial cleanup) — scoped ONLY to this
-    // leader's rows on the real biomechanics lesson ids this spec uses.
-    await cleanLessonAndCapRows()
-
-    // Preserve any pre-existing TeamStudyPlan row so this spec's writes to
-    // it (AC7/AC11) can be fully reverted in afterAll rather than deleting
-    // state this spec didn't create.
-    const existingPlan = await e2eDb.teamStudyPlan.findUnique({ where: { teamId: team.id } })
-    priorStudyPlan = existingPlan
-      ? {
-          tracksJson: existingPlan.tracksJson,
-          sourceHash: existingPlan.sourceHash,
-          runsToday: existingPlan.runsToday,
-          runsDay: existingPlan.runsDay,
-          manualTrackSlugs: existingPlan.manualTrackSlugs,
-        }
-      : null
+    // `true` for co-members: this spec signs in as the student fixture, which
+    // is only meaningful if it is on the lab the leader is driving.
+    //
+    // Both codex tables are keyed by (userId, teamId) and `TeamStudyPlan` by
+    // teamId, so a disposable lab isolates ALL of them. That retires the two
+    // things this hook pair used to do by hand: the leftover-row clean for
+    // interrupted runs (there is nothing to inherit — a crashed run used a
+    // different lab), and the read-preserve-restore of any pre-existing study
+    // plan, which existed only because AC7/AC11 write to a row shared with
+    // whatever ran next.
+    lab = await createLab('fieldcodex', true, true)
   })
 
   test.afterAll(async () => {
-    if (!leaderUserId || !teamId) return
-    await cleanLessonAndCapRows()
-
-    if (priorStudyPlan) {
-      // Restore exactly what was there before this spec touched it.
-      await e2eDb.teamStudyPlan.update({
-        where: { teamId },
-        data: {
-          tracksJson: priorStudyPlan.tracksJson as import('@prisma/client').Prisma.InputJsonValue,
-          sourceHash: priorStudyPlan.sourceHash,
-          runsToday: priorStudyPlan.runsToday,
-          runsDay: priorStudyPlan.runsDay,
-          manualTrackSlugs: priorStudyPlan.manualTrackSlugs,
-        },
-      })
-    } else {
-      // This spec created the row from nothing — remove it entirely.
-      await e2eDb.teamStudyPlan.deleteMany({ where: { teamId } })
-    }
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────
@@ -306,7 +263,7 @@ test.describe('F13 — Field Codex', () => {
   test('AC2 + AC8: first-time completion pays 8 KP, marks complete, and persists across reload', async ({ page }) => {
     await page.goto('/lab')
 
-    const kpBefore = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpBefore = await e2eDb.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
 
     const submission = await correctSubmissionFor(UNIT1_LESSON_IDS[0])
 
@@ -332,7 +289,7 @@ test.describe('F13 — Field Codex', () => {
     expect(row?.kpAwarded).toBe(CODEX_KP_PER_LESSON)
 
     // KP is shared drifting fixture state — assert the DELTA, not an absolute.
-    const kpAfter = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpAfter = await e2eDb.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
     expect((kpAfter?.kp ?? 0) - (kpBefore?.kp ?? 0)).toBe(CODEX_KP_PER_LESSON)
 
     // AC8: reload and re-fetch — progress must still show completed (DB, not
@@ -349,7 +306,7 @@ test.describe('F13 — Field Codex', () => {
   test('AC3: re-passing an already-completed lesson pays 0 additional KP', async ({ page }) => {
     await page.goto('/lab')
 
-    const kpBefore = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpBefore = await e2eDb.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
 
     const submission = await correctSubmissionFor(UNIT1_LESSON_IDS[0])
     const res = await api.post(page, '/api/ops/codex/complete', {
@@ -367,7 +324,7 @@ test.describe('F13 — Field Codex', () => {
     expect(row?.kpAwarded).toBe(CODEX_KP_PER_LESSON)
 
     // The team's KP total must be UNCHANGED from before this re-pass.
-    const kpAfter = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpAfter = await e2eDb.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
     expect((kpAfter?.kp ?? 0) - (kpBefore?.kp ?? 0)).toBe(0)
   })
 
@@ -447,7 +404,7 @@ test.describe('F13 — Field Codex', () => {
   test('AC4: after 3 first-time completions today, a 4th distinct lesson reports capReached with no completion/KP', async ({ page }) => {
     await page.goto('/lab')
 
-    const kpBeforeAny = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpBeforeAny = await e2eDb.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
 
     // Lesson 0 was already completed in the AC2/AC8 test above (1st slot
     // consumed). Complete two more distinct lessons to reach the cap of 3.
@@ -487,7 +444,7 @@ test.describe('F13 — Field Codex', () => {
 
     // KP delta across this test: exactly 2 lessons paid (lesson0 was already
     // paid in the previous test) — the capped 4th paid nothing.
-    const kpAfterAll = await e2eDb.teamCurrency.findUnique({ where: { teamId: teamId! }, select: { kp: true } })
+    const kpAfterAll = await e2eDb.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
     expect((kpAfterAll?.kp ?? 0) - (kpBeforeAny?.kp ?? 0)).toBe(CODEX_KP_PER_LESSON * 2)
   })
 
@@ -520,12 +477,12 @@ test.describe('F13 — Field Codex', () => {
     await e2eDb.codexKpDay.upsert({
       where: {
         userId_teamId_day: {
-          userId: leaderUserId!,
-          teamId: teamId!,
+          userId: lab.leaderUserId,
+          teamId: lab.teamId,
           day: todayForReset,
         },
       },
-      create: { userId: leaderUserId!, teamId: teamId!, day: todayForReset, lessonsCompleted: 0 },
+      create: { userId: lab.leaderUserId, teamId: lab.teamId, day: todayForReset, lessonsCompleted: 0 },
       update: { lessonsCompleted: 0 },
     })
 
@@ -558,15 +515,15 @@ test.describe('F13 — Field Codex', () => {
       await e2eDb.codexLessonProgress.upsert({
         where: {
           userId_teamId_trackSlug_lessonId: {
-            userId: leaderUserId!,
-            teamId: teamId!,
+            userId: lab.leaderUserId,
+            teamId: lab.teamId,
             trackSlug: 'gait-biomechanics',
             lessonId,
           },
         },
         create: {
-          userId: leaderUserId!,
-          teamId: teamId!,
+          userId: lab.leaderUserId,
+          teamId: lab.teamId,
           trackSlug: 'gait-biomechanics',
           lessonId,
           completed: true,
@@ -657,7 +614,7 @@ test.describe('F13 — Field Codex', () => {
     // route can't cache-hit its way past the cap check.
     const today = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()))
     await e2eDb.teamStudyPlan.update({
-      where: { teamId: teamId! },
+      where: { teamId: lab.teamId },
       data: { runsToday: 2, runsDay: today, sourceHash: 'e2e-forced-stale-hash-for-cap-test' },
     })
 

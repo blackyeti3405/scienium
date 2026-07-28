@@ -16,6 +16,7 @@ import {
   Activity,
   MessageCircle,
   Coins,
+  History,
 } from 'lucide-react'
 import { SectionTabs } from '@/components/ui/SectionTabs'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
@@ -24,6 +25,7 @@ import { Field } from './student-detail/shared'
 import { useStudentOverview } from './student-detail/useStudentOverview'
 import { StudentHeader } from './student-detail/StudentHeader'
 import { IdentitySection, PhaseSection } from './student-detail/sections/ProfileSections'
+import { ClassHistorySection } from './student-detail/sections/ClassHistorySection'
 import { LiteratureSection } from './student-detail/sections/LiteratureSection'
 import { ResearchPlanSection } from './student-detail/sections/ResearchPlanSection'
 import { LogsSection, ExperimentsSection } from './student-detail/sections/WorkSections'
@@ -106,6 +108,11 @@ export function StudentDetail({ studentId }: { studentId: string }) {
             <Field label="Email" value={student.email} />
             {student.class && <Field label="Class" value={student.class.name} />}
           </div>
+          {/* A student with no lab is exactly the one whose class history a
+              teacher needs — the tabbed layout below never renders for them. */}
+          <div className="text-left max-w-md mx-auto pt-2">
+            <ClassHistorySection rows={overview.classHistory} />
+          </div>
         </div>
       ) : (
         <div className="space-y-6">
@@ -128,6 +135,13 @@ export function StudentDetail({ studentId }: { studentId: string }) {
                 group: 'Profile',
                 icon: <TrendingUp size={14} />,
                 content: <PhaseSection overview={overview} />,
+              },
+              {
+                key: 'class-history',
+                label: 'Class history',
+                group: 'Profile',
+                icon: <History size={14} />,
+                content: <ClassHistorySection rows={overview.classHistory} />,
               },
               {
                 key: 'literature',

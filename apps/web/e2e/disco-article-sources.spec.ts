@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api } from './api'
+import { createLab, type OwnedLab } from './lab'
 import { dismissHome, openDiscovery, resetTree, treeHasExternalId } from './discovery-helpers'
 
 /**
@@ -66,9 +67,16 @@ async function waitForArticlePersisted(page: Page, externalId: string) {
     .toBe(true)
 }
 
+let lab: OwnedLab
+
 test.describe('Feature — disco-article-sources (article Discovery source type)', () => {
-  // Serial: every test shares the one E2E leader team's discovery tree.
+  // Serial: every test in this FILE shares one discovery tree. The lab is
+  // per-file, so `beforeEach` still has to reset between tests.
   test.describe.configure({ mode: 'serial' })
+
+  test.beforeAll(async () => {
+    lab = await createLab('article-sources')
+  })
 
   test.beforeEach(async ({ page }) => {
     // resetTree makes api.* calls, which refresh the Clerk token via the page's
@@ -77,11 +85,10 @@ test.describe('Feature — disco-article-sources (article Discovery source type)
     await resetTree(page)
   })
 
-  test.afterAll(async ({ browser }) => {
-    // Self-clean: leave the team's tree empty for the next run.
-    await withSeedPage(browser, 'leader', async (page) => {
-      await resetTree(page)
-    })
+  test.afterAll(async () => {
+    // Replaces the "leave the team's tree empty for the next run" reset, which
+    // had to open a fresh authed page purely to clean up after itself.
+    await lab.dispose()
   })
 
   // ── Criterion 1 ──────────────────────────────────────────────────────────────

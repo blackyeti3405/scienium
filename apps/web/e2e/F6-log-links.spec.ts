@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { api, withSeedPage, uploadLogAttachment } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * F6 — Project-Log log↔log linking (activates `ProjectLogReference`).
@@ -48,7 +49,9 @@ interface SeededEntry {
   entryNumber: number
 }
 
-/** Seeded entry ids (set in beforeAll, read across tests, cleaned up in afterAll). */
+let lab: OwnedLab
+
+/** Seeded entry ids (set in beforeAll, read across tests). */
 let entryA: SeededEntry | null = null
 let entryB: SeededEntry | null = null
 let entryC: SeededEntry | null = null
@@ -129,6 +132,9 @@ test.describe('F6 — Project-Log log↔log linking', () => {
   // ── Seed / teardown ───────────────────────────────────────────────────────────
 
   test.beforeAll(async ({ browser }) => {
+    // Created BEFORE any browser work: it repoints the leader's `activeTeamId`,
+    // so every seeded entry below belongs to this file's own lab.
+    lab = await createLab('log-links')
     await withSeedPage(browser, 'leader', async (page) => {
       entryA = await seedEntry(page, BODY_A)
       entryB = await seedEntry(page, BODY_B)
@@ -136,56 +142,14 @@ test.describe('F6 — Project-Log log↔log linking', () => {
     })
   })
 
-  test.afterAll(async ({ browser }) => {
-    // Navigate first (Clerk JWT freshness — F4.spec.ts:518 pattern) before any
-    // page.request call in this cleanup context.
-    await withSeedPage(browser, 'leader', async (page) => {
-
-      // Best-effort: remove any reference still dangling from A (idempotent —
-      // the DELETE route no-ops on an already-removed link). entryC may already
-      // be gone (deleted by AC9) so its own DELETE below is expected to 404,
-      // which is fine — we only need entryA/entryB gone at the end.
-      if (entryA && entryB) {
-        await page.request
-          .delete(`/api/project-log/${entryA.id}/references?targetId=${entryB.id}`)
-          .catch(() => {})
-      }
-      if (entryA && entryC) {
-        await page.request
-          .delete(`/api/project-log/${entryA.id}/references?targetId=${entryC.id}`)
-          .catch(() => {})
-      }
-
-      const seededIds = [entryA?.id, entryB?.id, entryC?.id].filter((id): id is string => !!id)
-      const results: string[] = []
-      for (const id of seededIds) {
-        const res = await api.delete(page, `/api/project-log/${id}`).catch(() => null)
-        if (!res) {
-          results.push(`${id}: request threw`)
-        } else if (res.ok() || res.status() === 404) {
-          // 404 is acceptable for entryC, already deleted during AC9.
-          results.push(`${id}: ${res.status()}`)
-        } else {
-          results.push(`${id}: FAILED (${res.status()})`)
-        }
-      }
-      // eslint-disable-next-line no-console
-      console.log(`F6 afterAll cleanup: ${results.join(', ')}`)
-
-      // Confirm the leader team's Project Log no longer contains any of the
-      // seeded bodies — loud verification that cleanup actually worked.
-      const verifyRes = await api.get(page, '/api/project-log')
-      if (verifyRes.ok()) {
-        const { entries } = await verifyRes.json()
-        const leftover = (entries as Array<{ body: string }>).filter((e) => e.body.includes(`E2E-F6-${RUN_ID}`))
-        if (leftover.length > 0) {
-          console.warn(`F6 afterAll cleanup INCOMPLETE: ${leftover.length} seeded entr(y/ies) still present.`)
-        } else {
-          // eslint-disable-next-line no-console
-          console.log('F6 afterAll cleanup verified: no seeded entries remain.')
-        }
-      }
-    })
+  test.afterAll(async () => {
+    // Entries, their cross-references and the whole reference graph go with the
+    // lab. This replaces a cleanup that had to unlink A→B and A→C by hand,
+    // DELETE three entries while tolerating a 404 for the one AC9 already
+    // removed, and then re-GET the log to VERIFY none survived — every step of
+    // which existed only because the entries lived in a lab shared with the
+    // next spec.
+    await lab.dispose()
   })
 
   // ── AC1 ───────────────────────────────────────────────────────────────────────

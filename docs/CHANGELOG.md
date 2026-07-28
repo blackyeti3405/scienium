@@ -5,6 +5,134 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.75.0] — 2026-07-27
+
+HANDOFF.md's whole "Ready to pick up" list, items 1–5.
+
+### Fixed — every public showcase view ran its Prisma queries twice
+
+`app/(public)/showcase/[slug]/page.tsx` — `generateMetadata` and the page body each called
+`loadShowcase()` and `resolveShowcaseViewer()` independently, and neither was `React.cache()`
+wrapped, so one anonymous page view executed the showcase+assets+team+viewer query set **twice**.
+Both are now `cache()`d for the request. `resolveShowcaseViewer` is wrapped at the CALL site, not
+its definition: `test/showcase-viewer-resolution.test.ts` invokes it repeatedly under different
+Clerk mocks in one process, and a definition-site cache outside a request scope would make those
+runs share a result.
+
+`ResourceLink` also rendered `metadataJson.url` straight into an `href` with no render-time
+scheme check. Safe today only because the write path validates — i.e. exactly the
+defence-in-depth gap `SourceReader`/`IdeaCheckView` closed in v0.64.0. It now goes through the
+same `isSafeHttpUrl` gate, so a legacy row saved before that validation existed cannot get a free
+pass into an anchor.
+
+### Fixed — a rejected forms-status write told the student nothing
+
+`components/fair/FormsChecklist.tsx` — the initial GET never checked `r.ok` (a 307 to the
+sign-in page surfaced as a JSON parse error), and `cycleStatus`'s PATCH failure was a bare
+`catch {}`: the status icon snapped back and there was no way to tell "didn't save" from
+"misclicked". Both now use the retry-banner shape `LiteratureFeature`/`CodexTab`/
+`ExperimentDetail` already share — the load banner re-runs the fetch, the write banner names the
+form and re-sends the exact same transition.
+
+### Added — the synthesis stale-grid 409 now says WHAT changed
+
+`components/literature/synthesisDiff.ts` (+ 11 unit tests). The P1-R13 stale-grid refusal said
+"your grid changed since it was last loaded" and stopped, which on a shared grid is the least
+useful half of the message. The 409 branch in `useSynthesisMatrix` already reloads the fresh
+matrix, so both snapshots are in hand: the diff names an added/removed/renamed column, an
+added/removed source, or the specific edited cell ("the *Findings* cell for *Voltage decay in
+salt bridges* was edited"), capped at two named changes plus a count. Costs one pass over the
+cells and **no extra request**. Returns null when nothing describable differs, so the 409's other
+callers — "some cells could not be saved", "already being checked" — get no invented detail.
+
+### Added — P1-R8's three named leftovers
+
+- **Teacher-initiated lead reassignment.** `reassignLeadAsTeacher` +
+  `POST /api/teacher/student/[id]/lead` + a "Make lab lead" control on the student detail page.
+  The capability P1-R8 named and deliberately did not build with the team half: a lead who stops
+  showing up leaves their team unable to remove members, hand over, or manage invites, and the
+  only remedy was for that lead to act. It stays a **separate export** from `transferLead` rather
+  than a flag, because the two authorize on different facts — one proves the actor IS the lead,
+  the other that they OWN the team — and a shared function with a boolean is one inverted
+  condition away from letting either stand in for the other. Seven new rows in the
+  `test/teacher-policy.test.ts` authz matrix, including a signed-in student getting 403 (being ON
+  the team is not authority to reassign it) and the cross-teacher 404 asserting the team is
+  UNCHANGED, not merely that an error came back.
+  - Found while writing it: demoting the outgoing lead through `update` throws when
+    `Team.teamLeadId` points at someone already departed, taking the whole reassignment down over
+    a row that is already gone. Now `updateMany`, with a test that pins it.
+- **A removal notification.** A teacher un-enrolling a student wrote an event log for the teacher
+  and nothing for the student, who found out by noticing their teacher could no longer see their
+  work. New `membership_changed` `NotificationKind` (migration
+  `20260727190000_membership_notification_kind`, enum values are only added), written in the SAME
+  transaction as the removal. `dedupeKey` is keyed to the `ClassMembershipEvent` **id**, not
+  (student, class): the column is globally unique, so a per-pair key would collide on a second
+  removal and — because the write is inside the removal's own transaction — roll the removal
+  itself back. A test pins exactly that.
+- **A reader for `ClassMembershipEvent`.** The log has recorded class transitions since v0.52.0
+  and no surface showed them. `loadStudentOverview` now returns `classHistory`, scoped to the
+  caller's own classes **in the WHERE clause** (a student's history can include another teacher's
+  class, whose name is not this teacher's to read), rendered as a "Class history" tab — and also
+  on the no-team branch, since a student with no lab is exactly the one whose class history a
+  teacher needs.
+
+### Changed — 27 of 32 E2E specs now own a disposable lab
+
+Up from 6. Each migration deletes a `beforeAll`/`afterAll` that existed only because the spec was
+writing to a lab shared with every other spec. The cleanups that went away are the point:
+F9 reconstructing a `nudge:<team>:<day>` dedupeKey by hand and deciding whether it owned the
+feedback row before daring to delete it; F5 settling for MARKING a notification read because
+there is no DELETE route; F13 reading-preserving-restoring any pre-existing study plan; F3's
+"library locked at 25 ready papers" guard and its `24 - existing` clamp; `paper-upload` saving
+and restoring the shared team's topic; rubric-self-assessment's afterAll reset that could
+silently 307 on a stale token and leave `science:I` dirty for the next run.
+
+Three infrastructure changes made that possible, each a real defect in its own right:
+
+- **`createLab` now seeds the gateway layout.** A disposable lab had no
+  `team_gateway_placements`, so the scene fell back to the DEFAULT cells — where one 128px
+  sprite's silhouette covers a neighbour's centre and Playwright cannot click "Open Discovery" at
+  all. `seed-e2e.mjs` seeds an explicit spread for the shared fixture precisely to avoid this;
+  every disposable lab was inheriting the layout that file exists to prevent. Fixed by seeding
+  the same spread, **not** by switching the E2E to a JS click — a `dispatchEvent` would sail
+  through a layout no student could use.
+- **One owner for the team-delete inventory.** `reset:e2e`'s stray sweep and `disposeLab` kept
+  separate lists and both were incomplete the same way: a lab that had recorded codex progress or
+  bought a building could not be deleted by either (`P2003`), so a crashed run left an `[E2E …]`
+  team that no later reset could ever clear — observed live, twice. Now one
+  `retireDisposableTeam` in `prisma/reset-e2e.mjs`, derived by walking `schema.prisma` for every
+  model with a `team Team` relation. Deliberately a different list from `purgeTeam`, which spares
+  the shared fixture's LAYOUT.
+- **`createLab(label, claimActive, bringCoMembers)`.** Four specs sign in as the student fixture
+  to prove a team-shared surface (F18's shared Vega thread, vocab's per-member card scoping), and
+  six teacher specs resolve their target through the roster. Moving only the leader breaks both.
+  Co-members are opt-in because the borrowed accounts give up their own membership for the file's
+  lifetime.
+
+`e2e/db.ts`'s helpers (`setE2eLabCredits`, `deleteE2eBuilding`, …) take an optional `teamId`,
+defaulting to the shared fixture — they were hardwired to it, so a spec on a disposable lab would
+have written the shared team's currency while the browser read its own.
+
+**One trap this created, now documented in `createLab`.** The lab's label becomes the team name,
+which is the accessible name of the status strip's team button — and Playwright's
+`getByRole('button', { name: X })` matches X as a case-insensitive **substring**. So
+`createLab('rubric-self-check')` made `getByRole('button', { name: 'Self-check' })` resolve to the
+team button instead of the Fair Hub tab, and because the status strip sits behind any open feature
+panel the symptom was not "wrong element" but `<div class="feature-panel__backdrop"> intercepts
+pointer events`, retried to timeout. Seven labels renamed; the rule is written down where the next
+author will hit it.
+
+The teacher specs gain more than tidiness: F1's seed used to fall back to "any student with a
+team", which on a shared class could write teacher feedback into a **real** student's lab, and
+F9's "this may report `alreadyNudged: true` if an earlier run nudged today" ambiguity is gone
+because a brand-new team has never been nudged.
+
+**Five specs deliberately stay on the shared fixture**, each annotated in-file: `smoke` /
+`settings-smoke` / `F8-reports` (read-only — and F8's invariant compares reports against the
+WHOLE roster, which an extra team would change), `data-requests` (`DataRequest` is keyed by
+subject user, not team, so a lab isolates none of it), and `team-membership` — a hard no, since
+`createLab` works by deleting and recreating the very `TeamMember` rows that file exists to test.
+
 ## [0.74.0] — 2026-07-27
 
 ### Changed — the `ApiError` client/server rename lands; the "AC15 mystery" was a dev-server flake, not the rename

@@ -3,6 +3,14 @@ import { withSeedPage } from './api'
 import { e2eDb } from './db'
 
 /**
+ * NOT migrated to `createLab()` (e2e/lab.ts), on purpose. `DataRequest` is keyed
+ * by SUBJECT USER, not by team, so a disposable lab isolates none of it — the
+ * one row this spec files would survive the lab's disposal either way. The
+ * existing `deleteMany` by exact id is already precise, and the deliberately
+ * non-destructive design means there is nothing else to clean.
+ */
+
+/**
  * "Your data" — export / erasure requests (REFACTOR2 P1-R9).
  *
  * The unit tests cover the workflow; what they cannot show is whether a student

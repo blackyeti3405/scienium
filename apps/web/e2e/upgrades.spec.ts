@@ -42,13 +42,13 @@
 
 import { test, expect, type Page } from '@playwright/test'
 import {
-  deleteE2eBuilding,
   deleteE2eLabCreditClaimsToday,
   getE2eLabCredits,
   setE2eBuildingLevel,
   setE2eKnowledgePoints,
   setE2eLabCredits,
 } from './db'
+import { createLab, type OwnedLab } from './lab'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -71,8 +71,21 @@ const DROP_GY = 3
 // mode:'serial' here prevents the two sub-describes (seeded-LC upgrades and
 // LC-earning) from interleaving when fullyParallel:true is set in the config.
 
+let lab: OwnedLab
+
 test.describe('upgrades feature', () => {
   test.describe.configure({ mode: 'serial' })
+
+  test.beforeAll(async () => {
+    // One lab for the whole file. It also retires the "(-3,3) so we never
+    // collide with placement.spec.ts's (3,3)" arrangement below: the two files
+    // no longer share a plot at all.
+    lab = await createLab('upgradeflow')
+  })
+
+  test.afterAll(async () => {
+    await lab.dispose()
+  })
 
   // ─── Upgrade flow tests (seeded LC) ────────────────────────────────────────
   // These tests use "Robotics Bay" (robotics_bay) placed at cell (-3,3) so they
@@ -81,18 +94,11 @@ test.describe('upgrades feature', () => {
 
   test.describe('upgrade flow (seeded LC)', () => {
     test.beforeAll(async () => {
-      // Delete any stale robotics_bay row first so reruns start clean, then seed LC.
-      await deleteE2eBuilding(UPGRADE_BUILDING_KEY)
-      await deleteE2eLabCreditClaimsToday()
-      await setE2eKnowledgePoints(100_000)
-      await setE2eLabCredits(30)
-    })
-
-    test.afterAll(async () => {
-      // Clean up: remove the test building and reset LC to 0.
-      await deleteE2eBuilding(UPGRADE_BUILDING_KEY)
-      await deleteE2eLabCreditClaimsToday()
-      await setE2eLabCredits(0)
+      // The stale-row delete is gone: a disposable lab has no robotics_bay to
+      // inherit. LC still has to be SEEDED (30) — that is the precondition
+      // under test, not accumulated state.
+      await setE2eKnowledgePoints(100_000, lab.teamId)
+      await setE2eLabCredits(30, lab.teamId)
     })
 
     // Helper: place the Robotics Bay on the plot via the shop UI (used in AC4/AC5/AC6).
@@ -184,8 +190,8 @@ test.describe('upgrades feature', () => {
     //      leaves the menu open showing the next level — without a reload.
     test('AC5 — Upgrade on L1 building: level 2, KP drops, LC unchanged, toast', async ({ page }) => {
       // Ensure a clean L1 building with known funds.
-      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 1)
-      await setE2eLabCredits(30)
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 1, lab.teamId)
+      await setE2eLabCredits(30, lab.teamId)
       await page.goto('/lab')
 
       const kp0 = await readStat(page, 'KP')
@@ -242,8 +248,8 @@ test.describe('upgrades feature', () => {
 
     // A TIER upgrade (→4) charges LC in addition to KP.
     test('a tier upgrade (→L4) charges LC as well as KP', async ({ page }) => {
-      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 3)
-      await setE2eLabCredits(30)
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 3, lab.teamId)
+      await setE2eLabCredits(30, lab.teamId)
       await page.goto('/lab')
 
       const lc0 = await readStat(page, 'LC')
@@ -284,8 +290,8 @@ test.describe('upgrades feature', () => {
     // Use the TOP tier (14→15 needs 10 LC) with LC drained to 0, so a stray +LC grant
     // from a parallel spec sharing this test team can't push LC over the threshold.
     test('AC9 — tier upgrade returns 402 when LC is insufficient', async ({ page }) => {
-      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 14)
-      await setE2eLabCredits(0)
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 14, lab.teamId)
+      await setE2eLabCredits(0, lab.teamId)
 
       await page.goto('/lab')
 
@@ -303,8 +309,8 @@ test.describe('upgrades feature', () => {
       expect(response.body.error).toContain('Not enough Lab Credits')
 
       // Restore for remaining tests: level back to 2, LC topped up.
-      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 2)
-      await setE2eLabCredits(30)
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 2, lab.teamId)
+      await setE2eLabCredits(30, lab.teamId)
     })
 
     // AC12: the activity feed records a building_upgraded entry after upgrade.
@@ -341,7 +347,7 @@ test.describe('upgrades feature', () => {
       page,
     }) => {
       // Set the building to max level via DB.
-      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 15)
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 15, lab.teamId)
 
       await page.goto('/lab')
 
@@ -371,7 +377,7 @@ test.describe('upgrades feature', () => {
       expect(response.body.error).toContain('already at max level')
 
       // Reset building level back to 2 for any remaining tests.
-      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 2)
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 2, lab.teamId)
     })
 
     // AC7: at level >= 4, the menu's Upgrade label shows L5; manifest resolves _t2.png.
@@ -382,7 +388,7 @@ test.describe('upgrades feature', () => {
       page,
     }) => {
       // Set building to level 4 via DB.
-      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 4)
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 4, lab.teamId)
 
       await page.goto('/lab')
 
@@ -396,7 +402,7 @@ test.describe('upgrades feature', () => {
       await page.keyboard.press('Escape')
 
       // Reset to level 1 for a clean state.
-      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 1)
+      await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 1, lab.teamId)
     })
   })
 
@@ -408,15 +414,11 @@ test.describe('upgrades feature', () => {
 
   test.describe('LC earning via log creation (daily cap)', () => {
     test.beforeAll(async () => {
-      // Start with 0 LC and no claims today so the earning path is clear.
-      await setE2eLabCredits(0)
-      await deleteE2eLabCreditClaimsToday()
-    })
-
-    test.afterAll(async () => {
-      // Clean up: remove any claims created during these tests.
-      await deleteE2eLabCreditClaimsToday()
-      await setE2eLabCredits(0)
+      // Start with 0 LC. There are no claims to clear — the previous describe's
+      // claims were made in this same lab, so this reset is the only carry-over
+      // between the two blocks and it is deliberate.
+      await setE2eLabCredits(0, lab.teamId)
+      await deleteE2eLabCreditClaimsToday(lab.teamId)
     })
 
     // AC1: the first log of the real day grants the team exactly +1 LC. Verified at
@@ -447,7 +449,7 @@ test.describe('upgrades feature', () => {
 
       // The LC in the DB should now be initialLC + 1.
       // We verify via the DB since the StatusStrip is SSR-seeded and not live-polled.
-      const lcAfter = await getE2eLabCredits()
+      const lcAfter = await getE2eLabCredits(lab.teamId)
       expect(lcAfter).toBe(initialLC + 1)
     })
 
@@ -458,7 +460,7 @@ test.describe('upgrades feature', () => {
       await page.goto('/lab')
 
       // Get current LC from DB (after AC1 granted 1).
-      const lcBefore = await getE2eLabCredits()
+      const lcBefore = await getE2eLabCredits(lab.teamId)
 
       // POST a second failure log.
       const postResult = await page.evaluate(async () => {
@@ -475,7 +477,7 @@ test.describe('upgrades feature', () => {
       expect(postResult.ok).toBe(true)
 
       // LC should NOT have changed (daily cap).
-      const lcAfter = await getE2eLabCredits()
+      const lcAfter = await getE2eLabCredits(lab.teamId)
       expect(lcAfter).toBe(lcBefore)
     })
   })

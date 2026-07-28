@@ -52,6 +52,16 @@ const tx = {
       )!
       Object.assign(m, data)
     },
+    updateMany: async ({ where, data }: any) => {
+      const rows = store.members.filter(
+        (m) =>
+          (where.teamId === undefined || m.teamId === where.teamId) &&
+          (where.userId === undefined || m.userId === where.userId) &&
+          (where.role === undefined || m.role === where.role),
+      )
+      for (const m of rows) Object.assign(m, data)
+      return { count: rows.length }
+    },
   },
   team: {
     findUnique: async ({ where }: any) => store.teams.find((t) => t.id === where.id) ?? null,
@@ -92,7 +102,13 @@ vi.mock('@/lib/db', () => ({
   db: { $transaction: (fn: (t: unknown) => Promise<unknown>) => fn(tx) },
 }))
 
-import { departTeam, leaveOtherTeams, transferLead, MembershipError } from '@/lib/team/membership'
+import {
+  departTeam,
+  leaveOtherTeams,
+  transferLead,
+  reassignLeadAsTeacher,
+  MembershipError,
+} from '@/lib/team/membership'
 
 const T1 = 'team_1'
 const T2 = 'team_2'
@@ -320,6 +336,90 @@ describe('lead transfer', () => {
     await expect(
       transferLead(tx as never, { teamId: T1, fromUserId: 'u1', toUserId: 'u2' }),
     ).rejects.toMatchObject({ status: 409 })
+  })
+})
+
+/**
+ * The capability P1-R8 named and left unbuilt: a lead who stops showing up
+ * leaves their team unable to remove members, hand over, or manage invites, and
+ * the only remedy was for that lead to act.
+ *
+ * The load-bearing part is that this authorizes on OWNERSHIP, never on being the
+ * lead — so the two must not be able to stand in for one another.
+ */
+describe('teacher-initiated lead reassignment', () => {
+  it('moves the role without the outgoing lead acting', async () => {
+    seedTeam(T1, 'u1', ['u1', 'u2'])
+
+    const out = await reassignLeadAsTeacher({
+      teamId: T1,
+      toUserId: 'u2',
+      actorUserId: 'teacher_1',
+      ownsTeam: true,
+    })
+
+    expect(out.previousLeadUserId).toBe('u1')
+    expect(store.teams[0]!.teamLeadId).toBe('u2')
+    expect(store.members.find((m) => m.userId === 'u2')!.role).toBe('lead')
+    expect(store.members.find((m) => m.userId === 'u1')!.role).toBe('member')
+    expect(store.events.at(-1)).toMatchObject({
+      event: 'lead_transferred',
+      actorUserId: 'teacher_1',
+      reason: 'reassigned_by_teacher',
+    })
+  })
+
+  it('a teacher who does not own the team gets the same 404 as a missing one', async () => {
+    seedTeam(T1, 'u1', ['u1', 'u2'])
+    await expect(
+      reassignLeadAsTeacher({ teamId: T1, toUserId: 'u2', actorUserId: 'teacher_1', ownsTeam: false }),
+    ).rejects.toMatchObject({ status: 404 })
+    // NEGATIVE CONTROL: the refusal is the only reason nothing moved.
+    expect(store.teams[0]!.teamLeadId).toBe('u1')
+    expect(store.events).toHaveLength(0)
+  })
+
+  it('refuses a target who is not on the team', async () => {
+    seedTeam(T1, 'u1', ['u1'])
+    await expect(
+      reassignLeadAsTeacher({
+        teamId: T1,
+        toUserId: 'stranger',
+        actorUserId: 'teacher_1',
+        ownsTeam: true,
+      }),
+    ).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('refuses when the target already leads', async () => {
+    seedTeam(T1, 'u1', ['u1', 'u2'])
+    await expect(
+      reassignLeadAsTeacher({ teamId: T1, toUserId: 'u1', actorUserId: 'teacher_1', ownsTeam: true }),
+    ).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('refuses on an archived team', async () => {
+    seedTeam(T1, 'u1', ['u1', 'u2'])
+    store.teams[0]!.archivedAt = new Date()
+    await expect(
+      reassignLeadAsTeacher({ teamId: T1, toUserId: 'u2', actorUserId: 'teacher_1', ownsTeam: true }),
+    ).rejects.toMatchObject({ status: 409 })
+  })
+
+  it('still promotes when the outgoing lead has no membership row left', async () => {
+    // `Team.teamLeadId` can point at someone already departed. Demoting through
+    // `update` would throw here and take the whole reassignment down.
+    seedTeam(T1, 'ghost', ['u2'])
+
+    await reassignLeadAsTeacher({
+      teamId: T1,
+      toUserId: 'u2',
+      actorUserId: 'teacher_1',
+      ownsTeam: true,
+    })
+
+    expect(store.teams[0]!.teamLeadId).toBe('u2')
+    expect(store.members.find((m) => m.userId === 'u2')!.role).toBe('lead')
   })
 })
 

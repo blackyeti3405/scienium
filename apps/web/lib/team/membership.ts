@@ -193,21 +193,17 @@ export async function leaveOtherTeams(
 }
 
 /**
- * Hand the lead role to another current member.
+ * Move the lead role to `toUserId`, once the caller's authority has been decided.
  *
- * Only the current lead may do this. A teacher-initiated transfer would be a
- * separate command with its own authorization — deliberately not folded in here,
- * because "the lead may hand over" and "a teacher may reassign" are different
- * capabilities and conflating them is how one becomes the other.
+ * Private: it performs no authorization of its own. Both public entry points
+ * below check a DIFFERENT thing before calling it, which is exactly why they
+ * stay separate commands — see `reassignLeadAsTeacher`.
  */
-export async function transferLead(
+async function applyLead(
   tx: MembershipTx,
-  input: { teamId: string; fromUserId: string; toUserId: string },
-): Promise<void> {
-  const { teamId, fromUserId, toUserId } = input
-  if (fromUserId === toUserId) throw new MembershipError('Already the lead', 400)
-
-  await lockAggregate(tx, `team-membership:${teamId}`)
+  input: { teamId: string; toUserId: string; actorUserId: string | null; reason: string },
+): Promise<{ previousLeadUserId: string }> {
+  const { teamId, toUserId } = input
 
   const team = await tx.team.findUnique({
     where: { id: teamId },
@@ -215,9 +211,10 @@ export async function transferLead(
   })
   if (!team) throw new MembershipError('Lab not found', 404)
   if (team.archivedAt) throw new MembershipError('That lab is archived', 409)
-  if (team.teamLeadId !== fromUserId) {
-    throw new MembershipError('Only the lab lead can hand over the lead role', 403)
-  }
+  if (team.teamLeadId === toUserId) throw new MembershipError('Already the lead', 400)
+  // Read it out BEFORE any write. Who to demote, and who to report as outgoing,
+  // are both facts about the state this command started from.
+  const previousLeadUserId = team.teamLeadId
 
   const target = await tx.teamMember.findUnique({
     where: { userId_teamId: { userId: toUserId, teamId } },
@@ -230,8 +227,12 @@ export async function transferLead(
     where: { userId_teamId: { userId: toUserId, teamId } },
     data: { role: 'lead' },
   })
-  await tx.teamMember.update({
-    where: { userId_teamId: { userId: fromUserId, teamId } },
+  // Demote through `updateMany`, not `update`: the outgoing lead is read from
+  // `Team.teamLeadId`, and a team whose lead has already departed can point at
+  // someone with no membership row. `update` would throw and take the whole
+  // reassignment down over a row that is already gone.
+  await tx.teamMember.updateMany({
+    where: { teamId, userId: previousLeadUserId, role: 'lead' },
     data: { role: 'member' },
   })
   await record(tx, {
@@ -239,8 +240,72 @@ export async function transferLead(
     userId: toUserId,
     event: 'lead_transferred',
     role: 'lead',
-    actorUserId: fromUserId,
-    reason: 'handed_over',
+    actorUserId: input.actorUserId,
+    reason: input.reason,
+  })
+  return { previousLeadUserId }
+}
+
+/**
+ * Hand the lead role to another current member.
+ *
+ * Only the current lead may do this. A teacher-initiated transfer is a separate
+ * command with its own authorization (`reassignLeadAsTeacher`) — deliberately
+ * not folded in here, because "the lead may hand over" and "a teacher may
+ * reassign" are different capabilities and conflating them is how one becomes
+ * the other.
+ */
+export async function transferLead(
+  tx: MembershipTx,
+  input: { teamId: string; fromUserId: string; toUserId: string },
+): Promise<void> {
+  const { teamId, fromUserId, toUserId } = input
+  if (fromUserId === toUserId) throw new MembershipError('Already the lead', 400)
+
+  await lockAggregate(tx, `team-membership:${teamId}`)
+
+  const team = await tx.team.findUnique({ where: { id: teamId }, select: { teamLeadId: true } })
+  if (!team) throw new MembershipError('Lab not found', 404)
+  if (team.teamLeadId !== fromUserId) {
+    throw new MembershipError('Only the lab lead can hand over the lead role', 403)
+  }
+
+  await applyLead(tx, { teamId, toUserId, actorUserId: fromUserId, reason: 'handed_over' })
+}
+
+/**
+ * A teacher reassigns the lead of a team they own (REFACTOR2 P1-R8).
+ *
+ * The capability P1-R8 named and deliberately did not build with the team half:
+ * a lead who has stopped showing up leaves their team unable to remove members,
+ * hand over, or manage invites, and the only remedy was for that lead to act. A
+ * teacher is the authority that outlasts the team.
+ *
+ * It stays a separate export rather than a flag on `transferLead` because the
+ * two authorize on different facts — `transferLead` proves the actor IS the
+ * lead, this proves the actor OWNS the team. A shared function with a boolean
+ * is one inverted condition away from letting either check stand in for the
+ * other. `ownsTeam` is passed in: the class-scope rule lives in
+ * `lib/teacher/auth.ts` and is not re-derived here.
+ */
+export async function reassignLeadAsTeacher(input: {
+  teamId: string
+  toUserId: string
+  actorUserId: string
+  ownsTeam: boolean
+}): Promise<{ previousLeadUserId: string }> {
+  // `async` so an unauthorized call REJECTS rather than throwing synchronously —
+  // a caller that only `.catch()`es would otherwise crash on the one path that
+  // matters most.
+  if (!input.ownsTeam) throw new MembershipError('Lab not found', 404)
+  return db.$transaction(async (tx) => {
+    await lockAggregate(tx, `team-membership:${input.teamId}`)
+    return applyLead(tx, {
+      teamId: input.teamId,
+      toUserId: input.toUserId,
+      actorUserId: input.actorUserId,
+      reason: 'reassigned_by_teacher',
+    })
   })
 }
 

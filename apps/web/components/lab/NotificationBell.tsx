@@ -26,6 +26,7 @@ const KIND_META: Record<string, KindMeta> = {
   teacher_feedback: { icon: '💬', accent: '#5ac8fa', label: 'Feedback' },
   phase_reviewed: { icon: '✅', accent: '#4cd964', label: 'Review' },
   showcase_reviewed: { icon: '🏆', accent: '#c58af9', label: 'Showcase' },
+  membership_changed: { icon: '🚪', accent: '#ff9f43', label: 'Membership' },
 }
 
 const FALLBACK_META: KindMeta = { icon: '🔔', accent: 'rgba(255,255,255,0.6)', label: 'Update' }

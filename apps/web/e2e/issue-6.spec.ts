@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { STORAGE } from './roles'
 import { api, withSeedPage } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * Issue 6 — Teacher dashboard revamp (roster restyle + student drill-down).
@@ -26,6 +27,8 @@ import { api, withSeedPage } from './api'
  * feature is read-only.
  */
 
+let lab: OwnedLab
+
 /** Student id discovered in beforeAll from the teacher's roster. */
 let inScopeStudentId: string | null = null
 
@@ -38,23 +41,34 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   // ── Seed ─────────────────────────────────────────────────────────────────────
 
   test.beforeAll(async ({ browser }) => {
+    // Co-members, so the fixture roster resolves to THIS lab. The drill-down
+    // this spec exercises then reads a team whose contents are known, instead
+    // of "the first student who happens to have a team" — which, on a shared
+    // class, could be a real student's real lab.
+    lab = await createLab('teacher-drilldown', true, true)
+
     await withSeedPage(browser, 'teacher', async (page) => {
       const rosterRes = await api.get(page, '/api/teacher/roster')
       if (!rosterRes.ok()) {
         throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
       }
       const { students } = await rosterRes.json()
-      // Find the first student with a team so drill-down has real data.
-      const withTeam = (students as Array<{ studentId: string; teamId: string | null }>).find(
-        (s) => s.teamId !== null,
+      // Narrowed to this lab's own members rather than any team at all.
+      const mine = (students as Array<{ studentId: string; teamId: string | null }>).find(
+        (s) => s.teamId === lab.teamId,
       )
-      inScopeStudentId = withTeam?.studentId ?? (students[0]?.studentId ?? null)
+      inScopeStudentId = mine?.studentId ?? null
       if (!inScopeStudentId) {
         throw new Error(
-          'No students found in teacher roster — DevTeacher must be linked to the dev class.',
+          "This file's disposable lab did not appear in the teacher roster — the E2E teacher " +
+            'account must be linked to the dev class that contains the E2E leader.',
         )
       }
     })
+  })
+
+  test.afterAll(async () => {
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────

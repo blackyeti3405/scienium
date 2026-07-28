@@ -57,6 +57,12 @@ export class ClassMembershipError extends Error {
 /**
  * Append one event. Always called inside the transaction that made the change —
  * a log that can commit without its cause is not evidence of anything.
+ *
+ * Returns the new row's id, which is what makes a notification about this event
+ * dedupable: `Notification.dedupeKey` is globally unique, so a key built from
+ * (student, class) would collide the second time a student is removed from the
+ * same class and abort the removal itself. The event id is unique by
+ * construction and names the exact occurrence.
  */
 export async function recordClassEvent(
   tx: ClassTx,
@@ -67,14 +73,65 @@ export async function recordClassEvent(
     actorUserId?: string | null
     reason?: string
   },
-): Promise<void> {
-  await tx.classMembershipEvent.create({
+): Promise<string> {
+  const row = await tx.classMembershipEvent.create({
     data: {
       classId: input.classId,
       userId: input.userId,
       event: input.event,
       actorUserId: input.actorUserId ?? null,
       reason: input.reason ?? null,
+    },
+    select: { id: true },
+  })
+  return row.id
+}
+
+/**
+ * Tell the student their teacher ended their enrolment (REFACTOR2 P1-R8).
+ *
+ * Only for a teacher removal: a student who left knows they left, and a
+ * `superseded` approval is not something that happened *to* them.
+ *
+ * Written in the SAME transaction as the removal. A best-effort notification
+ * after the commit is the shape that produces a student who was removed and
+ * never told — which is the exact gap this closes.
+ *
+ * **Limitation, on purpose:** `Notification.teamId` is required and the bell is
+ * team-scoped, so a student with no live team membership gets no row. Making it
+ * nullable means a nullable FK, four index changes, and an `OR` in the bell's
+ * visibility predicate — for a student who has no bell to read it in. Recorded
+ * rather than papered over.
+ */
+async function notifyRemoved(
+  tx: ClassTx,
+  input: { userId: string; classId: string; eventId: string },
+): Promise<void> {
+  // One team at a time (`TeamMember.userId` is `@@unique`), so the live
+  // membership IS the team whose bell this student reads.
+  const membership = await tx.teamMember.findUnique({
+    where: { userId: input.userId },
+    select: { teamId: true },
+  })
+  if (!membership) return
+
+  const klass = await tx.class.findUnique({
+    where: { id: input.classId },
+    select: { name: true },
+  })
+
+  await tx.notification.create({
+    data: {
+      teamId: membership.teamId,
+      // Addressed to the student alone — their teammates are not party to it.
+      userId: input.userId,
+      kind: 'membership_changed',
+      title: klass ? `You were removed from ${klass.name}` : 'You were removed from your class',
+      body:
+        'Your teacher un-enrolled you. Your lab and everything in it are unchanged, ' +
+        'but your teacher can no longer see your work until you join a class again.',
+      linkUrl: '/onboarding',
+      dedupeKey: `class_removed:${input.eventId}`,
     },
   })
 }
@@ -139,6 +196,8 @@ async function endEnrolment(
   reason: string,
   /** When set, the command only applies if the student is in THIS class. */
   requireClassId?: string,
+  /** Whether the student needs telling — true only for a teacher removal. */
+  notify = false,
 ): Promise<ClassEndOutcome> {
   return db.$transaction(async (tx) => {
     // The same lock `decideClassJoin` takes: an approval landing concurrently
@@ -158,7 +217,14 @@ async function endEnrolment(
       where: { userId, classId, status: { in: ['approved', 'pending'] } },
       data: { status: 'revoked', decidedAt: new Date(), decidedByUserId: actorUserId },
     })
-    await recordClassEvent(tx, { classId, userId, event: 'revoked', actorUserId, reason })
+    const eventId = await recordClassEvent(tx, {
+      classId,
+      userId,
+      event: 'revoked',
+      actorUserId,
+      reason,
+    })
+    if (notify) await notifyRemoved(tx, { userId, classId, eventId })
 
     return { committed: true, classId }
   })
@@ -181,5 +247,5 @@ export function removeFromClass(
   userId: string,
   actorUserId: string,
 ): Promise<ClassEndOutcome> {
-  return endEnrolment(userId, actorUserId, 'removed_by_teacher', classId)
+  return endEnrolment(userId, actorUserId, 'removed_by_teacher', classId, true)
 }

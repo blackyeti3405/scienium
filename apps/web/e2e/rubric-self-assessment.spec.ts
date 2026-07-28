@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, openGateway } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * Rubric self-assessment (Feature F1 — Rubric self-assessment).
@@ -39,37 +40,13 @@ import { api, withSeedPage } from './api'
  * running the reset.
  */
 
-const RESEARCH_QUESTION_KEY = 'science:I'
+let lab: OwnedLab
 
-/**
- * Reset science:I to score 0 / notes null, scoped to the leader's team.
- *
- * Called from both beforeAll and afterAll (see the hooks below) on a fresh
- * authed seed page. `api.put` refreshes the Clerk session before firing, so
- * this stays reliable even in afterAll — ~2 minutes into this serial suite,
- * by which point the on-disk STORAGE.leader token is stale and a bare
- * request-context PUT would silently 307 to an HTML sign-in page (Playwright
- * doesn't reject on a 200-with-HTML response) and leave science:I dirty for
- * whatever the last test set it to, breaking the next run's determinism (e.g.
- * AC5's exact "8 / 100" assertion assumes a 0 starting score). The status
- * check asserts the PUT actually succeeded so a broken reset fails loudly
- * instead of silently leaving dirty shared-DB state (PARALLELISM.md:
- * write-touching specs must leave their own data clean).
- */
-async function resetResearchQuestion(page: Page) {
-  const res = await api.put(page, '/api/rubric/self-assessment', {
-    data: { track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 0 },
-  })
-  if (res.status() !== 200) {
-    throw new Error(`resetResearchQuestion PUT failed: ${res.status()} ${await res.text()}`)
-  }
-}
+const RESEARCH_QUESTION_KEY = 'science:I'
 
 /** Open the Science Fair Hub feature panel from /lab (mirrors F3.spec.ts's openLiteratureReview). */
 async function openScienceFairHub(page: Page) {
-  await page.goto('/lab')
-  await page.getByRole('button', { name: 'Open Science Fair' }).click({ timeout: 10_000 })
-  await expect(page.getByRole('dialog', { name: 'Science Fair' })).toBeVisible({ timeout: 5000 })
+  await openGateway(page, 'Science Fair')
 }
 
 /**
@@ -102,12 +79,18 @@ async function fillAndSave(card: import('@playwright/test').Locator, value: stri
 test.describe('Rubric self-assessment (F1)', () => {
   test.describe.configure({ mode: 'serial' })
 
-  test.beforeAll(async ({ browser }) => {
-    await withSeedPage(browser, 'leader', (page) => resetResearchQuestion(page))
+  test.beforeAll(async () => {
+    // A fresh lab has no rubric rows at all, so `science:I` already reads 0 —
+    // which is the precondition the beforeAll reset existed to manufacture, and
+    // the one AC5's exact "8 / 100" assertion depends on.
+    lab = await createLab('f1selfcheck')
   })
 
-  test.afterAll(async ({ browser }) => {
-    await withSeedPage(browser, 'leader', (page) => resetResearchQuestion(page))
+  test.afterAll(async () => {
+    // The afterAll reset was the fragile half: ~2 minutes into a serial file the
+    // on-disk leader token is stale, and a silently-307'd PUT left `science:I`
+    // dirty for the NEXT run. Disposing the lab cannot 307.
+    await lab.dispose()
   })
 
   // ── AC1 ───────────────────────────────────────────────────────────────────

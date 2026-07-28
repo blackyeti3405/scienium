@@ -1,9 +1,10 @@
+import { cache } from 'react'
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
 import { Github, Paperclip, ExternalLink, Eye, Printer } from 'lucide-react'
 import { db } from '@/lib/db'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
-import { canViewShowcase, toShowcaseForView, type ShowcaseAccess } from '@/lib/showcase'
+import { canViewShowcase, isSafeHttpUrl, toShowcaseForView, type ShowcaseAccess } from '@/lib/showcase'
 import { viewFingerprint, recordShowcaseView, resolveShowcaseViewer } from '@/lib/showcase-server'
 import { PrintButton } from '@/components/showcase/PrintButton'
 
@@ -33,8 +34,12 @@ function readMeta<T>(a?: { metadataJson: unknown }): T | undefined {
  * showcase, whose only unguessable part is six hex characters. Presenting the
  * 128-bit token is now the sole anonymous way into a `link_only` showcase;
  * `canViewShowcase` decides using `via`.
+ *
+ * `cache()`d because `generateMetadata` and the page body each resolve the same
+ * slug during one request — without it every public showcase view ran this
+ * query set twice.
  */
-async function loadShowcase(param: string) {
+const loadShowcase = cache(async function loadShowcase(param: string) {
   const sc = await db.showcase.findFirst({
     where: { OR: [{ slug: param }, { shareToken: param }] },
     include: {
@@ -54,12 +59,15 @@ async function loadShowcase(param: string) {
   // upgrade the caller's access.
   const via: ShowcaseAccess = sc.shareToken === param ? 'share_token' : 'slug'
   return { sc, via }
-}
+})
+
+/** Same request, same viewer — deduped for the `generateMetadata` + page pair. */
+const loadViewer = cache(resolveShowcaseViewer)
 
 export async function generateMetadata(props: Props) {
   const params = await props.params;
   const found = await loadShowcase(params.slug)
-  const viewer = await resolveShowcaseViewer()
+  const viewer = await loadViewer()
   if (!found || !canViewShowcase(toShowcaseForView(found.sc), viewer, found.via)) {
     return { title: 'Showcase' }
   }
@@ -85,7 +93,7 @@ export default async function PublicShowcasePage(props: Props) {
   const searchParams = await props.searchParams;
   const params = await props.params;
   const found = await loadShowcase(params.slug)
-  const viewer = await resolveShowcaseViewer()
+  const viewer = await loadViewer()
 
   if (!found || !canViewShowcase(toShowcaseForView(found.sc), viewer, found.via)) notFound()
   const { sc } = found
@@ -382,13 +390,12 @@ function ResourceLink({
 }) {
   const meta = readMeta<{ url?: string; label?: string }>(asset)
   const url = meta?.url
-  if (!url) return null
-  let host = ''
-  try {
-    host = new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    /* ignore */
-  }
+  // Second, independent gate at the render boundary — the upload path validates
+  // the scheme, but a legacy `metadataJson.url` saved before it did must not get
+  // a free pass into an `href` (same rule `SourceReader`/`IdeaCheckView` apply).
+  if (!url || !isSafeHttpUrl(url)) return null
+  // Parse is guaranteed to succeed: `isSafeHttpUrl` already constructed it.
+  const host = new URL(url).hostname.replace(/^www\./, '')
   return (
     <a href={url} target="_blank" rel="noopener noreferrer nofollow" className="sc-show__link">
       {icon}
