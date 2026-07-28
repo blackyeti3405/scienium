@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
 
@@ -93,7 +93,7 @@ let lab: OwnedLab
 let studentUserId: string | null = null
 
 async function openVocab(page: Page) {
-  await page.goto('/literature/review')
+  await gotoFresh(page, '/literature/review')
   const openBtn = page.getByTestId('vocab-open')
   await expect(openBtn).toBeVisible({ timeout: 15000 })
   await openBtn.click()
@@ -186,7 +186,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
   // timeout (consistent with this suite's other first-network-fetch checks,
   // e.g. papers-tab.spec.ts's 20s laneChips wait).
   test('AC1: vocab-open is visible; clicking opens the panel (no navigation), then renders vocab-deck (or the empty state)', async ({ page }) => {
-    await page.goto('/literature/review')
+    await gotoFresh(page, '/literature/review')
     const openBtn = page.getByTestId('vocab-open')
     await expect(openBtn).toBeVisible({ timeout: 15000 })
     const urlBefore = page.url()
@@ -332,7 +332,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
     // A `page.request.*` call this deep into the serial run can carry a
     // stale storageState Clerk JWT (60s TTL) unless a live page navigation
     // refreshes it first — see e2e/api.ts's `refreshClerkSession` doc comment.
-    await page.goto('/literature/review')
+    await gotoFresh(page, '/literature/review')
     const deck = await getDeck(page)
     const card = deck.cards.find((c) => c.source === 'research_glossary') ?? deck.cards[0]
     expect(card).toBeDefined()
@@ -358,7 +358,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
 
   // ── AC10 ─────────────────────────────────────────────────────────────────
   test('AC10: a POST for a card whose dueAt is in the future returns 409 and leaves box/dueAt unchanged', async ({ page }) => {
-    await page.goto('/literature/review')
+    await gotoFresh(page, '/literature/review')
     const deck = await getDeck(page)
     const card = deck.cards[0]
     expect(card).toBeDefined()
@@ -380,7 +380,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
 
   // ── AC9 ──────────────────────────────────────────────────────────────────
   test('AC9: KP is once-ever and mastery-gated — mastering pays 3 KP once, 0 on a forced re-grade', async ({ page }) => {
-    await page.goto('/literature/review')
+    await gotoFresh(page, '/literature/review')
     const deck = await getDeck(page)
     const card = deck.cards.find((c) => c.source === 'paper_definition') ?? deck.cards[0]
     expect(card).toBeDefined()
@@ -433,7 +433,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
 
   // ── AC11 ─────────────────────────────────────────────────────────────────
   test('AC11: daily KP cap — mastering a further card shows vocab-cap-reached, pays 0 KP, but still advances the box', async ({ page }) => {
-    await page.goto('/literature/review')
+    await gotoFresh(page, '/literature/review')
     const deck = await getDeck(page)
     const card = deck.cards.find((c) => c.source === 'research_glossary') ?? deck.cards[0]
     expect(card).toBeDefined()
@@ -469,7 +469,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
 
   // ── AC6 + AC8 ────────────────────────────────────────────────────────────
   test('AC6 + AC8: the review UI loop schedules and persists across reload', async ({ page }) => {
-    await page.goto('/literature/review')
+    await gotoFresh(page, '/literature/review')
     const deck = await getDeck(page)
     const card = deck.cards.find((c) => c.source === 'paper_context') ?? deck.cards[deck.cards.length - 1]
     expect(card).toBeDefined()
@@ -510,7 +510,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
 
   // ── AC13 ─────────────────────────────────────────────────────────────────
   test('AC13: team-scoped — foreign paperId 404s and creates nothing; co-member sees only their own cards; a foreign cardId 404s; unauthenticated redirects', async ({ page, browser }) => {
-    await page.goto('/literature/review')
+    await gotoFresh(page, '/literature/review')
     const { PrismaClient } = await import('@prisma/client')
     const db = new PrismaClient()
     const foreignTeam = await db.team.create({

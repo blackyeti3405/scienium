@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage, uploadLogAttachment, openGateway, openLiteratureReview } from './api'
+import { api, withSeedPage, uploadLogAttachment, openGateway, openLiteratureReview, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
 
@@ -258,7 +258,7 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
   // Pressing Escape while the dialog is open dismisses it without deleting anything.
   test('AC5: pressing Escape dismisses the dialog without deleting', async ({ page }) => {
     // Fetch the current paper count via API before opening the UI.
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const resBefore = await api.get(page, '/api/papers')
     const { papers: papersBefore } = await resBefore.json()
     const countBefore = (papersBefore as Array<{ id: string }>).length
@@ -407,7 +407,7 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
   test('AC9: delete failure shows alert-variant dialog with single OK button', async ({ page }) => {
     // We'll use the failure-log path since it's easier to seed fresh.
     // Seed a new failure entry for this test.
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const seedRes = await api.post(page, '/api/failure-log', {
       data: {
         happened: `[E2E-F3-AC9-${RUN_ID}] Entry to trigger alert-variant test.`,

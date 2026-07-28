@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { gotoFresh } from './api'
 
 /**
  * NOT migrated to `createLab()` (e2e/lab.ts), on purpose: read-only smoke. See
@@ -12,7 +13,7 @@ import { test, expect } from '@playwright/test'
  * the hook's state (open editor → draft seeded → cancel).
  */
 test('settings panel renders profile + research topic via the shared hook', async ({ page }) => {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Settings' })

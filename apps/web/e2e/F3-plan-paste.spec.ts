@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api } from './api'
+import { api, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
 /**
@@ -77,7 +77,7 @@ let lab: OwnedLab
 
 /** Open the Research Plan feature panel from /lab. */
 async function openResearchPlan(page: Page) {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
   await page.getByRole('button', { name: 'Open Research Plan' }).click({ timeout: 10_000 })
   const dialog = page.getByRole('dialog', { name: 'Research Plan' })
   await expect(dialog).toBeVisible({ timeout: 5000 })
@@ -423,7 +423,7 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
     // neither ... present" scenario the criterion describes. This proves the
     // server-side guard behind that disabled-button UX is real (not merely
     // client-side theatre) and degrades cleanly, not with a 500.
-    await page.goto('/lab') // fresh session cookie before the request call
+    await gotoFresh(page, '/lab') // fresh session cookie before the request call
     const res = await api.post(page, '/api/research-plan', {
       data: { projectType: 'engineering', projectSubtype: 'robotics' },
     })

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
 /**
@@ -76,7 +76,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   // data fonts (text-sm / text-base on the student name cell, NOT pixel glyphs).
   // Toggling "Needs my attention" reduces / filters visible rows.
   test('AC1: roster readable fonts + attention filter reduces visible rows', async ({ page }) => {
-    await page.goto('/teacher')
+    await gotoFresh(page, '/teacher')
 
     // Wait for the roster to load (at least one student row must be present).
     // Each row is a Link to /teacher/student/<id>; the student name uses text-sm.
@@ -117,7 +117,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   }) => {
     if (!inScopeStudentId) throw new Error('inScopeStudentId not set — beforeAll failed')
 
-    await page.goto('/teacher')
+    await gotoFresh(page, '/teacher')
 
     // Wait for roster rows to appear.
     await expect(page.locator('a[href^="/teacher/student/"]').first()).toBeVisible({
@@ -125,7 +125,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
     })
 
     // Click the specific student row we discovered in beforeAll.
-    await page.goto(`/teacher/student/${inScopeStudentId}`)
+    await gotoFresh(page, `/teacher/student/${inScopeStudentId}`)
 
     // URL must have /teacher/student/<id>.
     await expect(page).toHaveURL(new RegExp(`/teacher/student/${inScopeStudentId}`))
@@ -153,7 +153,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   }) => {
     if (!inScopeStudentId) throw new Error('inScopeStudentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${inScopeStudentId}`)
+    await gotoFresh(page, `/teacher/student/${inScopeStudentId}`)
 
     // Click the Economy tab button.
     const economyTab = page.getByRole('button', { name: /economy/i })
@@ -178,7 +178,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   test('AC4: Buildings tab shows buildings list or explicit empty state', async ({ page }) => {
     if (!inScopeStudentId) throw new Error('inScopeStudentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${inScopeStudentId}`)
+    await gotoFresh(page, `/teacher/student/${inScopeStudentId}`)
 
     const buildingsTab = page.getByRole('button', { name: /buildings/i })
     await expect(buildingsTab).toBeVisible({ timeout: 10000 })
@@ -206,7 +206,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   }) => {
     if (!inScopeStudentId) throw new Error('inScopeStudentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${inScopeStudentId}`)
+    await gotoFresh(page, `/teacher/student/${inScopeStudentId}`)
 
     const litTab = page.getByRole('button', { name: /literature/i })
     await expect(litTab).toBeVisible({ timeout: 10000 })
@@ -233,7 +233,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   test('AC6: Logs, Experiments, Showcase, and Activity are distinct tabs', async ({ page }) => {
     if (!inScopeStudentId) throw new Error('inScopeStudentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${inScopeStudentId}`)
+    await gotoFresh(page, `/teacher/student/${inScopeStudentId}`)
 
     // Wait for tab strip to render.
     await expect(page.getByRole('button', { name: /identity/i })).toBeVisible({ timeout: 10000 })
@@ -276,7 +276,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   // Uses the teacher's own authenticated page (api.*) to prove it is a scoping
   // failure (not an auth failure), and the endpoint is GET-only.
   test('AC7: IDOR guard — out-of-scope student ID returns HTTP 404', async ({ page }) => {
-    await page.goto('/teacher') // fresh session cookie before api.* calls
+    await gotoFresh(page, '/teacher') // fresh session cookie before api.* calls
 
     // A syntactically valid but non-existent/out-of-scope CUID.
     const fakeId = 'cl000000000000000000000000'
@@ -301,7 +301,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   // separately in the pipeline). We assert the teacher landing page loads
   // correctly to confirm the overall integration is healthy.
   test('AC8: gates pass — teacher dashboard loads without error', async ({ page }) => {
-    await page.goto('/teacher')
+    await gotoFresh(page, '/teacher')
     await expect(page).toHaveURL(/\/teacher/)
     // The page renders the Classes section heading and the Roster section heading.
     await expect(page.getByText('Classes')).toBeVisible({ timeout: 10000 })

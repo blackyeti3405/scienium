@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withRateLimitRetry, openLiteratureReview } from './api'
+import { api, withRateLimitRetry, openLiteratureReview, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
 
@@ -362,7 +362,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   }) => {
     const paper = await seedFreshPaper()
     // Navigate first to establish session cookies before any page.request call.
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await requestWithRateLimitRetry(() =>
       api.post(page, `/api/papers/${paper.id}/quiz/retry`, {
         data: { sessionId: 'not-a-real-session-id', answers: [{ questionId: 'q1', response: 'x' }] },
@@ -379,7 +379,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
     page,
   }) => {
     const paper = await seedFreshPaper()
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
 
     // Ungraded session: generate a fresh quiz (POST /quiz) but never grade it.
     const genRes = await requestWithRateLimitRetry(() => api.post(page, `/api/papers/${paper.id}/quiz`))

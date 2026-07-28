@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage, uploadLogAttachment } from './api'
+import { api, withSeedPage, uploadLogAttachment, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
 /**
@@ -100,7 +100,7 @@ async function seedEntry(page: Page, body: string): Promise<SeededEntry> {
  * how many duplicate fetches are in flight or in what order they land.
  */
 async function openProjectLog(page: Page) {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
   await page.getByRole('button', { name: 'Open Operations Hub' }).waitFor({ state: 'attached' })
   // JS click bypasses the isometric z-index overlap that blocks Playwright's
   // coordinate-based pointer events (same workaround as F2/F3 specs).
@@ -371,7 +371,7 @@ test.describe('F6 — Project-Log log↔log linking', () => {
     page,
   }) => {
     if (!entryA || !entryC) throw new Error('Seeded entries not set')
-    await page.goto('/lab') // fresh session cookie before page.request calls
+    await gotoFresh(page, '/lab') // fresh session cookie before page.request calls
 
     // Link A -> C via the API directly (equivalent to the UI flow, faster to set up).
     const linkRes = await api.post(page, `/api/project-log/${entryA.id}/references`, {

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, openGateway } from './api'
+import { api, openGateway, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
 /**
@@ -97,14 +97,14 @@ test.describe('Rubric self-assessment (F1)', () => {
   test('AC1: /fair-hub/rubric renders a self-check surface with no TODO placeholder', async ({
     page,
   }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     await expect(page.getByRole('heading', { name: 'ISEF Rubric' })).toBeVisible({ timeout: 8000 })
     await expect(page.getByText('TODO', { exact: false })).toHaveCount(0)
   })
 
   // ── AC2 ───────────────────────────────────────────────────────────────────
   test('AC2: a "Judge-readiness" total out of 100 is visible', async ({ page }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const readiness = page.getByTestId('judge-readiness')
     await expect(readiness).toBeVisible({ timeout: 8000 })
     await expect(readiness).toContainText(/\/\s*100/)
@@ -112,7 +112,7 @@ test.describe('Rubric self-assessment (F1)', () => {
 
   // ── AC3 ───────────────────────────────────────────────────────────────────
   test('AC3: a scoreable "Research Question" card shows its 10-pt max', async ({ page }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
     await expect(card).toBeVisible({ timeout: 8000 })
     await expect(card).toContainText('Research Question')
@@ -121,7 +121,7 @@ test.describe('Rubric self-assessment (F1)', () => {
 
   // ── AC4 ───────────────────────────────────────────────────────────────────
   test('AC4: saving a score shows a saved indicator without a full reload', async ({ page }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const urlBefore = page.url()
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
     await expect(card).toBeVisible({ timeout: 8000 })
@@ -136,7 +136,7 @@ test.describe('Rubric self-assessment (F1)', () => {
   test('AC5: after saving, the Judge-readiness total reflects the new score without a reload', async ({
     page,
   }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const urlBefore = page.url()
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
     await expect(card).toBeVisible({ timeout: 8000 })
@@ -158,7 +158,7 @@ test.describe('Rubric self-assessment (F1)', () => {
 
   // ── AC6 ───────────────────────────────────────────────────────────────────
   test('AC6: reloading the page shows the saved score persisted from the DB', async ({ page }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
     await expect(card).toBeVisible({ timeout: 8000 })
 
@@ -173,7 +173,7 @@ test.describe('Rubric self-assessment (F1)', () => {
   // ── AC7 ───────────────────────────────────────────────────────────────────
   test('AC7: a saved note persists across reload', async ({ page }) => {
     const noteText = `E2E note ${Date.now()}`
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
     await expect(card).toBeVisible({ timeout: 8000 })
 
@@ -195,7 +195,7 @@ test.describe('Rubric self-assessment (F1)', () => {
 
   // ── AC8 ───────────────────────────────────────────────────────────────────
   test('AC8: a score above the criterion max clamps to the max after save', async ({ page }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
     await expect(card).toBeVisible({ timeout: 8000 })
 
@@ -212,7 +212,7 @@ test.describe('Rubric self-assessment (F1)', () => {
   test('AC9: toggling to Engineering changes criterion I\'s title to "Research Problem"', async ({
     page,
   }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const scienceCard = page.locator('[data-criterion-key="science:I"]')
     await expect(scienceCard).toBeVisible({ timeout: 8000 })
     await expect(scienceCard).toContainText('Research Question')
@@ -248,7 +248,7 @@ test.describe('Rubric self-assessment (F1)', () => {
     // the route (a 200 whose body is "<!DOCTYPE ..." instead of JSON — not a
     // route bug). Waiting on judge-readiness confirms the client-side session
     // refresh has actually landed before firing the API request below.
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 8000 })
 
     const res = await api.get(page, '/api/rubric/self-assessment?track=science')
@@ -261,7 +261,7 @@ test.describe('Rubric self-assessment (F1)', () => {
   // ── AC12 ──────────────────────────────────────────────────────────────────
   test('AC12: PUT persists a score that a subsequent team-scoped GET reflects', async ({ page }) => {
     // Same session-refresh rationale as AC11 — see comment there.
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 8000 })
 
     const putRes = await api.put(page, '/api/rubric/self-assessment', {

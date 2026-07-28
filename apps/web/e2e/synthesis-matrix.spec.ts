@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withRateLimitRetry } from './api'
+import { api, withRateLimitRetry, gotoFresh } from './api'
 import { createLab, seedPapers, type OwnedLab } from './lab'
 import { e2eDb } from './db'
 
@@ -95,13 +95,13 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   async function openSynthesisPanel(page: Page) {
-    await page.goto('/literature/review')
+    await gotoFresh(page, '/literature/review')
     await page.getByTestId('synthesis-open').click()
   }
 
   // ── AC1 ──────────────────────────────────────────────────────────────────
   test('AC1: the Synthesis button opens the panel within 2s', async ({ page }) => {
-    await page.goto('/literature/review')
+    await gotoFresh(page, '/literature/review')
     const btn = page.getByTestId('synthesis-open')
     await expect(btn).toBeVisible()
     const start = Date.now()
@@ -381,7 +381,7 @@ test.describe('Synthesis Matrix (Literature Review)', () => {
 
   // ── AC12 ─────────────────────────────────────────────────────────────────
   test('AC12: team-scoped (IDOR) — foreign matrix id 404s; a foreign paperId on create 400s and creates nothing', async ({ page }) => {
-    await page.goto('/literature/review')
+    await gotoFresh(page, '/literature/review')
 
     const getRes = await api.get(page, `/api/literature/synthesis/${foreignMatrixId}`)
     expect(getRes.status()).toBe(404)

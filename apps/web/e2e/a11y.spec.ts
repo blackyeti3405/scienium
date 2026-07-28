@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { withLab } from './lab'
 import { e2eDb } from './db'
+import { gotoFresh } from './api'
 
 /**
  * Accessibility smoke (A9) — the automated floor, not a full audit:
@@ -29,7 +30,7 @@ async function scanCritical(page: Page) {
 
 test.describe('accessibility floor (A9)', () => {
   test('lab scene has no critical axe violations', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: 'Open Operations Hub' }).waitFor({ state: 'attached' })
     const critical = await scanCritical(page)
     expect(
@@ -38,7 +39,7 @@ test.describe('accessibility floor (A9)', () => {
   })
 
   test('keyboard flow: open a gateway, trapped focus, Escape restores', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const gateway = page.getByRole('button', { name: 'Open Operations Hub' })
     await gateway.waitFor({ state: 'attached' })
 
@@ -114,7 +115,7 @@ test.describe('accessibility floor (A9)', () => {
         },
       })
 
-      await page.goto('/discovery')
+      await gotoFresh(page, '/discovery')
       await page.getByRole('button', { name: /Continue Exploring|Start Exploring/ }).click()
 
       const controls = page.locator('svg[aria-label="Discovery tree"] g[role="button"]')

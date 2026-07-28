@@ -49,6 +49,7 @@ import {
   setE2eLabCredits,
 } from './db'
 import { createLab, type OwnedLab } from './lab'
+import { gotoFresh } from './api'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -104,7 +105,7 @@ test.describe('upgrades feature', () => {
     // Helper: place the Robotics Bay on the plot via the shop UI (used in AC4/AC5/AC6).
     // After this helper the building is on the plot at cell (DROP_GX, DROP_GY).
     async function placeRoboticsBay(page: Page) {
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
       await page.getByRole('button', { name: 'Open buildings shop' }).click()
       const card = page
         .locator('.shop-card')
@@ -162,7 +163,7 @@ test.describe('upgrades feature', () => {
     // AC10: gateways open their feature on regular click (no Sell/Upgrade menu) and
     //       cannot be deleted in arrange mode.
     test('AC10 — a gateway opens its feature (no menu) and shows no Delete in arrange', async ({ page }) => {
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
 
       // Regular click on a gateway opens its feature panel — NOT the building menu.
       await page.getByRole('button', { name: 'Open Operations Hub' }).click()
@@ -192,7 +193,7 @@ test.describe('upgrades feature', () => {
       // Ensure a clean L1 building with known funds.
       await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 1, lab.teamId)
       await setE2eLabCredits(30, lab.teamId)
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
 
       const kp0 = await readStat(page, 'KP')
       const lc0 = await readStat(page, 'LC')
@@ -236,7 +237,7 @@ test.describe('upgrades feature', () => {
     test('AC6 — after reload, upgraded level persists; menu shows next level cost', async ({
       page,
     }) => {
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
 
       await openBuildingMenu(page)
       const upgradeBtn = page.locator('.plot-menu__upgrade')
@@ -250,7 +251,7 @@ test.describe('upgrades feature', () => {
     test('a tier upgrade (→L4) charges LC as well as KP', async ({ page }) => {
       await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 3, lab.teamId)
       await setE2eLabCredits(30, lab.teamId)
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
 
       const lc0 = await readStat(page, 'LC')
       await openBuildingMenu(page)
@@ -265,7 +266,7 @@ test.describe('upgrades feature', () => {
 
     // The ARRANGE-mode Delete action removes a placed economy building (90% refund).
     test('Arrange mode Delete removes a placed economy building', async ({ page }) => {
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
 
       await page.getByRole('button', { name: 'Arrange buildings' }).click()
       await page
@@ -293,7 +294,7 @@ test.describe('upgrades feature', () => {
       await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 14, lab.teamId)
       await setE2eLabCredits(0, lab.teamId)
 
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
 
       // Try to upgrade via API directly (authenticated page context).
       const response = await page.evaluate(async (key: string) => {
@@ -317,7 +318,7 @@ test.describe('upgrades feature', () => {
     test('AC12 — activity feed records building_upgraded entry after successful upgrade', async ({
       page,
     }) => {
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
 
       // Open the building menu and upgrade (building is below max at this point).
       await openBuildingMenu(page)
@@ -349,7 +350,7 @@ test.describe('upgrades feature', () => {
       // Set the building to max level via DB.
       await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 15, lab.teamId)
 
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
 
       // Open the building menu.
       await openBuildingMenu(page)
@@ -390,7 +391,7 @@ test.describe('upgrades feature', () => {
       // Set building to level 4 via DB.
       await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 4, lab.teamId)
 
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
 
       // Open the building menu.
       await openBuildingMenu(page)
@@ -427,7 +428,7 @@ test.describe('upgrades feature', () => {
     test('AC1 — first log of the day grants the team +1 LC (DB-verified)', async ({
       page,
     }) => {
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
 
       // Read initial LC.
       const lcStat = page.locator('.status-strip__stat').filter({ hasText: 'LC' })
@@ -457,7 +458,7 @@ test.describe('upgrades feature', () => {
     test('AC2 — second log the same day does not change LC balance (daily cap enforced)', async ({
       page,
     }) => {
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
 
       // Get current LC from DB (after AC1 granted 1).
       const lcBefore = await getE2eLabCredits(lab.teamId)

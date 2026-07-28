@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api, withRateLimitRetry, openLiteratureReview } from './api'
+import { api, withRateLimitRetry, openLiteratureReview, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
 
@@ -351,7 +351,7 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
   test('AC11: team-scoped IDOR — POST/GET on a foreign/fake paper id 404s with no verdict data in the body', async ({
     page,
   }) => {
-    await page.goto('/lab') // establish a live, refreshable Clerk session before any page.request call
+    await gotoFresh(page, '/lab') // establish a live, refreshable Clerk session before any page.request call
     const fakeId = 'clxxxxxxxxxxxxxxxxxxxxxxx'
 
     const postRes = await api.post(page, `/api/papers/${fakeId}/explain`, {
@@ -421,7 +421,7 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
     page,
   }) => {
     const paper = await seedFreshPaper()
-    await page.goto('/lab') // live session for the direct API calls below
+    await gotoFresh(page, '/lab') // live session for the direct API calls below
 
     // Generate + grade a quiz (E2E fixture always fails the first grade —
     // see e2e/F11-quiz-retry.spec.ts) so hasPastResults is true and the
@@ -474,7 +474,7 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
     page,
   }) => {
     const paper = await seedFreshPaper()
-    await page.goto('/lab') // confirm the route exists/is reachable under a real session first
+    await gotoFresh(page, '/lab') // confirm the route exists/is reachable under a real session first
 
     const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
     // storageState MUST be explicitly cleared: newContext otherwise inherits

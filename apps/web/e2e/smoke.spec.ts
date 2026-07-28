@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { gotoFresh } from './api'
 
 /**
  * NOT migrated to `createLab()` (e2e/lab.ts), on purpose: this file only READS.
@@ -15,7 +16,7 @@ import { test, expect } from '@playwright/test'
  */
 test('authenticated leader lands on the lab scene', async ({ page }) => {
   // The post-sign-in landing (/dashboard) redirects to the lab — the home surface.
-  await page.goto('/dashboard')
+  await gotoFresh(page, '/dashboard')
 
   await expect(page).toHaveURL(/\/lab/)
   await expect(page).toHaveTitle(/scienium/)

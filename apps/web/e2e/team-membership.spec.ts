@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
 import { e2eDb, e2eTeamId } from './db'
 
 /**
@@ -27,7 +27,7 @@ import { e2eDb, e2eTeamId } from './db'
  */
 
 async function openTeamPanel(page: import('@playwright/test').Page) {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
   // The status strip's team-name button is the only way in.
   await page.locator('button.status-strip__team--button').click()
   // `exact` matters: `getByText` is a case-insensitive SUBSTRING match, and the

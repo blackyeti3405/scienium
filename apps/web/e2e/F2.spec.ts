@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
 /**
@@ -45,7 +45,7 @@ const MY_ANSWER = 'We should check if ambient light interfered with the sensor r
 
 /** Navigate to the Operations Hub and switch to the Failure Log tab. */
 async function openFailureLog(page: Page) {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
   await page.getByRole('button', { name: 'Open Operations Hub' }).click()
   await page.getByRole('button', { name: /Failure Log/i }).click()
 }
@@ -210,7 +210,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
   test('AC6: After a full page reload, the question and saved answer are still shown (DB persisted)', async ({
     page,
   }) => {
-    await page.goto('/lab') // navigate away first
+    await gotoFresh(page, '/lab') // navigate away first
     await openFailureLog(page)
 
     const card = seedCard(page)
@@ -242,7 +242,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
   test('AC8: POST /api/failure-log/{id}/followup with a cross-team id returns 404', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.post(page, '/api/failure-log/clxxxxxxxxxxxxxxxxxxxxxxx/followup')
     expect(res.status()).toBe(404)
     const json = await res.json()
@@ -253,7 +253,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
   test('AC9: A second POST on an entry with an existing follow-up returns 409', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.post(page, `/api/failure-log/${seededId}/followup`)
     expect(res.status()).toBe(409)
     const json = await res.json()
@@ -278,7 +278,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
     // 4. Clean up all seeded entries (cascade-delete handles child followup rows).
     const DAILY_LIMIT = 10
 
-    await page.goto('/lab') // fresh session cookie before page.request calls
+    await gotoFresh(page, '/lab') // fresh session cookie before page.request calls
 
     // Count followups used today by fetching all entries and counting those with
     // a followup created on or after local midnight.

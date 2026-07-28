@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
 /**
@@ -107,7 +107,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────
   test('AC1: clicking the bell opens the notifications panel within 2s', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const bell = page.getByRole('button', { name: /^Notifications/ })
     await expect(bell).toBeVisible()
     await bell.click()
@@ -116,7 +116,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
   // ── AC2 ──────────────────────────────────────────────────────────────────────
   test('AC2: seeded teacher_feedback item shows a "Feedback" label chip', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: /^Notifications/ }).click()
     const panel = page.locator('.notif-bell__panel')
     await expect(panel).toBeVisible()
@@ -128,7 +128,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
   // ── AC3 ──────────────────────────────────────────────────────────────────────
   test('AC3: seeded teacher_feedback item title is prefixed by the 💬 icon', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: /^Notifications/ }).click()
     const panel = page.locator('.notif-bell__panel')
     await expect(panel).toBeVisible()
@@ -141,7 +141,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
   test('AC4: a fair_deadline item, if present, shows "Deadline" chip + 📅 icon', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.get(page, '/api/notifications')
     expect(res.status()).toBe(200)
     const { items } = await res.json()
@@ -166,7 +166,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
   // ── AC5 ──────────────────────────────────────────────────────────────────────
   test('AC5: an urgency item, if present, shows "Nudge" chip + ⚠ icon', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.get(page, '/api/notifications')
     expect(res.status()).toBe(200)
     const { items } = await res.json()
@@ -192,7 +192,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
   // openItem's linkUrl navigation fires regardless of prior read state, so this
   // assertion holds whether or not an earlier test already read the seeded item.
   test('AC6: clicking the seeded item navigates to /lab?panel=feedback', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: /^Notifications/ }).click()
     const panel = page.locator('.notif-bell__panel')
     await expect(panel).toBeVisible()
@@ -205,7 +205,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     page,
     browser,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
 
     // Ensure there is at least one unread item to click: if the seeded item was
     // already read by AC6 above (serial order), re-seed a second teacher_feedback
@@ -227,7 +227,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     if (!unreadItem) {
       await withSeedPage(browser, 'teacher', (p) => seedExtraFeedback(p, '(AC7 re-seed)'))
 
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
       const res2 = await api.get(page, '/api/notifications')
       const json2 = await res2.json()
       unreadItem = (
@@ -244,7 +244,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
     expect(unreadItem, 'expected at least one unread notification to exist for AC7').toBeTruthy()
 
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     // Read the true unread count from the API (the badge caps its display at
     // "9+", so the DOM text alone cannot be trusted to compute an exact N-1).
     const countRes = await api.get(page, '/api/notifications')
@@ -293,7 +293,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     page,
     browser,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
 
     // Ensure there is at least one unread item so "Mark all read" is present and
     // meaningfully exercised; re-seed if the shared seeded item is already read.
@@ -305,7 +305,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     if (!hasUnread) {
       await withSeedPage(browser, 'teacher', (p) => seedExtraFeedback(p, '(AC8 re-seed)'))
 
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
       const res2 = await api.get(page, '/api/notifications')
       const json2 = await res2.json()
       extraSeededId = (
@@ -313,7 +313,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
       ).find((n) => n.readAt === null && n.body?.includes('AC8 re-seed'))?.id ?? null
     }
 
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: /^Notifications/ }).click()
     const panel = page.locator('.notif-bell__panel')
     await expect(panel).toBeVisible()
@@ -334,7 +334,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
   test('AC9: seeded item label chip uses pixel chrome (font-pixel, uppercase)', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: /^Notifications/ }).click()
     const panel = page.locator('.notif-bell__panel')
     await expect(panel).toBeVisible()
@@ -353,7 +353,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
   test('AC10: GET /api/notifications only returns the five canonical kind values', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.get(page, '/api/notifications')
     expect(res.status()).toBe(200)
     const json = await res.json()

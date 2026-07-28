@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { withSeedPage } from './api'
+import { withSeedPage, gotoFresh } from './api'
 import { e2eDb } from './db'
 
 /**
@@ -25,7 +25,7 @@ import { e2eDb } from './db'
  */
 
 async function openSettings(page: import('@playwright/test').Page) {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
   await page.getByRole('button', { name: 'Settings' }).click()
   await expect(page.getByTestId('settings-data-section')).toBeVisible()
 }

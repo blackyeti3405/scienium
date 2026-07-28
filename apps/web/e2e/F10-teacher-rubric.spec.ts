@@ -6,7 +6,7 @@ import {
   type Page,
 } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api, registerPageRole, withSeedPage } from './api'
+import { api, registerPageRole, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
 /**
@@ -59,7 +59,7 @@ let teamId: string | null = null
 let studentId: string | null = null
 
 async function refreshTeacherSession(page: Page) {
-  await page.goto('/teacher')
+  await gotoFresh(page, '/teacher')
   await expect(page.getByText('Class Roster')).toBeVisible({ timeout: 20_000 })
 }
 
@@ -79,7 +79,7 @@ async function refreshTeacherSession(page: Page) {
  */
 async function seedStudentScore(browser: Browser, score: number) {
   await withSeedPage(browser, 'leader', async (page) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 20_000 })
     const res = await api.put(page, '/api/rubric/self-assessment', {
       data: { track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score },
@@ -143,7 +143,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -156,7 +156,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   test('AC2: the card shows a low/mid/high anchor description and a talking point', async ({ page }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -173,7 +173,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   test('AC3: saving a teacher score of 7 shows a saved badge without a full page reload', async ({ page }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -198,7 +198,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   test('AC4: after saving 7, the teacher-total header is at least 7 / 100 without a reload', async ({ page }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -231,7 +231,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -258,7 +258,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
     const noteText = `E2E teacher note ${Date.now()}`
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -285,7 +285,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -317,7 +317,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     // Seed a student self-check score of 9 via the leader session for the SAME team.
     await seedStudentScore(browser, 9)
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -347,7 +347,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const scienceCard = page.locator('[data-criterion-key="science:I"]')

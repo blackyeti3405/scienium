@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api } from './api'
+import { api, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { dismissHome, openDiscovery, resetTree, treeHasExternalId } from './discovery-helpers'
 
@@ -81,7 +81,7 @@ test.describe('Feature — disco-article-sources (article Discovery source type)
   test.beforeEach(async ({ page }) => {
     // resetTree makes api.* calls, which refresh the Clerk token via the page's
     // live clerk-js — a never-navigated page has no clerk-js, so navigate first.
-    await page.goto('/discovery')
+    await gotoFresh(page, '/discovery')
     await resetTree(page)
   })
 
@@ -279,7 +279,7 @@ test.describe('Feature — disco-article-sources (article Discovery source type)
   }) => {
     // Navigate first so a live page exists for context (not strictly required for
     // an anonymous request context, but keeps this test's setup consistent).
-    await page.goto('/discovery')
+    await gotoFresh(page, '/discovery')
 
     const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
     // storageState MUST be explicitly cleared — newContext otherwise inherits the

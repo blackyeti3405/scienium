@@ -1,6 +1,7 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
+import { gotoFresh } from './api'
 
 /**
  * F10 — "Momentum" weekly recap card on the lab.
@@ -60,7 +61,7 @@ interface MomentumResponse {
 
 /** Clear the dismiss key for the current origin, then reload so /lab re-mounts fresh. */
 async function clearDismissAndReload(page: import('@playwright/test').Page): Promise<void> {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
   await page.evaluate((key) => window.localStorage.removeItem(key), DISMISS_KEY)
   await page.reload()
 }
@@ -122,7 +123,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
     const context = await browser.newContext({ baseURL: BASE_URL })
     try {
       const page = await context.newPage()
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
       await page.evaluate((key) => window.localStorage.removeItem(key), DISMISS_KEY)
     } catch {
       // Non-fatal cleanup — a leftover key only affects a future run's AC1
@@ -291,7 +292,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
   test('AC8: GET /api/team/momentum (signed in) returns 200 with the full shape, windowDays 7', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const momentum = (await page.evaluate(async () => {
       const res = await fetch('/api/team/momentum')
       return { status: res.status, body: await res.json() }

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
 /**
@@ -77,7 +77,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
   test('AC1: FEEDBACK FAB is visible on /lab with aria-label and FEEDBACK label', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const fab = page.getByRole('button', { name: 'Open teacher feedback' })
     await expect(fab).toBeVisible()
     await expect(fab).toContainText('FEEDBACK')
@@ -85,7 +85,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
 
   // ── AC2 ──────────────────────────────────────────────────────────────────────
   test('AC2: clicking FEEDBACK FAB opens Teacher Feedback dialog within 2s', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: 'Open teacher feedback' }).click()
     const dialog = page.getByRole('dialog', { name: 'Teacher Feedback' })
     await expect(dialog).toBeVisible({ timeout: 2000 })
@@ -97,7 +97,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
     page,
   }) => {
     // seededId is guaranteed by beforeAll; if seeding failed the suite already errors.
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: 'Open teacher feedback' }).click()
     const dialog = page.getByRole('dialog', { name: 'Teacher Feedback' })
     await expect(dialog).toBeVisible()
@@ -108,7 +108,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
   test('AC4: each note shows teacher name and a valid contextual target label', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     // Fetch to get the teacher name for the seeded item.
     const res = await api.get(page, '/api/team/feedback')
     const json = await res.json()
@@ -135,7 +135,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
   }) => {
     // Reset the seeded item to unresolved so this test always starts with data to act on.
     // Navigate first so the session cookies are live before making API calls.
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     if (seededId) {
       await api.patch(page, '/api/team/feedback', {
         data: { id: seededId, resolved: false },
@@ -143,7 +143,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
     }
 
     // Reload to pick up the reset state, then open the panel.
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: 'Open teacher feedback' }).click()
     const dialog = page.getByRole('dialog', { name: 'Teacher Feedback' })
     await expect(dialog).toBeVisible()
@@ -167,7 +167,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
 
   // ── AC6 ──────────────────────────────────────────────────────────────────────
   test('AC6: badge unread count is not visible after all notes are resolved', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.get(page, '/api/team/feedback')
     const json = await res.json()
     const unresolved = json.items.filter((i: { resolved: boolean }) => !i.resolved)
@@ -194,7 +194,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
   // ── AC7 ──────────────────────────────────────────────────────────────────────
   test('AC7: resolved state persists after /lab reload (written to DB)', async ({ page }) => {
     // Navigate first so session cookies are live before making API calls.
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
 
     // Reset the seeded item to unresolved so this test always has something to resolve.
     if (seededId) {
@@ -204,7 +204,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
     }
 
     // Reload to pick up the reset state.
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.get(page, '/api/team/feedback')
     const json = await res.json()
     // Prefer the seeded item (by id); fall back to any unresolved item.
@@ -223,7 +223,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
     })
 
     // Full reload, then open panel.
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: 'Open teacher feedback' }).click()
     const dialog = page.getByRole('dialog', { name: 'Teacher Feedback' })
     await expect(dialog).toBeVisible()
@@ -237,14 +237,14 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
 
   // ── AC8 ──────────────────────────────────────────────────────────────────────
   test('AC8: /lab?panel=feedback auto-opens Teacher Feedback dialog on load', async ({ page }) => {
-    await page.goto('/lab?panel=feedback')
+    await gotoFresh(page, '/lab?panel=feedback')
     const dialog = page.getByRole('dialog', { name: 'Teacher Feedback' })
     await expect(dialog).toBeVisible({ timeout: 3000 })
   })
 
   // ── AC9 ──────────────────────────────────────────────────────────────────────
   test('AC9: empty state text appears when the team has no feedback', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.get(page, '/api/team/feedback')
     const json = await res.json()
 
@@ -264,7 +264,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
   test('AC10: PATCH with an id from another team returns updated:0 (IDOR guard)', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     // A fake / cross-team id — updateMany's teamId guard means count is always 0.
     const res = await api.patch(page, '/api/team/feedback', {
       data: { id: 'clxxxxxxxxxxxxxxxxxxxxxxx', resolved: true },
@@ -279,7 +279,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
   test('AC11: GET /api/team/feedback returns 200 + items array for authenticated user', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.get(page, '/api/team/feedback')
     expect(res.status()).toBe(200)
     const json = await res.json()
@@ -304,7 +304,7 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
   test('AC12: panel matches pixel aesthetic — font-pixel chrome, dark bg, gold FAB', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
 
     // FEEDBACK FAB carries the font-pixel class (chrome rule).
     const fab = page.getByRole('button', { name: 'Open teacher feedback' })

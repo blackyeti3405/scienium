@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api } from './api'
+import { api, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { dismissHome, openDiscovery } from './discovery-helpers'
 
@@ -223,7 +223,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     // The tree SVG renders only for a NON-empty tree (DiscoveryTree shows an
     // empty-state placeholder at nodes.length === 0), so seed a root first —
     // otherwise this asserts against ambient tree state that a fresh fixture lacks.
-    await page.goto('/discovery')
+    await gotoFresh(page, '/discovery')
     const nodeId = await seedRoot(page, seedTitle('tree-view'))
     createdNodeIds.push(nodeId)
     await page.reload() // settle the seeded node past the mount-time hydrate race
@@ -244,7 +244,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     // it (per F4.spec.ts:518 / the Clerk-JWT-expiry convention, and MEMORY.md's
     // "Scienium E2E conventions" note — this applies even to a test's FIRST
     // page.request, not just ones late in the test body).
-    await page.goto('/discovery')
+    await gotoFresh(page, '/discovery')
 
     const nodeId = await seedRoot(page, seedTitle('unmarked'))
     createdNodeIds.push(nodeId)
@@ -266,7 +266,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
 
   // ── AC4 ──────────────────────────────────────────────────────────────────────
   test('AC4: clicking a swatch cycles it to "high" (green circle) with a 200 PATCH', async ({ page }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const nodeId = await seedRoot(page, seedTitle('cycle-high'))
     createdNodeIds.push(nodeId)
 
@@ -305,7 +305,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC5: clicking the same swatch again cycles it to "mid" (orange triangle), non-color shape differs from high', async ({
     page,
   }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const nodeId = await seedRoot(page, seedTitle('cycle-mid'))
     createdNodeIds.push(nodeId)
     // Seed straight to "high" (the PATCH contract AC4 already exercises live)
@@ -345,7 +345,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC6: a third click cycles it to "low" (red square), visibly distinct from the orange mid state', async ({
     page,
   }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const nodeId = await seedRoot(page, seedTitle('cycle-low'))
     createdNodeIds.push(nodeId)
     // Seed straight to "mid" (the none->high->mid transitions are AC4/AC5's
@@ -384,7 +384,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC7: after marking a node "high" and reloading, the swatch still reads data-interest="high" (DB-persisted)', async ({
     page,
   }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const nodeId = await seedRoot(page, seedTitle('persist-high'))
     createdNodeIds.push(nodeId)
     await seedInterest(page, nodeId, 'high')
@@ -412,7 +412,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     // full reload — measured at ~29s of the default 30s budget on a clean
     // tree, so any dev-mode compile cost tips it over. Give it real headroom.
     test.slow()
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const highId = await seedRoot(page, seedTitle('tier-high'))
     const midId = await seedRoot(page, seedTitle('tier-mid'))
     const lowId = await seedRoot(page, seedTitle('tier-low'))
@@ -445,7 +445,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC9: within the "high" tier, rows are ordered by ascending tree index (tree 1 above tree 2)', async ({
     page,
   }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     // Two SEPARATE trees (each its own root), each with a high-marked node.
     const tree1RootId = await seedRoot(page, seedTitle('tree1-root'))
     const tree2RootId = await seedRoot(page, seedTitle('tree2-root'))
@@ -476,12 +476,12 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
 
   // ── AC10 ─────────────────────────────────────────────────────────────────────
   test('AC10: GET /api/discovery/tree includes the marked node\'s interestLevel: "high"', async ({ page }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const nodeId = await seedRoot(page, seedTitle('get-serializer'))
     createdNodeIds.push(nodeId)
     await seedInterest(page, nodeId, 'high')
 
-    await page.goto('/discovery') // re-navigate: refresh the JWT again before the assertion GET
+    await gotoFresh(page, '/discovery') // re-navigate: refresh the JWT again before the assertion GET
     const res = await api.get(page, '/api/discovery/tree')
     expect(res.status()).toBe(200)
     const body = await res.json()
@@ -492,7 +492,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
 
   // ── AC11 ─────────────────────────────────────────────────────────────────────
   test('AC11: PATCH on a foreign/fake node id returns 404 (team-scoped IDOR guard)', async ({ page }) => {
-    await page.goto('/discovery')
+    await gotoFresh(page, '/discovery')
     const res = await api.patch(page, '/api/discovery/tree/clxxxxxxxxxxxxxxxxxxxxxxx', {
       data: { interestLevel: 'high' },
     })
@@ -501,11 +501,11 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
 
   // ── AC12 ─────────────────────────────────────────────────────────────────────
   test('AC12: PATCH with an invalid interestLevel value returns 400 (zod enum rejects it)', async ({ page }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const nodeId = await seedRoot(page, seedTitle('invalid-body'))
     createdNodeIds.push(nodeId)
 
-    await page.goto('/discovery') // re-navigate: refresh the JWT again before the assertion PATCH
+    await gotoFresh(page, '/discovery') // re-navigate: refresh the JWT again before the assertion PATCH
     const res = await api.patch(page, `/api/discovery/tree/${nodeId}`, {
       data: { interestLevel: 'purple' },
     })
@@ -530,7 +530,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC14: clicking "New tree" then opening a source creates a new root; root count increases by exactly 1', async ({
     page,
   }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     // Ensure at least one existing root/tree is present before the flow.
     const existingRootId = await seedRoot(page, seedTitle('pre-existing-root'))
     createdNodeIds.push(existingRootId)
@@ -577,7 +577,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC15: after the new-tree flow, the topic list shows the new topic under a greater tree index', async ({
     page,
   }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     // Rebuild the AC14 scenario end-to-end within this test so it stands alone
     // (its own root/tree, marked "high" so it lands in a single, easy-to-scope
     // tier section for the assertion).

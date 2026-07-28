@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest, type Page, type Locator } from '@playwright/test'
-import { api } from './api'
+import { api, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { dismissHome, openDiscovery, resetTree, treeHasExternalId } from './discovery-helpers'
 
@@ -172,7 +172,7 @@ test.describe('Feature A — Papers tab', () => {
     // live clerk-js. A never-navigated page (about:blank) has no clerk-js, so the
     // request would ride the frozen storageState token, 307 to /sign-in, and the
     // reset would never confirm. Navigate first so the token is refreshable.
-    await page.goto('/discovery')
+    await gotoFresh(page, '/discovery')
     await resetTree(page)
   })
 
@@ -654,7 +654,7 @@ test.describe('Feature — disco-pubmed-citations (PubMed cites/cited-by via Ope
   test.describe.configure({ mode: 'serial' })
 
   test.beforeEach(async ({ page }) => {
-    await page.goto('/discovery')
+    await gotoFresh(page, '/discovery')
     await resetTree(page)
   })
 

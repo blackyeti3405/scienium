@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
 /**
@@ -53,7 +53,7 @@ const RUN_ID = Date.now()
 /** Open the Operations Hub feature panel from /lab and switch to the "Study
  *  with Vega" tab. */
 async function openVegaTab(page: Page) {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
   await page.getByRole('button', { name: 'Open Operations Hub' }).click({ timeout: 10_000 })
   await expect(page.getByRole('dialog', { name: 'Operations Hub' })).toBeVisible({ timeout: 5000 })
   await page.getByTestId('vega-tab').click()
@@ -237,7 +237,7 @@ test.describe('F18 — Study with Vega', () => {
 
   // ── AC8 ──────────────────────────────────────────────────────────────────
   test('AC8: a message over 8000 chars is rejected 400 before reaching Claude', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.post(page, '/api/ops/vega-study', {
       data: { message: 'x'.repeat(8001) },
     })
@@ -249,7 +249,7 @@ test.describe('F18 — Study with Vega', () => {
   test('AC8b: a client-supplied messages array is rejected — the server owns the thread', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     // The old injection vector: sending a full history (with fabricated assistant
     // turns). The route now accepts ONLY { message }, so a messages array is
     // rejected before any Claude call — a client cannot seed the persisted context.

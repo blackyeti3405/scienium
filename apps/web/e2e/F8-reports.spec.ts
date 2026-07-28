@@ -1,6 +1,6 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
 
 /**
  * NOT migrated to `createLab()` (e2e/lab.ts), on purpose. This file writes
@@ -50,7 +50,7 @@ test.describe('F8 — Teacher Reports', () => {
   test('AC1: teacher navigating to /teacher/reports sees <h1> "Class Reports" within 3s', async ({
     page,
   }) => {
-    await page.goto('/teacher/reports')
+    await gotoFresh(page, '/teacher/reports')
     await expect(page.getByRole('heading', { level: 1, name: 'Class Reports' })).toBeVisible({
       timeout: 3000,
     })
@@ -60,7 +60,7 @@ test.describe('F8 — Teacher Reports', () => {
   test('AC2: teacher layout nav shows a "Reports" link that navigates to /teacher/reports', async ({
     page,
   }) => {
-    await page.goto('/teacher')
+    await gotoFresh(page, '/teacher')
     const link = page.getByRole('link', { name: 'Reports' })
     await expect(link).toBeVisible()
     await expect(link).toHaveAttribute('href', '/teacher/reports')
@@ -75,7 +75,7 @@ test.describe('F8 — Teacher Reports', () => {
   }) => {
     // Navigate first — a stored Clerk session cookie can be minutes-stale by
     // the time a serial suite reaches a bare page.request call.
-    await page.goto('/teacher/reports')
+    await gotoFresh(page, '/teacher/reports')
     await expect(page.getByRole('heading', { level: 1, name: 'Class Reports' })).toBeVisible({
       timeout: 3000,
     })
@@ -129,7 +129,7 @@ test.describe('F8 — Teacher Reports', () => {
 
   // ── AC6 ──────────────────────────────────────────────────────────────────
   test('AC6: [data-testid="report-phase-distribution"] is visible after load', async ({ page }) => {
-    await page.goto('/teacher/reports')
+    await gotoFresh(page, '/teacher/reports')
     await expect(page.getByTestId('report-phase-distribution')).toBeVisible({ timeout: 8000 })
   })
 
@@ -137,7 +137,7 @@ test.describe('F8 — Teacher Reports', () => {
   test('AC7: [data-testid="report-proficiency-heatmap"] is visible with at least one team row', async ({
     page,
   }) => {
-    await page.goto('/teacher/reports')
+    await gotoFresh(page, '/teacher/reports')
     const heatmap = page.getByTestId('report-proficiency-heatmap')
     await expect(heatmap).toBeVisible({ timeout: 8000 })
     await expect(heatmap.getByTestId('report-proficiency-row').first()).toBeVisible()
@@ -146,13 +146,13 @@ test.describe('F8 — Teacher Reports', () => {
 
   // ── AC8 ──────────────────────────────────────────────────────────────────
   test('AC8: [data-testid="report-kp-distribution"] is visible after load', async ({ page }) => {
-    await page.goto('/teacher/reports')
+    await gotoFresh(page, '/teacher/reports')
     await expect(page.getByTestId('report-kp-distribution')).toBeVisible({ timeout: 8000 })
   })
 
   // ── AC9 ──────────────────────────────────────────────────────────────────
   test('AC9: [data-testid="report-pacing"] is visible with at least one pacing row', async ({ page }) => {
-    await page.goto('/teacher/reports')
+    await gotoFresh(page, '/teacher/reports')
     const pacing = page.getByTestId('report-pacing')
     await expect(pacing).toBeVisible({ timeout: 8000 })
     await expect(pacing.getByTestId('report-pacing-row').first()).toBeVisible()
@@ -161,7 +161,7 @@ test.describe('F8 — Teacher Reports', () => {
 
   // ── AC10 ─────────────────────────────────────────────────────────────────
   test('AC10: [data-testid="report-summary"] text includes the seeded student count', async ({ page }) => {
-    await page.goto('/teacher/reports')
+    await gotoFresh(page, '/teacher/reports')
     const summary = page.getByTestId('report-summary')
     await expect(summary).toBeVisible({ timeout: 8000 })
     await expect(summary).toHaveText(/\d+ students/)
@@ -171,7 +171,7 @@ test.describe('F8 — Teacher Reports', () => {
   test('AC11: a "Print / Save as PDF" control is visible inside a [data-print-hide] wrapper', async ({
     page,
   }) => {
-    await page.goto('/teacher/reports')
+    await gotoFresh(page, '/teacher/reports')
     const printButton = page.getByRole('button', { name: 'Print / Save as PDF' })
     await expect(printButton).toBeVisible({ timeout: 8000 })
 
@@ -185,7 +185,7 @@ test.describe('F8 — Teacher Reports', () => {
   test('AC12: reports teamCount equals the distinct team count from the roster for the same teacher', async ({
     page,
   }) => {
-    await page.goto('/teacher/reports')
+    await gotoFresh(page, '/teacher/reports')
     await expect(page.getByRole('heading', { level: 1, name: 'Class Reports' })).toBeVisible({
       timeout: 3000,
     })

@@ -13,6 +13,7 @@ let lab: OwnedLab
  */
 
 import { STEP_X, STEP_Y, CLUSTER_Y } from '@/lib/plot'
+import { gotoFresh } from './api'
 
 test.beforeAll(async () => {
   // A disposable lab starts with no shop buildings, so the stale-row delete
@@ -28,7 +29,7 @@ test.afterAll(async () => {
 })
 
 test('shop shows gateways as placed and economy buildings as placeable', async ({ page }) => {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
   await page.getByRole('button', { name: 'Open buildings shop' }).click()
 
   // The 7 gateways appear greyed-out as "Already placed".
@@ -40,7 +41,7 @@ test('shop shows gateways as placed and economy buildings as placeable', async (
 })
 
 test('arrange mode toggles and a gateway can be moved and persists', async ({ page }) => {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
 
   // Enter arrange mode → the edit banner appears.
   await page.getByRole('button', { name: 'Arrange buildings' }).click()
@@ -94,7 +95,7 @@ test('arrange mode toggles and a gateway can be moved and persists', async ({ pa
 })
 
 test('an economy building can be placed (purchased) and sold for a refund', async ({ page }) => {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
 
   // Place the 3D Printing Shop (the user's centering example) from the shop —
   // buying happens on drop.

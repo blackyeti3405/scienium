@@ -1,5 +1,5 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
 import { findLessonLocation } from '../lib/ops/codex/engine'
@@ -235,7 +235,7 @@ test.describe('F13 — Field Codex', () => {
 
   // ── AC10 (part 1) ──────────────────────────────────────────────────────────
   test('AC10: POST complete with an unknown lessonId in a real track 404s', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.post(page, '/api/ops/codex/complete', {
       data: { trackSlug: 'gait-biomechanics', lessonId: 'not-a-real-lesson-id', submission: { answers: [] } },
     })
@@ -261,7 +261,7 @@ test.describe('F13 — Field Codex', () => {
 
   // ── AC2 + AC8 ──────────────────────────────────────────────────────────────
   test('AC2 + AC8: first-time completion pays 8 KP, marks complete, and persists across reload', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
 
     const kpBefore = await e2eDb.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
 
@@ -304,7 +304,7 @@ test.describe('F13 — Field Codex', () => {
 
   // ── AC3 ──────────────────────────────────────────────────────────────────
   test('AC3: re-passing an already-completed lesson pays 0 additional KP', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
 
     const kpBefore = await e2eDb.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
 
@@ -330,7 +330,7 @@ test.describe('F13 — Field Codex', () => {
 
   // ── AC6 ──────────────────────────────────────────────────────────────────
   test('AC6: a deliberately-wrong checkpoint fails, shows explanations, does not complete or pay KP', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const submission = await wrongSubmissionFor(UNIT1_LESSON_IDS[1])
     const res = await api.post(page, '/api/ops/codex/complete', {
       data: { trackSlug: 'gait-biomechanics', lessonId: UNIT1_LESSON_IDS[1], submission },
@@ -402,7 +402,7 @@ test.describe('F13 — Field Codex', () => {
 
   // ── AC4 ──────────────────────────────────────────────────────────────────
   test('AC4: after 3 first-time completions today, a 4th distinct lesson reports capReached with no completion/KP', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
 
     const kpBeforeAny = await e2eDb.teamCurrency.findUnique({ where: { teamId: lab.teamId }, select: { kp: true } })
 
@@ -598,7 +598,7 @@ test.describe('F13 — Field Codex', () => {
 
   // ── AC11 ─────────────────────────────────────────────────────────────────
   test('AC11: study-plan re-run cap (2/team/day) 429s once reached; unchanged source returns the cached plan', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
 
     // Part A — cache-hit path: calling again with UNCHANGED team topic/idea/
     // plan must return the cached plan and consume neither the LLM nor the
@@ -624,7 +624,7 @@ test.describe('F13 — Field Codex', () => {
 
   // ── AC10 (part 2 — IDOR scoping) ────────────────────────────────────────
   test("AC10: progress GET never leaks another team member's data", async ({ page, browser }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.get(page, '/api/ops/codex/progress')
     expect(res.status()).toBe(200)
     const payload = (await res.json()) as ProgressResponse
@@ -659,7 +659,7 @@ test.describe('F13 — Field Codex', () => {
 
   // ── AC12 ─────────────────────────────────────────────────────────────────
   test('AC12: no Anthropic/LLM call site exists in progress or complete routes — only study-plan is LLM-backed', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const fs = await import('node:fs')
     const path = await import('node:path')
     const progressSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'api', 'ops', 'codex', 'progress', 'route.ts'), 'utf8')
