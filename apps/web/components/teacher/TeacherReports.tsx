@@ -6,6 +6,7 @@ import { PHASE_INFO, PHASE_ORDER, type Phase } from '@/lib/phase'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { PrintButton } from '@/components/showcase/PrintButton'
 import { TeacherPanelState } from './TeacherPanelState'
+import { TruncationNotice } from './TruncationNotice'
 
 // Code-split (PERF-10): recharts is ~100KB and only these two bar charts use it,
 // so the chart module loads on demand instead of riding in the eager bundle.
@@ -46,6 +47,8 @@ interface ReportsResponse {
   kpDistribution: KpBucket[]
   proficiency: ProficiencyRow[]
   pacing: PacingRow[]
+  truncated?: boolean
+  limit?: number
   generatedAt: string
 }
 
@@ -94,6 +97,10 @@ export function TeacherReports() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 tr-report">
+      {/* P2-1: a bounded report may cover fewer students than the class scope
+          holds — say so rather than presenting a subset as the whole class. */}
+      {data.truncated && <TruncationNotice limit={data.limit ?? data.studentCount} noun="students" />}
+
       {/* Summary row — the page header (eyebrow + <h1>) lives in page.tsx, this
           is the report-specific summary line + print action underneath it. */}
       <div className="flex items-start justify-between gap-4">

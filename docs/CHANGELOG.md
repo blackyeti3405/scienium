@@ -5,6 +5,67 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.75.6] — 2026-07-28
+
+REFACTOR2 **SVC-1**, **P2-1** (the reopened teacher-scale half), and the highest-consequence
+slice of **P1-1**. Each row was re-verified against the current tree first; one of P2-1's three
+named offenders was already closed and is recorded as declined rather than "fixed".
+
+### Changed — reward minting has one owner per domain (SVC-1)
+
+The paper-quiz KP award existed twice, near-verbatim: a ~60-line transaction in
+`app/api/papers/[id]/quiz/grade/route.ts` and its clone in `lib/literature/quiz-retry.ts`
+(`paper-quiz:` lock → high-water award → `teamCurrency.upsert` → `recordActivity`). Both now
+call `commitQuizGrade` in the new `lib/literature/quiz-service.ts`. One flag separates the two
+callers, because it is a real difference and not a knob: the initial grade is first-writer-wins
+(a concurrent grade that already stamped `gradedAt` mints nothing and records nothing), while a
+retry is graded by construction and writes MONOTONICALLY, so a late low-scoring retry cannot
+contradict `PaperProficiency.demonstrated`.
+
+The third site, `app/api/expertise/grade/route.ts`, moved its commit into
+`lib/clearance/exam-service.ts` (`commitExamGrade`). That one removes no duplication — it has a
+single caller — and the CHANGELOG says so: what it buys is a money transaction that is no longer
+interleaved with a paid Claude call inside a route handler. Its load-bearing property is
+unchanged and still pinned by the existing 15 tests, unmodified: the `clearanceLevel: { lt: … }`
+guard and the `kp: { increment }` ride in the SAME `updateMany`.
+
+Both modules copy `lib/economy/lab-credit.ts` (A6) rather than inventing a second convention:
+the transaction lives in the module, the caller gets an explicit outcome, never a
+`NextResponse`. New `test/quiz-award.test.ts` (7 tests) pins the attacks on the consolidated
+module — the race loser, the late low retry, the KP high-water top-up, and the `quiz_passed`
+record being written INSIDE the money transaction — each negative-controlled.
+
+### Fixed — a teacher's authorization scope stopped truncating silently (P2-1)
+
+`requireTeacher` loaded `take: 200` classes and handed the truncated list on as `ctx.classIds`.
+The 201st class does not go missing from a list a teacher can scroll: it drops out of every
+WHERE clause downstream, so that class's students 404 from the roster, from `student/[id]`, and
+from every ownership check, with nothing anywhere saying why. It now probes one past the limit
+and REFUSES with a 409 naming the limit. A scope that cannot be represented is not half-answered.
+
+The roster and reports student reads (previously no `take` at all) are bounded by the same
+contract module, `lib/teacher/caps.ts`, with the OPPOSITE failure mode — they are display lists,
+so they serve the page and return `truncated`, rendered by the new `TruncationNotice` banner in
+both `TeacherRoster` and `TeacherReports`. Limits live in the contract, not in route constants
+(a route module may not export one anyway).
+
+### Added — route-policy matrix for the buildings family (P1-1)
+
+`test/buildings-policy.test.ts` (30 tests) covers the five routes that let a student SPEND and
+REFUND Knowledge Points and had no route-level coverage of any kind. `test/route-guard-sweep.ts`
+greps for a guard TOKEN, so it cannot see a guard whose error return is dropped or a `where`
+missing `teamId`; the harness runs the real guards, real limiter and a where-clause-honouring
+store, and the "another team's REAL key" case is the one that matters for money — team B
+genuinely owns `workshop`, so a handler scoping by key alone would sell it and refund team A.
+Invalid-input and conflict behaviour for the same handlers is here too (off-grid cells, unknown
+keys, an occupied cell, an unaffordable purchase). Negative-controlled by unscoping the sell
+lookup and the shop currency read and watching exactly the intended tests fail.
+
+`test/teacher-policy.test.ts` gains six tests for the two P2-1 bounds, including the attack: one
+class past the limit must refuse, not scope to a subset.
+
+---
+
 ## [0.75.5] — 2026-07-28
 
 REFACTOR2 **P2-S3**, **P1-6 (notification half)**, **§0.8 destination verification**, and

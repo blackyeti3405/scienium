@@ -19,6 +19,7 @@ import { GET as overviewGET } from '@/app/api/teacher/student/[id]/overview/rout
 import { POST as leadPOST } from '@/app/api/teacher/student/[id]/lead/route'
 import { GET as litGET } from '@/app/api/teacher/student/[id]/literature/[paperId]/route'
 import { GET as litFileGET } from '@/app/api/teacher/student/[id]/literature/[paperId]/file/route'
+import { MAX_TEACHER_CLASS_SCOPE, MAX_TEACHER_ROSTER_STUDENTS } from '@/lib/teacher/caps'
 
 let h: RoutePolicyHarness
 /** A team-less student in class A — exercises the `team: null` 200 branch
@@ -239,4 +240,68 @@ describe('GET /api/teacher/student/[id]/literature/[paperId] (+ /file)', () => {
   it("file: 404s when the student is in another teacher's class", () =>
     h.asTeacherB().get(litFileGET, params(P_A)).expect(404))
   it('file: 401s signed out', () => h.anonymous().get(litFileGET, params(P_A)).expect(401))
+})
+
+/**
+ * P2-1 — a bounded read may never lie about what it left out.
+ *
+ * Two bounds with deliberately different failure modes (`lib/teacher/caps.ts`),
+ * and the tests pin the DIFFERENCE, because getting them the same way round is
+ * the bug:
+ *
+ *  - the class scope is an AUTHORIZATION boundary. It used to `take: 200` and
+ *    hand the truncated list on as `ctx.classIds`, so the 201st class's
+ *    students silently 404ed from every teacher route. Overflow must REFUSE.
+ *  - the roster is a DISPLAY list. Refusing there takes a whole department
+ *    offline; it serves a page and flags it.
+ */
+describe('P2-1 — bounded teacher reads never truncate silently', () => {
+  function seedClasses(n: number) {
+    for (let i = 0; i < n; i++) {
+      h.seed('class', { id: `extra_class_${i}`, teacherId: h.ids.teacherA, name: `Extra ${i}` })
+    }
+  }
+
+  it('serves a teacher at exactly the class-scope limit', async () => {
+    seedClasses(MAX_TEACHER_CLASS_SCOPE - 1) // + classA from the fixture
+    await h.asTeacherA().get(rosterGET).expect(200)
+  })
+
+  it('THE ATTACK: one class past the limit REFUSES instead of scoping to a subset', async () => {
+    seedClasses(MAX_TEACHER_CLASS_SCOPE) // 201 with classA
+    const body = await h.asTeacherA().get(rosterGET).expect(409)
+    expect(body.error).toMatch(/more than 200 classes/i)
+  })
+
+  it('a full-but-not-over class scope is NOT reported as an overflow', async () => {
+    seedClasses(MAX_TEACHER_CLASS_SCOPE - 1)
+    const body = await h.asTeacherA().get(rosterGET).expect(200)
+    expect(body.hasClasses).toBe(true)
+  })
+
+  it('the roster serves an over-limit class and SAYS it is partial', async () => {
+    for (let i = 0; i < MAX_TEACHER_ROSTER_STUDENTS + 1; i++) {
+      h.seed('user', {
+        id: `bulk_${i}`,
+        clerkUserId: `clerk_bulk_${i}`,
+        name: `Bulk ${i}`,
+        email: `bulk${i}@example.test`,
+        role: 'student',
+        classId: h.ids.classA,
+        activeTeamId: null,
+        teamMemberships: [],
+      })
+    }
+
+    const body = await h.asTeacherA().get(rosterGET).expect(200)
+
+    expect(body.truncated).toBe(true)
+    expect(body.limit).toBe(MAX_TEACHER_ROSTER_STUDENTS)
+    expect(body.students).toHaveLength(MAX_TEACHER_ROSTER_STUDENTS)
+  })
+
+  it('an ordinary class is not flagged as truncated', async () => {
+    const body = await h.asTeacherA().get(rosterGET).expect(200)
+    expect(body.truncated).toBe(false)
+  })
 })

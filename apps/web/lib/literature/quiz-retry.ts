@@ -24,10 +24,9 @@ import {
   paperTextContext,
   QUIZ_GRADING_PROMPT_INTRO,
 } from '@/lib/literature/grading'
-import { clampScore, computeQuizAward, computeRetryAggregate } from '@/lib/economy'
-import { recordActivity } from '@/lib/activity/log'
+import { clampScore, computeRetryAggregate } from '@/lib/economy'
+import { commitQuizGrade } from '@/lib/literature/quiz-service'
 import { logEvent } from '@/lib/observability/log'
-import { lockAggregate } from '@/lib/db-lock'
 import { sleep } from '@/lib/fetch-retry'
 
 /**
@@ -499,90 +498,29 @@ export async function submitRetry(
     cap: RETRY_SCORE_CAP,
   })
 
-  // ── Proficiency/KP — identical high-water logic to the grade route ────────
   // ── Persist atomically ─────────────────────────────────────────────────────
-  const kpEarned = await db.$transaction(async (tx) => {
-    await lockAggregate(tx, `paper-quiz:${session.paper.id}:${principal.dbUserId}`)
-    const [freshSession, existing] = await Promise.all([
-      tx.paperQuizSession.findUnique({
-        where: { id: session.id },
-        select: { score: true, passed: true },
-      }),
-      tx.paperProficiency.findUnique({
-        where: { paperId_userId: { paperId: session.paper.id, userId: principal.dbUserId } },
-        select: { kpAwarded: true, bestScore: true },
-      }),
-    ])
-    const award = computeQuizAward({
-      passed,
-      aggregate,
-      priorKp: existing?.kpAwarded ?? 0,
-      priorBest: existing?.bestScore ?? 0,
-    })
-
-    await tx.paperQuizAttempt.createMany({
-      data: toGrade.map((q) => {
-        const g = gradeMap.get(q.id)
-        return {
-          sessionId: session.id,
-          paperId: session.paper.id,
-          userId: principal.dbUserId,
-          question: q.prompt,
-          response: answerMap.get(q.id) ?? '',
-          evaluation: g?.rationale ?? '',
-          score: clampScore(g?.score ?? 0),
-        }
-      }),
-    })
-    // MONOTONIC (REFACTOR2 P1-R11). This update used to be unconditional, so a
-    // later low-scoring retry could set `passed = false` on a session another
-    // retry had already passed — while `PaperProficiency.demonstrated` stayed
-    // true, leaving the two records contradicting each other. A retry may raise
-    // the visible verdict; it may never lower it.
-    await tx.paperQuizSession.update({
-      where: { id: session.id },
-      data: {
-        score: Math.max(aggregate, freshSession?.score ?? 0),
-        passed: passed || (freshSession?.passed ?? false),
-        gradedAt: new Date(),
-        questionsJson: currentQuestions as unknown as Prisma.InputJsonValue,
-        retryGradeClaimedAt: null,
-      },
-    })
-    if (passed) {
-      await tx.paperProficiency.upsert({
-        where: { paperId_userId: { paperId: session.paper.id, userId: principal.dbUserId } },
-        create: {
-          paperId: session.paper.id,
-          userId: principal.dbUserId,
-          demonstrated: true,
-          bestScore: award.newBestScore,
-          kpAwarded: award.newKpAwarded,
-        },
-        update: {
-          demonstrated: true,
-          bestScore: award.newBestScore,
-          kpAwarded: award.newKpAwarded,
-        },
-      })
-    }
-    if (award.kpEarned > 0) {
-      await tx.teamCurrency.upsert({
-        where: { teamId: session.paper.teamId },
-        create: { teamId: session.paper.teamId, kp: award.kpEarned },
-        update: { kp: { increment: award.kpEarned } },
-      })
-    }
-    // The proficiency/KP writes and the record that the student passed commit
-    // together (P1-R5): teacher-visible evidence of progression must not be able
-    // to go missing on its own.
-    if (passed) {
-      await recordActivity(tx, principal.teamId, principal.dbUserId, 'quiz_passed', {
-        paperTitle: session.paper.title,
-        score: aggregate,
-      })
-    }
-    return award.kpEarned
+  // The award, the monotonic session write, the KP mint and the durable
+  // `quiz_passed` record all live in `commitQuizGrade` (SVC-1), shared with the
+  // initial-grade route so the two cannot drift.
+  const { kpEarned } = await commitQuizGrade({
+    sessionId: session.id,
+    paperId: session.paper.id,
+    paperTitle: session.paper.title,
+    teamId: session.paper.teamId,
+    dbUserId: principal.dbUserId,
+    aggregate,
+    passed,
+    questions: currentQuestions,
+    attempts: toGrade.map((q) => {
+      const g = gradeMap.get(q.id)
+      return {
+        question: q.prompt,
+        response: answerMap.get(q.id) ?? '',
+        evaluation: g?.rationale ?? '',
+        score: clampScore(g?.score ?? 0),
+      }
+    }),
+    retry: true,
   })
 
   return {

@@ -6,16 +6,15 @@ import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import {
   CLEARANCE_PASS_THRESHOLD,
-  levelInfo,
   type ExpertiseQuestion,
   GradedExpertiseAnswerSchema,
 } from '@/lib/clearance/expertise'
+import { clearanceBonus, commitExamGrade } from '@/lib/clearance/exam-service'
 import { loadExpertiseRubric } from '@/lib/clearance/rubric'
 import { AnswerItem, buildGradingPayload, gradeAnswers } from '@/lib/literature/grading'
 import { aggregateOverQuestions } from '@/lib/literature/quiz'
 import { getProjectContext, renderProjectContext } from '@/lib/clearance/context'
 import { clampScore } from '@/lib/economy'
-import { recordActivity } from '@/lib/activity/log'
 
 /** A grading claim older than this is treated as abandoned and may be re-taken. */
 const STALE_CLAIM_MS = 5 * 60 * 1000
@@ -111,86 +110,39 @@ export async function POST(req: NextRequest) {
   // the rule has ONE owner and cannot drift apart from the quiz path (P1-S3).
   const aggregate = aggregateOverQuestions(questions, graded, clampScore)
   const passed = aggregate >= CLEARANCE_PASS_THRESHOLD
-  // The clearance bonus is a fixed property of the target level; whether it is
-  // actually awarded is decided by the conditional raise below, not here.
-  const kpBonus = levelInfo(exam.targetLevel)?.kpBonus ?? 0
 
-  // Commit everything in one interactive transaction and DERIVE the response from
-  // the committed writes — never from a pre-read guess. The exam is marked graded
-  // only from our own claim, and the clearance raise is a high-water conditional
-  // update whose row count tells us whether this pass truly advanced the team.
+  // The money write — mark-from-our-claim, attempt history, the conditional
+  // clearance raise + KP bonus, and the durable record — belongs to
+  // `commitExamGrade` (SVC-1). The route only maps its outcome to HTTP.
   let committed
   try {
-    committed = await db.$transaction(async (tx) => {
-      // Mark graded from OUR claim. If another (stale-recovered) request took over,
-      // this affects 0 rows — bail out so we never double-award or lie about state.
-      const mark = await tx.expertiseExam.updateMany({
-        where: { id: exam.id, status: 'grading', gradingRequestId: requestId },
-        data: {
-          status: 'graded',
-          score: aggregate,
-          passed,
-          gradedAt: new Date(),
-          gradingClaimedAt: null,
-          gradingRequestId: null,
-        },
-      })
-      if (mark.count === 0) throw new GradeConflict()
-
-      await tx.expertiseAttempt.createMany({
-        data: questions.map((q) => {
-          const g = gradeMap.get(q.id)
-          return {
-            examId: exam.id,
-            userId: ctx.dbUserId,
-            question: q.prompt,
-            response: answerMap.get(q.id) ?? '',
-            evaluation: g?.rationale ?? '',
-            score: clampScore(g?.score ?? 0),
-          }
-        }),
-      })
-
-      // Ensure a currency row exists (legacy teams), then raise atomically. The
-      // `lt` guard makes the raise idempotent and safe against concurrent passes —
-      // its row count is the authoritative answer to "did this pass raise us?".
-      await tx.teamCurrency.upsert({
-        where: { teamId: ctx.teamId },
-        create: { teamId: ctx.teamId },
-        update: {},
-      })
-      const raise = passed
-        ? await tx.teamCurrency.updateMany({
-            where: { teamId: ctx.teamId, clearanceLevel: { lt: exam.targetLevel } },
-            data: { clearanceLevel: exam.targetLevel, kp: { increment: kpBonus } },
-          })
-        : { count: 0 }
-      const cur = await tx.teamCurrency.findUnique({
-        where: { teamId: ctx.teamId },
-        select: { clearanceLevel: true },
-      })
-      // Durable (REFACTOR2 P1-R5): the clearance raise and its record commit
-      // together — this `raise.count > 0` guard is the same one that decides
-      // whether the KP bonus itself landed.
-      if (raise.count > 0) {
-        await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'clearance_raised', {
-          level: exam.targetLevel,
-          title: levelInfo(exam.targetLevel)?.title,
-          score: aggregate,
-        })
-      }
-      return { raised: raise.count > 0, newClearance: cur?.clearanceLevel ?? 0 }
+    committed = await commitExamGrade({
+      examId: exam.id,
+      teamId: ctx.teamId,
+      dbUserId: ctx.dbUserId,
+      targetLevel: exam.targetLevel,
+      gradingRequestId: requestId,
+      aggregate,
+      passed,
+      attempts: questions.map((q) => {
+        const g = gradeMap.get(q.id)
+        return {
+          question: q.prompt,
+          response: answerMap.get(q.id) ?? '',
+          evaluation: g?.rationale ?? '',
+          score: clampScore(g?.score ?? 0),
+        }
+      }),
     })
   } catch (err) {
-    if (err instanceof GradeConflict) {
-      return NextResponse.json({ error: 'This exam is already being graded' }, { status: 409 })
-    }
     await releaseClaim()
     throw err
   }
+  if (!committed.ok) {
+    return NextResponse.json({ error: 'This exam is already being graded' }, { status: 409 })
+  }
 
   const raised = committed.raised
-  const kpEarned = raised ? kpBonus : 0
 
   return NextResponse.json({
     score: aggregate,
@@ -199,16 +151,13 @@ export async function POST(req: NextRequest) {
     targetLevel: exam.targetLevel,
     raised,
     newClearance: committed.newClearance,
-    kpEarned,
+    kpEarned: raised ? clearanceBonus(exam.targetLevel) : 0,
     results: questions.map((q) => {
       const g = gradeMap.get(q.id)
       return { questionId: q.id, score: clampScore(g?.score ?? 0), rationale: g?.rationale ?? '' }
     }),
   })
 }
-
-/** Thrown inside the commit tx when our grading claim was superseded (stale recovery). */
-class GradeConflict extends Error {}
 
 function GRADING_INSTRUCTIONS(rubric: string, level: number): string {
   return `You are Vega, grading a student's answers to a LEVEL ${level} clearance exam about their own science-fair project. Follow this rubric exactly:

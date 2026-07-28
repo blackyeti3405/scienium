@@ -3,6 +3,7 @@ import { differenceInCalendarDays } from 'date-fns'
 import { requireTeacher } from '@/lib/teacher/auth'
 import { db } from '@/lib/db'
 import { pickActiveTeam } from '@/lib/team/active-team'
+import { MAX_TEACHER_ROSTER_STUDENTS, overflowTake, withOverflow } from '@/lib/teacher/caps'
 
 /** Days without a progress log before a working-phase team is flagged stale. */
 const STALE_LOG_DAYS = 5
@@ -28,21 +29,21 @@ export async function GET(req: NextRequest) {
   if (error) return error
 
   if (ctx.classIds.length === 0) {
-    return NextResponse.json({ students: [], hasClasses: false })
+    return NextResponse.json({ students: [], hasClasses: false, truncated: false })
   }
 
-  // No `take` here, deliberately (§0.7: "responses are unbounded" — checked,
-  // and this one is NOT unbounded in any practical sense). Every row is a real
-  // student a school assigned to this teacher; a cap here would silently hide
-  // some of a teacher's own class from them once enrollment passed it — the
-  // same reasoning student-overview's (v0.60.1) declined query cap already
-  // recorded. A real deployment tops out at a few hundred students per
-  // teacher (several sections), not an attacker-influenced number — unlike
-  // `/api/teacher/class`'s pending-join-requests list, which a leaked join
-  // code can inflate and which IS capped below.
-  const students = await db.user.findMany({
+  // Bounded, and never SILENTLY (P2-1). Every row is a real student a school
+  // assigned to this teacher, and a real deployment tops out at a few hundred
+  // per teacher, so this is not paginated — a classroom-sized roster is one
+  // screen with a filter, and paging it would cost the teacher the whole-class
+  // view they came for. What it does have now is a ceiling on a growing read
+  // plus an honest `truncated` flag: the earlier version had no `take` at all,
+  // and the alternative (a bare cap) would have hidden some of a teacher's own
+  // class from them with nothing on screen saying so.
+  const studentRows = await db.user.findMany({
     where: { classId: { in: ctx.classIds }, role: 'student' },
     orderBy: { name: 'asc' },
+    take: overflowTake(MAX_TEACHER_ROSTER_STUDENTS),
     select: {
       id: true,
       name: true,
@@ -58,6 +59,7 @@ export async function GET(req: NextRequest) {
       },
     },
   })
+  const { rows: students, truncated } = withOverflow(studentRows, MAX_TEACHER_ROSTER_STUDENTS)
 
   // `students` are already scoped to this teacher's classes (per-student
   // membership), so every one of their teams is in scope regardless of the
@@ -151,5 +153,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ students: roster, hasClasses: true, phaseCounts, attentionCount })
+  return NextResponse.json({
+    students: roster,
+    hasClasses: true,
+    phaseCounts,
+    attentionCount,
+    truncated,
+    limit: MAX_TEACHER_ROSTER_STUDENTS,
+  })
 }

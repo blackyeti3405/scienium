@@ -6,6 +6,7 @@ import { resolveAuthoritativeRole } from '@/lib/teacher/role'
 import { enforceRateLimit, type TierName } from '@/lib/rate-limit'
 import { assertSameOrigin } from '@/lib/api/route-context'
 import { resolvePrimaryEmail } from '@/lib/onboarding/profile'
+import { MAX_TEACHER_CLASS_SCOPE, overflowTake } from '@/lib/teacher/caps'
 
 // Re-exported so the role decision has one public home on the teacher guard; the
 // implementation lives in the import-free role module so it stays unit-testable.
@@ -93,14 +94,30 @@ export async function requireTeacher(
     })
   }
 
-  // Bounded (P2-1): this runs on EVERY teacher request. No real teacher owns
-  // anywhere near this many classes; the cap just keeps the read from growing
-  // unboundedly with data-entry mistakes or imports.
+  // Bounded (P2-1): this runs on EVERY teacher request, so the read needs a
+  // ceiling. It used to `take: 200` and hand the truncated list on as
+  // `ctx.classIds` — a SILENT TRUNCATION OF AN AUTHORIZATION SCOPE. The 201st
+  // class does not go missing from a list a teacher can scroll; it drops out of
+  // every WHERE clause below, so that class's students 404 from the roster,
+  // from `student/[id]`, and from every ownership check, with nothing anywhere
+  // saying why. A scope that cannot be represented must be REFUSED, not
+  // half-answered — probe one past the limit and say so.
   const classes = await db.class.findMany({
     where: { teacherId: user.id },
     select: { id: true },
-    take: 200,
+    take: overflowTake(MAX_TEACHER_CLASS_SCOPE),
   })
+  if (classes.length > MAX_TEACHER_CLASS_SCOPE) {
+    return {
+      ctx: null,
+      error: NextResponse.json(
+        {
+          error: `You own more than ${MAX_TEACHER_CLASS_SCOPE} classes, which is more than this view can load safely. Archive the classes you no longer teach, or contact support.`,
+        },
+        { status: 409 },
+      ),
+    }
+  }
 
   return {
     ctx: { userId, dbUserId: user.id, classIds: classes.map((c) => c.id) },

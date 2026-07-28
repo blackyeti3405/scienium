@@ -345,11 +345,13 @@ flows) or only need a rate-limited identity (the discovery proxies). It returns
 authorization, a transaction, concurrency, a provider call, or prompt
 construction follows one shape: the route file selects the policy, parses the
 body with Zod, calls ONE application-service function, and maps the typed
-result to HTTP — it contains no direct `db.` calls of its own. Nine modules
+result to HTTP — it contains no direct `db.` calls of its own. Eleven modules
 currently own this seam: the three original exemplars (`lib/buildings/service.ts`,
 `lib/papers/service.ts`, `lib/literature/quiz-retry.ts` — whose `submitRetry`
 elects one grader via `retryGradeClaimedAt` before the paid call and writes the
-session monotonically, so a late low-scoring retry cannot un-pass it) plus the six extracted
+session monotonically, so a late low-scoring retry cannot un-pass it), the two
+reward-minting modules added by SVC-1 (`lib/literature/quiz-service.ts`,
+`lib/clearance/exam-service.ts` — below), plus the six extracted
 in the Track B P1-2 sweep — `lib/teacher/student-overview.ts`,
 `lib/logs/project-log-service.ts`, `lib/ops/codex/complete-service.ts`,
 `lib/ops/codex/study-plan-service.ts`, `lib/research-plan/review-service.ts`,
@@ -358,6 +360,34 @@ return a typed `{ ok: true; kind: 'replay' | 'stream'; ... }` result so the
 route only wraps it in a `Response`; the NDJSON framing itself is
 `lib/ndjson.ts`'s `createNdjsonStream`, shared by both.
 
+**Reward minting has one owner per domain (SVC-1).** A currency write is the
+narrowest, highest-consequence case of the seam above, so it gets its own rule:
+the transaction that mints or refunds currency lives in a module, never in a
+route handler, and returns an explicit outcome the caller maps to HTTP.
+`lib/economy/lab-credit.ts` is the template (one module owning the transaction,
+the P2002-only duplicate rule, the retry, the redacted failure event, and an
+outcome). Three modules follow it:
+
+- `lib/economy/lab-credit.ts` — the once-per-member-per-day +1 LC.
+- `lib/literature/quiz-service.ts` — `commitQuizGrade`, the paper-quiz KP award.
+  Shared by BOTH quiz paths (`app/api/papers/[id]/quiz/grade` and
+  `submitRetry`), which previously held near-identical 60-line transactions. One
+  flag separates them and it is a real difference, not a knob: the initial grade
+  is first-writer-wins (a concurrent grade that already stamped `gradedAt` mints
+  nothing), while a retry is graded by construction and writes MONOTONICALLY
+  (`score` max, `passed` OR) so a late low retry cannot contradict
+  `PaperProficiency.demonstrated`.
+- `lib/clearance/exam-service.ts` — `commitExamGrade`, the clearance raise. Its
+  load-bearing property is that the high-water `clearanceLevel: { lt: target }`
+  guard and the `kp: { increment }` ride in the SAME `updateMany`, so two
+  concurrent passing exams pay one bonus; splitting them reads harmless and pays
+  twice. The route keeps only the pre-call claim/release fence around the paid
+  Claude call.
+
+Unlike the other services this one has a single caller — extraction bought
+testability and a consistent convention, not de-duplication, and that is the
+honest reason it exists.
+
 The remaining simple routes — a scoped read or a single-table write behind a
 guard, with no transaction, concurrency, or provider call to isolate —
 deliberately stay direct-Prisma; extraction would only add an indirection.
@@ -365,7 +395,14 @@ These ~90 handlers migrate onto the seam when a change to that route already
 touches it, not as a standalone batch — do not "fix" them as cleanup.
 
 `lib/teacher/auth.ts` is the teacher guard. It validates teacher/admin role and
-loads the classes the teacher owns. The DB `User.role` is authoritative whenever
+loads the classes the teacher owns — bounded by `MAX_TEACHER_CLASS_SCOPE` in
+`lib/teacher/caps.ts`, and REFUSING with a 409 on overflow rather than handing
+on a truncated `classIds`. That distinction is the point of the module: an
+authorization scope that silently drops rows does not hide a row in a list, it
+makes a teacher's own students 404 from every per-student route with no signal.
+Display lists bounded by the same module (`MAX_TEACHER_ROSTER_STUDENTS`, used by
+the roster and reports reads) do the opposite — they serve the page and return
+`truncated`, which `TruncationNotice` renders as a banner. The DB `User.role` is authoritative whenever
 a row exists (`resolveAuthoritativeRole`, `lib/teacher/role.ts`), so a stale
 Clerk claim can never override a DB downgrade; the claim only bootstraps an
 account with no row. `teacherOwnsTeam(classIds, teamId)` is **membership-based**:
@@ -590,7 +627,9 @@ Feature-owned library folders:
   upgrade business rules, per-team `team-plot:<teamId>` advisory lock, in-lock
   occupancy re-checks, and race-safe currency debits, lifted out of the route
   handlers so they are unit-testable without a request.
-- `clearance/`: expertise context, rubric, authored rubric prompt, and scoring.
+- `clearance/`: expertise context, rubric, authored rubric prompt, scoring, and
+  `exam-service.ts` (the clearance-raise money transaction — see the
+  reward-minting rule above).
 - `cron/`: cron bearer authentication.
 - `data-requests/`: export and erasure (REFACTOR2 P1-R9). `inventory.ts` is the
   ONE list of per-student models — export reads it, erasure deletes it, so the
@@ -665,7 +704,9 @@ Feature-owned library folders:
   (`scripts/seed-real-lit.mjs`) import the identical logic without a second
   copy), quiz, relevance, research-guide, the shared
   `grading.ts` (the grading Anthropic call + JSON extraction + `paperTextBlock`
-  helper reused by quiz grade/retry, expertise grade, and Explain-it-back), and
+  helper reused by quiz grade/retry, expertise grade, and Explain-it-back),
+  `quiz-service.ts` (`commitQuizGrade` — the ONE paper-quiz reward transaction,
+  shared by the initial grade route and `quiz-retry.ts`), and
   durable paper processing (metadata extraction on Haiku). Three newer, feature-
   owned modules: `explain.ts` (Explain-it-back verdict schema/prompt, graded
   against the paper on the PERF-8 cache prefix); `synthesis.ts` (Synthesis

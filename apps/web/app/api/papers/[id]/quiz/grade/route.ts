@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
@@ -18,9 +17,8 @@ import {
   paperTextContext,
   QUIZ_GRADING_PROMPT_INTRO,
 } from '@/lib/literature/grading'
-import { clampScore, computeQuizAward } from '@/lib/economy'
-import { recordActivity } from '@/lib/activity/log'
-import { lockAggregate } from '@/lib/db-lock'
+import { clampScore } from '@/lib/economy'
+import { commitQuizGrade } from '@/lib/literature/quiz-service'
 
 // Server-side only; the Anthropic key never reaches the browser.
 
@@ -116,85 +114,27 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
   // Persist atomically: per-question attempts, session result, and — when passed —
   // this student's proficiency row (new high-water mark) + the team's KP bump.
-  const kpEarned = await db.$transaction(async (tx) => {
-    await lockAggregate(tx, `paper-quiz:${session.paper.id}:${ctx.dbUserId}`)
-    const [freshSession, existing] = await Promise.all([
-      tx.paperQuizSession.findUnique({
-        where: { id: session.id },
-        select: { gradedAt: true },
-      }),
-      tx.paperProficiency.findUnique({
-        where: { paperId_userId: { paperId: session.paper.id, userId: ctx.dbUserId } },
-        select: { kpAwarded: true, bestScore: true },
-      }),
-    ])
-    if (freshSession?.gradedAt) return 0
-
-    const award = computeQuizAward({
-      passed,
-      aggregate,
-      priorKp: existing?.kpAwarded ?? 0,
-      priorBest: existing?.bestScore ?? 0,
-    })
-
-    await tx.paperQuizAttempt.createMany({
-      data: questions.map((q) => {
-        const g = gradeMap.get(q.id)
-        return {
-          sessionId: session.id,
-          paperId: session.paper.id,
-          userId: ctx.dbUserId,
-          question: q.prompt,
-          response: answerMap.get(q.id) ?? '',
-          evaluation: g?.rationale ?? '',
-          score: clampScore(g?.score ?? 0),
-        }
-      }),
-    })
-    await tx.paperQuizSession.update({
-      where: { id: session.id },
-      data: {
-        score: aggregate,
-        passed,
-        gradedAt: new Date(),
-        questionsJson: questionsWithNotes as unknown as Prisma.InputJsonValue,
-      },
-    })
-    if (passed) {
-      await tx.paperProficiency.upsert({
-        where: { paperId_userId: { paperId: session.paper.id, userId: ctx.dbUserId } },
-        create: {
-          paperId: session.paper.id,
-          userId: ctx.dbUserId,
-          demonstrated: true,
-          bestScore: award.newBestScore,
-          kpAwarded: award.newKpAwarded,
-        },
-        update: {
-          demonstrated: true,
-          bestScore: award.newBestScore,
-          kpAwarded: award.newKpAwarded,
-        },
-      })
-    }
-    if (award.kpEarned > 0) {
-      await tx.teamCurrency.upsert({
-        where: { teamId: session.paper.teamId },
-        create: { teamId: session.paper.teamId, kp: award.kpEarned },
-        update: { kp: { increment: award.kpEarned } },
-      })
-    }
-    // Durable (REFACTOR2 P1-R5): the session's grade commit and its record
-    // land together — gated on THIS call being the one that actually graded
-    // the session (we already bailed above with `return 0` if a concurrent
-    // request won the race), so a race loser never double-records a pass.
-    if (passed) {
-      await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'quiz_passed', {
-        paperTitle: session.paper.title,
-        score: aggregate,
-      })
-    }
-    return award.kpEarned
+  // The money write itself belongs to `commitQuizGrade` (SVC-1), shared with the
+  // retry path so the award rule has exactly one owner.
+  const { kpEarned } = await commitQuizGrade({
+    sessionId: session.id,
+    paperId: session.paper.id,
+    paperTitle: session.paper.title,
+    teamId: session.paper.teamId,
+    dbUserId: ctx.dbUserId,
+    aggregate,
+    passed,
+    questions: questionsWithNotes,
+    attempts: questions.map((q) => {
+      const g = gradeMap.get(q.id)
+      return {
+        question: q.prompt,
+        response: answerMap.get(q.id) ?? '',
+        evaluation: g?.rationale ?? '',
+        score: clampScore(g?.score ?? 0),
+      }
+    }),
+    retry: false,
   })
 
   return NextResponse.json({

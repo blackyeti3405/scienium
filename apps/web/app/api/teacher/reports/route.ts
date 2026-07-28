@@ -8,6 +8,7 @@ import {
   computeTeamProficiency,
   computePhasePacing,
 } from '@/lib/teacher/analytics'
+import { MAX_TEACHER_ROSTER_STUDENTS, overflowTake, withOverflow } from '@/lib/teacher/caps'
 
 /**
  * GET /api/teacher/reports — class-wide analytics (phase distribution,
@@ -38,12 +39,19 @@ export async function GET(req: NextRequest) {
       kpDistribution: computeKpDistribution([]),
       proficiency: [],
       pacing: [],
+      truncated: false,
       generatedAt: new Date().toISOString(),
     })
   }
 
-  const students = await db.user.findMany({
+  // Same contract limit as the roster (P2-1), so the two views can never
+  // disagree about which students are in scope — and the same non-silent rule:
+  // an overflowing report says `truncated` rather than quietly reporting on a
+  // subset of the class as if it were the whole class.
+  const studentRows = await db.user.findMany({
     where: { classId: { in: ctx.classIds }, role: 'student' },
+    take: overflowTake(MAX_TEACHER_ROSTER_STUDENTS),
+    orderBy: { name: 'asc' },
     select: {
       id: true,
       // `activeTeamId`, never the `activeTeam` RELATION: the id is only honoured
@@ -68,6 +76,8 @@ export async function GET(req: NextRequest) {
       },
     },
   })
+
+  const { rows: students, truncated } = withOverflow(studentRows, MAX_TEACHER_ROSTER_STUDENTS)
 
   // De-duped teams from the scoped student set — the ONLY teams any aggregate below may touch.
   const teams = dedupeScopedTeams(students)
@@ -103,6 +113,8 @@ export async function GET(req: NextRequest) {
     kpDistribution,
     proficiency,
     pacing,
+    truncated,
+    limit: MAX_TEACHER_ROSTER_STUDENTS,
     generatedAt: new Date().toISOString(),
   })
 }

@@ -21,6 +21,7 @@ import { StatTile } from '@/components/ui/Card'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { useCopyToClipboard } from '@/components/ops/guide-chrome'
 import { TeacherPanelState } from './TeacherPanelState'
+import { TruncationNotice } from './TruncationNotice'
 
 interface RosterStudent {
   studentId: string
@@ -54,6 +55,8 @@ interface RosterResponse {
   hasClasses: boolean
   phaseCounts?: Record<string, number>
   attentionCount?: number
+  truncated?: boolean
+  limit?: number
 }
 
 export function TeacherRoster() {
@@ -61,6 +64,8 @@ export function TeacherRoster() {
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [phaseCounts, setPhaseCounts] = useState<Record<string, number>>({})
   const [attentionCount, setAttentionCount] = useState(0)
+  // P2-1: the roster read is bounded, so it may be partial — never silently.
+  const [truncated, setTruncated] = useState<{ limit: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [attentionOnly, setAttentionOnly] = useState(false)
@@ -99,6 +104,7 @@ export function TeacherRoster() {
         setStudents(roster.students ?? [])
         setPhaseCounts(roster.phaseCounts ?? {})
         setAttentionCount(roster.attentionCount ?? 0)
+        setTruncated(roster.truncated ? { limit: roster.limit ?? roster.students.length } : null)
         setClasses(cls.classes ?? [])
       })
       .catch(() => setLoadError('Could not load your roster. Try refreshing the page.'))
@@ -116,6 +122,7 @@ export function TeacherRoster() {
         setStudents(roster.students ?? [])
         setPhaseCounts(roster.phaseCounts ?? {})
         setAttentionCount(roster.attentionCount ?? 0)
+        setTruncated(roster.truncated ? { limit: roster.limit ?? roster.students.length } : null)
       })
       .catch(() =>
         setRosterRefreshError(
@@ -152,6 +159,8 @@ export function TeacherRoster() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
+      {truncated && <TruncationNotice limit={truncated.limit} noun="students" />}
+
       {rosterRefreshError && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-2.5">
           <span className="text-sm text-amber-300">{rosterRefreshError}</span>
