@@ -40,6 +40,8 @@ interface PaperRow {
 
 let jobs: JobRow[]
 let papers: PaperRow[]
+/** Papers with no `Citation` row — the maintenance sweep's input. */
+let uncited: Array<{ id: string; teamId: string; title: string; authors: string[]; fileUrl: string | null }>
 let processed: string[]
 /**
  * Fired ONCE, immediately after the route's first `findMany` returns — i.e.
@@ -130,7 +132,14 @@ vi.mock('@/lib/db', () => {
         for (const p of hits) apply(p as unknown as Record<string, unknown>, data)
         return { count: hits.length }
       },
+      // The citation backfill's input, kept as its own list: the `citation: null`
+      // predicate and the row it builds are owned by
+      // `lib/literature/citation-backfill.test.ts`. What this file owns is the
+      // WIRING — the sweep runs inside `isolate()`, so before these two members
+      // existed it threw on this fake db, was swallowed, and reported 0 forever.
+      findMany: async () => uncited.map((p) => ({ ...p })),
     },
+    citation: { createMany: async ({ data }: any) => ({ count: data.length }) },
     $transaction: async (fn: any) => fn(db),
   }
   return { db }
@@ -165,6 +174,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   jobs = []
   papers = []
+  uncited = []
   processed = []
   interleave = null
   mocks.assertCron.mockReturnValue(null)
@@ -284,4 +294,31 @@ describe('the 3-way job-selection OR', () => {
     expect((await (await GET(cronReq())).json()).processed).toBe(30)
     expect(processed).toHaveLength(30)
   })
+})
+
+describe('the maintenance sweeps the cron also carries', () => {
+  it('reports the citation backfill instead of swallowing it', async () => {
+    // `isolate()` turns any throw into a `catalogFailures` bump and a 0, so a
+    // backfill that is broken — or silently unwired — looks identical to one
+    // with nothing to do. The count has to come back on the response.
+    uncited = [
+      { id: 'legacy_1', teamId: 'team_1', title: 'An Older Upload', authors: [], fileUrl: null },
+    ]
+
+    const body = await (await GET(cronReq())).json()
+
+    expect(body.citationsBackfilled).toBe(1)
+  })
+
+  it('reports 0, not a failure, when there is nothing to backfill', async () => {
+    const body = await (await GET(cronReq())).json()
+
+    expect(body.citationsBackfilled).toBe(0)
+  })
+
+  // The other two sweeps (`ensureFairsSeeded`, `ensureFormsSeeded`) still throw
+  // against this fake db and are still swallowed by `isolate` — deliberately not
+  // stubbed, because that is what proves the isolation: the paper-job results
+  // above are reported whatever the catalog does. `catalogFailures` itself is
+  // NOT assertable here: it goes to the log line only, never to the response.
 })

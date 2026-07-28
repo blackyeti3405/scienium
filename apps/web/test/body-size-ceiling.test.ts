@@ -166,14 +166,17 @@ describe('parseJson — body byte ceiling (P2-S8)', () => {
     expect(allowed.data!.name).toHaveLength(MAX_BODY_BYTES)
   })
 
-  it('an override cannot be used to lower the ceiling below the semantic caps it fronts', async () => {
-    // Guard against the opposite mistake: a route passing a tiny maxBytes turns
-    // a validation 400 into an unexplained 413. The ceiling is infrastructure,
-    // so it is only ever raised — a smaller value is a route bug, not a policy.
+  it('a tiny override DOES lower the ceiling — documented, not prevented', async () => {
+    // The title used to say "cannot be used to lower the ceiling", which is the
+    // opposite of what the body asserts and of what the code does. Nothing here
+    // stops a route from passing a tiny `maxBytes`; the consequence is that a
+    // validation 400 becomes an unexplained 413, and this test records that the
+    // behaviour was chosen rather than overlooked. The ceiling is infrastructure
+    // and is only ever meant to be RAISED — a smaller value is a route bug that
+    // review has to catch, because this function will not.
     const s = streamingReq(['{"name":"ok"}'], { declareLength: true })
     const { error } = await parseJson(s.req, Schema, { maxBytes: 4 })
     expect(error?.status).toBe(413)
-    // …documented, not prevented. This test exists so the behaviour is chosen.
   })
 
   it('still returns 400 (not 413) for malformed JSON under the ceiling', async () => {

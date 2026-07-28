@@ -133,4 +133,35 @@ describe('mapWithConcurrency', () => {
       }),
     ).rejects.toThrow('job blew up')
   })
+
+  it('a rejection does not strand the pool', async () => {
+    // The rejecting worker exits its loop; the OTHER workers keep draining the
+    // shared cursor. That matters because the reject propagates immediately,
+    // while the survivors are still running — an implementation that parked the
+    // cursor on the first throw would leave the tail of the batch unattempted
+    // AND unrejected (a cron that reports one failure and silently skips ten).
+    const attempted: number[] = []
+    let inFlight = 0
+    let peak = 0
+
+    const run = mapWithConcurrency(Array.from({ length: 12 }, (_, i) => i), 3, async (i) => {
+      attempted.push(i)
+      inFlight++
+      peak = Math.max(peak, inFlight)
+      try {
+        await sleep(2)
+        if (i === 3) throw new Error('job 3 blew up')
+        return i
+      } finally {
+        inFlight--
+      }
+    })
+
+    await expect(run).rejects.toThrow('job 3 blew up')
+
+    await sleep(60)
+    expect(attempted.sort((a, b) => a - b)).toEqual(Array.from({ length: 12 }, (_, i) => i))
+    expect(inFlight).toBe(0) // nothing left holding a slot
+    expect(peak).toBe(3) // and the cap held while it happened
+  })
 })

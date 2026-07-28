@@ -311,12 +311,22 @@ describe('the clearance raise and its KP bonus are ONE conditional write', () =>
     expect(activities).toEqual([]) // no clearance_raised record either
   })
 
-  it('two concurrent passing submissions pay the bonus ONCE, not twice', async () => {
+  it('two interleaved passing submissions pay the bonus ONCE — by predicate, not by isolation', async () => {
     // THE ATTACK. Two exams for the same target level, graded at the same
     // instant. Only the first `updateMany` can match `clearanceLevel < 1`; the
     // second matches nothing, and because the increment rides on that same
     // predicate it does not pay. Decouple them and this team is paid twice for
     // one level.
+    //
+    // What this does NOT prove, and the title no longer claims: DB atomicity.
+    // `$transaction` here is `fn => fn(db)` — no isolation, no lock — so what is
+    // exercised is the compare-and-set SHAPE against a row store that honours
+    // `lt`, with the two calls interleaved by `Promise.all` rather than by the
+    // database. Real interleavings are proven in `test/pg/invariants.pg.test.ts`,
+    // and `expertise/grade` is still absent from it. It is OWED one: the raise
+    // increments `kp` and `clearanceLevel` gates `minClearance` purchases
+    // (`lib/economy.ts`), so this is the money path, not a cosmetic level. The
+    // A6-style row is the open item — see REFACTOR2 §0.11 v0.75.10.
     exams.push(exam({ id: 'exam_2' }))
 
     await Promise.all([POST(gradeReq('exam_1')), POST(gradeReq('exam_2'))])

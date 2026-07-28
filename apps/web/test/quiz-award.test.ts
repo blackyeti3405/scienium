@@ -191,7 +191,11 @@ describe('a retry may raise a verdict but never lower it', () => {
     // PaperProficiency.demonstrated, which stays true.
     expect(sessions[0]).toMatchObject({ score: 88, passed: true })
     expect(currency[0]!.kp).toBe(0)
-    expect(activities).toEqual([])
+    // `expect(activities).toEqual([])` used to sit here and was arithmetically
+    // implied: `recordActivity` is inside `if (input.passed)` and this call
+    // passes `passed: false`, so no guard in the award path can flip it. The two
+    // assertions above are the ones that go red when the `Math.max` / `passed ||`
+    // high-water is dropped.
   })
 })
 

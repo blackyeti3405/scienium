@@ -5,7 +5,69 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
-## [0.75.9] — 2026-07-28
+## [0.75.10] — 2026-07-28
+
+Test-truth work: no product behaviour changes in this release. The closing audit of the
+0.75.1–0.75.9 remediation found six tests that did not test what their titles claimed, and three
+modules edited in that range with no executable coverage at all. What follows is a list of things
+that were **claimed** before and are **proven** now.
+
+### Fixed — a bell test that could not see the bell
+
+`test/notification-email-targeting.test.ts`'s *"the bell still carries every window any member
+chose"* mocked `tx.notification.createMany` to `() => ({ count: 0 })` — it recorded nothing — and
+then asserted against `enqueued`, which is the **email** table. The bell could have dropped every
+window and the test stayed green. The mock now records what it is handed and the assertion reads
+the notification rows the route actually writes, plus two facts only that table can show: one
+event row rather than one per recipient, and no `bracket` field (routing metadata, not a column).
+
+### Fixed — a durability test that never looked at `tx`
+
+`test/notification-durability.test.ts` was titled *"a notification commits in the transaction of
+the thing it announces"* and consisted of two source sweeps, for `.catch(` and for `Date.now()`.
+Neither examined `tx` versus `db`. It now executes the real removal path against the suite's only
+fake that models **rollback** — `tx` writes are staged and merged on a clean return, `db` writes
+commit immediately — and asserts that a notice whose removal fails mid-transaction does not
+exist. The sweeps gained the sibling line to `activity-durability.test.ts`'s
+`recordActivity\((db|prisma),`: `\b(db|prisma)\.notification\.create(Many)?\(`, and the `.catch`
+sweep now matches `createMany`, which it did not before.
+
+### Fixed — four smaller mislabels
+
+- `test/body-size-ceiling.test.ts` said an override *"cannot be used to lower the ceiling"*; the
+  body asserts a 413 proving it **can**. Retitled to what it tests: documented, not prevented.
+- `test/notification-email-targeting.test.ts`'s §0.8 *"mails the account email, and never a
+  member-supplied one"* restated an assertion three tests above it, against a fixture with no
+  member-supplied-address field — there was no guard to delete. Removed; the real guard is
+  `notification-prefs-destination.test.ts`. The erased-account exclusion stays: it is the cron's
+  own `where` clause and has no other owner.
+- `test/quiz-award.test.ts`'s `expect(activities).toEqual([])` on a failed retry was
+  arithmetically implied by `passed: false`. Removed with a note naming the two assertions that
+  carry the case.
+- `test/expertise-grade.test.ts`'s *"two concurrent passing submissions"* is `Promise.all` over
+  `$transaction: fn => fn(db)` — no isolation. Retitled *"by predicate, not by isolation"*, and
+  the pg-lane row it still owes is now recorded rather than implied.
+
+### Added — coverage for three modules that had none
+
+- **`lib/literature/citation-backfill.ts`** (new in this range, called by the papers cron inside
+  `isolate()`, which swallows every throw). Direct tests: only papers lacking a citation are
+  touched, each row carries its **own** `teamId`, the count reported is what the database wrote
+  rather than what it was handed, a sparse legacy row does not throw, and the sweep stays
+  bounded and oldest-first. `test/cron-papers.test.ts` now asserts `citationsBackfilled` on the
+  response, so an unwired or broken sweep is visible there too.
+- **`lib/discovery/{medlineplus,patents,semanticscholar}.ts`** — all three rebound onto the
+  shared outbound primitive in this range with no executable check. Sixteen tests against a real
+  `node:http` server (the `fetch-retry.test.ts` / `geocode.test.ts` pattern): MedlinePlus's host
+  allowlist rejecting a suffix host, a foreign host and a scheme downgrade; its order-dependent
+  `decodeXmlEntities`, where decoding `&amp;` anywhere but last turns provider text into a live
+  `<script>` element in the one lane that renders in-app; the patents keyless degrade opening no
+  socket at all and the key riding in a header rather than the query string; and Semantic
+  Scholar's throttled-pool rule, which is one request and null, never a retry.
+- **`lib/concurrency.ts`** — the audit ranked this #1 and listed it as untested. **It was
+  wrong**: `lib/concurrency.test.ts` shipped in the same batch it was auditing. One genuine gap
+  is added — that a rejection does not strand the pool, i.e. the surviving workers drain the rest
+  of the batch instead of parking the shared cursor.
 
 REFACTOR2 **§0.8**'s versioned rules edition, plus the **P2-3 / P2-4** rows of §4. Two of the
 three rows were refactors, and two thirds of what they proposed is DECLINED here with the

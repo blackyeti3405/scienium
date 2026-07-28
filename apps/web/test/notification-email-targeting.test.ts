@@ -60,6 +60,8 @@ interface Member {
 
 let members: Member[]
 let enqueued: Array<{ dedupeKey: string; recipient: string }>
+/** Rows written to the BELL table (`Notification`), captured like the email ones. */
+let bell: Array<Record<string, unknown>>
 let memberWhere: unknown
 
 vi.mock('@/lib/db', () => ({
@@ -87,7 +89,15 @@ vi.mock('@/lib/db', () => ({
     notification: { findMany: async () => [] },
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
-        notification: { createMany: async () => ({ count: 0 }) },
+        notification: {
+          // Records what it is handed. It used to be `() => ({count:0})`, which
+          // recorded nothing — so the bell assertion below read the EMAIL table
+          // and stayed green however many windows the bell dropped.
+          createMany: async (args: { data: Array<Record<string, unknown>> }) => {
+            bell.push(...args.data)
+            return { count: args.data.length }
+          },
+        },
         notificationEmail: {
           createMany: async (args: {
             data: Array<{ dedupeKey: string; recipient: string }>
@@ -116,6 +126,7 @@ function member(email: string, deadlineDays: number[] | null, emailEnabled = tru
 
 beforeEach(() => {
   enqueued = []
+  bell = []
   memberWhere = undefined
   deadlineIn.days = 30
 })
@@ -162,30 +173,39 @@ describe('P2-S3 — reminder email is generated against each member\'s own windo
     expect(enqueued).toEqual([])
   })
 
-  it('the bell still carries every window any member chose', async () => {
+  it('the bell still carries a window only ONE member chose', async () => {
     // The union is the point: a teammate's tighter window must not be dropped
-    // just because it is not the reader's. At 7 days out, both members' brackets
-    // have fired at some point, and the shared feed has to be able to say so.
+    // just because it is not the reader's. This asserts the BELL table, which is
+    // the only table the union can be read off — the email fan-out below is
+    // filtered back to each member's own windows, so it cannot see the union at
+    // all. Narrow the generator to one member's windows (`members[0]`, the
+    // obvious "why compute a union?" simplification) and the 7-day member's
+    // notice never reaches the shared feed.
     deadlineIn.days = 7
     members = [member('early@school.test', [30]), member('late@school.test', [7])]
 
     await run()
 
-    expect(enqueued.map((e) => e.dedupeKey)).toEqual([
-      'deadline:team_1:event_r:registration:7',
-    ])
+    expect(bell.map((n) => n.dedupeKey)).toEqual(['deadline:team_1:event_r:registration:7'])
+    // A notification row is an EVENT, not a per-person copy (HANDOFF): one bell
+    // row, addressed to the team, and one email — not one row per recipient.
+    expect(bell).toHaveLength(1)
+    expect(enqueued.map((e) => e.recipient)).toEqual(['late@school.test'])
+    // `bracket` is routing metadata for the fan-out, not a column. Persisting it
+    // is an unknown-argument error against the real client, which the fake db
+    // cannot raise — so it is asserted here.
+    expect(bell[0]).not.toHaveProperty('bracket')
   })
 })
 
-describe('§0.8 — the destination is the Clerk-verified account address', () => {
-  it('mails the account email, and never a member-supplied one', async () => {
-    members = [member('verified@school.test', [30])]
-
-    await run()
-
-    expect(enqueued.map((e) => e.recipient)).toEqual(['verified@school.test'])
-  })
-
+describe('§0.8 — the cron never mails an erased account', () => {
+  /**
+   * The other §0.8 case that lived here — "mails the account email, and never a
+   * member-supplied one" — is DELETED. It restated the recipient assertion three
+   * tests up, and the guard it named (a member-supplied address being refused)
+   * has no fixture here to delete: `Member` carries no such field. The real
+   * guard is the prefs route, owned by `notification-prefs-destination.test.ts:58`.
+   */
   it('excludes an erased member, whose address is a non-routable tombstone', async () => {
     // Erasure blanks `User.email` to `deleted+<id>@invalid.scienium.app` and
     // stamps `deletedAt`. Mailing that address is a bounce per reminder per day.

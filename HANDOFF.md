@@ -174,6 +174,13 @@ load skews the suite; `test:e2e:file` uses `next dev`). New this session:
 - Use **ponytail** for all fixes.
 - Gates from repo root, in order: `shared-types build`, `check:integrity`, `typecheck`, `lint`,
   `build`. Run Vitest every iteration.
+- **`pnpm --filter web test` IS NOT DB-FREE.** `test/pg/invariants.pg.test.ts` loads `.env.local`
+  itself and runs against the live dev Postgres — that is the point (P1-R14: it is the only
+  true-concurrency lane and it now fails rather than skips in CI). Its fixtures are namespaced
+  `pgtest_<uuid8>` and self-cleaning, so it does not corrupt data, but do **not** run the suite
+  while a browser E2E run is live: the two contend for the same database and the E2E failures
+  that result look like product regressions. Scope it out with
+  `pnpm --filter web test -- --exclude 'test/pg/**'` when something else holds the DB.
 - E2E: **judge on `pnpm --filter web test:e2e` (`E2E_BUILD=1`)**, from a clean fixture
   (`reset:e2e` then `seed:e2e`), with nothing on port 3000. `test:e2e:file` is `next dev` and is
   for iteration only — cold-route compilation alone can blow a 30s `beforeAll`.
