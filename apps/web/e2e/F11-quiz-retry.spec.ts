@@ -34,7 +34,7 @@ import { e2eDb } from './db'
  *  - POST /api/papers/[id]/quiz always returns the same 5-question fixture set.
  *  - POST /api/papers/[id]/quiz/grade always scores every answer 40 (< 70) —
  *    the seeded first attempt always FAILS, enabling the retry path.
- *  - GET/POST /api/papers/[id]/quiz/retry always score every re-graded answer 90
+ *  - POST /api/papers/[id]/quiz/retry[/prepare] always score every re-graded answer 90
  *    (>= 70) — a retry always deterministically PASSES, capped at 95 (RETRY_SCORE_CAP).
  *  No Anthropic call is made anywhere in this spec.
  *
@@ -172,11 +172,15 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
    */
   async function clickFixMyMisses(page: Page, paperId: string) {
     await withRateLimitRetry(async () => {
-      const retryGetResponse = page.waitForResponse(
-        (res) => res.url().includes(`/api/papers/${paperId}/quiz/retry?`) && res.request().method() === 'GET',
+      // Preparation is a POST now — it generates the fresh question and that
+      // costs money, so it may not ride on a GET (REFACTOR2 P2-S6).
+      const retryPrepareResponse = page.waitForResponse(
+        (res) =>
+          res.url().endsWith(`/api/papers/${paperId}/quiz/retry/prepare`) &&
+          res.request().method() === 'POST',
       )
       await page.getByRole('button', { name: 'Fix my misses' }).click()
-      const res = await retryGetResponse
+      const res = await retryPrepareResponse
       return { status: res.status(), retryAfterSeconds: Number(res.headers()['retry-after'] ?? 60), result: res }
     }, 'F11 spec')
     await expect(page.locator('textarea')).toHaveCount(6, { timeout: 10000 })

@@ -1,7 +1,7 @@
 import 'server-only'
 import { LruCache } from '@/lib/lru'
 import { serverEnv } from '@/lib/env'
-import { fetchWithRetry } from '@/lib/fetch-retry'
+import { fetchWithRetry, readJsonCapped } from '@/lib/fetch-retry'
 import { DISCOVERY_UA, type ArticleSearchResult, type ResolvedArticle } from '@/lib/discovery/sources'
 
 // ── Discovery prior-art lane (patents) ────────────────────────────────────────
@@ -27,6 +27,8 @@ const API = 'https://search.patentsview.org/api/v1/patent/'
 const FETCH_TIMEOUT_MS = 8000
 const CACHE_TTL_MS = 1000 * 60 * 60
 const MAX_RESULTS = 10
+// Ten patents with abstracts: tens of KB. 2 MB is headroom, not a real ceiling.
+const MAX_BODY_BYTES = 2 * 1024 * 1024
 
 interface PatentHit {
   externalId: string
@@ -106,12 +108,13 @@ export async function searchPatents(query: string): Promise<PatentHit[]> {
     const res = await fetchWithRetry(url.toString(), {
       headers: { 'User-Agent': DISCOVERY_UA, Accept: 'application/json', 'X-Api-Key': apiKey },
       timeoutMs: FETCH_TIMEOUT_MS,
+      contentTypes: ['application/json'],
     })
     if (!res.ok) {
       console.error('[discovery/patents] PatentsView responded', res.status)
       return [fallbackSearchCard(q)]
     }
-    const data = (await res.json()) as {
+    const data = (await readJsonCapped(res, MAX_BODY_BYTES)) as {
       patents?: Array<{ patent_id?: string; patent_title?: string; patent_date?: string; patent_abstract?: string }>
     }
     const hits: PatentHit[] = []

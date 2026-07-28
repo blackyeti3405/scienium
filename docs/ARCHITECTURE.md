@@ -452,6 +452,27 @@ imports `paperTextBlock`/`paperTextContext`, and caches its `<sources>` block
 on its own, separate prefix — keeping the single-paper PERF-8 prefix clean and
 the multi-paper comparison cheap instead of mixing the two.
 
+**A GET does not write** (REFACTOR2 P2-S6, v0.75.4). Domain and catalog writes
+belong to explicit commands, migrations, or the scheduled jobs in §12 — not to
+whichever student happens to read next. Five GETs used to mutate; four moved.
+The paid one is the reason the rule is normative rather than tidy: preparing a
+quiz retry generated a fresh question with an Anthropic call, behind a verb the
+whole web treats as safe to replay, so it is now
+`POST api/papers/[id]/quiz/retry/prepare`. The citation backfill, the ISEF forms
+catalog seed and the fair catalog reconcile run on the five-minute maintenance
+cron instead. **One exception is kept and named:** the discovery source search
+fills an `ExternalWork` row per result — a read-through cache of public provider
+metadata, idempotent, page-bounded, owned by no team, behind a free provider.
+`test/paid-work-guard.test.ts` enforces the rule with that allowlist.
+
+**Every outbound provider request goes through `lib/fetch-retry.ts`** — the one
+place the outbound policy lives (REFACTOR2 P2-2, closed v0.75.4): scheme, DNS
+and private-range checks on the URL *and every redirect hop* (redirects are
+followed manually), a clamped `Retry-After`, a total deadline across attempts,
+drained bodies, streaming byte caps (`readCapped` / `readJsonCapped`) and opt-in
+content-type caps. Adapters supply only their headers, timeout and backoff base.
+`lib/fairs/zip.ts`'s `geocodeZip` is the single documented holdout.
+
 ### 5.3 API route inventory
 
 - `api/buildings/`: read plot/shop state; place/purchase, move, sell, upgrade
@@ -1428,7 +1449,11 @@ and fails when the two disagree, which is the drift guard in place of codegen.
 
 `apps/web/vercel.json` schedules:
 
-- `/api/cron/papers` every five minutes.
+- `/api/cron/papers` every five minutes. Despite the name this is the general
+  maintenance sweep: paper jobs, upload-asset reclaim, and — since v0.75.4 — the
+  catalog reconciles and the legacy citation backfill that used to ride on
+  student GETs (§5.2). Each catalog task is isolated, so one failing reconcile
+  cannot take the paper jobs with it.
 - `/api/cron/notifications` every 15 minutes across a 07:00-11:45 UTC window —
   a durable `NotificationRunTeam` per-day ledger (§9, §10) lets each run
   resume where the last one left off, so one day's runs can cover a

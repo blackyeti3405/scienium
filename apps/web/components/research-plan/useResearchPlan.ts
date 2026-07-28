@@ -23,6 +23,11 @@ export interface PlanData {
   planTextFull: string | null
   lastReview: PlanReview | null
   lastIdeaCheck: IdeaCheckResult | null
+  // REFACTOR2 P2-S7 — true when the stored result was produced from plan text
+  // that has since been replaced. The result is still shown (it is the team's
+  // work) but it must not read as a verdict on the plan now on screen.
+  lastReviewStale: boolean
+  lastIdeaCheckStale: boolean
 }
 
 /**
@@ -141,6 +146,9 @@ export function useResearchPlan() {
     setReviewStreaming(true)
     setReviewError(null)
     setReview(EMPTY_REVIEW)
+    // This review is about the text as it stands now, so whatever staleness the
+    // last load reported no longer applies (P2-S7).
+    setPlan((p) => (p ? { ...p, lastReviewStale: false } : p))
     try {
       const res = await fetch('/api/research-plan/review', { method: 'POST' })
       if (!res.ok || !res.body) {
@@ -188,6 +196,7 @@ export function useResearchPlan() {
     setIdeaError(null)
     setIdea(null)
     setActivity({ status: 'Starting…', searches: [], sources: [] })
+    setPlan((p) => (p ? { ...p, lastIdeaCheckStale: false } : p))
     try {
       const res = await fetch('/api/research-plan/idea-check', { method: 'POST' })
       if (!res.ok || !res.body) {

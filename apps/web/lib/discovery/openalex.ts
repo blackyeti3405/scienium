@@ -118,6 +118,7 @@ const oaFetch = (url: URL) =>
     headers: { 'User-Agent': DISCOVERY_UA, Accept: 'application/json' },
     timeoutMs: 8000,
     timeoutMessage: 'OpenAlex request timed out',
+    contentTypes: ['application/json'],
   })
 
 /**

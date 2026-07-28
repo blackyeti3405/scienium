@@ -79,6 +79,16 @@ export async function GET(req: NextRequest) {
 
     // Phase B cache: insert new works (skipDuplicates → one round-trip, no churn on
     // works we already have). Metadata is effectively static, so we don't update.
+    //
+    // This is the one write-on-GET REFACTOR2 P2-S6 KEEPS, and deliberately: it is
+    // a read-through CACHE fill, not a domain or catalog write. `ExternalWork`
+    // holds nothing but public provider metadata keyed by the provider's own id;
+    // no team owns a row, deleting the table costs a re-fetch and nothing else,
+    // the insert is idempotent (`skipDuplicates` on the unique
+    // `(platform, externalId)`), it is bounded by the 20-result page above, and
+    // the provider behind it (OpenAlex) is free — a GET here can never start
+    // paid work. The three writes that did NOT meet that bar (fairs, forms,
+    // citations) moved to `app/api/cron/papers`.
     if (works.length > 0) {
       await db.externalWork.createMany({
         data: works.map((w) => ({

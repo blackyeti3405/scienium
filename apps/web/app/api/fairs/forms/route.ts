@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeamContext } from '@/lib/api/route-context'
-import { ensureFormsSeeded } from '@/lib/fairs/forms-server'
 import { ISEF_EDITION, isEditionReviewed } from '@/lib/fairs/forms'
 import { db } from '@/lib/db'
 
@@ -12,12 +11,17 @@ import { db } from '@/lib/db'
  * seeded under an older edition would otherwise keep serving retired codes and
  * stale titles (REFACTOR2 P0-R4). Rows for codes outside the active edition stay
  * in the table — `TeamFormStatus` FKs point at them — but are not served.
+ *
+ * A PURE READ (REFACTOR2 P2-S6): seeding the catalog used to happen here, so
+ * the first student to open the checklist after a deploy paid for — and raced
+ * on — a global catalog write. `ensureFormsSeeded` now runs on the maintenance
+ * cron (`app/api/cron/papers`). A code the edition names but the table has not
+ * caught up to is simply not served yet, which is what the `if (!id)` skip
+ * below already did for retired codes.
  */
 export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
-
-  await ensureFormsSeeded()
 
   const [catalog, statuses] = await Promise.all([
     db.formsCatalog.findMany({

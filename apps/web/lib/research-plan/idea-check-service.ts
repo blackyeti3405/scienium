@@ -8,6 +8,7 @@ import { db } from '@/lib/db'
 import { IDEA_CHECK_DAILY_LIMIT, ideaChecksUsedToday } from '@/lib/research-plan/idea-check'
 import { requirePlanText } from '@/lib/research-plan/require-plan-text'
 import { claimPlanWork } from '@/lib/research-plan/claim'
+import { planHashOf } from '@/lib/research-plan/plan-hash'
 import { createNdjsonStream } from '@/lib/ndjson'
 import { logEvent } from '@/lib/observability/log'
 import { isSafeHttpUrl } from '@/lib/showcase'
@@ -108,6 +109,8 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
   const { teamId, dbUserId } = principal
   /** The exact source this check was run against — the commit CASes on it. */
   const checkedText = plan.lastSyncedText
+  /** …and the same source as a hash, stamped into the stored verdict (P2-S7). */
+  const planHash = planHashOf(plan)
 
   const stream = createNdjsonStream(async (send) => {
     try {
@@ -291,7 +294,11 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
         const committed = await tx.researchPlan.updateMany({
           where: { teamId, lastSyncedText: checkedText },
           data: {
-            lastIdeaCheckJson: { verdict, findings } as unknown as Prisma.InputJsonValue,
+            // `planHash` stamps WHICH plan this verdict is about, so a later
+            // save of new text can mark it out of date instead of letting it
+            // keep looking current (P2-S7). Same field name and formula the
+            // review has carried since PERF-7 — one convention, not two.
+            lastIdeaCheckJson: { verdict, findings, planHash } as unknown as Prisma.InputJsonValue,
             lastIdeaCheckAt: new Date(),
             ideaCheckClaimedAt: null,
           },

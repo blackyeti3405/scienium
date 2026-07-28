@@ -4,6 +4,7 @@ import sanitizeHtml from 'sanitize-html'
 import { LruCache } from '@/lib/lru'
 import { ARTICLE_SANITIZE_OPTS } from '@/lib/discovery/sanitize'
 import { DISCOVERY_UA, type ArticleSearchResult, type ResolvedArticle } from '@/lib/discovery/sources'
+import { fetchWithRetry, readCapped } from '@/lib/fetch-retry'
 
 // ── Discovery explainers (MedlinePlus health topics) ──────────────────────────
 // The plain-language lane: NIH's consumer-health encyclopedia, written at a
@@ -30,6 +31,8 @@ const API = 'https://wsearch.nlm.nih.gov/ws/query'
 const FETCH_TIMEOUT_MS = 8000
 const CACHE_TTL_MS = 1000 * 60 * 60
 const MAX_RESULTS = 12
+// A 12-topic health-topic result set is tens of KB. 4 MB is headroom.
+const MAX_BODY_BYTES = 4 * 1024 * 1024
 
 interface HealthTopic {
   externalId: string
@@ -107,12 +110,15 @@ export async function searchHealthTopics(query: string): Promise<HealthTopic[]> 
   url.searchParams.set('retmax', String(MAX_RESULTS))
 
   try {
-    const res = await fetch(url.toString(), {
+    // Through the shared primitive (REFACTOR2 P2-2): raw `fetch` here inherited
+    // none of the outbound policy — no redirect revalidation, no total deadline,
+    // and `res.text()` buffered whatever the provider sent.
+    const res = await fetchWithRetry(url.toString(), {
       headers: { 'User-Agent': DISCOVERY_UA, Accept: 'application/xml' },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      timeoutMs: FETCH_TIMEOUT_MS,
     })
     if (!res.ok) return []
-    const xml = await res.text()
+    const xml = await readCapped(res, MAX_BODY_BYTES)
 
     const topics: HealthTopic[] = []
     // One <document rank url> block per topic; fields are XML-escaped HTML.

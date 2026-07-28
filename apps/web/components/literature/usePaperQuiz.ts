@@ -134,9 +134,14 @@ export function usePaperQuiz(paper: Paper, onProficiencyEarned?: () => void) {
     setRetryLoading(true)
     setPhase('retry')
     try {
-      const res = await fetch(
-        `/api/papers/${paper.id}/quiz/retry?sessionId=${encodeURIComponent(quiz.sessionId)}`,
-      )
+      // POST, not GET: preparing generates the fresh question, which costs money
+      // (REFACTOR2 P2-S6). Still idempotent server-side — re-entering the retry
+      // view returns the same question rather than paying again.
+      const res = await fetch(`/api/papers/${paper.id}/quiz/retry/prepare`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: quiz.sessionId }),
+      })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to prepare retry')
       const extra = (data.questions as QuizQuestionView[]).find((q) => q.id === data.newQuestionId)

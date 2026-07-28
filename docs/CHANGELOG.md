@@ -5,6 +5,85 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.75.4] — 2026-07-28
+
+REFACTOR2 findings **P2-S10 + P2-2**, **P2-S6**, **P2-S7**.
+
+### Fixed — a provider could park a request, or redirect it inside our network (P2-S10 / P2-2)
+
+`lib/fetch-retry.ts` is the one outbound primitive, and it trusted three things it should not
+have. `Retry-After` was multiplied straight into `sleep()`, so `Retry-After: 86400` parked a
+serverless invocation for a day. There was no deadline across attempts — only a per-attempt
+timeout, so three slow attempts cost three timeouts plus unbounded backoff. And `fetch` ran at
+its `redirect: 'follow'` default, so nothing inspected where a redirect landed.
+
+All three are fixed in the primitive, so every adapter inherits them:
+
+- **Every hop is revalidated.** Redirects are followed by hand (max 5) and each hop goes through
+  a new `assertPublicUrl`: `http(s)` only, and never an address inside our own network —
+  loopback, RFC1918, CGNAT, link-local (which is where `169.254.169.254` lives), IPv6 loopback,
+  `fc00::/7`, `fe80::/10`, and the IPv4-mapped forms of all of them. A hostname is resolved and
+  its addresses checked; `localhost` and any single-label intranet name are refused outright.
+- **`Retry-After` is clamped to 10s** and parsed in both its forms (delta-seconds and HTTP-date).
+- **A total deadline** (`4 × timeoutMs` by default) bounds the whole call, backoff included; a
+  wait the budget cannot afford ends the call instead of being taken.
+- **Every response we don't return is drained** — retry and redirect bodies each leaked a socket.
+- **Content-type caps**, opt-in per adapter, so a JSON provider answering `text/html` is refused
+  rather than parsed.
+
+**Google Docs now goes through the primitive.** Its export always redirects, and it was the one
+call site following those redirects outside this policy. It also read the entire export with
+`res.text()` before anything truncated it; it now uses `readCapped` (2 MB). OpenAlex citation
+URLs were already pinned to `api.openalex.org` (v0.55.0) — verified, unchanged.
+
+The three remaining uncapped provider reads are capped and routed through the primitive too:
+`patents.ts`, `medlineplus.ts`, `semanticscholar.ts` (the last with `attempts: 1`, because its
+no-retry rule is deliberate), plus both `res.json()` reads in the wiki article route.
+
+### Changed — GETs stopped writing, and the paid one stopped being a GET (P2-S6)
+
+Five GETs mutated. Four moved; one stayed with its reasons written down.
+
+- **The paid one.** `GET /api/papers/[id]/quiz/retry?sessionId=` generated the retry's fresh
+  question — an Anthropic call behind a verb the whole web treats as safe to replay. It is now
+  `POST /api/papers/[id]/quiz/retry/prepare`, same service call, same `ai` tier, same scoping.
+- **Citations backfill**, **forms catalog seed** and **fair catalog reconcile** moved to the
+  five-minute maintenance cron (`/api/cron/papers`), each isolated so one failure cannot take
+  the paper jobs with it. Citations for new papers were already written where the facts arrive
+  (at promote time, and when a paper's metadata lands); only the legacy sweep remained.
+- **The discovery source cache stays**, documented as what it is: a read-through cache of public
+  provider metadata — idempotent, bounded by the result page, owned by no team, free provider.
+
+A route contract test now enforces it: no `app/api` GET may call `db.*.create/update/upsert/
+delete` outside a named allowlist, and no GET may reach the paid retry preparer.
+
+### Fixed — a settings PATCH could half-apply, and stale AI results looked current (P2-S7)
+
+- **`PATCH /api/settings` validated the ZIP last.** It wrote the name (and mirrored it to
+  Clerk), the school, the research idea and the lab name, and only then asked whether the ZIP
+  mapped to a state — so `{ name, labName, zip: '00000' }` returned 400 with most of it already
+  saved. Everything is derived and validated first; the writes commit in one transaction; the
+  geocode happens before the transaction opens and the Clerk mirror after it commits.
+- **The research-plan client sent `null` into a schema that accepted only strings.** Saving
+  pasted text with no project type picked — a flow the client deliberately allows — was an
+  unconditional 400 shown as "Could not save the text". The client is right: `null` means "no
+  selection", and the schema now says `.nullish()`.
+- **A review kept looking current after the plan changed.** The compare-and-set writeback
+  (v0.43.0) covers a review that finishes *after* the text moved; it does not cover the other
+  order. The `planHash` already stamped inside `lastReviewJson` is now shared with the idea
+  check and compared on read, and both GET and POST return `lastReviewStale` /
+  `lastIdeaCheckStale`. The panel renders an orange note over the stale result rather than
+  hiding the team's work. The POST response also stopped omitting the idea check that GET
+  returns.
+
+### Removed
+
+- `GET /api/papers/[id]/quiz/retry` (preparation moved to the `prepare` POST above).
+- `ensureFormsSeeded` / `ensureFairsSeeded` calls from the fairs GETs, and the citation backfill
+  from `GET /api/citations`.
+
+---
+
 ## [0.75.3] — 2026-07-28
 
 REFACTOR2 findings **P2-S1**, **P2-S2**, **P2-S4**.

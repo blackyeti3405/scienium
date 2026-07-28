@@ -3,6 +3,7 @@ import { LruCache } from '@/lib/lru'
 import { normalizeArxivId } from '@/lib/discovery/arxiv'
 import { DISCOVERY_UA } from '@/lib/discovery/sources'
 import { serverEnv } from '@/lib/env'
+import { fetchWithRetry, readJsonCapped } from '@/lib/fetch-retry'
 
 // ── Semantic Scholar (TL;DR + influential-citation ordering) ──────────────────
 //
@@ -27,6 +28,8 @@ const CACHE_TTL_MS = 1000 * 60 * 60 // 60 minutes — a hard, aggressive cache T
 const CACHE_MAX_ENTRIES = 500
 
 const FETCH_TIMEOUT_MS = 8000
+// A 1,000-citation page with externalIds is a few MB at the outside.
+const MAX_BODY_BYTES = 8 * 1024 * 1024
 
 export interface S2Tldr {
   text: string
@@ -81,13 +84,18 @@ function s2IdFor(externalId: string, sourceUrl?: string | null): string | null {
  */
 async function s2Fetch(url: string): Promise<Response | null> {
   try {
-    const res = await fetch(url, {
+    // Through the shared primitive for the outbound policy (redirect
+    // revalidation, private-range refusal, total deadline) — but `attempts: 1`,
+    // because the no-retry rule above is deliberate (REFACTOR2 P2-2).
+    const res = await fetchWithRetry(url, {
       headers: {
         'User-Agent': DISCOVERY_UA,
         Accept: 'application/json',
         ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
       },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      timeoutMs: FETCH_TIMEOUT_MS,
+      attempts: 1,
+      contentTypes: ['application/json'],
     })
     if (!res.ok) return null
     return res
@@ -114,7 +122,7 @@ export async function getTldr(externalId: string, sourceUrl?: string | null): Pr
   }
 
   try {
-    const data = (await res.json()) as { tldr?: { text?: string } | null }
+    const data = (await readJsonCapped(res, MAX_BODY_BYTES)) as { tldr?: { text?: string } | null }
     const text = data.tldr?.text?.replace(/\s+/g, ' ').trim() ?? ''
     const result: S2Tldr | null = text ? { text } : null
     tldrCache.set(id, result)
@@ -153,7 +161,7 @@ export async function getInfluentialCitingIds(
   }
 
   try {
-    const data = (await res.json()) as {
+    const data = (await readJsonCapped(res, MAX_BODY_BYTES)) as {
       data?: Array<{
         isInfluential?: boolean
         citingPaper?: { externalIds?: { ArXiv?: string; PubMed?: string } }

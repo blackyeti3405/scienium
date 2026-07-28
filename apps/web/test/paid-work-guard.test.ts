@@ -105,4 +105,72 @@ describe('paid-work guard sweep', () => {
     const src = readFileSync(join(WEB_ROOT, 'app', 'api', 'papers', '[id]', 'route.ts'), 'utf8')
     expect(src).not.toMatch(/processPaperJob/)
   })
+
+  it('no GET reaches the paid quiz-retry preparer', () => {
+    // The sharp end of P2-S6: `prepareRetry` generates a question with an
+    // Anthropic call, and it used to hang off `GET .../quiz/retry?sessionId=`.
+    // A safe verb on top of a spend is one prefetch away from a bill.
+    for (const p of routes) {
+      const body = getHandlerBody(readFileSync(p, 'utf8'))
+      expect(body, relative(WEB_ROOT, p)).not.toMatch(/prepareRetry\s*\(/)
+    }
+  })
+})
+
+/**
+ * The exported GET handler's body, or '' if the file has none. Crude on
+ * purpose: handlers are top-level `export async function GET(...)` in every
+ * route here, so slicing to the next `export ` is exact enough to assert on.
+ */
+function getHandlerBody(src: string): string {
+  const start = src.search(/export\s+async\s+function\s+GET\b/)
+  if (start === -1) return ''
+  const rest = src.slice(start + 1)
+  const end = rest.search(/\nexport\s/)
+  return end === -1 ? rest : rest.slice(0, end)
+}
+
+/**
+ * REFACTOR2 P2-S6 — a GET does not write.
+ *
+ * Five GETs mutated: citations backfill, discovery source cache, forms seed,
+ * fair match seed, and the paid quiz-retry preparation. Four moved to explicit
+ * homes (`app/api/cron/papers` and `.../quiz/retry/prepare`); the fifth is a
+ * read-through cache fill and is listed below with the reason it is allowed.
+ *
+ * ponytail: this sees writes written IN the route file. A write reached through
+ * a lib call (which is how the forms and fairs seeds hid) is invisible here —
+ * upgrade to a transitive scan like `paidLibSpecifiers()` above if that class
+ * recurs. Bounded as it is, it fails on the exact regression it was written
+ * for: a `db.*.create/update/upsert/delete` creeping back into a GET.
+ */
+const GET_WRITE_ALLOWLIST: Record<string, string> = {
+  // Read-through cache of public provider metadata: idempotent, bounded by the
+  // result page, owned by no team, and behind a free provider.
+  'app/api/discovery/sources/search/route.ts': 'ExternalWork cache fill',
+  // Just-in-time provisioning of a teacher who has a Clerk claim and no row —
+  // authentication, not domain state, and it is what makes the read possible.
+  'lib/teacher/auth.ts': 'teacher JIT provisioning (not a route file)',
+}
+
+describe('GET purity sweep (P2-S6)', () => {
+  const routes = collectFiles(join(WEB_ROOT, 'app', 'api'), 'route.ts')
+  const WRITE = /\b(?:db|tx)\.[a-zA-Z]+\.(?:create|createMany|update|updateMany|upsert|delete|deleteMany|createManyAndReturn)\s*\(/
+
+  it('sweep is not vacuous', () => {
+    expect(routes.length).toBeGreaterThan(50)
+    expect(routes.filter((p) => getHandlerBody(readFileSync(p, 'utf8')))).not.toHaveLength(0)
+  })
+
+  it.each(routes.map((p) => relative(WEB_ROOT, p)))('%s: GET does not write', (routeRel) => {
+    // Cron GETs are the job path — they exist to write, and `assertCron` gates them.
+    if (routeRel.includes(`api${'/'}cron`)) return
+    if (GET_WRITE_ALLOWLIST[routeRel.split('\\').join('/')]) return
+    const body = getHandlerBody(readFileSync(join(WEB_ROOT, routeRel), 'utf8'))
+    expect(
+      WRITE.test(body),
+      `GET writes to the database. Move it to a command, a migration, or the cron sweep — ` +
+        `or add it to GET_WRITE_ALLOWLIST with the reason it is a cache fill.`,
+    ).toBe(false)
+  })
 })

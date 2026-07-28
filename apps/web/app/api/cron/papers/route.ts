@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { assertCron } from '@/lib/cron/auth'
 import { mapWithConcurrency } from '@/lib/concurrency'
 import { db } from '@/lib/db'
+import { ensureFairsSeeded } from '@/lib/fairs/match'
+import { ensureFormsSeeded } from '@/lib/fairs/forms-server'
+import { backfillMissingCitations } from '@/lib/literature/citation-backfill'
 import { processPaperJob } from '@/lib/literature/process-paper'
 import { logEvent } from '@/lib/observability/log'
 import { reclaimAbandonedAssets, reconcileOrphanedAssets } from '@/lib/uploads/assets'
@@ -96,18 +99,39 @@ export async function GET(req: NextRequest) {
   const reconciled = await reconcileOrphanedAssets()
   const cleanedAssets = await reclaimAbandonedAssets({ olderThanMs: STALE_ASSET_MS, limit: 50 })
 
+  // ── The catalog/domain writes that used to ride on student GETs (P2-S6) ─────
+  // A read request is not a place to reconcile a global catalog or repair
+  // history. All three are idempotent, bounded, and unpaid; this five-minute
+  // sweep is their explicit home, so `/api/fairs/match`, `/api/fairs/forms` and
+  // `/api/citations` are pure reads. Each is isolated: a catalog that fails to
+  // reconcile must not stop the paper jobs above from being reported.
+  let catalogFailures = 0
+  const isolate = async <T>(run: () => Promise<T>, fallback: T): Promise<T> => {
+    try {
+      return await run()
+    } catch (err) {
+      catalogFailures++
+      console.error('[cron/papers] catalog reconcile failed:', err)
+      return fallback
+    }
+  }
+  await isolate(ensureFairsSeeded, undefined)
+  await isolate(ensureFormsSeeded, undefined)
+  const citationsBackfilled = await isolate(backfillMissingCitations, 0)
+
   logEvent({
     event: 'cron.papers',
     route: '/api/cron/papers',
     durationMs: Date.now() - now.getTime(),
-    outcome: 'ok',
-    detail: `processed=${jobs.length} terminalized=${terminalized} reconciled=${reconciled} cleanedAssets=${cleanedAssets}`,
+    outcome: catalogFailures ? 'error' : 'ok',
+    detail: `processed=${jobs.length} terminalized=${terminalized} reconciled=${reconciled} cleanedAssets=${cleanedAssets} citations=${citationsBackfilled} catalogFailures=${catalogFailures}`,
   })
 
   return NextResponse.json({
     processed: jobs.length,
     terminalized,
     reconciled,
+    citationsBackfilled,
     cleanedAssets,
   })
 }

@@ -93,7 +93,15 @@ const ALLOWLIST: Record<string, string[]> = {
   'lib/observability/log.ts': ['line'],
   // Module-level constants and local counters — all numbers.
   'app/api/cron/notifications/route.ts': ['MAX_TEAMS_PER_RUN', 'RUN_BUDGET_MS', 'processed'],
-  'app/api/cron/papers/route.ts': ['now.getTime()', 'cleanedAssets', 'reconciled', 'terminalized'],
+  'app/api/cron/papers/route.ts': [
+    'now.getTime()',
+    'cleanedAssets',
+    'reconciled',
+    'terminalized',
+    // P2-S6's catalog sweep: a `createMany` row count and a failure tally.
+    'citationsBackfilled',
+    'catalogFailures',
+  ],
   'lib/notifications/outbox.ts': ['sent'],
   'lib/economy/lab-credit.ts': ['attempt'],
   'lib/literature/process-paper.ts': ['paperId', 'attempts'],

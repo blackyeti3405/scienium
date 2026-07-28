@@ -369,8 +369,12 @@ export async function matchFairs(
   state: string | null,
   coords?: readonly [number, number] | null,
 ): Promise<FairMatch> {
-  await ensureFairsSeeded()
-
+  // NO `ensureFairsSeeded()` here (REFACTOR2 P2-S6). This is the read behind
+  // `GET /api/fairs/match`, and reconciling a GLOBAL catalog — creating,
+  // updating and retiring `Fair`/`FairEvent` rows every other team also reads —
+  // is not a read. The reconcile now runs from the maintenance cron
+  // (`app/api/cron/papers`, every five minutes) and from `loadFairIndex`, which
+  // only the notifications cron calls.
   const isefRow = await db.fair.findFirst({
     where: { level: 'international', retiredAt: null },
     include: fairInclude,

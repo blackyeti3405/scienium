@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson, zipString } from '@/lib/validation'
 import { zipToState, geocodeZip } from '@/lib/fairs/zip'
-import { applySchoolAndClass, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { resolveSchool, syncClerkDisplayName } from '@/lib/onboarding/profile'
 import { db } from '@/lib/db'
 
 const SettingsBody = z
@@ -80,27 +80,20 @@ export async function PATCH(req: NextRequest) {
     )
   }
 
-  // User-field writes (any member, self-scoped)
-  if (data.name !== undefined) {
-    await db.user.update({ where: { id: ctx.dbUserId }, data: { name: data.name } })
-    // Mirror to the Clerk profile name so the avatar/account stay in sync with the DB.
-    await syncClerkDisplayName(ctx.userId, data.name)
-  }
-  if (data.school !== undefined) {
-    await applySchoolAndClass(ctx.dbUserId, { highSchool: data.school })
-  }
-  // researchIdea is any-member — updates only the researchIdea column; labType is unchanged
-  if (data.researchIdea !== undefined) {
-    await db.team.update({
-      where: { id: ctx.teamId },
-      data: { researchIdea: data.researchIdea },
-    })
-  }
+  // ── DERIVE EVERYTHING FIRST, THEN WRITE ONCE (REFACTOR2 P2-S7) ─────────────
+  // This handler used to write the name (and mirror it to Clerk), the school,
+  // the research idea and the lab name — and only THEN check whether the ZIP
+  // maps to a state. A PATCH carrying `{ name, labName, zip: '00000' }` came
+  // back 400 with three of its four fields already applied and the fourth
+  // silently dropped, which is the worst of both: the caller believes nothing
+  // was saved. Every rejection now happens before the first write, and the
+  // writes that survive it commit together or not at all.
 
+  const teamData: { researchIdea?: string; name?: string } & Record<string, unknown> = {}
+  if (data.researchIdea !== undefined) teamData.researchIdea = data.researchIdea
   // Team-field writes (lead only, already guarded above)
-  if (data.labName !== undefined) {
-    await db.team.update({ where: { id: ctx.teamId }, data: { name: data.labName } })
-  }
+  if (data.labName !== undefined) teamData.name = data.labName
+
   if (data.zip !== undefined) {
     const state = zipToState(data.zip)
     if (!state) {
@@ -109,17 +102,45 @@ export async function PATCH(req: NextRequest) {
         { status: 400 },
       )
     }
+    // Geocoding is a network call to Nominatim — done HERE, before the
+    // transaction opens, because a transaction must never be held across the
+    // network (HANDOFF conventions). A geocode miss is not an error: the ZIP
+    // and state are still authoritative, the coordinates are a nicety.
     const coords = await geocodeZip(data.zip)
-    await db.team.update({
-      where: { id: ctx.teamId },
-      data: {
-        locationZip: data.zip,
-        locationState: state,
-        locationLat: coords?.[0] ?? null,
-        locationLng: coords?.[1] ?? null,
-      },
-    })
+    teamData.locationZip = data.zip
+    teamData.locationState = state
+    teamData.locationLat = coords?.[0] ?? null
+    teamData.locationLng = coords?.[1] ?? null
   }
+
+  // Find-or-create the School by name, also before the transaction (it is a
+  // shared lookup row, keyed by unique name, that any user may already have
+  // created). Only the user's POINTER to it is part of the atomic write below.
+  const schoolId =
+    data.school !== undefined ? await resolveSchool(data.school) : undefined
+
+  await db.$transaction(async (tx) => {
+    // User-field writes (any member, self-scoped)
+    if (data.name !== undefined || schoolId !== undefined) {
+      await tx.user.update({
+        where: { id: ctx.dbUserId },
+        data: {
+          ...(data.name !== undefined ? { name: data.name } : {}),
+          // `resolveSchool('')` is null — a blank school name clears nothing
+          // today, matching the previous `if (schoolId)` behaviour.
+          ...(schoolId ? { schoolId } : {}),
+        },
+      })
+    }
+    if (Object.keys(teamData).length > 0) {
+      await tx.team.update({ where: { id: ctx.teamId }, data: teamData })
+    }
+  })
+
+  // Mirror to the Clerk profile name so the avatar/account stay in sync with the
+  // DB — AFTER the commit, so a Clerk outage cannot leave a half-applied PATCH.
+  // It swallows its own errors; the DB is the source of truth.
+  if (data.name !== undefined) await syncClerkDisplayName(ctx.userId, data.name)
 
   // Return refreshed values (same shape as GET)
   const [updatedUser, updatedTeam] = await fetchProfile(ctx)

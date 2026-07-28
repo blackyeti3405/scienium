@@ -282,13 +282,31 @@ export function ResearchPlanFeature() {
         {/* ── Plan review (structured, fills in live) ── */}
         {reviewError && <p className="font-pixel text-[8px] text-red-400">{reviewError}</p>}
         {(reviewStreaming || review) && (
-          <PlanReviewView review={review ?? EMPTY_REVIEW} variant="student" streaming={reviewStreaming} />
+          <>
+            {/* REFACTOR2 P2-S7 — the review below graded text this plan no
+                longer contains. Same shape as the synthesis check's stale note. */}
+            {plan?.lastReviewStale && !reviewStreaming && (
+              <p data-testid="plan-review-stale" className="font-pixel text-[8px] text-orange-300/90">
+                your plan has changed since this review — run it again for the current text
+              </p>
+            )}
+            <PlanReviewView review={review ?? EMPTY_REVIEW} variant="student" streaming={reviewStreaming} />
+          </>
         )}
 
         {/* ── Idea check (live activity, then verdict) ── */}
         {ideaError && <p className="font-pixel text-[8px] text-red-400">{ideaError}</p>}
         {checking && <IdeaActivity activity={activity} />}
-        {idea && !checking && <IdeaCheckView idea={idea} variant="student" />}
+        {idea && !checking && (
+          <>
+            {plan?.lastIdeaCheckStale && (
+              <p data-testid="idea-check-stale" className="font-pixel text-[8px] text-orange-300/90">
+                your plan has changed since this check — run it again for the current text
+              </p>
+            )}
+            <IdeaCheckView idea={idea} variant="student" />
+          </>
+        )}
       </div>
     </div>
   )

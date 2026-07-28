@@ -22,7 +22,8 @@ import { GET as chatGET, POST as chatPOST } from '@/app/api/papers/[id]/chat/rou
 import { GET as explainGET, POST as explainPOST } from '@/app/api/papers/[id]/explain/route'
 import { GET as quizGET, POST as quizPOST } from '@/app/api/papers/[id]/quiz/route'
 import { POST as gradePOST } from '@/app/api/papers/[id]/quiz/grade/route'
-import { GET as retryGET, POST as retryPOST } from '@/app/api/papers/[id]/quiz/retry/route'
+import { POST as retryPOST } from '@/app/api/papers/[id]/quiz/retry/route'
+import { POST as retryPreparePOST } from '@/app/api/papers/[id]/quiz/retry/prepare/route'
 
 let h: RoutePolicyHarness
 
@@ -211,7 +212,9 @@ describe('POST /api/papers/[id]/quiz/grade (AI)', () => {
 })
 
 describe('/api/papers/[id]/quiz/retry (AI, scoping delegated to quiz-retry service)', () => {
-  it("GET 404s a session on ANOTHER team's paper", async () => {
+  // Preparation is `./prepare`'s POST now — it spends, so it may not be a GET
+  // (REFACTOR2 P2-S6). Same four authz facts, same service call.
+  it("prepare 404s a session on ANOTHER team's paper", async () => {
     h.seed('paperQuizSession', {
       id: 'sess_b',
       paperId: P_B,
@@ -220,12 +223,21 @@ describe('/api/papers/[id]/quiz/retry (AI, scoping delegated to quiz-retry servi
       questionsJson: [],
       paper: { id: P_B, teamId: h.ids.teamB },
     })
-    await h.asStudentA().get(retryGET, P_B, { query: { sessionId: 'sess_b' } }).expect(404)
+    await h
+      .asStudentA()
+      .post(retryPreparePOST, P_B, { body: { sessionId: 'sess_b' } })
+      .expect(404)
   })
-  it('GET 401s signed out', () =>
-    h.anonymous().get(retryGET, P_A, { query: { sessionId: 's' } }).expect(401))
-  it('GET 429s over the tier', () =>
-    h.asStudentA().overLimit().get(retryGET, P_A, { query: { sessionId: 's' } }).expect(429))
+  it('prepare 401s signed out', () =>
+    h.anonymous().post(retryPreparePOST, P_A, { body: { sessionId: 's' } }).expect(401))
+  it('prepare 403s cross-origin', () =>
+    h
+      .asStudentA()
+      .crossOrigin()
+      .post(retryPreparePOST, P_A, { body: { sessionId: 's' } })
+      .expect(403))
+  it('prepare 429s over the tier', () =>
+    h.asStudentA().overLimit().post(retryPreparePOST, P_A, { body: { sessionId: 's' } }).expect(429))
   it('POST 401s signed out', () =>
     h
       .anonymous()

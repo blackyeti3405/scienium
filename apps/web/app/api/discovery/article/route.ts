@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchWithRetry } from '@/lib/fetch-retry'
+import { fetchWithRetry, readJsonCapped } from '@/lib/fetch-retry'
 import sanitizeHtml from 'sanitize-html'
 import { requireUserContext } from '@/lib/api/route-context'
 import { LruCache } from '@/lib/lru'
@@ -42,7 +42,15 @@ const cache = new LruCache<ArticlePayload>(CACHE_MAX_ENTRIES, CACHE_TTL_MS)
 
 /** Fetch with a descriptive UA + retry/backoff for transient 429 / 5xx errors. */
 const wikiFetch = (url: string) =>
-  fetchWithRetry(url, { headers: { 'User-Agent': UA, Accept: 'application/json' }, timeoutMs: 8_000 })
+  fetchWithRetry(url, {
+    headers: { 'User-Agent': UA, Accept: 'application/json' },
+    timeoutMs: 8_000,
+    contentTypes: ['application/json'],
+  })
+
+// The largest English Wikipedia articles render a few MB of HTML; 16 MB is
+// headroom. Uncapped `res.json()` buffered whatever arrived (REFACTOR2 P2-S10).
+const MAX_BODY_BYTES = 16 * 1024 * 1024
 
 export async function GET(req: NextRequest) {
   // Rate-limited per-user (shared-NAT classrooms aren't punished) so this
@@ -94,7 +102,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: detail }, { status: 502 })
     }
 
-    const parseData = (await parseRes.json()) as {
+    const parseData = (await readJsonCapped(parseRes, MAX_BODY_BYTES)) as {
       parse?: { title: string; displaytitle: string; text: { '*': string } }
       error?: { code: string; info: string }
     }
@@ -110,7 +118,7 @@ export async function GET(req: NextRequest) {
         `${wikiRest(lang)}/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`,
       )
       if (summaryRes.ok) {
-        const s = (await summaryRes.json()) as { description?: string }
+        const s = (await readJsonCapped(summaryRes, MAX_BODY_BYTES)) as { description?: string }
         description = s.description
       }
     } catch {

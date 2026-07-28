@@ -1,5 +1,4 @@
 import 'server-only'
-import { createHash } from 'crypto'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
@@ -9,6 +8,7 @@ import { loadResearchRubric } from '@/lib/research-plan/rubric'
 import { findProjectType, findSubtype } from '@/lib/research-plan/types'
 import { requirePlanText } from '@/lib/research-plan/require-plan-text'
 import { claimPlanWork } from '@/lib/research-plan/claim'
+import { planHashOf } from '@/lib/research-plan/plan-hash'
 import { createNdjsonStream } from '@/lib/ndjson'
 
 /**
@@ -79,10 +79,8 @@ export async function reviewPlan(principal: ReviewPrincipal): Promise<ReviewPlan
   // Cache key covers everything the review depends on: the (capped) plan text
   // AND the type/subtype that pick the rubric — re-selecting the project type
   // must re-run even on identical text.
-  const planTextForHash = (plan.lastSyncedText ?? '').slice(0, 80000)
-  const planHash = createHash('sha256')
-    .update(`${plan.projectType}\n${plan.projectSubtype}\n${planTextForHash}`)
-    .digest('hex')
+  // Shared with the route's staleness check (P2-S7) — one formula, one meaning.
+  const planHash = planHashOf(plan)
 
   // Unchanged since the last paid review — replay the persisted result in the
   // exact NDJSON event order the streaming path emits, so the client is none
@@ -127,7 +125,7 @@ export async function reviewPlan(principal: ReviewPrincipal): Promise<ReviewPlan
   // runs when the consumer reads it, which may be outside that context.
   const spendScope = currentAiScope()
 
-  const planText = planTextForHash
+  const planText = (plan.lastSyncedText ?? '').slice(0, 80000)
   const teamId = principal.teamId
   // The exact source this review is graded against. The commit below is a
   // compare-and-set on these three columns, so a review of text the team has
