@@ -319,7 +319,8 @@ describePg('P2-S1 — count-then-create caps admit exactly one caller at cap-1',
   })
 
   it('experiments: two concurrent creates at the team cap → one 200, one 409', async () => {
-    const { POST, MAX_EXPERIMENTS_PER_TEAM } = await import('@/app/api/data-terminal/route')
+    const { POST } = await import('@/app/api/data-terminal/route')
+    const { MAX_EXPERIMENTS_PER_TEAM } = await import('@/lib/data-terminal/caps')
     const held = await db.experiment.count({ where: { teamId } })
     await db.experiment.createMany({
       data: Array.from({ length: MAX_EXPERIMENTS_PER_TEAM - held - 1 }, (_, i) => ({

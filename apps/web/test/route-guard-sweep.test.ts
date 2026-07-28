@@ -75,3 +75,44 @@ describe('route guard sweep', () => {
     expect(src).toMatch(/requireTeacher\s*\(/)
   })
 })
+
+/**
+ * A route module may only export the framework's own names.
+ *
+ * `export const MAX_EXPERIMENTS_PER_TEAM = 200` in a route file typechecks and
+ * lints cleanly, then fails `next build` with "not a valid Route export field"
+ * — twelve minutes into the E2E lane, which is where it actually cost us. The
+ * legitimate reason to reach for it is a test wanting the constant; the fix is
+ * to put the constant in `lib/` and import it from both sides.
+ */
+describe('route modules export only Next.js route fields', () => {
+  const ALLOWED = new Set([
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'HEAD',
+    'OPTIONS',
+    'dynamic',
+    'dynamicParams',
+    'revalidate',
+    'fetchCache',
+    'runtime',
+    'preferredRegion',
+    'maxDuration',
+    'generateStaticParams',
+  ])
+  const EXPORT_NAME =
+    /^export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm
+
+  const routes = collectRoutes(join(WEB_ROOT, 'app', 'api')).map((f) => relative(WEB_ROOT, f))
+
+  it.each(routes)('%s', (routeRel) => {
+    const src = readFileSync(join(WEB_ROOT, routeRel), 'utf8')
+    const offenders = [...src.matchAll(EXPORT_NAME)]
+      .map((m) => m[1]!)
+      .filter((name) => !ALLOWED.has(name))
+    expect(offenders).toEqual([])
+  })
+})

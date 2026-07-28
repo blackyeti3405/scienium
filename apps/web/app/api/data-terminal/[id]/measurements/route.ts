@@ -4,6 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
+import { MAX_POINTS_PER_EXPERIMENT } from '@/lib/data-terminal/caps'
 
 // Scoped single query (SEC-1's standard shape) — never fetch-by-id-then-check.
 async function ownedExperiment(id: string, teamId: string) {
@@ -20,7 +21,6 @@ async function ownedExperiment(id: string, teamId: string) {
  * one transaction behind an advisory lock, so two concurrent pastes cannot
  * each see room for 500 points and store 2,500 between them.
  */
-const MAX_POINTS_PER_EXPERIMENT = 2_000
 
 /**
  * Reads ONE row past the cap so overflow is DETECTED rather than hidden

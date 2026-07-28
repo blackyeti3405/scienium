@@ -29,7 +29,8 @@ vi.mock('@/lib/literature/vocab', () => ({
   VOCAB_TEXT_SLICE_CHARS: 60_000,
 }))
 
-import { GET as experimentsGET, POST as experimentsPOST, MAX_EXPERIMENTS_PER_TEAM } from '@/app/api/data-terminal/route'
+import { GET as experimentsGET, POST as experimentsPOST } from '@/app/api/data-terminal/route'
+import { MAX_EXPERIMENTS_PER_TEAM } from '@/lib/data-terminal/caps'
 import { GET as measurementsGET } from '@/app/api/data-terminal/[id]/measurements/route'
 import { POST as referencesPOST } from '@/app/api/project-log/[id]/references/route'
 import { POST as vocabBuildPOST } from '@/app/api/literature/vocab/build/route'

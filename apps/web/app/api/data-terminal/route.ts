@@ -4,6 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
+import { MAX_EXPERIMENTS_PER_TEAM } from '@/lib/data-terminal/caps'
 
 /**
  * Data Terminal (spec §14.1) — experiment tracking + graphing, unlocked at the
@@ -18,8 +19,10 @@ import { lockAggregate } from '@/lib/db-lock'
  * then unreachable — no pagination, no error, just gone. A real cap refused at
  * write time is the honest version of the same bound: the list's `take` is now
  * exactly the cap, which makes it a backstop that can never hide a row.
+ *
+ * The value lives in `lib/data-terminal/caps.ts` because a route module may not
+ * export anything but Next's own names — see that file.
  */
-export const MAX_EXPERIMENTS_PER_TEAM = 200
 
 export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'read', feature: 'data_terminal' })
