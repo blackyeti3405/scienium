@@ -17,6 +17,8 @@ import { randomUUID } from 'node:crypto'
  *   - A13: concurrent showcase views count once per visitor per day
  *   - P2-S1: every count-then-create cap admits exactly one caller at cap-1
  *   - P2-S4: two concurrent grades of one due vocabulary card admit exactly one
+ *   - P2-6:  the DELETE rules themselves — what a cascade takes and what it must
+ *            never take
  *
  * The P2-S1/P2-S4 blocks call the REAL route handlers (Clerk is the only thing
  * mocked) rather than a re-implementation of their logic, because the defect
@@ -595,6 +597,272 @@ describePg('P2-S3 — read state is per member, not per team', () => {
     expect(mateView.items.find((i) => i.title === 'PG shared notice')?.readAt).toBeNull()
 
     clerkState.userId = `clerk_${ns}`
+  })
+})
+
+// ─── P2-6: the deletion rules themselves ──────────────────────────────────────
+//
+// The lifecycle was documented (`docs/runbooks/data-export-delete.md`) and the
+// erasure workflow is tested, but the DELETE rules never were — and a cascade is
+// the one failure that leaves nothing behind to notice. The three shapes that
+// matter are all here: what a cascade must never reach, what happens when it is
+// correctly refused, and what it does take when it fires.
+//
+// Real Postgres because a delete rule is a property of the database. Prisma's
+// schema is a claim about it; `information_schema` is the fact, and the two have
+// disagreed before (a migration applied by hand, a `migrate diff` that dropped a
+// clause). Everything below reads or exercises the live constraint.
+
+/** `child.column -> parent` for every FK, with its ON DELETE rule. */
+interface FkEdge {
+  child: string
+  parent: string
+  rule: string
+}
+
+async function foreignKeys(): Promise<FkEdge[]> {
+  return db.$queryRaw<FkEdge[]>`
+    SELECT c.conrelid::regclass::text AS child,
+           c.confrelid::regclass::text AS parent,
+           CASE c.confdeltype WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL'
+                              WHEN 'd' THEN 'SET DEFAULT' WHEN 'r' THEN 'RESTRICT'
+                              ELSE 'NO ACTION' END AS rule
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE c.contype = 'f' AND n.nspname = 'public'`
+}
+
+/**
+ * Tables no cascade may ever reach, and why. Two kinds:
+ *
+ *   - a row that is the ONLY record of something outside Postgres. Deleting an
+ *     `uploaded_assets` row destroys the sole pointer to an R2 object, which is
+ *     then unreachable by the reclaim sweep, by an operator, by anyone —
+ *     billed forever and impossible to find. `papers.pdf_key` is the same
+ *     object-key problem one table over. This is the exact defect P1-R12 fixed
+ *     by moving `uploaded_assets.team_id` off CASCADE, and the exact defect a
+ *     cascade added ANYWHERE else would silently reintroduce;
+ *   - a row that is the record of an ACCOUNT of something. Membership and class
+ *     history, teacher feedback, activity, LLM spend and data requests are what
+ *     answers "what happened to this student's work" and "what did this cost".
+ *     A parent delete that quietly takes the audit trail with it is how the
+ *     answer stops existing.
+ *
+ * A row here is a deliberate policy statement, not a snapshot: adding an
+ * `onDelete: Cascade` that reaches one of these fails this test, which is the
+ * point. Deletion of those parents is meant to be a LOUD refusal that a
+ * teardown command must handle in order.
+ */
+const NEVER_CASCADED: Record<string, string> = {
+  uploaded_assets: 'the only record of an R2 object (P1-R12)',
+  papers: 'papers.pdf_key is an R2 object key',
+  activity_feed: 'the record of what a team did',
+  teacher_feedback: "the teacher's record, not the student's row",
+  ai_usage: 'paid-call accounting',
+  team_membership_events: 'append-only authorization log',
+  class_membership_events: 'append-only authorization log',
+  data_requests: 'the evidence that an erasure ran',
+}
+
+describePg('P2-6 — no cascade path can reach an object ledger or an audit trail', () => {
+  it('every protected table is unreachable from any parent by CASCADE', async () => {
+    const edges = (await foreignKeys()).filter((e) => e.rule === 'CASCADE')
+    // Being the CHILD of any cascade edge is enough: a delete of that parent is
+    // always reachable somehow, so no transitive walk is needed and none is
+    // assumed. Depending on "but that parent is itself protected" would make
+    // this guard only as strong as the weakest RESTRICT one hop up.
+    const reachable = new Set(edges.map((e) => e.child))
+    const breached = [...Object.keys(NEVER_CASCADED)]
+      .filter((t) => reachable.has(t))
+      .map((t) => `${t} — ${NEVER_CASCADED[t]}`)
+    expect(breached, breached.join('\n')).toEqual([])
+  })
+
+  it('the protected tables still exist under these names (the guard is not vacuous)', async () => {
+    const present = await db.$queryRaw<{ table_name: string }[]>`
+      SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`
+    const names = new Set(present.map((r) => r.table_name))
+    expect(Object.keys(NEVER_CASCADED).filter((t) => !names.has(t))).toEqual([])
+    // And the two object-key columns the storage half is about.
+    const cols = await db.$queryRaw<{ table_name: string; column_name: string }[]>`
+      SELECT table_name, column_name FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND (table_name = 'uploaded_assets' AND column_name = 'object_key'
+          OR table_name = 'papers' AND column_name = 'pdf_key')`
+    expect(cols).toHaveLength(2)
+  })
+})
+
+describePg('P2-6 — deleting a team that still holds storage is refused, not silent', () => {
+  it('team.delete rejects and the asset ledger row survives', async () => {
+    const doomed = await db.team.create({
+      data: { name: `PG Teardown Lab ${ns}`, teamLeadId: userId, phase: 'discovery' },
+      select: { id: true },
+    })
+    const asset = await db.uploadedAsset.create({
+      data: {
+        teamId: doomed.id,
+        userId,
+        objectKey: `${ns}/teardown`,
+        url: '',
+        contentType: 'image/png',
+        sizeBytes: 10,
+        purpose: 'pg_test',
+        status: 'attached',
+      },
+      select: { id: true },
+    })
+
+    // THE ATTACK: an end-of-pilot teardown deletes the team while an object is
+    // still in R2. Under CASCADE this succeeds, the ledger row disappears, and
+    // the object is orphaned with nothing left pointing at it.
+    await expect(db.team.delete({ where: { id: doomed.id } })).rejects.toThrow()
+    expect(await db.uploadedAsset.findUnique({ where: { id: asset.id } })).not.toBeNull()
+
+    // Retire the asset first — the order the refusal is teaching — and the team
+    // deletes cleanly. A refusal nothing can satisfy would be its own bug.
+    await db.uploadedAsset.delete({ where: { id: asset.id } })
+    await db.team.delete({ where: { id: doomed.id } })
+  })
+})
+
+describePg('P2-6 — deleting a paper takes its derived rows and nothing else', () => {
+  it('cascades citations/jobs/cards/curations, leaves the asset ledger standing', async () => {
+    const paper = await db.paper.create({
+      data: {
+        teamId,
+        title: 'PG lifecycle paper',
+        authors: [],
+        sourceType: 'pdf',
+        pdfKey: `${ns}/lifecycle.pdf`,
+        uploadedByUserId: userId,
+      },
+      select: { id: true },
+    })
+    await db.citation.create({
+      data: { paperId: paper.id, teamId, apa: 'a', mla: 'm', ieee: 'i' },
+    })
+    await db.paperProcessingJob.create({ data: { paperId: paper.id } })
+    await db.vocabPaperCuration.create({ data: { paperId: paper.id, userId } })
+    await db.vocabCard.create({
+      data: {
+        userId,
+        teamId,
+        paperId: paper.id,
+        termKey: `lifecycle_${ns}`,
+        term: 'lifecycle',
+        definition: 'd',
+        source: 'llm_definition',
+        box: 1,
+        dueAt: new Date(),
+      },
+    })
+    // The ledger row for that paper's PDF. It carries no FK to `papers` — the
+    // binding is `attachedToType`/`attachedToId` — precisely so the record of
+    // the object outlives the row that referenced it and the reclaim sweep can
+    // still find it (`reconcileOrphanedAssets`).
+    const asset = await db.uploadedAsset.create({
+      data: {
+        teamId,
+        userId,
+        objectKey: `${ns}/lifecycle.pdf`,
+        url: '',
+        contentType: 'application/pdf',
+        sizeBytes: 10,
+        purpose: 'paper_pdf',
+        status: 'attached',
+        attachedToType: 'paper',
+        attachedToId: paper.id,
+      },
+      select: { id: true },
+    })
+
+    await db.paper.delete({ where: { id: paper.id } })
+
+    expect(await db.citation.count({ where: { paperId: paper.id } })).toBe(0)
+    expect(await db.paperProcessingJob.count({ where: { paperId: paper.id } })).toBe(0)
+    expect(await db.vocabPaperCuration.count({ where: { paperId: paper.id } })).toBe(0)
+    expect(await db.vocabCard.count({ where: { paperId: paper.id } })).toBe(0)
+    // THE ATTACK: if this row went with the paper, the PDF in R2 becomes
+    // untracked and permanently unbillable-to-anyone.
+    const survivor = await db.uploadedAsset.findUnique({
+      where: { id: asset.id },
+      select: { status: true, objectKey: true },
+    })
+    expect(survivor).toMatchObject({ status: 'attached' })
+  })
+})
+
+describePg('P2-6 — a personal notification never becomes a broadcast', () => {
+  it('deleting its subject deletes the notice instead of re-addressing it to the team', async () => {
+    const { GET } = await import('@/app/api/notifications/route')
+    const subject = await db.user.create({
+      data: {
+        clerkUserId: `clerk_${ns}_subject`,
+        name: 'PG Erased Student',
+        email: `${ns}-subject@invariants.test`,
+        role: 'student',
+      },
+      select: { id: true },
+    })
+    await db.notification.create({
+      data: {
+        teamId, // the team they were removed FROM — the row still names it
+        userId: subject.id,
+        kind: 'membership_changed',
+        title: 'PG private removal notice',
+        body: 'Your teacher un-enrolled you.',
+        dedupeKey: `pg_private_${ns}`,
+      },
+    })
+
+    const titlesForFixtureMember = async () => {
+      clerkState.userId = `clerk_${ns}`
+      const body = (await (await get(GET)).json()) as { items: Array<{ title: string }> }
+      return body.items.map((i) => i.title)
+    }
+    expect(await titlesForFixtureMember()).not.toContain('PG private removal notice')
+
+    // THE ATTACK: an end-of-pilot teardown (or any raw delete outside the
+    // erasure workflow) removes the student. Under the implicit SET NULL,
+    // `user_id` becomes NULL — which on this table does not mean "nobody", it
+    // means TEAM-WIDE — and every remaining member's bell now shows a private
+    // notice about a classmate.
+    await db.user.delete({ where: { id: subject.id } })
+
+    // The harm first, the mechanism second: assert what the teammate can SEE
+    // before asserting the row is gone, so a regression reports the disclosure
+    // rather than a row count.
+    expect(await titlesForFixtureMember()).not.toContain('PG private removal notice')
+    expect(await db.notification.count({ where: { dedupeKey: `pg_private_${ns}` } })).toBe(0)
+  })
+
+  it('a team-wide notice is untouched when an unrelated user is deleted', async () => {
+    // The other half: cascading on `user_id` must not reach rows that were
+    // team-wide to begin with (`user_id` already NULL).
+    await db.notification.create({
+      data: {
+        teamId,
+        userId: null,
+        kind: 'teacher_feedback',
+        title: 'PG survives-deletion notice',
+        body: 'body',
+        dedupeKey: `pg_survives_${ns}`,
+      },
+    })
+    const bystander = await db.user.create({
+      data: {
+        clerkUserId: `clerk_${ns}_bystander`,
+        name: 'PG Bystander',
+        email: `${ns}-bystander@invariants.test`,
+        role: 'student',
+      },
+      select: { id: true },
+    })
+    await db.user.delete({ where: { id: bystander.id } })
+
+    expect(await db.notification.count({ where: { dedupeKey: `pg_survives_${ns}` } })).toBe(1)
   })
 })
 

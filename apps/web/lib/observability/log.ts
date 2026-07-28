@@ -7,11 +7,31 @@
  * through it. `detail` is for short operator-facing strings (error codes,
  * provider names, state names), never user content.
  *
- * Correlation uses opaque ids only (Clerk user id, cuid team/job ids). On
- * Vercel, `requestIdFrom(req)` reuses the platform's `x-vercel-id` so a log
- * line joins against the platform's own request logs; elsewhere it mints a
- * UUID.
+ * Correlation uses opaque ids only. On Vercel, `requestIdFrom(req)` reuses the
+ * platform's `x-vercel-id` so a log line joins against the platform's own
+ * request logs; elsewhere it mints a UUID.
+ *
+ * `userId` and `teamId` are PSEUDONYMIZED by the sink itself (REFACTOR2 P1-5).
+ * A Clerk user id in a log line is not opaque in the sense that matters — it is
+ * a primary key, so anyone holding the drain can join it straight back to a
+ * named minor. Hashing at the sink rather than at each call site means every
+ * existing caller became pseudonymous without touching one of them, and a new
+ * caller cannot forget. To find a known team's lines, hash its id the same way:
+ * `sha256(<id>).slice(0, 12)` (`opaqueId`).
  */
+
+import { createHash } from 'node:crypto'
+
+/**
+ * Stable pseudonym for an identifier. 12 hex chars ≈ 48 bits — far past
+ * collision risk at pilot log volume, and not invertible without already
+ * holding the id. Exported so an operator (or a test) can compute the same
+ * value from an id they legitimately have.
+ */
+export function opaqueId(id: string | null | undefined): string | null | undefined {
+  if (id === null || id === undefined) return id
+  return createHash('sha256').update(id).digest('hex').slice(0, 12)
+}
 
 export interface LogEvent {
   /** Dot-namespaced event name, e.g. `rate_limit.denied`, `llm.call`, `paper_job.failed`, `cron.papers`. */
@@ -20,7 +40,9 @@ export interface LogEvent {
   route?: string
   outcome?: 'ok' | 'denied' | 'error'
   durationMs?: number
-  /** Opaque ids only — never names/emails. */
+  /** HTTP status of the response this event describes. */
+  status?: number
+  /** Raw ids in, pseudonyms out — `logEvent` hashes both before serializing. */
   userId?: string | null
   teamId?: string | null
   jobId?: string
@@ -35,7 +57,12 @@ export interface LogEvent {
 }
 
 export function logEvent(e: LogEvent): void {
-  const line = JSON.stringify({ ts: new Date().toISOString(), ...e })
+  const line = JSON.stringify({
+    ts: new Date().toISOString(),
+    ...e,
+    userId: opaqueId(e.userId),
+    teamId: opaqueId(e.teamId),
+  })
   if (e.outcome === 'error') console.error(line)
   else console.log(line)
 }

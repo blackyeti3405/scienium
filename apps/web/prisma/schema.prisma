@@ -1583,8 +1583,17 @@ model Notification {
   dedupeKey String           @unique @map("dedupe_key")
   createdAt DateTime         @default(now()) @map("created_at")
 
-  team  Team?              @relation(fields: [teamId], references: [id])
-  user  User?              @relation(fields: [userId], references: [id])
+  team Team? @relation(fields: [teamId], references: [id])
+  /// CASCADE, not the implicit SET NULL (REFACTOR2 P2-6). `userId = null` does
+  /// not mean "nobody" here — it means TEAM-WIDE (see the bell's predicate in
+  /// `app/api/notifications/route.ts`). So nulling this column on a user delete
+  /// silently re-addressed that student's private notice — "You were removed
+  /// from <class>" — to every remaining member of the team it names. A personal
+  /// notice belongs to its subject: when they are gone, so is it. This matches
+  /// what erasure already does explicitly (`lib/data-requests/inventory.ts`
+  /// deletes `notifications` by `userId`); the cascade is what covers the raw
+  /// deletes erasure does not run, e.g. an end-of-pilot teardown.
+  user  User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
   reads NotificationRead[]
 
   // The feed lists by recency alone (ORDER BY createdAt).

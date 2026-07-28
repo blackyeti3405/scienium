@@ -127,6 +127,21 @@ const ALLOWLIST: Record<string, string[]> = {
     'String(err)',
   ],
   'lib/cron/auth.ts': ['requestIdFrom(req)'],
+  // Per-request observability (REFACTOR2 P1-5). Every vouched expression here is
+  // a bounded operator value, and none is derived from a body or a model:
+  // `reason` is the `DenialReason` union, `tier` a `RATE_LIMITS` key, `status`
+  // and `started` numbers, `userId`/`dbUserId`/`teamId` opaque ids that
+  // `logEvent` hashes at the sink before they reach a line.
+  'lib/api/route-context.ts': ['requestIdFrom(req)', 'status', 'tier', 'userId', 'reason'],
+  'lib/api/with-route.ts': [
+    'requestId',
+    'pathname',
+    'status',
+    'started',
+    'opts.tier',
+    'dbUserId',
+    'teamId',
+  ],
   // The instrumented client's own accounting: the operation name and model id
   // are registry constants, `started` is a clock reading, `errDetail` maps to an
   // API status or an error class name.

@@ -2009,6 +2009,14 @@ defence-in-depth gap `SourceReader`/`IdeaCheckView` closed in v0.64.0, now close
 and the synthesis stale-grid 409 now names what moved, computed client-side from the two
 snapshots it already holds, for no extra request.
 
+#### v0.75.7 — 2026-07-28 — the delete rules get tested, and a private notice stops going to the class
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **P2-6** Data lifecycle is documented but untested | **CLOSED for the cascade half; the register's sharp claim was stale and is now PINNED** | Verified against the deployed database first, not `schema.prisma`: there are **12** cascade rules (not ten), and the named defect — "storage cleanup can be erased by cascade" — was already closed by P1-R12, with `uploaded_assets.team_id` genuinely `RESTRICT` in Postgres. So the work was to make that property *fail loudly if it returns*, generically: a `pg_constraint` read asserts that **no** `ON DELETE CASCADE` anywhere reaches a table that is the only record of something outside Postgres (`uploaded_assets`, `papers.pdf_key`) or the record of an account of something (`activity_feed`, `teacher_feedback`, `ai_usage`, the two membership-event logs, `data_requests`) — plus a non-vacuity test that those tables and both object-key columns still exist. Behaviour on top of the declaration: a team holding an asset **refuses** to delete and its ledger row survives (then deletes cleanly once retired, so the refusal is satisfiable); deleting a paper cascades citations/job/vocab cards/curations and leaves the PDF's ledger row standing. Five tests in `test/pg/invariants.pg.test.ts` (the real-Postgres lane, because a delete rule is a database property). Negative-controlled by ALTERing the live constraints: `uploaded_assets.team_id` → CASCADE reddens exactly the closure test and the refusal test; dropping `citations.paper_id`'s cascade reddens exactly the paper test; all restored and verified. **Found in passing and fixed** — see the row below. | User/Class deletion behaviour is asserted structurally (nothing may cascade into the protected set) rather than by driving a teardown, because **there is no teardown command to drive**: `teams` has 36 `RESTRICT` children and no delete path exists. Writing one is real product work and out of scope here; the runbook now states the ordering instead of implying `DELETE FROM teams` works. Publications (`showcases`) and the retention pruner keep their existing coverage; they were not re-tested. |
+| **P2-6 (found in passing)** A deleted student's private notice became a class-wide broadcast | **CLOSED** | `notifications.user_id` carried Prisma's implicit `ON DELETE SET NULL`. On that table `NULL` does not mean "unaddressed" — it means TEAM-WIDE, and the bell shows every team-wide row for the team the reader is acting as. Deleting a student therefore re-addressed *their own* removal notices to the classmates the row still names, contradicting the in-code comment on both writers ("Addressed to the removed member alone"). Migration `20260728180000_notification_user_cascade` → `ON DELETE CASCADE`: a personal notice dies with its subject, team-wide rows untouched. Consistent with erasure, which already deletes `notifications` by `userId`; the cascade covers the raw deletes erasure does not run. Reproduced first: with `SET NULL` restored on the live database, the fixture teammate's bell returns the other student's "PG private removal notice" verbatim. | `notification_reads.user_id` is still `RESTRICT`, so a user who has READ a team-wide notice cannot be hard-deleted until those receipts go. That is correct for the erasure path (which deletes receipts first) and is one more reason a teardown needs a real command. |
+| **P1-5** Widen structured observability | **PARTIAL — denials universal, latency on the wrapper only** | Two seams, zero per-route edits, as the row required. `withTeamRoute` emits one `route.request` (requestId, route, outcome, status, durationMs, tier, ids) — it is the only thing that sees a whole request, so it is the only thing that can time one. `requireTeamContext`/`requireUserContext` emit `route.denied` with a bounded `detail` (`unauthenticated`/`cross_origin`/`no_team`/`phase_locked`) for every guarded route; 429s are deliberately NOT re-logged because `enforceRateLimit` already emits its own and two lines for one refusal is worse than none. **Pseudonymity moved into the sink**: `logEvent` hashes `userId`/`teamId` via `opaqueId` (SHA-256, 12 hex) before serializing, so all 25 existing callers — `lib/rate-limit.ts` was logging a raw Clerk id — became pseudonymous without being touched, and a new caller cannot forget. `test/route-observability.test.ts` (7) drives the real guards and handlers through the route-policy harness; the pseudonymity test greps the WHOLE line for the raw ids so a future leaking field fails it whatever it is called. Negative-controlled three ways: dropping the 401 denial (1 red), un-hashing the sink (1 red), dropping the request event (3 red). The AST sweep is satisfied by construction — five vouched expressions per file, each named and justified in `ALLOWLIST`, not a blanket entry. | `route.request` covers the **10** routes on `withTeamRoute`; the other 99 emit denials but no latency/outcome line. Closing that is a mechanical migration of 66 `requireTeamContext` call sites onto the wrapper — the 66 edits this row explicitly said not to make in the same breath, so it is left as its own batch. `operation` is not on the route events (it lives on the LLM events, where the work has a name). No request-scoped store, so a handler's own logs still do not inherit `requestId`. |
+
 #### v0.75.6 — 2026-07-28 — money gets one owner per domain, and a scope stops truncating in silence
 
 | Finding | Status | What actually changed | Still owed |
@@ -2560,9 +2568,17 @@ provider request id, token counts, and terminal error code. Evaluate each AI wor
 individually; do not migrate for uniformity. Streaming chat may stay synchronous, but still
 needs server-owned turn state and enough usage metadata to enforce cost policy.
 
-### P1-5 — Widen structured observability
+### P1-5 — Widen structured observability — **PARTIAL (v0.75.7)**
 
-_Narrowed._ `lib/observability/log.ts` exists and is correct. It is wired into five modules:
+`withTeamRoute` emits `route.request` (requestId, route, outcome, status, durationMs, tier,
+pseudonymous ids); `requireTeamContext`/`requireUserContext` emit `route.denied` with a bounded
+reason for every guarded route. `logEvent` now hashes `userId`/`teamId` at the sink, so "opaque"
+means pseudonymous rather than "a primary key you can join back to a minor". Pinned by
+`test/route-observability.test.ts`; contract documented in `docs/ARCHITECTURE.md`. **Still owed:**
+latency covers only the 10 routes on the wrapper — the remaining 99 need a mechanical migration
+onto `withTeamRoute`, deliberately not folded into this batch. See §0.11's v0.75.7 entry.
+
+_Original finding, for reference:_ `lib/observability/log.ts` exists and is correct. It is wired into five modules:
 `lib/anthropic.ts`, `lib/rate-limit.ts`, `lib/cron/auth.ts`, `lib/literature/process-paper.ts`,
 `app/api/cron/papers/route.ts`. Sentry is configured across all three runtimes.
 
@@ -2673,9 +2689,20 @@ responsibilities (counts refreshed 2026-07-23):
 Split along behavior/state ownership, never a line-count quota. Keep cohesive large pure
 tables or tests intact.
 
-### P2-6 — Test the data lifecycle
+### P2-6 — Test the data lifecycle — **CASCADE HALF CLOSED (v0.75.7)**
 
-_Reframed._ The inventory landed (`docs/runbooks/data-export-delete.md`), and the schema has
+Five tests in `test/pg/invariants.pg.test.ts` (real Postgres — a delete rule is a database
+property, not a schema-file claim). Corrections to this row, proven against the deployed
+database: there are **12** cascade rules, not ten; and "storage cleanup can be erased by
+cascade" was already closed by P1-R12, so it is now pinned generically — no `ON DELETE CASCADE`
+anywhere may reach `uploaded_assets`, `papers`, or the audit tables. Verifying it surfaced a
+live defect nobody had named: `notifications.user_id`'s implicit `SET NULL` turned a deleted
+student's private notice into a team-wide broadcast (fixed, migration
+`20260728180000_notification_user_cascade`). **Still owed:** there is no team-deletion command
+to drive a teardown test against — `teams` has 36 `RESTRICT` children by design. See §0.11's
+v0.75.7 entry.
+
+_Original finding, for reference:_ The inventory landed (`docs/runbooks/data-export-delete.md`), and the schema has
 ten `onDelete: Cascade` rules. **The tests did not.** There is no lifecycle/deletion test
 file. Add tested deletion behavior for User/Class/Team, uploaded assets, publications,
 activity, LLM history, and teacher feedback.

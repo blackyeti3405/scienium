@@ -5,6 +5,84 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.75.7] — 2026-07-28
+
+REFACTOR2 **P2-6** (test the data lifecycle) and **P1-5** (widen structured observability).
+Both register rows were re-verified against the current tree first, and both were partly
+stale — the sharp claim in P2-6 ("storage cleanup can be erased by cascade") had already been
+closed by P1-R12 and is now *pinned* rather than fixed. Verifying it turned up a different,
+live cascade defect that nobody had named.
+
+### Fixed — a private notification stopped becoming a class-wide broadcast
+
+`notifications.user_id` carried Prisma's implicit `ON DELETE SET NULL` for an optional
+relation. But `NULL` is not "unaddressed" on that table — it means **team-wide**, and the
+bell shows every team-wide row for the team the reader is acting as. So deleting a student
+re-addressed their own private notices — *"You were removed from `<class>`"*, *"You were
+removed from `<lab>`"* — to every remaining member of the team the row still names. Both of
+those notices are written with an in-code comment stating they are addressed to the removed
+member **alone**; the delete rule quietly contradicted it.
+
+Migration `20260728180000_notification_user_cascade` moves the column to `ON DELETE CASCADE`:
+a personal notice dies with its subject. Team-wide rows (`user_id` already `NULL`) are
+untouched. This matches what erasure already does explicitly — `lib/data-requests/inventory.ts`
+deletes `notifications` by `userId` — so the cascade is what covers the raw deletes the
+erasure workflow does not run, which is exactly the end-of-pilot teardown the runbook
+describes. Reproduced against the live pre-fix rule before the change: with `SET NULL`
+restored, the fixture teammate's bell literally returns *"PG private removal notice"*.
+
+### Added — the delete rules themselves are now tested (P2-6)
+
+Five tests in `test/pg/invariants.pg.test.ts` — the real-Postgres lane, because a delete rule
+is a property of the database and `schema.prisma` is only a claim about it:
+
+- **no `ON DELETE CASCADE` may reach a protected table.** Read from `pg_constraint`, so it
+  covers every cascade that exists rather than the ones someone remembered. Protected =
+  tables that are the only record of something outside Postgres (`uploaded_assets` — the sole
+  pointer to an R2 object; `papers`, for `pdf_key`) or the record of an *account* of something
+  (`activity_feed`, `teacher_feedback`, `ai_usage`, `team_membership_events`,
+  `class_membership_events`, `data_requests`). A companion test asserts those tables and the
+  two object-key columns still exist, so the guard cannot pass vacuously after a rename.
+- **a team still holding storage refuses to delete**, and its ledger row survives the refusal —
+  then deletes cleanly once the asset is retired, so the refusal is satisfiable.
+- **deleting a paper takes its derived rows and nothing else**: citations, the processing job,
+  vocabulary cards and curations cascade; the `UploadedAsset` row for its PDF does not, which
+  is what keeps the object reclaimable.
+- **the two notification cases above**, positive and negative.
+
+Verified while writing them, and recorded rather than assumed: the schema has **12** cascade
+rules, not the register's ten; `uploaded_assets.team_id` is `RESTRICT` in the deployed database
+and not only in the schema file; and `teams` has **36** `RESTRICT` children, which is why there
+is no team-deletion command. `docs/runbooks/data-export-delete.md`'s teardown section now says
+so instead of implying `DELETE FROM teams` works.
+
+### Added — per-request structured observability (P1-5)
+
+Two seams, no per-route edits. `withTeamRoute` emits one `route.request` line per request with
+`requestId`, `route`, `outcome`, `status`, `durationMs`, `tier` and ids — it is the only place
+that can time a handler. `requireTeamContext`/`requireUserContext` emit `route.denied` with a
+bounded `detail` (`unauthenticated`, `cross_origin`, `no_team`, `phase_locked`) for **every**
+guarded route, including the 78 not yet on the wrapper. Rate-limit denials are deliberately not
+re-logged; `enforceRateLimit` already emits its own.
+
+**Identifiers are now pseudonymous, at the sink.** `logEvent` hashes `userId`/`teamId` through
+`opaqueId` (SHA-256, 12 hex) before serializing, so all 25 existing call sites — including
+`lib/rate-limit.ts`, which was logging a raw Clerk id — became pseudonymous without one of them
+being touched, and a new caller cannot forget. A Clerk id in a log drain is a primary key that
+joins straight back to a named minor; a hash joins only to other log lines. To find a known
+team's lines, hash its id the same way.
+
+`test/route-observability.test.ts` (7 tests) drives the real guards and real handlers through
+the route-policy harness. The pseudonymity test searches the WHOLE emitted line for the raw
+ids, so a future field that leaks one fails it whatever the field is called. The new log calls
+satisfy the AST redaction sweep by construction; the five vouched expressions per file are
+listed in `test/log-redaction-sweep.test.ts`'s `ALLOWLIST` with the reason (bounded enums,
+numbers, and ids the sink hashes), not added as a blanket allowance.
+
+**Still owed:** `route.request` covers the 10 routes on `withTeamRoute`. The other 99 emit
+denials but no latency line — closing that is a migration onto the wrapper, not more logging.
+`operation` is not on the route events (it is on the LLM events, where the work has a name).
+
 ## [0.75.6] — 2026-07-28
 
 REFACTOR2 **SVC-1**, **P2-1** (the reopened teacher-scale half), and the highest-consequence

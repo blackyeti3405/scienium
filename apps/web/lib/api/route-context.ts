@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { resolveActiveTeam } from '@/lib/team/context'
 import { enforceRateLimit, type TierName } from '@/lib/rate-limit'
 import { enterAiScope } from '@/lib/ai/scope'
+import { logEvent, requestIdFrom } from '@/lib/observability/log'
 import {
   assertFeatureUnlocked,
   PhaseGateError,
@@ -74,12 +75,47 @@ export function assertSameOrigin(req: NextRequest): NextResponse | null {
   return NextResponse.json({ error: 'Cross-origin request rejected' }, { status: 403 })
 }
 
+/**
+ * Why a guard refused. A bounded enum, never a message built from the request —
+ * `LogEvent.detail` is operator-facing text and nothing else.
+ */
+type DenialReason = 'unauthenticated' | 'cross_origin' | 'no_team' | 'phase_locked'
+
+/**
+ * Emit the policy-denial event for a refused request (REFACTOR2 P1-5).
+ *
+ * It lives HERE, in the two guards, rather than at 78 call sites: these are the
+ * only places a denial of this shape is produced, so every guarded route
+ * inherits the event and a new route cannot forget it. Rate-limit denials are
+ * deliberately absent — `enforceRateLimit` already logs its own
+ * `rate_limit.denied`, and two lines for one refusal is worse than none.
+ */
+function logDenied(
+  req: NextRequest,
+  tier: TierName,
+  reason: DenialReason,
+  status: number,
+  userId: string | null,
+): void {
+  logEvent({
+    event: 'route.denied',
+    requestId: requestIdFrom(req),
+    route: new URL(req.url).pathname,
+    outcome: 'denied',
+    status,
+    tier,
+    userId,
+    detail: reason,
+  })
+}
+
 export async function requireTeamContext(
   req: NextRequest,
   opts: RequireTeamOptions,
 ): Promise<TeamRouteGuard> {
   const { userId } = await auth()
   if (!userId) {
+    logDenied(req, opts.tier, 'unauthenticated', 401, null)
     return { ctx: null, error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   }
 
@@ -87,13 +123,17 @@ export async function requireTeamContext(
   if (limited) return { ctx: null, error: limited }
 
   const crossOrigin = assertSameOrigin(req)
-  if (crossOrigin) return { ctx: null, error: crossOrigin }
+  if (crossOrigin) {
+    logDenied(req, opts.tier, 'cross_origin', 403, userId)
+    return { ctx: null, error: crossOrigin }
+  }
 
   // Resolve the active team through membership (the ONE query for this lives in
   // lib/team/context.ts): a stored activeTeamId is only trusted while a
   // TeamMember row still backs it.
   const resolved = await resolveActiveTeam(userId)
   if (!resolved) {
+    logDenied(req, opts.tier, 'no_team', 404, userId)
     return { ctx: null, error: NextResponse.json({ error: 'No team found' }, { status: 404 }) }
   }
   const { dbUserId, team } = resolved
@@ -103,6 +143,7 @@ export async function requireTeamContext(
       assertFeatureUnlocked(team.phase as Phase, opts.feature)
     } catch (err) {
       if (err instanceof PhaseGateError) {
+        logDenied(req, opts.tier, 'phase_locked', 403, userId)
         return { ctx: null, error: NextResponse.json({ error: err.message }, { status: 403 }) }
       }
       throw err
@@ -155,6 +196,7 @@ export async function requireUserContext(
 ): Promise<UserRouteGuard> {
   const { userId } = await auth()
   if (!userId) {
+    logDenied(req, opts.tier, 'unauthenticated', 401, null)
     return { ctx: null, error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   }
 
@@ -162,7 +204,10 @@ export async function requireUserContext(
   if (limited) return { ctx: null, error: limited }
 
   const crossOrigin = assertSameOrigin(req)
-  if (crossOrigin) return { ctx: null, error: crossOrigin }
+  if (crossOrigin) {
+    logDenied(req, opts.tier, 'cross_origin', 403, userId)
+    return { ctx: null, error: crossOrigin }
+  }
 
   return { ctx: { userId }, error: null }
 }

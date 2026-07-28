@@ -450,6 +450,30 @@ discovery promote, topic wipe), or `assertCron`. The static sweep
 `llm.stream` event (model, duration, token usage — never prompt content; see
 `lib/observability/log.ts` and `docs/runbooks/llm-cost.md`).
 
+**Request-event contract (REFACTOR2 P1-5).** Every API request that goes
+through the shared route plumbing emits structured JSON on stdout — one seam,
+no per-route logger calls:
+
+| Event | Emitted by | Carries |
+| --- | --- | --- |
+| `route.request` | `withTeamRoute` (`lib/api/with-route.ts`) | `requestId`, `route` (pathname), `outcome` (`ok`/`denied`/`error`), `status`, `durationMs`, `tier`, `userId`, `teamId` |
+| `route.denied` | `requireTeamContext` / `requireUserContext` (`lib/api/route-context.ts`) | the same minus `durationMs`, plus `detail` — one of `unauthenticated`, `cross_origin`, `no_team`, `phase_locked` |
+| `rate_limit.denied` | `lib/rate-limit.ts` | pre-existing; the guards deliberately do **not** re-log a 429 |
+| `llm.call` / `llm.stream` | `lib/anthropic.ts` | `provider`, `model`, `durationMs`, `inputTokens`, `outputTokens` |
+
+Two properties are load-bearing. **The wrapper is the only thing that can time
+a handler**, so latency and outcome come from there while denials come from the
+guards — which is why a route that has not yet moved onto `withTeamRoute` still
+reports every policy refusal, just not its latency. **Identifiers are
+pseudonymous**: `logEvent` hashes `userId` and `teamId` at the sink
+(`opaqueId` — SHA-256, 12 hex chars), because a Clerk id or a cuid in a drain is
+a primary key that joins straight back to a named minor. To find a known
+subject's lines, hash the id the same way. Payload redaction is by type — the
+`LogEvent` shape has no content field — and enforced statically over every
+`console.*`/`logEvent` argument by `test/log-redaction-sweep.test.ts`.
+`test/route-observability.test.ts` pins the events against the real guards.
+None of this writes to the database: it is a log line per request, nothing more.
+
 `lib/lru.ts` provides bounded in-process TTL/LRU caching for cheap read-through
 caches such as the Wikipedia article proxy. These caches are intentionally
 best-effort and per-instance. Durable data and user-visible state live in

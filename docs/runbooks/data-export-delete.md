@@ -101,6 +101,7 @@ user id:
 | `project_logs`, `discovery_nodes`, `synthesis_matrices`, `experiments`, `team_shop_buildings`, `team_rubric_scores` | The team's work product. Deleting one member's contributions guts their teammates' project. |
 | `discovery_source_visits` | The team's **once-ever KP claim** for a source (P1-S14). Deleting it lets the same source be farmed for KP again. *Correction: earlier versions of this runbook listed it as per-student.* |
 | `uploaded_assets` | The ledger proving an R2 object exists. Deleting the row strands the object permanently (P1-R12). |
+| `notifications` addressed to the whole team | Team-wide rows (`user_id IS NULL`) are not the subject's. Their **personal** rows are erased, and since P2-6 a raw `DELETE FROM users` cascades them too — `user_id` NULL means TEAM-WIDE on this table, so nulling it would re-address a private notice to the classmates it names. |
 | `team_membership_events` | Append-only authorization log; after the tombstone it names a user with no personal fields. |
 | `teacher_feedback` | The teacher's record, not the student's row. |
 | `ai_usage` | Token counts and cost, no content; attribution is nullable. |
@@ -142,9 +143,22 @@ overrides a registry default, so it is how `showcase_view` gets turned back off.
   email attachment to an unverified address.
 - **Whole-class teardown** (end of pilot): delete teams of that class's students
   (team-shared rows by `team_id`), then students, then the `Class`. Take a final
-  backup first ([restore.md](restore.md)) and record the school's sign-off. Note
-  that `uploaded_assets.team_id` is `ON DELETE RESTRICT` — retire the team's
-  assets through the reclaim sweep before deleting the team.
+  backup first ([restore.md](restore.md)) and record the school's sign-off.
+
+  There is deliberately **no team-deletion command**, and `DELETE FROM teams`
+  will not work on its own: 36 tables reference `teams.id` with `ON DELETE
+  RESTRICT`, so the delete fails loudly on the first one that still has rows.
+  That refusal is the design. Clear the team's rows in dependency order, and
+  **retire `uploaded_assets` through the reclaim sweep first** — the sweep is the
+  only thing that deletes an R2 object, and a ledger row removed before its
+  object leaves an untracked, unfindable blob billed forever (P1-R12).
+
+  `test/pg/invariants.pg.test.ts` enforces the two halves of this against the
+  live database (P2-6): no `ON DELETE CASCADE` anywhere may reach
+  `uploaded_assets`, `papers`, or the audit tables (`activity_feed`,
+  `teacher_feedback`, `ai_usage`, the membership-event logs, `data_requests`);
+  and a team still holding an asset refuses to delete rather than stranding it.
+  A new cascade that breaks either fails that suite.
 - **Resend log retention** — no action beyond their window; do not re-email.
 
 ## Verification
