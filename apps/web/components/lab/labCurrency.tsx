@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import type { Currency } from '@/components/lab/StatusStrip'
+import { applyCurrencyDelta, applyCurrencyValues } from '@/components/lab/currency-math'
 
 /**
  * Live currency state for the lab shell.
@@ -38,15 +39,11 @@ export function LabCurrencyProvider({
   const [currency, setCurrency] = useState<Currency>(initial)
 
   const addCurrency = useCallback((delta: Partial<Currency>) => {
-    setCurrency((c) => ({
-      kp: c.kp + (delta.kp ?? 0),
-      clearanceLevel: c.clearanceLevel + (delta.clearanceLevel ?? 0),
-      lc: c.lc + (delta.lc ?? 0),
-    }))
+    setCurrency((c) => applyCurrencyDelta(c, delta))
   }, [])
 
   const setCurrencyValues = useCallback((next: Partial<Currency>) => {
-    setCurrency((current) => ({ ...current, ...next }))
+    setCurrency((current) => applyCurrencyValues(current, next))
   }, [])
 
   return (
