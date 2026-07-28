@@ -3047,38 +3047,6 @@
   animation: mkt-flip-in 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* 3D Sprite Carousel (game-layer) — "coverflow" style: center item full-size
-   and forward-facing, two on each side progressively smaller and turned
-   inward (CSS perspective + per-item translateX/Z, rotateY, scale; no
-   library). Fills the width of its container — translateX on each item
-   uses %, which resolves against the item's own box (same width as the
-   scene, since items are position:absolute + inset:0). */
-.mkt-carousel-scene {
-  perspective: 1100px;
-  height: clamp(180px, 30vw, 260px);
-}
-.mkt-carousel-track {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  transform-style: preserve-3d;
-  cursor: grab;
-  touch-action: pan-y;
-}
-.mkt-carousel-track:active {
-  cursor: grabbing;
-}
-.mkt-carousel-item {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  backface-visibility: hidden;
-  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
 /* Lightbox (Shot zoom) — quick fade, respects reduced-motion below. */
 @keyframes mkt-lightbox-in {
   from { opacity: 0; }
@@ -3146,6 +3114,5 @@
   .mkt-flip-in { animation: none !important; }
   [data-flip] { transform: none !important; transition: none !important; }
   .mkt-accordion-flip { transition: none !important; }
-  .mkt-carousel-item { transition: none !important; }
   .mkt-lightbox { animation: none !important; }
 }

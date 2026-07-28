@@ -11,7 +11,6 @@ import { TiltCard } from '@/components/marketing/TiltCard'
 import { MarketingNav, MarketingFooter } from '@/components/marketing/MarketingChrome'
 import { JourneyRail } from '@/components/marketing/JourneyRail'
 import { FlipWords } from '@/components/marketing/FlipWords'
-import { SpriteCarousel } from '@/components/marketing/SpriteCarousel'
 
 /**
  * Public marketing home (`/`) — the product front door. Light theme (paper field,
@@ -402,9 +401,6 @@ export default async function HomePage() {
             </li>
           ))}
         </ul>
-        <Reveal className="mkt-iso-plate mt-12 border border-[#e6e5dd] p-6 md:p-10" style={{ borderRadius: 8 }}>
-          <SpriteCarousel />
-        </Reveal>
       </section>
 
       {/* ── For teachers. Split, image-LEFT (varies orientation). ─────────── */}

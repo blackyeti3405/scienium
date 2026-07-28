@@ -40,7 +40,7 @@ export function HeroParallaxBg({ src }: { src: string }) {
         src={src}
         alt=""
         className="h-full w-full object-cover"
-        style={{ objectPosition: 'center 42%' }}
+        style={{ objectPosition: 'center' }}
       />
       <div
         className="absolute inset-0"

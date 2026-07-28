@@ -5,6 +5,21 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.28.0] — 2026-07-28
+
+### Removed
+
+- **Lab-building carousel** on the homepage "game layer" section, per Isaac's request. Deleted
+  `SpriteCarousel.tsx` outright (unused elsewhere) along with its now-dead `.mkt-carousel-*`
+  CSS in `globals.css`, rather than leaving dead code behind.
+
+### Changed
+
+- **Hero background re-cropped and re-centered** — the previous crop had the building cluster
+  off to one side with a lot of surrounding grass. Re-cropped `lab-hero-crop-maxed.png` tighter
+  around the cluster (buildings now fill most of the frame) and set `object-position: center` so
+  the crop shows as much of the maxed-out lab and as little grass as possible.
+
 ## [0.27.0] — 2026-07-17
 
 Pass inspired by Isaac's design references (teak.io, saaspo.com's curated gallery,
