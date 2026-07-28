@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { aiCreate } from '@/lib/ai/spend'
+import { aiCreate, firstText } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
@@ -159,7 +159,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     }
 
     // Defensive output handling: first line, stripped of wrapping quotes/backticks, capped at 300.
-    const raw = aiResponse.content[0]?.type === 'text' ? aiResponse.content[0].text : ''
+    const raw = firstText(aiResponse)
     question = raw
       .split('\n')[0]!
       .trim()

@@ -1,6 +1,6 @@
 import 'server-only'
 import { z } from 'zod'
-import { aiCreate } from '@/lib/ai/spend'
+import { aiCreate, parseModelOutput } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import { VOCAB_MAX_TERMS_PER_PAPER, type ExtractedTerm, type TermSource } from './vocab'
 
@@ -129,14 +129,6 @@ export interface CuratedTerm extends Omit<ExtractedTerm, 'source'> {
 
 const EXCERPT_CHARS = 6000
 
-function safeJson(raw: string): unknown {
-  try {
-    return JSON.parse(raw)
-  } catch {
-    return null
-  }
-}
-
 function buildUserMessage(paperTitle: string, excerpt: string, candidates: ExtractedTerm[]): string {
   const list = candidates
     .map((c, i) => {
@@ -193,15 +185,16 @@ export async function curateTerms(input: {
   })
 
   // Structured outputs guarantee the shape, but `stop_reason: "max_tokens"`
-  // still truncates mid-JSON — parse defensively rather than trusting it.
-  const raw = response.content.find((b) => b.type === 'text')?.text ?? ''
-  const parsedJson = CurationSchema.safeParse(safeJson(raw))
-  if (!parsedJson.success) {
-    // Model output can echo paper text — log stop reason + length only (A7).
+  // still truncates mid-JSON — so this goes through the ONE output boundary
+  // (P2-S9) like every other call site, rather than trusting the format flag.
+  const parsedJson = parseModelOutput(response, CurationSchema)
+  if (!parsedJson.ok) {
+    // Model output can echo paper text — `logDetail` is a reason, a stop
+    // reason, and a length, never the text (A7).
     logEvent({
       event: 'vocab_curate.parse_failed',
       outcome: 'error',
-      detail: `stop=${response.stop_reason} len=${raw.length}`,
+      detail: parsedJson.logDetail,
     })
     return []
   }

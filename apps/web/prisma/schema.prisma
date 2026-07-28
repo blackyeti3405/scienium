@@ -404,6 +404,12 @@ model Team {
   labType          LabType?     @map("lab_type")
   topic            String?
   phase            ProjectPhase @default(discovery)
+  // When the team ENTERED its current phase (REFACTOR2 P2-S14). Teacher phase
+  // pacing used to be computed from `createdAt`, so "days in current phase" was
+  // really the team's age — a lab that advanced this morning read as three weeks
+  // behind. Stamped by both compare-and-set transitions in
+  // app/api/team/advance-phase/route.ts; backfilled to `createdAt` for rows that
+  // predate the column, and readers still fall back to `createdAt` for safety.
   // Cap on how many students may join this lab. Building costs scale with the
   // live member count (lib/shop.ts), so a bigger team earns more KP but pays more.
   maxMembers       Int          @default(3) @map("max_members")
@@ -431,6 +437,7 @@ model Team {
   // away must not destroy it. An archived team is read-only, still visible to the
   // teacher, and cannot be joined.
   archivedAt       DateTime?    @map("archived_at")
+  phaseEnteredAt   DateTime?    @default(now()) @map("phase_entered_at")
   createdAt        DateTime     @default(now()) @map("created_at")
 
   teamLead              User                   @relation("teamLead", fields: [teamLeadId], references: [id])

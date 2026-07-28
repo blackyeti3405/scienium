@@ -1,5 +1,6 @@
 import { readFile } from 'fs/promises'
 import path from 'path'
+import { z } from 'zod'
 
 /** Number of free-response questions generated per quiz. */
 export const QUIZ_QUESTION_COUNT = 5
@@ -34,13 +35,24 @@ export interface QuizQuestion {
 /** What the client sees — the key is stripped. */
 export type ClientQuizQuestion = Omit<QuizQuestion, 'key'>
 
-export interface GradedAnswer {
-  questionId: string
-  score: number // 0-100
-  rationale: string
+/**
+ * One graded answer, as the MODEL returns it (REFACTOR2 P2-S9).
+ *
+ * The schema is the type — `gradeAnswers` `safeParse`s every element against it,
+ * so a row can never reach `clampScore`, the KP award, or `paperQuizAttempt`
+ * with a string score, a missing id, or as `null`. `score` is `.finite()`
+ * because `clampScore(NaN)` is the one number that survives the clamp and then
+ * fails at the Prisma Int column, mid-transaction, after the paid call.
+ */
+export const GradedAnswerSchema = z.object({
+  questionId: z.string().min(1),
+  score: z.number().finite(),
+  rationale: z.string().default(''),
   /** Present only when the answer scored below the pass threshold. */
-  strongAnswer?: string
-}
+  strongAnswer: z.string().optional(),
+})
+
+export type GradedAnswer = z.infer<typeof GradedAnswerSchema>
 
 let cachedRubric: string | null = null
 

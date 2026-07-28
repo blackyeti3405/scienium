@@ -1,5 +1,6 @@
 import 'server-only'
 import type Anthropic from '@anthropic-ai/sdk'
+import type { z } from 'zod'
 import { anthropic } from '@/lib/anthropic'
 import { db } from '@/lib/db'
 import { logEvent } from '@/lib/observability/log'
@@ -186,4 +187,95 @@ export function aiStream(
  */
 export async function assertAiSpendAllowed(): Promise<void> {
   await assertAiEnabled(currentAiScope().teamId)
+}
+
+// ─── The output boundary (REFACTOR2 P2-S9) ───────────────────────────────────
+//
+// `aiCreate` is the ONE door in; these are the ONE door out. Every call site
+// used to read the reply itself, and they disagreed: six dereferenced
+// `content[0].type` (a TypeError the moment the array is empty — a refusal, or a
+// stop before any block), the rest used `content[0]?` (silently reading a
+// leading `thinking`/`tool_use` block as "no text"), and the generic grader
+// accepted ANY non-empty array as a grade. Nothing may read `message.content`
+// directly any more; `test/llm-output-boundary.test.ts` pins the attacks.
+
+/** The minimum of an Anthropic message these two need — so a fixture is a literal. */
+export interface ModelReply {
+  content: ReadonlyArray<{ type: string }>
+  stop_reason?: string | null
+}
+
+/**
+ * The FIRST text block, or `''`.
+ *
+ * `content[0]` is not the text block. The array can be empty, and extended
+ * thinking / tool use / server-tool results all emit blocks that lead it — so
+ * indexing position 0 is either a crash or a silent empty read, depending on
+ * which `?.` the call site happened to write.
+ */
+export function firstText(message: ModelReply): string {
+  const block = message.content.find((b) => b?.type === 'text') as { text?: unknown } | undefined
+  return typeof block?.text === 'string' ? block.text : ''
+}
+
+export type ModelOutputFailure = 'truncated' | 'no_text' | 'no_json' | 'shape'
+
+export type ModelOutput<T> =
+  | { ok: true; data: T }
+  | {
+      ok: false
+      reason: ModelOutputFailure
+      /**
+       * Ready-made, payload-free log line: a reason enum, the provider stop
+       * reason, and a character count. Built here precisely so no call site has
+       * to touch the raw text to say why it failed (A7).
+       */
+      logDetail: string
+    }
+
+/**
+ * The ONE strict parse of a model's JSON reply: `safeParse`, never a cast
+ * (HANDOFF convention). Returns a discriminated result — callers map it to their
+ * own error response and log `logDetail`.
+ */
+export function parseModelOutput<S extends z.ZodTypeAny>(
+  message: ModelReply,
+  schema: S,
+): ModelOutput<z.infer<S>> {
+  const stop = message.stop_reason ?? null
+  // Truncation is a FAILURE, not a shape. `max_tokens` cuts the reply mid-value;
+  // a prefix that still happens to parse is a SMALLER answer wearing a valid
+  // shape — five graded questions arriving as one, and the aggregate scored
+  // against it. Reject before parsing so that can never be a judgement call.
+  return parseModelJson(firstText(message), schema, stop)
+}
+
+/**
+ * The same strict parse for text a caller already has in hand — the streaming
+ * paths accumulate their own `text_delta`s and never hold a `Message`.
+ */
+export function parseModelJson<S extends z.ZodTypeAny>(
+  raw: string,
+  schema: S,
+  stopReason: string | null = null,
+): ModelOutput<z.infer<S>> {
+  type T = z.infer<S>
+  const fail = (reason: ModelOutputFailure): ModelOutput<T> => ({
+    ok: false,
+    reason,
+    logDetail: `reason=${reason} stop=${stopReason ?? 'none'} len=${raw.length}`,
+  })
+
+  if (stopReason === 'max_tokens') return fail('truncated')
+  if (!raw) return fail('no_text')
+  const span = raw.match(/[[{][\s\S]*[\]}]/)
+  if (!span) return fail('no_json')
+  let json: unknown
+  try {
+    json = JSON.parse(span[0])
+  } catch {
+    return fail('no_json')
+  }
+  const parsed = schema.safeParse(json)
+  return parsed.success ? { ok: true, data: parsed.data } : fail('shape')
 }

@@ -1,5 +1,5 @@
-import { aiCreate } from '@/lib/ai/spend'
-import { extractJson } from '@/lib/literature/quiz'
+import { z } from 'zod'
+import { aiCreate, parseModelOutput } from '@/lib/ai/spend'
 
 export interface RelevanceResult {
   relevant: boolean
@@ -94,11 +94,11 @@ export async function checkPaperRelevance(
     ],
   })
 
-  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-  const parsed = extractJson<{ relevant: boolean; reason?: string }>(raw)
-  if (parsed && typeof parsed.relevant === 'boolean') {
-    return { relevant: parsed.relevant, reason: parsed.reason ?? '' }
-  }
+  const parsed = parseModelOutput(
+    response,
+    z.object({ relevant: z.boolean(), reason: z.string().default('') }),
+  )
+  if (parsed.ok) return parsed.data
 
   // If parsing fails, default to allowing the upload
   return { relevant: true, reason: '' }
@@ -145,18 +145,18 @@ export async function batchCheckRelevance(
   // Default to keeping all papers if parsing fails
   for (const p of papers) result.set(p.id, true)
 
-  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-  const parsed = extractJson<{ results?: Array<{ id: string; relevant: boolean }> }>(raw)
-  if (Array.isArray(parsed?.results)) {
-    for (const r of parsed.results) {
+  const parsed = parseModelOutput(
+    response,
+    z.object({ results: z.array(z.object({ id: z.string(), relevant: z.boolean() })) }),
+  )
+  if (parsed.ok) {
+    for (const r of parsed.data.results) {
       // Only ids we actually sent may enter the map — a hostile abstract
       // that forges the scaffolding could make the model emit foreign ids,
       // and callers iterate their own papers, so a stray key is at best
       // noise and at worst a footgun for a future caller that iterates the
       // MAP instead.
-      if (typeof r.id === 'string' && typeof r.relevant === 'boolean' && result.has(r.id)) {
-        result.set(r.id, r.relevant)
-      }
+      if (result.has(r.id)) result.set(r.id, r.relevant)
     }
   }
 

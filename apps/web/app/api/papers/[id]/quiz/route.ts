@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
-import { aiCreate } from '@/lib/ai/spend'
+import { z } from 'zod'
+import { aiCreate, parseModelOutput } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import { paperTextBlock } from '@/lib/literature/grading'
 import {
@@ -12,7 +13,6 @@ import {
   loadRubric,
   parseGeneratedQuestions,
   stripKeys,
-  extractJson,
   mapGradedQuizSession,
 } from '@/lib/literature/quiz'
 
@@ -135,18 +135,20 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       ],
     })
 
-    const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-    // EXACT cardinality (P1-S3): the old check accepted any non-empty array, so
+    // First-text extraction + truncation check through the ONE boundary
+    // (P2-S9); EXACT cardinality (P1-S3) still belongs to
+    // `parseGeneratedQuestions` — the old check accepted any non-empty array, so
     // a one-element response became a one-question "5-question" exam worth the
     // same proficiency and KP.
-    const validated = parseGeneratedQuestions(extractJson(raw), QUIZ_QUESTION_COUNT)
+    const out = parseModelOutput(response, z.unknown())
+    const validated = out.ok ? parseGeneratedQuestions(out.data, QUIZ_QUESTION_COUNT) : null
 
     if (!validated) {
       // Model output can echo paper text — log lengths only, never content (A7).
       logEvent({
         event: 'quiz.generation_parse_failed',
         outcome: 'error',
-        detail: `stop=${response.stop_reason} len=${raw.length}`,
+        detail: out.ok ? 'cardinality_or_shape' : out.logDetail,
       })
       return NextResponse.json({ error: 'Failed to generate quiz' }, { status: 502 })
     }

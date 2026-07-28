@@ -1,9 +1,9 @@
 import 'server-only'
 import { z } from 'zod'
-import { aiCreate } from '@/lib/ai/spend'
+import { aiCreate, parseModelOutput } from '@/lib/ai/spend'
 import type { AiOperationName } from '@/lib/ai/models'
 import { logEvent } from '@/lib/observability/log'
-import { QUIZ_PASS_THRESHOLD, extractJson } from '@/lib/literature/quiz'
+import { QUIZ_PASS_THRESHOLD } from '@/lib/literature/quiz'
 
 /**
  * Shared grading helper for the LLM-graded free-response routes (paper quiz
@@ -96,7 +96,7 @@ export type GradeAnswersResult<T> = { ok: true; graded: T[] } | { ok: false }
  * failure (call or parse) it logs internally under `logLabel` and returns
  * `{ ok: false }` — callers turn that into their existing generic 502.
  */
-export async function gradeAnswers<T>({
+export async function gradeAnswers<S extends z.ZodTypeAny>({
   operation,
   instructions,
   contextBlock,
@@ -104,7 +104,16 @@ export async function gradeAnswers<T>({
   promptIntro,
   maxTokens,
   logLabel,
+  itemSchema,
 }: {
+  /**
+   * The shape of ONE graded row (REFACTOR2 P2-S9). This used to be a bare
+   * generic `T` with no runtime counterpart, so the only check was "a non-empty
+   * array" — `[null]` reached the caller and crashed building the grade map,
+   * and `{ score: "95" }` reached `clampScore` and the KP award. Every element
+   * is now `safeParse`d, and a single bad row fails the whole grading.
+   */
+  itemSchema: S
   /**
    * Which paid call this is. Shared by three routes with different cost and risk
    * profiles, so the accounting must be able to tell them apart — and the model
@@ -127,7 +136,7 @@ export async function gradeAnswers<T>({
   maxTokens: number
   /** Console prefix for internal error logs, e.g. '[quiz]'. */
   logLabel: string
-}): Promise<GradeAnswersResult<T>> {
+}): Promise<GradeAnswersResult<z.infer<S>>> {
   let response
   try {
     response = await aiCreate(operation, {
@@ -166,16 +175,18 @@ export async function gradeAnswers<T>({
     return { ok: false }
   }
 
-  const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
-  const graded = extractJson<T[]>(raw)
-  if (!graded || !Array.isArray(graded) || graded.length === 0) {
-    // Model output can echo paper text or student answers — log lengths only (A7).
+  // The ONE output boundary (P2-S9): first-text extraction, truncation check,
+  // and a strict per-row parse — never a cast.
+  const parsed = parseModelOutput(response, z.array(itemSchema).min(1))
+  if (!parsed.ok) {
+    // Model output can echo paper text or student answers — `logDetail` is built
+    // from a reason, a stop reason, and a length, never the text itself (A7).
     logEvent({
       event: 'literature.grading_parse_failed',
       outcome: 'error',
-      detail: `${logLabel} stop=${response.stop_reason} len=${raw.length}`,
+      detail: `${logLabel} ${parsed.logDetail}`,
     })
     return { ok: false }
   }
-  return { ok: true, graded }
+  return { ok: true, graded: parsed.data }
 }

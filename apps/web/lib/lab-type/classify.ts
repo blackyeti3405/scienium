@@ -1,4 +1,5 @@
-import { aiCreate } from '@/lib/ai/spend'
+import { z } from 'zod'
+import { aiCreate, parseModelOutput } from '@/lib/ai/spend'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
 
 const LAB_TYPE_DESCRIPTIONS: Record<LabType, string> = {
@@ -47,19 +48,17 @@ Rules:
     ],
   })
 
-  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
-  try {
-    const match = raw.match(/\{[\s\S]*\}/)
-    if (match) {
-      const parsed = JSON.parse(match[0])
-      const labType = parsed.labType as LabType
-      if (labType && LAB_TYPE_LABELS[labType]) {
-        return { labType, rationale: parsed.rationale ?? '' }
-      }
-    }
-  } catch {
-    // fall through to default
-  }
+  // Through the ONE output boundary (P2-S9). This used to index `content[0]`
+  // unguarded, so an empty `content` array threw a TypeError out of the paid
+  // phase-advance — after the claim was taken and the money spent.
+  const parsed = parseModelOutput(
+    response,
+    z.object({
+      labType: z.enum(Object.keys(LAB_TYPE_LABELS) as [LabType, ...LabType[]]),
+      rationale: z.string().default(''),
+    }),
+  )
+  if (parsed.ok) return parsed.data
 
   return { labType: 'volt_lab', rationale: 'Could not classify — defaulted to Volt Lab.' }
 }

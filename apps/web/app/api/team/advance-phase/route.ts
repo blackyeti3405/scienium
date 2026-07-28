@@ -52,7 +52,9 @@ export async function POST(req: NextRequest) {
     await db.$transaction(async (tx) => {
       const { count } = await tx.team.updateMany({
         where: { id: ctx.teamId, phase: ctx.phase },
-        data: { phase: toPhase },
+        // The phase clock is stamped BY the compare-and-set, so only the
+        // request that actually moved the team sets it (REFACTOR2 P2-S14).
+        data: { phase: toPhase, phaseEnteredAt: new Date() },
       })
       if (count > 0) {
         await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'phase_advanced', {
@@ -146,7 +148,15 @@ export async function POST(req: NextRequest) {
   const advanced = await db.$transaction(async (tx) => {
     const result = await tx.team.updateMany({
       where: { id: ctx.teamId, phase: 'literature_review' },
-      data: { phase: 'research_planning', labType, researchIdea, advanceClaimedAt: null },
+      data: {
+        phase: 'research_planning',
+        // Same rule on the paid path: the CAS is the one place a phase change
+        // is real, so it is the one place the clock is set (P2-S14).
+        phaseEnteredAt: new Date(),
+        labType,
+        researchIdea,
+        advanceClaimedAt: null,
+      },
     })
     if (result.count === 1) {
       await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'phase_advanced', {

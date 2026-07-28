@@ -3,6 +3,7 @@ import { fetchWithRetry } from '@/lib/fetch-retry'
 import sanitizeHtml from 'sanitize-html'
 import { requireUserContext } from '@/lib/api/route-context'
 import { LruCache } from '@/lib/lru'
+import { logEvent } from '@/lib/observability/log'
 // Shared XSS allowlist (also used by the Discovery v2 source path for abstracts).
 // See lib/discovery/sanitize.ts — do NOT fork a looser allowlist.
 import { ARTICLE_SANITIZE_OPTS, TITLE_SANITIZE_OPTS } from '@/lib/discovery/sanitize'
@@ -80,7 +81,16 @@ export async function GET(req: NextRequest) {
         parseRes.status === 429
           ? 'Wikipedia is rate-limiting requests — please wait a moment and retry.'
           : `Wikipedia API error (HTTP ${parseRes.status})`
-      console.error(`[discovery/article] "${title}" → HTTP ${parseRes.status}`)
+      // The requested title is REQUEST-DERIVED free text (A7 / P2-S11) — a
+      // student's reading trail, and an attacker-chosen string. Log the status
+      // and a length, never the title itself.
+      logEvent({
+        event: 'discovery.article_fetch_failed',
+        route: '/api/discovery/article',
+        provider: 'wikipedia',
+        outcome: 'error',
+        detail: `http=${parseRes.status} titleLen=${title.length}`,
+      })
       return NextResponse.json({ error: detail }, { status: 502 })
     }
 

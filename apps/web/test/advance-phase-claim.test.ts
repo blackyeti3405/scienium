@@ -183,9 +183,46 @@ describe('the free self-advance path is unchanged', () => {
     expect(await res.json()).toMatchObject({ phase: 'working' })
     expect(mocks.teamUpdateMany).toHaveBeenCalledWith({
       where: { id: 'team_1', phase: 'research_planning' },
-      data: { phase: 'working' },
+      data: { phase: 'working', phaseEnteredAt: expect.any(Date) },
     })
     expect(mocks.classifyLabType).not.toHaveBeenCalled()
     expect(mocks.enforceRateLimit).not.toHaveBeenCalledWith(expect.anything(), 'ai', expect.anything())
+  })
+})
+
+/**
+ * The phase CLOCK (REFACTOR2 P2-S14). Teacher pacing reported "days in current
+ * phase" from `Team.createdAt` — the team's AGE — so a month-old lab that
+ * advanced this morning was ranked as a month behind. The entry timestamp is
+ * stamped BY the compare-and-set, which is the only place a phase change is
+ * real: a claim that wins but whose CAS matches nothing must not move the clock,
+ * and neither must the claim itself.
+ */
+describe('the phase clock is stamped by the transition, not the attempt', () => {
+  it('the paid CAS sets phaseEnteredAt alongside the new phase', async () => {
+    await POST(advanceReq())
+
+    expect(casCall().data).toMatchObject({
+      phase: 'research_planning',
+      phaseEnteredAt: expect.any(Date),
+    })
+  })
+
+  it('the CLAIM does not touch the clock — it has not advanced anything yet', async () => {
+    await POST(advanceReq())
+
+    expect(claimCall().data).not.toHaveProperty('phaseEnteredAt')
+  })
+
+  it('a CAS that matches nothing leaves the clock alone (release is clock-free)', async () => {
+    mocks.teamUpdateMany
+      .mockResolvedValueOnce({ count: 1 }) // claim won
+      .mockResolvedValueOnce({ count: 0 }) // CAS matched nothing — phase moved
+      .mockResolvedValue({ count: 1 }) // claim release
+    mocks.teamFindUnique.mockResolvedValue({ phase: 'showcase', labType: 'volt_lab' })
+
+    await POST(advanceReq())
+
+    expect(mocks.teamUpdateMany.mock.calls.at(-1)![0].data).not.toHaveProperty('phaseEnteredAt')
   })
 })

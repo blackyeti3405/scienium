@@ -52,10 +52,18 @@ describe('GET /api/teacher/roster (ADR-004: per-student class membership)', () =
       email: 'cross@example.test',
       role: 'student',
       classId: h.ids.classB,
-      // Denormalized to-one relation for the route's `activeTeam` select. The
-      // team deliberately has NO classId — like every post-ADR-004 team.
-      activeTeam: { id: h.ids.teamA, name: 'Team A', phase: 'working', labType: 'volt_lab' },
-      teamMemberships: [],
+      // A REAL membership backing the pointer (P2-S14): the roster resolves the
+      // team through `pickActiveTeam`, so a bare `activeTeamId` with no
+      // `TeamMember` row is now (correctly) teamless. The team deliberately has
+      // NO classId — like every post-ADR-004 team.
+      activeTeamId: h.ids.teamA,
+      teamMemberships: [
+        {
+          teamId: h.ids.teamA,
+          joinedAt: new Date(0),
+          team: { id: h.ids.teamA, name: 'Team A', phase: 'working', labType: 'volt_lab' },
+        },
+      ],
     })
   })
 
@@ -74,8 +82,14 @@ describe('GET /api/teacher/roster (ADR-004: per-student class membership)', () =
       email: 'nullclass@example.test',
       role: 'student',
       classId: h.ids.classA,
-      activeTeam: { id: 'team_new', name: 'New Lab', phase: 'literature_review', labType: null },
-      teamMemberships: [],
+      activeTeamId: 'team_new',
+      teamMemberships: [
+        {
+          teamId: 'team_new',
+          joinedAt: new Date(0),
+          team: { id: 'team_new', name: 'New Lab', phase: 'literature_review', labType: null },
+        },
+      ],
     })
     const body = await h.asTeacherA().get(rosterGET).expect(200)
     const row = body.students.find(

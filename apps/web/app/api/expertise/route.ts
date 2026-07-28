@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { aiCreate } from '@/lib/ai/spend'
+import { aiCreate, parseModelOutput } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import {
   MAX_CLEARANCE,
@@ -15,7 +15,6 @@ import {
   type ExpertiseQuestion,
 } from '@/lib/clearance/expertise'
 import { loadExpertiseRubric } from '@/lib/clearance/rubric'
-import { extractJson } from '@/lib/literature/quiz'
 import { getProjectContext, hasMinimumContext, renderProjectContext } from '@/lib/clearance/context'
 
 // Server-side only; the Anthropic key never reaches the browser.
@@ -180,24 +179,38 @@ export async function POST(req: NextRequest) {
     ],
   })
 
-  const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
-  const parsed = extractJson<Array<{ prompt: string; focus: string; key: string }>>(raw)
-  if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
-    // Model output can echo paper/team content — log lengths only (A7).
+  // Through the ONE output boundary (P2-S9), with CARDINALITY as part of the
+  // contract. The old check was "a non-empty array", so a one-element reply
+  // became a `meta.questionCount`-question clearance exam — the same P1-S3 bug
+  // the paper quiz already fixed, still open on the path that raises clearance
+  // and mints the level bonus. A blank prompt or key is likewise not a question:
+  // `String(q.prompt ?? '')` used to launder both into the exam.
+  const parsed = parseModelOutput(
+    response,
+    z
+      .array(
+        z.object({
+          prompt: z.string().trim().min(1).max(1_000),
+          focus: z.string().trim().min(1).max(40).catch('concept'),
+          key: z.string().trim().min(1).max(2_000),
+        }),
+      )
+      .min(meta.questionCount),
+  )
+  if (!parsed.ok) {
+    // Model output can echo paper/team content — `logDetail` is reason, stop
+    // reason, and length only (A7).
     logEvent({
       event: 'expertise.generation_parse_failed',
       outcome: 'error',
-      detail: `len=${raw.length}`,
+      detail: parsed.logDetail,
     })
     return NextResponse.json({ error: 'Failed to generate exam' }, { status: 502 })
   }
 
-  const questions: ExpertiseQuestion[] = parsed.slice(0, meta.questionCount).map((q, i) => ({
-    id: `q${i + 1}`,
-    prompt: String(q.prompt ?? '').slice(0, 1000),
-    focus: String(q.focus ?? 'concept').slice(0, 40),
-    key: String(q.key ?? '').slice(0, 2000),
-  }))
+  const questions: ExpertiseQuestion[] = parsed.data
+    .slice(0, meta.questionCount)
+    .map((q, i) => ({ id: `q${i + 1}`, ...q }))
 
   const exam = await db.expertiseExam.create({
     data: {

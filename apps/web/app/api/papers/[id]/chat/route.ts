@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { aiCreate } from '@/lib/ai/spend'
+import { aiCreate, firstText } from '@/lib/ai/spend'
 import { paperTextBlock } from '@/lib/literature/grading'
 import { buildChatTurns, runChatTurn } from '@/lib/chat/thread'
 
@@ -105,7 +105,9 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         ],
         messages: convo,
       })
-      const reply = response.content[0].type === 'text' ? response.content[0].text : ''
+      // First TEXT block, not `content[0]` (P2-S9): an empty array threw, and a
+      // leading thinking/tool block read as an empty reply that was then stored.
+      const reply = firstText(response)
       return {
         reply,
         usageJson: {

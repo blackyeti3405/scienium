@@ -4,7 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { buildStudyContext, STUDY_INSTRUCTIONS } from '@/lib/ops/vega-study-context'
-import { aiCreate } from '@/lib/ai/spend'
+import { aiCreate, firstText } from '@/lib/ai/spend'
 import { buildChatTurns, runChatTurn } from '@/lib/chat/thread'
 
 // The server owns the team's shared study thread. A request carries ONE new user
@@ -90,7 +90,8 @@ export async function POST(req: NextRequest) {
         ],
         messages: convo,
       })
-      const reply = response.content[0].type === 'text' ? response.content[0].text : ''
+      // First TEXT block, not `content[0]` (P2-S9) — see the chat route.
+      const reply = firstText(response)
       return {
         reply,
         usageJson: {

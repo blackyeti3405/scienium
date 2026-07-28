@@ -12,6 +12,8 @@
  */
 
 /** Highest clearance a team can reach. */
+import { z } from 'zod'
+
 export const MAX_CLEARANCE = 5
 
 /** Aggregate score (0-100) required to pass a clearance exam. */
@@ -110,11 +112,18 @@ export interface ExpertiseQuestion {
 /** What the client receives — the grading key is stripped. */
 export type ClientExpertiseQuestion = Omit<ExpertiseQuestion, 'key'>
 
-export interface GradedExpertiseAnswer {
-  questionId: string
-  score: number // 0-100
-  rationale: string
-}
+/**
+ * One graded clearance answer, as the MODEL returns it (REFACTOR2 P2-S9).
+ * `gradeAnswers` `safeParse`s each element — a clearance raise mints KP, so a
+ * malformed row must never reach `clampScore` or the level high-water write.
+ */
+export const GradedExpertiseAnswerSchema = z.object({
+  questionId: z.string().min(1),
+  score: z.number().finite(),
+  rationale: z.string().default(''),
+})
+
+export type GradedExpertiseAnswer = z.infer<typeof GradedExpertiseAnswerSchema>
 
 export function stripExpertiseKeys(questions: ExpertiseQuestion[]): ClientExpertiseQuestion[] {
   return questions.map(({ key: _key, ...rest }) => rest)

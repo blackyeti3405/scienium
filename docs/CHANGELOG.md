@@ -5,6 +5,76 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.75.2] — 2026-07-27
+
+REFACTOR2 findings **P2-S9**, **P2-S11**, **P2-S14**.
+
+### Fixed — a raw request-derived Wikipedia title was still logged, and the sweep that was
+supposed to catch it could be defeated by a rename (P2-S11)
+
+`app/api/discovery/article/route.ts` logged `` `[discovery/article] "${title}" → HTTP ${status}` ``
+on a provider failure — the student's reading trail, and an attacker-chosen string, in the log
+drain. It is now a payload-free `logEvent` (`http=<status> titleLen=<n>`). The synthesis check's
+`console.error('…', outcome.error)` went the same way: a provider error can carry a response
+body, and that call's prompt is the student's own synthesis grid, so only the error CLASS is
+logged now.
+
+The sweep is the real finding. `test/log-redaction-sweep.test.ts` recognised a finite list of
+payload variable NAMES (`raw`, `verdictRaw`, `fullText`, …) — the payloads someone had already
+thought of — so `title` walked past it and so would any rename. It is now a **closed AST
+policy** built on TypeScript's own compiler API (already a dependency): every `console.*` and
+every `logEvent` argument is parsed, and each sub-expression must be provably payload-free by
+SHAPE — a literal, a `.length`/`.status`/`.id`-class terminal, or the caught error of an
+enclosing `try/catch` resolved STRUCTURALLY from the AST rather than by being named `err`.
+Everything else fails unless its exact source text is enumerated in a per-file allowlist with a
+reason. `logEvent` is in scope too, so a payload cannot simply move into its free-text `detail`.
+
+### Fixed — every Anthropic call site read the reply its own way (P2-S9)
+
+Six dereferenced `response.content[0].type` — a `TypeError` the instant the array is empty (a
+refusal, or a stop before any block) — and the rest used `content[0]?`, which reads a leading
+`thinking`/`tool_use` block as "no text". `lib/ai/spend.ts` now owns the ONE door out, beside
+the `aiCreate` door in: `firstText` (the first TEXT block, wherever it sits) and
+`parseModelOutput` / `parseModelJson` (truncation check → JSON span → `safeParse`, never a
+cast). `stop_reason: 'max_tokens'` is a FAILURE, not a shape: a truncated prefix that still
+parses is a smaller answer wearing a valid shape. Fourteen call sites route through it; nothing
+reads `message.content` directly any more.
+
+`gradeAnswers` — shared by the paper quiz, the quiz retry, and the clearance exam — validated
+only "a non-empty array" of a bare generic `T`. It now takes an `itemSchema` and parses every
+row, so `[null]` (which crashed building the grade map, after the paid call), `{ score: "95" }`
+(which `clampScore` laundered straight into a KP award), `{ score: "lots" }` (which clamped to
+`NaN` and failed at the Prisma `Int` column mid-transaction) and a row with no `questionId` all
+land as a clean 502 instead.
+
+### Fixed — a one-question clearance exam counted as a full one (P2-S9, found in passing)
+
+`app/api/expertise/route.ts` accepted any non-empty array of generated questions and then
+`.slice(0, meta.questionCount)` — so a one-element reply became a `questionCount`-question
+clearance exam, graded at the same bar, minting the same level bonus. That is the P1-S3 bug the
+paper quiz fixed in v0.31.0, still open on the path that raises clearance. Cardinality is now
+part of the schema, and a blank prompt or key is no longer laundered in by `String(q.prompt ?? '')`.
+
+### Fixed — "days in current phase" was really the team's age (P2-S14)
+
+`computePhasePacing` measured from `Team.createdAt`, so a month-old lab that advanced this
+morning was reported to its teacher as a month behind, and the "who is stuck" ranking was a
+ranking by age. New nullable `Team.phaseEnteredAt` (migration
+`20260727230000_team_phase_entered_at`, backfilled to `created_at` — there is no phase history
+to reconstruct, and that backfill reproduces exactly the number the report showed before). It is
+stamped BY the compare-and-set that performs each transition, which is the only place a phase
+change is real: the claim does not set it, and a CAS that matches nothing does not either.
+
+### Fixed — teacher reports resolved a student's team from an unbacked pointer (P2-S14)
+
+`dedupeScopedTeams` read the raw `activeTeam` RELATION — `User.activeTeamId` with no membership
+check — so a stale pointer at a team the student no longer belongs to put that team's id into
+`teamIds`, and every report aggregate is keyed on that set. Both the reports and roster routes
+now resolve through the canonical `pickActiveTeam`, which honours `activeTeamId` only while a
+`TeamMember` row backs it.
+
+---
+
 ## [0.75.1] — 2026-07-27
 
 REFACTOR2 findings **P2-S8**, **P2-S12**, **P2-S13**.

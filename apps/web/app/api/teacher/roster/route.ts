@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { differenceInCalendarDays } from 'date-fns'
 import { requireTeacher } from '@/lib/teacher/auth'
 import { db } from '@/lib/db'
+import { pickActiveTeam } from '@/lib/team/active-team'
 
 /** Days without a progress log before a working-phase team is flagged stale. */
 const STALE_LOG_DAYS = 5
@@ -45,13 +46,13 @@ export async function GET(req: NextRequest) {
     select: {
       id: true,
       name: true,
-      activeTeam: {
-        select: { id: true, name: true, phase: true, labType: true },
-      },
+      // Same canonical selection as the reports route (P2-S14): `activeTeamId`
+      // is honoured only while a `TeamMember` row backs it.
+      activeTeamId: true,
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
-        take: 1,
         select: {
+          teamId: true,
           team: { select: { id: true, name: true, phase: true, labType: true } },
         },
       },
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest) {
   const teamIds = [
     ...new Set(
       students
-        .map((s) => (s.activeTeam ?? s.teamMemberships[0]?.team)?.id)
+        .map((s) => pickActiveTeam(s.activeTeamId, s.teamMemberships)?.id)
         .filter((x): x is string => !!x),
     ),
   ]
@@ -101,7 +102,7 @@ export async function GET(req: NextRequest) {
     // vestigial and never read. The student is already scoped to this teacher's
     // classes above, so their team is in scope even if it spans classes/schools
     // or carries a null legacy classId.
-    const team = s.activeTeam ?? s.teamMemberships[0]?.team ?? null
+    const team = pickActiveTeam(s.activeTeamId, s.teamMemberships)
     const teamId = team?.id ?? null
     const lastLog = teamId ? (lastLogMap.get(teamId) ?? null) : null
     const lastActivity = teamId ? (lastActivityMap.get(teamId) ?? null) : null

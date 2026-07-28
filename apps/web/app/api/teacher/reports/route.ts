@@ -46,15 +46,23 @@ export async function GET(req: NextRequest) {
     where: { classId: { in: ctx.classIds }, role: 'student' },
     select: {
       id: true,
-      activeTeam: {
-        select: { id: true, name: true, phase: true, createdAt: true, classId: true },
-      },
+      // `activeTeamId`, never the `activeTeam` RELATION: the id is only honoured
+      // when a `TeamMember` row still backs it (`pickActiveTeam`). No `take: 1`
+      // — the resolver has to see every membership to find the backing one.
+      activeTeamId: true,
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
-        take: 1,
         select: {
+          teamId: true,
           team: {
-            select: { id: true, name: true, phase: true, createdAt: true, classId: true },
+            select: {
+              id: true,
+              name: true,
+              phase: true,
+              createdAt: true,
+              phaseEnteredAt: true,
+              classId: true,
+            },
           },
         },
       },

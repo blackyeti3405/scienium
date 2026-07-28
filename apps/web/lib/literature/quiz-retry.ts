@@ -1,6 +1,7 @@
 import 'server-only'
 import { Prisma } from '@prisma/client'
-import { aiCreate } from '@/lib/ai/spend'
+import { z } from 'zod'
+import { aiCreate, parseModelOutput } from '@/lib/ai/spend'
 import { db } from '@/lib/db'
 import { aiIdempotencyKey, runAiOperation } from '@/lib/ai/operation'
 import {
@@ -10,8 +11,8 @@ import {
   type QuizQuestion,
   type ClientQuizQuestion,
   type GradedAnswer,
+  GradedAnswerSchema,
   loadRubric,
-  extractJson,
   stripKeys,
   latestFailedQuestionIds,
   NEW_QUESTION_INSTRUCTIONS,
@@ -162,24 +163,28 @@ async function generateNewQuestion(
     ],
   })
 
-  const genRaw = genResponse.content[0].type === 'text' ? genResponse.content[0].text : ''
-  const genParsed = extractJson<{ prompt: string; focus: string; key: string }>(genRaw)
-  if (!genParsed || !genParsed.prompt) {
-    // The thrown error is console.error'd upstream — it must never carry model
-    // output, which can echo paper text (A7). Length-only diagnostics here.
+  // Through the ONE output boundary (P2-S9): `content[0]` was indexed unguarded
+  // (a TypeError on an empty array, mid-retry, after the paid call), and a
+  // truncated question was accepted as long as it had a `prompt`.
+  const genParsed = parseModelOutput(
+    genResponse,
+    z.object({
+      prompt: z.string().trim().min(1),
+      focus: z.string().default('general'),
+      key: z.string().default(''),
+    }),
+  )
+  if (!genParsed.ok) {
+    // The thrown error is logged upstream — it must never carry model output,
+    // which can echo paper text (A7). `logDetail` is reason/stop/length only.
     logEvent({
       event: 'quiz_retry.generation_parse_failed',
       outcome: 'error',
-      detail: `stop=${genResponse.stop_reason} len=${genRaw.length}`,
+      detail: genParsed.logDetail,
     })
     throw new Error('Failed to parse new-question generation')
   }
-  return {
-    id: nextId,
-    prompt: genParsed.prompt,
-    focus: genParsed.focus ?? 'general',
-    key: genParsed.key ?? '',
-  }
+  return { id: nextId, ...genParsed.data }
 }
 
 /** How long a generation claim is honored before a crashed generator's claim
@@ -433,7 +438,7 @@ export async function submitRetry(
       ]),
       teamId: principal.teamId,
       run: async () => {
-        const result = await gradeAnswers<GradedAnswer>({
+        const result = await gradeAnswers({
       operation: 'quiz_retry_grade',
           instructions: RETRY_GRADING_INSTRUCTIONS(rubric),
           contextBlock: paperTextContext(session.paper.fullText),
@@ -441,6 +446,7 @@ export async function submitRetry(
           promptIntro: QUIZ_GRADING_PROMPT_INTRO,
           maxTokens: 1536,
           logLabel: '[quiz retry]',
+          itemSchema: GradedAnswerSchema,
         })
         if (!result.ok) throw new RetryGradingError()
         return result.graded

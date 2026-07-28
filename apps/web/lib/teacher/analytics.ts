@@ -1,5 +1,6 @@
 import { differenceInCalendarDays } from 'date-fns'
 import type { Phase } from '@/lib/phase'
+import { pickActiveTeam } from '@/lib/team/active-team'
 import { CODEX_TRACKS, loadTrack } from '@/lib/ops/codex'
 import { shopBuilding } from '@/lib/shop'
 
@@ -33,6 +34,8 @@ export interface ScopedTeam {
   name: string
   phase: Phase
   createdAt: Date
+  /** When the team entered `phase`. Null only for rows older than the column. */
+  phaseEnteredAt: Date | null
 }
 
 interface StudentTeamRow {
@@ -40,6 +43,7 @@ interface StudentTeamRow {
   name: string
   phase: string
   createdAt: Date
+  phaseEnteredAt: Date | null
   classId: string | null
 }
 
@@ -55,19 +59,24 @@ interface StudentTeamRow {
  */
 export function dedupeScopedTeams(
   students: {
-    activeTeam: StudentTeamRow | null
-    teamMemberships: { team: StudentTeamRow }[]
+    activeTeamId: string | null
+    teamMemberships: { teamId: string; team: StudentTeamRow }[]
   }[],
 ): ScopedTeam[] {
   const teamMap = new Map<string, ScopedTeam>()
   for (const s of students) {
-    const team = s.activeTeam ?? s.teamMemberships[0]?.team
+    // The CANONICAL selection (REFACTOR2 P2-S14). This used to read the raw
+    // `activeTeam` RELATION, which is `activeTeamId` with no membership check —
+    // so a stale pointer at a team the student no longer belongs to put that
+    // team's id into `teamIds`, and every aggregate below then read it.
+    const team = pickActiveTeam(s.activeTeamId, s.teamMemberships)
     if (team) {
       teamMap.set(team.id, {
         id: team.id,
         name: team.name,
         phase: team.phase as Phase,
         createdAt: team.createdAt,
+        phaseEnteredAt: team.phaseEnteredAt,
       })
     }
   }
@@ -147,9 +156,14 @@ export function computeTeamProficiency(
 }
 
 /**
- * Phase pacing: days since the team was created. (Per-phase pacing used to
- * key off approved teacher advances; with self-paced advancement removed, the
- * team's age is the available proxy for "how long has this team been going".)
+ * Phase pacing: days since the team ENTERED its current phase.
+ *
+ * This was days since the team was CREATED, labelled `daysInPhase` — so a lab
+ * that advanced this morning read as however old the lab was, and the teacher's
+ * "who is stuck" list ranked by age. `Team.phaseEnteredAt` is stamped by the
+ * compare-and-set that performs each transition (REFACTOR2 P2-S14); rows that
+ * predate the column were backfilled to `createdAt`, and the `??` keeps that
+ * honest reading for anything the backfill missed.
  */
 export function computePhasePacing(
   teams: ScopedTeam[],
@@ -157,7 +171,7 @@ export function computePhasePacing(
   const now = new Date()
   return teams
     .map((t) => {
-      const since = t.createdAt
+      const since = t.phaseEnteredAt ?? t.createdAt
       return {
         teamId: t.id,
         teamName: t.name,

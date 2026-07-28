@@ -17,8 +17,13 @@ import {
  * pilot teacher wrong numbers.
  */
 
-function team(id: string, phase = 'literature_review', createdAt = new Date()): ScopedTeam {
-  return { id, name: `Team ${id}`, phase: phase as ScopedTeam['phase'], createdAt }
+function team(
+  id: string,
+  phase = 'literature_review',
+  createdAt = new Date(),
+  phaseEnteredAt: Date | null = null,
+): ScopedTeam {
+  return { id, name: `Team ${id}`, phase: phase as ScopedTeam['phase'], createdAt, phaseEnteredAt }
 }
 
 const T1 = team('t1')
@@ -93,23 +98,51 @@ describe('computeTeamProficiency — per-paper rollup (the inflation fix)', () =
   })
 })
 
-describe('dedupeScopedTeams', () => {
+describe('dedupeScopedTeams — membership-backed selection (P2-S14)', () => {
+  const row = (id: string) => ({
+    id,
+    name: `T${id}`,
+    phase: 'discovery',
+    createdAt: new Date(),
+    phaseEnteredAt: null,
+    classId: null,
+  })
+
   it('two students on the same team yield one team', () => {
-    const t = { id: 't1', name: 'T', phase: 'discovery', createdAt: new Date(), classId: null }
+    const t = row('t1')
     const out = dedupeScopedTeams([
-      { activeTeam: t, teamMemberships: [{ team: t }] },
-      { activeTeam: t, teamMemberships: [{ team: t }] },
+      { activeTeamId: 't1', teamMemberships: [{ teamId: 't1', team: t }] },
+      { activeTeamId: 't1', teamMemberships: [{ teamId: 't1', team: t }] },
     ])
     expect(out).toHaveLength(1)
   })
 
-  it('falls back to the first membership when activeTeam is null; skips teamless students', () => {
-    const t = { id: 't1', name: 'T', phase: 'discovery', createdAt: new Date(), classId: null }
+  it('falls back to the newest membership when activeTeamId is null; skips teamless students', () => {
     const out = dedupeScopedTeams([
-      { activeTeam: null, teamMemberships: [{ team: t }] },
-      { activeTeam: null, teamMemberships: [] },
+      { activeTeamId: null, teamMemberships: [{ teamId: 't1', team: row('t1') }] },
+      { activeTeamId: null, teamMemberships: [] },
     ])
     expect(out.map((x) => x.id)).toEqual(['t1'])
+  })
+
+  /**
+   * THE ATTACK. `activeTeamId` survives paths that do not clear it, and the
+   * report used to read the `activeTeam` RELATION — the id resolved with no
+   * membership check. Every aggregate in the reports route is keyed on the ids
+   * this returns, so a stale pointer put another lab's KP and proficiency into
+   * a teacher's class report. Only teams the student is really a member of may
+   * come back.
+   */
+  it('a stale activeTeamId with no membership row cannot enter the report', () => {
+    const out = dedupeScopedTeams([
+      { activeTeamId: 'other-school-team', teamMemberships: [{ teamId: 't1', team: row('t1') }] },
+    ])
+    expect(out.map((x) => x.id)).toEqual(['t1'])
+  })
+
+  it('a student with a stale pointer and NO memberships contributes no team at all', () => {
+    const out = dedupeScopedTeams([{ activeTeamId: 'other-school-team', teamMemberships: [] }])
+    expect(out).toEqual([])
   })
 })
 
@@ -133,5 +166,26 @@ describe('computePhaseCounts / computeKpDistribution / computePhasePacing', () =
     expect(out[0].teamId).toBe('old')
     expect(out[0].daysInPhase).toBeGreaterThanOrEqual(9)
     expect(out[1].daysInPhase).toBe(0)
+  })
+
+  /**
+   * THE ATTACK (P2-S14): `daysInPhase` was days since the team was CREATED. A
+   * month-old lab that advanced this morning was reported as a month behind in
+   * its current phase, and the teacher's "who is stuck" ranking is that number.
+   */
+  it('a month-old team that entered its phase TODAY reports 0 days, not 30', () => {
+    const t = team('t', 'working', new Date(Date.now() - 30 * 864e5), new Date())
+    expect(computePhasePacing([t])[0].daysInPhase).toBe(0)
+  })
+
+  it('a team that has SAT in one phase for a month still reports 30 days', () => {
+    const month = new Date(Date.now() - 30 * 864e5)
+    const t = team('t', 'working', new Date(Date.now() - 60 * 864e5), month)
+    expect(computePhasePacing([t])[0].daysInPhase).toBe(30)
+  })
+
+  it('a row predating the column falls back to createdAt (the pre-migration reading)', () => {
+    const t = team('t', 'working', new Date(Date.now() - 12 * 864e5), null)
+    expect(computePhasePacing([t])[0].daysInPhase).toBe(12)
   })
 })

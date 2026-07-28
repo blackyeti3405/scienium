@@ -7,6 +7,7 @@ import {
   QUIZ_PASS_THRESHOLD,
   QuizQuestion,
   GradedAnswer,
+  GradedAnswerSchema,
   aggregateOverQuestions,
   loadRubric,
 } from '@/lib/literature/quiz'
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       strongAnswer: 'A strong answer would cite the paper\'s specific findings and reasoning.',
     }))
   } else {
-    const result = await gradeAnswers<GradedAnswer>({
+    const result = await gradeAnswers({
       operation: 'quiz_grade',
       instructions: GRADING_INSTRUCTIONS(rubric),
       // Untrusted, attacker-influenceable content (an uploaded PDF) — delimited
@@ -81,6 +82,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       promptIntro: QUIZ_GRADING_PROMPT_INTRO,
       maxTokens: 3072,
       logLabel: '[quiz]',
+      itemSchema: GradedAnswerSchema,
     })
     if (!result.ok) {
       return NextResponse.json({ error: 'Failed to grade quiz' }, { status: 502 })

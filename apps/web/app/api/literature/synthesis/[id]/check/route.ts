@@ -4,10 +4,9 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { aiCreate } from '@/lib/ai/spend'
+import { aiCreate, parseModelOutput } from '@/lib/ai/spend'
 import { aiIdempotencyKey, runAiOperation } from '@/lib/ai/operation'
 import { logEvent } from '@/lib/observability/log'
-import { extractJson } from '@/lib/literature/quiz'
 import { lockAggregate } from '@/lib/db-lock'
 import { logActivityBestEffort } from '@/lib/activity/log'
 import {
@@ -25,6 +24,11 @@ import {
 } from '@/lib/literature/synthesis'
 
 export const maxDuration = 60
+
+/** Unusable model output. Thrown inside the operation so the ledger records a
+ *  real failed attempt; mapped to the route's existing 502 outside it. Carries
+ *  only `parseModelOutput`'s payload-free `logDetail`. */
+class SynthesisOutputError extends Error {}
 
 /**
  * The grid the client believes it is asking about (REFACTOR2 P1-R13).
@@ -159,8 +163,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
           ],
           messages: [{ role: 'user', content: buildStudentMatrixBlock(columns, orderedPapers, cellViews) }],
         })
-        const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
-        return extractJson<unknown>(raw)
+        // The ONE output boundary (P2-S9): first-text extraction, truncation
+        // check, and the verdict schema. Thrown INSIDE the operation so the
+        // ledger records a real failed attempt (matching the explain route) —
+        // the replay cache must never hold an unusable verdict.
+        const parsed = parseModelOutput(response, VerdictSchema)
+        if (!parsed.ok) throw new SynthesisOutputError(parsed.logDetail)
+        return parsed.data
       },
     })
 
@@ -171,7 +180,14 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
           { status: 409 },
         )
       }
-      console.error('[synthesis] check call failed:', outcome.error)
+      // A provider error can carry a response body, and this call's prompt is
+      // the student's own synthesis grid — log the error CLASS only (A7/P2-S11).
+      logEvent({
+        event: 'synthesis.check_call_failed',
+        route: '/api/literature/synthesis/[id]/check',
+        outcome: 'error',
+        detail: outcome.error instanceof Error ? outcome.error.constructor.name : 'unknown',
+      })
       return NextResponse.json({ error: 'Vega could not check your synthesis — try again' }, { status: 502 })
     }
     verdictRaw = outcome.result

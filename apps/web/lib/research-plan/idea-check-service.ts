@@ -1,7 +1,8 @@
 import 'server-only'
 import { Prisma } from '@prisma/client'
 import Anthropic from '@anthropic-ai/sdk'
-import { aiStream, assertAiSpendAllowed, AiDisabledError } from '@/lib/ai/spend'
+import { z } from 'zod'
+import { aiStream, assertAiSpendAllowed, AiDisabledError, parseModelJson } from '@/lib/ai/spend'
 import { currentAiScope } from '@/lib/ai/scope'
 import { db } from '@/lib/db'
 import { IDEA_CHECK_DAILY_LIMIT, ideaChecksUsedToday } from '@/lib/research-plan/idea-check'
@@ -227,24 +228,19 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
         if (items.length) send({ type: 'sources', items })
       }
 
-      // Parse the final JSON verdict. NOTE: the greedy `\{[\s\S]*\}` happily
-      // matches a truncated object by running to the last inner `}` of a
-      // `priorWork` entry, so a match here does NOT mean the JSON is whole —
-      // check `truncated` before trusting a parse failure.
-      const match = verdictText.match(/\{[\s\S]*\}/)
-      let parsed: ParsedVerdict | null = null
-      if (match) {
-        try {
-          parsed = JSON.parse(match[0]) as ParsedVerdict
-        } catch {
-          parsed = null
-        }
-      }
-      if (!parsed) {
-        if (truncated) {
-          console.error('[idea-check] verdict truncated at max_tokens', {
-            chars: verdictText.length,
-            sources: sources.length,
+      // The ONE output boundary (P2-S9), on the string this stream accumulated.
+      // The greedy `\{[\s\S]*\}` inside it happily matches a TRUNCATED object by
+      // running to the last inner `}` of a `priorWork` entry, so a successful
+      // parse does not mean the JSON is whole — which is exactly why the stop
+      // reason is passed in and checked FIRST, and why this replaced a
+      // `JSON.parse(...) as ParsedVerdict` cast.
+      const out = parseModelJson(verdictText, ParsedVerdictSchema, truncated ? 'max_tokens' : null)
+      if (!out.ok) {
+        if (out.reason === 'truncated') {
+          logEvent({
+            event: 'idea_check.verdict_truncated',
+            outcome: 'error',
+            detail: `${out.logDetail} sources=${sources.length}`,
           })
           await claim.release()
           send({
@@ -253,25 +249,25 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
           })
           return
         }
-        // Verdict text can quote the student's plan — log lengths only (A7).
+        // Verdict text can quote the student's plan — `logDetail` is a reason,
+        // a stop reason, and a length only (A7).
         logEvent({
           event: 'idea_check.verdict_parse_failed',
           outcome: 'error',
-          detail: `len=${verdictText.length}`,
+          detail: out.logDetail,
         })
         await claim.release()
         send({ type: 'error', error: 'Could not interpret the result — try again' })
         return
       }
+      const parsed = out.data
 
-      const verdict = ['novel', 'refine', 'reject'].includes(parsed.verdict)
-        ? parsed.verdict
-        : 'refine'
+      const verdict = parsed.verdict
       const findings = {
-        summary: parsed.summary ?? '',
-        priorWork: Array.isArray(parsed.priorWork) ? sanitizePriorWork(parsed.priorWork.slice(0, 8)) : [],
-        differentiation: parsed.differentiation ?? '',
-        recommendation: parsed.recommendation ?? '',
+        summary: parsed.summary,
+        priorWork: sanitizePriorWork(parsed.priorWork.slice(0, 8)),
+        differentiation: parsed.differentiation,
+        recommendation: parsed.recommendation,
         citations: sources.slice(0, 10),
       }
 
@@ -329,13 +325,20 @@ export async function runIdeaCheck(principal: IdeaCheckPrincipal): Promise<IdeaC
   return { ok: true, stream }
 }
 
-interface ParsedVerdict {
-  verdict: string
-  summary?: string
-  priorWork?: PriorWorkItem[]
-  differentiation?: string
-  recommendation?: string
-}
+/**
+ * The verdict as the MODEL returns it (REFACTOR2 P2-S9). `verdict` is `.catch`ed
+ * rather than required so an unrecognised label degrades to 'refine' exactly as
+ * the old `includes()` ladder did — the rest of the object is still worth
+ * showing. Everything else defaults to '' / [], never `undefined`, so nothing
+ * downstream re-implements the fallbacks.
+ */
+const ParsedVerdictSchema = z.object({
+  verdict: z.enum(['novel', 'refine', 'reject']).catch('refine'),
+  summary: z.string().catch(''),
+  priorWork: z.array(z.object({ title: z.string().optional(), url: z.string().optional(), note: z.string().optional() })).catch([]),
+  differentiation: z.string().catch(''),
+  recommendation: z.string().catch(''),
+})
 
 const IDEA_CHECK_SYSTEM = `You are Vega, helping an advanced high-school science-fair team check the originality of their research idea. You have a web search tool — use it.
 

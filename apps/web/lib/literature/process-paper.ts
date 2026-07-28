@@ -1,7 +1,7 @@
 import 'server-only'
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
-import { aiCreate } from '@/lib/ai/spend'
+import { aiCreate, parseModelOutput } from '@/lib/ai/spend'
 import { db } from '@/lib/db'
 import { buildCitations, parseYear } from '@/lib/literature/citation'
 import { logEvent } from '@/lib/observability/log'
@@ -101,9 +101,12 @@ export async function processPaperJob(paperId: string): Promise<void> {
         },
       ],
     })
-    const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
-    const match = raw.match(/\{[\s\S]*\}/)
-    const metadata = Metadata.parse(JSON.parse(match?.[0] ?? '{}'))
+    // Through the ONE output boundary (P2-S9). `JSON.parse` of a truncated
+    // reply used to throw a SyntaxError that the retry ladder below recorded as
+    // an opaque failure; a `Metadata` mismatch threw a ZodError the same way.
+    const parsed = parseModelOutput(response, Metadata)
+    if (!parsed.ok) throw new Error(`paper_metadata ${parsed.logDetail}`)
+    const metadata = parsed.data
 
     // Citation rows are created at the moment a paper becomes ready (PERF-10a)
     // — built locally (no LLM) — so the citations GET never needs a

@@ -4,10 +4,9 @@ import { Prisma } from '@prisma/client'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson, boundedText } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { aiCreate } from '@/lib/ai/spend'
+import { aiCreate, parseModelOutput } from '@/lib/ai/spend'
 import { logEvent } from '@/lib/observability/log'
 import { paperTextBlock } from '@/lib/literature/grading'
-import { extractJson } from '@/lib/literature/quiz'
 import { recordActivity } from '@/lib/activity/log'
 import { lockAggregate } from '@/lib/db-lock'
 import { aiIdempotencyKey, runAiOperation } from '@/lib/ai/operation'
@@ -135,19 +134,20 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       ],
     })
 
-        const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
-        const parsed = extractJson<unknown>(raw)
-        const result = parsed ? ExplainVerdictSchema.safeParse(parsed) : null
-        if (!result || !result.success) {
-          // Verdict can quote the student's explanation — log lengths only (A7).
+        // The ONE output boundary (P2-S9): first-text extraction, truncation
+        // check, then the schema. A `max_tokens` cut used to be invisible here.
+        const parsed = parseModelOutput(response, ExplainVerdictSchema)
+        if (!parsed.ok) {
+          // Verdict can quote the student's explanation — `logDetail` is a
+          // reason, a stop reason, and a length, never the text (A7).
           logEvent({
             event: 'explain.verdict_parse_failed',
             outcome: 'error',
-            detail: `len=${raw.length}`,
+            detail: parsed.logDetail,
           })
           throw new ExplainGradingError()
         }
-        return normalizeVerdict(result.data)
+        return normalizeVerdict(parsed.data)
       },
     })
 

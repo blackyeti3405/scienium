@@ -31,7 +31,10 @@ vi.mock('server-only', () => ({}))
 vi.mock('@/lib/observability/log', () => ({ logEvent: vi.fn(), requestIdFrom: () => 'r' }))
 vi.mock('@/lib/activity/log', () => ({ logActivityBestEffort: async () => {} }))
 vi.mock('@/lib/db-lock', () => ({ lockAggregate: async () => {} }))
-vi.mock('@/lib/ai/spend', () => ({ aiCreate: mocks.aiCreate }))
+vi.mock('@/lib/ai/spend', async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  aiCreate: mocks.aiCreate,
+}))
 vi.mock('@/lib/ai/operation', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   runAiOperation: mocks.runAiOperation,
