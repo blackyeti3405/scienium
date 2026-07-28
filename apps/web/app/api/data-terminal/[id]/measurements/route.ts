@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
+import { lockAggregate } from '@/lib/db-lock'
 
 // Scoped single query (SEC-1's standard shape) — never fetch-by-id-then-check.
 async function ownedExperiment(id: string, teamId: string) {
@@ -14,15 +15,25 @@ async function ownedExperiment(id: string, teamId: string) {
  * read backstop, so payloads stay bounded as a class accumulates a year of
  * data. Far above any real classroom dataset (charts get unreadable long
  * before this), so no pagination UI is needed for the pilot.
+ *
+ * The write cap is ATOMIC (REFACTOR2 P2-S1): the count and the insert run in
+ * one transaction behind an advisory lock, so two concurrent pastes cannot
+ * each see room for 500 points and store 2,500 between them.
  */
 const MAX_POINTS_PER_EXPERIMENT = 2_000
 
+/**
+ * Reads ONE row past the cap so overflow is DETECTED rather than hidden
+ * (REFACTOR2 P2-S2). With the write cap now atomic no new experiment can
+ * exceed it, but rows a pre-fix race already stored must announce themselves
+ * instead of vanishing off the end of an x-ascending `take`.
+ */
 function listMeasurements(experimentId: string) {
   return db.measurement.findMany({
     where: { experimentId },
     orderBy: { x: 'asc' },
     select: { id: true, x: true, y: true, series: true, note: true },
-    take: MAX_POINTS_PER_EXPERIMENT,
+    take: MAX_POINTS_PER_EXPERIMENT + 1,
   })
 }
 
@@ -39,7 +50,11 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
     return NextResponse.json({ error: 'Experiment not found' }, { status: 404 })
   }
 
-  return NextResponse.json({ measurements: await listMeasurements(params.id) })
+  const rows = await listMeasurements(params.id)
+  const truncated = rows.length > MAX_POINTS_PER_EXPERIMENT
+  if (truncated) rows.pop()
+
+  return NextResponse.json({ measurements: rows, truncated, cap: MAX_POINTS_PER_EXPERIMENT })
 }
 
 // Finite numbers only — reject NaN/Infinity so a bad client can't poison a chart.
@@ -75,31 +90,44 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   const { data, error: bodyError } = await parseJson(req, AddBody)
   if (bodyError) return bodyError
 
-  const existing = await db.measurement.count({ where: { experimentId: params.id } })
-  if (existing + data.points.length > MAX_POINTS_PER_EXPERIMENT) {
+  // Count and insert under one advisory lock (P2-S1) — a count outside the
+  // write's transaction is a suggestion, not a cap. Same shape as the showcase
+  // slot cap in app/api/showcase/asset/link/route.ts.
+  const outcome = await db.$transaction(async (tx) => {
+    await lockAggregate(tx, `experiment-points:${params.id}`)
+    const existing = await tx.measurement.count({ where: { experimentId: params.id } })
+    if (existing + data.points.length > MAX_POINTS_PER_EXPERIMENT) {
+      return { existing, created: null }
+    }
+    // Return ONLY the created rows (P2-1): echoing the whole history after
+    // every write made the POST payload grow with a term's data; the client
+    // merges these into its already-loaded set instead.
+    const created = await tx.measurement.createManyAndReturn({
+      data: data.points.map((p) => ({
+        experimentId: params.id,
+        x: p.x,
+        y: p.y,
+        series: p.series ?? '',
+        note: p.note ?? null,
+      })),
+      select: { id: true, x: true, y: true, series: true, note: true },
+    })
+    return { existing, created }
+  })
+
+  if (!outcome.created) {
     return NextResponse.json(
       {
-        error: `An experiment holds at most ${MAX_POINTS_PER_EXPERIMENT} points (${existing} recorded). Start a new experiment or delete old points.`,
+        error: `An experiment holds at most ${MAX_POINTS_PER_EXPERIMENT} points (${outcome.existing} recorded). Start a new experiment or delete old points.`,
       },
       { status: 409 },
     )
   }
 
-  // Return ONLY the created rows (P2-1): echoing the whole history after every
-  // write made the POST payload grow with a term's data; the client merges
-  // these into its already-loaded set instead.
-  const created = await db.measurement.createManyAndReturn({
-    data: data.points.map((p) => ({
-      experimentId: params.id,
-      x: p.x,
-      y: p.y,
-      series: p.series ?? '',
-      note: p.note ?? null,
-    })),
-    select: { id: true, x: true, y: true, series: true, note: true },
+  return NextResponse.json({
+    created: outcome.created,
+    total: outcome.existing + outcome.created.length,
   })
-
-  return NextResponse.json({ created, total: existing + created.length })
 }
 
 export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {

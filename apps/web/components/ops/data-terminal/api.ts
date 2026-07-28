@@ -27,10 +27,18 @@ export function listExperiments() {
   return requestJson('/api/data-terminal', z.object({ experiments: z.array(experimentSchema) }))
 }
 
+// `truncated` is the server saying it had MORE points than the cap and is not
+// showing them all (P2-S2) — silent truncation is the one thing the read must
+// never do. New data can no longer hit it (the write cap is atomic); rows a
+// pre-fix race stored can.
 export function listMeasurements(experimentId: string) {
   return requestJson(
     `/api/data-terminal/${experimentId}/measurements`,
-    z.object({ measurements: z.array(measurementSchema) }),
+    z.object({
+      measurements: z.array(measurementSchema),
+      truncated: z.boolean(),
+      cap: z.number(),
+    }),
   )
 }
 

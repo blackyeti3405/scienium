@@ -31,6 +31,8 @@ const EXEMPT: Record<string, string> = {
     'Replaces (team_id, criterion_key) with (team_id, criterion_key, scorer_role). Strictly WIDER than the unique it drops, so it cannot collide on rows the old index already permitted.',
   '20260708182000_codex_team_scoping':
     'Replaces (user_id, day) with (user_id, team_id, day) on codex_kp_days — again strictly wider than the dropped unique.',
+  '20260728000000_vocab_deck_team_scope':
+    'Replaces (user_id, term_key) with (user_id, team_id, term_key) on vocab_cards. Strictly WIDER than the unique it drops, so no row the old index already permitted can collide under the new one.',
   '20260725160000_showcase_share_token':
     'Indexes a column added by the same migration and backfilled with per-row random values; there are no historical values to collide.',
   '20260701004819_discovery_v2_papers_tab':

@@ -43,6 +43,9 @@ export function ExperimentDetail({
   // so each selection remounts and refetches.
   const [measurements, setMeasurements] = useState<Measurement[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // The server had MORE points than it will return (P2-S2). Stated rather than
+  // silently dropped, so a student never charts a subset believing it is all.
+  const [overflow, setOverflow] = useState<number | null>(null)
 
   // Extracted so a failed load has a real retry, not just a message — same
   // shape as LiteratureFeature's (v0.59.0) and CodexTab's (v0.58.0) load
@@ -52,7 +55,9 @@ export function ExperimentDetail({
     setLoadError(null)
     listMeasurements(experiment.id)
       .then((d) => {
-        if (!cancelled) setMeasurements(d.measurements)
+        if (cancelled) return
+        setMeasurements(d.measurements)
+        setOverflow(d.truncated ? d.cap : null)
       })
       .catch(() => {
         if (!cancelled) setLoadError('Could not load the data points. Please try again.')
@@ -269,6 +274,13 @@ export function ExperimentDetail({
             </ResponsiveContainer>
           )}
         </div>
+        {overflow !== null && (
+          <p className="font-pixel text-[7px] text-[#F5C518] leading-relaxed border border-[#F5C518]/40 bg-[#F5C518]/5 px-2 py-1.5">
+            This experiment holds more than {overflow} points — the chart and table below show the
+            first {overflow}. Delete points you no longer need, or split the rest into a new
+            experiment.
+          </p>
+        )}
         {duplicateCount > 0 && (
           <p className="font-pixel text-[7px] text-[#F5C518]/70 leading-relaxed">
             {duplicateCount} point{duplicateCount !== 1 ? 's' : ''} share the same {experiment.xLabel} and

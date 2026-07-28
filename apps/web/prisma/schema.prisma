@@ -2229,7 +2229,11 @@ model VocabCard {
   team  Team  @relation(fields: [teamId], references: [id])
   paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, termKey]) // one card per term per student
+  // One card per term per student PER LAB (REFACTOR2 P2-S4). This was
+  // (userId, termKey) — global per student — while deck/review/delete were all
+  // team-scoped, so a student in a second lab had their build filtered against
+  // a deck they could not see and the term never appeared at all.
+  @@unique([userId, teamId, termKey])
   @@index([userId, teamId, dueAt]) // "today's due cards"
   @@index([paperId])
   @@map("vocab_cards")

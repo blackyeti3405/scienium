@@ -66,10 +66,17 @@ export async function POST(req: NextRequest) {
 
   const next = scheduleNext({ box: card.box, lapses: card.lapses, reviewCount: card.reviewCount }, grade, now)
 
-  // Persist the schedule unconditionally, in its own update — the review
-  // happened; a KP daily-cap miss must NOT roll back the scheduling.
-  await db.vocabCard.update({
-    where: { id: card.id },
+  // Persist the schedule in its own update — the review happened; a KP
+  // daily-cap miss must NOT roll back the scheduling.
+  //
+  // COMPARE-AND-SET on the exact `dueAt` this request read (REFACTOR2 P2-S4).
+  // The gate above is a read-then-write: two concurrent grades of the same due
+  // card both passed it and both wrote, counting one review twice and
+  // advancing the box off a stale value. Predicating the write on the due
+  // stamp we graded means exactly one wins; the loser sees a card that is no
+  // longer due and gets the same 409 as any other early review.
+  const claimed = await db.vocabCard.updateMany({
+    where: { id: card.id, dueAt: card.dueAt },
     data: {
       box: next.box,
       dueAt: next.dueAt,
@@ -78,6 +85,9 @@ export async function POST(req: NextRequest) {
       lastReviewedAt: now,
     },
   })
+  if (claimed.count === 0) {
+    return NextResponse.json({ error: 'This card is not due yet.' }, { status: 409 })
+  }
 
   let kpEarned = 0
   let capReached = false

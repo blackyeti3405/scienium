@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson, cuid } from '@/lib/validation'
 import { db } from '@/lib/db'
+import { lockAggregate } from '@/lib/db-lock'
 import { extractCandidates, VOCAB_TEXT_SLICE_CHARS } from '@/lib/literature/vocab'
 import { curateTerms, type CuratedTerm } from '@/lib/literature/vocab-curate'
 import type { VocabSource } from '@prisma/client'
@@ -13,8 +14,9 @@ export const maxDuration = 120
 
 const BuildBody = z.object({ paperId: cuid.optional() }).strict()
 
-// Deck size cap — enforced at insert time so a student's deck stays a deck,
-// not an unbounded accumulation across every source they upload.
+// Deck size cap, PER STUDENT PER LAB — enforced at insert time (under the
+// deck's advisory lock) so a student's deck stays a deck, not an unbounded
+// accumulation across every source they upload.
 const VOCAB_MAX_DECK = 200
 
 // Paid-call bound per build request: papers have no hard per-team cap, so an
@@ -62,9 +64,15 @@ export async function POST(req: NextRequest) {
   // already carded" is never true for a curated paper — the marker row (not
   // the cards) is what proves this student already paid this paper's curation
   // call, keeping re-builds free AND deterministic.
+  //
+  // Scoped to (user, TEAM) — REFACTOR2 P2-S4. The deck's uniqueness used to be
+  // global per student while every other vocabulary surface (deck, review,
+  // delete) was team-scoped, so a student in a second lab was filtered against
+  // a deck they could not see: the term was skipped as "already known" and
+  // never appeared anywhere.
   const [existing, curationMarkers] = await Promise.all([
     db.vocabCard.findMany({
-      where: { userId: ctx.dbUserId },
+      where: { userId: ctx.dbUserId, teamId: ctx.teamId },
       select: { termKey: true },
     }),
     db.vocabPaperCuration.findMany({
@@ -124,50 +132,67 @@ export async function POST(req: NextRequest) {
   }
 
   if (merged.size === 0) {
-    const total = await db.vocabCard.count({ where: { userId: ctx.dbUserId } })
+    const total = await db.vocabCard.count({ where: { userId: ctx.dbUserId, teamId: ctx.teamId } })
     return NextResponse.json({ created: 0, skipped: 0, total })
   }
 
-  const toCreate = Array.from(merged.values()).slice(0, capacityBeforeBuild)
-
-  if (toCreate.length === 0) {
-    const total = await db.vocabCard.count({ where: { userId: ctx.dbUserId } })
-    return NextResponse.json({ created: 0, skipped: merged.size, total })
-  }
-
   const now = new Date()
-  // Cards + curation markers land together: the marker is what makes the
-  // per-paper curation spend once-ever, so it must not persist without its
-  // cards (or vice versa).
-  const [result] = await db.$transaction([
-    db.vocabCard.createMany({
-      data: toCreate.map((c) => ({
-        userId: ctx.dbUserId,
-        teamId: ctx.teamId,
-        paperId: c.paperId,
-        termKey: c.termKey,
-        term: c.term,
-        aliases: c.aliases,
-        definition: c.definition,
-        source: c.source as VocabSource,
-        sourceEntryId: c.sourceEntryId,
-        quote: c.quote,
-        box: 1,
-        dueAt: now, // immediately due — first exposure
-      })),
-      skipDuplicates: true, // @@unique([userId, termKey]) makes this idempotent
-    }),
-    db.vocabPaperCuration.createMany({
-      data: newlyCurated.map((paperId) => ({ userId: ctx.dbUserId, paperId })),
-      skipDuplicates: true, // @@unique([userId, paperId])
-    }),
-  ])
+  const candidates = Array.from(merged.values())
 
-  const total = await db.vocabCard.count({ where: { userId: ctx.dbUserId } })
+  // Capacity is re-read INSIDE the lock (REFACTOR2 P2-S1). `capacityBeforeBuild`
+  // was measured before the paid curation above, and a transaction must never
+  // be held across a network call — so the deck can have filled since. Cards +
+  // curation markers land together: the marker is what makes the per-paper
+  // curation spend once-ever, so it must not persist without its cards (or
+  // vice versa).
+  const result = await db.$transaction(async (tx) => {
+    await lockAggregate(tx, `vocab-deck:${ctx.dbUserId}:${ctx.teamId}`)
+    const held = await tx.vocabCard.count({ where: { userId: ctx.dbUserId, teamId: ctx.teamId } })
+    const kept = candidates.slice(0, Math.max(0, VOCAB_MAX_DECK - held))
+    const keptKeys = new Set(kept.map((c) => c.termKey))
+
+    // A paper is marked curated ONLY when every term it contributed was
+    // stored (P2-S4). The marker makes curation once-ever, so marking a paper
+    // whose terms were dropped at capacity suppressed those terms
+    // permanently — freeing room later could never bring them back.
+    const droppedPapers = new Set(
+      candidates.filter((c) => !keptKeys.has(c.termKey)).map((c) => c.paperId),
+    )
+    const markable = newlyCurated.filter((paperId) => !droppedPapers.has(paperId))
+
+    const created = kept.length
+      ? await tx.vocabCard.createMany({
+          data: kept.map((c) => ({
+            userId: ctx.dbUserId,
+            teamId: ctx.teamId,
+            paperId: c.paperId,
+            termKey: c.termKey,
+            term: c.term,
+            aliases: c.aliases,
+            definition: c.definition,
+            source: c.source as VocabSource,
+            sourceEntryId: c.sourceEntryId,
+            quote: c.quote,
+            box: 1,
+            dueAt: now, // immediately due — first exposure
+          })),
+          skipDuplicates: true, // @@unique([userId, teamId, termKey]) makes this idempotent
+        })
+      : { count: 0 }
+
+    if (markable.length > 0) {
+      await tx.vocabPaperCuration.createMany({
+        data: markable.map((paperId) => ({ userId: ctx.dbUserId, paperId })),
+        skipDuplicates: true, // @@unique([userId, paperId])
+      })
+    }
+
+    return { created: created.count, total: held + created.count }
+  })
 
   return NextResponse.json({
-    created: result.count,
-    skipped: merged.size - result.count,
-    total,
+    created: result.created,
+    skipped: merged.size - result.created,
+    total: result.total,
   })
 }

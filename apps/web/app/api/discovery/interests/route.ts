@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
+import { lockAggregate } from '@/lib/db-lock'
 
 // ── Team interest seeds (#2 Activate TopicInterest) ───────────────────────────
 // Each teammate seeds 1–3 short interest phrases that render as one-tap START
@@ -46,48 +47,51 @@ export async function POST(req: NextRequest) {
   if (error) return error
   const text = data.text.trim()
 
-  const mine = await db.topicInterest.findMany({
-    where: { teamId: ctx.teamId, createdByUserId: ctx.dbUserId },
-    select: { id: true, text: true, createdByUserId: true, createdAt: true },
+  // Read, de-dupe, cap and create under one advisory lock (REFACTOR2 P2-S1).
+  // Both invariants this route advertises — "at most 3" and "one row per
+  // phrase" — were read-then-write races: two concurrent adds each saw 2 rows
+  // and stored a 4th, and two concurrent adds of the SAME phrase each missed
+  // the other and stored it twice.
+  const outcome = await db.$transaction(async (tx) => {
+    await lockAggregate(tx, `topic-interests:${ctx.teamId}:${ctx.dbUserId}`)
+    const mine = await tx.topicInterest.findMany({
+      where: { teamId: ctx.teamId, createdByUserId: ctx.dbUserId },
+      select: { id: true, text: true, createdByUserId: true, createdAt: true },
+    })
+
+    // De-dupe case-insensitively against the caller's own interests.
+    const dupe = mine.find((m) => m.text.toLowerCase() === text.toLowerCase())
+    if (dupe) return { kind: 'existing' as const, row: dupe }
+    if (mine.length >= MAX_INTERESTS_PER_USER) return { kind: 'cap' as const, row: null }
+
+    return {
+      kind: 'created' as const,
+      row: await tx.topicInterest.create({
+        data: { teamId: ctx.teamId, createdByUserId: ctx.dbUserId, text },
+        select: { id: true, text: true, createdByUserId: true, createdAt: true },
+      }),
+    }
   })
 
-  // De-dupe case-insensitively against the caller's own interests.
-  const dupe = mine.find((m) => m.text.toLowerCase() === text.toLowerCase())
-  if (dupe) {
-    return NextResponse.json({
-      interest: {
-        id: dupe.id,
-        text: dupe.text,
-        createdByUserId: dupe.createdByUserId,
-        isMine: true,
-        createdAt: dupe.createdAt.toISOString(),
-      },
-    })
-  }
-
-  if (mine.length >= MAX_INTERESTS_PER_USER) {
+  if (outcome.kind === 'cap') {
     return NextResponse.json(
       { error: `You can add at most ${MAX_INTERESTS_PER_USER} interests.` },
       { status: 409 },
     )
   }
 
-  const created = await db.topicInterest.create({
-    data: { teamId: ctx.teamId, createdByUserId: ctx.dbUserId, text },
-    select: { id: true, text: true, createdByUserId: true, createdAt: true },
-  })
-
+  const row = outcome.row
   return NextResponse.json(
     {
       interest: {
-        id: created.id,
-        text: created.text,
-        createdByUserId: created.createdByUserId,
+        id: row.id,
+        text: row.text,
+        createdByUserId: row.createdByUserId,
         isMine: true,
-        createdAt: created.createdAt.toISOString(),
+        createdAt: row.createdAt.toISOString(),
       },
     },
-    { status: 201 },
+    { status: outcome.kind === 'created' ? 201 : 200 },
   )
 }
 

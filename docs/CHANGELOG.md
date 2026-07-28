@@ -5,6 +5,96 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.75.3] — 2026-07-28
+
+REFACTOR2 findings **P2-S1**, **P2-S2**, **P2-S4**.
+
+### Fixed — every advertised cap was a suggestion (P2-S1)
+
+Six caps counted rows in one statement and inserted in another, with nothing between them
+holding the count still. Reproduced against the current code before anything was changed, by
+racing the real handlers' logic on the dev database: **2,500 measurement points under a 2,000
+cap**, 11 synthesis matrices under a cap of 5, 4 topic interests under a cap of 3, 11 outgoing
+project-log references under a cap of 10.
+
+Each site now counts and creates inside ONE transaction behind the advisory lock the repo
+already uses for exactly this defect class (`lib/db-lock.ts`, the same shape as the showcase
+slot cap): `experiment-points:<id>`, `team-experiments:<team>`, `synthesis-matrices:<team>`,
+`project-log-refs:<id>`, `topic-interests:<team>:<user>`, `vocab-deck:<user>:<team>`. The
+vocabulary build re-reads its capacity *inside* the lock rather than reusing the number it
+measured before curation, because the paid Anthropic call runs first and a transaction is never
+held across a network call.
+
+Two behaviours fell out of doing this properly rather than mechanically:
+
+- The topic-interest route's case-insensitive de-dupe was the *same* race — two concurrent adds
+  of "solar cells" each missed the other and stored both. Reading, de-duping, capping and
+  creating under one lock closes both invariants at once.
+- The project-log reference cap now counts every target *except* the one being posted, so
+  re-posting a link that already exists stays idempotent at the cap instead of being refused.
+  `skipDuplicates` replaces the old `P2002` catch — a unique violation raised inside a
+  transaction aborts it rather than reading as success.
+
+### Fixed — the Data Terminal stored data it would never show again (P2-S2)
+
+Experiments persisted without limit and the list rendered `take: 200`; a 201st experiment was
+stored, unreachable, with no error and no pagination. Measurements did the same at 2,000. Took
+the register's "define a real cap" option over pagination, because the bound is real: a lab
+holds at most **200 experiments** and an experiment at most **2,000 points**, both refused at
+write time with a message the existing error surfaces already render. The list `take` now equals
+the cap, which makes it a backstop that cannot hide a row.
+
+Silent truncation is not replaced by a promise. The measurement read fetches one row PAST the
+cap, so rows a pre-fix race already stored are *detected*: the response carries `truncated`, and
+`ExperimentDetail` renders a gold pixel banner saying the chart and table show the first 2,000
+points and what to do about it.
+
+### Fixed — the vocabulary deck was scoped two different ways at once (P2-S4)
+
+`VocabCard` was unique on `(userId, termKey)` — global per student — while the deck read, the
+review, the delete and the daily KP ledger were all `(userId, teamId)`. The case that matters is
+a student in a second lab: the build filtered candidates against cards they could not see,
+`skipDuplicates` swallowed the insert, and the term appeared in neither lab. Reproduced on the
+dev database (lab-B build inserted 0 rows; lab-B deck held 0 cards).
+
+Migration `20260728000000_vocab_deck_team_scope` widens the unique to
+`(userId, teamId, termKey)`, and every branch that assumed the old scope moved with it. No
+dedupe preflight is needed and none was faked: the new key is strictly wider than the one it
+replaces, the same case as `20260708182000_codex_team_scoping`, recorded as an exemption with
+that reason.
+
+Two more defects on the same finding:
+
+- **Curation markers buried terms permanently.** The once-ever `VocabPaperCuration` marker was
+  written for every paper that returned terms, including a paper whose terms were then dropped
+  by the capacity slice. Because the marker is what makes curation once-ever, the next build
+  skipped that paper forever — freeing room could never bring those terms back. A paper is now
+  marked only when *every* term it contributed was stored.
+- **Concurrent reviews accepted the same due card.** The `dueAt > now` anti-farm gate was a
+  read-then-write: two simultaneous grades both passed it and both wrote, counting one review
+  twice. The schedule write is now a compare-and-set on the exact `dueAt` the request graded;
+  the loser gets the same 409 as any other early review.
+
+### Added — the true-concurrency suite covers the caps
+
+`test/pg/invariants.pg.test.ts` (real PostgreSQL, runs in CI) gains eight tests that call the
+**real route handlers** — Clerk identity is the only mock, so the guard, rate limiter, phase
+gate, zod and Prisma all run — and race two valid calls at cap-1 for all six caps plus the due
+card. Every one was negative-controlled by moving that site's count back outside its transaction
+and confirming exactly that test (and no other) fails.
+
+`test/capacity-caps.test.ts` (11 tests) carries the deterministic half through the route-policy
+harness: the experiment cap that did not exist before, the `truncated` flag, the reference cap's
+idempotent re-post, the deck's team scope, and the curation marker. Each was negative-controlled
+the same way.
+
+Its `afterAll` also stopped swallowing failures. Twelve stray "PG Fixture Lab" teams had
+accumulated in the dev database because `db.team.delete(...).catch(() => {})` hid a
+foreign-key error on a child table nobody had added to the cleanup list. The strays were
+removed and the suite now leaves none.
+
+---
+
 ## [0.75.2] — 2026-07-27
 
 REFACTOR2 findings **P2-S9**, **P2-S11**, **P2-S14**.

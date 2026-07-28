@@ -1275,6 +1275,13 @@ The migration chain is append-only:
   `(showcaseId, visitorFingerprint, day)` unique (A13 per-day view dedupe,
   backfilled from each row's own `viewedAt` date), and the
   `NotificationRunTeam` per-day run ledger table (A4, `0.30.0`).
+- `20260728000000_vocab_deck_team_scope`: widens `VocabCard`'s unique from
+  `(user_id, term_key)` to `(user_id, team_id, term_key)`, so the deck is
+  scoped the same way every other vocabulary surface already was (P2-S4,
+  `0.75.3`). No dedupe preflight: the new key is strictly wider than the one it
+  replaces, so no row the old unique permitted can collide — the same case as
+  `20260708182000_codex_team_scoping`, and exempted with that reason in
+  `test/migration-unique-index-policy.test.ts`.
 
 The `2026070913xxxx`–`2026070918xxxx` migrations correspond to the earlier
 refactor Phases 3–8 (changelog `0.21.2`–`0.21.7`). The
@@ -1322,6 +1329,24 @@ pass.
   before the paid call; Synthesis Matrix adds a **team**-scoped advisory lock
   around a correlated `COUNT`-gated claim, since its cap is per-team across
   matrices, not per-row (§8.2).
+- **Every advertised cap counts and creates inside ONE transaction** (P2-S1). A
+  `count()` taken outside the write's transaction is a suggestion: two valid
+  calls at cap-1 each see the other's slot free. The six caps that had this
+  shape — experiment points (2,000), experiments per lab (200), synthesis
+  matrices, project-log outgoing references, per-user topic interests, and the
+  200-card vocabulary deck — now take a `lockAggregate` on the aggregate they
+  bound (`experiment-points:<id>`, `team-experiments:<team>`,
+  `synthesis-matrices:<team>`, `project-log-refs:<id>`,
+  `topic-interests:<team>:<user>`, `vocab-deck:<user>:<team>`) and re-read the
+  count inside it. The vocabulary build re-reads capacity inside the lock
+  specifically because its paid curation runs first and a transaction is never
+  held across a network call. The races are pinned against real PostgreSQL in
+  `test/pg/invariants.pg.test.ts`, which calls the actual route handlers.
+- **A cap is refused, never truncated.** The Data Terminal used to persist
+  experiments without limit and render `take: 200`, so a 201st experiment was
+  stored and unreachable. The list `take` now equals a write-time cap, and the
+  measurement read fetches one row PAST the cap so genuine overflow is reported
+  to the client (`truncated`) and shown in the panel instead of dropped.
 - CSRF: mutating requests are same-origin-checked in the shared guards, since
   Clerk sessions are cookie-borne (`assertSameOrigin`).
 - Uploaded attachments are referenced by `UploadedAsset` id, not raw URL; the
