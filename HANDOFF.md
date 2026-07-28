@@ -2,27 +2,26 @@
 
 ## STATE
 
-Branch `Rig-features`, HEAD at **v0.75.5** (working tree; v0.75.0 was the last handoff), gates
-1–5 green — E2E not re-run for v0.75.5, see below.
-Vitest **135 files / 1,883 tests**. **64 migrations**, all applied to the local dev DB.
-devlab (`cmre80gn50004mb3log7ad2vg`) verified intact after the migration: 25 papers, 11 discovery
-nodes. `reset:e2e` leaves **zero stray labs**.
+Branch `Rig-features`, HEAD at **v0.75.11**, **all six gates green**.
+Vitest **161 files / 2,490 tests** (was 135 / 1,883 at v0.75.0). **69 migrations**, all applied
+to the local dev DB. devlab (`cmre80gn50004mb3log7ad2vg`) verified intact after every migration:
+25 papers, 11 discovery nodes. `reset:e2e` leaves **zero stray labs**.
 
-**E2E: 309 passed, 8 skipped (15.3 min)** on the production build (`E2E_BUILD=1`), against
-**three genuinely distinct Clerk accounts** — leader `devuser2`, student `devuser4`, teacher
-`DevTeacher`. One navigation-abort flake (`net::ERR_ABORTED` on a `page.goto`) in
-`lit-explain-it-back`; re-ran the file in isolation, 17/17. The skips are the pre-existing
-documented static-check ones.
+**E2E: 319 passed, 8 skipped, 0 failed (20.0 min)** on the production build (`E2E_BUILD=1`) from
+a clean fixture, against **three genuinely distinct Clerk accounts** — leader `devuser2`, student
+`devuser4`, teacher `DevTeacher`. The skips are the pre-existing documented static-check ones.
 
-HANDOFF's previous "Ready to pick up" list — all five items — is **done**. See
-`docs/CHANGELOG.md`'s v0.75.0 entry and `REFACTOR2.MD` §0.11's v0.75.0 table.
+**v0.75.1–v0.75.11 closed the 26 REFACTOR2 rows that were code-only and unblocked** — the whole
+P2-S phase-two block except the owner-blocked ones, SVC-1, P2-1, P2-3, P2-4, P2-6, P1-1, P1-5,
+P1-6, P1-R14, §0.9's client-state/a11y families, and two §0.8 product gaps. See `docs/CHANGELOG.md`
+and `REFACTOR2.MD` §0.11 for the per-version tables, and §0.11's v0.75.10 entry for what the two
+test-truth audits found.
 
-**v0.75.5 (uncommitted)** closed the notification subsystem: P2-S3, P1-6's notification half,
-§0.8's destination verification, and this list's items 4 and 5 (both now removed from it).
-Migration `20260728120000_notification_receipts_and_reach` is applied to the local dev DB;
-devlab re-verified (25 papers, 11 discovery nodes). **E2E has NOT been re-run since** — the
-migration drops `notifications.read_at` and `notification_prefs.email`, and `e2e/F5-bell.spec.ts`
-exercises the bell's read state, so run gate 6 before trusting it.
+What is left in REFACTOR2 is either **owner-blocked** (the `E2E_ENV_FILE` secret, branch
+protection, FERPA/COPPA retention numbers, a separate R2 test bucket, a week of real `ai_usage`,
+the ISEF reviewer sign-off) or **not code** (the restore drill, the measured capacity test,
+production identity/data-plane verification, domain-expert content review, the tiny-text size
+product call, and the 18 remaining Codex fields).
 
 ---
 
@@ -78,6 +77,24 @@ load skews the suite; `test:e2e:file` uses `next dev`). New this session:
 - **`next dev` route compilation blows the 30s hook budget.** Two "failures" while iterating were
   `beforeAll` timeouts on the FIRST request to a cold route. Judge E2E on `E2E_BUILD=1`; the
   single-spec dev lane is for iteration only.
+- **A route module may not export a constant.** `export const MAX_EXPERIMENTS_PER_TEAM` in an
+  `app/api/**/route.ts` typechecks, lints, and then fails `next build` with "not a valid Route
+  export field" — twelve minutes into the E2E lane, which is where it actually surfaced. Put the
+  constant in `lib/` and import it from both sides. `test/route-guard-sweep.test.ts` now fails on
+  any non-Next export, so this costs seconds instead of a suite run.
+- **`pnpm --filter web test` contends with a live E2E run.** See OPERATIONS — the pg lane is not
+  DB-free. Two "regressions" in a full run were chased before it turned out a unit-test run had
+  been hitting the same database. Reproduce a suite failure in isolation before attributing it,
+  and check what else was running.
+- **A stale Clerk session presents as an element timeout, not an auth error.** `F10-teacher-rubric`
+  AC9 failed fourteen minutes into a run looking for a criterion card, and passed 16/16 alone. A
+  bare `page.goto` carries the frozen `storageState` token, 307s to sign-in, and the spec then
+  waits 20s for an element on the wrong page. Every authenticated navigation goes through
+  `gotoFresh` now; keep it that way when writing a new spec.
+- **Adding an ARIA role changes what `getByRole` matches.** Giving `TopicSearch`'s results
+  `role="option"` (correct for a listbox) overrode their implicit button role and broke two ACs
+  that looked like a discovery regression. When an a11y change lands, grep the specs for the old
+  role before assuming the product broke.
 
 ---
 
@@ -87,8 +104,8 @@ load skews the suite; `test:e2e:file` uses `next dev`). New this session:
 
 | Item | Needs |
 | --- | --- |
-| **`E2E_ENV_FILE` unset** | A repo secret. Until set, **both CI jobs report "skipped" and pass** — the E2E lane cannot fail CI. Still the highest-leverage item on this list, and now more so: there are 309 green assertions behind that switch. |
-| **P1-R6 / S13 / R14** | Branch protection + secrets (repo admin). The workflow files can be written; applying them cannot. |
+| **`E2E_ENV_FILE` unset** | A repo secret. Until set, **both CI jobs report "skipped" and pass** — the E2E lane cannot fail CI. Still the highest-leverage item on this list, and now more so: there are 319 green assertions behind that switch. |
+| **P1-R6 / S13** | Branch protection + secrets (repo admin). The workflow files can be written; applying them cannot. **P1-R14 is CLOSED** (v0.75.1): `ci.yml`'s Test step now has a `services: postgres` block and the pg suite THROWS rather than skips when `CI` is set. |
 | **P1-R9 retention numbers** | Qualified FERPA/COPPA input. Nine windows; `retention_policies` ships EMPTY on purpose. Also a production-like erasure drill and an approval surface recording WHO approved. |
 | **P1-R3 enforcement** | A week of real `ai_usage` rows. `docs/TODO.md` → "AI cost review". |
 | **E2E asset reclaim (P1-S15)** | A separate R2 bucket. `nova-lab-assets` is **shared with production** — never delete objects there. |
@@ -110,9 +127,11 @@ load skews the suite; `test:e2e:file` uses `next dev`). New this session:
    not the problem being fixed. In the DEFAULT layout the Operations Hub's silhouette covers
    Discovery's centre; a student on a fresh lab has to find an unoccluded corner. The seed is in
    two places now (`prisma/seed-e2e.mjs` and `e2e/lab.ts`) and kept in step by hand.
-4. **`e2e/api.ts`'s auth recovery ladder** (~150 lines of escalating Clerk session recovery)
-   **fired zero times** in the production-build baseline again. It exists for the `next dev` lane.
-   Worth deleting if a few dev-lane runs agree.
+4. **`e2e/api.ts`'s auth recovery ladder** (~150 lines of escalating Clerk session recovery).
+   It fired zero times in earlier production-build baselines — but do NOT delete it on that
+   evidence now: v0.75.1's sweep routed all 152 bare `page.goto` calls through `gotoFresh`, whose
+   own re-sign-in branch is part of that ladder, and a stale-session navigation was exactly what
+   made `F10-teacher-rubric` AC9 fail fourteen minutes into a run. Re-measure before deciding.
 
 ### Deliberately not done — do not "fix" without a reason
 
