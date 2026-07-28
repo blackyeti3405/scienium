@@ -104,6 +104,15 @@ describe('migration status — honest about what is still best-effort', () => {
           remaining.push(`${relative(root, p)}:${m[1]}`)
         }
       }
+      // The OTHER shape of the same failure, and the one the type system
+      // cannot see: `recordActivity` accepts any `{activityFeed:{create}}`, so
+      // handing it the GLOBAL client typechecks, is durable-classified, and
+      // commits in its own implicit transaction — separately from the domain
+      // write it is supposed to be evidence of. All 18 call sites pass a `tx`;
+      // nothing but this line keeps that true.
+      for (const m of src.matchAll(/recordActivity\(\s*(db|prisma)\s*,/g)) {
+        remaining.push(`${relative(root, p)}:recordActivity(${m[1]})`)
+      }
     }
 
     // v0.72.0 migrated all 11 formerly-remaining durable-class events into

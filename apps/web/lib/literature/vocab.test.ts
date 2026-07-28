@@ -226,12 +226,19 @@ describe('extractCandidates', () => {
     const terms = extractCandidates(input)
     expect(terms.length).toBeGreaterThan(0)
 
+    let checked = 0
     for (const term of terms) {
       if (term.definition === '') continue // curation writes this one
+      checked++
       const isGroundedDefinition = groundedDefinitions.has(term.definition)
       const isVerbatimSubstring = normalizedBody.includes(term.definition)
       expect(isGroundedDefinition || isVerbatimSubstring).toBe(true)
     }
+    // Without this the invariant is vacuous: `paper_context` cards are empty by
+    // construction, so if the glossary and acronym channels stopped emitting
+    // definitions entirely, every iteration would `continue` and the loop would
+    // assert nothing while `terms.length > 0` above still held.
+    expect(checked, 'no non-empty definition was actually checked').toBeGreaterThan(0)
   })
 
   // Every quote must be the paper's own bytes — the card shows it in quotation

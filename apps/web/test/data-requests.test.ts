@@ -100,20 +100,31 @@ vi.mock('@/lib/data-requests/inventory', () => ({
 let nextId = 0
 const newId = () => `id${++nextId}`
 
-function selectable(r: RequestRow, staleBefore: Date): boolean {
-  if (r.attempts >= 3) return false
-  if (r.status === 'approved') return true
-  return r.status === 'running' && r.claimedAt !== null && r.claimedAt < staleBefore
-}
-
-/** Applies the exact `{OR:[{status:'approved'},{status:'running',claimedAt:{lt}}]}` shape. */
+/**
+ * A dumb row store: every clause is read off the REAL `where` the production
+ * code passes. Nothing here knows what "approved" means — an earlier version
+ * reimplemented the selection predicate, so changing `workflow.ts` to run
+ * unapproved erasures left the suite green. Same shape as
+ * `test/notification-outbox.test.ts`'s matcher.
+ */
 function matchesRequest(r: RequestRow, where: any): boolean {
-  if (where.id?.in && !where.id.in.includes(r.id)) return false
-  if (typeof where.id === 'string' && r.id !== where.id) return false
-  if (where.status !== undefined && r.status !== where.status) return false
-  if (where.claimToken !== undefined && r.claimToken !== where.claimToken) return false
-  if (where.attempts?.lt !== undefined && !(r.attempts < where.attempts.lt)) return false
-  if (where.OR) return selectable(r, where.OR[1].claimedAt.lt)
+  for (const [field, cond] of Object.entries(where ?? {})) {
+    if (field === 'OR') {
+      if (!(cond as any[]).some((c) => matchesRequest(r, c))) return false
+      continue
+    }
+    const actual = (r as any)[field]
+    if (cond !== null && typeof cond === 'object' && !(cond instanceof Date)) {
+      const c = cond as any
+      if (c.in !== undefined && !c.in.includes(actual)) return false
+      if (c.notIn !== undefined && c.notIn.includes(actual)) return false
+      if (c.not !== undefined && actual === c.not) return false
+      if (c.lt !== undefined && !(actual !== null && actual < c.lt)) return false
+      if (c.gt !== undefined && !(actual !== null && actual > c.gt)) return false
+      continue
+    }
+    if (actual !== cond) return false
+  }
   return true
 }
 
@@ -265,6 +276,10 @@ describe('filing a request', () => {
     expect(clerkDeletes).toEqual([])
     expect(deletedRows).toEqual([])
     expect(users[0]!.deletedAt).toBeNull()
+    // The drain did not even CLAIM it: `requested` is outside the selection
+    // predicate, not merely short-circuited somewhere later.
+    expect(requests[0]!.status).toBe('requested')
+    expect(requests[0]!.attempts).toBe(0)
   })
 
   it('a decision is a CAS — the second operator loses instead of overwriting', async () => {
@@ -298,7 +313,10 @@ describe('the worker', () => {
     expect(user.name).toBe('Deleted student')
     expect(user.email).not.toContain('a@example.com')
     expect(user.clerkUserId).not.toBe('clerk_u1')
-    // The real departure command runs, so lead handover and archiving still happen.
+    // `departTeam` is MOCKED here (see the `@/lib/team/membership` mock above), so
+    // this pins only that erasure routes through the departure command with the
+    // right arguments — lead handover and archiving are NOT exercised by this
+    // file. They are owned by `test/team-membership-lifecycle.test.ts`.
     expect(departures).toEqual([
       { teamId: 't1', userId: 'u1', event: 'removed', actorUserId: null, reason: 'data_erasure' },
     ])

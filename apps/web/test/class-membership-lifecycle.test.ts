@@ -261,18 +261,23 @@ describe('ending an approved enrolment', () => {
     expect(notifications).toEqual([])
   })
 
-  it('a refused removal writes no notification either', async () => {
-    interleave = () => {
-      users[0]!.classId = 'class_somewhere_else'
-    }
-    await removeFromClass(CLASS, STUDENT, TEACHER)
-    expect(notifications).toEqual([])
-  })
+  // Cut: 'a refused removal writes no notification either'. `endEnrolment`
+  // returns at class-membership.ts:198-201 long before `notifyRemoved` is
+  // reachable — there is no suppression branch whose removal could flip it,
+  // and the refusal itself is already pinned by the interleave test above.
 
-  it('a student with no live team is removed anyway — the bell is team-scoped', async () => {
-    // Documented limitation, not an oversight: `Notification.teamId` is
-    // required and the bell only renders inside a team. The removal must not
-    // fail because there is nowhere to show the notice.
+  it('DOCUMENTS A KNOWN GAP: a student with no live team is removed but never told', async () => {
+    // This is NOT a property we want — it is the register's debt, asserted so
+    // it stays visible. HANDOFF "Ready to pick up #4": `Notification.teamId` is
+    // required and the bell only renders inside a team, so there is nowhere to
+    // show the notice. Closing that gap (nullable FK + an `OR` in the bell's
+    // visibility predicate) will make the `notifications` assertion below FAIL,
+    // and that failure means THE GAP CLOSED, not that something regressed —
+    // delete this test at that point.
+    //
+    // What must stay true either way, and is the reason this test exists at
+    // all: the removal itself COMMITS. It must never fail because the notice
+    // has nowhere to go.
     memberships = []
 
     await expect(removeFromClass(CLASS, STUDENT, TEACHER)).resolves.toMatchObject({

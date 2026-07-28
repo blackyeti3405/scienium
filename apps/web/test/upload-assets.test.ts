@@ -48,7 +48,11 @@ import {
 } from '@/lib/uploads/assets'
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  // `resetAllMocks`, not `clearAllMocks`: the latter clears call RECORDS but
+  // leaves `mockResolvedValue` implementations in place, so a value stubbed in
+  // one test silently leaks into the next. No assertion depends on the leak
+  // today; this is the safer default before one does.
+  vi.resetAllMocks()
 })
 
 describe('resolveAttachmentKeys ownership (SEC-6)', () => {

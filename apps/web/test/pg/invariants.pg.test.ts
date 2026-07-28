@@ -16,9 +16,15 @@ import { randomUUID } from 'node:crypto'
  *   - A13: concurrent showcase views count once per visitor per day
  *
  * Runs against the LOCAL dev database (docker `scienium-postgres`, loaded from
- * apps/web/.env.local) with self-created, self-cleaned fixture rows. When no
- * database is reachable (e.g. unit-test CI), every test here self-skips —
- * the suite is additive, never a hidden dependency.
+ * apps/web/.env.local) with self-created, self-cleaned fixture rows.
+ *
+ * On a developer laptop with no database up, every test here self-skips — the
+ * suite is additive locally, never a hidden dependency. On CI it is the
+ * OPPOSITE: `.github/workflows/ci.yml` gives the Test step a postgres service
+ * and a `DATABASE_URL`, so an unreachable database there means the service
+ * block broke, not that the tests are optional. A self-skip in that case is a
+ * silently green CI over the repo's only true-concurrency coverage, so `CI=1`
+ * turns the skip into a throw.
  */
 
 vi.mock('server-only', () => ({}))
@@ -58,6 +64,14 @@ async function pingDatabase(): Promise<boolean> {
 }
 
 const dbUp = await pingDatabase()
+if (!dbUp && process.env.CI) {
+  throw new Error(
+    'test/pg/invariants.pg.test.ts: no reachable DATABASE_URL on CI. These are the ' +
+      'only true-concurrency tests in the repo — skipping them here would make CI ' +
+      'green over zero coverage. Check the `services: postgres` block and the Test ' +
+      "step's DATABASE_URL in .github/workflows/ci.yml.",
+  )
+}
 const describePg = describe.skipIf(!dbUp)
 
 // Loaded lazily so an unreachable-DB run never imports app modules at all.

@@ -1,49 +1,26 @@
 import { describe, it, expect } from 'vitest'
 import { STATS_GUIDE, STAT_CATEGORIES, filterConcepts } from '@/content/data-terminal/stats-guide'
-import type { StatCategory } from '@/content/data-terminal/stats-guide'
+import { describeGuideIntegrity } from '@/test/helpers/guide-integrity'
 
 // ---------------------------------------------------------------------------
-// Content shape invariants — cheap guard that the 25-item authored guide
-// stays well-formed as it's edited over time.
+// Content shape invariants. The six assertions this dataset shares with the
+// other six authored guides live in one place now
+// (test/helpers/guide-integrity.ts); what stays below is what is true of the
+// STATS guide alone.
 // ---------------------------------------------------------------------------
 
-const VALID_CATEGORIES = new Set<StatCategory>(STAT_CATEGORIES.map((c) => c.key))
-const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
+describeGuideIntegrity('STATS_GUIDE', STATS_GUIDE, {
+  categoryField: 'category',
+  categories: STAT_CATEGORIES.map((c) => c.key),
+  requiredFields: [
+    'title', 'whenToUse', 'definition', 'formula',
+    'datasetCsv', 'code', 'datasetNote', 'output', 'caveat',
+  ],
+  proseFields: ['definition'],
+  minEntries: 65,
+})
 
 describe('STATS_GUIDE content shape', () => {
-  it('has exactly 65 entries', () => {
-    expect(STATS_GUIDE).toHaveLength(65)
-  })
-
-  it('every id is unique', () => {
-    const ids = STATS_GUIDE.map((c) => c.id)
-    expect(new Set(ids).size).toBe(ids.length)
-  })
-
-  it('every id is slug-safe (lowercase, digits, single hyphens)', () => {
-    for (const c of STATS_GUIDE) {
-      expect(c.id).toMatch(SLUG_RE)
-    }
-  })
-
-  it('every category is one of STAT_CATEGORIES', () => {
-    for (const c of STATS_GUIDE) {
-      expect(VALID_CATEGORIES.has(c.category)).toBe(true)
-    }
-  })
-
-  it('every entry has non-empty definition, formula, datasetCsv, code, datasetNote, output, and caveat', () => {
-    for (const c of STATS_GUIDE) {
-      expect(c.definition.trim().length).toBeGreaterThan(0)
-      expect(c.formula.trim().length).toBeGreaterThan(0)
-      expect(c.datasetCsv.trim().length).toBeGreaterThan(0)
-      expect(c.code.trim().length).toBeGreaterThan(0)
-      expect(c.datasetNote.trim().length).toBeGreaterThan(0)
-      expect(c.output.trim().length).toBeGreaterThan(0)
-      expect(c.caveat.trim().length).toBeGreaterThan(0)
-    }
-  })
-
   it('every entry has a formulaBreakdown with at least 2 decoded terms, each with non-empty term + meaning', () => {
     for (const c of STATS_GUIDE) {
       expect(c.formulaBreakdown.length).toBeGreaterThanOrEqual(2)
@@ -51,16 +28,6 @@ describe('STATS_GUIDE content shape', () => {
         expect(term.trim().length).toBeGreaterThan(0)
         expect(meaning.trim().length).toBeGreaterThan(0)
       }
-    }
-  })
-
-  it('every definition is genuinely detailed (2+ sentences), not a one-line tooltip', () => {
-    for (const c of STATS_GUIDE) {
-      // Split on sentence-ending punctuation followed by a space/end — a crude
-      // but effective guard that `definition` grew into real prose, not a
-      // single terse sentence.
-      const sentenceCount = c.definition.split(/[.!?]+(?:\s|$)/).filter((s) => s.trim().length > 0).length
-      expect(sentenceCount).toBeGreaterThanOrEqual(2)
     }
   })
 
@@ -92,24 +59,10 @@ describe('STATS_GUIDE content shape', () => {
     }
   })
 
-  it('every entry has a non-empty title and whenToUse', () => {
-    for (const c of STATS_GUIDE) {
-      expect(c.title.trim().length).toBeGreaterThan(0)
-      expect(c.whenToUse.trim().length).toBeGreaterThan(0)
-    }
-  })
-
   it('every code snippet contains at least one import and one print(', () => {
     for (const c of STATS_GUIDE) {
       expect(c.code).toContain('import')
       expect(c.code).toContain('print(')
-    }
-  })
-
-  it('each of the 10 categories is represented at least once', () => {
-    for (const cat of STAT_CATEGORIES) {
-      const count = STATS_GUIDE.filter((c) => c.category === cat.key).length
-      expect(count).toBeGreaterThan(0)
     }
   })
 

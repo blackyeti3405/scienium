@@ -231,3 +231,50 @@ describe('concurrency and replay', () => {
     expect(mocks.runAiOperation).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * P1-S3 — model output must not reach the economy.
+ *
+ * Previously pinned only by a negative REGEX over this route's source text
+ * (`test/ai-route-cost-shape.test.ts`: `not.toMatch(/kp\s*[:=]\s*verdict/)`).
+ * Any ordinary refactor defeats that silently — the route already computes
+ * `missed` from the verdict's findings, so `kp: { increment: missed * 10 }`
+ * would sail through the regex. This executes the route with a verdict full of
+ * findings and asserts the amount actually written to `teamCurrency`.
+ */
+describe('the award is a server constant, not a function of the verdict', () => {
+  it('a finding-rich verdict still mints exactly SYNTHESIS_KP_AWARD', async () => {
+    const finding = (i: number) => ({
+      paperIds: PAPER_IDS,
+      columnId: 'finding',
+      claim: `Finding ${i}`,
+      studentNoticed: false,
+    })
+    const RICH = {
+      ...VERDICT,
+      agreements: [finding(1), finding(2), finding(3)],
+      contradictions: [finding(4), finding(5)],
+    }
+    mocks.runAiOperation.mockImplementation(async (input: { run: () => Promise<unknown> }) => {
+      await input.run()
+      return { ok: true, result: RICH, replayed: false }
+    })
+    mocks.matrixFindFirst.mockResolvedValue(matrixRow())
+    mocks.cellFindMany.mockResolvedValue(SEEN)
+    mocks.txMatrixFindUnique.mockResolvedValue(matrixRow())
+    mocks.txCellFindMany.mockResolvedValue(SEEN)
+
+    const body = await (await post({ expectedHash: hashOf(SEEN) })).json()
+
+    // The verdict really is finding-rich — otherwise this proves nothing.
+    expect(body.verdict.agreements.length + body.verdict.contradictions.length).toBe(5)
+    expect(body.kpEarned).toBe(SYNTHESIS_KP_AWARD)
+    expect(mocks.currencyUpsert).toHaveBeenCalledOnce()
+    const upsert = mocks.currencyUpsert.mock.calls[0]![0] as {
+      create: { kp: number }
+      update: { kp: { increment: number } }
+    }
+    expect(upsert.update.kp.increment).toBe(SYNTHESIS_KP_AWARD)
+    expect(upsert.create.kp).toBe(SYNTHESIS_KP_AWARD)
+  })
+})

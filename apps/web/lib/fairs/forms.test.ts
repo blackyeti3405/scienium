@@ -47,20 +47,27 @@ describe('ISEF edition catalog', () => {
     }
   })
 
-  it('getForm returns undefined for a bogus code', () => {
-    expect(getForm('Form 99Z')).toBeUndefined()
-  })
+  // Removed: `getForm('Form 99Z')` → undefined. That asserted that
+  // `Array.prototype.find` returns undefined for an absent value; there is no
+  // guard, filter or validation whose removal could flip it.
 })
 
-describe('fail-closed guidance gate', () => {
-  // The app must not restate applicability or timing until a qualified
-  // teacher/SRC reviewer signs the edition off. `appliesTo` stays null and
-  // `isEditionReviewed()` stays false until then; the checklist renders the
-  // official-rules pointer instead.
+/**
+ * NOT a gate — a register of the current CONTENT state.
+ *
+ * There is no fail-closed mechanism in the code: `forms.ts` authors
+ * `appliesTo: null` on every literal and `app/api/fairs/forms/route.ts` passes
+ * `def.appliesTo` straight through without consulting `isEditionReviewed()`.
+ * These assertions record that applicability/timing copy is UNAUTHORED pending
+ * qualified teacher/SRC review, so it cannot reach a student by accident today.
+ * Building the actual gate (route suppresses `appliesTo` while
+ * `reviewedBy === null`) is a separate item — see the audit report §1.
+ */
+describe('ISEF edition review state (unauthored applicability copy)', () => {
   it('is not marked reviewed', () => {
+    // The derived predicate, not its two literal inputs — asserting all three
+    // was one fact stated three times.
     expect(isEditionReviewed()).toBe(false)
-    expect(ISEF_EDITION.reviewedBy).toBeNull()
-    expect(ISEF_EDITION.reviewedAt).toBeNull()
   })
 
   it('ships no unreviewed applicability copy', () => {
@@ -78,10 +85,6 @@ describe('fail-closed guidance gate', () => {
 })
 
 describe('HAZARD_CLASSES content shape', () => {
-  it('has exactly 4 entries', () => {
-    expect(HAZARD_CLASSES).toHaveLength(4)
-  })
-
   it('keys are exactly chemical, biological, sharp-mechanical, human-subjects with no dupes', () => {
     const keys = HAZARD_CLASSES.map((h) => h.key)
     expect(new Set(keys).size).toBe(keys.length)
@@ -114,10 +117,11 @@ describe('HAZARD_CLASSES content shape', () => {
     }
   })
 
-  it('getHazardClass round-trips a known key and returns undefined for a bogus key', () => {
+  it('getHazardClass round-trips a known key', () => {
     const cls = getHazardClass('chemical')
     expect(cls).toBeDefined()
     expect(cls?.key).toBe('chemical')
-    expect(getHazardClass('not-a-real-key' as HazardClassKey)).toBeUndefined()
+    // Removed the bogus-key half: `find` returning undefined for an absent key
+    // is a language guarantee, not a guard this module could regress.
   })
 })

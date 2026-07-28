@@ -14,8 +14,10 @@ import { LAB_TYPES } from '@/lib/phase'
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
 describe('SYNTHESIS_TEMPLATES content shape', () => {
-  it('has exactly 7 templates', () => {
-    expect(SYNTHESIS_TEMPLATES).toHaveLength(7)
+  it('ships at least 7 templates', () => {
+    // A floor, not a pin — an exact count fails on every legitimate template
+    // addition and catches nothing the id-uniqueness check below misses.
+    expect(SYNTHESIS_TEMPLATES.length).toBeGreaterThanOrEqual(7)
   })
 
   it('every template id is unique and slug-safe', () => {

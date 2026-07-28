@@ -176,11 +176,19 @@ describe('outbox delivery', () => {
     await deliverNotificationEmails(10)
     await deliverNotificationEmails(10)
     expect(rows[0]!.status).toBe('failed')
+    expect(rows[0]!.attempts).toBe(3)
 
-    // Parked, not retried forever — a bad address must not consume every run.
+    // The ATTEMPT CAP, not the terminal status, is what parks it. The previous
+    // version re-drained and asserted `sent` was empty — but the drain's `OR`
+    // only selects pending/sending, so it found nothing because of `failed`,
+    // and the cap it credited was never exercised. Force the row back to
+    // `pending` with its attempts intact: only `attempts: { lt: MAX_ATTEMPTS }`
+    // can keep it out of the batch now.
     sent.length = 0
+    rows[0]!.status = 'pending'
     await deliverNotificationEmails(10)
     expect(sent).toEqual([])
+    expect(rows[0]!.attempts).toBe(3) // not even claimed
   })
 
   it('never throws: a broken outbox must not fail a cron whose real work succeeded', async () => {

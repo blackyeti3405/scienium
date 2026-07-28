@@ -1,47 +1,21 @@
 import { describe, it, expect } from 'vitest'
 import { METHODS, METHOD_CATEGORIES, filterMethods } from '@/content/data-terminal/methods-guide'
+import { describeGuideIntegrity } from '@/test/helpers/guide-integrity'
 
 // ---------------------------------------------------------------------------
-// Content shape invariants — cheap guard that the assembled 45-item methods
-// guide stays well-formed as it's edited over time. Mirrors plot-guide.test.ts.
+// Content shape invariants. The assertions shared with the other six authored
+// guides live in test/helpers/guide-integrity.ts; what stays below is what is
+// true of the METHODS guide alone.
 // ---------------------------------------------------------------------------
 
-const VALID_CATEGORIES = new Set(METHOD_CATEGORIES)
-const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
+describeGuideIntegrity('METHODS', METHODS, {
+  categoryField: 'category',
+  categories: METHOD_CATEGORIES,
+  requiredFields: ['title', 'category', 'definition', 'whenToUse', 'workedExample', 'pitfall'],
+  minEntries: 45,
+})
 
 describe('METHODS content shape', () => {
-  it('has exactly 45 entries', () => {
-    expect(METHODS).toHaveLength(45)
-  })
-
-  it('every id is unique', () => {
-    const ids = METHODS.map((m) => m.id)
-    expect(new Set(ids).size).toBe(ids.length)
-  })
-
-  it('every id is slug-safe (lowercase, digits, single hyphens)', () => {
-    for (const m of METHODS) {
-      expect(m.id).toMatch(SLUG_RE)
-    }
-  })
-
-  it('every category is one of METHOD_CATEGORIES', () => {
-    for (const m of METHODS) {
-      expect(VALID_CATEGORIES.has(m.category)).toBe(true)
-    }
-  })
-
-  it('every entry has non-empty title, category, definition, whenToUse, workedExample, and pitfall', () => {
-    for (const m of METHODS) {
-      expect(m.title.trim().length).toBeGreaterThan(0)
-      expect(m.category.trim().length).toBeGreaterThan(0)
-      expect(m.definition.trim().length).toBeGreaterThan(0)
-      expect(m.whenToUse.trim().length).toBeGreaterThan(0)
-      expect(m.workedExample.trim().length).toBeGreaterThan(0)
-      expect(m.pitfall.trim().length).toBeGreaterThan(0)
-    }
-  })
-
   it('every designTable is a non-empty array of { label, value } with both non-empty', () => {
     for (const m of METHODS) {
       expect(Array.isArray(m.designTable)).toBe(true)
@@ -66,14 +40,6 @@ describe('METHODS content shape', () => {
     expect(new Set(METHOD_CATEGORIES).size).toBe(METHOD_CATEGORIES.length)
     const sorted = [...METHOD_CATEGORIES].sort((a, b) => a.localeCompare(b))
     expect(METHOD_CATEGORIES).toEqual(sorted)
-  })
-
-  it('every category that appears in METHODS is represented in METHOD_CATEGORIES and vice versa', () => {
-    const categoriesInData = new Set(METHODS.map((m) => m.category))
-    expect(categoriesInData.size).toBe(METHOD_CATEGORIES.length)
-    for (const c of METHOD_CATEGORIES) {
-      expect(categoriesInData.has(c)).toBe(true)
-    }
   })
 })
 

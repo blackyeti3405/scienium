@@ -4,68 +4,26 @@ import {
   DQ_CATEGORIES,
   filterDataQualityConcepts,
 } from '@/content/data-terminal/data-quality-guide'
-import type { DataQualityCategory } from '@/content/data-terminal/data-quality-guide'
+import { describeGuideIntegrity } from '@/test/helpers/guide-integrity'
 
 // ---------------------------------------------------------------------------
-// Content shape invariants — cheap guard that the 36-item authored guide
-// stays well-formed as it's edited over time. Mirrors stats-guide.test.ts.
+// Content shape invariants. The assertions shared with the other six authored
+// guides live in test/helpers/guide-integrity.ts; what stays below is what is
+// true of the DATA QUALITY guide alone.
 // ---------------------------------------------------------------------------
 
-const VALID_CATEGORIES = new Set<DataQualityCategory>(DQ_CATEGORIES.map((c) => c.key))
-const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
+describeGuideIntegrity('DATA_QUALITY_GUIDE', DATA_QUALITY_GUIDE, {
+  categoryField: 'category',
+  categories: DQ_CATEGORIES.map((c) => c.key),
+  requiredFields: [
+    'title', 'whenToUse', 'definition', 'formula',
+    'datasetCsv', 'code', 'datasetNote', 'output', 'caveat',
+  ],
+  proseFields: ['definition'],
+  minEntries: 36,
+})
 
 describe('DATA_QUALITY_GUIDE content shape', () => {
-  it('has exactly 36 entries', () => {
-    expect(DATA_QUALITY_GUIDE).toHaveLength(36)
-  })
-
-  it('every id is unique', () => {
-    const ids = DATA_QUALITY_GUIDE.map((c) => c.id)
-    expect(new Set(ids).size).toBe(ids.length)
-  })
-
-  it('every id is slug-safe (lowercase, digits, single hyphens)', () => {
-    for (const c of DATA_QUALITY_GUIDE) {
-      expect(c.id).toMatch(SLUG_RE)
-    }
-  })
-
-  it('every category is one of DQ_CATEGORIES', () => {
-    for (const c of DATA_QUALITY_GUIDE) {
-      expect(VALID_CATEGORIES.has(c.category)).toBe(true)
-    }
-  })
-
-  it('each of the 4 categories is represented at least once', () => {
-    for (const cat of DQ_CATEGORIES) {
-      const count = DATA_QUALITY_GUIDE.filter((c) => c.category === cat.key).length
-      expect(count).toBeGreaterThan(0)
-    }
-  })
-
-  it('has exactly 4 categories', () => {
-    expect(DQ_CATEGORIES).toHaveLength(4)
-  })
-
-  it('every entry has non-empty definition, formula, datasetCsv, code, datasetNote, output, and caveat', () => {
-    for (const c of DATA_QUALITY_GUIDE) {
-      expect(c.definition.trim().length).toBeGreaterThan(0)
-      expect(c.formula.trim().length).toBeGreaterThan(0)
-      expect(c.datasetCsv.trim().length).toBeGreaterThan(0)
-      expect(c.code.trim().length).toBeGreaterThan(0)
-      expect(c.datasetNote.trim().length).toBeGreaterThan(0)
-      expect(c.output.trim().length).toBeGreaterThan(0)
-      expect(c.caveat.trim().length).toBeGreaterThan(0)
-    }
-  })
-
-  it('every entry has a non-empty title and whenToUse', () => {
-    for (const c of DATA_QUALITY_GUIDE) {
-      expect(c.title.trim().length).toBeGreaterThan(0)
-      expect(c.whenToUse.trim().length).toBeGreaterThan(0)
-    }
-  })
-
   it('every entry has a formulaBreakdown with at least 2 decoded terms, each with non-empty term + meaning', () => {
     for (const c of DATA_QUALITY_GUIDE) {
       expect(c.formulaBreakdown.length).toBeGreaterThanOrEqual(2)
@@ -73,13 +31,6 @@ describe('DATA_QUALITY_GUIDE content shape', () => {
         expect(term.trim().length).toBeGreaterThan(0)
         expect(meaning.trim().length).toBeGreaterThan(0)
       }
-    }
-  })
-
-  it('every definition is genuinely detailed (2+ sentences), not a one-line tooltip', () => {
-    for (const c of DATA_QUALITY_GUIDE) {
-      const sentenceCount = c.definition.split(/[.!?]+(?:\s|$)/).filter((s) => s.trim().length > 0).length
-      expect(sentenceCount).toBeGreaterThanOrEqual(2)
     }
   })
 

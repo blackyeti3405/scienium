@@ -57,7 +57,14 @@ describe('RUBRIC_ANCHORS content shape', () => {
     }
   })
 
-  it('anchorFor returns undefined for an unknown criterionKey', () => {
+  it('anchorFor is TRACK-scoped, not just key-matched', () => {
+    // `criterionKey` already embeds the track, so an absent key
+    // (`anchorFor('science','science:VI')`) proves nothing — it fails on the
+    // key clause whether or not the `track` clause exists. A key that IS
+    // present under the OTHER track is the case that fails when the `track`
+    // clause is dropped.
+    expect(anchorFor('science', 'engineering:I')).toBeUndefined()
+    expect(anchorFor('engineering', 'science:I')).toBeUndefined()
     expect(anchorFor('science', 'science:VI')).toBeUndefined()
   })
 })

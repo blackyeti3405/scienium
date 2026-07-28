@@ -14,6 +14,28 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    # A real postgres for the Test step. `test/pg/invariants.pg.test.ts` is the
+    # only true-concurrency suite in the repo (A12 quota reservation, A6 LC
+    # claim, A8 retry election, A13 view dedupe); without a reachable database
+    # it self-skipped and those four invariants never ran in CI at all. The
+    # suite now THROWS instead of skipping when `CI` is set, so a broken
+    # service block fails loudly rather than going quietly green.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: scienium
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -53,8 +75,19 @@ jobs:
       - name: Lint
         run: pnpm --filter web lint
 
+      - name: Migrate the test database
+        # `migrate deploy` applies the committed migrations only — never
+        # generates one, never touches a shadow database.
+        run: pnpm --filter web exec prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/scienium
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/scienium
+
       - name: Test
         run: pnpm --filter web test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/scienium
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/scienium
 
       - name: Build
         run: pnpm --filter web build

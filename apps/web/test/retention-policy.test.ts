@@ -81,21 +81,39 @@ beforeEach(() => {
 })
 
 describe('retention registry', () => {
-  it('ships exactly one default — everything else is unreviewed', () => {
-    const withDefaults = PRUNABLE_MODELS.filter((m) => m.defaultRetainDays !== null)
-    expect(withDefaults.map((m) => m.key)).toEqual(['showcase_view'])
-    expect(withDefaults[0]!.defaultRetainDays).toBe(90)
-  })
+  it('a model with no default retains everything, however old', async () => {
+    // The MECHANISM, not the placeholder list. This used to assert
+    // `withDefaults.map(m => m.key)` deep-equals `['showcase_view']`, which
+    // turned "not yet decided" into "asserted correct": HANDOFF lists P1-R9's
+    // retention numbers as blocked on qualified FERPA/COPPA input, and
+    // `retention_policies` ships EMPTY on purpose. The day real windows are
+    // authored, an exact-list pin reads as a regression. What must not change
+    // is that a `null` default means KEEP — a 400-day-old row survives a prune.
+    const unreviewed = PRUNABLE_MODELS.filter((m) => m.defaultRetainDays === null)
+    expect(unreviewed.length, 'no unreviewed models left to check').toBeGreaterThan(0)
 
-  it('prunes only the endorsed model when the policy table is empty', async () => {
     const pruned = await runRetentionPrune(100)
 
-    expect(pruned).toEqual({ showcase_view: 1 })
-    expect(tables.showcaseView!.map((r) => r.id)).toEqual(['showcase_view-new'])
-    // Every unreviewed model keeps BOTH rows — including the 400-day-old one.
-    expect(tables.activityFeed).toHaveLength(2)
-    expect(tables.paperChatMessage).toHaveLength(2)
-    expect(tables.teacherFeedback).toHaveLength(2)
+    for (const m of unreviewed) {
+      const table = m.key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+      expect(pruned[m.key], `${m.key} was pruned with no reviewed window`).toBeUndefined()
+      expect(tables[table], `${m.key} lost a row`).toHaveLength(2)
+    }
+  })
+
+  it('a model WITH a default prunes to that window without any policy row', async () => {
+    const withDefaults = PRUNABLE_MODELS.filter((m) => m.defaultRetainDays !== null)
+    expect(withDefaults.length, 'no defaulted models left to check').toBeGreaterThan(0)
+
+    const pruned = await runRetentionPrune(100)
+
+    for (const m of withDefaults) {
+      const table = m.key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+      // The fixture's old row is 400 days back; every authored window is shorter.
+      expect(m.defaultRetainDays!).toBeLessThan(400)
+      expect(pruned[m.key]).toBe(1)
+      expect(tables[table]!.map((r) => r.id)).toEqual([`${m.key}-new`])
+    }
   })
 
   it('a policy row turns an unreviewed model on', async () => {

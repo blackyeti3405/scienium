@@ -48,10 +48,10 @@ describe('resolveClass expiry (SEC2-003)', () => {
     expect(await resolveClass('K7M9QP')).toBeNull()
   })
 
-  it('an unknown code resolves null without touching expiry logic', async () => {
-    mocks.classFindUnique.mockResolvedValue(null)
-    expect(await resolveClass('NOPE99')).toBeNull()
-  })
+  // Cut: 'an unknown code resolves null without touching expiry logic'.
+  // `findUnique` was mocked to null, so profile.ts:67's null-check answered
+  // first — deleting the entire expiry block left it green. The three tests
+  // above own that block.
 
   it('a blank code never queries', async () => {
     expect(await resolveClass('   ')).toBeNull()

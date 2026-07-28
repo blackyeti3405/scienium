@@ -147,6 +147,19 @@ const COST_SHAPES: CostShape[] = [
     cacheBlocks: 1,
   },
   {
+    // Spends through `grading.ts` (the shared grader) rather than calling
+    // `aiCreate` itself, so the completeness sweep below cannot discover it —
+    // which is exactly why the row is written by hand. What it is here for is
+    // the `tier: 'ai'` cap: this route buys a 3072-token grade and mints
+    // 150–1200 KP, and it was the only paid route with no cost-shape entry.
+    file: 'app/api/expertise/grade/route.ts',
+    tier: 'ai',
+    operations: [],
+    callSites: 0,
+    cacheBlocks: 0,
+    require: ["operation: 'expertise_grade'"],
+  },
+  {
     file: 'app/api/failure-log/[id]/followup/route.ts',
     tier: 'ai',
     operations: ['failure_followup'],
@@ -293,6 +306,15 @@ describe('rewards never come from the model', () => {
    * Migrated from `lit-explain-it-back.spec.ts` AC14. The whole point of P1-S3
    * was that model output must not reach the economy; asserting it in a browser
    * suite that takes half an hour to run was the wrong home for it.
+   *
+   * These are LINT, not proof. A negative regex over source text only catches
+   * the literal shape it names — `const award = verdict.accuracy; … kp: {
+   * increment: award }` reads nothing like `kp: verdict` and passes here
+   * (verified by reverting both routes that way: these stayed green). The
+   * executable proof, which runs the route with a maximally generous verdict
+   * and asserts the amount written to `teamCurrency`, lives in
+   * `test/explain-monotonic.test.ts` and `test/synthesis-stale-check.test.ts`,
+   * both under "the award is a server constant, not a function of the verdict".
    */
   it('explain-back writes KP only as its flat constant, never from the verdict', () => {
     const src = code(read('app/api/papers/[id]/explain/route.ts'))

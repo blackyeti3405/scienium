@@ -65,6 +65,7 @@ vi.mock('@/lib/db', () => ({
 }))
 
 import { POST } from '@/app/api/papers/[id]/explain/route'
+import { EXPLAIN_KP_AWARD } from '@/lib/literature/explain'
 
 const params = { params: Promise.resolve({ id: 'paper_1' }) }
 
@@ -263,5 +264,55 @@ describe('a late result can raise truth but never lower it', () => {
 
     expect(body.kpEarned).toBe(0)
     expect(mocks.currencyUpsert).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * P1-S3 — model output must not reach the economy.
+ *
+ * This was previously pinned only by a negative REGEX over the route's source
+ * (`test/ai-route-cost-shape.test.ts`: `not.toMatch(/kp\s*[:=]\s*verdict/)`),
+ * which any ordinary refactor defeats silently — `const award = verdict.accuracy;
+ * … kp: { increment: award }` reads nothing like `kp: verdict`. This executes
+ * the route with a maximally generous verdict instead and asserts the amount
+ * actually written.
+ */
+describe('the award is a server constant, not a function of the verdict', () => {
+  it('a perfect 100/100 verdict still mints exactly EXPLAIN_KP_AWARD', async () => {
+    vi.stubEnv('E2E_SKIP_LLM', '')
+    mocks.anthropicCreate.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          // Every field a refactor might reach for: the scores that survive the
+          // schema, and invented `kp`/`kpAwarded`/`bonus` fields that must not.
+          text: JSON.stringify({
+            accuracy: 100,
+            completeness: 100,
+            kp: 9_999,
+            kpAwarded: 9_999,
+            bonus: 9_999,
+            correctPoints: [],
+            missedPoints: [],
+            misconceptions: [],
+            followUpQuestion: '',
+          }),
+        },
+      ],
+    })
+    mocks.queryRaw.mockResolvedValue([{ kp_awarded: EXPLAIN_KP_AWARD }])
+
+    const body = await (await POST(explainReq(), params)).json()
+
+    expect(body.passed).toBe(true)
+    expect(body.overall).toBe(100) // the verdict really was maximal
+    expect(body.kpEarned).toBe(EXPLAIN_KP_AWARD)
+    expect(mocks.currencyUpsert).toHaveBeenCalledOnce()
+    const upsert = (mocks.currencyUpsert.mock.calls as unknown as unknown[][])[0]![0] as {
+      create: { kp: number }
+      update: { kp: { increment: number } }
+    }
+    expect(upsert.update.kp.increment).toBe(EXPLAIN_KP_AWARD)
+    expect(upsert.create.kp).toBe(EXPLAIN_KP_AWARD)
   })
 })

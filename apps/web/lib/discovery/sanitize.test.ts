@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import sanitizeHtml from 'sanitize-html'
-import { ARTICLE_SANITIZE_OPTS, TITLE_SANITIZE_OPTS, sanitizeAbstract } from './sanitize'
+import { TITLE_SANITIZE_OPTS, sanitizeAbstract } from './sanitize'
 
 /**
  * The single XSS boundary for externally-sourced HTML (Wikipedia articles,
@@ -71,25 +71,36 @@ describe('sanitizeAbstract — legitimate academic markup survives', () => {
   })
 })
 
-describe('allowlist option pins — a typo in these fails OPEN, so pin them', () => {
-  it('allows only http/https/mailto schemes, no protocol-relative', () => {
-    expect(ARTICLE_SANITIZE_OPTS.allowedSchemes).toEqual(['http', 'https', 'mailto'])
-    expect(ARTICLE_SANITIZE_OPTS.allowProtocolRelative).toBe(false)
-  })
+/**
+ * These used to restate the option literals (`allowedSchemes` deep-equals
+ * ['http','https','mailto'], `allowedTags` does not contain 'script', …). A
+ * restatement of a config object in the same module cannot fail on a
+ * regression — it changes with the thing it is guarding. The scheme and
+ * attribute halves are already covered by the EXECUTED hostile-input cases
+ * above; what remained uncovered was the long tail of embedding tags, so this
+ * runs them through the sanitizer instead of reading the array.
+ */
+describe('every script-capable or embedding tag is discarded, not just the famous ones', () => {
+  it.each(['script', 'iframe', 'object', 'embed', 'style', 'img', 'svg', 'form', 'input', 'base', 'link', 'meta', 'template', 'math'])(
+    '<%s> is stripped',
+    (tag) => {
+      const out = sanitizeAbstract(`before<${tag} src="x" onerror="alert(1)">payload</${tag}>after`)
+      expect(out).not.toContain(`<${tag}`)
+      expect(out).not.toContain('onerror')
+      expect(out).toContain('before')
+      expect(out).toContain('after')
+    },
+  )
 
-  it('never allowlists script-capable or embedding tags', () => {
-    const tags = ARTICLE_SANITIZE_OPTS.allowedTags ?? []
-    for (const forbidden of ['script', 'iframe', 'object', 'embed', 'style', 'img', 'svg', 'form', 'input']) {
-      expect(tags).not.toContain(forbidden)
-    }
+  it('an attribute the allowlist does not name is dropped on an ALLOWED tag', () => {
+    // `formaction`/`srcdoc`/`xlink:href` are the shapes that turn a permitted
+    // tag into a payload if the attribute allowlist ever widens.
+    const out = sanitizeAbstract('<p formaction="javascript:x" srcdoc="<script>x</script>" id="x">hi</p>')
+    expect(out).toBe('<p>hi</p>')
   })
+})
 
-  it('never allowlists event-handler or style attributes', () => {
-    const attrs = JSON.stringify(ARTICLE_SANITIZE_OPTS.allowedAttributes)
-    expect(attrs).not.toMatch(/on[a-z]+/i)
-    expect(attrs).not.toContain('"style"')
-  })
-
+describe('allowlist option pins', () => {
   it('title allowlist is inline-only with zero attributes', () => {
     expect(TITLE_SANITIZE_OPTS.allowedTags).toEqual(['i', 'b', 'em', 'strong', 'sub', 'sup', 'span'])
     expect(TITLE_SANITIZE_OPTS.allowedAttributes).toEqual({})

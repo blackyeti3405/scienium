@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { CHART_FIELDS, loadChartField } from '@/lib/data-terminal/charts-guide'
 import type { ChartConcept } from '@/lib/data-terminal/charts-guide'
+import { describeGuideIntegrity } from '@/test/helpers/guide-integrity'
 
 // ---------------------------------------------------------------------------
 // Content shape invariants — the Charts Guide is now 29 lazily-loaded
@@ -79,8 +80,8 @@ const ALL_FIELD_MODULES: Record<string, ChartConcept[]> = {
 const ALL_CHARTS: ChartConcept[] = Object.values(ALL_FIELD_MODULES).flat()
 
 describe('CHART_FIELDS index', () => {
-  it('has 29 fields', () => {
-    expect(CHART_FIELDS).toHaveLength(29)
+  it('has at least 29 fields', () => {
+    expect(CHART_FIELDS.length).toBeGreaterThanOrEqual(29)
   })
 
   it('is sorted by label', () => {
@@ -116,39 +117,14 @@ describe('CHART_FIELDS index', () => {
   })
 })
 
+describeGuideIntegrity('CHARTS (all 29 field modules combined)', ALL_CHARTS, {
+  categoryField: 'field',
+  categories: CHART_FIELDS.map((f) => f.label),
+  requiredFields: ['title', 'field', 'plotType', 'description', 'whatItTellsYou'],
+  minEntries: 248,
+})
+
 describe('CHARTS content shape (all 29 field modules combined)', () => {
-  it('sums to at least 248 entries across all per-field modules', () => {
-    expect(ALL_CHARTS.length).toBeGreaterThanOrEqual(248)
-  })
-
-  it('every id is unique globally, across every field', () => {
-    const ids = ALL_CHARTS.map((c) => c.id)
-    expect(new Set(ids).size).toBe(ids.length)
-  })
-
-  it('every id is slug-safe (lowercase, digits, single hyphens)', () => {
-    for (const c of ALL_CHARTS) {
-      expect(c.id).toMatch(SLUG_RE)
-    }
-  })
-
-  it('every field is one of the CHART_FIELDS labels', () => {
-    const labels = new Set(CHART_FIELDS.map((f) => f.label))
-    for (const c of ALL_CHARTS) {
-      expect(labels.has(c.field)).toBe(true)
-    }
-  })
-
-  it('every entry has non-empty title, field, plotType, description, and whatItTellsYou', () => {
-    for (const c of ALL_CHARTS) {
-      expect(c.title.trim().length).toBeGreaterThan(0)
-      expect(c.field.trim().length).toBeGreaterThan(0)
-      expect(c.plotType.trim().length).toBeGreaterThan(0)
-      expect(c.description.trim().length).toBeGreaterThan(0)
-      expect(c.whatItTellsYou.trim().length).toBeGreaterThan(0)
-    }
-  })
-
   it('every dataNeeded is a non-empty array of { name, unit } with both non-empty', () => {
     for (const c of ALL_CHARTS) {
       expect(Array.isArray(c.dataNeeded)).toBe(true)

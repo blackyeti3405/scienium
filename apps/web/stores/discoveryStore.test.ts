@@ -299,15 +299,22 @@ describe('branchSources', () => {
  */
 describe('a write that never landed (§0.7)', () => {
   it('a failed create SAYS SO — it used to just erase the node', async () => {
-    useDiscoveryStore.setState({ nodes: [], currentNodeId: null })
+    // The server already holds one node. Seeding a NON-empty server response is
+    // the point: with `nodes: []` and `fetchTree → []`, the expected `[]` is
+    // also what you get from a rollback that never ran, from no optimistic
+    // apply at all, and from a store that wiped everything. Here the three
+    // outcomes are distinguishable — a dropped rollback leaves the optimistic
+    // node alongside `pre`, and a wipe leaves nothing.
+    const server = node('pre', { title: 'Already on the server' })
+    useDiscoveryStore.setState({ nodes: [server], currentNodeId: null })
     api.persistCreate.mockResolvedValue({ ok: false, kp: 0 })
-    api.fetchTree.mockResolvedValue([])
+    api.fetchTree.mockResolvedValue([server])
 
     useDiscoveryStore.getState().startExploration('Photosynthesis')
     await flush()
 
     const s = useDiscoveryStore.getState()
-    expect(s.nodes).toEqual([]) // the rollback itself is correct and unchanged
+    expect(s.nodes.map((n) => n.id)).toEqual(['pre']) // re-hydrated to server truth
     expect(s.loadError).toBe(false) // the READ was fine; this was a write
     expect(s.writeError?.message).toMatch(/Could not start that topic/)
   })
@@ -328,7 +335,10 @@ describe('a write that never landed (§0.7)', () => {
     useDiscoveryStore.getState().startExploration('Photosynthesis')
     await flush()
     expect(useDiscoveryStore.getState().newTreePending).toBe(false)
-    expect(useDiscoveryStore.getState().writeError).toBeNull()
+    // No `writeError` assertion here: the fixture seeds it null and
+    // `commitOptimistic` clears it unconditionally BEFORE persisting, so
+    // nothing on the success path could flip it. The load-bearing version is
+    // 'a successful write clears a standing writeError' below.
   })
 
   it('a repeat failure re-fires the toast via a bumped nonce', async () => {
