@@ -30,7 +30,12 @@ async function openTeamPanel(page: import('@playwright/test').Page) {
   await page.goto('/lab')
   // The status strip's team-name button is the only way in.
   await page.locator('button.status-strip__team--button').click()
-  await expect(page.getByText('Your Lab')).toBeVisible()
+  // `exact` matters: `getByText` is a case-insensitive SUBSTRING match, and the
+  // leave-flow consequence copy ends "…Your lab keeps everything you
+  // contributed." That paragraph only renders when the lab has ANOTHER member to
+  // hand the lead to, so a solo fixture hid the strict-mode violation entirely —
+  // it appeared the moment a real second account joined.
+  await expect(page.getByText('Your Lab', { exact: true })).toBeVisible()
   // The roster loads async; wait for it rather than racing the skeleton.
   await expect(page.getByTestId('team-panel-skeleton')).toHaveCount(0)
 }

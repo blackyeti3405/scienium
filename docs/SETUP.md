@@ -484,6 +484,16 @@ restores every other member of the fixture team for the file's lifetime. With th
 student pointed at the leader, that code is a no-op and has never actually run —
 so a genuine second account is the only way to test it. See `HANDOFF.md`.
 
+**Never set the same key twice in `.env.local` — the runner now refuses to start
+if you do.** `e2e/env.ts` is first-wins (a CI-provided secret must beat the
+file), but `source .env.local` in a shell is LAST-wins. So a stale
+`E2E_STUDENT_IDENTIFIER=` above your corrected one reads as fixed in the shell
+and is silently ignored by the suite. The cost of that being quiet, measured
+once: the "student" role signed in as the LEADER, and a test asserting *a
+non-lead cannot remove anyone* ran as the lead, got its 200, and removed a real
+member from the shared fixture. `loadTestEnv` now throws with the two line
+numbers.
+
 **Conscripting an account that already has a lab is fine, and it is announced.**
 A fresh Clerk user completes onboarding by creating its own team, and
 `TeamMember.userId` is `@@unique` (one team at a time, v0.71.0) — so wiring that
