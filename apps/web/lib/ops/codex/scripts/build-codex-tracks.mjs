@@ -20,6 +20,8 @@
  *
  * Run via `pnpm --filter web codex:build[ -- --check]`. `--check` is the CI-safe
  * mode: it exits non-zero if any wrapper is missing/stale or the registry drifts.
+ * It runs on every gate + CI run as the second half of `check:integrity`
+ * (P2-S12) — it writes nothing and takes ~0.5s.
  */
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -59,11 +61,25 @@ function contentSlugs() {
     .sort()
 }
 
-/** @param {string[]} slugs */
-function crossCheckIndex(slugs) {
+/**
+ * Cross-check the four inventories that must agree, in BOTH directions each:
+ * the content directory, the wrapper directory, the `index.ts` registry
+ * (LOADERS + CODEX_TRACKS), and the checksum lock. Comparing sets rather than
+ * spot-checking known names is the point — anything that only walks `slugs`
+ * cannot see an entry the content directory no longer has.
+ *
+ * @param {string[]} slugs authored content slugs (the source of truth)
+ * @param {Record<string, string>} checksums freshly computed, keyed by slug
+ */
+function crossCheckIndex(slugs, checksums) {
   const index = readFileSync(indexPath, 'utf8')
   const loaderSlugs = new Set([...index.matchAll(/'([a-z0-9-]+)':\s*\(\)\s*=>\s*import\('\.\/tracks\//g)].map((m) => m[1]))
   const summarySlugs = new Set([...index.matchAll(/\bslug:\s*'([a-z0-9-]+)'/g)].map((m) => m[1]))
+  const wrapperSlugs = new Set(
+    readdirSync(tracksDir)
+      .filter((f) => f.endsWith('.ts') && !f.startsWith('.'))
+      .map((f) => f.replace(/\.ts$/, '')),
+  )
 
   /** @type {string[]} */
   const problems = []
@@ -73,6 +89,20 @@ function crossCheckIndex(slugs) {
   }
   for (const slug of loaderSlugs) {
     if (!slugs.includes(slug)) problems.push(`index.ts LOADERS references '${slug}' but content/${slug}.json is missing`)
+  }
+  for (const slug of summarySlugs) {
+    if (!slugs.includes(slug)) problems.push(`index.ts CODEX_TRACKS lists '${slug}' but content/${slug}.json is missing`)
+  }
+  // Orphan wrapper: a tracks/*.ts left behind by a removed field. It still
+  // COMPILES (a copied wrapper points at some other field's JSON), so neither
+  // tsc nor the per-slug staleness loop above can see it — only a directory-set
+  // comparison can. `codex:build` never deletes, so this is the drift the
+  // builder itself creates.
+  for (const slug of wrapperSlugs) {
+    if (!slugs.includes(slug)) problems.push(`tracks/${slug}.ts has no content/${slug}.json (orphan wrapper — delete it)`)
+  }
+  for (const slug of Object.keys(checksums)) {
+    if (!wrapperSlugs.has(slug)) problems.push(`content/${slug}.json has no tracks/${slug}.ts wrapper`)
   }
   return problems
 }
@@ -117,7 +147,7 @@ function main() {
     }
   }
 
-  const indexProblems = crossCheckIndex(slugs)
+  const indexProblems = crossCheckIndex(slugs, checksums)
 
   if (CHECK && (stale.length || indexProblems.length)) {
     console.error('codex:build --check failed:')

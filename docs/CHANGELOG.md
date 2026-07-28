@@ -5,6 +5,58 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.75.1] — 2026-07-27
+
+REFACTOR2 findings **P2-S8**, **P2-S12**, **P2-S13**.
+
+### Fixed — request bodies were capped only after the whole payload was allocated (P2-S8)
+
+`lib/validation.ts` — Zod's `.max()` runs on an object `req.json()` has already fully
+materialized, so a route whose schema was `{ name: max(10) }` still buffered and `JSON.parse`d
+whatever arrived before answering 400. `parseJson` now enforces an infrastructure ceiling
+**before** allocation: `MAX_BODY_BYTES` (256 KiB) via `readBoundedBody`, which rejects an
+over-budget declared `Content-Length` without touching the stream, and otherwise reads the
+stream against a running byte total and cancels the reader the moment it is exceeded — so an
+absent or lying `Content-Length` cannot get past it either. Over-ceiling requests get the
+project's standard `{ error }` shape with **413**; the Zod semantic caps are unchanged behind it.
+
+The ceiling lives in the shared plumbing, not per route: ~50 routes call `parseJson` directly
+and the rest go through `withTeamRoute`, which threads the same option. A route **opts out**,
+never in — `/api/research-plan` (a 1 M-char `planText` paste it exists to truncate) and
+`/api/discovery/tree` (an `article` node carrying up to 200 000 chars of sanitized HTML) are the
+only two, each with the reason in-line. The next-largest ordinary body, a full 500-point Data
+Terminal paste, measures ~137 KB.
+
+### Fixed — the app could not round-trip its own valid CSV (P2-S13)
+
+`lib/data-terminal/csv.ts` — `toCsv` quotes commas, quotes and newlines per RFC-4180, but the
+importer read the result with `line.split(',')`. A student's note containing a comma shifted into
+the series column; one containing a newline invented a junk row and truncated a real one. The
+importer now goes through `parseDelimited`, a ~45-line RFC-4180 reader (quoted fields, `""`
+escapes, embedded newlines, CRLF or LF), and picks its delimiter **once, outside quotes**, so a
+quoted tab can no longer flip a comma file into tab mode. No new dependency.
+
+`csvField` now quotes tabs too. That is not RFC-4180's business but is ours: a raw tab in an axis
+label landed in the header, and the header is what decides the delimiter — one tab in a label
+shredded every data row on re-import.
+
+The 500-point / 40-char series / 200-char note caps are unchanged, as is the deliberate formula
+neutralization asymmetry (`'`-prefixed text comes back `'`-prefixed, on purpose).
+
+### Changed — codex content drift is now a gate, not a hand-maintained list (P2-S12)
+
+`pnpm --filter web check:integrity` is now text integrity **plus** `codex:build --check`
+(~0.5 s, writes nothing), so gate 2 and CI both catch drift between `lib/ops/codex`'s
+`content/`, `tracks/`, the `index.ts` registry and `.checksums.json`. `--check` was verified
+directory-aware against seven injected drift cases; the one it missed — an orphan `tracks/*.ts`
+whose content source was deleted, which still *compiles* because a copied wrapper points at
+another field's JSON — is closed by comparing the tracks directory set in both directions, along
+with `CODEX_TRACKS` entries that no longer have content.
+
+`__tests__/generated-content.test.ts` compares its hand-maintained `WRAPPERS` inventory against
+`content/` on disk. Previously a field shipped without editing that map was validated by
+nothing — no zod parse, no checksum, no deep-equal — and the suite stayed green while doing it.
+
 ## [0.75.0] — 2026-07-27
 
 HANDOFF.md's whole "Ready to pick up" list, items 1–5.

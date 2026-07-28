@@ -22,6 +22,8 @@ const MAX_NOTE = 200
 
 /**
  * Parse pasted spreadsheet text (tab or comma separated) into measurement points.
+ * Reads RFC-4180 quoting, so `toCsv`'s own output round-trips (see
+ * `csv-roundtrip.test.ts`); the reader itself is `parseDelimited` below.
  * Column order: x, y, series?, note?
  * A leading header row whose first two cells are non-numeric is detected and skipped.
  * Rows where x or y are blank or non-numeric are dropped and counted in `skipped`.
@@ -31,15 +33,14 @@ export function parsePastedPoints(text: string): ParsedPoints {
   const points: { x: number; y: number; series?: string; note?: string }[] = []
   let skipped = 0
 
-  const lines = text.split(/\r?\n/)
+  const rows = parseDelimited(text)
   let firstDataLine = 0
 
   // Detect and skip a header row: first non-empty line whose BOTH first two cells are non-numeric.
   // If only one cell is non-numeric the row is a bad data row (counted in skipped below), not a header.
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
-    if (!line) continue
-    const cells = splitLine(line)
+  for (let i = 0; i < rows.length; i++) {
+    if (isBlankRow(rows[i])) continue
+    const cells = rows[i]
     const x = toNumber(cells[0])
     const y = toNumber(cells[1])
     if (!Number.isFinite(x) && !Number.isFinite(y)) {
@@ -49,11 +50,10 @@ export function parsePastedPoints(text: string): ParsedPoints {
     break
   }
 
-  for (let i = firstDataLine; i < lines.length; i++) {
-    const line = lines[i].trim()
-    if (!line) continue
+  for (let i = firstDataLine; i < rows.length; i++) {
+    if (isBlankRow(rows[i])) continue
 
-    const cells = splitLine(line)
+    const cells = rows[i]
     const x = toNumber(cells[0])
     const y = toNumber(cells[1])
 
@@ -85,12 +85,92 @@ export function parsePastedPoints(text: string): ParsedPoints {
   return { points, skipped }
 }
 
-/** Split a single line on tab first; fall back to comma if no tab is found. */
-function splitLine(line: string): string[] {
-  if (line.includes('\t')) {
-    return line.split('\t')
+/**
+ * Minimal RFC-4180 reader (P2-S13). `toCsv` below quotes commas, quotes and
+ * newlines, so a line-at-a-time `split(',')` could not read back this app's own
+ * export: a note containing a comma shifted into the series column, and one
+ * containing a newline invented a junk row and truncated a real one.
+ *
+ * Handles: quoted fields, `""` as an escaped quote, embedded newlines, and CRLF
+ * or LF endings. A quote is only special at the START of a field, so an
+ * unquoted `he said "hi"` stays literal — pasted spreadsheet text is rarely
+ * strict CSV and must not become unreadable for being sloppy.
+ *
+ * The delimiter is decided ONCE, from the first record, and only counts
+ * characters outside quotes — a tab inside a quoted note can no longer flip a
+ * comma file into tab mode.
+ */
+function parseDelimited(text: string): string[][] {
+  const delimiter = detectDelimiter(text)
+  const rows: string[][] = []
+  let row: string[] = []
+  let field = ''
+  let quoted = false
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"'
+          i++
+        } else {
+          quoted = false
+        }
+      } else {
+        field += ch
+      }
+      continue
+    }
+
+    if (ch === '"' && field === '') {
+      quoted = true
+    } else if (ch === delimiter) {
+      row.push(field)
+      field = ''
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++
+      row.push(field)
+      rows.push(row)
+      row = []
+      field = ''
+    } else {
+      field += ch
+    }
   }
-  return line.split(',')
+
+  row.push(field)
+  rows.push(row)
+  return rows
+}
+
+/** Tab wins only if one appears OUTSIDE quotes before the first record break. */
+function detectDelimiter(text: string): string {
+  let quoted = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') i++
+        else quoted = false
+      }
+      continue
+    }
+    if (ch === '"') quoted = true
+    else if (ch === '\t') return '\t'
+    else if (ch === '\n' || ch === '\r') break
+  }
+  return ','
+}
+
+/**
+ * A blank line — including the empty final record a trailing newline always
+ * produces. Matches the old `line.trim()` emptiness check, so blank rows are
+ * still skipped silently rather than counted as skipped data.
+ */
+function isBlankRow(cells: string[]): boolean {
+  return cells.length === 1 && cells[0].trim() === ''
 }
 
 /**
@@ -106,8 +186,8 @@ function toNumber(cell: string | undefined): number {
 /**
  * Serialize an experiment's measurements to RFC-4180 CSV.
  * Header: xLabel, yLabel, series, note
- * Fields containing comma, double-quote, or newline are wrapped in double quotes;
- * embedded double quotes are escaped as "".
+ * Fields containing comma, double-quote, newline, or tab are wrapped in double
+ * quotes; embedded double quotes are escaped as "".
  * Line endings are CRLF per RFC-4180.
  */
 export function toCsv(experiment: {
@@ -161,16 +241,21 @@ function isPlainNumber(value: string): boolean {
 }
 
 /**
- * Wrap a field in double quotes if it contains comma, quote, or newline
- * (RFC-4180), and neutralize spreadsheet formula injection first.
+ * Wrap a field in double quotes if it contains comma, quote, newline, or TAB
+ * (RFC-4180 plus one), and neutralize spreadsheet formula injection first.
  *
  * Order matters: neutralize BEFORE quoting, so the escaping applies to the
  * value the spreadsheet will actually parse.
+ *
+ * The tab is not RFC-4180's business but is ours: `parsePastedPoints` accepts
+ * tab-separated spreadsheet paste as well as CSV, so an unquoted tab anywhere in
+ * a note would re-delimit our own export on re-import (P2-S13). Quoting is
+ * always valid CSV, so this costs nothing downstream.
  */
 function csvField(value: string): string {
   const needsPrefix = !isPlainNumber(value) && FORMULA_TRIGGERS.some((c) => value.startsWith(c))
   const safe = needsPrefix ? `'${value}` : value
-  if (safe.includes('"') || safe.includes(',') || safe.includes('\n') || safe.includes('\r')) {
+  if (/[",\n\r\t]/.test(safe)) {
     return '"' + safe.replace(/"/g, '""') + '"'
   }
   return safe

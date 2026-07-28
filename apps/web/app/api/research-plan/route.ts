@@ -103,7 +103,13 @@ export async function POST(req: NextRequest) {
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
 
-  const { data: body, error } = await parseJson(req, PlanBody)
+  // Raised above the shared MAX_BODY_BYTES (P2-S8): `planText` is allowed up to
+  // MAX_PLAN_TEXT_INPUT above, so the default 256 KiB ceiling would 413 a paste
+  // this route is specifically built to accept and truncate. Sized to clear the
+  // 1 MB field plus JSON escaping, not to be generous.
+  const { data: body, error } = await parseJson(req, PlanBody, {
+    maxBytes: 2 * MAX_PLAN_TEXT_INPUT,
+  })
   if (error) return error
   const { googleDocUrl, planText, projectType, projectSubtype } = body
   if (projectType && projectSubtype && !isValidSelection(projectType, projectSubtype)) {

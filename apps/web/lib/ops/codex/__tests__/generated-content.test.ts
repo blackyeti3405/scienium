@@ -11,7 +11,7 @@
  *      codex:build`), not smuggled in.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import { TrackSchema } from './track-schema'
@@ -53,11 +53,39 @@ function readContent(slug: string): unknown {
   return JSON.parse(readFileSync(fileURLToPath(new URL(`../content/${slug}.json`, import.meta.url)), 'utf8'))
 }
 
+/** Slugs on DISK — the source of truth `WRAPPERS` above is only a mirror of. */
+function dirSlugs(dir: string, ext: string): string[] {
+  return readdirSync(fileURLToPath(new URL(dir, import.meta.url)))
+    .filter((f) => f.endsWith(ext) && !f.startsWith('.'))
+    .map((f) => f.slice(0, -ext.length))
+    .sort()
+}
+
 const committedChecksums: Record<string, string> = JSON.parse(
   readFileSync(fileURLToPath(new URL('../content/.checksums.json', import.meta.url)), 'utf8'),
 )
 
 describe('generated codex content', () => {
+  /**
+   * P2-S12: `WRAPPERS` is a hand-maintained inventory, so every per-slug
+   * assertion below is only as complete as this map. A field shipped without
+   * touching this file used to be validated by nothing — no zod parse, no
+   * checksum, no deep-equal — and the suite stayed green while doing it.
+   *
+   * So the inventory is compared against the DIRECTORIES, not just against
+   * itself: content/*.json is the source of truth, and tracks/, the checksum
+   * lock, and this map must all match it exactly. `codex:build --check` (now
+   * part of `check:integrity`) enforces the same four-way agreement in CI; this
+   * is the half that also proves the TESTS cover every shipped field.
+   */
+  it('the wrapper inventory matches content/ on disk — no field escapes these tests', () => {
+    expect(Object.keys(WRAPPERS).sort()).toEqual(dirSlugs('../content/', '.json'))
+  })
+
+  it('tracks/ on disk matches content/ — no orphan or missing wrapper', () => {
+    expect(dirSlugs('../tracks/', '.ts')).toEqual(dirSlugs('../content/', '.json'))
+  })
+
   it('every wrapper module has a committed checksum, and vice versa', () => {
     expect(Object.keys(committedChecksums).sort()).toEqual(Object.keys(WRAPPERS).sort())
   })

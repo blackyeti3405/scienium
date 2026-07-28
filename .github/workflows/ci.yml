@@ -39,9 +39,12 @@ jobs:
         # Required: tsc + next build import @prisma/client types.
         run: pnpm --filter web exec prisma generate
 
-      - name: Text integrity
-        # Rejects control bytes (NUL etc.) hiding in authored source — tsc and
-        # eslint both tolerate them silently.
+      - name: Integrity (source text + generated codex tracks)
+        # Two things tsc and eslint both tolerate silently:
+        #   - control bytes (NUL etc.) hiding in authored source;
+        #   - drift between lib/ops/codex's content/, tracks/, index.ts registry
+        #     and .checksums.json (P2-S12). `codex:build --check` compares those
+        #     four inventories in both directions and writes nothing.
         run: pnpm --filter web check:integrity
 
       - name: Typecheck

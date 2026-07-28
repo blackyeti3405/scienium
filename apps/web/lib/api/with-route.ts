@@ -46,6 +46,12 @@ export class RouteError extends Error {
 interface WithTeamRouteOptions<TBody> extends RequireTeamOptions {
   /** When set, the JSON body is parsed + validated and handed over as `data`. */
   body?: ZodType<TBody>
+  /**
+   * Raise the shared body byte ceiling for this route (P2-S8). Omit it and the
+   * route inherits `MAX_BODY_BYTES` — the ceiling is infrastructure, so a route
+   * opts OUT of the default, never into having one.
+   */
+  maxBytes?: number
 }
 
 interface TeamRouteArgs<TBody> {
@@ -78,7 +84,7 @@ export function withTeamRoute<TBody = undefined>(
 
     let data = undefined as TBody
     if (opts.body) {
-      const parsed = await parseJson(req, opts.body)
+      const parsed = await parseJson(req, opts.body, { maxBytes: opts.maxBytes })
       if (parsed.error) return parsed.error
       data = parsed.data
     }

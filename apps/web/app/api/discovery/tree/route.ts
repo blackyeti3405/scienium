@@ -62,7 +62,12 @@ export async function POST(req: NextRequest) {
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
 
-  const { data, error } = await parseJson(req, TreeBody)
+  // Raised above the shared MAX_BODY_BYTES (P2-S8): an `article` node carries up
+  // to 200 000 chars of sanitized `html` plus a 20 000-char abstract, so a small
+  // batch of them clears the default 256 KiB ceiling legitimately. This is still
+  // two orders of magnitude below the schema's theoretical worst case (200 × ~223 KB)
+  // — the zod caps below remain the semantic bound; this is only the allocation guard.
+  const { data, error } = await parseJson(req, TreeBody, { maxBytes: 4 * 1024 * 1024 })
   if (error) return error
 
   let kpAwarded: number

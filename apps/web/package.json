@@ -9,7 +9,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "gen:sprite-versions": "node scripts/gen-sprite-versions.mjs",
-    "check:integrity": "node scripts/check-text-integrity.mjs",
+    "check:integrity": "node scripts/check-text-integrity.mjs && node lib/ops/codex/scripts/build-codex-tracks.mjs --check",
     "test": "vitest run",
     "test:watch": "vitest",
     "codex:build": "node lib/ops/codex/scripts/build-codex-tracks.mjs",
