@@ -17,61 +17,22 @@ import {
 import { useLabCurrency } from '@/components/lab/labCurrency'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
 import { OpsTabSkeleton } from '@/components/ui/skeletons/OpsTabSkeleton'
-import { createProgressSaver, patchExamProgress } from './expertiseProgress'
+import { ApiError } from '@/lib/api/client'
+import {
+  createProgressSaver,
+  patchExamProgress,
+  getExpertiseStatus,
+  startExam,
+  gradeExam as postGrade,
+  type ExpertiseStatus as Status,
+  type ExamView as StartResponse,
+  type GradeResult,
+} from './expertiseProgress'
 
-// ─── Types (mirror the /api/expertise responses) ─────────────────────────────
-
-interface LevelInfo {
-  level: number
-  title: string
-  theme: string
-  blurb: string
-  kpBonus: number
-  cleared: boolean
-}
-interface HistoryItem {
-  id: string
-  targetLevel: number
-  score: number
-  passed: boolean
-  gradedAt: string
-  by: string
-}
-interface Question {
-  id: string
-  prompt: string
-  focus: string
-}
-interface StartResponse {
-  examId: string
-  targetLevel: number
-  level: { title: string; theme: string; blurb: string; kpBonus: number }
-  questions: Question[]
-  /** Previously-saved answers (resume) — {} for a fresh exam. */
-  answers: Record<string, string>
-  /** Index of the question to resume on — 0 for a fresh exam. */
-  progressIndex: number
-}
-interface Status {
-  clearanceLevel: number
-  maxClearance: number
-  threshold: number
-  nextLevel: { level: number; title: string; theme: string; blurb: string; kpBonus: number } | null
-  /** The current user's in-progress exam, if any (for resume). */
-  activeExam: StartResponse | null
-  levels: LevelInfo[]
-  history: HistoryItem[]
-}
-interface GradeResult {
-  score: number
-  passed: boolean
-  threshold: number
-  targetLevel: number
-  raised: boolean
-  newClearance: number
-  kpEarned: number
-  results: { questionId: string; score: number; rationale: string }[]
-}
+// Response types come from the client module's schemas (REFACTOR2 P2-3) — the
+// hand-written mirrors that used to live here were casts over `res.json()`, and
+// the grade response is arithmetic on the lab's currency, not just text.
+type LevelInfo = Status['levels'][number]
 
 type Mode = 'loading' | 'idle' | 'exam' | 'grading' | 'result'
 
@@ -130,15 +91,13 @@ export function ExpertisePanel() {
   async function loadStatus() {
     const seq = ++statusSeq.current
     try {
-      const res = await fetch('/api/expertise')
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Failed to load')
+      const data = await getExpertiseStatus()
       if (seq !== statusSeq.current) return
       setStatus(data)
       setMode('idle')
     } catch (err) {
       if (seq !== statusSeq.current) return
-      setError(err instanceof Error ? err.message : 'Failed to load')
+      setError(err instanceof ApiError ? err.message : 'Failed to load')
       setMode('idle')
     }
   }
@@ -179,12 +138,9 @@ export function ExpertisePanel() {
     setMode('grading') // reuse spinner overlay while generating
     setVegaTyping(false)
     try {
-      const res = await fetch('/api/expertise', { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Failed to start exam')
-      enterExam(data)
+      enterExam(await startExam())
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start exam')
+      setError(err instanceof ApiError ? err.message : 'Failed to start exam')
       setMode('idle')
     }
   }
@@ -266,16 +222,10 @@ export function ExpertisePanel() {
     setMode('grading')
     setError(null)
     try {
-      const res = await fetch('/api/expertise/grade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          examId: exam.examId,
-          answers: exam.questions.map((q) => ({ questionId: q.id, response: finalAnswers[q.id] ?? '' })),
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Failed to grade exam')
+      const data = await postGrade(
+        exam.examId,
+        exam.questions.map((q) => ({ questionId: q.id, response: finalAnswers[q.id] ?? '' })),
+      )
       setResult(data)
       if (data.raised) {
         // Live StatusStrip update: clearance rises, bonus KP lands.
@@ -284,7 +234,11 @@ export function ExpertisePanel() {
       }
       setMode('result')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to grade exam')
+      // A body that does not parse as a grade result lands here too, and that is
+      // the point: the currency write above is skipped entirely rather than
+      // running on `undefined`, and the exam stays answerable so the student can
+      // resubmit.
+      setError(err instanceof ApiError ? err.message : 'Failed to grade exam')
       setMode('exam')
     }
   }

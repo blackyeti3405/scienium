@@ -143,7 +143,7 @@ describe('GET /api/fairs/forms — serves the active edition only (P0-R4)', () =
 
     const body = await (await GET(formsReq())).json()
 
-    expect(body.edition.reviewed).toBe(false)
+    expect(body.edition.guidance).toBe('unreviewed')
     expect(body.edition.season).toBe('2027')
     for (const f of body.forms) expect(f.appliesTo).toBeNull()
   })

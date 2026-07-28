@@ -42,3 +42,97 @@ export async function patchExamProgress(progress: ExamProgress): Promise<void> {
     body: JSON.stringify(progress),
   })
 }
+
+// ─── The rest of the clearance-exam client (REFACTOR2 P2-3) ──────────────────
+//
+// The panel used to hand-declare `Status`/`StartResponse`/`GradeResult` and cast
+// `await res.json()` to them. The HANDOFF's rule is "provider AND own-API output
+// gets a safeParse, never a cast", and this surface is where a cast costs
+// something: the grade response is not just displayed, it is ARITHMETIC on the
+// lab's currency —
+//
+//     addCurrency({ clearanceLevel: data.newClearance - prevClearance, kp: data.kpEarned })
+//
+// A body missing `newClearance` makes that `NaN`, and `labCurrency` has no
+// guard: the status strip's clearance reads NaN for the rest of the session and
+// the KP tick-up lands as `undefined`. Parsing turns that into the same visible
+// "Failed to grade exam" every other failure produces, with the exam kept and
+// retryable.
+
+const examLevelSchema = z.object({
+  title: z.string(),
+  theme: z.string(),
+  blurb: z.string(),
+  kpBonus: z.number(),
+})
+
+/** An ungraded exam as the route shapes it (fresh or resumed). */
+export const examSchema = z.object({
+  examId: z.string(),
+  targetLevel: z.number(),
+  level: examLevelSchema,
+  questions: z.array(z.object({ id: z.string(), prompt: z.string(), focus: z.string() })),
+  /** Previously-saved answers (resume) — {} for a fresh exam. */
+  answers: z.record(z.string(), z.string()),
+  /** Index of the question to resume on — 0 for a fresh exam. */
+  progressIndex: z.number(),
+})
+
+export const expertiseStatusSchema = z.object({
+  clearanceLevel: z.number(),
+  maxClearance: z.number(),
+  threshold: z.number(),
+  nextLevel: examLevelSchema.extend({ level: z.number() }).nullable(),
+  /** The current user's in-progress exam, if any (for resume). */
+  activeExam: examSchema.nullable(),
+  levels: z.array(examLevelSchema.extend({ level: z.number(), cleared: z.boolean() })),
+  history: z.array(
+    z.object({
+      id: z.string(),
+      targetLevel: z.number(),
+      score: z.number(),
+      passed: z.boolean(),
+      gradedAt: z.string(),
+      by: z.string(),
+    }),
+  ),
+})
+
+export const gradeResultSchema = z.object({
+  score: z.number(),
+  passed: z.boolean(),
+  threshold: z.number(),
+  targetLevel: z.number(),
+  raised: z.boolean(),
+  // The two fields the currency write is computed from. Not optional, not
+  // coerced: if they are absent the response is not a grade result.
+  newClearance: z.number(),
+  kpEarned: z.number(),
+  results: z.array(
+    z.object({ questionId: z.string(), score: z.number(), rationale: z.string() }),
+  ),
+})
+
+export type ExpertiseStatus = z.infer<typeof expertiseStatusSchema>
+export type ExamView = z.infer<typeof examSchema>
+export type GradeResult = z.infer<typeof gradeResultSchema>
+
+export function getExpertiseStatus(): Promise<ExpertiseStatus> {
+  return requestJson('/api/expertise', expertiseStatusSchema)
+}
+
+/** Begin (or resume) an exam. PAID — one Claude call per fresh exam. */
+export function startExam(): Promise<ExamView> {
+  return requestJson('/api/expertise', examSchema, { method: 'POST' })
+}
+
+export function gradeExam(
+  examId: string,
+  answers: { questionId: string; response: string }[],
+): Promise<GradeResult> {
+  return requestJson('/api/expertise/grade', gradeResultSchema, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ examId, answers }),
+  })
+}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeamContext } from '@/lib/api/route-context'
-import { ISEF_EDITION, isEditionReviewed } from '@/lib/fairs/forms'
+import { ISEF_EDITION, editionGuidanceState, servedForms } from '@/lib/fairs/forms'
 import { db } from '@/lib/db'
 
 /**
@@ -11,6 +11,12 @@ import { db } from '@/lib/db'
  * seeded under an older edition would otherwise keep serving retired codes and
  * stale titles (REFACTOR2 P0-R4). Rows for codes outside the active edition stay
  * in the table — `TeamFormStatus` FKs point at them — but are not served.
+ *
+ * Applicability/timing copy passes through `servedForms` (REFACTOR2 §0.8), not
+ * straight off the literal: while the edition is unreviewed, expired, or edited
+ * since sign-off, `appliesTo` is withheld and the client shows the official-rules
+ * pointer instead. The route is the gate because it is the last place the app
+ * controls before the copy is a student's to act on.
  *
  * A PURE READ (REFACTOR2 P2-S6): seeding the catalog used to happen here, so
  * the first student to open the checklist after a deploy paid for — and raced
@@ -34,7 +40,8 @@ export async function GET(req: NextRequest) {
   const idByCode = new Map(catalog.map((f) => [f.formCode, f.id]))
   const statusMap = new Map(statuses.map((s) => [s.formId, s]))
 
-  const forms = ISEF_EDITION.forms.flatMap((def) => {
+  const guidance = editionGuidanceState(ISEF_EDITION)
+  const forms = servedForms(ISEF_EDITION).flatMap((def) => {
     const id = idByCode.get(def.code)
     if (!id) return []
     const s = statusMap.get(id)
@@ -57,7 +64,10 @@ export async function GET(req: NextRequest) {
       season: ISEF_EDITION.season,
       formsUrl: ISEF_EDITION.formsUrl,
       rulesUrl: ISEF_EDITION.rulesUrl,
-      reviewed: isEditionReviewed(),
+      // One field, not a `reviewed` boolean beside it: the client needs to say
+      // WHY it is falling back, and a derived duplicate is a second thing to
+      // keep in step.
+      guidance,
     },
   })
 }

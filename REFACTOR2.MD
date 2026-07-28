@@ -948,7 +948,7 @@ still owed.
 | Google Drive OAuth | Research plans fetch an “Anyone with the link” document. `docs/TODO.md` calls Drive/Docs OAuth launch-needed, but there is no connect/callback route or `GoogleAccount` token model. | Either ship encrypted, revocable OAuth + Docs API sync or explicitly accept public-link documents and remove the “needed for launch” contradiction. |
 | Notification destination verification | ~~Any team member can store any syntactically valid email and enable deadline mail; it is not tied to a verified Clerk address and has no verification challenge.~~ **CLOSED v0.75.5** — by DELETING the destination rather than verifying it. `NotificationPref.email` is dropped; reminders go to `User.email`, which is mirrored from the Clerk identity at every path that mints a `User` row. A confirm-link flow would have built a token table, a mailer and an expiry rule to arrive at an address Clerk has already verified for the same person. Existing rows stop being mailed the moment the migration runs — there is no column left to read a stranger's address from — and `PUT /api/notifications/prefs` now REFUSES a body carrying `email` (400, `.strict()`) rather than ignoring it, because a silently-dropped field reads as accepted. The new Reminders panel in settings states the destination and that it cannot be changed here. Bounce/complaint suppression is still owed. |
 | Durable consequential work | Paid-operation claims, global/team budgets, email/activity outboxes, and a common lease/retry/dead-letter worker do not yet exist consistently. | Add the narrow PostgreSQL operation/outbox kernel in §0.5; do not add a separate broker for the pilot. |
-| Versioned fair-rule/forms workflow | The app has no active rules edition, reviewer, expiry, source digest, or local-fair override. The current form-number guide is factually wrong and omits 2A/2B/2C. | Disable the current guide; ship a qualified-review workflow and a season-bound canonical fixture before relying on it. Include AI-use disclosure/help and local-fair escalation. |
+| Versioned fair-rule/forms workflow | ~~The app has no active rules edition, reviewer, expiry, source digest, or local-fair override. The current form-number guide is factually wrong and omits 2A/2B/2C.~~ **MECHANISM CLOSED v0.75.9; the sign-off itself is the owner's.** The wrong guide went in v0.34.0 (P0-R4), which shipped the active edition (2027 codes/titles, `formsUrl`/`rulesUrl`, `sourcedAt`, `reviewedBy`/`reviewedAt`) — but the fail-closed part was a comment, not code: every literal had `appliesTo: null` and the route passed it straight through, so nothing consulted `isEditionReviewed()`. v0.75.9 adds **`expiresAt`** and **`reviewedDigest`**, makes the state a four-way `editionGuidanceState()` (`reviewed`/`expired`/`stale_review`/`unreviewed`), and puts the actual gate in `servedForms()`, which the route calls: applicability copy survives only while the edition is signed, unedited since signing, and in date. `test/forms-guidance-gate.test.ts` runs it against a SYNTHETIC edition that carries copy, with the served-when-signed positive control. The **local-fair override** is the checklist naming the matched affiliated/regional fair and stating that its forms and deadlines come first. | Still owed: the qualified teacher/SRC review that sets `reviewedBy`/`reviewedDigest` (blocked on the owner — the mechanism exists to keep its absence visible, not to unblock it); a season-bound AI-use disclosure contract; per-fair AUTHORED requirements, which would need the same reviewer gate and has no content behind it. |
 | Fair-data lifecycle | The shipped 2026 dataset has 266 fairs, 265 confirmed dates and 265 registration deadlines, but zero abstract deadlines and no later year. `docs/TODO.md` still describes it as a provisional starter. | Assign annual refresh ownership, source provenance, stale-date alerts, and deadline completeness; correct the stale status document. |
 | Curriculum completion and factual sign-off | Field Codex reports 11/29 fields and 66/174 segments: 18 fields/108 segments remain. Its post-ship audit sampled 708/1,096 lessons across four fields and repaired 83 defects, including 45 HIGH (11.7% sample defect rate); most shipped fields have zero post-ship audit coverage. | Restrict the pilot catalog to fully reviewed fields or finish independent post-ship/domain-expert review for every exposed field. Structural/checksum gates are not factual sign-off. |
 
@@ -2009,6 +2009,21 @@ defence-in-depth gap `SourceReader`/`IdeaCheckView` closed in v0.64.0, now close
 and the synthesis stale-grid 409 now names what moved, computed client-side from the two
 snapshots it already holds, for no extra request.
 
+#### v0.75.9 — 2026-07-28 — the forms gate stops being a comment, and two refactor rows are declined with evidence
+
+Three rows, two of them refactors. The batch's finding is that **most of what P2-3 and P2-4
+asked for is movement**: of six god files, six are declined, and of 38 UI files calling `fetch`,
+two were converted. Each decline names what was checked. The one row with real user stakes —
+§0.8 — was built in full.
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| **§0.8** Versioned fair-rules/forms edition | **MECHANISM CLOSED; the sign-off is the owner's** | P0-R4 shipped the edition; the fail-closed half was prose. Verified against HEAD first: all 13 literals carry `appliesTo: null`, `app/api/fairs/forms/route.ts` emitted `appliesTo: def.appliesTo`, and `isEditionReviewed()` had ZERO callers outside a test — the earlier batch's rename of the lying `describe('fail-closed guidance gate')` block was accurate. Now: `expiresAt` and `reviewedDigest` on `IsefFormsEdition`; `guidanceDigest()` (FNV-1a over code+title+applicability — client-safe, so no `node:crypto`, and the threat is a well-meaning content edit, not a forgery); `editionGuidanceState()` returning `reviewed`/`expired`/`stale_review`/`unreviewed`, expiry first because a stale catalog makes even the TITLES suspect; and `servedForms()`, the gate, called by the route with the edition passed explicitly so it is exercisable against an edition that HAS copy. A reviewer name alone publishes nothing — the digest must exist and still match, so editing an approved form's wording later reverts to the official-rules pointer instead of riding out on the old sign-off. `GET /api/fairs/forms` replaces `edition.reviewed` with `edition.guidance`; the checklist's pixel notice states which case it is and now names the matched affiliated/regional fair as the authority whose forms and deadlines come first (the local-fair override), passed down from state the Fair Hub had already loaded rather than re-fetched. `test/forms-guidance-gate.test.ts` (8) mocks only the edition, runs the real gate, and includes the served-when-signed positive control; negative-controlled by restoring `ISEF_EDITION.forms.flatMap` in the route, which reddened exactly the three withhold tests and left the positive control and the shipped-edition tests green. The forms tab had NO E2E coverage at all, so `e2e/forms-edition-gate.spec.ts` now asserts the student-visible half (title renders; notice renders beside it); negative-controlled by forcing `guidance: 'reviewed'` in the route and watching it fail. | The qualified teacher/SRC review — blocked on the owner, and deliberately not simulated. No migration: the edition is authored content, not a table, and a DB-backed edition would be a second place for the same fact. AI-use disclosure copy is still season-bound and unwritten. Per-fair AUTHORED requirements are not built: they would need the same reviewer gate and there is no content behind them. |
+| **§4 P2-3** Consolidate client data access | **PARTIAL — 2 of 38 converted, 36 declined by criterion** | Corrected the count first (44 files contain `fetch(`; minus 3 tests and 3 client modules ⇒ **38**, not the register's 35 nor a later recount's 45). Converted where the networking carries the defect. `components/lab/teamApi.ts`: `TeamPanel.refresh()` was `.then(r => r.json())` with `if (!d.error) setData(d)`, awaited inside `makeLead`/`removeMember`'s try — a 5xx re-read vanished (removed researcher still listed, nothing saying so), and an expired Clerk session's 307 to the sign-in page is FOLLOWED by `fetch`, so `r.json()` rejected on HTML and the student was told "Could not hand over the lead role" about a handover already committed. `refresh()` now owns its failure with a stale-list banner; the mutation's catch only reports the mutation. Class join became a discriminated union, because the old `d.status === 'approved' ? … : pending` read ANY other body as "waiting for approval". `components/ops/expertiseProgress.ts` absorbed the clearance status/start/grade calls: the panel hand-declared `GradeResult` and cast, and the grade response is arithmetic on the lab's currency — `addCurrency({ clearanceLevel: data.newClearance - prevClearance, … })` writes a sticky NaN into the visible clearance for a body missing one field. Both pinned with the repo's `http.createServer` + `requestJson` pattern (8 and 7 tests); negative-controlled by loosening `newClearance`/`clearanceLevel` to `.optional()` and the join union to a flat object, reddening exactly the four intended tests. | The 36 left are named in §4's P2-3 entry with the group each falls into. The component-level half of the TeamPanel fix — that a failed re-read renders the stale banner rather than the mutation's error — is **UNPINNED**: it lives in a `.tsx`, this repo has no jsdom, and an E2E would need network-fault injection on an authenticated GET. |
+| **§4 P2-4** Break remaining god files | **CLOSED AS DECLINED — all six** | The table is in §4. The load-bearing correction: the one file recommended for a split on merit, `stores/discoveryStore.ts`, was justified by "rollback correctness is untestable inside the store closure" — and `stores/discoveryStore.test.ts` has been testing exactly that against the real store since v0.56.0, which `vitest.config.ts` explicitly enables. The `ClassManager` extraction was declined on the same evidence v0.75.8 established for `loadLab.ts`: with no jsdom, moving a component between `.tsx` files cannot make anything testable that isn't. | Nothing, unless a defect turns up AT one of these seams — which is the only thing that would justify reopening any of the six. |
+
+Gates 1–5 pass; Vitest 158 files / 2,456 tests. No migration in this batch.
+
 #### v0.75.8 — 2026-07-28 — one Escape closes one dialog, and a load failure stops looking like an empty lab
 
 Three §0.9 client families in one batch. The recon's central finding held: most of these rows
@@ -2684,6 +2699,29 @@ networking out of large UI components (`TeacherRoster`, `LabProfileSettings`,
 `ScienceFairFeature`, `ExpertisePanel`, discovery shells). UI should render state and emit
 intent. Template: `components/discovery/api.ts`.
 
+**PARTIAL (v0.75.9) — corrected count, and a criterion instead of a quota.** The register's
+35 is wrong and so is a later recount of 45: **44 files under `components/` contain a `fetch(`,
+of which 3 are tests and 3 are designated client modules ⇒ 38 UI files call the network
+directly.** Two were converted, on the test that decides the whole row: *does moving this
+networking make a defect impossible or testable that isn't today?*
+
+- `components/lab/teamApi.ts` — the roster re-read that reported a COMMITTED lead handover as
+  failed (a 307-to-sign-in is followed by `fetch`, so `r.json()` rejects on HTML inside the
+  mutation's `try`), plus a class-join discriminated union.
+- `components/ops/expertiseProgress.ts` — the clearance status/start/grade calls. The grade
+  response is arithmetic on the lab's currency, and it was a cast.
+
+**36 files were deliberately left.** They fall into three groups, none of which a feature
+client improves: pure-ack POSTs whose response is never read (`RemoveFromClass`, `MakeLabLead`,
+`DecisionControls`, `SelfAdvance`, `PhaseAdvance`, `LinkAdder`, `ShowcaseModerationQueue`,
+`DevFillButton`, the two notification marks…); single loads that already check `res.ok`, hold a
+`loadError` and render a retry (`TeacherRoster`, `LabProfileSettings`, `RubricSelfCheck`,
+`CodexTab`, `FormsChecklist`, `NotificationBell`…); and the ORDERING defects, which are §0.9
+Row C's `useLatest`/`LoadRetry` mechanisms and are not a transport problem. Extracting the
+first group is movement; the second group would gain a schema and lose nothing else. **No
+`AbortController` and no TanStack Query** — §5.2 defers the latter, and every ordering defect
+found so far was answered by a generation token.
+
 ### P2-4 — Break remaining god files by responsibility
 
 Line count alone is not a defect. These authored files combine materially different
@@ -2701,6 +2739,22 @@ responsibilities (counts refreshed 2026-07-23):
 
 Split along behavior/state ownership, never a line-count quota. Keep cohesive large pure
 tables or tests intact.
+
+**CLOSED AS DECLINED (v0.75.9) — all six, each with what was checked.** The standard is
+v0.55.0's and v0.62.0's: split where a defect lives at the seam, not to move cohesive code into
+more files. Counts re-measured at v0.75.8.
+
+| File | Lines | Verdict |
+| --- | ---: | --- |
+| `stores/discoveryStore.ts` | 675 | **DECLINE.** The recommendation to extract `lib/discovery/tree-ops.ts` rested on "rollback correctness is untestable inside the store closure". That is false, and the evidence is in the repo: `vitest.config.ts` includes `stores/**/*.test.ts` precisely because the store's I/O already lives behind `lib/discovery/treeApi.ts`, and `stores/discoveryStore.test.ts` (25 tests) already exercises optimistic-apply → persist → rollback, the `newTreePending` give-back, the `writeError` nonce, and BOTH corrupted-graph termination cases — against the real store. Extracting the pure half would replace tests of the shipped path with tests of an extraction. |
+| `components/ops/ExpertisePanel.tsx` | 597 | **View split DECLINED, networking DONE.** `ClearanceLadder` and `ResultView` are already separate functions and the exam is one state machine. The three raw fetches were the real seam and moved to `expertiseProgress.ts` (see P2-3). |
+| `components/teacher/TeacherRoster.tsx` | 592 | **DECLINE, including the `ClassManager` extraction** an earlier recon recommended. `ClassManager` is already a self-contained function with its own state and mutations, and this repo has no jsdom/RTL — v0.75.8 established that by moving `/lab`'s load into `loadLab.ts` because *nothing inside a `.tsx` can be unit-tested here*. Moving a component from one `.tsx` to another therefore cannot produce a test that could not be written before. Its networking is already `res.ok`-checked with a `loadError` + retry and a separate post-approval refresh error. |
+| `components/settings/LabProfileSettings.tsx` | 615 | **DECLINE.** One form with two commands that authorize on different facts — the HANDOFF's "two commands that authorize on different facts stay two commands" already covers it. It reuses `TopicConfirmModals` and `settings/api.ts`; both loads already have a `loadError` and a retry (§0.7). |
+| `components/fair/ScienceFairFeature.tsx` | 561 | **DECLINE — already declined in v0.66.0**; re-verified, the named functions are still named, still single-use, still undefective. |
+| `lib/discovery/openalex.ts` | 645 | **DECLINE — already declined in v0.55.0**; the reason still holds (its one real defect was a request built where the host rule did not reach, so moving transport away from its callers is the shape that caused it). |
+
+`app/globals.css` (3,063) and `prisma/schema.prisma` stay out of scope per the HANDOFF: no
+behaviour attached, real regression surface.
 
 ### P2-6 — Test the data lifecycle — **CASCADE HALF CLOSED (v0.75.7)**
 

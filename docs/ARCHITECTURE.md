@@ -706,11 +706,24 @@ Feature-owned library folders:
   paid" — every other failure retries once, emits a redacted event, and
   reports `failed` instead of silently dropping the reward.
 - `fairs/`: abstract guidance, categories, forms (client-safe versioned
-  `ISEF_EDITION` catalog in `forms.ts` — official codes/titles only, with
-  applicability and timing fail-closed behind a `reviewedBy` sign-off gate; DB
+  `ISEF_EDITION` catalog in `forms.ts` — official codes/titles only; DB
   seeder split into `server-only` `forms-server.ts`, which keys on code
   coverage so a same-size edition change is not suppressed), rubric
   anchors/scoring, safety, ZIP lookup, and matching.
+  - **The applicability gate (§0.8).** An edition carries `sourcedAt`,
+    `expiresAt`, `reviewedBy`/`reviewedAt` and `reviewedDigest`.
+    `editionGuidanceState()` classifies it as `expired` (past `expiresAt`, or an
+    unparseable one — checked first, because a stale catalog makes even the
+    titles suspect), `unreviewed`, `stale_review` (signed, but
+    `guidanceDigest()` no longer matches, i.e. the copy was edited after
+    sign-off), or `reviewed`. **`servedForms()` is the gate**: applicability
+    copy survives only in `reviewed`, and `app/api/fairs/forms/route.ts` calls
+    it with the edition passed EXPLICITLY rather than relying on the default —
+    a gate whose only possible input is an edition with nothing to withhold
+    cannot be told from no gate at all (`test/forms-guidance-gate.test.ts`).
+    The route reports the state as `edition.guidance`, and the checklist renders
+    the matching notice plus the matched local fair, whose own forms and
+    deadlines take precedence over the ISEF catalog.
 - `guides/` and `hooks/`: guide filtering; reusable client hooks
   (`useToggleSet`, `useAutoDismiss`, `useResizablePanel`, `usePlotBuildings`,
   `useElementSize` — measures a container via `ResizeObserver`, shared by

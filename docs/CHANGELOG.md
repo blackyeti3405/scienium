@@ -5,6 +5,88 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.75.9] — 2026-07-28
+
+REFACTOR2 **§0.8**'s versioned rules edition, plus the **P2-3 / P2-4** rows of §4. Two of the
+three rows were refactors, and two thirds of what they proposed is DECLINED here with the
+evidence — see `REFACTOR2.MD` §4.
+
+### Added — the forms edition has a gate, not just a comment saying it should
+
+P0-R4 shipped a 2027 ISEF forms edition whose applicability copy ("required for every project",
+"only for vertebrate animals") is deliberately UNAUTHORED pending a qualified teacher/SRC
+reviewer. An earlier batch then found that `lib/fairs/forms.test.ts` carried a
+`describe('fail-closed guidance gate')` naming a mechanism **that did not exist**: every literal
+had `appliesTo: null`, `app/api/fairs/forms/route.ts` passed `def.appliesTo` straight through,
+and nothing consulted `isEditionReviewed()`. The block passed because there was nothing to
+withhold — which is exactly what a missing gate looks like from the inside.
+
+The edition is now modelled and the gate is real:
+
+- `IsefFormsEdition` gains **`expiresAt`** (the day the app stops claiming these titles are
+  current — operational, not an ISEF-published date) and **`reviewedDigest`**, an FNV-1a
+  fingerprint of the codes, titles and applicability strings the reviewer actually signed.
+- `editionGuidanceState()` returns one of `reviewed` / `expired` / `stale_review` /
+  `unreviewed`, and **`servedForms()` withholds `appliesTo` in every state but the first**. The
+  route calls both, passing the edition explicitly so the gate is exercisable against an
+  edition that HAS copy.
+- A reviewer name alone does not publish anything: the digest must exist and still match, so
+  editing an approved form's wording months later silently reverts to the official-rules
+  pointer instead of riding out on someone else's sign-off.
+- `ISEF_EDITION` itself stays unreviewed. That sign-off is the owner's, and the mechanism
+  exists to keep its absence visible rather than paper over it.
+
+The student-facing surface says which of those it is, in the checklist's pixel notice, and now
+also names the fair whose rules actually bind them: an affiliated fair can require its own
+forms and earlier deadlines than ISEF's. The matched fair rides along from state the Fair Hub
+had already loaded — the forms tab still mounts and fetches without waiting on it.
+
+### Changed — `GET /api/fairs/forms`
+
+`edition.reviewed` (boolean) is replaced by `edition.guidance` (the four-state enum). One
+field, because the client has to say WHY it is falling back, and a derived duplicate is a second
+thing to keep in step.
+
+### Fixed — a lab-membership change that worked is no longer reported as failed
+
+`TeamPanel.refresh()` was `const d = await fetch('/api/team').then(r => r.json()); if (!d.error)
+setData(d)`, awaited INSIDE the try of `makeLead` / `removeMember`. A 5xx re-read was dropped in
+silence, leaving a removed researcher on screen with nothing saying the list was stale. Worse,
+an expired Clerk session answers that GET with a 307 to the sign-in page, which `fetch` follows:
+status 200, HTML body, `r.json()` rejects, the rejection lands in the mutation's catch, and the
+student is told **"Could not hand over the lead role"** about a handover the server had already
+committed. The re-read now owns its own failure and shows the stale-list banner
+(`TeacherRoster`'s shape after an approval); the mutation's catch only ever reports the mutation.
+
+### Changed — two feature clients, where the network carries logic (P2-3)
+
+- **`components/lab/teamApi.ts`** — the roster read, the minted invite, and the class-join
+  outcome. Join is a discriminated union: an approved join names the class you are now in, a
+  pending one has no `classId`, and the old `d.status === 'approved' ? … : pending` branch read
+  *any* other body as "waiting for approval".
+- **`components/ops/expertiseProgress.ts`** — the clearance status, exam start and grading.
+  The panel hand-declared `GradeResult` and cast `res.json()` to it, against the HANDOFF's
+  "own-API output gets a safeParse, never a cast". This is where a cast costs something: the
+  grade response is arithmetic on the lab's currency
+  (`addCurrency({ clearanceLevel: data.newClearance - prevClearance, … })`), and `labCurrency`
+  has no guard, so a body without `newClearance` writes a sticky NaN into the clearance the
+  student sees. A body that does not parse now takes the same path as any other grading failure:
+  visible, and the exam stays answerable.
+
+### Added — tests
+
+- `test/forms-guidance-gate.test.ts` (8) — the gate run against a SYNTHETIC edition that does
+  carry applicability copy, including the positive control (signed + unedited ⇒ served) without
+  which "always null" would pass every other case.
+- `components/lab/teamApi.test.ts` (8) and `components/ops/expertiseProgress.test.ts` (7).
+- `e2e/forms-edition-gate.spec.ts` — the forms tab had **no E2E coverage at all**, on a surface
+  whose reason for existing is that wrong guidance can get a project disqualified. One test: the
+  official title renders, and the notice explaining why nothing beside it says *when* to file it
+  renders with it. Negative-controlled by forcing `guidance: 'reviewed'` in the route and
+  watching it fail.
+
+---
+
 ## [0.75.8] — 2026-07-28
 
 REFACTOR2 **§0.9**'s three client families — modal/dialog stack safety, keyboard &

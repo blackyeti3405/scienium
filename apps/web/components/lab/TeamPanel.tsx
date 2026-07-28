@@ -6,6 +6,8 @@ import { Users, Crown, Copy, Check, X, UserPlus, GraduationCap, LogOut, UserMinu
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
+import { ApiError } from '@/lib/api/client'
+import { getTeam, mintInvite, joinClass as postJoinClass, type TeamData } from './teamApi'
 
 /**
  * Team panel (Feature 1b) — opened from the team name in the status strip. Shows
@@ -21,23 +23,6 @@ import { BusyButton } from '@/components/ui/BusyButton'
  * Switching labs is NOT here: it happens by entering another lab's join code,
  * which departs this one in the same transaction. One lab at a time.
  */
-
-interface Member {
-  userId: string
-  name: string
-  role: 'lead' | 'member'
-  isYou: boolean
-}
-
-interface TeamData {
-  name: string
-  maxMembers: number
-  memberCount: number
-  isLead: boolean
-  members: Member[]
-  invite: { code: string; expiresAt: string } | null
-  myClass: { id: string; name: string } | null
-}
 
 export function TeamPanel({ onClose }: { onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -55,17 +40,15 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
   const [confirmLeaveClass, setConfirmLeaveClass] = useState(false)
   /** Which membership action is in flight, so only that row shows a spinner. */
   const [busyMember, setBusyMember] = useState<string | null>(null)
+  /** The change landed, but the roster below it could not be re-read (§0.8). */
+  const [staleRoster, setStaleRoster] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [leaving, setLeaving] = useState(false)
 
   useEffect(() => {
-    fetch('/api/team')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) throw new Error(d.error)
-        setData(d)
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load team'))
+    getTeam()
+      .then(setData)
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load team'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -73,21 +56,29 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
     setMinting(true)
     setError(null)
     try {
-      const res = await fetch('/api/team/invite', { method: 'POST' })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error ?? 'Could not create a code')
-      setData((prev) => (prev ? { ...prev, invite: d.invite } : prev))
+      const invite = await mintInvite()
+      setData((prev) => (prev ? { ...prev, invite } : prev))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create a code')
+      setError(err instanceof ApiError ? err.message : 'Could not create a code')
     } finally {
       setMinting(false)
     }
   }
 
-  /** Re-read the roster after a membership change rather than patching it locally. */
+  /**
+   * Re-read the roster after a membership change rather than patching it
+   * locally. NEVER throws: the change it follows has already committed, so a
+   * failed re-read is a stale LIST, not a failed action, and reporting it as the
+   * latter is exactly what this used to do. Same shape as `TeacherRoster`'s
+   * `rosterRefreshError` after an approval.
+   */
   async function refresh() {
-    const d = await fetch('/api/team').then((r) => r.json())
-    if (!d.error) setData(d)
+    try {
+      setData(await getTeam())
+      setStaleRoster(false)
+    } catch {
+      setStaleRoster(true)
+    }
   }
 
   async function makeLead(userId: string) {
@@ -178,23 +169,17 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
     setClassError(null)
     setClassPending(null)
     try {
-      const res = await fetch('/api/class/join', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
-      })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error ?? 'Could not join that class')
+      const d = await postJoinClass(code)
       if (d.status === 'approved') {
         // Already enrolled in this class — reflect it immediately.
         setData((prev) => (prev ? { ...prev, myClass: { id: d.classId, name: d.className } } : prev))
       } else {
         // Pending teacher approval — not yet on the roster.
-        setClassPending(d.className ?? 'that class')
+        setClassPending(d.className)
       }
       setClassCode('')
     } catch (err) {
-      setClassError(err instanceof Error ? err.message : 'Could not join that class')
+      setClassError(err instanceof ApiError ? err.message : 'Could not join that class')
     } finally {
       setJoining(false)
     }
@@ -246,6 +231,23 @@ export function TeamPanel({ onClose }: { onClose: () => void }) {
                   Each researcher earns KP independently — it all adds to your shared lab total,
                   shown the same for everyone.
                 </p>
+                {staleRoster && (
+                  <div
+                    data-testid="team-roster-stale"
+                    className="flex items-center justify-between gap-3 border border-amber-400/25 bg-amber-400/10 rounded-sm px-3 py-2 mb-2"
+                  >
+                    <span className="font-pixel text-[7px] text-amber-300 leading-loose">
+                      That change was saved — but this list may be out of date.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void refresh()}
+                      className="shrink-0 font-pixel text-[7px] text-white/60 border border-white/20 rounded-sm px-2 py-1 hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
                 <ul className="flex flex-col gap-1.5">
                   {data.members.map((m, i) => (
                     <li

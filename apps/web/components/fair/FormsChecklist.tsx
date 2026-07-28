@@ -22,16 +22,54 @@ interface FormItem {
   completedAt: string | null
 }
 
+/** Mirrors `EditionGuidanceState` in lib/fairs/forms.ts. */
+type GuidanceState = 'reviewed' | 'expired' | 'stale_review' | 'unreviewed'
+
 interface EditionInfo {
   season: string
   formsUrl: string
   rulesUrl: string
-  reviewed: boolean
+  guidance: GuidanceState
+}
+
+/**
+ * The team's own fair, when the Fair Hub has already matched one. Passed down
+ * rather than fetched: this panel is deliberately decoupled from the Overview
+ * tab's `/api/fairs/match` load, and re-fetching it here to print one line
+ * would undo that. Absent (still loading, or no match) simply prints nothing.
+ */
+export interface LocalFairRef {
+  name: string
+  websiteUrl: string | null
+}
+
+/** Why the app is not giving applicability guidance of its own (§0.8). */
+const GUIDANCE_COPY: Record<Exclude<GuidanceState, 'reviewed'>, { title: string; body: (season: string) => string }> = {
+  unreviewed: {
+    title: 'Check the official rules',
+    body: (season) =>
+      `These are the ISEF ${season} form titles. Which forms your project needs, and whether each one is signed before or after you start experimenting, is decided by the official rules and your fair director — scienium does not give that guidance. Read the official form and rules before you fill anything in.`,
+  },
+  stale_review: {
+    title: 'Check the official rules',
+    body: (season) =>
+      `The ISEF ${season} form wording changed after it was last checked by a teacher, so scienium is holding back its notes on which form applies until they are checked again. Go by the official form and rules.`,
+  },
+  expired: {
+    title: 'This list may be out of date',
+    body: (season) =>
+      `These titles were read off the ISEF ${season} forms page and have not been re-checked since. A newer season's forms are probably out — take the current list from the official forms page, not from here.`,
+  },
+}
+
+/** Fail closed on a state this build does not know: show the cautionary notice. */
+function guidanceCopy(state: GuidanceState) {
+  return GUIDANCE_COPY[state as Exclude<GuidanceState, 'reviewed'>] ?? GUIDANCE_COPY.unreviewed
 }
 
 const STATUS_CYCLE: FormStatus[] = ['not_started', 'in_progress', 'complete']
 
-export function FormsChecklist() {
+export function FormsChecklist({ localFair }: { localFair?: LocalFairRef | null }) {
   const [forms, setForms] = useState<FormItem[]>([])
   const [edition, setEdition] = useState<EditionInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -163,22 +201,39 @@ export function FormsChecklist() {
         </div>
       )}
 
-      {edition && !edition.reviewed && (
+      {edition && (edition.guidance !== 'reviewed' || localFair) && (
         <div
           data-testid="forms-edition-notice"
           className="border border-[#F5C518]/30 bg-[#F5C518]/[0.06] rounded-sm px-3 py-2.5 flex flex-col gap-1.5"
         >
           <span className="font-pixel text-[8px] text-[#F5C518] uppercase tracking-widest">
-            Check the official rules
+            {edition.guidance === 'reviewed'
+              ? 'Your fair has the final say'
+              : guidanceCopy(edition.guidance).title}
           </span>
-          <p className="text-[12px] text-white/60 leading-relaxed">
-            These are the ISEF {edition.season} form titles. Which forms your
-            project needs, and whether each one is signed before or after you
-            start experimenting, is decided by the official rules and your fair
-            director — scienium does not give that guidance. Read the official
-            form and rules before you fill anything in.
-          </p>
+          {edition.guidance !== 'reviewed' && (
+            <p className="text-[12px] text-white/60 leading-relaxed">
+              {guidanceCopy(edition.guidance).body(edition.season)}
+            </p>
+          )}
+          {localFair && (
+            <p data-testid="forms-local-fair" className="text-[12px] text-white/60 leading-relaxed">
+              You&apos;re matched to <span className="text-white/80">{localFair.name}</span>. An
+              affiliated fair can require its own forms, its own signatures and earlier deadlines
+              than ISEF&apos;s — check with them, and go by what they say.
+            </p>
+          )}
           <div className="flex flex-wrap gap-3">
+            {localFair?.websiteUrl && (
+              <a
+                href={localFair.websiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-pixel text-[7px] text-[#F5C518]/80 hover:text-[#F5C518] flex items-center gap-1"
+              >
+                <ExternalLink size={8} /> {localFair.name}
+              </a>
+            )}
             <a
               href={edition.formsUrl}
               target="_blank"

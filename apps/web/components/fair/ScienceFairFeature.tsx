@@ -198,7 +198,11 @@ export function ScienceFairFeature() {
         // state, so gating it behind an unrelated fetch meant it could never
         // mount while Overview was (historically, sometimes for minutes) pending.
         <div className="flex-1 overflow-y-auto">
-          <FormsChecklist />
+          {/* The matched fair rides along from state already loaded for the
+              Overview tab — the forms tab still mounts and fetches without
+              waiting on it (see above); it just gains the "your fair may
+              differ" line once the match lands. */}
+          <FormsChecklist localFair={localFairRef(fairs)} />
         </div>
       ) : tab === 'categories' ? (
         // CategoryBrowser is fully static (no fetch at all) — never gate it on
@@ -494,6 +498,17 @@ function IsefRubric() {
       </ul>
     </div>
   )
+}
+
+/**
+ * The fair whose rules actually bind this team (§0.8's local-fair override).
+ * The nearest affiliated/regional fair if there is one, else the state fair —
+ * ISEF is deliberately NOT a fallback: "your fair may require its own forms"
+ * says nothing when the fair named is the one the catalog already comes from.
+ */
+function localFairRef(match: FairMatch | undefined): { name: string; websiteUrl: string | null } | null {
+  const fair = match?.regional ?? match?.stateFair
+  return fair ? { name: fair.name, websiteUrl: fair.websiteUrl } : null
 }
 
 // ─── Countdown + deadline alerts ──────────────────────────────────────────────

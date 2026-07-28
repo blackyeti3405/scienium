@@ -53,21 +53,24 @@ describe('ISEF edition catalog', () => {
 })
 
 /**
- * NOT a gate — a register of the current CONTENT state.
- *
- * There is no fail-closed mechanism in the code: `forms.ts` authors
- * `appliesTo: null` on every literal and `app/api/fairs/forms/route.ts` passes
- * `def.appliesTo` straight through without consulting `isEditionReviewed()`.
- * These assertions record that applicability/timing copy is UNAUTHORED pending
- * qualified teacher/SRC review, so it cannot reach a student by accident today.
- * Building the actual gate (route suppresses `appliesTo` while
- * `reviewedBy === null`) is a separate item — see the audit report §1.
+ * The CONTENT half of §0.8. The mechanism half — that the route withholds
+ * applicability copy unless the edition is signed, unedited since, and still in
+ * date — is `test/forms-guidance-gate.test.ts`, which runs the real gate against
+ * a synthetic edition that actually carries copy. These four record the state of
+ * the SHIPPED edition: still unauthored, still unsigned, still sourced.
  */
 describe('ISEF edition review state (unauthored applicability copy)', () => {
   it('is not marked reviewed', () => {
-    // The derived predicate, not its two literal inputs — asserting all three
-    // was one fact stated three times.
-    expect(isEditionReviewed()).toBe(false)
+    // The derived predicate, not its literal inputs — asserting each one was
+    // the same fact stated three times.
+    expect(isEditionReviewed(ISEF_EDITION, new Date(ISEF_EDITION.sourcedAt))).toBe(false)
+  })
+
+  it('carries a re-source date that is after the day it was sourced', () => {
+    // A catalog whose expiry precedes its own sourcing would be born expired —
+    // the state is fail-closed, so that would be silent-but-safe, and silent is
+    // how a pilot ends up on a permanently degraded forms tab.
+    expect(Date.parse(ISEF_EDITION.expiresAt)).toBeGreaterThan(Date.parse(ISEF_EDITION.sourcedAt))
   })
 
   it('ships no unreviewed applicability copy', () => {
