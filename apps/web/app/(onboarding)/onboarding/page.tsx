@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
+import { NotificationBell } from '@/components/lab/NotificationBell'
 
 type Mode = 'create' | 'join'
 type AccountType = 'student' | 'teacher'
@@ -170,11 +171,19 @@ export default function OnboardingPage() {
 
   return (
     <div className="max-w-md w-full space-y-8">
-      <div>
-        <h1 className="font-pixel text-white text-lg">Welcome to scienium</h1>
-        <p className="font-pixel text-white/40 text-[9px] mt-2">
-          Set up your researcher profile to get started.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-pixel text-white text-lg">Welcome to scienium</h1>
+          <p className="font-pixel text-white/40 text-[9px] mt-2">
+            Set up your researcher profile to get started.
+          </p>
+        </div>
+        {/* The one place a student with NO live team can read their bell
+            (HANDOFF #4/#5). A notice that their class or lab membership ended
+            is written when they may hold no team at all, and this is where
+            those notices link to. Renders nothing for an account that has no
+            user row yet. */}
+        <NotificationBell />
       </div>
 
       {/* Student / Teacher top-level account type toggle */}

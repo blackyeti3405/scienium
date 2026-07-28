@@ -53,6 +53,7 @@ model User {
   paperExplanations     PaperExplanation[]
   teacherFeedbackGiven  TeacherFeedback[]      @relation("teacherFeedbackAuthor")
   notifications         Notification[]
+  notificationReads     NotificationRead[]
   notificationPref      NotificationPref?
   experiments           Experiment[]           @relation("experimentAuthor")
   codexLessonProgress   CodexLessonProgress[]
@@ -1562,28 +1563,55 @@ enum FeedbackTarget {
 // An in-app notification. `userId` null means the whole team. `dedupeKey` is
 // UNIQUE so the daily cron is idempotent — re-running never double-inserts the
 // same "regional fair in 7 days" reminder.
+/// One notification EVENT. `dedupeKey` is globally unique, so the row is the
+/// event — which is what `NotificationEmail` joins on, and the reason read state
+/// lives in `NotificationRead` rather than being fanned out per member
+/// (REFACTOR2 P2-S3).
+///
+/// `teamId` is NULLABLE (HANDOFF #4/#5): a notice about a membership that ENDED
+/// has to reach a student who, by the time it is written, may have no live team
+/// at all. Team-wide rows (`userId` null) still carry one; a notice addressed to
+/// a person carries whichever team it is about, or none.
 model Notification {
   id        String           @id @default(cuid())
-  teamId    String           @map("team_id")
+  teamId    String?          @map("team_id")
   userId    String?          @map("user_id")
   kind      NotificationKind
   title     String
   body      String
   linkUrl   String?          @map("link_url")
   dedupeKey String           @unique @map("dedupe_key")
-  readAt    DateTime?        @map("read_at")
   createdAt DateTime         @default(now()) @map("created_at")
 
-  team Team  @relation(fields: [teamId], references: [id])
-  user User? @relation(fields: [userId], references: [id])
+  team  Team?              @relation(fields: [teamId], references: [id])
+  user  User?              @relation(fields: [userId], references: [id])
+  reads NotificationRead[]
 
-  @@index([teamId, readAt, createdAt])
-  @@index([userId, readAt, createdAt])
-  // The feed lists by recency alone (ORDER BY createdAt), which the
-  // readAt-leading indexes above can't serve (PERF-9).
+  // The feed lists by recency alone (ORDER BY createdAt).
   @@index([teamId, createdAt])
   @@index([userId, createdAt])
   @@map("notifications")
+}
+
+/// Per-member read receipt (REFACTOR2 P2-S3).
+///
+/// `Notification.readAt` was ONE column on a row every teammate reads, so the
+/// first member to open the bell cleared the badge for all of them. Receipts
+/// instead of fan-out because the notification row IS the event: `dedupeKey` is
+/// globally unique and `NotificationEmail.dedupeKey` joins on it, so fanning one
+/// team notice into N rows would have to make that key per-user and break the
+/// join that makes email delivery at-most-once.
+model NotificationRead {
+  notificationId String   @map("notification_id")
+  userId         String   @map("user_id")
+  readAt         DateTime @default(now()) @map("read_at")
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@id([notificationId, userId])
+  @@index([userId])
+  @@map("notification_reads")
 }
 
 enum NotificationKind {
@@ -1600,11 +1628,20 @@ enum NotificationKind {
   @@map("notification_kind")
 }
 
+/// Per-member reminder settings.
+///
+/// There is deliberately NO destination column (REFACTOR2 §0.8). It used to hold
+/// any syntactically valid address the member typed, verified against nothing —
+/// a student could point school reminder mail at a stranger. Clerk is the
+/// identity source of truth and the only address it has verified for a user is
+/// the one mirrored into `User.email`, so that is the only address reminders go
+/// to and there is nothing left to verify.
 model NotificationPref {
   userId       String   @id @map("user_id")
   emailEnabled Boolean  @default(false) @map("email_enabled")
-  email        String?
-  // Days-before-deadline to fire reminders at (default 30/14/7/1).
+  // Days-before-deadline to fire reminders at (default 30/14/7/1). Honoured
+  // per member by the cron (P2-S3) — the team's bell shows the union, each
+  // member's EMAIL is filtered to the windows they chose.
   deadlineDays Int[]    @default([30, 14, 7, 1]) @map("deadline_days")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

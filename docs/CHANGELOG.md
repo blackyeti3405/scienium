@@ -5,6 +5,91 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.75.5] — 2026-07-28
+
+REFACTOR2 **P2-S3**, **P1-6 (notification half)**, **§0.8 destination verification**, and
+HANDOFF "Ready to pick up" **#4 + #5** — all one subsystem, and mostly one root cause: a
+notification was modelled as a thing a TEAM has, rather than an event that PEOPLE read.
+
+### Fixed — one member's "mark all read" cleared the whole team's badge (P2-S3)
+
+Reproduced against the real handler on real Postgres: a teammate who had never opened the bell
+had an unread count of 0 the moment another member marked all read. `Notification.read_at` was
+one column on a row every teammate reads.
+
+Read state is now a per-member receipt (`NotificationRead`), **not** a fan-out. The
+notification row IS the event — `dedupeKey` is globally unique and `NotificationEmail.dedupeKey`
+joins on it — so fanning one team notice into N rows would have had to make that key per-user
+and break the join that makes email delivery at-most-once. The migration backfills receipts
+before dropping the column, preserving what "read" meant: a personal notice becomes that
+member's receipt, a team-wide one becomes a receipt for every current member.
+
+### Fixed — saved reminder windows were stored, shown, and never read (P2-S3)
+
+The cron generated against a hard-coded `[30, 14, 7, 1]` and then emailed every opted-in member,
+so a student who asked for one reminder a week out got four, starting a month out. The bell is
+now generated from the UNION of the members' windows (a teammate's tighter window is not
+dropped) and each member's EMAIL is filtered back to their own via a `bracket` carried on the
+draft. Member preferences are read **one query per page**, never per team — the fan-out this
+cron was rebuilt to avoid.
+
+### Fixed — reminders could be aimed at anyone (§0.8)
+
+`NotificationPref.email` accepted any syntactically valid address, verified against nothing: a
+student could point recurring school mail at a stranger. Closed by DELETING the destination
+rather than verifying it — reminders go to `User.email`, mirrored from Clerk at every path that
+mints a `User` row, so there is nothing left to verify. Existing rows stop being mailed the
+moment the migration runs, and `PUT /api/notifications/prefs` now refuses a body carrying
+`email` (400) rather than ignoring it. An erased user's tombstone address is excluded from
+recipients, and reminders cannot be armed for an account with no routable address.
+
+### Fixed — a notice about a membership that ended was unreadable (HANDOFF #4/#5)
+
+`Notification.team_id` was NOT NULL and the bell filtered on the reader's current team, so a
+student removed from a class while holding no team got no row at all, and a student removed
+from a **team** got a row addressed to the one bell they had just lost access to. `team_id` is
+nullable, the bell's predicate reaches anything addressed to the reader whatever team it names
+(team-wide rows stay team-scoped — the widening is not a cross-team read), and the bell now
+renders on `/onboarding`, which is where those notices link to.
+
+**Team removal is notified at all** for the first time, in the removal's own transaction and
+keyed to the `TeamMembershipEvent` id — a (user, team) key would collide on a second removal
+and, being inside that transaction, abort the removal itself. Erasure departs memberships with
+a null actor and deliberately writes no notice.
+
+### Fixed — a user-facing notice was less durable than the thing it announced (P1-6)
+
+`POST /api/teacher/feedback` wrote its notification with a bare `.catch(() => {})` after the
+feedback had already committed. Both now commit together. The showcase-moderation notice was
+keyed on `Date.now()`, which defeats the unique column it is written into. Email enqueue no
+longer depends on a run's in-memory "fresh" list, so `(dedupeKey, recipient)` unique is the only
+thing deciding whether a person is mailed about an event.
+
+### Fixed — the Q&A panel spent money on mount
+
+`usePaperQuiz` POSTed a paid Anthropic quiz generation whenever the history read returned no
+session — no student click — and read `data.session` off an unvalidated body, so a
+malformed-but-200 response reached the same branch. Reproduced by transcribing the effect
+verbatim: a `200 {}` produced a GET followed by a POST. The history read is parsed now (a bad
+body throws into the error path), and `session: null` lands on a new `idle` phase whose only way
+forward is the student pressing **Start the quiz**.
+
+### Added — a Reminders panel in settings
+
+Deadline windows and the email toggle had an API and no UI at all. Settings now carries a pixel
+Reminders section: per-member windows, the destination stated plainly (and why it cannot be
+changed there), and the load/write retry-banner pair the other sections use.
+
+### Removed
+
+- `notifications.read_at` and its two read_at-leading indexes (replaced by `notification_reads`).
+- `notification_prefs.email` — the unverified destination.
+
+Migration `20260728120000_notification_receipts_and_reach`. devlab verified intact after it
+(25 papers, 11 discovery nodes).
+
+---
+
 ## [0.75.4] — 2026-07-28
 
 REFACTOR2 findings **P2-S10 + P2-2**, **P2-S6**, **P2-S7**.

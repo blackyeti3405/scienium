@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useLabCurrency } from '@/components/lab/labCurrency'
 import { buildRetryAnswers, deriveFailedQuestionIds } from './quizDerive'
+import { getQuizHistory } from './api'
 import type { Paper, QuizQuestionView, GradeResult, QuizPhase } from './types'
 
 /**
@@ -28,48 +29,39 @@ export function usePaperQuiz(paper: Paper, onProficiencyEarned?: () => void) {
   const [retryLoading, setRetryLoading] = useState(false)
 
   // On open: if a graded quiz already exists, show those past answers + feedback
-  // (they stay accessible). A fresh quiz is generated ONLY on an explicit
-  // `session: null` — a failed or non-OK read is NOT "no quiz yet" (REFACTOR2
-  // P1-S4). The old catch-all fell through to `generateQuiz()`, so a transient
-  // read outage silently spent an Anthropic call and could strand the existing
-  // session. On failure we surface a recoverable error; the banner's retry
-  // button makes generating an explicit student action.
+  // (they stay accessible). Otherwise land on `idle` and WAIT — generating a
+  // quiz is a paid Anthropic call and must follow a student pressing the button.
+  //
+  // Two ways the old effect spent that money unasked: it fell through to
+  // `generateQuiz()` on `session: null` with no click at all, and it read
+  // `data.session` off an unvalidated body, so a malformed-but-200 response
+  // reached the same branch. `getQuizHistory` parses the body, so a bad one
+  // throws into the catch and becomes a retryable error instead.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      let data: { session?: unknown; error?: string }
       try {
-        const res = await fetch(`/api/papers/${paper.id}/quiz`)
-        data = await res.json()
+        const { session } = await getQuizHistory(paper.id)
         if (cancelled) return
-        if (!res.ok) throw new Error(data.error ?? 'Could not load your quiz')
-      } catch (err) {
-        if (cancelled) return
-        setQuizError(
-          err instanceof Error ? err.message : 'Could not load your quiz',
-        )
-        setPhase('quiz')
-        return
-      }
-
-      if (data.session) {
-        const s = data.session as {
-          sessionId: string
-          questions: QuizQuestionView[]
-          answers?: Record<string, string>
-          score: number
-          passed: boolean
-          threshold: number
-          results: GradeResult['results']
+        if (!session) {
+          setPhase('idle')
+          return
         }
-        setQuiz({ sessionId: s.sessionId, questions: s.questions })
-        setAnswers(s.answers ?? {})
-        setResults({ score: s.score, passed: s.passed, threshold: s.threshold, results: s.results })
+        setQuiz({ sessionId: session.sessionId, questions: session.questions })
+        setAnswers(session.answers ?? {})
+        setResults({
+          score: session.score,
+          passed: session.passed,
+          threshold: session.threshold,
+          results: session.results,
+        })
         setHasPastResults(true)
         setPhase('results')
-        return
+      } catch (err) {
+        if (cancelled) return
+        setQuizError(err instanceof Error ? err.message : 'Could not load your quiz')
+        setPhase('idle')
       }
-      generateQuiz()
     })()
     return () => {
       cancelled = true

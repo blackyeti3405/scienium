@@ -44,6 +44,14 @@ export interface NotificationDraft {
   body: string
   linkUrl: string | null
   dedupeKey: string
+  /**
+   * Which configured window fired this draft, or null for a draft no window
+   * selects (urgency). The team's bell is generated from the UNION of its
+   * members' windows, so the bracket is what lets each member's EMAIL be
+   * filtered back down to the windows THEY saved (REFACTOR2 P2-S3) — without it
+   * a member who asked for one reminder at 7 days gets all four.
+   */
+  bracket: number | null
 }
 
 /** Days a fair is allowed to be near while the log is stale before we nudge. */
@@ -87,6 +95,7 @@ export function computeNotifications(input: NotifyComputeInput): NotificationDra
         body: `${field.label} for ${fair.fairName} is ${when}.`,
         linkUrl: '/fair-hub/calendar',
         dedupeKey: `deadline:${input.teamId}:${fair.eventId}:${field.key}:${bracket}`,
+        bracket,
       })
     }
   }
@@ -115,6 +124,7 @@ export function computeNotifications(input: NotifyComputeInput): NotificationDra
         body: `${upcoming.fair.fairName} is in ${upcoming.daysUntil} days and ${sinceText}. A quick Project Log entry keeps your momentum going.`,
         linkUrl: '/daily/log',
         dedupeKey: `urgency:${input.teamId}:${upcoming.fair.eventId}:${weekTag}`,
+        bracket: null,
       })
     }
   }

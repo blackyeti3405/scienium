@@ -51,6 +51,15 @@ export class MembershipError extends Error {
   }
 }
 
+/**
+ * Append one event, and return its id.
+ *
+ * The id is what makes a notification about this event dedupable:
+ * `Notification.dedupeKey` is globally unique, so a key built from (user, team)
+ * would collide the second time someone is removed from the same lab — and
+ * because the notice is written inside the removal's transaction, that collision
+ * would abort the removal itself. Same reasoning as `recordClassEvent`.
+ */
 async function record(
   tx: MembershipTx,
   input: {
@@ -61,8 +70,8 @@ async function record(
     actorUserId?: string | null
     reason?: string
   },
-): Promise<void> {
-  await tx.teamMembershipEvent.create({
+): Promise<string> {
+  const row = await tx.teamMembershipEvent.create({
     data: {
       teamId: input.teamId,
       userId: input.userId,
@@ -70,6 +79,43 @@ async function record(
       role: input.role ?? null,
       actorUserId: input.actorUserId ?? null,
       reason: input.reason ?? null,
+    },
+    select: { id: true },
+  })
+  return row.id
+}
+
+/**
+ * Tell someone their lab membership was ended for them (HANDOFF #5).
+ *
+ * Only for a REMOVAL: a student who left knows they left, and the automatic
+ * lead transfer that may follow is not something done *to* the departing member.
+ *
+ * Written in the SAME transaction as the removal — a best-effort notice after
+ * the commit is the shape that produces a student who was removed and never
+ * told. `teamId` names the team they were removed FROM, which is readable
+ * because the bell's predicate reaches anything addressed to the reader
+ * regardless of which team they are on now; before that it was written to the
+ * one team whose bell they had just lost access to.
+ */
+async function notifyRemovedFromTeam(
+  tx: MembershipTx,
+  input: { teamId: string; userId: string; eventId: string },
+): Promise<void> {
+  const team = await tx.team.findUnique({ where: { id: input.teamId }, select: { name: true } })
+  await tx.notification.create({
+    data: {
+      teamId: input.teamId,
+      // Addressed to the removed member alone — the remaining team is not party
+      // to it, and they are no longer on that team's feed anyway.
+      userId: input.userId,
+      kind: 'membership_changed',
+      title: team ? `You were removed from ${team.name}` : 'You were removed from your lab',
+      body:
+        'Your lab lead removed you from the lab. The lab and its work are unchanged, ' +
+        'but you no longer have access to it. You can join another lab or start your own.',
+      linkUrl: '/onboarding',
+      dedupeKey: `team_removed:${input.eventId}`,
     },
   })
 }
@@ -112,7 +158,14 @@ export async function departTeam(
   if (!membership) throw new MembershipError('Not a member of that lab', 404)
 
   await tx.teamMember.delete({ where: { userId_teamId: { userId, teamId } } })
-  await record(tx, { ...input, role: membership.role })
+  const eventId = await record(tx, { ...input, role: membership.role })
+  // Only when a PERSON removed them. Erasure departs memberships with a null
+  // actor (`lib/data-requests/workflow.ts`), and telling a student their lab
+  // membership ended — in the transaction that is deleting their notifications
+  // — is noise at best.
+  if (input.event === 'removed' && input.actorUserId) {
+    await notifyRemovedFromTeam(tx, { teamId, userId, eventId })
+  }
 
   const remaining = await tx.teamMember.findMany({
     where: { teamId },

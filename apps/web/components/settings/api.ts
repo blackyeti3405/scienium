@@ -29,3 +29,29 @@ export const researchPlanSummarySchema = z.object({
 export function getResearchPlanSummary() {
   return requestJson('/api/research-plan', researchPlanSummarySchema)
 }
+
+/**
+ * Reminder preferences (spec §13.7).
+ *
+ * `email` is READ-ONLY here and on the route: it is the address Clerk verified
+ * for this account (mirrored into `User.email`), and the only place reminders
+ * can go. The field used to be a free-text destination anyone could point
+ * anywhere (REFACTOR2 §0.8).
+ */
+export const notificationPrefsSchema = z.object({
+  emailEnabled: z.boolean(),
+  email: z.string().nullable(),
+  deadlineDays: z.array(z.number()),
+})
+
+export function getNotificationPrefs() {
+  return requestJson('/api/notifications/prefs', notificationPrefsSchema)
+}
+
+export function saveNotificationPrefs(input: { emailEnabled: boolean; deadlineDays: number[] }) {
+  return requestJson('/api/notifications/prefs', notificationPrefsSchema, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}

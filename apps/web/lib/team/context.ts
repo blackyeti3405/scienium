@@ -32,6 +32,22 @@ export interface ActiveTeamResolution {
  * not-yet-onboarded student).
  */
 export async function resolveActiveTeam(clerkUserId: string): Promise<ActiveTeamResolution | null> {
+  const resolved = await resolveUserAndTeam(clerkUserId)
+  return resolved?.team ? { dbUserId: resolved.dbUserId, team: resolved.team } : null
+}
+
+/**
+ * The same query, keeping the user when there is no team.
+ *
+ * `resolveActiveTeam` collapses "no user row" and "user with no team" into one
+ * null, which is right for every team-scoped route. The notification bell is the
+ * one reader that must survive the second case — a notice about a membership
+ * that ENDED is addressed to a person, not a team (HANDOFF #4/#5) — so it needs
+ * `dbUserId` even when `team` is null. Same one query; do not add a second.
+ */
+export async function resolveUserAndTeam(
+  clerkUserId: string,
+): Promise<{ dbUserId: string; team: ActiveTeamResolution['team'] | null } | null> {
   const user = await db.user.findUnique({
     where: { clerkUserId },
     select: {
@@ -44,8 +60,7 @@ export async function resolveActiveTeam(clerkUserId: string): Promise<ActiveTeam
     },
   })
   if (!user) return null
-  const team = pickActiveTeam(user.activeTeamId, user.teamMemberships)
-  return team ? { dbUserId: user.id, team } : null
+  return { dbUserId: user.id, team: pickActiveTeam(user.activeTeamId, user.teamMemberships) }
 }
 
 /**

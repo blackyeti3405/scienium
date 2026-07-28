@@ -168,6 +168,15 @@ vi.mock('@/lib/db', () => ({
         return []
       },
     },
+    // Members + their saved reminder windows, read ONCE per page (P2-S3). The
+    // budget assertion below is what keeps it that way: per-team it would be
+    // 3,500 reads instead of 35.
+    teamMember: {
+      findMany: async () => {
+        queryCount++
+        return []
+      },
+    },
     notification: {
       findMany: async () => {
         queryCount++
@@ -179,7 +188,6 @@ vi.mock('@/lib/db', () => ({
       },
     },
     notificationEmail: { createMany: async () => ({ count: 0 }) },
-    notificationPref: { findMany: async () => [] },
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
         notification: { createMany: async () => ({ count: 0 }) },

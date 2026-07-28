@@ -121,3 +121,46 @@ export const teamPhaseSchema = z.object({
 export function getTeamPhase() {
   return requestJson('/api/team', teamPhaseSchema)
 }
+
+// ─── Comprehension quiz history ─────────────────────────────────────────────
+
+const quizQuestionSchema = z.object({
+  id: z.string(),
+  prompt: z.string(),
+  focus: z.string(),
+})
+
+const quizSessionSchema = z.object({
+  sessionId: z.string(),
+  questions: z.array(quizQuestionSchema),
+  answers: z.record(z.string()).optional(),
+  score: z.number(),
+  passed: z.boolean(),
+  threshold: z.number(),
+  results: z.array(
+    z.object({
+      questionId: z.string(),
+      score: z.number(),
+      rationale: z.string(),
+      strongAnswer: z.string().optional(),
+    }),
+  ),
+})
+
+/** Exported so the parse itself is testable over a real socket. */
+export const quizHistorySchema = z.object({ session: quizSessionSchema.nullable() })
+
+/**
+ * The graded quiz session for this paper, or null when there is none.
+ *
+ * PARSED, not cast, and that is the whole point (REFACTOR2, the usePaperQuiz
+ * row). The panel's mount effect read `data.session` off an unvalidated body and
+ * treated anything falsy as "this student has never taken the quiz" — so a
+ * 200 with a malformed or truncated body was indistinguishable from a fresh
+ * paper, and the panel used to answer that by POSTing a PAID Anthropic quiz
+ * generation nobody asked for. A schema failure now throws, and the caller
+ * surfaces it as a retryable error instead of spending money on it.
+ */
+export function getQuizHistory(paperId: string) {
+  return requestJson(`/api/papers/${paperId}/quiz`, quizHistorySchema)
+}

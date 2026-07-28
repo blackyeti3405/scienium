@@ -97,23 +97,22 @@ export async function recordClassEvent(
  * after the commit is the shape that produces a student who was removed and
  * never told — which is the exact gap this closes.
  *
- * **Limitation, on purpose:** `Notification.teamId` is required and the bell is
- * team-scoped, so a student with no live team membership gets no row. Making it
- * nullable means a nullable FK, four index changes, and an `OR` in the bell's
- * visibility predicate — for a student who has no bell to read it in. Recorded
- * rather than papered over.
+ * The limitation this shipped with is CLOSED (HANDOFF #4): `Notification.teamId`
+ * is nullable and the bell's visibility predicate reaches anything addressed to
+ * the reader whatever team it names, so a student holding no team still gets the
+ * notice — and can still read it, which was the harder half.
  */
 async function notifyRemoved(
   tx: ClassTx,
   input: { userId: string; classId: string; eventId: string },
 ): Promise<void> {
   // One team at a time (`TeamMember.userId` is `@@unique`), so the live
-  // membership IS the team whose bell this student reads.
+  // membership IS the team whose bell this student reads — and null when they
+  // have none, which is a notice with no team rather than no notice.
   const membership = await tx.teamMember.findUnique({
     where: { userId: input.userId },
     select: { teamId: true },
   })
-  if (!membership) return
 
   const klass = await tx.class.findUnique({
     where: { id: input.classId },
@@ -122,7 +121,7 @@ async function notifyRemoved(
 
   await tx.notification.create({
     data: {
-      teamId: membership.teamId,
+      teamId: membership?.teamId ?? null,
       // Addressed to the student alone — their teammates are not party to it.
       userId: input.userId,
       kind: 'membership_changed',

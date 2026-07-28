@@ -173,6 +173,7 @@ afterAll(async () => {
   await db.projectLog.deleteMany({ where: { teamId } }).catch(() => {})
   await db.vocabCard.deleteMany({ where: { teamId } }).catch(() => {})
   await db.activityFeed.deleteMany({ where: { teamId } }).catch(() => {})
+  await db.notification.deleteMany({ where: { dedupeKey: { contains: ns } } }).catch(() => {})
   const papers = await db.paper.findMany({ where: { teamId }, select: { id: true } })
   await db.paperQuizSession
     .deleteMany({ where: { paperId: { in: papers.map((p) => p.id) } } })
@@ -190,7 +191,7 @@ afterAll(async () => {
   // foreign-key error here means this cleanup is incomplete — the right
   // response is to add the missing table, not to hide it.
   await db.team.delete({ where: { id: teamId } })
-  await db.user.delete({ where: { id: userId } })
+  await db.user.deleteMany({ where: { clerkUserId: { startsWith: `clerk_${ns}` } } })
   await db.$disconnect().catch(() => {})
 })
 
@@ -528,5 +529,148 @@ describePg('A13 — concurrent showcase views count once per visitor per day', (
       where: { showcaseId: showcase.id, visitorFingerprint: fp },
     })
     expect(rows).toBe(1)
+  })
+})
+
+// ─── P2-S3 / HANDOFF #4-#5: notification read state and reach ─────────────────
+//
+// Two defects that share one root cause — `Notification` carried a single
+// `read_at` for a row every teammate reads, and a required `team_id` the bell
+// filtered on:
+//
+//   - one member's "mark all read" cleared the badge for the whole team;
+//   - a notice addressed to a student who has no live team was unreadable,
+//     which is exactly the case (removed from a class, removed from a team)
+//     the notice exists for.
+//
+// Real Postgres because both are about what the DATABASE holds per user, and
+// both go through the real route handler — a re-implementation could not fail
+// when the handler regresses.
+
+/** GET a handler with the fixture identity currently in `clerkState`. */
+function get(handler: (req: NextRequest) => Promise<Response>): Promise<Response> {
+  const req = new NextRequest('http://localhost:3000/api/notifications', {
+    headers: { 'x-real-ip': `10.89.${(seq++ % 250) + 1}.1` },
+  })
+  return handler(req)
+}
+
+describePg('P2-S3 — read state is per member, not per team', () => {
+  it('one member marking a team-wide notification read leaves it UNREAD for a teammate', async () => {
+    const { GET, POST } = await import('@/app/api/notifications/route')
+    const mate = await db.user.create({
+      data: {
+        clerkUserId: `clerk_${ns}_mate`,
+        name: 'PG Teammate',
+        email: `${ns}-mate@invariants.test`,
+        role: 'student',
+      },
+      select: { id: true },
+    })
+    await db.teamMember.create({ data: { teamId, userId: mate.id, role: 'member' } })
+    await db.notification.create({
+      data: {
+        teamId,
+        userId: null, // whole team
+        kind: 'teacher_feedback',
+        title: 'PG shared notice',
+        body: 'body',
+        dedupeKey: `pg_shared_${ns}`,
+      },
+    })
+
+    clerkState.userId = `clerk_${ns}`
+    expect(((await (await get(GET)).json()) as { unreadCount: number }).unreadCount).toBeGreaterThan(0)
+    await post(POST as unknown as Handler, { all: true })
+    expect(((await (await get(GET)).json()) as { unreadCount: number }).unreadCount).toBe(0)
+
+    // THE ATTACK: the teammate never opened it. A shared `read_at` clears their
+    // badge too, and the notice is gone before they ever saw it.
+    clerkState.userId = `clerk_${ns}_mate`
+    const mateView = (await (await get(GET)).json()) as {
+      unreadCount: number
+      items: Array<{ title: string; readAt: string | null }>
+    }
+    expect(mateView.unreadCount).toBe(1)
+    expect(mateView.items.find((i) => i.title === 'PG shared notice')?.readAt).toBeNull()
+
+    clerkState.userId = `clerk_${ns}`
+  })
+})
+
+describePg('HANDOFF #4/#5 — a notice reaches a student with no live team', () => {
+  it('both shapes of an end-of-membership notice are readable with no team', async () => {
+    const { GET } = await import('@/app/api/notifications/route')
+    const orphan = await db.user.create({
+      data: {
+        clerkUserId: `clerk_${ns}_orphan`,
+        name: 'PG Removed Student',
+        email: `${ns}-orphan@invariants.test`,
+        role: 'student',
+      },
+      select: { id: true },
+    })
+    await db.notification.createMany({
+      data: [
+        {
+          // #4: removed from a class while holding no team at all — there was
+          // no row that could be written, `team_id` being NOT NULL.
+          teamId: null,
+          userId: orphan.id,
+          kind: 'membership_changed',
+          title: 'PG class removal notice',
+          body: 'Your teacher un-enrolled you.',
+          dedupeKey: `pg_orphan_class_${ns}`,
+        },
+        {
+          // #5: removed from a TEAM. The row could be written and was still
+          // unreadable — the bell filtered on the team the reader is on, which
+          // is precisely the team they just left.
+          teamId,
+          userId: orphan.id,
+          kind: 'membership_changed',
+          title: 'PG team removal notice',
+          body: 'You were removed from the lab.',
+          dedupeKey: `pg_orphan_team_${ns}`,
+        },
+      ],
+    })
+
+    clerkState.userId = `clerk_${ns}_orphan`
+    const res = await get(GET)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      unreadCount: number
+      items: Array<{ title: string }>
+    }
+    expect(body.items.map((i) => i.title).sort()).toEqual([
+      'PG class removal notice',
+      'PG team removal notice',
+    ])
+    expect(body.unreadCount).toBe(2)
+
+    clerkState.userId = `clerk_${ns}`
+  })
+
+  it('a team-wide notice is NOT visible to someone who is not on that team', async () => {
+    // The other half of the same predicate: widening it to reach a removed
+    // student must not turn the bell into a cross-team read.
+    const { GET } = await import('@/app/api/notifications/route')
+    await db.notification.create({
+      data: {
+        teamId,
+        userId: null,
+        kind: 'teacher_feedback',
+        title: 'PG team-only notice',
+        body: 'body',
+        dedupeKey: `pg_teamonly_${ns}`,
+      },
+    })
+
+    clerkState.userId = `clerk_${ns}_orphan`
+    const body = (await (await get(GET)).json()) as { items: Array<{ title: string }> }
+    expect(body.items.map((i) => i.title)).not.toContain('PG team-only notice')
+
+    clerkState.userId = `clerk_${ns}`
   })
 })

@@ -9,6 +9,7 @@ import { PROJECT_TYPES } from '@/lib/research-plan/types'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { MyDataSection } from './MyDataSection'
+import { RemindersSection } from './RemindersSection'
 import { getResearchPlanSummary } from './api'
 
 interface SettingsData {
@@ -592,6 +593,9 @@ export function LabProfileSettings() {
         </div>
       </div>
       )}
+
+      {/* ── Deadline reminders — per-member windows + destination (§13.7) ────── */}
+      <RemindersSection />
 
       {/* ── Your data — export / erasure requests (REFACTOR2 P1-R9) ──────────── */}
       <MyDataSection />

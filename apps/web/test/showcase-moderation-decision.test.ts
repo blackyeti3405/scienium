@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   findMany: vi.fn((): Promise<unknown[]> => Promise.resolve([])),
   updateMany: vi.fn(),
-  eventCreate: vi.fn(() => Promise.resolve({})),
+  eventCreate: vi.fn(() => Promise.resolve({ id: 'evt_1' })),
   notificationCreate: vi.fn(() => Promise.resolve({})),
 }))
 
@@ -165,6 +165,7 @@ describe('showcase moderation decision', () => {
       }),
     })
     expect(mocks.eventCreate).toHaveBeenCalledWith({
+      select: { id: true },
       data: expect.objectContaining({
         digest: REVIEWED,
         action: 'approved',
@@ -182,6 +183,7 @@ describe('showcase moderation decision', () => {
       }),
     )
     expect(mocks.eventCreate).toHaveBeenCalledWith({
+      select: { id: true },
       data: expect.objectContaining({ action: 'rejected', note: 'Add your control group.' }),
     })
   })

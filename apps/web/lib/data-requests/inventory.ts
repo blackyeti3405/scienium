@@ -77,6 +77,10 @@ export const PER_STUDENT_INVENTORY: InventoryEntry[] = [
   // Daily / rewards.
   { key: 'lab_credit_claims', model: 'labCreditClaim', column: 'userId' },
   // Communications and feed.
+  // Receipts BEFORE the notifications themselves: deleting the subject's own
+  // notifications cascades their receipts, but a receipt against a TEAM-WIDE
+  // notice is a per-student row that would otherwise survive erasure.
+  { key: 'notification_reads', model: 'notificationRead', column: 'userId' },
   { key: 'notifications', model: 'notification', column: 'userId' },
   { key: 'notification_prefs', model: 'notificationPref', column: 'userId' },
   { key: 'activity_feed', model: 'activityFeed', column: 'userId' },

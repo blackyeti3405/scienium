@@ -49,6 +49,9 @@ export interface GradeResult {
  *  explain-it-back views. */
 export type QuizPhase =
   | 'loading'
+  /** History read; no graded session. Waiting for the student to ASK for a
+   *  quiz — generation is a paid call and never happens on mount. */
+  | 'idle'
   | 'quiz'
   | 'grading'
   | 'results'

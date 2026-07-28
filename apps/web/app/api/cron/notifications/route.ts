@@ -12,7 +12,7 @@ import { randomUUID } from 'crypto'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-/** Team-level reminders use the default windows; per-user windows drive only email. */
+/** Windows for a member who has never saved any — matches `NotificationPref`'s default. */
 const DEFAULT_DEADLINE_DAYS = [30, 14, 7, 1]
 
 /** Teams fetched per query — bounds the working set instead of loading the roster at once. */
@@ -117,14 +117,42 @@ export async function GET(req: NextRequest) {
 
     // Bulk inputs for the page: one grouped read instead of one per team.
     const lastLogByTeam = new Map<string, Date>()
+    const membersByTeam = new Map<string, TeamMemberPrefs[]>()
     if (todo.length > 0) {
+      const todoIds = todo.map((t) => t.id)
       const lastLogs = await db.projectLog.groupBy({
         by: ['teamId'],
-        where: { teamId: { in: todo.map((t) => t.id) }, entryType: 'progress' },
+        where: { teamId: { in: todoIds }, entryType: 'progress' },
         _max: { createdAt: true },
       })
       for (const l of lastLogs) {
         if (l._max.createdAt) lastLogByTeam.set(l.teamId, l._max.createdAt)
+      }
+
+      // Members + their saved windows, ONE query per page. Per-team it would be
+      // a per-team read, which is the fan-out this cron was rebuilt to avoid.
+      const members = await db.teamMember.findMany({
+        where: { teamId: { in: todoIds }, user: { deletedAt: null } },
+        select: {
+          teamId: true,
+          user: {
+            select: {
+              email: true,
+              notificationPref: { select: { emailEnabled: true, deadlineDays: true } },
+            },
+          },
+        },
+      })
+      for (const m of members) {
+        const list = membersByTeam.get(m.teamId) ?? []
+        list.push({
+          email: m.user.email,
+          emailEnabled: m.user.notificationPref?.emailEnabled ?? false,
+          deadlineDays: m.user.notificationPref?.deadlineDays?.length
+            ? m.user.notificationPref.deadlineDays
+            : DEFAULT_DEADLINE_DAYS,
+        })
+        membersByTeam.set(m.teamId, list)
       }
     }
 
@@ -145,7 +173,12 @@ export async function GET(req: NextRequest) {
       }
       processed++
       try {
-        created += await processTeam(team, fairIndex, lastLogByTeam.get(team.id) ?? null)
+        created += await processTeam(
+          team,
+          fairIndex,
+          lastLogByTeam.get(team.id) ?? null,
+          membersByTeam.get(team.id) ?? [],
+        )
         completedIds.push(team.id)
       } catch (err) {
         failedTeams++
@@ -244,10 +277,19 @@ async function claimTeams(
   return teams.filter((t) => mine.has(t.id))
 }
 
+/** One member's reminder settings, resolved from the page-level read. */
+type TeamMemberPrefs = {
+  /** The Clerk-mirrored account address — the ONLY destination (§0.8). */
+  email: string
+  emailEnabled: boolean
+  deadlineDays: number[]
+}
+
 async function processTeam(
   team: TeamRow,
   fairIndex: FairIndex,
   lastProgressLogAt: Date | null,
+  members: TeamMemberPrefs[],
 ): Promise<number> {
   const coords: [number, number] | null =
     team.locationLat != null && team.locationLng != null
@@ -273,59 +315,64 @@ async function processTeam(
     })
   if (fairs.length === 0) return 0
 
+  // The bell is one shared feed, so it is generated from the UNION of the
+  // members' saved windows — a member who asked for a 3-day reminder gets one,
+  // without imposing it on a teammate who did not (P2-S3). Each member's EMAIL
+  // is then filtered back to their OWN windows below.
   const drafts = computeNotifications({
     teamId: team.id,
     now: new Date(),
-    deadlineDays: DEFAULT_DEADLINE_DAYS,
+    deadlineDays: unionWindows(members),
     fairs,
     lastProgressLogAt,
   })
   if (drafts.length === 0) return 0
 
   // Batched, idempotent insert (PERF-5): one read of the dedupe keys already
-  // present, one createMany for the rest — the rest are the NEW reminders to
-  // email. `skipDuplicates` keeps a concurrent run from double-inserting; the
-  // tiny check-then-create window means overlapping runs could at worst re-email
-  // one reminder, never duplicate a notification row.
+  // present, one createMany for the rest. `skipDuplicates` keeps a concurrent
+  // run from double-inserting.
   const existing = await db.notification.findMany({
     where: { dedupeKey: { in: drafts.map((d) => d.dedupeKey) } },
     select: { dedupeKey: true },
   })
   const existingKeys = new Set(existing.map((e) => e.dedupeKey))
   const fresh = drafts.filter((d) => !existingKeys.has(d.dedupeKey))
-  if (fresh.length === 0) return 0
 
-  const recipients = emailConfigured() ? await teamEmailRecipients(team.id) : []
+  // Outbox rows for EVERY draft, not only the fresh ones (P1-6). "Fresh" is one
+  // run's in-memory belief about what it just inserted — the exact input that
+  // made the old inline send duplicate. `(dedupeKey, recipient)` unique is what
+  // makes delivery once-per-event-per-person, so enqueueing unconditionally is
+  // both safe and the fix: a member who enables reminders mid-bracket still gets
+  // the one they are owed, instead of nothing because another run got there first.
+  const emails = emailConfigured()
+    ? drafts.flatMap((n) =>
+        members
+          .filter((m) => m.emailEnabled && (n.bracket === null || m.deadlineDays.includes(n.bracket)))
+          .map((m) => ({ dedupeKey: n.dedupeKey, recipient: m.email, subject: n.title, body: n.body })),
+      )
+    : []
+  if (fresh.length === 0 && emails.length === 0) return 0
 
   // Notification rows and their outbox entries commit TOGETHER (P1-R5). Enqueued,
-  // not sent: delivery is a separate claimed pass, and `(dedupeKey, recipient)`
-  // unique means a duplicated run cannot produce a duplicated email even if it
-  // gets this far.
+  // not sent: delivery is a separate claimed pass.
   await db.$transaction(async (tx) => {
-    await tx.notification.createMany({ data: fresh, skipDuplicates: true })
-    if (recipients.length > 0) {
-      await tx.notificationEmail.createMany({
-        data: fresh.flatMap((n) =>
-          recipients.map((recipient) => ({
-            dedupeKey: n.dedupeKey,
-            recipient,
-            subject: n.title,
-            body: n.body,
-          })),
-        ),
+    if (fresh.length > 0) {
+      await tx.notification.createMany({
+        // `bracket` is routing metadata for the email fan-out above, not a column.
+        data: fresh.map(({ bracket: _bracket, ...row }) => row),
         skipDuplicates: true,
       })
+    }
+    if (emails.length > 0) {
+      await tx.notificationEmail.createMany({ data: emails, skipDuplicates: true })
     }
   })
 
   return fresh.length
 }
 
-/** Opted-in email addresses for the team's members. */
-async function teamEmailRecipients(teamId: string): Promise<string[]> {
-  const prefs = await db.notificationPref.findMany({
-    where: { emailEnabled: true, user: { teamMemberships: { some: { teamId } } } },
-    select: { email: true, user: { select: { email: true } } },
-  })
-  return prefs.map((p) => p.email ?? p.user.email).filter((e): e is string => !!e)
+/** Every window any member asked for, or the defaults when the team saved none. */
+function unionWindows(members: TeamMemberPrefs[]): number[] {
+  const all = members.flatMap((m) => m.deadlineDays)
+  return all.length > 0 ? [...new Set(all)] : DEFAULT_DEADLINE_DAYS
 }

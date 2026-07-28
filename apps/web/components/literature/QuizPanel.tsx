@@ -59,6 +59,36 @@ export function QuizPanel({
 }: ReturnType<typeof usePaperQuiz>) {
   return (
     <>
+      {/* Idle — no graded quiz yet (or the history read failed). Writing one is
+          a paid Vega call, so it waits for the student to ask; the panel used to
+          fire it on mount. */}
+      {phase === 'idle' && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
+          {quizError ? (
+            <div className="w-full px-3 py-2 bg-red-500/15 border border-red-500/30 rounded-sm">
+              <span className="font-pixel text-[7px] text-red-300 leading-loose">{quizError}</span>
+            </div>
+          ) : (
+            <>
+              <Award size={22} className="text-[#F5C518]/60" />
+              <p className="font-pixel text-[8px] text-white/60 leading-loose">
+                Ready when you are
+              </p>
+              <p className="text-[13px] text-white/50 leading-relaxed max-w-[260px]">
+                Read the paper first. Vega will write a short comprehension quiz on it — answer
+                in your own words to earn proficiency for this source.
+              </p>
+            </>
+          )}
+          <button
+            onClick={generateQuiz}
+            className="font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-5 py-2.5 rounded-sm hover:brightness-110 transition-all"
+          >
+            {quizError ? 'Try again' : 'Start the quiz'}
+          </button>
+        </div>
+      )}
+
       {/* Loading — quiz generation (long LLM wait, no form to preserve yet) */}
       {phase === 'loading' && (
         <LabeledLoader label="Vega is writing your quiz…" tone="vega" fill="flex-1" />

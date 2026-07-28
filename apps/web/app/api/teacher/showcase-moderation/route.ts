@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
       return
     }
 
-    await tx.showcaseModerationEvent.create({
+    const event = await tx.showcaseModerationEvent.create({
       data: {
         showcaseId: sc.id,
         digest: data.digest,
@@ -142,6 +142,7 @@ export async function POST(req: NextRequest) {
         actorUserId: ctx.dbUserId,
         note,
       },
+      select: { id: true },
     })
 
     await tx.notification.create({
@@ -153,7 +154,9 @@ export async function POST(req: NextRequest) {
           ? `Your teacher approved your showcase. It's live in the public gallery.${note ? ` Note: ${note}` : ''}`
           : `Your teacher asked for changes before your showcase goes public.${note ? ` Note: ${note}` : ''}`,
         linkUrl: '/lab',
-        dedupeKey: `showcase_reviewed:${sc.id}:${Date.now()}`,
+        // Keyed to the moderation event, unique by construction. `Date.now()`
+        // made a retried transaction write a SECOND notice for one decision.
+        dedupeKey: `showcase_reviewed:${event.id}`,
       },
     })
   })

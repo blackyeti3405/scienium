@@ -15,11 +15,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const store = {
   members: [] as { userId: string; teamId: string; role: 'lead' | 'member'; joinedAt: Date }[],
-  teams: [] as { id: string; teamLeadId: string; archivedAt: Date | null }[],
+  teams: [] as { id: string; name: string; teamLeadId: string; archivedAt: Date | null }[],
   users: [] as { id: string; activeTeamId: string | null }[],
   invites: [] as { teamId: string; usedByUserId: string | null }[],
   events: [] as Record<string, unknown>[],
+  notifications: [] as Record<string, unknown>[],
 }
+let eventSeq = 0
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/db-lock', () => ({ lockAggregate: vi.fn(async () => {}) }))
@@ -92,7 +94,20 @@ const tx = {
   },
   teamMembershipEvent: {
     create: async ({ data }: any) => {
-      store.events.push(data)
+      const row = { id: `evt_${++eventSeq}`, ...data }
+      store.events.push(row)
+      return row
+    },
+  },
+  notification: {
+    create: async ({ data }: any) => {
+      if (store.notifications.some((n) => n.dedupeKey === data.dedupeKey)) {
+        // `dedupeKey` is `@unique`, and the write is inside the removal's
+        // transaction — a collision does not lose a notice, it rolls the
+        // removal back.
+        throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' })
+      }
+      store.notifications.push(data)
       return data
     },
   },
@@ -114,7 +129,7 @@ const T1 = 'team_1'
 const T2 = 'team_2'
 
 function seedTeam(id: string, leadId: string, memberIds: string[]) {
-  store.teams.push({ id, teamLeadId: leadId, archivedAt: null })
+  store.teams.push({ id, name: `Lab ${id}`, teamLeadId: leadId, archivedAt: null })
   memberIds.forEach((userId, i) =>
     store.members.push({
       userId,
@@ -133,6 +148,8 @@ beforeEach(() => {
   store.users = []
   store.invites = []
   store.events = []
+  store.notifications = []
+  eventSeq = 0
 })
 
 describe('one team at a time', () => {
@@ -435,5 +452,89 @@ describe('departing a team you are not on', () => {
         reason: 'self_leave',
       }),
     ).rejects.toBeInstanceOf(MembershipError)
+  })
+})
+
+describe('a removed member is told (HANDOFF #5)', () => {
+  const remove = (userId: string) =>
+    departTeam(tx as never, {
+      teamId: T1,
+      userId,
+      event: 'removed',
+      actorUserId: 'u1',
+      reason: 'removed_by_lead',
+    })
+
+  it('writes the notice addressed to the removed member alone', async () => {
+    seedTeam(T1, 'u1', ['u1', 'u2'])
+
+    await remove('u2')
+
+    expect(store.notifications).toHaveLength(1)
+    expect(store.notifications[0]).toMatchObject({
+      teamId: T1,
+      userId: 'u2',
+      kind: 'membership_changed',
+      title: `You were removed from Lab ${T1}`,
+      linkUrl: '/onboarding',
+    })
+  })
+
+  it('a member who LEFT is not notified — they know', async () => {
+    seedTeam(T1, 'u1', ['u1', 'u2'])
+
+    await departTeam(tx as never, {
+      teamId: T1,
+      userId: 'u2',
+      event: 'left',
+      actorUserId: 'u2',
+      reason: 'self_leave',
+    })
+
+    expect(store.notifications).toEqual([])
+  })
+
+  it('switching teams does not notify — the join did it, nobody removed them', async () => {
+    seedTeam(T1, 'u1', ['u1', 'u2'])
+    seedTeam(T2, 'u3', ['u3'])
+
+    await leaveOtherTeams(tx as never, 'u2', T2)
+
+    expect(store.notifications).toEqual([])
+  })
+
+  it('keys the notice to the EVENT, so re-joining and being removed again works', async () => {
+    // A key of (user, team) collides on the second removal — and because the
+    // write is inside the removal's transaction, that collision aborts the
+    // REMOVAL. The member would be stuck on a team they were removed from.
+    seedTeam(T1, 'u1', ['u1', 'u2'])
+    await remove('u2')
+    store.members.push({ userId: 'u2', teamId: T1, role: 'member', joinedAt: new Date(2026, 0, 5) })
+
+    await expect(remove('u2')).resolves.toBeTruthy()
+    expect(store.notifications).toHaveLength(2)
+    expect(store.notifications[0]!.dedupeKey).not.toBe(store.notifications[1]!.dedupeKey)
+  })
+})
+
+describe('a system removal is not a notice', () => {
+  it('erasure departs a membership with no actor and writes no notification', async () => {
+    // `lib/data-requests/workflow.ts` departs live memberships with
+    // `event: 'removed', actorUserId: null` so the lead handover and archiving
+    // still happen. Telling a student their lab membership ended, inside the
+    // transaction that is erasing them, is noise — and the notice would be
+    // deleted by the same transaction seconds later.
+    seedTeam(T1, 'u1', ['u1', 'u2'])
+
+    await departTeam(tx as never, {
+      teamId: T1,
+      userId: 'u2',
+      event: 'removed',
+      actorUserId: null,
+      reason: 'data_erasure',
+    })
+
+    expect(store.notifications).toEqual([])
+    expect(eventsOfType('removed')).toHaveLength(1) // the log still records it
   })
 })

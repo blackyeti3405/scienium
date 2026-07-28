@@ -2,7 +2,8 @@
 
 ## STATE
 
-Branch `Rig-features`, HEAD at **v0.75.0**, gates 1–6 green.
+Branch `Rig-features`, HEAD at **v0.75.5** (working tree; v0.75.0 was the last handoff), gates
+1–5 green — E2E not re-run for v0.75.5, see below.
 Vitest **135 files / 1,883 tests**. **64 migrations**, all applied to the local dev DB.
 devlab (`cmre80gn50004mb3log7ad2vg`) verified intact after the migration: 25 papers, 11 discovery
 nodes. `reset:e2e` leaves **zero stray labs**.
@@ -15,6 +16,13 @@ documented static-check ones.
 
 HANDOFF's previous "Ready to pick up" list — all five items — is **done**. See
 `docs/CHANGELOG.md`'s v0.75.0 entry and `REFACTOR2.MD` §0.11's v0.75.0 table.
+
+**v0.75.5 (uncommitted)** closed the notification subsystem: P2-S3, P1-6's notification half,
+§0.8's destination verification, and this list's items 4 and 5 (both now removed from it).
+Migration `20260728120000_notification_receipts_and_reach` is applied to the local dev DB;
+devlab re-verified (25 papers, 11 discovery nodes). **E2E has NOT been re-run since** — the
+migration drops `notifications.read_at` and `notification_prefs.email`, and `e2e/F5-bell.spec.ts`
+exercises the bell's read state, so run gate 6 before trusting it.
 
 ---
 
@@ -102,13 +110,7 @@ load skews the suite; `test:e2e:file` uses `next dev`). New this session:
    not the problem being fixed. In the DEFAULT layout the Operations Hub's silhouette covers
    Discovery's centre; a student on a fresh lab has to find an unoccluded corner. The seed is in
    two places now (`prisma/seed-e2e.mjs` and `e2e/lab.ts`) and kept in step by hand.
-4. **A removed student with no live team gets no notification.** `Notification.teamId` is
-   required and the bell is team-scoped. Making it nullable is a nullable FK, four index changes
-   and an `OR` in the bell's visibility predicate. Deliberate, tested (the removal still commits),
-   and recorded — not a bug to rediscover.
-5. **Team removal is not notified at all.** Same reason, worse: the bell reads `ctx.teamId`, so a
-   notification about the team you were just removed from is structurally unreadable.
-6. **`e2e/api.ts`'s auth recovery ladder** (~150 lines of escalating Clerk session recovery)
+4. **`e2e/api.ts`'s auth recovery ladder** (~150 lines of escalating Clerk session recovery)
    **fired zero times** in the production-build baseline again. It exists for the `next dev` lane.
    Worth deleting if a few dev-lane runs agree.
 
@@ -140,8 +142,16 @@ load skews the suite; `test:e2e:file` uses `next dev`). New this session:
   because a best-effort write afterwards is precisely the shape that produces a student who was
   removed and never told.
 - **A globally-unique `dedupeKey` inside a transaction is a rollback risk.** Key it to something
-  unique by construction (v0.75.0 uses the `ClassMembershipEvent` id) — a (subject, scope) key
-  collides on the second occurrence and takes the domain write down with it.
+  unique by construction (v0.75.0 uses the `ClassMembershipEvent` id, v0.75.5 the
+  `TeamMembershipEvent` and `ShowcaseModerationEvent` ids) — a (subject, scope) key collides on
+  the second occurrence and takes the domain write down with it. A wall clock in the key is the
+  opposite failure and just as bad: nothing ever collides, so a retried transaction writes a
+  second notice silently. `test/notification-durability.test.ts` asserts both lists EXACTLY.
+- **A notification row is an EVENT, not a per-person copy.** `dedupeKey` is globally unique and
+  `NotificationEmail.dedupeKey` joins on it, so read state is a receipt (`NotificationRead`) and
+  never a fan-out, and `Notification.teamId` is nullable because a notice about a membership that
+  ENDED outlives the team it names. The bell shows *anything addressed to me* plus *team-wide rows
+  for the team I am acting as* — widening the first clause must never widen the second.
 - **Never hold a DB transaction across a network call.** Compute first, open the transaction after.
 - **Provider AND own-API output gets a `safeParse`, never a cast.**
 - **A failed write must be visible to the user.** Established shapes: `writeError` + nonce →

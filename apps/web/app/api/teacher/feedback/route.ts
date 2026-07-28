@@ -30,29 +30,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Not in your classes' }, { status: 403 })
   }
 
-  const feedback = await db.teacherFeedback.create({
-    data: {
-      teamId: data.teamId,
-      teacherUserId: ctx.dbUserId,
-      targetType: data.targetType ?? 'team',
-      targetId: data.targetId ?? null,
-      body: data.body,
-    },
-  })
-
-  // Best-effort team notification (unique dedupe on the feedback id).
-  await db.notification
-    .create({
+  // Feedback and the notice about it commit TOGETHER (REFACTOR2 P1-6). The
+  // notification used to be a best-effort write after the fact, which is the
+  // shape that produces feedback a student is never told about — the same
+  // reasoning `recordActivity` encodes for the activity feed. `dedupeKey` is
+  // keyed to the feedback row's own id, unique by construction, so it can never
+  // collide and take the feedback down with it.
+  const feedback = await db.$transaction(async (tx) => {
+    const row = await tx.teacherFeedback.create({
+      data: {
+        teamId: data.teamId,
+        teacherUserId: ctx.dbUserId,
+        targetType: data.targetType ?? 'team',
+        targetId: data.targetId ?? null,
+        body: data.body,
+      },
+    })
+    await tx.notification.create({
       data: {
         teamId: data.teamId,
         kind: 'teacher_feedback',
         title: 'New feedback from your teacher',
         body: truncate(data.body),
         linkUrl: '/lab?panel=feedback',
-        dedupeKey: `teacher_feedback:${feedback.id}`,
+        dedupeKey: `teacher_feedback:${row.id}`,
       },
     })
-    .catch(() => {})
+    return row
+  })
 
   return NextResponse.json({ feedback })
 }

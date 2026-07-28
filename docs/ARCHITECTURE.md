@@ -1178,6 +1178,31 @@ being killed mid-team. A deterministic test proves one day's runs cover at
 least 3,500 teams within this budget. The in-app feed is served by
 `(teamId, createdAt)` / `(userId, createdAt)` indexes.
 
+**The notification contract (REFACTOR2 P2-S3, v0.75.5).** A `Notification` row
+is an EVENT, not a per-person copy — `dedupeKey` is globally unique and
+`NotificationEmail.dedupeKey` joins on it. Three properties follow:
+
+- **Read state is per member.** `NotificationRead(notificationId, userId)` is
+  the receipt; there is no `readAt` column. Fan-out was rejected because a
+  per-user notification row forces a per-user `dedupeKey`, which breaks the join
+  that makes email delivery at-most-once.
+- **`teamId` is nullable, and the bell reaches past the reader's team.** A
+  notice about a class or team membership that ENDED is written when the
+  student may hold no team at all. Visibility is *anything addressed to me* OR
+  *team-wide rows for the team I am acting as* — the second clause keeps a
+  team-wide notice from leaking to a non-member. A team-less student reads their
+  bell on `/onboarding`.
+- **Reminder windows are per member.** The bell is generated from the UNION of
+  the team's saved `deadlineDays`; each member's email is filtered back to their
+  own windows by the `bracket` on the draft. Member preferences are loaded one
+  query per page. The destination is `User.email` (mirrored from Clerk) and
+  nothing else — `NotificationPref` has no address column (§0.8).
+
+Outbox rows are enqueued for every draft, not only the ones a run believes it
+just inserted, so `(dedupeKey, recipient)` unique — not a run's in-memory state
+— is what decides whether a person is mailed about an event. Delivery remains
+at-most-once: a crash between provider acceptance and the `sent` write retries.
+
 ### 8.10 PvP
 
 `prisma/schema.prisma` (`Spell`, `PvpRaid`, `PvpTrophies`, `PvpRaidQuota`,
@@ -1202,7 +1227,7 @@ returns 501 and the lab opens a `StubFeature`.
 | Research plan | `ResearchPlan`, `IdeaCheck` |
 | Expertise/logs | `ExpertiseExam`, `ExpertiseAttempt`, `ProjectLog`, `ProjectLogFollowup`, `ProjectLogReference`, `ProjectLogEntry` |
 | Teacher workflow | `TeacherFeedback`, `FeedbackTarget` |
-| Notifications | `Notification`, `NotificationPref`, `NotificationKind`, `NotificationRunTeam` |
+| Notifications | `Notification`, `NotificationRead`, `NotificationPref`, `NotificationKind`, `NotificationRunTeam`, `NotificationEmail` |
 | Experiments | `Experiment`, `Measurement` |
 | Showcase | `Showcase`, `ShowcaseAsset`, `ShowcaseView`, privacy/moderation/asset enums |
 | Fairs/rubric | `Fair`, `FairEvent`, `FairUserAssociation`, `RubricVersion`, `RubricCriterion`, `RubricSelfAssessment`, `TeamRubricScore`, `IsefCategory`, `FormsCatalog`, `TeamFormStatus`, related enums |
@@ -1296,6 +1321,10 @@ The migration chain is append-only:
   `(showcaseId, visitorFingerprint, day)` unique (A13 per-day view dedupe,
   backfilled from each row's own `viewedAt` date), and the
   `NotificationRunTeam` per-day run ledger table (A4, `0.30.0`).
+- `20260728120000_notification_receipts_and_reach`: `notification_reads`
+  (backfilled from `read_at` before the column is dropped), nullable
+  `notifications.team_id`, and `notification_prefs.email` dropped (P2-S3, §0.8,
+  `0.75.5`).
 - `20260728000000_vocab_deck_team_scope`: widens `VocabCard`'s unique from
   `(user_id, term_key)` to `(user_id, team_id, term_key)`, so the deck is
   scoped the same way every other vocabulary surface already was (P2-S4,

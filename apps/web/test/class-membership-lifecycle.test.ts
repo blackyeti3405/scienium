@@ -266,25 +266,27 @@ describe('ending an approved enrolment', () => {
   // reachable — there is no suppression branch whose removal could flip it,
   // and the refusal itself is already pinned by the interleave test above.
 
-  it('DOCUMENTS A KNOWN GAP: a student with no live team is removed but never told', async () => {
-    // This is NOT a property we want — it is the register's debt, asserted so
-    // it stays visible. HANDOFF "Ready to pick up #4": `Notification.teamId` is
-    // required and the bell only renders inside a team, so there is nowhere to
-    // show the notice. Closing that gap (nullable FK + an `OR` in the bell's
-    // visibility predicate) will make the `notifications` assertion below FAIL,
-    // and that failure means THE GAP CLOSED, not that something regressed —
-    // delete this test at that point.
+  it('a student with no live team is told too — the notice carries no team', async () => {
+    // This inverts the gap this file used to DOCUMENT (HANDOFF #4). The notice
+    // was skipped entirely when the student held no `TeamMember` row, because
+    // `Notification.teamId` was required and the bell filtered on it. Both are
+    // fixed: the row is written with a null team, and the bell reaches anything
+    // addressed to the reader.
     //
-    // What must stay true either way, and is the reason this test exists at
-    // all: the removal itself COMMITS. It must never fail because the notice
-    // has nowhere to go.
+    // What must stay true either way, and is why the removal is asserted here:
+    // it COMMITS. It must never fail because the notice has nowhere to go.
     memberships = []
 
     await expect(removeFromClass(CLASS, STUDENT, TEACHER)).resolves.toMatchObject({
       committed: true,
     })
     expect(users[0]!.classId).toBeNull()
-    expect(notifications).toEqual([])
+    expect(notifications).toHaveLength(1)
+    expect(notifications[0]).toMatchObject({
+      teamId: null,
+      userId: STUDENT,
+      kind: 'membership_changed',
+    })
   })
 
   it('serializes against a concurrent decision on the same student', async () => {
