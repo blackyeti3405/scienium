@@ -2009,6 +2009,23 @@ defence-in-depth gap `SourceReader`/`IdeaCheckView` closed in v0.64.0, now close
 and the synthesis stale-grid 409 now names what moved, computed client-side from the two
 snapshots it already holds, for no extra request.
 
+#### v0.75.11 — 2026-07-28 — the E2E catches up with two batches that changed behaviour on purpose
+
+No product code. The first full suite run since v0.75.5 came back **290 passed / 3 failed / 7
+skipped / 27 did not run**, deterministic across two clean runs. All three failures were specs
+asserting behaviour an earlier batch deliberately removed, and the 27 were exactly the serial-mode
+remainder of the three files that failed (14 + 10 + 3) — nothing outside them was affected.
+
+| Finding | Status | What actually changed | Still owed |
+| --- | --- | --- | --- |
+| `F11-quiz-retry` AC1 and `lit-explain-it-back` AC1 waited for a quiz that no longer writes itself | **CLOSED — spec fix, and v0.75.5 was right** | Reproduced first against HEAD, separately, each with the file's own AC1: `waiting for getByPlaceholder('Your answer…')`, element never found. v0.75.5 stopped `usePaperQuiz`'s mount effect from calling `generateQuiz()` — that was a paid Anthropic generation per mount with no student click — so mount now settles on `idle` behind "Start the quiz". Fixed per file by subject: `F11-quiz-retry` tests the quiz, so it PRESSES the button and waits for the generation POST, inside the `withRateLimitRetry` its siblings already use (a 429 leaves the panel in the `quiz` phase where the same action is labelled "retry", so the locator matches both names); `lit-explain-it-back` tests the Feynman tab, so its `openQAPanel` races the **idle** panel against the graded tab-strip and generates nothing — paying for a quiz a spec never reads is the defect v0.75.5 removed, in test form. Both helpers carried long comments describing the old mount sequence as current; both rewritten. | Nothing. The rate-limit branch of the new click is reasoned-about, not exercised — no run has 429'd on generation. |
+| `F11` AC14/AC15 pinned an implicit ARIA role | **CLOSED — spec fix, attributed to v0.75.8** | Reproduced: `getByRole('button', { name: 'Photosynthesis', exact: true })`, element not found. v0.75.8's §0.9 Row B gave `TopicSearch` `role="combobox"`/`listbox`/`option`; the explicit `role="option"` on each result overrides the `<button>`'s implicit role. Changing ONLY the expected role turned AC14 and AC15 green with every other step of the flow untouched — which is what attributes it to the a11y attributes rather than to the other discovery changes in the same range (`lockAggregate` + case-insensitive de-dupe on `/api/discovery/interests`, the store's keyed rollback and search generation tokens), none of which this test path touches. | Nothing. `a11y.spec.ts` asserts the combobox contract; the option role is now asserted by use. |
+
+Verified on the dev lane, each file in FULL: `F11.spec.ts` 18 passed / 1 skipped (the documented
+static AC17), `F11-quiz-retry.spec.ts` 13 passed, `lit-explain-it-back.spec.ts` 17 passed. Gates
+1–4 pass; Vitest **161 files / 2,490 tests**. Gate 5 (`next build`) not run — the dev lane held
+port 3000 for this batch. No migration.
+
 #### v0.75.10 — 2026-07-28 — the tests stop claiming things they never checked
 
 No product code changed. This batch works the closing audit of 0.75.1–0.75.9

@@ -5,6 +5,42 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.75.11] — 2026-07-28
+
+E2E-only. The full suite's three deterministic failures (290 passed / 3 failed / 7 skipped / 27
+did not run) were all specs still asserting behaviour two earlier batches deliberately changed.
+No product code changed, and no assertion was weakened.
+
+### Fixed — two specs still expected the quiz to generate itself
+
+v0.75.5 removed the paid-work defect where `usePaperQuiz`'s mount effect called `generateQuiz()`
+with no student click, POSTing an Anthropic generation per mount. Mount now settles on `idle`,
+whose only exit is the "Start the quiz" button. `e2e/F11-quiz-retry.spec.ts` and
+`e2e/lit-explain-it-back.spec.ts` both waited on the quiz textarea that no longer appears
+(reproduced: `waiting for getByPlaceholder('Your answer…')`, element never found), which failed
+each file's AC1 and, under `mode: 'serial'`, skipped the 24 tests behind them.
+
+Fixed per file by what the file is actually about. `F11-quiz-retry`'s subject IS the quiz, so
+`submitFailingFirstAttempt` now presses "Start the quiz" and waits for the generation POST — the
+real student flow — inside the same `withRateLimitRetry` its siblings use (a 429'd generation
+leaves the panel in the `quiz` phase behind its error banner, where the same action is named
+"retry", so the locator matches both). `lit-explain-it-back`'s subject is the Feynman tab, so its
+`openQAPanel` waits for the **idle** panel instead: generating a quiz there would be a paid call
+the spec has no use for. Both helpers' doc comments described the old mount behaviour as current
+and are rewritten.
+
+### Fixed — a discovery spec pinned an implicit ARIA role
+
+`e2e/F11.spec.ts` AC14/AC15 located a topic-search result with
+`getByRole('button', { name: 'Photosynthesis' })`. v0.75.8 gave `TopicSearch` the full
+combobox/listbox/option attribute set, so each result's `<button>` now carries an explicit
+`role="option"` that overrides its implicit button role — same element, same click, different
+accessible role. Changed to `getByRole('option', …)`; nothing else in the flow moved, which is
+what attributes the failure to that change rather than to the discovery work in the same range
+(`lockAggregate` on interests, the store's keyed rollback and search generation tokens).
+
+---
+
 ## [0.75.10] — 2026-07-28
 
 Test-truth work: no product behaviour changes in this release. The closing audit of the

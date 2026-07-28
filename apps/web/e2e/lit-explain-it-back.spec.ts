@@ -129,16 +129,20 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
    * sequence has finished landing on ITS terminal phase, or that later,
    * in-flight `setPhase(...)` clobbers ours.
    *
-   * For a paper with no graded session yet (every paper this spec seeds),
-   * `usePaperQuiz`'s mount effect finds no session, then INTERNALLY calls
-   * `generateQuiz()`: `setPhase('loading')` → `POST /api/papers/[id]/quiz`
-   * → `setPhase('quiz')`. Waiting only on the mount-time GET .../quiz (which
-   * resolves BEFORE that POST even fires) is not enough — a tab click
-   * sequenced right after it can race ahead of `generateQuiz`'s later
-   * `setPhase('quiz')` and get silently reverted. Waiting for the quiz
-   * textarea (fresh papers) OR the graded tab-strip (AC18's pre-graded paper)
-   * to render is a DOM-observable proxy for "the phase machine has reached
-   * its terminal state and won't move again on its own".
+   * Mount has exactly two terminal phases, and neither of them spends money:
+   * a paper with no graded session lands on `idle` — the "Start the quiz"
+   * panel, whose only exit is the student pressing that button (v0.75.5: the
+   * mount effect used to call `generateQuiz()` itself, POSTing a paid Vega
+   * generation with no click) — and a paper WITH one lands on `results`, which
+   * renders the graded tab-strip. Racing those two DOM states is the
+   * observable proxy for "the phase machine has settled and won't move again
+   * on its own", which is what a following tab click needs.
+   *
+   * Nothing in this file asserts on the quiz itself (its subject is the
+   * Feynman tab), so the fresh-paper branch deliberately waits for the idle
+   * panel rather than pressing the button — generating a quiz here would be a
+   * paid call this spec has no use for. F11-quiz-retry, whose subject IS the
+   * quiz, presses it.
    */
   async function openQAPanel(page: Page, title: string, paperId: string) {
     await openLiteratureReview(page)
@@ -151,7 +155,7 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
     await row.getByRole('button', { name: 'Q&A' }).click()
     await explainGet
     await Promise.race([
-      page.getByPlaceholder('Your answer…').first().waitFor({ state: 'visible', timeout: 15000 }),
+      page.getByRole('button', { name: 'Start the quiz' }).waitFor({ state: 'visible', timeout: 15000 }),
       page.getByRole('button', { name: /Quiz results/ }).waitFor({ state: 'visible', timeout: 15000 }),
     ])
   }

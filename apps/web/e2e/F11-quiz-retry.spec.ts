@@ -107,8 +107,13 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
    * matching GET" — waitForResponse resolves on whichever one finishes) before
    * returning: the "Comprehension Quiz" header label renders unconditionally
    * even while that fetch is still in flight (`loading` phase), so callers
-   * that need the SETTLED phase (results vs. a fresh quiz form) must wait on
-   * the network response itself, not that static label.
+   * that need the SETTLED phase must wait on the network response itself, not
+   * that static label.
+   *
+   * Settling means `results` (a graded session exists) or `idle` (none does).
+   * `idle` is NOT a quiz form — since v0.75.5 the panel no longer generates a
+   * quiz on mount, because that POST is a paid Vega call and must follow a
+   * student pressing "Start the quiz". `submitFailingFirstAttempt` presses it.
    */
   async function openQAPanel(page: Page, title: string, paperId: string) {
     await openLiteratureReview(page)
@@ -135,10 +140,11 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   }
 
   /**
-   * Seeds a brand-new paper, opens its Q&A panel (always a fresh quiz — never
-   * graded before), answers every question, submits, and waits for the FAILED
-   * results view. Returns the paper id/title so the caller can keep driving
-   * the retry flow or make further API assertions against the same paper.
+   * Seeds a brand-new paper, opens its Q&A panel, presses "Start the quiz"
+   * (the panel opens on `idle` — generation is a paid call and waits for the
+   * click), answers every question, submits, and waits for the FAILED results
+   * view. Returns the paper id/title so the caller can keep driving the retry
+   * flow or make further API assertions against the same paper.
    *
    * Wrapped in `withRateLimitRetry`: if the 'ai'-tier window (see AC10) is
    * exhausted by this spec's own prior calls, the grade POST 429s — the panel
@@ -149,6 +155,16 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   async function submitFailingFirstAttempt(page: Page): Promise<{ id: string; title: string }> {
     const paper = await seedFreshPaper()
     await openQAPanel(page, paper.title, paper.id)
+    await withRateLimitRetry(async () => {
+      const generateResponse = page.waitForResponse(
+        (res) => res.url().endsWith(`/api/papers/${paper.id}/quiz`) && res.request().method() === 'POST',
+      )
+      // "retry" is the same action after a 429 — a failed generation leaves the
+      // panel in the `quiz` phase behind its error banner, not back on `idle`.
+      await page.getByRole('button', { name: /^(Start the quiz|retry)$/ }).click()
+      const res = await generateResponse
+      return { status: res.status(), retryAfterSeconds: Number(res.headers()['retry-after'] ?? 60), result: res }
+    }, 'F11 spec')
     await expect(page.getByPlaceholder('Your answer…').first()).toBeVisible({ timeout: 10000 })
     await answerAllQuizQuestions(page)
     await withRateLimitRetry(async () => {

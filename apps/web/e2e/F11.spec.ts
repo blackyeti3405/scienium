@@ -550,7 +550,12 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     // file-header note on why this, not Papers, is used here).
     const searchInput = page.getByPlaceholder(/Search another starting topic/)
     await searchInput.fill(WIKI_TOPIC)
-    const optionLocator = page.getByRole('button', { name: WIKI_TOPIC, exact: true })
+    // `option`, not `button`: v0.75.8 gave TopicSearch the full combobox /
+    // listbox / option attribute set (§0.9 "Keyboard/name defects"), so each
+    // result's <button> now carries an explicit role="option" that overrides
+    // its implicit button role. Same element, same click — the accessible role
+    // is what changed, and the spec was pinning the implicit one.
+    const optionLocator = page.getByRole('option', { name: WIKI_TOPIC, exact: true })
     await expect(optionLocator).toBeVisible({ timeout: 10000 })
 
     const treePostPromise = page.waitForResponse(
@@ -601,7 +606,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     // can't ambiguously satisfy the text-match below.
     const searchInput = page.getByPlaceholder(/Search another starting topic/)
     await searchInput.fill(WIKI_TOPIC_2)
-    const optionLocator = page.getByRole('button', { name: WIKI_TOPIC_2, exact: true })
+    const optionLocator = page.getByRole('option', { name: WIKI_TOPIC_2, exact: true }) // see AC14
     await expect(optionLocator).toBeVisible({ timeout: 10000 })
 
     const treePostPromise = page.waitForResponse(
