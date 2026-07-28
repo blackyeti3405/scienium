@@ -53,6 +53,15 @@ async function findUser(identifier, fallbackName, roleFilter) {
       where: { ...where, email: { startsWith: `${identifier}@` } },
     })
     if (byPrefix) return { user: byPrefix, via: `email prefix ${identifier}@…` }
+    // The identifier is a Clerk USERNAME (this instance signs in by username —
+    // `devuser2`, `devuser4`, `DevTeacher` — not by email), and the app stores
+    // that username as `User.name` for these dev accounts. Without this, an
+    // account whose email does not happen to start with its username falls
+    // through to the hardcoded `fallbackName` and, missing that, looks like a
+    // brand-new user to `materializeFromClerk` — which would try to create a row
+    // that already exists.
+    const byName = await db.user.findFirst({ where: { ...where, name: identifier } })
+    if (byName) return { user: byName, via: `name="${identifier}" (Clerk username)` }
   }
   const byName = await db.user.findFirst({ where: { ...where, name: fallbackName } })
   if (byName) return { user: byName, via: `name="${fallbackName}"` }

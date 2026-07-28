@@ -468,6 +468,16 @@ The E2E suite (`apps/web/e2e/`) drives a real logged-in browser against the dev
 DB using Clerk test accounts — set `E2E_LEADER_*`, `E2E_STUDENT_*`, and
 `E2E_TEACHER_*` in `apps/web/.env.local` (see `.env.example`).
 
+**`*_IDENTIFIER` is the Clerk USERNAME, not the email.** This instance signs in
+by username (`devuser2`, `devuser4`, `DevTeacher`), and `clerk.signIn` with an
+email address is rejected even when the password is correct and the address is
+on the account — a confusing failure, because `auth.setup.ts` can only report
+"failed to authenticate — check the E2E creds". If you hit it, verify the
+password independently before doubting it:
+`POST https://api.clerk.com/v1/users/<id>/verify_password`. `seed:e2e` resolves
+the same identifier against `User.name`, which is where the app stores that
+username.
+
 **Use dedicated test accounts — never a personal/play account.** The suite
 churns the leader/student team every run (spends KP, places/sells buildings,
 resets currency to a baseline), so any account wired as `E2E_LEADER`/`E2E_STUDENT`

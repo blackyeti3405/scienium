@@ -7,8 +7,11 @@ Vitest **135 files / 1,883 tests**. **64 migrations**, all applied to the local 
 devlab (`cmre80gn50004mb3log7ad2vg`) verified intact after the migration: 25 papers, 11 discovery
 nodes. `reset:e2e` leaves **zero stray labs**.
 
-**E2E: 309 passed, 0 failed, 9 skipped (14.5 min)** on the production build
-(`E2E_BUILD=1`). The 9 skips are the pre-existing documented static-check ones, unchanged.
+**E2E: 309 passed, 8 skipped (15.3 min)** on the production build (`E2E_BUILD=1`), against
+**three genuinely distinct Clerk accounts** — leader `devuser2`, student `devuser4`, teacher
+`DevTeacher`. One navigation-abort flake (`net::ERR_ABORTED` on a `page.goto`) in
+`lit-explain-it-back`; re-ran the file in isolation, 17/17. The skips are the pre-existing
+documented static-check ones.
 
 HANDOFF's previous "Ready to pick up" list — all five items — is **done**. See
 `docs/CHANGELOG.md`'s v0.75.0 entry and `REFACTOR2.MD` §0.11's v0.75.0 table.
@@ -41,6 +44,17 @@ Everything from the previous handoff still applies (never `pkill` the dev server
 `next build` while an E2E server is live; `pgrep -f "playwright test"` matches itself; machine
 load skews the suite; `test:e2e:file` uses `next dev`). New this session:
 
+- **`.env.local` first-wins vs `source` last-wins.** `e2e/env.ts` takes the FIRST value of a
+  duplicated key (a CI secret must beat the file); shell `source` takes the LAST. So appending a
+  corrected credential below a stale one reads as fixed to you and is ignored by the runner. It
+  cost a full suite run and, worse, was destructive: the "student" role silently signed in as the
+  LEADER, so `team-membership`'s *a non-lead cannot remove anyone* ran AS the lead, got its 200,
+  and removed a real member from the shared fixture. `loadTestEnv` now throws naming both lines.
+- **`*_IDENTIFIER` is the Clerk USERNAME, not the email.** Sign-in with an email is rejected by
+  this instance even when the password is right and the address is on the account. The only
+  symptom is `auth.setup.ts`'s generic "failed to authenticate — check the E2E creds", which
+  points at the password. Verify the password independently
+  (`POST /v1/users/<id>/verify_password`) before touching it.
 - **A `createLab` label becomes the team NAME, and `getByRole(name:)` matches SUBSTRINGS.**
   The team name is the accessible name of the status strip's team button. `createLab('rubric-
   self-check')` made `getByRole('button', { name: 'Self-check' })` resolve to the *team button*
@@ -70,19 +84,14 @@ load skews the suite; `test:e2e:file` uses `next dev`). New this session:
 | **P1-R9 retention numbers** | Qualified FERPA/COPPA input. Nine windows; `retention_policies` ships EMPTY on purpose. Also a production-like erasure drill and an approval surface recording WHO approved. |
 | **P1-R3 enforcement** | A week of real `ai_usage` rows. `docs/TODO.md` → "AI cost review". |
 | **E2E asset reclaim (P1-S15)** | A separate R2 bucket. `nova-lab-assets` is **shared with production** — never delete objects there. |
-| **A second E2E Clerk account** | `E2E_STUDENT_IDENTIFIER` currently points at the leader, so this machine has ONE account. Consequences below. |
 
 ### Ready to pick up
 
-1. **`createLab`'s co-member support is untested here.** `bringCoMembers` vacates and restores
-   every OTHER member of the shared fixture, and six specs now pass `true`. On this machine
-   `E2E_STUDENT_IDENTIFIER === E2E_LEADER_IDENTIFIER`, so the seeder's single-account path makes
-   the fixture a one-member team and the co-member code is a **no-op** — those specs pass by
-   collapsing to one account and skipping their cross-member assertions, exactly as
-   `seed-e2e.mjs` documents. The restore path (delete membership → recreate on dispose, under
-   `TeamMember.userId @@unique`) has therefore never actually run. Point `E2E_STUDENT_IDENTIFIER`
-   at a second Clerk account and re-run `F18-vega-companion`, `F13-codex`, `vocab-builder`, `F1`,
-   `F5-bell`, `F9`, `issue-6`, `F10-teacher-rubric` before trusting it.
+1. **A second LEADER account, for parallelism.** The student slot is now a real second account
+   (`devuser4`), which closed the co-member gap — but the suite is still one worker, because
+   `User.activeTeamId` is singular and parallelism needs one **leader** per worker, not one more
+   account of any kind. That change is per-worker account resolution in `roles.ts` and `lab.ts`,
+   and is worth doing on its own rather than folded into a credentials swap.
 2. **Dropping `mode: 'serial'`, file by file.** Every migrated spec still sets it. A disposable
    lab isolates a spec from its NEIGHBOURS, not its own tests from each other, and most of these
    files genuinely test a sequential state machine (a later AC reads what an earlier one saved).
