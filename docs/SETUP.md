@@ -478,6 +478,24 @@ cross-member specs (`F13` codex isolation, `F18` vega sharing) collapse to one
 account (F13's isolation assertion is skipped in that mode). Provision a separate
 student account only if you need to exercise true multi-member isolation.
 
+**A separate student account is what exercises `createLab`'s co-member path.**
+Six specs now pass `bringCoMembers: true` (`e2e/lab.ts`), which vacates and
+restores every other member of the fixture team for the file's lifetime. With the
+student pointed at the leader, that code is a no-op and has never actually run —
+so a genuine second account is the only way to test it. See `HANDOFF.md`.
+
+**Conscripting an account that already has a lab is fine, and it is announced.**
+A fresh Clerk user completes onboarding by creating its own team, and
+`TeamMember.userId` is `@@unique` (one team at a time, v0.71.0) — so wiring that
+account as `E2E_STUDENT` means it must LEAVE its own lab. `seed:e2e` does this
+deliberately: it deletes the stale membership with a raw delete (never
+`departTeam`, whose archive-if-last and lead-transfer side effects must not fire
+because a fixture borrowed an account) and prints
+`membership: student vacated  left "<lab name>"`. The abandoned lab is left
+intact — its `team_lead_id` may point at a non-member, which is tolerated
+everywhere it matters and is undone by rejoining. **Do not wire an account whose
+lab you care about.**
+
 Beyond the accounts, the suite needs a **fixture graph** in the dev DB that the
 app never creates on its own: an "E2E School" + "E2E Class" owned by the
 teacher account, the "E2E Test Lab" team containing the leader/student, and the

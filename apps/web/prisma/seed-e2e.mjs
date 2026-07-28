@@ -214,19 +214,48 @@ try {
   }
 
   // ── 5. Memberships ────────────────────────────────────────────────────────
+  //
+  // `TeamMember.userId` is `@@unique` (v0.71.0, one team at a time), so an
+  // account that already belongs to a DIFFERENT team cannot simply gain a second
+  // row — `create` fails P2002. That is not hypothetical: a fresh dev account
+  // completes onboarding by creating its own lab, so pointing
+  // `E2E_STUDENT_IDENTIFIER` at one crashed this step before it reached the
+  // class links.
+  //
+  // The stale membership is deleted with a RAW delete, not `departTeam` — the
+  // same reasoning `e2e/lab.ts` records: departing runs lead-transfer and
+  // archive-if-last side effects meant for a real student leaving a real team,
+  // which must not fire because a fixture conscripted an account. The lab the
+  // account leaves is left as-is, which can leave its `team_lead_id` pointing at
+  // a non-member; that state is tolerated everywhere it matters (`applyLead`
+  // demotes through `updateMany`, `disposeLab` does not care) and is reversible
+  // by rejoining. It is announced rather than done quietly, because losing your
+  // dev lab's membership to a seeder should never be a surprise.
   for (const [label, user, role] of [
     ['leader', leaderRec.user, 'lead'],
     ['student', student.user, 'member'],
   ]) {
-    const existing = await db.teamMember.findUnique({
-      where: { userId_teamId: { userId: user.id, teamId: team.id } },
-    })
-    if (existing) {
+    const existing = await db.teamMember.findUnique({ where: { userId: user.id } })
+    if (existing?.teamId === team.id) {
       note(`membership: ${label}`, 'found')
-    } else {
-      await db.teamMember.create({ data: { userId: user.id, teamId: team.id, role } })
-      note(`membership: ${label}`, 'created', `role=${role}`)
+      continue
     }
+    if (existing) {
+      const other = await db.team.findUnique({
+        where: { id: existing.teamId },
+        select: { name: true },
+      })
+      await db.teamMember.delete({
+        where: { userId_teamId: { userId: user.id, teamId: existing.teamId } },
+      })
+      note(
+        `membership: ${label} vacated`,
+        'updated',
+        `left "${other?.name ?? existing.teamId}" — one team at a time`,
+      )
+    }
+    await db.teamMember.create({ data: { userId: user.id, teamId: team.id, role } })
+    note(`membership: ${label}`, 'created', `role=${role}`)
   }
 
   // ── 6. Class/school links on the student users ────────────────────────────
