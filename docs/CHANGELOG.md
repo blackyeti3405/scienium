@@ -5,6 +5,19 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.28.1] — 2026-07-28
+
+### Fixed
+
+- **Hero image wasn't centered where it actually shows** — `object-position: center` was
+  centering the crop against the full hero width, but a left-side fade hides most of that width,
+  so the visible portion never looked centered. The image element now only occupies the right
+  60% of the hero (its own box, not the whole viewport) on `sm`+ screens, so centering happens
+  within the space the image is actually shown in. Mobile keeps the full-bleed backdrop
+  unchanged.
+- **`70` stat wasn't animating** — it was hardcoded as plain text while `832` used `CountUp`.
+  Both now count up identically on scroll.
+
 ## [0.28.0] — 2026-07-28
 
 ### Removed

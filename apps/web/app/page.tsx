@@ -173,7 +173,7 @@ export default async function HomePage() {
             </span>
           </div>
           <div className="flex items-baseline gap-4">
-            <span className="font-pixel text-[#0d1b2e]" style={{ fontSize: '1.6rem' }}>70</span>
+            <span className="font-pixel text-[#0d1b2e]" style={{ fontSize: '1.6rem' }}><CountUp value={70} /></span>
             <span className="font-display text-[15px] leading-snug text-[#46566b]">
               methodology terms, defined and always one tap away
             </span>

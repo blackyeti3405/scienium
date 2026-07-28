@@ -10,6 +10,11 @@ import { useEffect, useRef } from 'react'
  * a subtle scroll-linked parallax drift. Purely decorative at this size and
  * fade level — the hero paragraph already describes the product in full, so
  * this stays aria-hidden rather than duplicating that description.
+ *
+ * The image only occupies the right ~60% of the hero (not the full width) so
+ * `object-position: center` centers the crop within the space it's actually
+ * shown in, not the whole viewport — otherwise "center" centers against
+ * mostly-faded real estate the visitor never really sees.
  */
 export function HeroParallaxBg({ src }: { src: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -34,7 +39,7 @@ export function HeroParallaxBg({ src }: { src: string }) {
   }, [])
 
   return (
-    <div ref={ref} aria-hidden className="absolute inset-x-0 -top-16 -bottom-16 will-change-transform">
+    <div ref={ref} aria-hidden className="absolute inset-y-[-4rem] right-0 w-full sm:w-[60%] will-change-transform">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
@@ -46,7 +51,7 @@ export function HeroParallaxBg({ src }: { src: string }) {
         className="absolute inset-0"
         style={{
           backgroundImage:
-            'linear-gradient(90deg, #f7f7f4 0%, #f7f7f4 44%, rgba(247,247,244,0.72) 58%, rgba(247,247,244,0) 74%), ' +
+            'linear-gradient(90deg, #f7f7f4 0%, #f7f7f4 8%, rgba(247,247,244,0.7) 20%, rgba(247,247,244,0) 38%), ' +
             'linear-gradient(180deg, rgba(13,27,46,0.06) 0%, rgba(13,27,46,0.24) 58%, #f7f7f4 96%)',
         }}
       />
