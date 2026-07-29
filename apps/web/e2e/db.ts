@@ -179,10 +179,14 @@ export async function ensureSecondTeam(): Promise<string> {
   const classId = await getE2eTeamClassId()
   if (!classId) throw new Error('E2E Test Lab has no classId — run seed:e2e first.')
 
+  // Get the leader user for teamLeadId and building owner
+  const leaderUser = await e2eDb.user.findFirstOrThrow({ where: { name: 'E2E Leader' } })
+
   team = await e2eDb.team.create({
     data: {
       name: SECOND_TEAM_NAME,
       classId,
+      teamLeadId: leaderUser.id,
       phase: 'working',
       labType: 'volt_lab',
     },
@@ -193,7 +197,7 @@ export async function ensureSecondTeam(): Promise<string> {
     data: {
       teamId: team.id,
       buildingKey: 'workshop',
-      purchasedByUserId: (await e2eDb.user.findFirst({ select: { id: true } }))!.id,
+      purchasedByUserId: leaderUser.id,
       posX: 0,
       posY: 0,
       level: 1,

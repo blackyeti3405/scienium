@@ -352,6 +352,7 @@ export async function consumeRefind(teamId: string): Promise<void> {
 
 // ─── Internal ──────────────────────────────────────────────────────────────
 
-function todayUtc(): string {
-  return new Date().toISOString().slice(0, 10)
+function todayUtc(): Date {
+  const now = new Date()
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 }

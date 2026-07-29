@@ -482,7 +482,7 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
     // Navigate to lobby and verify meter renders
     await page.goto('/pvp/lobby')
     await expect(page.locator('text=Spell Power Meter')).toBeVisible({ timeout: POLL_TIMEOUT })
-    await expect(page.locator('text=Dormant')).toBeVisible()
+    await expect(page.locator('text=Dormant').first()).toBeVisible()
 
     console.log(`[AC8] Spell Power: tier=${body.tier}, mul=${body.multiplier}, tasks=${body.tasksCompleted}`)
   })
@@ -492,6 +492,8 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   // valid range (negative for 0% destruction since no casts landed).
 
   test('AC9 — Trophy delta calculation after raid completion', async ({ page }) => {
+    // Clear quota so AC9/AC10 don't exhaust the daily cap (3 raids used by AC5+AC7)
+    await e2eDb.pvpRaidQuota.deleteMany({ where: { teamId: e2eTeam } })
     await page.goto('/pvp/lobby')
 
     const { raidId, session } = await startRaid(page)
