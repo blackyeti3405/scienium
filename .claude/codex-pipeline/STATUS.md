@@ -10,7 +10,7 @@
 > Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
 > Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
 
-**Progress: 14 / 29 fields · 84 / 174 segments.**
+**Progress: 15 / 29 fields · 90 / 174 segments.**
 
 ---
 
@@ -154,15 +154,15 @@
 - [x] population-evolutionary-genomics
 - [x] transcriptomics-gene-expression
 
-## geology-seismology ⬜
+## geology-seismology ✅
 *Geology / Seismology*
 
-- [ ] Core
-- [ ] geotechnical-engineering-geology
-- [ ] mineralogy-petrology
-- [ ] sedimentology-stratigraphy
-- [ ] seismology-earthquake-science
-- [ ] structural-geology-geophysics
+- [x] Core
+- [x] geotechnical-engineering-geology
+- [x] mineralogy-petrology
+- [x] sedimentology-stratigraphy
+- [x] seismology-earthquake-science
+- [x] structural-geology-geophysics
 
 ## immunology-microbiology ⬜
 *Immunology / Microbiology*
