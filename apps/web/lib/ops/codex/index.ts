@@ -66,6 +66,7 @@ export const CODEX_TRACKS: CodexTrackSummary[] = [
   { slug: 'electronics-electrical-engineering', label: 'Electronics / Electrical Engineering', branchCount: 5, lessonCount: 275 },
   { slug: 'environmental-earth-science', label: 'Environmental / Earth Science', branchCount: 5, lessonCount: 275 },
   { slug: 'epidemiology-medicine', label: 'Epidemiology / Medicine', branchCount: 5, lessonCount: 275 },
+  { slug: 'fluid-dynamics-aerodynamics', label: 'Fluid Dynamics / Aerodynamics', branchCount: 5, lessonCount: 275 },
   { slug: 'gait-biomechanics', label: 'Gait Biomechanics', branchCount: 5, lessonCount: 274 },
 ]
 
@@ -90,6 +91,7 @@ const LOADERS: Record<CodexTrackSlug, () => Promise<{ default: CodexTrack }>> = 
   'electronics-electrical-engineering': () => import('./tracks/electronics-electrical-engineering'),
   'environmental-earth-science': () => import('./tracks/environmental-earth-science'),
   'epidemiology-medicine': () => import('./tracks/epidemiology-medicine'),
+  'fluid-dynamics-aerodynamics': () => import('./tracks/fluid-dynamics-aerodynamics'),
   'gait-biomechanics': () => import('./tracks/gait-biomechanics'),
 }
 

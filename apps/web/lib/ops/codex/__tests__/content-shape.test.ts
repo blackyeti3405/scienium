@@ -22,6 +22,7 @@ import ecology from '../tracks/ecology'
 import electronicsElectricalEngineering from '../tracks/electronics-electrical-engineering'
 import environmentalEarthScience from '../tracks/environmental-earth-science'
 import epidemiologyMedicine from '../tracks/epidemiology-medicine'
+import fluidDynamicsAerodynamics from '../tracks/fluid-dynamics-aerodynamics'
 import gaitBiomechanics from '../tracks/gait-biomechanics'
 
 const ALL_TRACK_MODULES: Record<string, CodexTrack> = {
@@ -36,6 +37,7 @@ const ALL_TRACK_MODULES: Record<string, CodexTrack> = {
   'electronics-electrical-engineering': electronicsElectricalEngineering,
   'environmental-earth-science': environmentalEarthScience,
   'epidemiology-medicine': epidemiologyMedicine,
+  'fluid-dynamics-aerodynamics': fluidDynamicsAerodynamics,
   'gait-biomechanics': gaitBiomechanics,
 }
 

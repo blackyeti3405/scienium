@@ -10,7 +10,7 @@
 > Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
 > Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
 
-**Progress: 12 / 29 fields · 72 / 174 segments.**
+**Progress: 13 / 29 fields · 78 / 174 segments.**
 
 ---
 
@@ -124,15 +124,15 @@
 - [x] outbreak-investigation
 - [x] public-health-surveillance
 
-## fluid-dynamics-aerodynamics ⬜
+## fluid-dynamics-aerodynamics ✅
 *Fluid Dynamics / Aerodynamics*
 
-- [ ] Core
-- [ ] boundary-layers-transition-separation
-- [ ] external-aero-lift-drag
-- [ ] hydrodynamics-open-channel-free-surface
-- [ ] internal-pipe-duct-flow
-- [ ] unsteady-vortex-wake-flows
+- [x] Core
+- [x] boundary-layers-transition-separation
+- [x] external-aero-lift-drag
+- [x] hydrodynamics-open-channel-free-surface
+- [x] internal-pipe-duct-flow
+- [x] unsteady-vortex-wake-flows
 
 ## gait-biomechanics ✅
 *Gait Biomechanics*
