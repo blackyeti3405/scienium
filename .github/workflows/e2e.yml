@@ -78,7 +78,7 @@ jobs:
           version: 11 # must match ci.yml — see the note there
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22 # must match ci.yml — pnpm 11 needs Node 22+
           cache: pnpm
 
       - name: Detect E2E credentials

@@ -50,7 +50,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22 # pnpm 11 needs a Node builtin (node:sqlite) absent in 20
           cache: pnpm
 
       - name: Install
