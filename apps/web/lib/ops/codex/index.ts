@@ -68,6 +68,7 @@ export const CODEX_TRACKS: CodexTrackSummary[] = [
   { slug: 'epidemiology-medicine', label: 'Epidemiology / Medicine', branchCount: 5, lessonCount: 275 },
   { slug: 'fluid-dynamics-aerodynamics', label: 'Fluid Dynamics / Aerodynamics', branchCount: 5, lessonCount: 275 },
   { slug: 'gait-biomechanics', label: 'Gait Biomechanics', branchCount: 5, lessonCount: 274 },
+  { slug: 'genetics-genomics', label: 'Genetics / Genomics', branchCount: 5, lessonCount: 275 },
 ]
 
 type CodexTrackSlug = (typeof CODEX_TRACKS)[number]['slug']
@@ -93,6 +94,7 @@ const LOADERS: Record<CodexTrackSlug, () => Promise<{ default: CodexTrack }>> = 
   'epidemiology-medicine': () => import('./tracks/epidemiology-medicine'),
   'fluid-dynamics-aerodynamics': () => import('./tracks/fluid-dynamics-aerodynamics'),
   'gait-biomechanics': () => import('./tracks/gait-biomechanics'),
+  'genetics-genomics': () => import('./tracks/genetics-genomics'),
 }
 
 /**

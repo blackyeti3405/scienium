@@ -24,6 +24,7 @@ import environmentalEarthScience from '../tracks/environmental-earth-science'
 import epidemiologyMedicine from '../tracks/epidemiology-medicine'
 import fluidDynamicsAerodynamics from '../tracks/fluid-dynamics-aerodynamics'
 import gaitBiomechanics from '../tracks/gait-biomechanics'
+import geneticsGenomics from '../tracks/genetics-genomics'
 
 const ALL_TRACK_MODULES: Record<string, CodexTrack> = {
   'acoustics-sound': acousticsSound,
@@ -39,6 +40,7 @@ const ALL_TRACK_MODULES: Record<string, CodexTrack> = {
   'epidemiology-medicine': epidemiologyMedicine,
   'fluid-dynamics-aerodynamics': fluidDynamicsAerodynamics,
   'gait-biomechanics': gaitBiomechanics,
+  'genetics-genomics': geneticsGenomics,
 }
 
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
