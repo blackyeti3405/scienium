@@ -10,7 +10,7 @@
 > Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
 > Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
 
-**Progress: 13 / 29 fields · 78 / 174 segments.**
+**Progress: 14 / 29 fields · 84 / 174 segments.**
 
 ---
 
@@ -144,15 +144,15 @@
 - [x] prosthetics-orthotics-gait
 - [x] wearable-gait-sensing
 
-## genetics-genomics ⬜
+## genetics-genomics ✅
 *Genetics / Genomics*
 
-- [ ] Core
-- [ ] bioinformatics-sequence-analysis
-- [ ] genome-editing-genetic-engineering
-- [ ] human-medical-genetics
-- [ ] population-evolutionary-genomics
-- [ ] transcriptomics-gene-expression
+- [x] Core
+- [x] bioinformatics-sequence-analysis
+- [x] genome-editing-genetic-engineering
+- [x] human-medical-genetics
+- [x] population-evolutionary-genomics
+- [x] transcriptomics-gene-expression
 
 ## geology-seismology ⬜
 *Geology / Seismology*
