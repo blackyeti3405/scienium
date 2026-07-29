@@ -60,6 +60,21 @@ recorded in the lockfile, and failed at `pnpm install --frozen-lockfile` with
 the dev machine runs pnpm 11.7.0. Both workflows now pin **pnpm 11**; `lockfileVersion 9.0` is
 shared by pnpm 9–11, so the lockfile is unchanged.
 
+Two follow-on breaks surfaced once the install got past that point and the gates could
+actually run — both were being masked by the install failure:
+
+- **Node 20 → 22.** pnpm 11 imports a builtin (`node:sqlite`) that first shipped in Node 22,
+  so the install crashed with `ERR_UNKNOWN_BUILTIN_MODULE`. Both workflows now use Node 22
+  (LTS; the dev machine runs Node 26). The root `engines` field advertised `node >=20` /
+  `pnpm >=9` — the stale `pnpm >=9` is what made pinning pnpm 9 look correct — now `>=22` /
+  `>=10`.
+- **`next build` ran out of heap.** `next build` compiles every codex content JSON into the
+  bundle graph — **48 MB across 15 fields**, growing ~3 MB per field with 14 still to author —
+  which overran the runner's ~2 GB default heap. The build step now sets
+  `--max-old-space-size=4096` (reproduced locally at 2 GB, clean at 4 GB). Flagged with a
+  `ponytail:` note: the real upgrade path is to load track JSON at runtime instead of
+  compiling it in, so content size stops touching the bundle.
+
 ## [0.76.1] — 2026-07-29
 
 Pilot-readiness wave 1 — closes REFACTOR2 rows P0-R3, P1-1, P1-2, the code half of P1-3, and
