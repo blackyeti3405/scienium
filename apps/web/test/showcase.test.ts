@@ -21,6 +21,7 @@ describe('canViewShowcase', () => {
     publishedAt: new Date('2026-01-01'),
     moderationStatus: 'approved',
     teamSchoolIds: ['school-A'],
+    takenDown: false,
   }
   const owner: ShowcaseViewer = { userId: 'u1', schoolId: 'school-Z', teamIds: ['team-1'], moderatorTeamIds: []  }
   const sameSchool: ShowcaseViewer = { userId: 'u2', schoolId: 'school-A', teamIds: ['team-9'], moderatorTeamIds: []  }
@@ -125,6 +126,40 @@ describe('canViewShowcase', () => {
       ).toBe(false)
       expect(
         canViewShowcase({ ...base, privacyLevel: 'private', publishedAt: null }, foreignTeacher),
+      ).toBe(false)
+    })
+  })
+
+  // REFACTOR2 P1-6 — the takedown gate. This is THE single check both public
+  // consumers reach (the page/one-pager and the asset-byte route); deleting the
+  // three lines it lives in fails every case below.
+  describe('takedown', () => {
+    const down: ShowcaseForView = { ...base, privacyLevel: 'public', takenDown: true }
+    const ourTeacher: ShowcaseViewer = {
+      userId: 't1', schoolId: null, teamIds: [], moderatorTeamIds: ['team-1'],
+    }
+
+    it('a taken-down public showcase is closed to the world', () => {
+      expect(canViewShowcase(down, anon)).toBe(false)
+      expect(canViewShowcase(down, sameSchool)).toBe(false)
+      expect(canViewShowcase(down, otherSchool)).toBe(false)
+    })
+
+    it('closes to the OWNING TEAM too — otherwise the takedown is advisory', () => {
+      expect(canViewShowcase(down, owner)).toBe(false)
+    })
+
+    it('a share token does not reopen a taken-down link_only showcase', () => {
+      expect(canViewShowcase({ ...down, privacyLevel: 'link_only' }, anon, 'share_token')).toBe(false)
+    })
+
+    it('the team’s teacher keeps access — a takedown removes the page, not the evidence', () => {
+      expect(canViewShowcase(down, ourTeacher)).toBe(true)
+    })
+
+    it('a teacher of another class gains nothing from a takedown', () => {
+      expect(
+        canViewShowcase(down, { userId: 't2', schoolId: null, teamIds: [], moderatorTeamIds: ['team-9'] }),
       ).toBe(false)
     })
   })

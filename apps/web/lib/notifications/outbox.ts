@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { mapWithConcurrency } from '@/lib/concurrency'
 import { sendNotificationEmail } from '@/lib/notifications/email'
 import { logEvent } from '@/lib/observability/log'
+import { recordSecurityEvent } from '@/lib/observability/security-event'
 
 /**
  * Email outbox delivery (REFACTOR2 P1-R5).
@@ -158,6 +159,21 @@ async function claimBatch(limit: number): Promise<OutboxRow[]> {
  */
 async function settle(row: OutboxRow, ok: boolean): Promise<void> {
   const exhausted = row.attempts >= MAX_ATTEMPTS
+  if (!ok && exhausted) {
+    // A parked row is a student who will never get their reminder, and nothing
+    // retries it (REFACTOR2 P1-5). Keyed to the ROW, so a drain that crashes and
+    // retries the same settlement appends one dead-letter event, not two — and
+    // the threshold therefore counts DISTINCT stuck jobs rather than attempts.
+    void recordSecurityEvent({
+      kind: 'worker.dead_letter',
+      outcome: 'error',
+      actorType: 'system',
+      targetType: 'notification_email',
+      targetId: row.id,
+      reason: 'attempts_exhausted',
+      dedupeKey: `dead_letter:notification_email:${row.id}`,
+    })
+  }
   const settled = await db.notificationEmail
     .updateMany({
       where: { id: row.id, status: 'sending', claimToken: row.claimToken },

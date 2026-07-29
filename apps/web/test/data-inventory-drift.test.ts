@@ -56,6 +56,11 @@ const DELIBERATELY_KEPT = [
   'TeamMember', // retired through `departTeam`, not deleted here
   'AiUsage', // spend accounting; nullable attribution, no content
   'IdeaCheck',
+  // REFACTOR2 P1-5. Ids, enums and timestamps only — no student-authored
+  // content can reach it (`boundedReason` sanitizes the one free-ish column), so
+  // there is nothing here for an erasure to remove, and removing it would delete
+  // the record of the erasure's own membership departures.
+  'SecurityEvent',
 ]
 
 describe('per-student data inventory', () => {

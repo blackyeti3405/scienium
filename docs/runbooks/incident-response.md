@@ -39,6 +39,62 @@ Incident owner during the pilot: the project owner (repo owner). Escalation path
    - `email_suppression.recorded` — a reminder hard-bounced or was reported as spam.
    - `email_webhook.auth_denied` — an unsigned/replayed POST to the Resend webhook.
 3. **Correlate a specific user report** by time + route; `requestId` matches Vercel's own request id (`x-vercel-id`).
+4. **Check the security ledger for anything older than the drain.** `security_events`
+   (REFACTOR2 P1-5) is append-only, has no foreign keys, and survives the deletion of
+   whatever it describes. It is where you answer "who", not "what is broken now":
+
+   ```sql
+   -- Everything one actor did or was refused, most recent first.
+   select created_at, kind, outcome, target_type, target_id, reason, request_id
+   from security_events where actor_user_id = '<User.id>' order by created_at desc limit 100;
+
+   -- Every authority change in a lab or class.
+   select * from security_events where scope_id = '<Team.id or Class.id>' order by created_at;
+
+   -- What alerted, and when.
+   select created_at, reason, scope_id, actor_user_id from security_events
+   where kind = 'alert.threshold' order by created_at desc limit 50;
+   ```
+
+   `reason` is always a snake_case token, never prose — the sink rewrites anything else
+   to `unbounded_reason`, so this table can be read and exported without exposing student
+   work. Ids are RAW here (unlike the log drain, which pseudonymizes): this is a
+   first-party table behind the database credential, and an audit trail you cannot join
+   back to a person answers nothing.
+
+## Alert thresholds
+
+Crossing one of these raises a **Sentry issue** (`captureMessage`, level `warning`,
+titled `[security] …`) — Sentry is the destination because it is the console step 1
+already sends you to. Each threshold also writes an `alert.threshold` row, and that
+row's unique `dedupe_key` is what rate-limits the alert: one issue per window, not one
+per event past the line. Numbers live in `ALERT_RULES`
+(`apps/web/lib/observability/security-event.ts`); they are pilot starting points, and
+retuning one is a one-line edit.
+
+| Signal | Threshold | Grouped by | What it usually means | First action |
+| --- | --- | --- | --- | --- |
+| Repeated scope denials (`authz.denied`) | 30 in 10 min | actor | A broken client, or someone walking ids across teams | Query the ledger for that `actor_user_id`; if the `target_id` paths vary, treat as probing |
+| Unauthorized cron (`cron.denied`) | 5 in 1 h | global | `CRON_SECRET` rotated on one side only, or a probe | Compare the Vercel env var against the scheduler; the 503 reasons (`cron_unconfigured`) mean cron is **off**, not merely denied |
+| Moderation rejections (`moderation.decision`, rejected) | 10 in 24 h | team | One team repeatedly submitting content a teacher refuses | Read the decisions in `showcase_moderation_events`; escalate to the teacher, not the students |
+| Showcase reports (`moderation.report`) | 3 distinct reporters in 24 h | team | A live public page readers are objecting to — or a classroom brigade | Go to **Public showcase abuse** below. Never auto-unpublishes; three coordinated reports are cheap to arrange in a classroom |
+| Showcase taken down (`moderation.takedown`, denied) | 1 in 24 h | global | A teacher pulled a public page offline | Read the event, then **Public showcase abuse** below. Restores are `ok` and stay silent |
+| Refused destructive commands (`command.destructive`, denied) | 20 in 1 h | team | A client replaying a spent proposal token, or guessing one | Tokens are single-use and payload-bound, so nothing was deleted; find the caller |
+| Worker dead letters (`worker.dead_letter`) | 3 distinct jobs in 1 h | global | Reminder emails or a data request exhausted 3 attempts | `select * from notification_emails where status='failed'` / `data_requests where status='failed'`; fix the cause, then re-queue |
+| Provider budget (`budget.pressure`) | day's `ai_usage` ≥ `AI_DAILY_BUDGET_USD` (default $25) | global | Spend running ahead of plan, or a loop | Break down by team/operation (below); the kill switch is the lever |
+
+**Failed crons are deliberately not in this table.** A cron route that throws is already
+captured by Sentry through `onRequestError` (`instrumentation.ts`), with the stack trace
+— strictly better than a threshold. What a threshold *does* add is the case Sentry
+cannot see: a cron that is never invoked at all. Check **Vercel → Cron** run history if
+`cron.papers` / `cron.notifications` lines stop appearing in the drain.
+
+Spend breakdown once budget pressure fires:
+
+```sql
+select team_id, operation, sum(cost_micros)/1e6 as usd, count(*)
+from ai_usage where day = current_date group by 1,2 order by usd desc limit 20;
+```
 
 ## Feature-disable levers
 
@@ -60,6 +116,75 @@ There is no feature-flag system. The levers that exist:
 | LLM spend spike | Check `llm.call` volume by route | Identify the route; if abusive, the per-user `ai` tier (12/min) should already bound it — investigate the caller |
 | One student gets no reminder email | Their address is suppressed after a bounce/complaint | `select * from email_suppressions where email = '…'`; fix the address (or confirm the complaint) and `delete` the row to re-enable |
 | A student got the same reminder twice | Duplicate send — see "Reminder email delivery" below | Expected only around a crash/redeploy mid-drain; if routine, check `notification_outbox.claim_lost` volume |
+| "Take this public project down" | A reported (or directly complained-about) showcase | **Public showcase abuse** below — teacher takes it offline from the moderation page; never delete rows |
+
+## Public showcase abuse
+
+Published showcases are the only student-authored content scienium serves to the open
+internet, so removing one has to be a button with an audit trail — never an `UPDATE`
+typed into Supabase (REFACTOR2 P1-6). **Nothing in this procedure deletes anything.**
+
+**1. Report.** Any visitor — signed in or not — can report a showcase from the page
+itself (`POST /api/showcase/public/report`). The reason is one of a closed list
+(`inappropriate` / `harassment` / `privacy` / `copyright` / `spam` / `other`) and there
+is **no free-text field anywhere**, so nothing a reporter writes can reach a teacher's
+screen or these logs. Reporters are stored as a salted hash, never an IP; one report per
+(reporter, showcase, reason) is kept, so the counts below count **people, not clicks**.
+Only a showcase the public can already open is reportable.
+
+**2. Triage.** Reported showcases appear at the top of **Teacher → Showcase Moderation**,
+above the pending queue, with the report count, the reasons, and whether the reports are
+about the revision that is **live right now** (a team may already have edited the problem
+away). The teacher of the class owns this decision — the same `requireTeacher` + class
+scope as an approval. There is no global moderator role: escalation past the class
+teacher is this procedure, not another button.
+
+**3. Takedown.** "Take offline" with a reason. Effect, immediately and everywhere:
+
+- the public page and the `?print=1` one-pager 404 (`canViewShowcase` — the single gate);
+- the board / quad-chart **bytes** stop streaming from `/api/showcase/public/asset`,
+  because that route runs the same gate;
+- the card leaves the gallery listing.
+
+Caching cannot hold a taken-down page open: both public pages are `force-dynamic`, and
+asset bytes are `Cache-Control: private, max-age=60` — `private` keeps every CDN and
+shared proxy out entirely (there is nothing to purge), and the 60s is the ceiling on how
+long one reader's own browser cache can outlive the takedown.
+
+What a takedown does **not** do: delete the showcase row, its assets, its R2 objects,
+its reports, or its moderation history. The teacher keeps moderator preview of the page,
+so the content stays reviewable in place. The team is notified without being told which
+reason was chosen.
+
+**4. Escalate** to the incident owner when the content is a safeguarding matter (a minor's
+personal information, threats, sexual content) or when the same team recurs. The first
+takedown in any 24 h window already raises a Sentry issue, so the owner does not learn
+about it from the queue. Off-platform escalation (school, guardians, law enforcement) is
+the school's process, not this repo's.
+
+**5. Restore.** Same screen, "Restore" — clears `takedown_at`, writes a `restored`
+moderation event with the actor, and records an `ok` ledger row. Deliberately silent: a
+restore is good news, and alerting on it would train the owner to ignore the channel.
+
+**Where the audit trail lives** (all three survive the showcase being deleted; the
+history is `RESTRICT` and reports carry no foreign key at all — pinned in
+`test/pg/invariants.pg.test.ts`):
+
+```sql
+-- Who reported it, when, against which revision. No identities, by design.
+select reason, count(*), min(created_at), max(created_at)
+from showcase_reports where showcase_id = '<Showcase.id>' group by 1;
+
+-- The decision history: submitted / approved / rejected / taken_down / restored,
+-- each against the digest it applied to. `actor_user_id` is the teacher.
+select created_at, action, actor_user_id, digest, note
+from showcase_moderation_events where showcase_id = '<Showcase.id>' order by created_at;
+
+-- The same acts in the ledger, which outlives the showcase entirely.
+select created_at, kind, outcome, actor_user_id, scope_id, reason
+from security_events
+where target_type = 'showcase' and target_id = '<Showcase.id>' order by created_at;
+```
 
 ## Reminder email delivery
 

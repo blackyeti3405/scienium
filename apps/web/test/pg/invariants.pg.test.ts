@@ -171,6 +171,9 @@ afterAll(async () => {
   await db.vocabCard.deleteMany({ where: { teamId } }).catch(() => {})
   await db.activityFeed.deleteMany({ where: { teamId } }).catch(() => {})
   await db.notification.deleteMany({ where: { dedupeKey: { contains: ns } } }).catch(() => {})
+  // The security ledger has no FK, so it never BLOCKS the team delete below —
+  // which is the point of it, and also why it has to be cleaned up by hand.
+  await db.securityEvent.deleteMany({ where: { OR: [{ scopeId: teamId }, { targetId: { contains: ns } }] } }).catch(() => {})
   const papers = await db.paper.findMany({ where: { teamId }, select: { id: true } })
   await db.paperQuizSession
     .deleteMany({ where: { paperId: { in: papers.map((p) => p.id) } } })
@@ -180,6 +183,10 @@ afterAll(async () => {
   const showcase = await db.showcase.findUnique({ where: { teamId }, select: { id: true } })
   if (showcase) {
     await db.showcaseView.deleteMany({ where: { showcaseId: showcase.id } }).catch(() => {})
+    // Moderation history is RESTRICT now (P1-6), so it has to go first or the
+    // showcase delete below fails — the loud refusal doing exactly its job.
+    await db.showcaseModerationEvent.deleteMany({ where: { showcaseId: showcase.id } }).catch(() => {})
+    await db.showcaseReport.deleteMany({ where: { showcaseId: showcase.id } }).catch(() => {})
     await db.showcase.delete({ where: { id: showcase.id } }).catch(() => {})
   }
   // NOT swallowed. A `.catch(() => {})` here is how twelve "PG Fixture Lab"
@@ -627,6 +634,21 @@ const NEVER_CASCADED: Record<string, string> = {
   team_membership_events: 'append-only authorization log',
   class_membership_events: 'append-only authorization log',
   data_requests: 'the evidence that an erasure ran',
+  // REFACTOR2 P1-6. The two halves of the answer to "why did that public page
+  // disappear": who reported it, and who took it down. Under CASCADE, deleting
+  // the showcase destroyed both — the record was exactly as durable as the thing
+  // it existed to outlive. The reports have no foreign key at all (like the
+  // ledger); the moderation events moved to RESTRICT, so a delete is a loud
+  // refusal instead of a silent erasure.
+  showcase_reports: 'the record that a public page was reported',
+  showcase_moderation_events: 'who approved a public page, and who took it down',
+  // REFACTOR2 P1-5. The one table whose whole purpose is to outlive the rows it
+  // describes: it records who was made a lead, who approved a public page, who
+  // ran a delete. A cascade reaching it would mean the domain operation an event
+  // records can erase that record — the exact failure the ledger exists to
+  // prevent. Enforced by giving it NO foreign keys at all, so this assertion is
+  // the guard against someone later adding one "for referential tidiness".
+  security_events: 'append-only security ledger — must outlive what it records',
 }
 
 describePg('P2-6 — no cascade path can reach an object ledger or an audit trail', () => {
@@ -688,6 +710,120 @@ describePg('P2-6 — deleting a team that still holds storage is refused, not si
     // deletes cleanly. A refusal nothing can satisfy would be its own bug.
     await db.uploadedAsset.delete({ where: { id: asset.id } })
     await db.team.delete({ where: { id: doomed.id } })
+  })
+})
+
+describePg('P1-6 — takedown evidence outlives the showcase it is about', () => {
+  it('the moderation history refuses the delete, and the reports survive it anyway', async () => {
+    const doomedTeam = await db.team.create({
+      data: { name: `PG Takedown Lab ${ns}`, teamLeadId: userId, phase: 'showcase' },
+      select: { id: true },
+    })
+    const sc = await db.showcase.create({
+      data: {
+        teamId: doomedTeam.id,
+        slug: `pg-takedown-${ns}`,
+        shortTitle: 'PG',
+        title: 'PG takedown fixture',
+        abstract: 'x',
+        privacyLevel: 'public',
+        contentDigest: 'd'.repeat(64),
+      },
+      select: { id: true },
+    })
+    const report = await db.showcaseReport.create({
+      data: {
+        showcaseId: sc.id,
+        digest: 'd'.repeat(64),
+        reason: 'inappropriate',
+        reporterHash: `pg_${ns}`,
+      },
+      select: { id: true },
+    })
+    const event = await db.showcaseModerationEvent.create({
+      data: { showcaseId: sc.id, digest: 'd'.repeat(64), action: 'taken_down', note: 'inappropriate' },
+      select: { id: true },
+    })
+
+    // THE ATTACK: the tidiest way to make a complaint go away is to delete the
+    // showcase. Under the old CASCADE that also deleted every record of who
+    // took it down and why — the exact question an operator is asked afterwards.
+    await expect(db.showcase.delete({ where: { id: sc.id } })).rejects.toThrow()
+    expect(await db.showcaseModerationEvent.findUnique({ where: { id: event.id } })).not.toBeNull()
+
+    // A deliberate teardown clears the history by hand and then succeeds — a
+    // refusal nothing can satisfy would be its own bug. The REPORTS still
+    // survive that, because they carry no foreign key: the record that a page
+    // was complained about outlives the page unconditionally.
+    await db.showcaseModerationEvent.delete({ where: { id: event.id } })
+    await db.showcase.delete({ where: { id: sc.id } })
+
+    const survivor = await db.showcaseReport.findUnique({ where: { id: report.id } })
+    expect(survivor).toMatchObject({ showcaseId: sc.id, reason: 'inappropriate' })
+
+    await db.showcaseReport.delete({ where: { id: report.id } })
+    await db.team.delete({ where: { id: doomedTeam.id } })
+  })
+})
+
+describePg('P1-5 — the security ledger outlives what it records', () => {
+  it('deleting the team an event names neither erases the event nor is blocked by it', async () => {
+    const doomed = await db.team.create({
+      data: { name: `PG Ledger Lab ${ns}`, teamLeadId: userId, phase: 'discovery' },
+      select: { id: true },
+    })
+    const event = await db.securityEvent.create({
+      data: {
+        kind: 'provision.team',
+        outcome: 'ok',
+        actorType: 'user',
+        actorUserId: userId,
+        targetType: 'team',
+        targetId: doomed.id,
+        scopeId: doomed.id,
+        reason: 'student_onboarding',
+        dedupeKey: `pg_ledger_${ns}`,
+      },
+      select: { id: true },
+    })
+
+    // THE ATTACK, both ways round. A CASCADE here means the record of who
+    // created a lab is destroyed by destroying the lab — the audit trail's own
+    // subject can delete it. A RESTRICT means the audit trail blocks the
+    // teardown it exists to document, which is how P1-4's "no complete teardown
+    // path" happens. Neither is possible without a foreign key, and there is none.
+    await db.team.delete({ where: { id: doomed.id } })
+
+    const survivor = await db.securityEvent.findUnique({ where: { id: event.id } })
+    expect(survivor).toMatchObject({ targetId: doomed.id, reason: 'student_onboarding' })
+
+    await db.securityEvent.delete({ where: { id: event.id } })
+  })
+
+  it('the unique dedupe key makes a retried write a no-op, not a duplicate', async () => {
+    // The real-Postgres half of `test/security-events.test.ts`: the unit test
+    // proves the sink SWALLOWS P2002, this proves the database actually raises
+    // it. A nullable unique column is subtle enough to be worth checking against
+    // the live constraint rather than against Prisma's claim about it.
+    const key = `pg_dedupe_${ns}`
+    const row = { kind: 'worker.dead_letter', outcome: 'error', actorType: 'system', dedupeKey: key }
+    const first = await db.securityEvent.create({ data: row, select: { id: true } })
+
+    await expect(db.securityEvent.create({ data: row })).rejects.toMatchObject({ code: 'P2002' })
+
+    // …while events that leave the key NULL repeat freely — Postgres treats
+    // NULLs as distinct, which is what lets denials and decisions accumulate.
+    const a = await db.securityEvent.create({
+      data: { kind: 'authz.denied', outcome: 'denied', actorType: 'anonymous', targetId: ns },
+      select: { id: true },
+    })
+    const b = await db.securityEvent.create({
+      data: { kind: 'authz.denied', outcome: 'denied', actorType: 'anonymous', targetId: ns },
+      select: { id: true },
+    })
+    expect(a.id).not.toBe(b.id)
+
+    await db.securityEvent.deleteMany({ where: { id: { in: [first.id, a.id, b.id] } } })
   })
 })
 

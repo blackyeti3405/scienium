@@ -16,12 +16,18 @@ const mocks = vi.hoisted(() => ({
   findMany: vi.fn((): Promise<unknown[]> => Promise.resolve([])),
   updateMany: vi.fn(),
   eventCreate: vi.fn(() => Promise.resolve({ id: 'evt_1' })),
-  notificationCreate: vi.fn(() => Promise.resolve({})),
+  notificationCreate: vi.fn((_a: Record<string, unknown>) => Promise.resolve({})),
+  reportGroupBy: vi.fn((): Promise<unknown[]> => Promise.resolve([])),
+  showcaseUpdate: vi.fn((_a: { data: Record<string, unknown> }) => Promise.resolve({})),
+  reportUpdateMany: vi.fn(() => Promise.resolve({ count: 0 })),
 }))
 
 const tx = {
-  showcase: { updateMany: mocks.updateMany },
+  // REFACTOR2 P1-5 — the ledger row written in the same transaction.
+  securityEvent: { create: vi.fn(async ({ data }: any) => ({ id: 'sec_1', ...data })) },
+  showcase: { updateMany: mocks.updateMany, update: mocks.showcaseUpdate },
   showcaseModerationEvent: { create: mocks.eventCreate },
+  showcaseReport: { updateMany: mocks.reportUpdateMany },
   notification: { create: mocks.notificationCreate },
 }
 
@@ -33,11 +39,12 @@ vi.mock('@/lib/teacher/auth', () => ({
 vi.mock('@/lib/db', () => ({
   db: {
     showcase: { findUnique: mocks.findUnique, findMany: mocks.findMany },
+    showcaseReport: { groupBy: mocks.reportGroupBy },
     $transaction: (fn: (t: typeof tx) => unknown) => fn(tx),
   },
 }))
 
-import { GET, POST } from '@/app/api/teacher/showcase-moderation/route'
+import { GET, PATCH, POST } from '@/app/api/teacher/showcase-moderation/route'
 
 const REVIEWED = 'a'.repeat(64)
 
@@ -66,6 +73,9 @@ beforeEach(() => {
   })
   mocks.updateMany.mockResolvedValue({ count: 1 })
   mocks.findMany.mockResolvedValue([])
+  mocks.reportGroupBy.mockResolvedValue([])
+  mocks.showcaseUpdate.mockResolvedValue({})
+  mocks.reportUpdateMany.mockResolvedValue({ count: 0 })
 })
 
 // P0-R3: the queue used to select only text/team summary fields, so a reviewer
@@ -233,5 +243,282 @@ describe('showcase moderation decision', () => {
 
     expect(res.status).toBe(400)
     expect(mocks.updateMany).not.toHaveBeenCalled()
+  })
+})
+
+describe('P1-5 — a moderation decision is recorded where a deletion cannot reach it', () => {
+  /**
+   * `ShowcaseModerationEvent` is `onDelete: Cascade` on the showcase, so
+   * deleting a showcase erases the record of who published it and who signed it
+   * off — the one thing an operator asked about a public page needs. The ledger
+   * row has no foreign key and survives.
+   */
+  const secCreate = () => tx.securityEvent.create as ReturnType<typeof vi.fn>
+
+  it('an approval is recorded as an OK outcome, with no note carried across', async () => {
+    await POST(decideReq({ note: 'Nice work, ask Ms Alvarez about the poster.' }))
+
+    expect(secCreate()).toHaveBeenCalledWith({
+      select: { id: true },
+      data: expect.objectContaining({
+        kind: 'moderation.decision',
+        outcome: 'ok',
+        actorType: 'teacher',
+        actorUserId: 'db_t',
+        targetType: 'showcase',
+        targetId: 'sc_1',
+        reason: 'approved',
+      }),
+    })
+    // The teacher's note is written TO a student ABOUT their work. It belongs in
+    // the domain event and the notification, never in a cross-team ledger.
+    const written = secCreate().mock.calls[0]![0].data as Record<string, unknown>
+    expect(JSON.stringify(written)).not.toContain('Ms Alvarez')
+  })
+
+  it('a rejection is recorded as DENIED, which is what the abuse threshold counts', async () => {
+    await POST(decideReq({ decision: 'reject' }))
+
+    expect(secCreate()).toHaveBeenCalledWith({
+      select: { id: true },
+      data: expect.objectContaining({ outcome: 'denied', reason: 'rejected' }),
+    })
+  })
+
+  it('a stale-revision refusal records nothing — no decision was made', async () => {
+    mocks.updateMany.mockResolvedValue({ count: 0 })
+
+    expect((await POST(decideReq({}))).status).toBe(409)
+    expect(secCreate()).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * REFACTOR2 P1-6 — takedown and restore.
+ *
+ * Revision binding covers what goes live. This covers what happens when a live
+ * page turns out to be a problem: the served state flips, the evidence stays,
+ * and the act is attributable — none of which was possible before without an
+ * UPDATE typed into a database console.
+ */
+describe('showcase takedown and restore', () => {
+  const secCreate = () => tx.securityEvent.create as ReturnType<typeof vi.fn>
+
+  function patchReq(body: Record<string, unknown>): NextRequest {
+    return new NextRequest('http://app.example.com/api/teacher/showcase-moderation', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
+  const LIVE = {
+    id: 'sc_1',
+    teamId: 'team_1',
+    contentDigest: REVIEWED,
+    takedownAt: null,
+  }
+
+  beforeEach(() => {
+    mocks.findUnique.mockResolvedValue(LIVE)
+  })
+
+  it('a takedown flips the served state without deleting anything', async () => {
+    const res = await PATCH(patchReq({ showcaseId: 'sc_1', action: 'takedown', reason: 'privacy' }))
+
+    expect(res.status).toBe(200)
+    expect(mocks.showcaseUpdate).toHaveBeenCalledWith({
+      where: { id: 'sc_1' },
+      data: expect.objectContaining({ takedownReason: 'privacy' }),
+    })
+    const { data } = mocks.showcaseUpdate.mock.calls[0]![0]
+    expect(data.takedownAt).toBeInstanceOf(Date)
+    // The row, its assets and its history are the evidence — nothing is removed.
+    expect(Object.keys(data)).toEqual(['takedownAt', 'takedownReason'])
+  })
+
+  it('records actor, reason, revision and outcome in the moderation history', async () => {
+    await PATCH(patchReq({ showcaseId: 'sc_1', action: 'takedown', reason: 'harassment' }))
+
+    expect(mocks.eventCreate).toHaveBeenCalledWith({
+      select: { id: true },
+      data: expect.objectContaining({
+        showcaseId: 'sc_1',
+        action: 'taken_down',
+        actorUserId: 'db_t',
+        // The revision that was live at the moment of the act.
+        digest: REVIEWED,
+        note: 'harassment',
+      }),
+    })
+  })
+
+  it('records the takedown in the ledger as DENIED, which is what raises the owner', async () => {
+    await PATCH(patchReq({ showcaseId: 'sc_1', action: 'takedown', reason: 'copyright' }))
+
+    expect(secCreate()).toHaveBeenCalledWith({
+      select: { id: true },
+      data: expect.objectContaining({
+        kind: 'moderation.takedown',
+        outcome: 'denied',
+        actorType: 'teacher',
+        actorUserId: 'db_t',
+        targetType: 'showcase',
+        targetId: 'sc_1',
+        scopeId: 'team_1',
+        reason: 'copyright',
+      }),
+    })
+  })
+
+  it('resolves the open reports it was acting on', async () => {
+    await PATCH(patchReq({ showcaseId: 'sc_1', action: 'takedown', reason: 'spam' }))
+
+    expect(mocks.reportUpdateMany).toHaveBeenCalledWith({
+      where: { showcaseId: 'sc_1', resolvedAt: null },
+      data: expect.objectContaining({ resolvedAt: expect.any(Date) }),
+    })
+  })
+
+  it('a restore clears the takedown and is audited the same way, but silently', async () => {
+    mocks.findUnique.mockResolvedValue({ ...LIVE, takedownAt: new Date('2026-07-29') })
+
+    const res = await PATCH(patchReq({ showcaseId: 'sc_1', action: 'restore' }))
+
+    expect(res.status).toBe(200)
+    expect(mocks.showcaseUpdate).toHaveBeenCalledWith({
+      where: { id: 'sc_1' },
+      data: { takedownAt: null, takedownReason: null },
+    })
+    expect(mocks.eventCreate).toHaveBeenCalledWith({
+      select: { id: true },
+      data: expect.objectContaining({ action: 'restored', actorUserId: 'db_t' }),
+    })
+    // `ok`, so no alert rule counts it — a restore is good news.
+    expect(secCreate()).toHaveBeenCalledWith({
+      select: { id: true },
+      data: expect.objectContaining({ outcome: 'ok', reason: 'restored' }),
+    })
+  })
+
+  it('refuses a takedown with no reason — the taxonomy is the whole record of why', async () => {
+    const res = await PATCH(patchReq({ showcaseId: 'sc_1', action: 'takedown' }))
+
+    expect(res.status).toBe(400)
+    expect(mocks.showcaseUpdate).not.toHaveBeenCalled()
+  })
+
+  it('refuses a reason outside the taxonomy', async () => {
+    const res = await PATCH(
+      patchReq({ showcaseId: 'sc_1', action: 'takedown', reason: 'i-just-dont-like-it' }),
+    )
+
+    expect(res.status).toBe(400)
+    expect(mocks.showcaseUpdate).not.toHaveBeenCalled()
+  })
+
+  it('a teacher outside the class cannot take down another class’s showcase', async () => {
+    mocks.teacherOwnsTeam.mockResolvedValue(false)
+
+    const res = await PATCH(patchReq({ showcaseId: 'sc_1', action: 'takedown', reason: 'spam' }))
+
+    expect(res.status).toBe(403)
+    expect(mocks.showcaseUpdate).not.toHaveBeenCalled()
+    expect(secCreate()).not.toHaveBeenCalled()
+  })
+
+  it('a second takedown of an already-down showcase writes nothing', async () => {
+    mocks.findUnique.mockResolvedValue({ ...LIVE, takedownAt: new Date('2026-07-29') })
+
+    const res = await PATCH(patchReq({ showcaseId: 'sc_1', action: 'takedown', reason: 'spam' }))
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, alreadyApplied: true })
+    expect(mocks.eventCreate).not.toHaveBeenCalled()
+  })
+
+  it('the team is told, keyed to the event so a retry cannot tell them twice', async () => {
+    await PATCH(patchReq({ showcaseId: 'sc_1', action: 'takedown', reason: 'inappropriate' }))
+
+    expect(mocks.notificationCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        teamId: 'team_1',
+        dedupeKey: 'showcase_takedown:evt_1',
+      }),
+    })
+    // The reason a report gave is not repeated to the students it is about.
+    const body = JSON.stringify(mocks.notificationCreate.mock.calls[0]![0])
+    expect(body).not.toContain('inappropriate')
+  })
+})
+
+// The queue is where a report becomes actionable — a count nobody sees is not a
+// moderation path.
+describe('reported showcases surface in the moderation queue', () => {
+  function queueReq(): NextRequest {
+    return new NextRequest('http://app.example.com/api/teacher/showcase-moderation')
+  }
+
+  const FLAGGED = {
+    id: 'sc_9',
+    slug: 'algae-99',
+    shortTitle: 'Algae',
+    title: 'Algae growth',
+    privacyLevel: 'public',
+    publishedAt: new Date('2026-06-01'),
+    moderationStatus: 'approved',
+    contentDigest: REVIEWED,
+    takedownAt: null,
+    takedownReason: null,
+    team: { name: 'Algae Lab' },
+    moderationEvents: [
+      { id: 'e1', action: 'approved', note: null, digest: REVIEWED, createdAt: new Date('2026-06-01') },
+    ],
+  }
+
+  it('counts open reports per reason and flags whether they are about the LIVE revision', async () => {
+    mocks.reportGroupBy.mockResolvedValue([
+      { showcaseId: 'sc_9', reason: 'inappropriate', digest: REVIEWED, _count: { _all: 2 } },
+      { showcaseId: 'sc_9', reason: 'spam', digest: 'b'.repeat(64), _count: { _all: 1 } },
+    ])
+    mocks.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([FLAGGED])
+
+    const { flagged } = await (await GET(queueReq())).json()
+
+    expect(flagged[0].reportCount).toBe(3)
+    expect(flagged[0].reasons).toEqual([
+      { reason: 'inappropriate', count: 2 },
+      { reason: 'spam', count: 1 },
+    ])
+    expect(flagged[0].reportedCurrentRevision).toBe(true)
+    expect(flagged[0].events).toHaveLength(1)
+  })
+
+  it('says so when the team has edited since every report was filed', async () => {
+    mocks.reportGroupBy.mockResolvedValue([
+      { showcaseId: 'sc_9', reason: 'spam', digest: 'b'.repeat(64), _count: { _all: 4 } },
+    ])
+    mocks.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([FLAGGED])
+
+    const { flagged } = await (await GET(queueReq())).json()
+
+    expect(flagged[0].reportedCurrentRevision).toBe(false)
+  })
+
+  it('is class-scoped — a report never pulls another teacher’s showcase into view', async () => {
+    mocks.reportGroupBy.mockResolvedValue([
+      { showcaseId: 'sc_9', reason: 'spam', digest: REVIEWED, _count: { _all: 1 } },
+    ])
+    mocks.findMany.mockResolvedValue([])
+
+    await GET(queueReq())
+
+    expect(mocks.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          team: { members: { some: { user: { classId: { in: ['class_1'] } } } } },
+        }),
+      }),
+    )
   })
 })

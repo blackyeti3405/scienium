@@ -113,6 +113,62 @@ describe('P1-5 — policy denials are observable', () => {
   })
 })
 
+describe('P1-5 — a denial is also recorded durably', () => {
+  beforeEach(() => {
+    h = routeHarness()
+  })
+
+  /** `logDenied` fires the ledger write without awaiting it — let it land. */
+  const settle = () => new Promise((r) => setTimeout(r, 0))
+
+  it('the STUDENT guard appends an authz.denied row naming the route and reason', async () => {
+    // The log line above expires with the drain. This row is what is still there
+    // when someone asks, weeks later, what that account was doing.
+    const locked = routeHarness({ phase: 'discovery' })
+    const { GET } = await import('@/app/api/literature/synthesis/route')
+    await locked.asStudentA().get(GET).expect(403)
+    await settle()
+
+    expect(locked.rows('securityEvent')).toEqual([
+      expect.objectContaining({
+        kind: 'authz.denied',
+        outcome: 'denied',
+        actorType: 'user',
+        targetType: 'route',
+        targetId: '/api/route-under-test',
+        reason: 'phase_locked',
+      }),
+    ])
+  })
+
+  it('the TEACHER guard records a student reaching for a teacher route', async () => {
+    // This guard emitted NOTHING before P1-5 — the highest-privilege surface in
+    // the app was the one whose refusals left no trace anywhere.
+    const { GET } = await import('@/app/api/teacher/roster/route')
+    await h.asStudentA().get(GET).expect(403)
+    await settle()
+
+    expect(h.rows('securityEvent')).toEqual([
+      expect.objectContaining({
+        kind: 'authz.denied',
+        outcome: 'denied',
+        reason: 'not_teacher',
+        targetId: '/api/route-under-test',
+      }),
+    ])
+  })
+
+  it('a signed-out denial is recorded as anonymous, not attributed to a guess', async () => {
+    const { GET } = await import('@/app/api/literature/synthesis/route')
+    await h.anonymous().get(GET).expect(401)
+    await settle()
+
+    const [row] = h.rows('securityEvent')
+    expect(row).toMatchObject({ kind: 'authz.denied', actorType: 'anonymous', reason: 'unauthenticated' })
+    expect(row!.actorUserId).toBeNull()
+  })
+})
+
 describe('P1-5 — a served request reports latency and outcome', () => {
   beforeEach(() => {
     h = routeHarness()

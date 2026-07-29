@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireUserContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
+import { recordSecurityEventTx } from '@/lib/observability/security-event'
 import { db } from '@/lib/db'
 import { pickActiveTeam } from '@/lib/team/context'
 import { isValidZip, zipToState, geocodeZip } from '@/lib/fairs/zip'
@@ -85,6 +86,20 @@ export async function POST(req: NextRequest) {
       },
     })
     await tx.user.update({ where: { id: user.id }, data: { activeTeamId: created.id } })
+    // Provisioning is an authority event (REFACTOR2 P1-5): this is where a lab —
+    // and its first lead — comes into existence. Nothing else in the app records
+    // that, and `Team.createdAt` cannot say who did it. In the same transaction,
+    // so a rolled-back creation leaves no claim that one happened.
+    await recordSecurityEventTx(tx, {
+      kind: 'provision.team',
+      outcome: 'ok',
+      actorType: 'user',
+      actorUserId: user.id,
+      targetType: 'team',
+      targetId: created.id,
+      scopeId: created.id,
+      reason: 'student_onboarding',
+    })
     return created
   })
 

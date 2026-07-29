@@ -2,6 +2,7 @@ import 'server-only'
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
+import { recordSecurityEventTx } from '@/lib/observability/security-event'
 
 /**
  * Class membership lifecycle (REFACTOR2 P1-R8, the class half).
@@ -83,6 +84,19 @@ export async function recordClassEvent(
       reason: input.reason ?? null,
     },
     select: { id: true },
+  })
+  // Mirrored into the cross-surface ledger (REFACTOR2 P1-5) for the same reason
+  // as `TeamMembershipEvent` — and it matters more here, because a class
+  // membership IS the teacher's authorization over a student's individual work.
+  await recordSecurityEventTx(tx, {
+    kind: 'authority.membership',
+    outcome: 'ok',
+    actorType: input.actorUserId ? 'user' : 'system',
+    actorUserId: input.actorUserId ?? null,
+    targetType: 'class_member',
+    targetId: input.userId,
+    scopeId: input.classId,
+    reason: `class_${input.event}:${input.reason ?? 'none'}`,
   })
   return row.id
 }

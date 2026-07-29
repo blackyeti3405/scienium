@@ -2,6 +2,7 @@ import 'server-only'
 import type { Prisma, MemberRole } from '@prisma/client'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
+import { recordSecurityEventTx } from '@/lib/observability/security-event'
 
 /**
  * Team membership lifecycle (REFACTOR2 P1-R8).
@@ -54,13 +55,20 @@ export class MembershipError extends Error {
 /**
  * Append one event, and return its id.
  *
+ * EXPORTED as `recordMembershipEvent` (REFACTOR2 P1-5) because it was not
+ * actually the single append point this module's header claims: the join route
+ * wrote its own `teamMembershipEvent.create` inline, so a joiner's `joined` event
+ * skipped everything this function does — which, now that it also writes the
+ * security ledger, meant join-code redemption was the one membership change with
+ * no ledger row. One append point, or the guarantee is only a comment.
+ *
  * The id is what makes a notification about this event dedupable:
  * `Notification.dedupeKey` is globally unique, so a key built from (user, team)
  * would collide the second time someone is removed from the same lab — and
  * because the notice is written inside the removal's transaction, that collision
  * would abort the removal itself. Same reasoning as `recordClassEvent`.
  */
-async function record(
+export async function recordMembershipEvent(
   tx: MembershipTx,
   input: {
     teamId: string
@@ -82,8 +90,27 @@ async function record(
     },
     select: { id: true },
   })
+  // The same fact, in the cross-surface ledger (REFACTOR2 P1-5). `TeamMembershipEvent`
+  // is the team's own history and is the right place to read it from; the
+  // security ledger is where an operator investigating "what authority changed
+  // this week, anywhere" looks without knowing which of six per-domain tables to
+  // join. Emitted HERE, at the single append point, so a new lifecycle
+  // transition inherits it and cannot forget.
+  await recordSecurityEventTx(tx, {
+    kind: input.event === 'lead_transferred' ? 'authority.role_changed' : 'authority.membership',
+    outcome: 'ok',
+    actorType: input.actorUserId ? 'user' : 'system',
+    actorUserId: input.actorUserId ?? null,
+    targetType: 'team_member',
+    targetId: input.userId,
+    scopeId: input.teamId,
+    reason: `${input.event}:${input.reason ?? 'none'}`,
+  })
   return row.id
 }
+
+/** Internal shorthand — the six call sites below all mean the exported append. */
+const record = recordMembershipEvent
 
 /**
  * Tell someone their lab membership was ended for them (HANDOFF #5).

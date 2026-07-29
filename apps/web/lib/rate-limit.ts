@@ -47,6 +47,14 @@ export const RATE_LIMITS = {
   read: { limit: 120, windowMs: 60_000 },
   /** Invite-code redemption — kept low to blunt code brute-forcing. */
   join: { limit: 10, windowMs: 60_000 },
+  /**
+   * Anonymous abuse reports on a public showcase (REFACTOR2 P1-6). Its own tier
+   * rather than a borrowed one so a `rate_limit.denied` line in the drain says
+   * what was denied. Low because reporting is a rare, deliberate act — and
+   * because the caller has no account, so this bucket (keyed on the reporter
+   * hash) is the only per-identity ceiling there is.
+   */
+  report: { limit: 5, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitTier>
 
 export type TierName = keyof typeof RATE_LIMITS

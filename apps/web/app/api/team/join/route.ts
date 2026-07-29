@@ -8,7 +8,7 @@ import { normalizeInviteCode } from '@/lib/team/invite'
 import { applySchoolAndClass, resolvePrimaryEmail, syncClerkDisplayName } from '@/lib/onboarding/profile'
 import { recordActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
-import { leaveOtherTeams } from '@/lib/team/membership'
+import { leaveOtherTeams, recordMembershipEvent } from '@/lib/team/membership'
 import { lockAggregate } from '@/lib/db-lock'
 
 const JoinBody = z
@@ -118,8 +118,16 @@ export async function POST(req: NextRequest) {
       await leaveOtherTeams(tx, user.id, team.id)
 
       await tx.teamMember.create({ data: { userId: user.id, teamId: team.id, role: 'member' } })
-      await tx.teamMembershipEvent.create({
-        data: { teamId: team.id, userId: user.id, event: 'joined', role: 'member', actorUserId: user.id, reason: 'invite_code' },
+      // Through the membership service's append point, not a local `create`
+      // (REFACTOR2 P1-5): that is what also writes the security ledger row, so
+      // redeeming a join code is recorded like every other membership change.
+      await recordMembershipEvent(tx, {
+        teamId: team.id,
+        userId: user.id,
+        event: 'joined',
+        role: 'member',
+        actorUserId: user.id,
+        reason: 'invite_code',
       })
       await tx.user.update({ where: { id: user.id }, data: { activeTeamId: team.id } })
       // Durable (REFACTOR2 P1-R5): the membership write and its record commit

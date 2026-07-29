@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { resolveAuthoritativeRole } from '@/lib/teacher/role'
 import { enforceRateLimit, type TierName } from '@/lib/rate-limit'
-import { assertSameOrigin } from '@/lib/api/route-context'
+import { assertSameOrigin, logDenied } from '@/lib/api/route-context'
+import { recordSecurityEvent } from '@/lib/observability/security-event'
 import { resolvePrimaryEmail } from '@/lib/onboarding/profile'
 import { MAX_TEACHER_CLASS_SCOPE, overflowTake } from '@/lib/teacher/caps'
 
@@ -51,8 +52,15 @@ export async function requireTeacher(
   req: NextRequest,
   opts: { tier: TierName },
 ): Promise<TeacherGuard> {
+  // Every refusal below goes through `logDenied` (REFACTOR2 P1-5). This guard
+  // emitted NOTHING before: the highest-privilege surface in the app was also
+  // the only one whose refusals left no trace, so "is somebody probing the
+  // teacher routes" had no answer anywhere. It reuses the team guard's emitter
+  // rather than a local one, so a teacher denial and a student denial are the
+  // same event shape and the repeated-denial alert counts them together.
   const { userId, sessionClaims } = await auth()
   if (!userId) {
+    logDenied(req, opts.tier, 'unauthenticated', 401, null)
     return { ctx: null, error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   }
 
@@ -61,7 +69,10 @@ export async function requireTeacher(
 
   // CSRF: mutating teacher routes are cookie-authenticated too (SEC-11).
   const crossOrigin = assertSameOrigin(req)
-  if (crossOrigin) return { ctx: null, error: crossOrigin }
+  if (crossOrigin) {
+    logDenied(req, opts.tier, 'cross_origin', 403, userId)
+    return { ctx: null, error: crossOrigin }
+  }
 
   // Role: the DB is the source of truth. For an existing row we ignore the claim
   // entirely, so a downgraded teacher whose token still says "teacher" is denied.
@@ -73,6 +84,9 @@ export async function requireTeacher(
   })
   const role = resolveAuthoritativeRole(user?.role, claimRole, !!user)
   if (!role) {
+    // The one denial in this file worth alerting on by itself: a signed-in
+    // student repeatedly hitting teacher routes is not a typo.
+    logDenied(req, opts.tier, 'not_teacher', 403, userId)
     return { ctx: null, error: NextResponse.json({ error: 'Teacher access required' }, { status: 403 }) }
   }
 
@@ -81,6 +95,7 @@ export async function requireTeacher(
     const clerkUser = await currentUser()
     const email = resolvePrimaryEmail(clerkUser)
     if (!email) {
+      logDenied(req, opts.tier, 'no_email', 400, userId)
       return { ctx: null, error: NextResponse.json({ error: 'No email on account' }, { status: 400 }) }
     }
     user = await db.user.create({
@@ -91,6 +106,18 @@ export async function requireTeacher(
         role,
       },
       select: { id: true, role: true },
+    })
+    // A teacher row minted from a Clerk CLAIM rather than from the onboarding
+    // route — the one path where the privilege is granted without a request that
+    // asked for it. Recorded separately for exactly that reason.
+    void recordSecurityEvent({
+      kind: 'provision.teacher_role',
+      outcome: 'ok',
+      actorType: 'teacher',
+      actorUserId: user.id,
+      targetType: 'user',
+      targetId: user.id,
+      reason: 'claim_bootstrap',
     })
   }
 
@@ -108,6 +135,7 @@ export async function requireTeacher(
     take: overflowTake(MAX_TEACHER_CLASS_SCOPE),
   })
   if (classes.length > MAX_TEACHER_CLASS_SCOPE) {
+    logDenied(req, opts.tier, 'class_scope_overflow', 409, userId)
     return {
       ctx: null,
       error: NextResponse.json(

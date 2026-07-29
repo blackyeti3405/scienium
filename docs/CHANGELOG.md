@@ -5,6 +5,58 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.76.3] — 2026-07-29
+
+Pilot-readiness wave 2 — closes REFACTOR2 rows P1-5 (security events + observability) and
+P1-6 (public-showcase abuse controls). Two migrations: `20260729030000_security_events`,
+`20260729040000_showcase_abuse_controls`.
+
+### Added
+
+- **P1-5 — append-only security-event ledger.** New relation-free `SecurityEvent` model
+  (bare ids only, so domain deletes can neither erase nor be blocked by the audit trail) with
+  a two-write helper (`recordSecurityEvent` / `recordSecurityEventTx`,
+  `lib/observability/security-event.ts`): bounded reason slugs, P2002-keyed dedupe, request-id
+  correlation via a new AsyncLocalStorage in the logger. Wired across the previously silent
+  surfaces: teacher-guard denials, cron auth (including the 503 "locked" branches),
+  role/membership changes (single append point; the join route had been bypassing it), team +
+  class + teacher provisioning, join-code mint/rotate, destructive-command gate, moderation
+  decisions, worker dead letters, and provider-budget pressure (`AI_DAILY_BUDGET_USD`, default
+  $25).
+- **Alert thresholds → Sentry** with DB-backed alert dedupe (window-bucketed `dedupe_key`
+  rows, serverless-safe): repeated denials 30/10 min/actor, cron denials 5/h, moderation
+  rejections 10/24 h/team, refused destructive commands 20/h/team, dead letters 3 distinct
+  jobs/h, daily AI budget ceiling. Documented with a ledger query cookbook in
+  `docs/runbooks/incident-response.md`.
+- **P1-6 — public-showcase reporting.** Anonymous rate-limited
+  `POST /api/showcase/public/report`: hard enum taxonomy
+  (inappropriate/harassment/privacy/copyright/spam/other), **no free-text field**, salted
+  reporter hash (no raw IP stored), dedupe on (showcase, reporter, reason), 5/min per
+  reporter + 100/h per showcase, visibility-gated so it is not an existence oracle. 3 distinct
+  reporters/24 h raises Sentry and surfaces the showcase atop the teacher moderation queue —
+  never auto-unpublishes.
+- **Takedown / restore.** `Showcase.takedownAt`/`takedownReason` checked as the first gate in
+  `canViewShowcase` (typed-required input, so a consumer that forgets the column fails
+  typecheck) — covers the public page, print view, metadata, asset bytes, and the report
+  endpoint; the moderating teacher retains access to the evidence. Restore is `takedownAt =
+  NULL`, fully audited. Teacher UI: flagged-showcase cards (report counts, per-reason chips,
+  live-revision indicator, take offline / restore) above the pending queue; public pages get a
+  ReportButton hidden from the owning team.
+
+### Changed
+
+- `ShowcaseModerationEvent` no longer cascade-deletes with its showcase (CASCADE → RESTRICT):
+  deleting a showcase previously erased who approved or removed it. Reports and security
+  events survive deletion by construction (no FKs).
+- Public asset bytes: `Cache-Control` tightened from `private, max-age=3600` to
+  `private, max-age=60, must-revalidate`, and both public showcase pages pinned
+  `force-dynamic` — a takedown is now visible within a minute even to readers who already
+  loaded the bytes, and no shared cache ever holds a copy.
+- `app/api/team/lead` and `app/api/team/members/[userId]` moved onto the shared
+  `withTeamRoute` envelope (both hand-rolled the prelude and reported nothing).
+
+---
+
 ## [0.76.2] — 2026-07-29
 
 Content-only. One `/codex-pipeline` run authored the whole **Geology / Seismology** field —

@@ -25,6 +25,15 @@ const logEvent = vi.fn()
 vi.mock('@/lib/observability/log', () => ({
   logEvent: (e: unknown) => logEvent(e),
   requestIdFrom: () => 'req_test',
+  beginRequest: () => 'req_test',
+  currentRequestId: () => 'req_test',
+}))
+// The durable half of a denial (REFACTOR2 P1-5). Mocked at the module rather
+// than through `db`, because what this file cares about is that the guard emits
+// it at all — the sink's own behaviour is `test/security-events.test.ts`.
+const recordSecurityEvent = vi.fn((_e: unknown) => Promise.resolve(true))
+vi.mock('@/lib/observability/security-event', () => ({
+  recordSecurityEvent: (e: unknown) => recordSecurityEvent(e),
 }))
 
 import { assertCron } from '@/lib/cron/auth'
@@ -68,6 +77,24 @@ describe('assertCron', () => {
     expect(res?.status).toBe(401)
     expect(logEvent).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'cron.auth_denied', outcome: 'denied' }),
+    )
+    // …and appends the durable event the "unauthorized cron attempts" threshold
+    // counts over. The log line alone expires with the drain (REFACTOR2 P1-5).
+    expect(recordSecurityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'cron.denied',
+        outcome: 'denied',
+        targetId: '/api/cron/notifications',
+        reason: 'cron_secret_mismatch',
+      }),
+    )
+  })
+
+  it('a LOCKED cron (no secret) is recorded too — silence looks identical to working', () => {
+    mockCronSecret.mockReturnValue(undefined)
+    expect(assertCron(cronReq('Bearer anything'))?.status).toBe(503)
+    expect(recordSecurityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'cron.denied', reason: 'cron_unconfigured' }),
     )
   })
 

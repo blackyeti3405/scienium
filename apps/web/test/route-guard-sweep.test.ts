@@ -25,6 +25,13 @@ const PUBLIC_ALLOWLIST: Record<string, RegExp> = {
   'app/api/dev/backfill-me/route.ts': /NODE_ENV\s*===\s*'production'/,
   // Deliberately public gallery asset: privacy enforced by canViewShowcase.
   'app/api/showcase/public/asset/route.ts': /canViewShowcase/,
+  // Deliberately anonymous abuse reporting (REFACTOR2 P1-6) — the audience for
+  // a public showcase has no account here, so requiring one would mean only the
+  // students could report. Same compensating control as the asset route: only a
+  // showcase an anonymous visitor could actually OPEN can be reported, so this
+  // is not an oracle for private drafts. Rate limiting, a per-identity unique
+  // key and a per-showcase ceiling bound the rest.
+  'app/api/showcase/public/report/route.ts': /canViewShowcase/,
   // E2E preflight probe. Unauthenticated ON PURPOSE — it is what the Playwright
   // preflight calls to prove it is talking to a stub-mode server before any test
   // runs. Its compensating control is stronger than a guard: the route only

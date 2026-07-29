@@ -12,6 +12,15 @@ import {
   toVerifiedShowcaseForView,
 } from '@/lib/showcase-server'
 import { PrintButton } from '@/components/showcase/PrintButton'
+import { ReportButton } from '@/components/showcase/ReportButton'
+
+/**
+ * Never rendered from a cache (REFACTOR2 P1-6). `auth()` and `headers()` make
+ * this dynamic today; this PINS it, so a takedown can never be served out of a
+ * render cache there is no way to purge. It is also what makes the asset
+ * route's `private` cache header the only cached copy of anything here.
+ */
+export const dynamic = 'force-dynamic'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -279,6 +288,11 @@ export default async function PublicShowcasePage(props: Props) {
           </div>
         </section>
       )}
+      {/* Report path (P1-6) — only on a page a stranger is actually looking at.
+          The team previewing its own draft has a teacher; a `link_only` viewer
+          reports through the token they were given, which is the identifier
+          they have. */}
+      {!isOwner && <ReportButton showcase={found.via === 'share_token' ? sc.shareToken! : sc.slug} />}
     </article>
   );
 }

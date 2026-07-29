@@ -85,6 +85,39 @@ export const PRIVACY_OPTIONS: { value: PrivacyLevel; label: string; blurb: strin
   { value: 'public', label: 'Public', blurb: 'Submitted for teacher review — appears in the public gallery once approved.' },
 ]
 
+// ─── Abuse reporting (REFACTOR2 P1-6) ────────────────────────────────────────
+
+/**
+ * The complete reporting vocabulary, mirroring the `ShowcaseReportReason` enum
+ * in schema.prisma. Deliberately short and deliberately closed: a report is a
+ * ROUTING signal for a teacher, not a message, so there is no free-text field
+ * anywhere in this feature — nothing a reporter types can reach a moderation
+ * screen, a log line, or the security ledger.
+ *
+ * Doubles as the takedown vocabulary: `Showcase.takedownReason` holds one of
+ * these, so "why was it reported" and "why was it removed" are the same list.
+ */
+export const SHOWCASE_REPORT_REASONS = [
+  'inappropriate',
+  'harassment',
+  'privacy',
+  'copyright',
+  'spam',
+  'other',
+] as const
+
+export type ShowcaseReportReason = (typeof SHOWCASE_REPORT_REASONS)[number]
+
+/** Reader-facing labels for the report control and the moderation queue. */
+export const REPORT_REASON_LABELS: Record<ShowcaseReportReason, string> = {
+  inappropriate: 'Inappropriate or unsafe content',
+  harassment: 'Bullying or harassment',
+  privacy: 'Personal information about someone',
+  copyright: "Someone else's work used without permission",
+  spam: 'Spam or advertising',
+  other: 'Something else',
+}
+
 export interface ShowcaseViewer {
   userId: string | null
   schoolId: string | null
@@ -107,6 +140,8 @@ export interface ShowcaseForView {
   moderationStatus: string
   /** Distinct school ids of the team's members (Team has no school of its own). */
   teamSchoolIds: string[]
+  /** `Showcase.takedownAt != null` — staff pulled this from public serving. */
+  takenDown: boolean
 }
 
 /**
@@ -128,6 +163,19 @@ export function canViewShowcase(
   viewer: ShowcaseViewer | null,
   via: ShowcaseAccess = 'slug',
 ): boolean {
+  // TAKEDOWN (REFACTOR2 P1-6) — first, and above the owner check, because it is
+  // the one state the owning team must not be able to keep serving. Only the
+  // moderating teacher gets through, and only so the content stays REVIEWABLE:
+  // a takedown removes the page, not the evidence, and an investigation that
+  // has to go to the database to see what was reported is the "ad hoc database
+  // change" this item exists to eliminate.
+  //
+  // This is THE single gate. Both public consumers (the page/one-pager and the
+  // asset-byte route) reach it through `canViewShowcase`, so the bytes cannot
+  // outlive the page; the gallery, which lists rather than views, filters on
+  // `takedownAt: null` in its own query.
+  if (sc.takenDown) return viewer?.moderatorTeamIds.includes(sc.teamId) ?? false
+
   const isOwner = !!viewer && viewer.teamIds.includes(sc.teamId)
   if (isOwner) return true
 
@@ -172,6 +220,7 @@ export function toShowcaseForView(sc: {
   privacyLevel: string
   publishedAt: Date | null
   moderationStatus: string
+  takedownAt: Date | null
   team: { members: { user: { schoolId: string | null } }[] }
 }): ShowcaseForView {
   return {
@@ -180,6 +229,7 @@ export function toShowcaseForView(sc: {
     publishedAt: sc.publishedAt,
     moderationStatus: sc.moderationStatus,
     teamSchoolIds: teamSchoolIds(sc.team.members),
+    takenDown: sc.takedownAt != null,
   }
 }
 

@@ -33,6 +33,10 @@ export async function GET(req: NextRequest) {
           publishedAt: true,
           moderationStatus: true,
           shareToken: true,
+          // Takedown (P1-6). The bytes are gated by the SAME `canViewShowcase`
+          // call as the page, so a takedown that removes the page cannot leave
+          // the board and quad chart still streaming from a bookmarked URL.
+          takedownAt: true,
           // The digest inputs, so the approval can be re-verified against the
           // content actually being served (see `toVerifiedShowcaseForView`).
           shortTitle: true,
@@ -78,7 +82,15 @@ export async function GET(req: NextRequest) {
     const headers: Record<string, string> = {
       'Content-Type': contentType ?? (isPdf ? 'application/pdf' : 'image/jpeg'),
       'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': 'private, max-age=3600',
+      // The cache lifetime IS the takedown latency (REFACTOR2 P1-6). `private`
+      // is the load-bearing half: no CDN or shared proxy ever holds a copy, so
+      // a takedown is immediate for every viewer who has not already loaded the
+      // bytes, and there is no shared cache to purge. What remains is a client's
+      // OWN cache — the one copy no server can recall — so it is bounded to a
+      // minute instead of an hour. Tradeoff: a board PDF is re-fetched from R2
+      // once a minute per reader rather than once an hour. That is the price of
+      // "immediately", and it is small next to a takedown that isn't.
+      'Cache-Control': 'private, max-age=60, must-revalidate',
     }
     if (isPdf) {
       // Render inline in the viewer's PDF reader (mirrors the papers file route).

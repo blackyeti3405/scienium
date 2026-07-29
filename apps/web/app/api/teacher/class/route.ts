@@ -4,6 +4,7 @@ import { requireTeacher } from '@/lib/teacher/auth'
 import { parseJson } from '@/lib/validation'
 import { resolveSchool } from '@/lib/onboarding/profile'
 import { classJoinCodeExpiry, generateInviteCode } from '@/lib/team/invite'
+import { recordSecurityEvent } from '@/lib/observability/security-event'
 import { db } from '@/lib/db'
 
 /**
@@ -113,6 +114,21 @@ export async function POST(req: NextRequest) {
   if (!created) {
     return NextResponse.json({ error: 'Could not generate a unique class code, try again.' }, { status: 503 })
   }
+
+  // A class is a scope of authority, not just a container: every student who
+  // joins it becomes readable by this teacher. Recorded once, at creation
+  // (REFACTOR2 P1-5).
+  await recordSecurityEvent({
+    kind: 'provision.class',
+    outcome: 'ok',
+    actorType: 'teacher',
+    actorUserId: ctx.dbUserId,
+    targetType: 'class',
+    targetId: created.id,
+    scopeId: created.id,
+    reason: 'class_created',
+    dedupeKey: `class_created:${created.id}`,
+  })
 
   return NextResponse.json({ class: created })
 }

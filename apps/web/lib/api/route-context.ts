@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { resolveActiveTeam } from '@/lib/team/context'
 import { enforceRateLimit, type TierName } from '@/lib/rate-limit'
 import { enterAiScope } from '@/lib/ai/scope'
-import { logEvent, requestIdFrom } from '@/lib/observability/log'
+import { beginRequest, logEvent } from '@/lib/observability/log'
+import { recordSecurityEvent } from '@/lib/observability/security-event'
 import {
   assertFeatureUnlocked,
   PhaseGateError,
@@ -79,33 +80,63 @@ export function assertSameOrigin(req: NextRequest): NextResponse | null {
  * Why a guard refused. A bounded enum, never a message built from the request —
  * `LogEvent.detail` is operator-facing text and nothing else.
  */
-type DenialReason = 'unauthenticated' | 'cross_origin' | 'no_team' | 'phase_locked'
+export type DenialReason =
+  | 'unauthenticated'
+  | 'cross_origin'
+  | 'no_team'
+  | 'phase_locked'
+  /** Teacher guard: the caller is not teacher|admin (`lib/teacher/auth.ts`). */
+  | 'not_teacher'
+  /** Teacher guard: the class scope is larger than a request can represent. */
+  | 'class_scope_overflow'
+  /** Teacher guard: a claim-only teacher with no resolvable email. */
+  | 'no_email'
 
 /**
  * Emit the policy-denial event for a refused request (REFACTOR2 P1-5).
  *
- * It lives HERE, in the two guards, rather than at 78 call sites: these are the
- * only places a denial of this shape is produced, so every guarded route
- * inherits the event and a new route cannot forget it. Rate-limit denials are
- * deliberately absent — `enforceRateLimit` already logs its own
- * `rate_limit.denied`, and two lines for one refusal is worse than none.
+ * It lives HERE, in the guards, rather than at 78 call sites: these are the only
+ * places a denial of this shape is produced, so every guarded route inherits the
+ * event and a new route cannot forget it. Rate-limit denials are deliberately
+ * absent — `enforceRateLimit` already logs its own `rate_limit.denied`, and two
+ * lines for one refusal is worse than none.
+ *
+ * TWO SINKS, on purpose. The log line answers "what is happening right now" and
+ * expires with the drain; the `SecurityEvent` row is what is still there next
+ * month, and is what the repeated-denial alert counts over. Exported so the
+ * teacher guard — a different guard, the same kind of refusal — emits the
+ * identical pair rather than growing its own dialect.
  */
-function logDenied(
+export function logDenied(
   req: NextRequest,
   tier: TierName,
   reason: DenialReason,
   status: number,
   userId: string | null,
 ): void {
+  const pathname = new URL(req.url).pathname
   logEvent({
     event: 'route.denied',
-    requestId: requestIdFrom(req),
-    route: new URL(req.url).pathname,
+    requestId: beginRequest(req),
+    route: pathname,
     outcome: 'denied',
     status,
     tier,
     userId,
     detail: reason,
+  })
+  // Not awaited: a refusal has already been decided and its response is about to
+  // be returned — the audit write must not add latency to it, and cannot change
+  // it. `recordSecurityEvent` never rejects, so there is no unhandled rejection.
+  void recordSecurityEvent({
+    kind: 'authz.denied',
+    outcome: 'denied',
+    actorType: userId ? 'user' : 'anonymous',
+    actorUserId: userId,
+    targetType: 'route',
+    // The route PATH — `LogEvent.route`'s own domain, and never a query string.
+    targetId: pathname,
+    reason,
   })
 }
 

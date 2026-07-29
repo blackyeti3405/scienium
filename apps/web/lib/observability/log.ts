@@ -20,6 +20,7 @@
  * `sha256(<id>).slice(0, 12)` (`opaqueId`).
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 
 /**
@@ -70,4 +71,34 @@ export function logEvent(e: LogEvent): void {
 /** Correlation id for a request: Vercel's own request id when present. */
 export function requestIdFrom(req: { headers: { get(name: string): string | null } }): string {
   return req.headers.get('x-vercel-id') ?? crypto.randomUUID()
+}
+
+const requestIdStore = new AsyncLocalStorage<string>()
+
+/**
+ * Bind this request's correlation id to the rest of its async context, and
+ * return it (REFACTOR2 P1-5).
+ *
+ * A security event is written from wherever the decision is MADE —
+ * `lib/team/membership.ts` inside a transaction, `lib/api/destructive-proposal.ts`
+ * from a service — and none of those see the `Request`. The alternative was an
+ * optional `requestId` threaded through eight service signatures that have no
+ * other reason to know one, which is the same trade `enterAiScope` already
+ * settled the same way one module over.
+ *
+ * IDEMPOTENT: the wrapper and the guard both call it, and off Vercel
+ * `requestIdFrom` mints a fresh UUID each time — so the first caller wins and
+ * the log line, the denial event, and the security row all carry ONE id.
+ */
+export function beginRequest(req: { headers: { get(name: string): string | null } }): string {
+  const existing = requestIdStore.getStore()
+  if (existing) return existing
+  const id = requestIdFrom(req)
+  requestIdStore.enterWith(id)
+  return id
+}
+
+/** The current request's correlation id, or undefined outside a request (cron, workers). */
+export function currentRequestId(): string | undefined {
+  return requestIdStore.getStore()
 }

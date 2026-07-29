@@ -7,8 +7,9 @@
 > belongs here only while it has a verified defect, an incomplete production path, or a
 > concrete pilot sign-off still outstanding.
 >
-> Wave 1 (v0.76.1) closed P0-R3, P1-1, P1-2, the code half of P1-3, and P2-4; see
-> `docs/CHANGELOG.md`. P1-3's remaining owner actions moved to the owner gates table.
+> Wave 1 (v0.76.1) closed P0-R3, P1-1, P1-2, the code half of P1-3, and P2-4. Wave 2
+> (v0.76.3) closed P1-5 and P1-6. See `docs/CHANGELOG.md`. Owner remainders (E2E secret,
+> branch protection, Resend webhook config) live in the owner gates table.
 
 ## P1 — correctness, cost, and release integrity
 
@@ -32,46 +33,6 @@ Required:
 
 Done when an operator can request, resume, inspect, and prove an export or erasure without
 manual database surgery.
-
-### P1-5 — Complete security events and actionable observability
-
-Structured request and denial events cover only the routes using `withTeamRoute`. Security
-events and alert thresholds are still incomplete for provisioning, role changes, membership
-changes, destructive commands, moderation, cron authorization, and repeated scope denials.
-
-Required:
-
-- Add privacy-minimized append-only security events for consequential authority changes and
-  commands.
-- Preserve actor, target, request id, bounded reason, outcome, and timestamp without logging
-  student-authored payloads.
-- Extend the shared route envelope to risk-bearing routes first; do not mechanically wrap
-  trivial routes when it adds no policy or observability value.
-- Define alert thresholds and an incident-response destination for repeated denials, failed
-  crons, worker dead letters, provider-budget pressure, and moderation abuse.
-- Add tests that prove events survive retries without duplication and cannot be erased by the
-  domain operation they record.
-
-Done when the pilot operator can detect and investigate authority, privacy, cost, and
-background-work failures.
-
-### P1-6 — Add public-showcase abuse controls
-
-Revision-bound moderation does not replace post-publication operations. Published showcases
-still need a complete report, unpublish, takedown, and escalation path.
-
-Required:
-
-- Add rate-limited reporting with a bounded reason taxonomy.
-- Let authorized staff unpublish or take down content without deleting the evidence needed for
-  review.
-- Record actor, reason, revision, and outcome in the moderation event history.
-- Make public page and asset-byte access reflect takedown immediately and reliably invalidate
-  caches.
-- Document escalation and restoration procedures.
-
-Done when reported public content can be investigated and removed without ad hoc database
-changes.
 
 ## P2 — hardening and product-quality work
 

@@ -20,6 +20,7 @@ const store = {
   invites: [] as { teamId: string; usedByUserId: string | null }[],
   events: [] as Record<string, unknown>[],
   notifications: [] as Record<string, unknown>[],
+  securityEvents: [] as Record<string, unknown>[],
 }
 let eventSeq = 0
 
@@ -99,6 +100,15 @@ const tx = {
       return row
     },
   },
+  // The cross-surface ledger written alongside every lifecycle event
+  // (REFACTOR2 P1-5) — captured so the assertions below can read it.
+  securityEvent: {
+    create: async ({ data }: any) => {
+      const row = { id: `sec_${++eventSeq}`, ...data }
+      store.securityEvents.push(row)
+      return row
+    },
+  },
   notification: {
     create: async ({ data }: any) => {
       if (store.notifications.some((n) => n.dedupeKey === data.dedupeKey)) {
@@ -149,6 +159,7 @@ beforeEach(() => {
   store.invites = []
   store.events = []
   store.notifications = []
+  store.securityEvents = []
   eventSeq = 0
 })
 
@@ -536,5 +547,74 @@ describe('a system removal is not a notice', () => {
 
     expect(store.notifications).toEqual([])
     expect(eventsOfType('removed')).toHaveLength(1) // the log still records it
+  })
+})
+
+describe('P1-5 — every lifecycle change lands in the security ledger', () => {
+  /**
+   * `TeamMembershipEvent` is the team's own history. The security ledger is the
+   * cross-surface one an operator queries without knowing which of six
+   * per-domain tables to join — and, unlike `TeamMembershipEvent`, it carries no
+   * foreign key, so a team teardown cannot take it with it.
+   *
+   * These assert against the SINGLE append point (`record`), which is why a
+   * lifecycle transition added later inherits the ledger row instead of needing
+   * to remember one.
+   */
+  it('a removal is recorded with actor, target, team and a bounded reason', async () => {
+    seedTeam(T1, 'u1', ['u1', 'u2'])
+
+    await departTeam(tx as never, {
+      teamId: T1,
+      userId: 'u2',
+      event: 'removed',
+      actorUserId: 'u1',
+      reason: 'removed_by_lead',
+    })
+
+    expect(store.securityEvents).toContainEqual(
+      expect.objectContaining({
+        kind: 'authority.membership',
+        outcome: 'ok',
+        actorType: 'user',
+        actorUserId: 'u1',
+        targetType: 'team_member',
+        targetId: 'u2',
+        scopeId: T1,
+        reason: 'removed:removed_by_lead',
+      }),
+    )
+  })
+
+  it('a lead transfer is a ROLE change, not a membership change', async () => {
+    // The two are separated in the ledger because they are separate questions:
+    // "who is in this lab" and "who runs it" are investigated differently.
+    seedTeam(T1, 'u1', ['u1', 'u2'])
+
+    await transferLead(tx as never, { teamId: T1, fromUserId: 'u1', toUserId: 'u2' })
+
+    const roleRows = store.securityEvents.filter((e) => e.kind === 'authority.role_changed')
+    expect(roleRows).toHaveLength(1)
+    expect(roleRows[0]).toMatchObject({
+      actorUserId: 'u1',
+      targetId: 'u2',
+      scopeId: T1,
+      reason: 'lead_transferred:handed_over',
+    })
+  })
+
+  it('a system-chosen transfer is recorded as system, never credited to a person', async () => {
+    seedTeam(T1, 'u1', ['u1', 'u2'])
+
+    await departTeam(tx as never, {
+      teamId: T1,
+      userId: 'u1',
+      event: 'left',
+      actorUserId: 'u1',
+      reason: 'self_leave',
+    })
+
+    const auto = store.securityEvents.find((e) => e.reason === 'lead_transferred:previous_lead_departed')
+    expect(auto).toMatchObject({ actorType: 'system', actorUserId: null, targetId: 'u2' })
   })
 })

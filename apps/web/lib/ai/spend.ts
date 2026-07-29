@@ -4,6 +4,7 @@ import type { z } from 'zod'
 import { anthropic } from '@/lib/anthropic'
 import { db } from '@/lib/db'
 import { logEvent } from '@/lib/observability/log'
+import { recordSecurityEvent } from '@/lib/observability/security-event'
 import { currentAiScope, type AiScope } from '@/lib/ai/scope'
 import {
   AI_RATE_VERSION,
@@ -187,6 +188,47 @@ export function aiStream(
  */
 export async function assertAiSpendAllowed(): Promise<void> {
   await assertAiEnabled(currentAiScope().teamId)
+}
+
+/**
+ * Default daily spend at which the operator is told (REFACTOR2 P1-5).
+ *
+ * A knob, not a cap: nothing is refused here. The refusal lever already exists
+ * and is deliberately blunt (the kill switch, and pulling the Upstash vars —
+ * docs/runbooks/incident-response.md). What did not exist was any way to find
+ * out you needed it before the invoice arrived.
+ *
+ * $25/day is a pilot-shaped starting number — roughly a full class-day of paid
+ * work — and the whole point is that it will be wrong until there is a week of
+ * real classroom data. `AI_DAILY_BUDGET_USD` overrides it without a code change.
+ */
+const DEFAULT_DAILY_BUDGET_USD = 25
+
+/**
+ * Alert once per UTC day when provider spend crosses the budget.
+ *
+ * Called from the 5-minute papers cron rather than from `record()`: one
+ * aggregate every five minutes is free, whereas a check on the paid path would
+ * add a query to every LLM call to answer a question that changes slowly. The
+ * `dedupeKey` is the day, so the ledger holds one row and Sentry gets one issue
+ * however many times the cron runs after the crossing.
+ */
+export async function checkDailySpendPressure(): Promise<void> {
+  const budgetUsd = Number(process.env.AI_DAILY_BUDGET_USD ?? DEFAULT_DAILY_BUDGET_USD)
+  if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) return
+
+  const day = utcDay()
+  const spent = await db.aiUsage.aggregate({ where: { day }, _sum: { costMicros: true } })
+  const spentMicros = spent._sum.costMicros ?? 0
+  if (spentMicros < budgetUsd * 1_000_000) return
+
+  await recordSecurityEvent({
+    kind: 'budget.pressure',
+    outcome: 'error',
+    actorType: 'system',
+    reason: 'daily_spend_over_budget',
+    dedupeKey: `budget:${day.toISOString().slice(0, 10)}`,
+  })
 }
 
 // ─── The output boundary (REFACTOR2 P2-S9) ───────────────────────────────────

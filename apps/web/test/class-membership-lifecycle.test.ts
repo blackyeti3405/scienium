@@ -48,6 +48,8 @@ function matches(r: RequestRow, where: any): boolean {
 }
 
 const tx = {
+  // REFACTOR2 P1-5 — the ledger row written in the same transaction.
+  securityEvent: { create: vi.fn(async ({ data }: any) => ({ id: 'sec_1', ...data })) },
   classJoinRequest: {
     findFirst: async ({ where }: any) => requests.find((r) => matches(r, where)) ?? null,
     findUnique: async ({ where }: any) => requests.find((r) => r.id === where.id) ?? null,

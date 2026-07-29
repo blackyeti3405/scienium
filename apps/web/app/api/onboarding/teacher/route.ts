@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { requireUserContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
+import { recordSecurityEvent } from '@/lib/observability/security-event'
 import { resolvePrimaryEmail, resolveSchool, syncClerkDisplayName } from '@/lib/onboarding/profile'
 
 // `.strict()` rejects any field other than name + highSchool — role and userId
@@ -75,6 +76,21 @@ export async function POST(req: NextRequest) {
   // clerkClient is async in Clerk v5 — must be called before .users access.
   const cc = await clerkClient()
   await cc.users.updateUserMetadata(userId, { publicMetadata: { role: 'teacher' } })
+
+  // The largest privilege grant in the app, recorded durably (REFACTOR2 P1-5):
+  // a teacher can read every student's individual work in their classes.
+  // `dedupeKey` is the user id, so the idempotent re-submit this route
+  // deliberately allows appends exactly one row however many times it is called.
+  await recordSecurityEvent({
+    kind: 'provision.teacher_role',
+    outcome: 'ok',
+    actorType: 'teacher',
+    actorUserId: user.id,
+    targetType: 'user',
+    targetId: user.id,
+    reason: 'teacher_onboarding',
+    dedupeKey: `teacher_role:${user.id}`,
+  })
 
   return NextResponse.json({ ok: true })
 }

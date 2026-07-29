@@ -167,6 +167,8 @@ export function toVerifiedShowcaseForView(
     publishedAt: Date | null
     moderationStatus: string
     approvedDigest: string | null
+    /** Takedown state (P1-6) — required, so a consumer cannot forget to select it. */
+    takedownAt: Date | null
     team: { members: { user: { schoolId: string | null } }[] }
   },
 ): ShowcaseForView {
@@ -226,6 +228,23 @@ export async function resolveShowcaseViewer(): Promise<ShowcaseViewer | null> {
 export function viewFingerprint(ip: string, userAgent: string): string {
   const day = new Date().toISOString().slice(0, 10)
   return createHash('sha256').update(`${viewFingerprintSalt()}|${ip}|${userAgent}|${day}`).digest('hex').slice(0, 32)
+}
+
+/**
+ * A stable pseudonym for whoever filed an abuse report (REFACTOR2 P1-6).
+ *
+ * Salted hash of the IP alone — no user agent and no day bucket, unlike
+ * `viewFingerprint`: this one has to stay the SAME across days and browsers so
+ * the `(showcase, reporter, reason)` unique key actually collapses a repeat
+ * report instead of counting it twice. It shares the salt (and its production
+ * requirement) because it is the same promise: the raw address is never stored,
+ * and the stored value cannot be walked back to one.
+ *
+ * The `report|` prefix is a domain separator, so a view fingerprint and a
+ * reporter hash can never collide into each other's tables.
+ */
+export function reporterHash(ip: string): string {
+  return createHash('sha256').update(`${viewFingerprintSalt()}|report|${ip}`).digest('hex').slice(0, 32)
 }
 
 /**

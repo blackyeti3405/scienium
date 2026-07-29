@@ -47,12 +47,14 @@ function asset(overrides: {
   shareToken?: string | null
   /** Omit to get a showcase whose approval genuinely covers the content below. */
   approvedDigest?: string | null
+  takedownAt?: Date | null
 }) {
   const showcase = {
     teamId: 'team_1',
     privacyLevel: overrides.privacyLevel ?? 'private',
     publishedAt: 'publishedAt' in overrides ? overrides.publishedAt : new Date('2026-01-01'),
     moderationStatus: overrides.moderationStatus ?? 'approved',
+    takedownAt: overrides.takedownAt ?? null,
     shareToken: 'shareToken' in overrides ? overrides.shareToken : SHARE_TOKEN,
     shortTitle: 'Mould',
     title: 'Mould growth on bread',
@@ -184,6 +186,44 @@ describe('public showcase asset privacy', () => {
 
     expect((await GET(assetReq('asset_1', SHARE_TOKEN))).status).toBe(404)
     expect(mocks.getObjectStream).not.toHaveBeenCalled()
+  })
+
+  // REFACTOR2 P1-6. A takedown that only removed the PAGE would leave the board
+  // and quad chart streaming from a bookmarked `?id=` URL — the reported bytes
+  // still served, from the same object, to anyone who had the link. The route
+  // and the page share one gate, so it cannot come apart.
+  it('a taken-down public showcase stops streaming immediately, without touching storage', async () => {
+    mocks.assetFindUnique.mockResolvedValue(
+      asset({ privacyLevel: 'public', takedownAt: new Date('2026-07-29') }),
+    )
+
+    const res = await GET(assetReq())
+
+    expect(res.status).toBe(404)
+    expect(mocks.getObjectStream).not.toHaveBeenCalled()
+  })
+
+  it('a taken-down link_only showcase does not reopen for the share token', async () => {
+    mocks.assetFindUnique.mockResolvedValue(
+      asset({ privacyLevel: 'link_only', takedownAt: new Date('2026-07-29') }),
+    )
+
+    expect((await GET(assetReq('asset_1', SHARE_TOKEN))).status).toBe(404)
+    expect(mocks.getObjectStream).not.toHaveBeenCalled()
+  })
+
+  it('the bytes are never held by a shared cache, and only briefly by the client', async () => {
+    mocks.assetFindUnique.mockResolvedValue(asset({ privacyLevel: 'public' }))
+
+    const cc = (await GET(assetReq())).headers.get('Cache-Control') ?? ''
+
+    // `private` is what keeps a CDN from serving a taken-down board with nothing
+    // to purge; the max-age is the ceiling on how long one reader's own cache
+    // can outlive a takedown.
+    expect(cc).toContain('private')
+    expect(cc).not.toContain('public')
+    const maxAge = Number(/max-age=(\d+)/.exec(cc)?.[1])
+    expect(maxAge).toBeLessThanOrEqual(60)
   })
 
   it('an object key outside the showcase/ prefix is never streamed', async () => {

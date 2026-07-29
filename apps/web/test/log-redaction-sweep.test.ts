@@ -134,13 +134,18 @@ const ALLOWLIST: Record<string, string[]> = {
     'err.message',
     'String(err)',
   ],
-  'lib/cron/auth.ts': ['requestIdFrom(req)'],
+  // `reason` is one of three hardcoded tokens chosen inside `assertCron`
+  // (`cron_unconfigured`, `cron_secret_too_short`, `cron_secret_mismatch`), and
+  // `status` is a number the same call site passes in. Neither is request-derived.
+  'lib/cron/auth.ts': ['beginRequest(req)', 'reason', 'status'],
   // Per-request observability (REFACTOR2 P1-5). Every vouched expression here is
   // a bounded operator value, and none is derived from a body or a model:
   // `reason` is the `DenialReason` union, `tier` a `RATE_LIMITS` key, `status`
   // and `started` numbers, `userId`/`dbUserId`/`teamId` opaque ids that
   // `logEvent` hashes at the sink before they reach a line.
-  'lib/api/route-context.ts': ['requestIdFrom(req)', 'status', 'tier', 'userId', 'reason'],
+  // `pathname` is `new URL(req.url).pathname` — the route path, `LogEvent.route`'s
+  // own domain, and never a query string or a body.
+  'lib/api/route-context.ts': ['beginRequest(req)', 'pathname', 'status', 'tier', 'userId', 'reason'],
   'lib/api/with-route.ts': [
     'requestId',
     'pathname',
@@ -155,6 +160,9 @@ const ALLOWLIST: Record<string, string[]> = {
   // API status or an error class name.
   'lib/anthropic.ts': ['event', 'model', 'started', 'errDetail(err)'],
   'lib/ai/spend.ts': ['operation'],
+  // The security ledger's own failure line: `input.kind` is a
+  // `SecurityEventKind` literal union member, never a value from a request.
+  'lib/observability/security-event.ts': ['input.kind'],
   // `err` here is an `onError` CALLBACK parameter, not a catch binding, so the
   // structural rule cannot see it. Both are provider/DB errors, no payload.
   'app/api/papers/[id]/chat/route.ts': ['err'],

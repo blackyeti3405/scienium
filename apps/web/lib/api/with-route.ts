@@ -7,7 +7,7 @@ import {
   type RequireTeamOptions,
 } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { logEvent, requestIdFrom } from '@/lib/observability/log'
+import { beginRequest, logEvent } from '@/lib/observability/log'
 
 /**
  * Composable handler wrapper for team-scoped API routes.
@@ -83,7 +83,10 @@ export function withTeamRoute<TBody = undefined>(
     // are pseudonymized by `logEvent` itself. It is a log line, not a write —
     // nothing here touches the database.
     const started = Date.now()
-    const requestId = requestIdFrom(req)
+    // Binds the id to the async context as well as returning it, so a security
+    // event written from deep inside the handler carries the SAME requestId as
+    // this line and as any denial the guard emitted.
+    const requestId = beginRequest(req)
     const pathname = new URL(req.url).pathname
     let status = 500
     let teamId: string | null = null

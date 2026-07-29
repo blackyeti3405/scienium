@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireTeacher, teacherOwnsTeam } from '@/lib/teacher/auth'
 import { parseJson } from '@/lib/validation'
+import { recordSecurityEventTx } from '@/lib/observability/security-event'
+import { SHOWCASE_REPORT_REASONS } from '@/lib/showcase'
 import { db } from '@/lib/db'
 
 /**
  * GET /api/teacher/showcase-moderation — pending showcase submissions for teams
- * in the teacher's classes. Scoped to the caller's classIds; no cross-class data
+ * in the teacher's classes, plus anything already published that has been
+ * REPORTED or taken down. Scoped to the caller's classIds; no cross-class data
  * is ever returned.
  *
  * Returns `contentDigest` and the full asset list (REFACTOR2 P0-R3). The queue
@@ -19,7 +22,7 @@ export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeacher(req, { tier: 'read' })
   if (error) return error
 
-  if (ctx.classIds.length === 0) return NextResponse.json({ showcases: [] })
+  if (ctx.classIds.length === 0) return NextResponse.json({ showcases: [], flagged: [] })
 
   const showcases = await db.showcase.findMany({
     where: {
@@ -60,6 +63,88 @@ export async function GET(req: NextRequest) {
         metadata: a.metadataJson ?? null,
       })),
     })),
+    flagged: await flaggedForTeacher(ctx.classIds),
+  })
+}
+
+/**
+ * Published showcases in the teacher's classes that need post-publication
+ * attention: an open report, or an existing takedown to consider restoring.
+ *
+ * This is the half of moderation that revision binding does not cover. Approval
+ * is bound to a revision, but the thing that makes a page a problem is often
+ * discovered by a reader weeks later, and until now there was nowhere for that
+ * to land.
+ *
+ * `ShowcaseReport` has no foreign key (evidence outlives the showcase), so the
+ * counts are gathered with one `groupBy` over the scoped ids rather than a join.
+ */
+async function flaggedForTeacher(classIds: string[]) {
+  const inScope = { team: { members: { some: { user: { classId: { in: classIds } } } } } }
+
+  // Grouped by DIGEST as well as reason, so the revision each report was filed
+  // against survives into the answer — that is what `reportedCurrentRevision`
+  // below is derived from.
+  // ponytail: unbounded group over OPEN reports only, which a teacher resolves
+  // as they act; add a `take` if open reports are ever left to accumulate.
+  const reported = await db.showcaseReport.groupBy({
+    by: ['showcaseId', 'reason', 'digest'],
+    where: { resolvedAt: null },
+    _count: { _all: true },
+  })
+  const reportedIds = [...new Set(reported.map((r) => r.showcaseId))]
+
+  const showcases = await db.showcase.findMany({
+    where: { ...inScope, OR: [{ id: { in: reportedIds } }, { takedownAt: { not: null } }] },
+    orderBy: { lastEditedAt: 'desc' },
+    take: 50,
+    select: {
+      id: true,
+      slug: true,
+      shortTitle: true,
+      title: true,
+      privacyLevel: true,
+      publishedAt: true,
+      moderationStatus: true,
+      contentDigest: true,
+      takedownAt: true,
+      takedownReason: true,
+      team: { select: { name: true } },
+      moderationEvents: {
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { id: true, action: true, note: true, digest: true, createdAt: true },
+      },
+    },
+  })
+
+  return showcases.map((sc) => {
+    const rows = reported.filter((r) => r.showcaseId === sc.id)
+    const byReason = new Map<string, number>()
+    for (const r of rows) byReason.set(r.reason, (byReason.get(r.reason) ?? 0) + r._count._all)
+    return {
+      id: sc.id,
+      slug: sc.slug,
+      shortTitle: sc.shortTitle,
+      title: sc.title,
+      teamName: sc.team.name,
+      previewUrl: `/showcase/${sc.slug}`,
+      privacyLevel: sc.privacyLevel,
+      published: sc.publishedAt != null,
+      moderationStatus: sc.moderationStatus,
+      contentDigest: sc.contentDigest,
+      takedownAt: sc.takedownAt,
+      takedownReason: sc.takedownReason,
+      reportCount: rows.reduce((n, r) => n + r._count._all, 0),
+      reasons: [...byReason].map(([reason, count]) => ({ reason, count })),
+      // Whether any open report is about the revision that is live RIGHT NOW. A
+      // team that has since edited may have already fixed it, and a reviewer who
+      // cannot tell the difference either over- or under-reacts.
+      reportedCurrentRevision: rows.some((r) => r.digest === sc.contentDigest),
+      // `note` on these rows is a teacher's own prose or a bounded takedown
+      // slug — never student-authored text (see the decision handler).
+      events: sc.moderationEvents,
+    }
   })
 }
 
@@ -145,6 +230,25 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     })
 
+    // The durable half of the decision (REFACTOR2 P1-5). `ShowcaseModerationEvent`
+    // is `onDelete: Cascade` on the showcase — deleting the showcase erases the
+    // record of who published it and who signed it off, which is the one thing an
+    // operator asked about a public page needs. This row has no FK and survives.
+    // The teacher's NOTE is deliberately not carried across: it is written to a
+    // student about their work, and the ledger holds decisions, not prose.
+    await recordSecurityEventTx(tx, {
+      kind: 'moderation.decision',
+      // A rejection is `denied` so it counts toward the moderation-abuse
+      // threshold; an approval is `ok` and, by the alert rule's design, silent.
+      outcome: approved ? 'ok' : 'denied',
+      actorType: 'teacher',
+      actorUserId: ctx.dbUserId,
+      targetType: 'showcase',
+      targetId: sc.id,
+      scopeId: sc.teamId,
+      reason: approved ? 'approved' : 'rejected',
+    })
+
     await tx.notification.create({
       data: {
         teamId: sc.teamId,
@@ -172,4 +276,123 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, decision: data.decision })
+}
+
+const TakedownBody = z
+  .object({
+    showcaseId: z.string().trim().min(1).max(40),
+    action: z.enum(['takedown', 'restore']),
+    /** Required on a takedown, from the same bounded taxonomy reports use. */
+    reason: z.enum(SHOWCASE_REPORT_REASONS).optional(),
+  })
+  .strict()
+
+/**
+ * PATCH /api/teacher/showcase-moderation — take a published showcase out of
+ * public serving, or put it back (REFACTOR2 P1-6).
+ *
+ * This is the post-publication half that revision-bound moderation does not
+ * cover, and the whole reason it exists is so removing a page is a BUTTON with
+ * an audit trail rather than an UPDATE typed into a database console at 9pm.
+ *
+ * Authorization is exactly the decision path's: `requireTeacher` plus
+ * `teacherOwnsTeam`. There is no platform-moderator role in scienium — `admin`
+ * is a role on `User` that `requireTeacher` already admits, and inventing a
+ * global content-moderator scope for a single-classroom pilot would be a new
+ * privilege tier with nobody in it. Escalation past the class teacher is a
+ * PROCESS (docs/runbooks/incident-response.md), not another button.
+ *
+ * What a takedown does NOT do: delete anything. The showcase row, its assets,
+ * its R2 objects, its reports and its moderation history all stay exactly where
+ * they are — an investigation needs them, and the teacher keeps moderator
+ * preview through `canViewShowcase` so the content stays reviewable in place.
+ */
+export async function PATCH(req: NextRequest) {
+  const { ctx, error } = await requireTeacher(req, { tier: 'mutate' })
+  if (error) return error
+
+  const { data, error: bodyError } = await parseJson(req, TakedownBody)
+  if (bodyError) return bodyError
+
+  const down = data.action === 'takedown'
+  if (down && !data.reason) {
+    return NextResponse.json({ error: 'Choose a reason for the takedown.' }, { status: 400 })
+  }
+
+  const sc = await db.showcase.findUnique({
+    where: { id: data.showcaseId },
+    select: { id: true, teamId: true, contentDigest: true, takedownAt: true },
+  })
+  if (!sc) return NextResponse.json({ error: 'Showcase not found' }, { status: 404 })
+  if (!(await teacherOwnsTeam(ctx.classIds, sc.teamId))) {
+    return NextResponse.json({ error: 'Not in your classes' }, { status: 403 })
+  }
+  if (down === (sc.takedownAt != null)) {
+    return NextResponse.json({ ok: true, alreadyApplied: true })
+  }
+
+  // Deliberately NOT digest-bound, unlike an approval. An approval must land on
+  // the revision that was read; a takedown is the opposite — it has to apply to
+  // whatever is live, including a revision the team pushed thirty seconds ago,
+  // or editing during review would be a way to stay up. The revision at the
+  // moment of the act is RECORDED instead.
+  await db.$transaction(async (tx) => {
+    await tx.showcase.update({
+      where: { id: sc.id },
+      data: {
+        takedownAt: down ? new Date() : null,
+        takedownReason: down ? (data.reason ?? null) : null,
+      },
+    })
+
+    const event = await tx.showcaseModerationEvent.create({
+      data: {
+        showcaseId: sc.id,
+        digest: sc.contentDigest,
+        action: down ? 'taken_down' : 'restored',
+        actorUserId: ctx.dbUserId,
+        // A bounded slug, not prose — this row is read by an operator.
+        note: down ? (data.reason ?? null) : null,
+      },
+      select: { id: true },
+    })
+
+    // Acting on the reports closes them: the count in the queue is "what still
+    // needs a look", and a page a teacher has already decided about does not.
+    await tx.showcaseReport.updateMany({
+      where: { showcaseId: sc.id, resolvedAt: null },
+      data: { resolvedAt: new Date() },
+    })
+
+    await recordSecurityEventTx(tx, {
+      kind: 'moderation.takedown',
+      // `denied` on a takedown is what the threshold rule counts, so the first
+      // one in a day raises the owner (ALERT_RULES). A restore is `ok`, and
+      // silent — the ledger row is the record, not an alarm.
+      outcome: down ? 'denied' : 'ok',
+      actorType: 'teacher',
+      actorUserId: ctx.dbUserId,
+      targetType: 'showcase',
+      targetId: sc.id,
+      scopeId: sc.teamId,
+      reason: down ? (data.reason ?? null) : 'restored',
+    })
+
+    await tx.notification.create({
+      data: {
+        teamId: sc.teamId,
+        kind: 'showcase_reviewed',
+        title: down ? 'Showcase taken offline' : 'Showcase back online',
+        body: down
+          ? 'Your teacher took your public showcase offline while they look into a report. Talk to them about what happens next.'
+          : 'Your teacher put your public showcase back online.',
+        linkUrl: '/lab',
+        // Keyed to the moderation event, same as the decision path: a retried
+        // transaction must not tell a team twice that their page came down.
+        dedupeKey: `showcase_takedown:${event.id}`,
+      },
+    })
+  })
+
+  return NextResponse.json({ ok: true, takenDown: down })
 }

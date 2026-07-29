@@ -81,6 +81,11 @@ const tx = {
   teamMembershipEvent: {
     create: async ({ data }: any) => stage('teamMembershipEvent', data),
   },
+  // REFACTOR2 P1-5: written INSIDE the removal's transaction, so it is staged
+  // here like everything else and is discarded by the same rollback.
+  securityEvent: {
+    create: async ({ data }: any) => stage('securityEvent', data),
+  },
   teamInvite: { deleteMany: async () => ({ count: 0 }) },
   notification: {
     create: async ({ data }: any) => stage('notification', data),

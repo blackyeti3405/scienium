@@ -2,7 +2,8 @@ import 'server-only'
 import { timingSafeEqual } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { serverEnv } from '@/lib/env'
-import { logEvent, requestIdFrom } from '@/lib/observability/log'
+import { beginRequest, logEvent } from '@/lib/observability/log'
+import { recordSecurityEvent } from '@/lib/observability/security-event'
 
 /**
  * Shared guard for scheduled (cron) routes.
@@ -19,12 +20,14 @@ import { logEvent, requestIdFrom } from '@/lib/observability/log'
 export function assertCron(req: NextRequest): NextResponse | null {
   const secret = serverEnv.CRON_SECRET()
   if (!secret) {
+    denied(req, 'cron_unconfigured', 503)
     return NextResponse.json({ error: 'Cron not configured' }, { status: 503 })
   }
   // Weak secrets defeat the whole guard — refuse them in production rather
   // than let a 6-char value ship (SEC-10).
   if (process.env.NODE_ENV === 'production' && secret.length < 32) {
     console.error('[cron] CRON_SECRET is shorter than 32 bytes — refusing to run.')
+    denied(req, 'cron_secret_too_short', 503)
     return NextResponse.json({ error: 'Cron not configured' }, { status: 503 })
   }
   // Constant-time compare (SEC-10): `!==` short-circuits on the first differing
@@ -34,15 +37,39 @@ export function assertCron(req: NextRequest): NextResponse | null {
   const provided = Buffer.from(req.headers.get('authorization') ?? '')
   const ok = provided.length === expected.length && timingSafeEqual(provided, expected)
   if (!ok) {
-    // An unauthorized hit on a cron route is either a probe or a scheduler
-    // misconfiguration — both are operator-relevant.
-    logEvent({
-      event: 'cron.auth_denied',
-      route: req.nextUrl.pathname,
-      requestId: requestIdFrom(req),
-      outcome: 'denied',
-    })
+    denied(req, 'cron_secret_mismatch', 401)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return null
+}
+
+/**
+ * An unauthorized hit on a cron route is either a probe or a scheduler
+ * misconfiguration — both are operator-relevant, and neither is visible in a
+ * drain that has already rolled over. The log line stays (it is what the runbook
+ * greps during an incident); the durable row is what the "unauthorized cron
+ * attempts" threshold counts over (REFACTOR2 P1-5).
+ *
+ * The 503 branches are included deliberately: a cron route that is LOCKED
+ * because nobody set `CRON_SECRET` looks, from the outside, exactly like one
+ * that is running — and it silently means notification email, paper retries, and
+ * data requests all stopped.
+ */
+function denied(req: NextRequest, reason: string, status: number): void {
+  logEvent({
+    event: 'cron.auth_denied',
+    route: req.nextUrl.pathname,
+    requestId: beginRequest(req),
+    outcome: 'denied',
+    status,
+    detail: reason,
+  })
+  void recordSecurityEvent({
+    kind: 'cron.denied',
+    outcome: 'denied',
+    actorType: 'anonymous',
+    targetType: 'route',
+    targetId: req.nextUrl.pathname,
+    reason,
+  })
 }

@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { putObject } from '@/lib/storage'
 import { departTeam } from '@/lib/team/membership'
 import { logEvent } from '@/lib/observability/log'
+import { recordSecurityEvent } from '@/lib/observability/security-event'
 import { collectSubjectRows, deleteSubjectRows } from '@/lib/data-requests/inventory'
 
 /**
@@ -450,6 +451,20 @@ async function release(request: ClaimedRequest, err: unknown): Promise<void> {
     outcome: 'error',
     detail: `request=${request.id} kind=${request.kind} exhausted=${exhausted}`,
   })
+  if (exhausted) {
+    // A parked export or erasure is a legal obligation that silently stopped
+    // (REFACTOR2 P1-5) — the dead letter that matters most in this codebase.
+    // Keyed to the request so a retried release records it once.
+    void recordSecurityEvent({
+      kind: 'worker.dead_letter',
+      outcome: 'error',
+      actorType: 'system',
+      targetType: 'data_request',
+      targetId: request.id,
+      reason: 'attempts_exhausted',
+      dedupeKey: `dead_letter:data_request:${request.id}`,
+    })
+  }
   const released = await db.dataRequest
     .updateMany({
       where: { id: request.id, status: 'running', claimToken: request.claimToken },

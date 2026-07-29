@@ -28,7 +28,8 @@ const mocks = vi.hoisted(() => ({
   // One-team-at-a-time (P1-R8): the join now departs every other live membership
   // inside the same transaction, so the mock has to model those reads.
   txMemberFindMany: vi.fn(() => Promise.resolve([])),
-  txMembershipEventCreate: vi.fn(() => Promise.resolve({})),
+  txMembershipEventCreate: vi.fn(() => Promise.resolve({ id: 'tme_1' })),
+  txSecurityEventCreate: vi.fn(() => Promise.resolve({ id: 'sec_1' })),
 }))
 
 const tx = {
@@ -36,6 +37,9 @@ const tx = {
   team: { findUnique: mocks.txTeamFindUnique },
   teamMember: { create: mocks.txMemberCreate, findMany: mocks.txMemberFindMany },
   teamMembershipEvent: { create: mocks.txMembershipEventCreate },
+  // REFACTOR2 P1-5 — redeeming a join code now goes through the membership
+  // service's append point, which also writes the security ledger row.
+  securityEvent: { create: mocks.txSecurityEventCreate },
   user: { update: mocks.txUserUpdate, updateMany: vi.fn(() => Promise.resolve({ count: 0 })) },
 }
 
@@ -195,5 +199,39 @@ describe('team join invariants', () => {
 
     expect(res.status).toBe(200)
     expect(mocks.txMemberCreate).toHaveBeenCalled()
+  })
+})
+
+describe('P1-5 — redeeming a join code is an authority change', () => {
+  it('records the redemption in the security ledger, not only in team history', async () => {
+    // The join route used to write `teamMembershipEvent.create` inline instead of
+    // calling the membership service's append point, so a joiner was the ONE
+    // membership change that would have skipped the ledger. Asserting the ledger
+    // row here is what keeps that inline shortcut from coming back.
+    mocks.txInviteFindUnique.mockResolvedValue(invite())
+    mocks.txTeamFindUnique.mockResolvedValue(team())
+
+    expect((await POST(joinReq())).status).toBe(200)
+    expect(mocks.txSecurityEventCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          kind: 'authority.membership',
+          outcome: 'ok',
+          actorType: 'user',
+          targetType: 'team_member',
+          targetId: USER.id,
+          scopeId: 'team_1',
+          reason: 'joined:invite_code',
+        }),
+      }),
+    )
+  })
+
+  it('an already-a-member re-POST records nothing — no membership changed', async () => {
+    mocks.txInviteFindUnique.mockResolvedValue(invite())
+    mocks.txTeamFindUnique.mockResolvedValue(team({ members: [{ userId: USER.id }] }))
+
+    expect((await POST(joinReq())).status).toBe(200)
+    expect(mocks.txSecurityEventCreate).not.toHaveBeenCalled()
   })
 })

@@ -44,6 +44,11 @@ const held: Array<(ok: boolean) => void> = []
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/observability/log', () => ({ logEvent: vi.fn() }))
+// REFACTOR2 P1-5 — a parked row raises a dead-letter event the operator alerts on.
+const recordSecurityEvent = vi.fn((_e: unknown) => Promise.resolve(true))
+vi.mock('@/lib/observability/security-event', () => ({
+  recordSecurityEvent: (e: unknown) => recordSecurityEvent(e),
+}))
 vi.mock('@/lib/notifications/email', () => ({
   sendNotificationEmail: async (o: { to: string; idempotencyKey?: string }) => {
     sent.push(o.to)
@@ -213,6 +218,22 @@ describe('outbox delivery', () => {
     rows[0]!.status = 'pending'
     await deliverNotificationEmails(10)
     expect(sent).toEqual([])
+
+    // A parked row is a student who will never get their reminder and nothing
+    // that retries it, so it raises a dead-letter event (REFACTOR2 P1-5). Keyed
+    // to the ROW: this test drained four times, and the operator must see ONE
+    // stuck job, not four — otherwise the "3 dead letters in an hour" threshold
+    // is really "one flaky address, counted repeatedly".
+    const dead = recordSecurityEvent.mock.calls.map((c) => c[0] as Record<string, unknown>)
+    expect(dead).toContainEqual(
+      expect.objectContaining({
+        kind: 'worker.dead_letter',
+        outcome: 'error',
+        targetType: 'notification_email',
+        dedupeKey: `dead_letter:notification_email:${rows[0]!.id}`,
+      }),
+    )
+    expect(new Set(dead.map((d) => d.dedupeKey)).size).toBe(1)
     expect(rows[0]!.attempts).toBe(3) // not even claimed
   })
 

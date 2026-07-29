@@ -176,6 +176,67 @@ model DestructiveProposal {
   @@map("destructive_proposals")
 }
 
+/// Append-only security ledger (REFACTOR2 P1-5).
+///
+/// `lib/observability/log.ts` answers "what happened in the last few days" from
+/// the Vercel drain. It cannot answer "who was made lead of that lab in March,
+/// and by whom" — logs expire, and the domain rows that would tell you have all
+/// been overwritten by then. This table is the durable half: one row per
+/// consequential authority change, destructive command, moderation decision, and
+/// refusal.
+///
+/// THREE PROPERTIES, each deliberate:
+///
+///  1. **No relations.** Every id here is a bare string — `actorUserId`,
+///     `targetId`, `teamId` carry NO foreign key. That is the whole point: an
+///     audit trail a domain delete can take with it is not an audit trail. A FK
+///     would either cascade (erasing the record of the very act being recorded)
+///     or restrict (making the audit trail block the teardown it is documenting).
+///     `test/pg/invariants.pg.test.ts` pins that no cascade edge reaches this
+///     table.
+///  2. **Append-only.** `lib/observability/security-event.ts` exports exactly one
+///     write and no update or delete. There is no `updatedAt`, and nothing in the
+///     app mutates a row after `create`.
+///  3. **Payload-free by construction.** There is no title, note, body, or
+///     message column. `reason` is a snake_case token sanitized at the sink
+///     (`^[a-z0-9][a-z0-9_.:-]{0,63}$`), so student prose cannot land here
+///     whatever a future call site passes.
+model SecurityEvent {
+  id          String   @id @default(cuid())
+  /// Bounded event name from `SecurityEventKind`, e.g. `authority.role_changed`.
+  kind        String
+  /// `ok` | `denied` | `error`. Alert rules only ever consider the non-`ok` ones.
+  outcome     String
+  /// `user` | `teacher` | `system` | `anonymous` — who the actor was, when the
+  /// actor id itself is null (a signed-out denial, a cron probe, a worker).
+  actorType   String   @map("actor_type")
+  /// `User.id`, or the Clerk id when the request never resolved a row. No FK.
+  actorUserId String?  @map("actor_user_id")
+  /// What the act was performed ON: `team_member`, `showcase`, `class`, …
+  targetType  String?  @map("target_type")
+  targetId    String?  @map("target_id")
+  /// The team OR class the act happened within — one column, because a class
+  /// membership change and a team membership change are the same kind of fact at
+  /// two levels, and the alert rules group by "which group is this about"
+  /// regardless of which. Ids are globally unique cuids, so nothing is ambiguous.
+  scopeId     String?  @map("scope_id")
+  /// Correlates to `LogEvent.requestId` and Vercel's own `x-vercel-id`.
+  requestId   String?  @map("request_id")
+  /// Bounded token — `removed_by_lead`, `phase_locked`. Never free text.
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  /// Idempotency key for events emitted from retried work (a worker dead letter,
+  /// a daily budget alert). Unique, so a retry writes the event exactly once;
+  /// NULL for the events that legitimately repeat, since Postgres treats NULLs
+  /// as distinct.
+  dedupeKey   String?  @unique @map("dedupe_key")
+
+  /// The alert-threshold window queries: kind + outcome over a recent window.
+  @@index([kind, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("security_events")
+}
+
 /// Result replay for one paid provider call (REFACTOR2 P1-R3, and the replay
 /// half of P1-R11 / P1-S6 / P1-R2).
 ///
@@ -1774,6 +1835,15 @@ model Showcase {
   /// `link_only` reads must present this instead. Rotating it revokes every
   /// previously shared link.
   shareToken       String?          @unique @map("share_token")
+  /// Post-publication takedown (REFACTOR2 P1-6). Deliberately NOT a
+  /// `ModerationStatus` value: a takedown is an operational act on top of
+  /// whatever review state the showcase was in, and keeping them separate is
+  /// what makes a restore a single `takedownAt = null` rather than a guess at
+  /// which status to put back. Nothing is deleted when this is set — the row,
+  /// its assets, its reports and its moderation history are the evidence.
+  takedownAt       DateTime?        @map("takedown_at")
+  /// Why, as a `ShowcaseReportReason` slug. Bounded taxonomy, never prose.
+  takedownReason   String?          @map("takedown_reason")
 
   team             Team                      @relation(fields: [teamId], references: [id])
   assets           ShowcaseAsset[]
@@ -1796,10 +1866,64 @@ model ShowcaseModerationEvent {
   note        String?
   createdAt   DateTime                 @default(now()) @map("created_at")
 
-  showcase Showcase @relation(fields: [showcaseId], references: [id], onDelete: Cascade)
+  /// RESTRICT, not CASCADE (REFACTOR2 P1-6). This table is the answer to "who
+  /// approved that public page, and who took it down" — the question an
+  /// operator gets asked about content that has since been removed. Under
+  /// CASCADE, deleting the showcase erased that answer, which made the history
+  /// exactly as durable as the thing it was supposed to outlive. A delete is now
+  /// a LOUD refusal (the posture `test/pg/invariants.pg.test.ts` already pins
+  /// for the other audit trails) rather than a silent erasure.
+  showcase Showcase @relation(fields: [showcaseId], references: [id], onDelete: Restrict)
 
   @@index([showcaseId, createdAt])
   @@map("showcase_moderation_events")
+}
+
+/// One abuse report against a PUBLISHED showcase (REFACTOR2 P1-6).
+///
+/// No foreign key, on purpose — same rule as `SecurityEvent`: the evidence that
+/// a page was reported has to survive the removal of the page. `showcaseId` is a
+/// bare id.
+///
+/// Carries NO free text. The reason is a bounded enum and the reporter is a
+/// salted hash, never an IP: enough to dedupe and to count, not enough to
+/// identify, and nothing a reporter can type that a teacher would then read.
+model ShowcaseReport {
+  id           String               @id @default(cuid())
+  /// Bare `Showcase.id` — no FK (see above).
+  showcaseId   String               @map("showcase_id")
+  /// The `Showcase.contentDigest` that was live when the report was filed, so a
+  /// reviewer can tell whether they are looking at the reported revision.
+  digest       String
+  reason       ShowcaseReportReason
+  /// Salted SHA-256 of the reporter's IP (`reporterHash` in lib/showcase-server.ts).
+  /// Dedupe key material, not an identity.
+  reporterHash String               @map("reporter_hash")
+  /// Null while OPEN. Set when a teacher acts on it (takedown or dismissal) —
+  /// one nullable column instead of a status string, because "is it open" is the
+  /// only question asked of it.
+  resolvedAt   DateTime?            @map("resolved_at")
+  createdAt    DateTime             @default(now()) @map("created_at")
+
+  /// One report per (reporter, showcase, reason): a reload or a rage-click adds
+  /// nothing, and the count a teacher sees is a count of PEOPLE, not of clicks.
+  @@unique([showcaseId, reporterHash, reason])
+  @@index([showcaseId, createdAt])
+  @@map("showcase_reports")
+}
+
+/// The whole reporting vocabulary. An enum rather than a string column so the
+/// database itself refuses anything outside it (and so the UI, the route and the
+/// takedown reason all read from one list — `SHOWCASE_REPORT_REASONS`).
+enum ShowcaseReportReason {
+  inappropriate
+  harassment
+  privacy
+  copyright
+  spam
+  other
+
+  @@map("showcase_report_reason")
 }
 
 enum ShowcaseModerationAction {
@@ -1810,6 +1934,11 @@ enum ShowcaseModerationAction {
   /// longer applies and the showcase returned to review.
   revision_invalidated
   unpublished
+  /// Staff pulled a published showcase out of public serving (P1-6). Appended
+  /// last, matching the `ALTER TYPE … ADD VALUE` order in the migration.
+  taken_down
+  /// …and put it back.
+  restored
 
   @@map("showcase_moderation_action")
 }

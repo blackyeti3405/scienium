@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkDailySpendPressure } from '@/lib/ai/spend'
 import { assertCron } from '@/lib/cron/auth'
 import { mapWithConcurrency } from '@/lib/concurrency'
 import { db } from '@/lib/db'
@@ -118,6 +119,13 @@ export async function GET(req: NextRequest) {
   await isolate(ensureFairsSeeded, undefined)
   await isolate(ensureFormsSeeded, undefined)
   const citationsBackfilled = await isolate(backfillMissingCitations, 0)
+
+  // Provider-budget pressure (REFACTOR2 P1-5). One aggregate over today's
+  // `ai_usage`, isolated like the reconciles above: an alert that fails must not
+  // fail the sweep it is riding on. This cron is its home because it is the
+  // frequent one — checking on the paid path would add a query to every LLM call
+  // to answer a question that moves in hours.
+  await isolate(checkDailySpendPressure, undefined)
 
   logEvent({
     event: 'cron.papers',

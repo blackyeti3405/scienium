@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeacher } from '@/lib/teacher/auth'
 import { classJoinCodeExpiry, generateInviteCode } from '@/lib/team/invite'
+import { recordSecurityEvent } from '@/lib/observability/security-event'
 import { db } from '@/lib/db'
 
 /**
@@ -46,6 +47,20 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   if (!joinCode) {
     return NextResponse.json({ error: 'Could not generate a unique class code, try again.' }, { status: 503 })
   }
+
+  // This route IS the revocation lever for a leaked class code, so "when was it
+  // last rotated, and by whom" is a question an incident will ask (REFACTOR2
+  // P1-5). The code itself is never recorded — it is a live credential.
+  await recordSecurityEvent({
+    kind: 'authority.join_code',
+    outcome: 'ok',
+    actorType: 'teacher',
+    actorUserId: ctx.dbUserId,
+    targetType: 'class',
+    targetId: owned.id,
+    scopeId: owned.id,
+    reason: 'class_code_rotated',
+  })
 
   return NextResponse.json({ joinCode, joinCodeExpiresAt })
 }

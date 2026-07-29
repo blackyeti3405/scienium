@@ -2916,6 +2916,55 @@
 }
 .sc-show__printlink:hover { color: #7ff2e3; }
 
+/* ── Report control (REFACTOR2 P1-6) ──────────────────────────────────────── */
+/* Quiet by default and quiet when open: a report path has to be findable
+   without competing with the project it sits under. Native <details>, so the
+   open/close state, keyboard handling and screen-reader semantics are the
+   browser's. */
+.sc-report { margin: 40px auto 0; max-width: 860px; font-size: 8px; }
+.sc-report__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.35);
+  list-style: none;
+  transition: color 0.12s;
+}
+.sc-report__toggle::-webkit-details-marker { display: none; }
+.sc-report__toggle:hover { color: rgba(255, 255, 255, 0.7); }
+.sc-report__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 22, 40, 0.6);
+}
+.sc-report__label { color: rgba(255, 255, 255, 0.45); width: 100%; }
+.sc-report__select {
+  background: #0d1b2e;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e8ecfb;
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+}
+.sc-report__select:focus { border-color: rgba(245, 197, 24, 0.6); }
+.sc-report__send {
+  border: 1px solid rgba(245, 197, 24, 0.4);
+  background: rgba(245, 197, 24, 0.1);
+  color: rgba(245, 197, 24, 0.85);
+  padding: 7px 12px;
+  transition: border-color 0.12s;
+}
+.sc-report__send:hover:not(:disabled) { border-color: rgba(245, 197, 24, 0.8); }
+.sc-report__send:disabled { opacity: 0.45; }
+.sc-report__error { color: #f87171; }
+.sc-report--done { margin-top: 40px; color: rgba(255, 255, 255, 0.4); text-align: center; }
+
 /* ── Showcase one-pager (?print=1) — screen rendering ─────────────────────── */
 /* Compact single-page summary meant for the browser's native print/Save-as-PDF.
    Chrome bits (action bar, lab label) use font-pixel; body/article text (title,

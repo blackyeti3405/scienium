@@ -30,6 +30,8 @@ const mocks = vi.hoisted(() => ({
 }))
 
 const tx = {
+  // REFACTOR2 P1-5 — the ledger row written in the same transaction.
+  securityEvent: { create: vi.fn(async ({ data }: any) => ({ id: 'sec_1', ...data })) },
   classJoinRequest: {
     findUnique: mocks.requestFindUnique,
     findMany: mocks.requestFindMany,
