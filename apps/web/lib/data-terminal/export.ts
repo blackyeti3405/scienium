@@ -10,6 +10,29 @@ export function slugify(title: string): string {
   return showcaseSlugify(title, 'experiment')
 }
 
+/** MIME type per Lab figure export format (Phase F1). */
+const FIGURE_MIME = {
+  png: 'image/png',
+  svg: 'image/svg+xml',
+  pdf: 'application/pdf',
+} as const
+
+/**
+ * Download base64-encoded figure bytes produced by the Lab worker's DPI/format
+ * export (`_export` → matplotlib `savefig`). `atob` yields a latin1 binary
+ * string; copy it byte-for-byte into a Uint8Array so PNG/PDF bytes survive.
+ */
+export function downloadFigureExport(
+  base64: string,
+  format: keyof typeof FIGURE_MIME,
+  filename: string,
+) {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  downloadBlob(new Blob([bytes], { type: FIGURE_MIME[format] }), filename)
+}
+
 /** Trigger a file download from a Blob. */
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -24,15 +47,15 @@ export function downloadBlob(blob: Blob, filename: string) {
 }
 
 /**
- * Rasterize a rendered chart SVG to a PNG and download it. Clones the SVG,
- * prepends a solid background rect (so transparency renders correctly), then
- * draws it onto a canvas and downloads the blob. Throws on failure.
+ * Rasterize a rendered chart SVG to a PNG Blob. Clones the SVG, prepends a solid
+ * background rect (so transparency renders correctly), then draws it onto a
+ * canvas. Throws on failure. Shared by the download and "attach to showcase"
+ * paths so both rasterize identically.
  */
-export async function downloadChartPng(
+export async function chartSvgToPngBlob(
   svg: SVGSVGElement,
-  filename: string,
   background = '#0a1628',
-): Promise<void> {
+): Promise<Blob> {
   const svgEl = svg.cloneNode(true) as SVGElement
   const width = svg.clientWidth || 600
   const height = svg.clientHeight || 240
@@ -51,7 +74,7 @@ export async function downloadChartPng(
   const serialized = new XMLSerializer().serializeToString(svgEl)
   const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(serialized)
 
-  await new Promise<void>((resolve, reject) => {
+  return new Promise<Blob>((resolve, reject) => {
     const img = new Image()
     img.onload = () => {
       const canvas = document.createElement('canvas')
@@ -68,11 +91,45 @@ export async function downloadChartPng(
           reject(new Error('Canvas toBlob failed'))
           return
         }
-        downloadBlob(blob, filename)
-        resolve()
+        resolve(blob)
       }, 'image/png')
     }
     img.onerror = () => reject(new Error('SVG image load failed'))
     img.src = dataUrl
   })
+}
+
+/** Rasterize a rendered chart SVG to a PNG and download it. Throws on failure. */
+export async function downloadChartPng(
+  svg: SVGSVGElement,
+  filename: string,
+  background = '#0a1628',
+): Promise<void> {
+  downloadBlob(await chartSvgToPngBlob(svg, background), filename)
+}
+
+/**
+ * Attach an exported Data Terminal figure (a PNG blob) to the team's showcase.
+ * Reuses the SAME upload+attach pipeline the showcase board/quad chart use
+ * (`POST /api/showcase/asset`, reservation-first R2 upload, team-scoped, rate
+ * limited at the `upload` tier) — the only new axis is `kind: 'figure'`. Throws
+ * with the server's message on failure (e.g. "Save your showcase details
+ * first." when the team has no showcase yet). Same-origin fetch, so the session
+ * cookie and CSRF origin check are satisfied without extra headers.
+ */
+export async function attachFigureToShowcase(blob: Blob, filename: string): Promise<void> {
+  const form = new FormData()
+  form.append('file', new File([blob], filename, { type: 'image/png' }))
+  form.append('kind', 'figure')
+  const res = await fetch('/api/showcase/asset', { method: 'POST', body: form })
+  if (!res.ok) {
+    let message = 'Could not attach the figure to your showcase.'
+    try {
+      const body = (await res.json()) as { error?: string }
+      if (body?.error) message = body.error
+    } catch {
+      /* non-JSON error body — keep the default message */
+    }
+    throw new Error(message)
+  }
 }

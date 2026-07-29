@@ -7,7 +7,7 @@ import {
   User,
   TrendingUp,
   BookOpen,
-  FlaskConical,
+  Table2,
   ClipboardList,
   Building2,
   Trophy,
@@ -28,7 +28,7 @@ import { IdentitySection, PhaseSection } from './student-detail/sections/Profile
 import { ClassHistorySection } from './student-detail/sections/ClassHistorySection'
 import { LiteratureSection } from './student-detail/sections/LiteratureSection'
 import { ResearchPlanSection } from './student-detail/sections/ResearchPlanSection'
-import { LogsSection, ExperimentsSection } from './student-detail/sections/WorkSections'
+import { LogsSection, DatasetsSection } from './student-detail/sections/WorkSections'
 import { EconomySection, BuildingsSection } from './student-detail/sections/LabSections'
 import { ShowcaseSection, ScienceFairSection } from './student-detail/sections/ShowcaseSections'
 import {
@@ -158,11 +158,11 @@ export function StudentDetail({ studentId }: { studentId: string }) {
                 content: <ResearchPlanSection overview={overview} />,
               },
               {
-                key: 'experiments',
-                label: 'Experiments',
+                key: 'datasets',
+                label: 'Datasets',
                 group: 'Work',
-                icon: <FlaskConical size={14} />,
-                content: <ExperimentsSection overview={overview} />,
+                icon: <Table2 size={14} />,
+                content: <DatasetsSection overview={overview} />,
               },
               {
                 key: 'logs',

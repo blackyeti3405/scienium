@@ -1,8 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { Sparkles } from 'lucide-react'
 import { CHART_FIELDS, loadChartField, filterCharts } from '@/lib/data-terminal/charts-guide'
 import type { ChartConcept } from '@/lib/data-terminal/charts-guide'
+import { recipeToDataset } from '@/lib/data-terminal/recipe'
+import { createDataset } from './data-terminal/datasets-api'
+import { ApiError } from '@/lib/api/client'
+import { BusyButton } from '@/components/ui/BusyButton'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
 import { useToggleSet } from '@/lib/hooks/useToggleSet'
 import {
@@ -25,7 +30,17 @@ import {
  * Terminal load. Mounted by `DataTerminalTab` ABOVE the phase-gate early
  * returns so it renders in every phase — mirrors `StatsGuidePanel` (F12).
  */
-export function ChartsGuidePanel() {
+export function ChartsGuidePanel({
+  onStartRecipe,
+}: {
+  /**
+   * "Start from this recipe" — creates a dataset pre-shaped from the concept's
+   * `dataNeeded` and hands its id back so the Data Terminal can open it. Absent
+   * when the panel is rendered without a dataset host (it simply hides the
+   * action then).
+   */
+  onStartRecipe?: (datasetId: string) => void
+} = {}) {
   const [field, setField] = useState<string>(CHART_FIELDS[0]?.slug ?? '')
   const [query, setQuery] = useState('')
   const [charts, setCharts] = useState<ChartConcept[]>([])
@@ -113,6 +128,7 @@ export function ChartsGuidePanel() {
                   chart={chart}
                   isExpanded={expanded.has(chart.id)}
                   onToggle={() => toggle(chart.id)}
+                  onStartRecipe={onStartRecipe}
                 />
               ))}
             </ul>
@@ -129,11 +145,36 @@ function ChartBox({
   chart,
   isExpanded,
   onToggle,
+  onStartRecipe,
 }: {
   chart: ChartConcept
   isExpanded: boolean
   onToggle: () => void
+  onStartRecipe?: (datasetId: string) => void
 }) {
+  const [starting, setStarting] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
+
+  async function start() {
+    if (starting || !onStartRecipe) return
+    setStarting(true)
+    setStartError(null)
+    try {
+      const { dataset } = await createDataset(recipeToDataset(chart))
+      onStartRecipe(dataset.id)
+    } catch (err) {
+      // Datasets unlock at the Working phase; a 403 there is expected, not a bug.
+      setStartError(
+        err instanceof ApiError && err.status === 403
+          ? 'Datasets unlock at the Working phase — come back once you start collecting data.'
+          : err instanceof ApiError
+            ? err.message
+            : 'Could not start a dataset from this recipe.',
+      )
+      setStarting(false)
+    }
+  }
+
   return (
     <GuideBox
       testId={`chart-box-${chart.id}`}
@@ -143,6 +184,31 @@ function ChartBox({
       isExpanded={isExpanded}
       onToggle={onToggle}
     >
+      {onStartRecipe && (
+        <div>
+          <BusyButton
+            busy={starting}
+            showSpinner={false}
+            onClick={start}
+            className="dt-btn dt-btn--primary"
+            data-testid={`chart-box-${chart.id}-start-recipe`}
+          >
+            <Sparkles size={12} /> Start from this recipe
+          </BusyButton>
+          <p className="text-xs text-white/40 leading-relaxed mt-1.5">
+            Creates a new dataset with these columns ready to fill in.
+          </p>
+          {startError && (
+            <p
+              className="text-xs text-red-400/80 leading-relaxed mt-1"
+              data-testid={`chart-box-${chart.id}-start-error`}
+            >
+              {startError}
+            </p>
+          )}
+        </div>
+      )}
+
       <div>
         <SectionLabel>What it is</SectionLabel>
         <p className="text-sm text-white/70 leading-relaxed">{chart.description}</p>

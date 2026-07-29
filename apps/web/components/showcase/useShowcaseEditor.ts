@@ -234,6 +234,8 @@ export function useShowcaseEditor() {
   const repo = sc ? byType(sc.assets, 'repo_link') : undefined
   const demos = sc ? allByType(sc.assets, 'demo_video') : []
   const supplements = sc ? allByType(sc.assets, 'supplement') : []
+  // Optional Data Terminal figure (attached from the workbench or uploaded here).
+  const figure = sc ? byType(sc.assets, 'figure') : undefined
 
   const checklist = [
     { key: 'short', label: 'Short title', done: shortTitle.trim().length >= 1 },
@@ -279,6 +281,7 @@ export function useShowcaseEditor() {
     repo,
     demos,
     supplements,
+    figure,
     checklist,
     doneCount,
   }

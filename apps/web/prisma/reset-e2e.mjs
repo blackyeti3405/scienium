@@ -100,9 +100,8 @@ export function teamPurgeSteps(db, teamId, paperIds) {
     ],
     ['showcases', () => db.showcase.deleteMany({ where: { teamId } })],
 
-    // ── Experiments / data terminal ───────────────────────────────────────
-    ['measurements', () => db.measurement.deleteMany({ where: { experiment: { teamId } } })],
-    ['experiments', () => db.experiment.deleteMany({ where: { teamId } })],
+    // ── Data terminal ─────────────────────────────────────────────────────
+    ['datasets', () => db.dataset.deleteMany({ where: { teamId } })],
 
     // ── Research plan ─────────────────────────────────────────────────────
     ['idea_checks', () => db.ideaCheck.deleteMany({ where: { teamId } })],

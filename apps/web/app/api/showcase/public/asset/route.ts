@@ -39,10 +39,11 @@ export async function GET(req: NextRequest) {
     },
   })
 
-  // Only uploaded files (board / quad chart) are streamed; link assets have no bytes.
+  // Only uploaded files (board / quad chart / figure) are streamed; link assets
+  // have no bytes.
   if (
     !asset?.fileUrl ||
-    (asset.assetType !== 'board' && asset.assetType !== 'quad_chart') ||
+    (asset.assetType !== 'board' && asset.assetType !== 'quad_chart' && asset.assetType !== 'figure') ||
     !asset.fileUrl.startsWith('showcase/') ||
     asset.fileUrl.includes('..')
   ) {

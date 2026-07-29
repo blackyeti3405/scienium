@@ -35,6 +35,9 @@ const IMAGE_FORMATS: Record<string, { ext: string; contentType: string }> = {
 const ALLOWS: Record<string, { pdf: boolean; imageFormats: string[] | null; reject: string }> = {
   board: { pdf: true, imageFormats: null, reject: 'The board must be a PDF file.' },
   quad_chart: { pdf: false, imageFormats: ['png'], reject: 'The quad chart must be a PNG image.' },
+  // A Data Terminal figure — an exported chart/analysis PNG (see F1 export.ts).
+  // Single-slot like the quad chart, so it reuses the replace path below verbatim.
+  figure: { pdf: false, imageFormats: ['png'], reject: 'The figure must be a PNG image.' },
 }
 
 export async function POST(req: NextRequest) {
@@ -56,7 +59,7 @@ export async function POST(req: NextRequest) {
   const kindRaw = String(form.get('kind') ?? '')
   const allows = ALLOWS[kindRaw]
   if (!allows) return NextResponse.json({ error: 'Invalid upload slot' }, { status: 400 })
-  const kind = kindRaw as 'board' | 'quad_chart'
+  const kind = kindRaw as 'board' | 'quad_chart' | 'figure'
 
   const file = form.get('file') as File | null
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })

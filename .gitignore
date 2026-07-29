@@ -185,3 +185,9 @@ art_ref/images.jpeg
 
 # Local DB dumps — never commit (100MB+)
 backups/
+
+# Pyodide runtime cache — the full release tarball extracted by
+# apps/web/scripts/fetch-pyodide.mjs (hundreds of MB of wheels; content-pinned
+# by version, re-fetchable at any time). Never committed; served in dev from
+# here, in prod from R2. See docs/architecture/data-terminal-revamp-plan.md §4.
+apps/web/.pyodide-cache/

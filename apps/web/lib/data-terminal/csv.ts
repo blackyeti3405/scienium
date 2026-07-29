@@ -1,94 +1,38 @@
 /**
  * Pure parse/serialize helpers for the Data Terminal.
  * No React, no DOM — fully unit-testable.
+ *
+ * One RFC-4180 tokenizer (`parseDelimited`) feeds the N-column dataset importer
+ * (`parseDatasetTable`) and the raw-record reader (`readDelimited`). The
+ * tokenizer is the part that is hard to get right, so it is written once.
  */
 
-export interface MeasurementRow {
-  id: string
-  x: number
-  y: number
-  series: string
-  note: string | null
-}
-
-export interface ParsedPoints {
-  points: { x: number; y: number; series?: string; note?: string }[]
-  skipped: number
-}
-
-const MAX_POINTS = 500
-const MAX_SERIES = 40
-const MAX_NOTE = 200
+import {
+  coerceCell,
+  newColumnId,
+  tableTypeSpec,
+  MAX_COLUMNS_PER_DATASET,
+  MAX_COLUMN_NAME,
+  MAX_ROWS_PER_DATASET,
+  type ColumnSpec,
+  type ColumnType,
+  type DataRow,
+  type TableType,
+} from './dataset'
 
 /**
- * Parse pasted spreadsheet text (tab or comma separated) into measurement points.
- * Reads RFC-4180 quoting, so `toCsv`'s own output round-trips (see
- * `csv-roundtrip.test.ts`); the reader itself is `parseDelimited` below.
- * Column order: x, y, series?, note?
- * A leading header row whose first two cells are non-numeric is detected and skipped.
- * Rows where x or y are blank or non-numeric are dropped and counted in `skipped`.
- * Returns at most 500 points; overflow rows are counted in `skipped`.
+ * The RFC-4180 reader as raw records, for callers that want cells rather than a
+ * typed dataset — the grid's clipboard paste overlays values onto existing
+ * columns and must not re-infer types or roles from what was pasted.
  */
-export function parsePastedPoints(text: string): ParsedPoints {
-  const points: { x: number; y: number; series?: string; note?: string }[] = []
-  let skipped = 0
-
-  const rows = parseDelimited(text)
-  let firstDataLine = 0
-
-  // Detect and skip a header row: first non-empty line whose BOTH first two cells are non-numeric.
-  // If only one cell is non-numeric the row is a bad data row (counted in skipped below), not a header.
-  for (let i = 0; i < rows.length; i++) {
-    if (isBlankRow(rows[i])) continue
-    const cells = rows[i]
-    const x = toNumber(cells[0])
-    const y = toNumber(cells[1])
-    if (!Number.isFinite(x) && !Number.isFinite(y)) {
-      // Both cells non-numeric — treat as header and skip silently
-      firstDataLine = i + 1
-    }
-    break
-  }
-
-  for (let i = firstDataLine; i < rows.length; i++) {
-    if (isBlankRow(rows[i])) continue
-
-    const cells = rows[i]
-    const x = toNumber(cells[0])
-    const y = toNumber(cells[1])
-
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      skipped++
-      continue
-    }
-
-    if (points.length >= MAX_POINTS) {
-      skipped++
-      continue
-    }
-
-    const point: { x: number; y: number; series?: string; note?: string } = { x, y }
-
-    const rawSeries = (cells[2] ?? '').trim()
-    if (rawSeries) {
-      point.series = rawSeries.slice(0, MAX_SERIES)
-    }
-
-    const rawNote = (cells[3] ?? '').trim()
-    if (rawNote) {
-      point.note = rawNote.slice(0, MAX_NOTE)
-    }
-
-    points.push(point)
-  }
-
-  return { points, skipped }
+export function readDelimited(text: string): string[][] {
+  return parseDelimited(text).filter((r) => !isBlankRow(r))
 }
 
 /**
- * Minimal RFC-4180 reader (P2-S13). `toCsv` below quotes commas, quotes and
- * newlines, so a line-at-a-time `split(',')` could not read back this app's own
- * export: a note containing a comma shifted into the series column, and one
+ * Minimal RFC-4180 reader (P2-S13). `toDatasetCsv` below quotes commas, quotes
+ * and newlines, so a line-at-a-time `split(',')` could not read back this app's
+ * own export: a cell containing a comma shifted into the next column, and one
  * containing a newline invented a junk row and truncated a real one.
  *
  * Handles: quoted fields, `""` as an escaped quote, embedded newlines, and CRLF
@@ -174,48 +118,6 @@ function isBlankRow(cells: string[]): boolean {
 }
 
 /**
- * Parse a cell to a number. An empty or whitespace-only cell is NaN (not 0) so a
- * row with a blank x or y (e.g. a stray `,2`) is dropped, not read as the point 0.
- */
-function toNumber(cell: string | undefined): number {
-  const trimmed = (cell ?? '').trim()
-  if (trimmed === '') return NaN
-  return Number(trimmed)
-}
-
-/**
- * Serialize an experiment's measurements to RFC-4180 CSV.
- * Header: xLabel, yLabel, series, note
- * Fields containing comma, double-quote, newline, or tab are wrapped in double
- * quotes; embedded double quotes are escaped as "".
- * Line endings are CRLF per RFC-4180.
- */
-export function toCsv(experiment: {
-  xLabel: string
-  yLabel: string
-  measurements: MeasurementRow[]
-}): string {
-  const rows: string[] = [
-    [experiment.xLabel, experiment.yLabel, 'series', 'note'].map(csvField).join(','),
-  ]
-
-  for (const m of experiment.measurements) {
-    rows.push(
-      [
-        String(m.x),
-        String(m.y),
-        m.series ?? '',
-        m.note ?? '',
-      ]
-        .map(csvField)
-        .join(','),
-    )
-  }
-
-  return rows.join('\r\n') + '\r\n'
-}
-
-/**
  * Characters that make Excel/Sheets/LibreOffice treat a cell as a FORMULA rather
  * than text. A student's series/note text lands in a file a teacher opens, so
  * `=cmd|'/c calc'!A1` or `=HYPERLINK("http://evil","click")` would execute (or
@@ -247,9 +149,9 @@ function isPlainNumber(value: string): boolean {
  * Order matters: neutralize BEFORE quoting, so the escaping applies to the
  * value the spreadsheet will actually parse.
  *
- * The tab is not RFC-4180's business but is ours: `parsePastedPoints` accepts
+ * The tab is not RFC-4180's business but is ours: `parseDatasetTable` accepts
  * tab-separated spreadsheet paste as well as CSV, so an unquoted tab anywhere in
- * a note would re-delimit our own export on re-import (P2-S13). Quoting is
+ * a cell would re-delimit our own export on re-import (P2-S13). Quoting is
  * always valid CSV, so this costs nothing downstream.
  */
 function csvField(value: string): string {
@@ -259,4 +161,195 @@ function csvField(value: string): string {
     return '"' + safe.replace(/"/g, '""') + '"'
   }
   return safe
+}
+
+// ─── N-column dataset import (revamp phase A) ────────────────────────────────
+
+export interface ParsedTable {
+  columns: ColumnSpec[]
+  rows: DataRow[]
+  /** Rows past the cap, dropped. Stated to the student, never silent. */
+  droppedRows: number
+  /** Columns past the cap, dropped. */
+  droppedColumns: number
+  /** Whether the first record was consumed as a header. */
+  usedHeader: boolean
+}
+
+/** Cells that parse as a finite number, over the cells that are not blank. */
+function numericShare(values: string[]): number {
+  const present = values.filter((v) => v.trim() !== '')
+  if (present.length === 0) return 0
+  const numeric = present.filter((v) => Number.isFinite(Number(v.trim())))
+  return numeric.length / present.length
+}
+
+/**
+ * Does record 0 look like column titles?
+ *
+ * The rule: at least one column where the first cell is NOT a number but the
+ * rest of that column mostly IS. That is the only evidence that actually
+ * distinguishes a header from a first data row, and it is the evidence a person
+ * uses. A table whose data is entirely text produces no such column and so gets
+ * `false` — which is why the caller can override (the grid offers a "first row
+ * is a header" toggle), rather than this guessing harder and being confidently
+ * wrong.
+ */
+function looksLikeHeader(records: string[][]): boolean {
+  if (records.length < 2) return false
+  // Loop, not spread — same reason as in `parseDatasetTable` below: a spread
+  // over 125 000+ records throws RangeError.
+  let width = 0
+  for (const record of records) {
+    if (record.length > width) width = record.length
+  }
+  for (let c = 0; c < width; c++) {
+    const first = (records[0]![c] ?? '').trim()
+    if (first === '' || Number.isFinite(Number(first))) continue
+    const below = records.slice(1).map((r) => r[c] ?? '')
+    if (numericShare(below) >= 0.5) return true
+  }
+  return false
+}
+
+/** A column is numeric when most of its present values parse as numbers. */
+function inferType(values: string[]): ColumnType {
+  return numericShare(values) >= 0.8 ? 'number' : 'text'
+}
+
+/**
+ * Default roles, so an import is immediately usable without configuring
+ * anything. Text columns become labels; numeric columns take the table type's
+ * natural shape — an XY table's first numeric column is the x axis, everything
+ * numeric after it is a y. Every role stays editable in the grid afterwards.
+ */
+export function defaultRoles(columns: ColumnSpec[], tableType: TableType): void {
+  const allowed = tableTypeSpec(tableType).roles
+  const useX = allowed.includes('x')
+  let assignedX = false
+  for (const col of columns) {
+    if (col.type !== 'number') {
+      col.role = allowed.includes('label') ? 'label' : 'ignore'
+      continue
+    }
+    if (useX && !assignedX) {
+      col.role = 'x'
+      assignedX = true
+    } else {
+      col.role = 'y'
+    }
+  }
+}
+
+/**
+ * Parse pasted or uploaded delimited text into a dataset.
+ *
+ * This drops NOTHING for being non-numeric: a text column is a legitimate
+ * column (subject names, treatment labels, survey answers), and a blank cell is
+ * a missing observation that has to survive as `null` rather than becoming a
+ * zero. Only rows and columns past the caps are dropped, and both are counted
+ * so the caller can say so.
+ *
+ * `hasHeader` overrides the detection in `looksLikeHeader` when the student
+ * tells us; leave it undefined to auto-detect.
+ */
+export function parseDatasetTable(
+  text: string,
+  tableType: TableType,
+  hasHeader?: boolean,
+): ParsedTable {
+  const records = parseDelimited(text).filter((r) => !isBlankRow(r))
+  if (records.length === 0) {
+    return { columns: [], rows: [], droppedRows: 0, droppedColumns: 0, usedHeader: false }
+  }
+
+  const usedHeader = hasHeader ?? looksLikeHeader(records)
+  const headerRow = usedHeader ? records[0]! : null
+  const bodyRecords = usedHeader ? records.slice(1) : records
+
+  // A loop, not `Math.max(...records.map(...))`: V8 caps a spread at roughly
+  // 125 000 arguments, and this function exists precisely to ACCEPT over-cap
+  // files and report `droppedRows`. A 130 000-row datalogger export threw
+  // RangeError instead, which surfaced as the file picker doing nothing at all.
+  let rawWidth = 0
+  for (const record of records) {
+    if (record.length > rawWidth) rawWidth = record.length
+  }
+  const width = Math.min(rawWidth, MAX_COLUMNS_PER_DATASET)
+  const droppedColumns = rawWidth - width
+
+  const keptRecords = bodyRecords.slice(0, MAX_ROWS_PER_DATASET)
+  const droppedRows = bodyRecords.length - keptRecords.length
+
+  const columns: ColumnSpec[] = []
+  const takenNames = new Set<string>()
+  for (let c = 0; c < width; c++) {
+    const values = keptRecords.map((r) => r[c] ?? '')
+    const rawName = (headerRow?.[c] ?? '').trim()
+    columns.push({
+      id: newColumnId(columns),
+      name: uniqueName(rawName || spreadsheetColumnName(c), takenNames),
+      type: inferType(values),
+      role: 'ignore', // replaced by defaultRoles below
+    })
+  }
+  defaultRoles(columns, tableType)
+
+  const rows: DataRow[] = keptRecords.map((record) =>
+    columns.map((col, c) => coerceCell(record[c] ?? null, col.type)),
+  )
+
+  return { columns, rows, droppedRows, droppedColumns, usedHeader }
+}
+
+/**
+ * Make a header name unique within the import, case-insensitively.
+ *
+ * Repeated headers are ordinary — three replicate columns all called "Mass" is
+ * exactly the wide layout this feature is built around — but `validateDataset`
+ * refuses duplicate names, so importing one produced a table that rendered on
+ * screen and could never be saved. Suffixing keeps the student's own wording
+ * and the meaning ("Mass 2" reads as the second Mass), rather than rejecting
+ * the file or renaming it to something they would not recognise.
+ */
+function uniqueName(base: string, taken: Set<string>): string {
+  const trimmed = base.slice(0, MAX_COLUMN_NAME)
+  if (!taken.has(trimmed.toLowerCase())) {
+    taken.add(trimmed.toLowerCase())
+    return trimmed
+  }
+  for (let n = 2; ; n++) {
+    const suffix = ` ${n}`
+    const candidate = trimmed.slice(0, MAX_COLUMN_NAME - suffix.length) + suffix
+    if (!taken.has(candidate.toLowerCase())) {
+      taken.add(candidate.toLowerCase())
+      return candidate
+    }
+  }
+}
+
+/** A, B, … Z, AA, AB — the fallback name for a column with no header. */
+export function spreadsheetColumnName(index: number): string {
+  let name = ''
+  let n = index
+  do {
+    name = String.fromCharCode(65 + (n % 26)) + name
+    n = Math.floor(n / 26) - 1
+  } while (n >= 0)
+  return name
+}
+
+/**
+ * Serialize a dataset to RFC-4180 CSV, header included. Shares `csvField`, so
+ * formula-injection neutralization and quoting behave exactly as they do for
+ * the legacy export — a teacher opens both files in the same spreadsheet.
+ */
+export function toDatasetCsv(shape: { columns: ColumnSpec[]; rows: DataRow[] }): string {
+  const header = shape.columns
+    .map((c) => csvField(c.unit ? `${c.name} (${c.unit})` : c.name))
+    .join(',')
+  const body = shape.rows.map((row) =>
+    row.map((cell) => csvField(cell === null ? '' : String(cell))).join(','),
+  )
+  return [header, ...body].join('\r\n') + '\r\n'
 }

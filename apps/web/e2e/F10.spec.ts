@@ -14,7 +14,7 @@ import { gotoFresh } from './api'
  *  AC1  — Fresh-ISO-week load of /lab shows a card headed "THIS WEEK"/"LAST 7 DAYS"
  *         inside the lab viewport (team has activity)
  *  AC2  — Card shows a "KP EARNED" row with a non-negative numeric value
- *  AC3  — Card shows "SOURCES", "LOGS", "EXPERIMENTS", "DATA POINTS" rows, each numeric
+ *  AC3  — Card shows "SOURCES", "LOGS", "DATASETS", "DATA POINTS" rows, each numeric
  *  AC4  — "NEXT FAIR" row present with a day count + fair name iff daysToNextFair != null
  *  AC5  — Card never overlaps the plot / SHOP / ARRANGE / LOG FAB / FEEDBACK FAB —
  *         all four remain visible and clickable while the card is shown
@@ -53,7 +53,7 @@ interface MomentumResponse {
   kpEarned: number
   sourcesReviewed: number
   logsWritten: number
-  experimentsAdded: number
+  datasetsAdded: number
   pointsAdded: number
   daysToNextFair: number | null
   nextFairName: string | null
@@ -171,13 +171,13 @@ test.describe('F10 — Momentum weekly recap card', () => {
   })
 
   // ── AC3 ──────────────────────────────────────────────────────────────────────
-  test('AC3: card shows SOURCES, LOGS, EXPERIMENTS, DATA POINTS rows, each numeric', async ({ page }) => {
+  test('AC3: card shows SOURCES, LOGS, DATASETS, DATA POINTS rows, each numeric', async ({ page }) => {
     await clearDismissAndReload(page)
     const card = momentumCard(page)
     await expect(card).toBeVisible({ timeout: 20_000 })
 
     const text = await card.innerText()
-    for (const label of ['SOURCES', 'LOGS', 'EXPERIMENTS', 'DATA POINTS']) {
+    for (const label of ['SOURCES', 'LOGS', 'DATASETS', 'DATA POINTS']) {
       await expect(card).toContainText(label)
       const value = valueAfterLabel(text, label)
       expect(value, `expected a value line right after "${label}", got card text: ${JSON.stringify(text)}`).not.toBeNull()
@@ -301,7 +301,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
     expect(momentum.status).toBe(200)
     const body = momentum.body
     expect(body.windowDays).toBe(7)
-    for (const key of ['kpEarned', 'sourcesReviewed', 'logsWritten', 'experimentsAdded', 'pointsAdded'] as const) {
+    for (const key of ['kpEarned', 'sourcesReviewed', 'logsWritten', 'datasetsAdded', 'pointsAdded'] as const) {
       expect(typeof body[key], `expected "${key}" to be a number, got ${typeof body[key]}`).toBe('number')
       expect(body[key]).toBeGreaterThanOrEqual(0)
     }
@@ -317,7 +317,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
     })) as { status: number; body: MomentumResponse }
     expect(second.status).toBe(200)
     expect(Object.keys(second.body).sort()).toEqual(Object.keys(body).sort())
-    for (const key of ['kpEarned', 'sourcesReviewed', 'logsWritten', 'experimentsAdded', 'pointsAdded'] as const) {
+    for (const key of ['kpEarned', 'sourcesReviewed', 'logsWritten', 'datasetsAdded', 'pointsAdded'] as const) {
       expect(typeof second.body[key]).toBe('number')
       expect(second.body[key]).toBeGreaterThanOrEqual(0)
     }
@@ -343,7 +343,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
       // The actual leak check, regardless of which status came back: no
       // team-stat fields anywhere in the response body.
       const text = await res.text()
-      for (const key of ['kpEarned', 'sourcesReviewed', 'logsWritten', 'experimentsAdded', 'pointsAdded']) {
+      for (const key of ['kpEarned', 'sourcesReviewed', 'logsWritten', 'datasetsAdded', 'pointsAdded']) {
         expect(text).not.toContain(key)
       }
     } finally {

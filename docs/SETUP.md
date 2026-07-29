@@ -221,6 +221,23 @@ production builds):
 `phase` ∈ discovery · lab_selection · literature_review · research_planning · working · showcase
 `lab` ∈ biocore · chemworks · volt_lab · terrabase · mindframe · axiom
 
+### Code / Lab-mode Python runtime (optional)
+
+Sheets mode needs nothing extra. The Data Terminal's **Code** and **Lab** modes
+run Python (Pyodide + numpy/scipy/statsmodels/matplotlib) in a Web Worker, and
+the wheels are served by a same-origin proxy — never from a CDN — so before those
+lanes work locally you must populate the on-disk cache once:
+
+```bash
+node apps/web/scripts/fetch-pyodide.mjs     # ~500 MB extracted into apps/web/.pyodide-cache/ (gitignored)
+```
+
+With `.pyodide-cache/` present the proxy (`/api/data-terminal/runtime/[...path]`)
+auto-serves from it; set `PYODIDE_SOURCE=local` to pin it. You do **not** need this
+for Sheets mode or any non–Data-Terminal work. In production the same wheels are
+served from R2 (`PYODIDE_SOURCE=r2`, uploaded once with
+`node apps/web/scripts/upload-pyodide-to-r2.mjs` — see §8.1).
+
 ### Useful checks
 ```bash
 pnpm --filter web typecheck     # tsc --noEmit
@@ -332,6 +349,7 @@ Set these in **Vercel → Project → Settings → Environment Variables**, scop
 | `FIRECRAWL_API_KEY` | only if using Science-Fair "sync deadlines" | scrapes fair sites (`fc-…`) |
 | `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | multi-instance / serverless scale-out | switches rate limiting to a **shared** store so limits hold globally across instances (default is per-instance in-memory) |
 | `RATE_LIMIT_IP_HEADER` | only if your edge sets a non-standard client-IP header | overrides the trusted-IP source (default order: `cf-connecting-ip` → `x-real-ip` → `x-forwarded-for`) |
+| `PYODIDE_SOURCE` | set to `r2` in production | tells the Data Terminal runtime proxy to serve the Pyodide/scipy wheels from the R2 bucket instead of a local `.pyodide-cache/` (which isn't on the serverless filesystem). Upload the wheels once — see §8.2 step 5. Leave unset in local dev. |
 
 > **One-liner to set the salt** (with the Vercel CLI):
 > ```bash
@@ -347,6 +365,10 @@ Set these in **Vercel → Project → Settings → Environment Variables**, scop
 3. Add your Vercel domain to **Clerk's allowed origins** (production instance).
 4. Run `pnpm prisma migrate deploy` against the production DB (Vercel build step or
    a one-off using `DIRECT_URL`) — migrations are **not** auto-applied.
+5. Upload the Data Terminal Python runtime to R2 **once** (and again only when the
+   pinned Pyodide version bumps): `node apps/web/scripts/upload-pyodide-to-r2.mjs`
+   with the `R2_*` vars set, then set `PYODIDE_SOURCE=r2`. Without this, Code and
+   Lab modes can't load their wheels in production; Sheets mode is unaffected.
 
 ### 8.3 Pre-launch verification
 
@@ -576,6 +598,15 @@ server for the fast iteration loop; prefix it with `E2E_BUILD=1` to reproduce
 a full-suite result exactly (pays the ~3-min build). Don't run `pnpm dev` on
 the same port either way — and never start a dev server while the E2E build
 is in progress (shared `.next`).
+
+**The `data-terminal-*` specs are the one place you must run `E2E_BUILD=1`.**
+The Code/Lab specs boot Pyodide and pull ~65 MB of wheels (numpy/scipy/
+statsmodels/matplotlib) into the worker before the first assertion, served by the
+same-origin runtime proxy — so they need generous per-step timeouts, and the dev
+server's on-demand compilation makes them flake. Against a production bundle they
+are reliable. Run one with `E2E_BUILD=1 pnpm --filter web test:e2e:file
+e2e/data-terminal-lab.spec.ts`, and make sure `.pyodide-cache/` is populated (or
+`PYODIDE_SOURCE`/R2 configured) first — the proxy has to have wheels to serve.
 
 **A `preflight` project now catches the port clash before any test runs.**
 Playwright reuses whatever is already listening, and a server started any other

@@ -55,7 +55,7 @@ model User {
   notifications         Notification[]
   notificationReads     NotificationRead[]
   notificationPref      NotificationPref?
-  experiments           Experiment[]           @relation("experimentAuthor")
+  datasets              Dataset[]              @relation("datasetAuthor")
   codexLessonProgress   CodexLessonProgress[]
   codexKpDays           CodexKpDay[]
   vegaStudyMessages     VegaStudyMessage[]
@@ -472,7 +472,7 @@ model Team {
   activityFeed          ActivityFeed[]
   teacherFeedback       TeacherFeedback[]
   notifications         Notification[]
-  experiments           Experiment[]
+  datasets              Dataset[]
   teamRubricScores      TeamRubricScore[]
   codexLessonProgress   CodexLessonProgress[]
   codexKpDays           CodexKpDay[]
@@ -1661,40 +1661,82 @@ model NotificationPref {
 
 // ─── Data Terminal ───────────────────────────────────────────────────────────
 
-// Experiment tracking + graphing (unlocked at `working`). An experiment is a
-// titled x/y dataset; measurements are its points, optionally grouped by series.
-model Experiment {
-  id              String   @id @default(cuid())
-  teamId          String   @map("team_id")
-  title           String
-  description     String   @default("")
-  xLabel          String   @default("x") @map("x_label")
-  yLabel          String   @default("y") @map("y_label")
-  createdByUserId String   @map("created_by_user_id")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+// Prism's table type, chosen before data is entered. It is not cosmetic: it
+// decides which analyses the Analyze dialog may offer and which graph families
+// are drawable, so a Column table can never be handed a correlation. That
+// gating is the accessibility mechanism the whole Lab mode rests on — see
+// docs/architecture/data-terminal-revamp-plan.md §2.
+//
+// `survival` is deliberately absent: Kaplan-Meier is rare at fair level and
+// would be dead weight to gate against.
+enum DatasetTableType {
+  xy
+  column
+  grouped
+  contingency
+  nested
+  parts_of_whole
+  multiple_variables
 
-  team         Team          @relation(fields: [teamId], references: [id])
-  createdBy    User          @relation("experimentAuthor", fields: [createdByUserId], references: [id])
-  measurements Measurement[]
-
-  @@index([teamId, createdAt])
-  @@map("experiments")
+  @@map("dataset_table_type")
 }
 
-model Measurement {
-  id           String   @id @default(cuid())
-  experimentId String   @map("experiment_id")
-  series       String   @default("")
-  x            Float
-  y            Float
-  note         String?
-  recordedAt   DateTime @default(now()) @map("recorded_at")
+// A team's working dataset — the single spine under all three Data Terminal
+// lanes (Sheets / Lab / Code). Replaces the Experiment + Measurement pair,
+// which could hold exactly one x and one y and so could not represent a CSV.
+//
+// `rows` is jsonb rather than a row-per-point table because NOTHING ever
+// queries inside the data: it is fetched whole, analyzed whole, and written
+// whole. A `measurements`-style child table would buy indexing nobody uses and
+// cost a join on every read.
+//
+// `columns` is a ColumnSpec[] (lib/data-terminal/dataset.ts) carrying each
+// column's role (x / y / yErr / xErr / group / label) and, for replicates, the
+// `subcolumnOf` link. Roles are what make error bars DERIVED rather than
+// configured, and what make replication visible to the analyses — a nested
+// table's n is the number of groups, not the number of measurements.
+//
+// Team-scoped and gated by the `data_terminal` feature (lib/phase.ts), so
+// datasets unlock at `working` exactly as the experiments they replace did.
+model Dataset {
+  id              String           @id @default(cuid())
+  teamId          String           @map("team_id")
+  name            String
+  tableType       DatasetTableType @default(xy) @map("table_type")
+  // Original upload filename, kept so a re-import can be recognised.
+  sourceFilename  String?          @map("source_filename")
+  // ColumnSpec[] — see lib/data-terminal/dataset.ts.
+  columns         Json
+  // (string | number | null)[][], row-major, aligned to `columns`.
+  rows            Json
+  // SheetsChartSpec[] — Sheets-mode chart builder specs (Phase B). Null until
+  // the first chart is built; kept whole because charts are drawn client-side
+  // and nothing ever queries inside them. See lib/data-terminal/sheets-chart.ts.
+  charts          Json?
+  // CodeScriptSpec[] — Code-lane scripts (`{ id, name, code }`, Phase C). Same
+  // jsonb-not-a-child-table reasoning as `charts`: scripts run client-side in a
+  // Pyodide worker and nothing queries inside them. Null until the first save.
+  scripts         Json?
+  // AnalysisSpec[] — Lab-mode analysis specs (`{ id, analysisId, columnIds,
+  // options }`, Phase D). INPUTS only; the result is re-computed in the browser
+  // and never stored (Prism's live-linked results sheet). Null until the first.
+  analyses        Json?
+  // LayoutSpec[] — poster layouts (`{ id, name, rows, cols, panels: [{analysisId}] }`,
+  // Phase F2). Each composes several SAVED analyses into one multi-panel figure
+  // (a science-fair poster board); panels reference `analyses[].id`. Same
+  // jsonb-not-a-child-table reasoning as the arrays above. Null until the first.
+  layouts         Json?
+  // Denormalised `rows.length`, so the list route never ships the data.
+  rowCount        Int              @default(0) @map("row_count")
+  createdByUserId String           @map("created_by_user_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  experiment Experiment @relation(fields: [experimentId], references: [id])
+  team      Team @relation(fields: [teamId], references: [id])
+  createdBy User @relation("datasetAuthor", fields: [createdByUserId], references: [id])
 
-  @@index([experimentId, recordedAt])
-  @@map("measurements")
+  @@index([teamId, createdAt])
+  @@map("datasets")
 }
 
 // ─── Showcase ────────────────────────────────────────────────────────────────
@@ -1808,6 +1850,7 @@ enum AssetType {
   visual // (legacy, unused)
   report // (legacy, unused)
   repo_link // optional GitHub / code link
+  figure // optional Data Terminal figure (exported chart/analysis PNG) — appended last to match the ADD VALUE migration order
 
   @@map("asset_type")
 }

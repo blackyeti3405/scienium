@@ -38,7 +38,7 @@ const TAB_DEFS: [OperationsTab, string, string, string?][] = [
   ['log', '📋', 'Project Log'],
   ['failure', '⚡', 'Failure Log'],
   ['expertise', '🎖', 'Proof of Expertise'],
-  ['data', '📊', 'Data Terminal'],
+  ['data', '📊', 'Data Terminal', 'data-terminal-tab'],
   ['vega', '🧠', 'Study with Vega', 'vega-tab'],
 ]
 

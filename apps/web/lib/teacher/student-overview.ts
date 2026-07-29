@@ -137,7 +137,7 @@ export async function loadStudentOverview(
     papers,
     researchPlan,
     logs,
-    experiments,
+    datasets,
     showcase,
     codexRecent,
     codexLessonsCompleted,
@@ -250,13 +250,16 @@ export async function loadStudentOverview(
       },
     }),
 
-    // Experiments
-    db.experiment.findMany({
+    // Datasets (the Data Terminal's working data — replaced Experiments)
+    db.dataset.findMany({
       where: { teamId },
+      orderBy: { updatedAt: 'desc' },
       select: {
         id: true,
-        title: true,
-        _count: { select: { measurements: true } },
+        name: true,
+        tableType: true,
+        rowCount: true,
+        updatedAt: true,
       },
     }),
 
@@ -365,7 +368,7 @@ export async function loadStudentOverview(
       papers,
       researchPlan,
       logs,
-      experiments,
+      datasets,
       showcase,
       codex: {
         lessonsCompleted: codexLessonsCompleted,

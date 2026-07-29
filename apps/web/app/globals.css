@@ -3061,3 +3061,623 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Data Terminal — Data lane (dataset grid) ─────────────────────────────────
+   The grid needs the full panel width, so this lane deliberately does NOT use
+   `.ops-tab-body` (max-width 720px) — a spreadsheet squeezed into a reading
+   column is the one layout that makes a dataset unusable. */
+.dt-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 24px;
+  width: 100%;
+}
+.dt-pane > * { flex-shrink: 0; }
+
+.dt-toolbar { display: flex; align-items: center; gap: 10px; }
+.dt-toolbar__spacer { flex: 1; }
+.dt-back {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--font-pixel), monospace; font-size: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  transition: color 0.14s;
+}
+.dt-back:hover { color: rgba(255, 255, 255, 0.75); }
+
+.dt-savestate {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-pixel), monospace; font-size: 7px;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+
+.dt-listhead { display: flex; align-items: center; justify-content: space-between; }
+
+.dt-titlebar { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.dt-title-input {
+  flex: 1; min-width: 200px;
+  background: transparent; border: none; border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff; font-size: 19px; padding: 5px 2px; outline: none;
+  transition: border-color 0.14s;
+}
+.dt-title-input:focus { border-bottom-color: rgba(245, 197, 24, 0.6); }
+.dt-tabletype { display: flex; flex-direction: column; gap: 4px; min-width: 190px; }
+.dt-tabletype__blurb {
+  font-size: 12px; color: rgba(255, 255, 255, 0.45); margin-top: -6px; line-height: 1.5;
+}
+
+/* ── Buttons and fields ──────────────────────────────────────────────────── */
+.dt-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-pixel), monospace; font-size: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.6);
+  padding: 8px 12px; border-radius: 5px;
+  transition: border-color 0.14s, color 0.14s, background 0.14s;
+}
+.dt-btn:hover:not(:disabled) { border-color: rgba(245, 197, 24, 0.55); color: #f5c518; }
+.dt-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.dt-btn--primary {
+  background: #f5c518; border-color: #f5c518; color: #0d1b2e;
+}
+.dt-btn--primary:hover:not(:disabled) { filter: brightness(1.1); color: #0d1b2e; }
+.dt-btn--ghost { border-color: transparent; padding: 6px 9px; }
+.dt-btn--danger { align-self: flex-start; border-color: rgba(248, 113, 113, 0.35); color: rgba(248, 113, 113, 0.85); }
+.dt-btn--danger:hover:not(:disabled) { border-color: rgba(248, 113, 113, 0.8); color: #f87171; }
+
+.dt-icon-btn {
+  color: rgba(255, 255, 255, 0.4); padding: 6px; border-radius: 5px;
+  transition: color 0.14s, background 0.14s;
+}
+.dt-icon-btn:hover { color: rgba(255, 255, 255, 0.85); background: rgba(255, 255, 255, 0.06); }
+.dt-icon-btn--danger:hover { color: #f87171; }
+
+.dt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.dt-field { display: flex; flex-direction: column; gap: 5px; }
+.dt-field__label {
+  font-family: var(--font-pixel), monospace; font-size: 7px;
+  color: rgba(255, 255, 255, 0.45); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.dt-field__hint { font-size: 11.5px; color: rgba(255, 255, 255, 0.4); line-height: 1.55; }
+.dt-field__error { font-size: 11.5px; color: #f87171; line-height: 1.5; }
+.dt-field__ok {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: #6ee7b7; line-height: 1.5;
+}
+.dt-input {
+  background: #0a1628; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 5px;
+  color: #fff; font-size: 13px; padding: 8px 10px; outline: none;
+  transition: border-color 0.14s, box-shadow 0.14s; width: 100%;
+}
+.dt-input:focus { border-color: rgba(245, 197, 24, 0.55); box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.08); }
+.dt-input--mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+
+.dt-banner {
+  display: flex; align-items: center; gap: 9px;
+  border: 1px solid rgba(245, 197, 24, 0.4); background: rgba(245, 197, 24, 0.06);
+  color: rgba(255, 255, 255, 0.8); font-size: 12px; line-height: 1.5;
+  padding: 10px 12px; border-radius: 6px;
+}
+.dt-banner--danger { border-color: rgba(248, 113, 113, 0.45); background: rgba(248, 113, 113, 0.07); }
+.dt-banner span { flex: 1; }
+
+/* ── Dataset list ────────────────────────────────────────────────────────── */
+.dt-list { display: flex; flex-direction: column; gap: 8px; }
+.dt-list__row {
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1); background: #0a1628;
+  border-radius: 6px; padding: 11px 12px;
+  transition: border-color 0.14s;
+}
+.dt-list__row:hover { border-color: rgba(255, 255, 255, 0.25); }
+.dt-list__open { flex: 1; text-align: left; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dt-list__name { font-size: 14px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-list__meta {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-pixel), monospace; font-size: 7px; color: rgba(255, 255, 255, 0.4);
+}
+.dt-chip {
+  border: 1px solid rgba(245, 197, 24, 0.35); color: rgba(245, 197, 24, 0.85);
+  border-radius: 3px; padding: 2px 5px; font-size: 7px;
+}
+.dt-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 42px 20px;
+}
+
+/* ── New-dataset form ────────────────────────────────────────────────────── */
+.dt-newform {
+  display: flex; flex-direction: column; gap: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px; padding: 16px;
+}
+.dt-typepicker { display: flex; flex-direction: column; gap: 8px; border: none; padding: 0; margin: 0; }
+.dt-typepicker__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 7px; }
+.dt-typecard {
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 5px;
+  padding: 11px 9px; text-align: center;
+  transition: border-color 0.14s, background 0.14s, color 0.14s;
+  color: rgba(255, 255, 255, 0.65);
+}
+.dt-typecard:hover { border-color: rgba(255, 255, 255, 0.3); color: rgba(255, 255, 255, 0.9); }
+.dt-typecard.is-selected {
+  border-color: #f5c518; background: rgba(245, 197, 24, 0.1); color: #f5c518;
+}
+.dt-typecard__label { font-family: var(--font-pixel), monospace; font-size: 7.5px; line-height: 1.5; }
+
+/* ── Import panel ────────────────────────────────────────────────────────── */
+.dt-import {
+  display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px; padding: 14px;
+}
+.dt-import textarea { resize: vertical; }
+
+/* ── Workspace: grid + column panel ──────────────────────────────────────── */
+.dt-workspace { display: flex; gap: 14px; align-items: flex-start; }
+.dt-workspace > .dt-grid { flex: 1; min-width: 0; }
+.dt-colpanel {
+  width: 268px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 12px;
+  border: 1px solid rgba(245, 197, 24, 0.3); background: rgba(245, 197, 24, 0.03);
+  border-radius: 6px; padding: 14px;
+}
+.dt-colpanel__head { display: flex; align-items: center; justify-content: space-between; }
+.dt-colpanel__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dt-colpanel__grid > .dt-field:nth-child(n + 3) { grid-column: span 2; }
+.dt-colpanel__help {
+  font-size: 11.5px; color: rgba(255, 255, 255, 0.5); line-height: 1.55;
+  border-left: 2px solid rgba(245, 197, 24, 0.4); padding-left: 9px;
+}
+.dt-formula-row { display: flex; gap: 6px; align-items: center; }
+.dt-formula-row .dt-input { flex: 1; }
+
+@media (max-width: 900px) {
+  .dt-workspace { flex-direction: column; }
+  .dt-colpanel { width: 100%; }
+}
+
+/* ── The grid itself ─────────────────────────────────────────────────────── */
+.dt-grid {
+  border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px;
+  background: #0a1628; overflow: hidden; outline: none;
+}
+.dt-grid:focus-visible { border-color: rgba(245, 197, 24, 0.5); box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.08); }
+.dt-grid-empty {
+  border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 6px;
+  padding: 40px; text-align: center;
+}
+.dt-grid__scroll { overflow: auto; }
+/* Sticky VERTICALLY only, so the titles stay put as rows scroll but travel with
+   their columns when the table is scrolled sideways. */
+.dt-grid__head {
+  display: flex; width: max-content; min-width: 100%;
+  position: sticky; top: 0; z-index: 2;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14); background: #0d1b2e;
+}
+.dt-grid__body { position: relative; width: max-content; min-width: 100%; }
+.dt-grid__row { display: flex; position: absolute; left: 0; width: max-content; min-width: 100%; }
+
+.dt-grid__gutter {
+  width: 44px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-pixel), monospace; font-size: 7px;
+  color: rgba(255, 255, 255, 0.28);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  background: #0d1b2e;
+}
+.dt-grid__gutter--head { height: 46px; }
+
+.dt-grid__header {
+  width: 132px; flex-shrink: 0; height: 46px;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px;
+  padding: 0 9px; text-align: left;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.14s;
+}
+.dt-grid__header:hover { background: rgba(255, 255, 255, 0.04); }
+.dt-grid__header.is-active { background: rgba(245, 197, 24, 0.1); }
+.dt-grid__header-name {
+  font-size: 12.5px; color: rgba(255, 255, 255, 0.9);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dt-grid__header-meta { display: flex; align-items: center; gap: 5px; }
+.dt-grid__unit { font-size: 10px; color: rgba(255, 255, 255, 0.35); }
+.dt-grid__fx {
+  font-family: ui-monospace, monospace; font-size: 9px; font-style: italic;
+  color: rgba(110, 231, 183, 0.85);
+}
+.dt-role {
+  font-family: var(--font-pixel), monospace; font-size: 6px; letter-spacing: 0.04em;
+  border-radius: 2px; padding: 2px 3px; line-height: 1;
+}
+.dt-role--x { background: rgba(144, 205, 244, 0.16); color: #90cdf4; }
+.dt-role--y { background: rgba(245, 197, 24, 0.16); color: #f5c518; }
+.dt-role--yErr, .dt-role--xErr { background: rgba(246, 135, 179, 0.16); color: #f687b3; }
+.dt-role--group { background: rgba(79, 209, 197, 0.16); color: #4fd1c5; }
+.dt-role--label { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.55); }
+.dt-role--ignore { background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.3); }
+
+.dt-grid__cell {
+  width: 132px; flex-shrink: 0;
+  display: flex; align-items: center; padding: 0 9px;
+  font-size: 12.5px; color: rgba(255, 255, 255, 0.82);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: cell;
+}
+.dt-grid__cell.is-number { justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.dt-grid__cell.is-computed { color: rgba(110, 231, 183, 0.85); }
+.dt-grid__cell.is-cursor { box-shadow: inset 0 0 0 2px #f5c518; background: rgba(245, 197, 24, 0.06); }
+.dt-grid__input {
+  width: 100%; height: 100%;
+  background: #0d1b2e; border: none; outline: none;
+  color: #fff; font-size: 12.5px; font-family: inherit;
+  padding: 0; text-align: inherit;
+}
+
+.dt-rowcount {
+  font-family: var(--font-pixel), monospace; font-size: 7px;
+  color: rgba(255, 255, 255, 0.3); letter-spacing: 0.06em;
+}
+
+/* Import panel's header override. */
+.dt-check {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; color: rgba(255, 255, 255, 0.6); cursor: pointer;
+}
+.dt-check input { accent-color: #f5c518; width: 14px; height: 14px; }
+
+/* List skeleton — same geometry as `.dt-list__row` so the loaded list does not
+   shift when it replaces this. */
+.dt-skel { pointer-events: none; }
+.dt-skel__bar {
+  height: 13px; border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
+  animation: dt-skel-pulse 1.4s ease-in-out infinite;
+}
+@keyframes dt-skel-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dt-skel__bar { animation: none; }
+}
+
+/* A computed cell is written by its formula, never typed into — the cursor says so. */
+.dt-grid__cell.is-computed { cursor: default; }
+
+/* Fills the width left over by the fixed-width columns, so the table's rules run
+   the full span of the panel instead of stopping mid-air. */
+.dt-grid__filler { flex: 1 1 auto; min-width: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.dt-grid__head .dt-grid__filler { border-bottom: none; }
+/* The row-number gutter was rgba(…,0.28) — below 3:1 against #0d1b2e and the one
+   column a student scans to find their place. */
+.dt-grid__gutter { color: rgba(255, 255, 255, 0.5); }
+
+/* ── Sheets mode: Grid | Chart view toggle ───────────────────────────────────
+   Grid and Chart are two views of the ONE Sheets lane (plan §3), so the toggle
+   is a small segmented control, not a lane strip. */
+.dt-viewtoggle {
+  display: inline-flex; gap: 2px; align-self: flex-start;
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 6px; padding: 2px; background: #0a1628;
+}
+.dt-viewtoggle__btn {
+  font-family: var(--font-pixel), monospace; font-size: 8px;
+  color: rgba(255, 255, 255, 0.5); padding: 7px 16px; border-radius: 4px;
+  transition: background 0.14s, color 0.14s;
+}
+.dt-viewtoggle__btn:hover { color: rgba(255, 255, 255, 0.85); }
+.dt-viewtoggle__btn.is-active { background: rgba(245, 197, 24, 0.14); color: #f5c518; }
+
+/* ── Chart builder ───────────────────────────────────────────────────────── */
+.dt-chart { display: flex; flex-direction: column; gap: 12px; }
+.dt-chart__bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dt-chart__body { display: flex; gap: 14px; align-items: flex-start; }
+.dt-chart__controls {
+  width: 264px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px; padding: 14px;
+}
+.dt-chart__canvas {
+  flex: 1; min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: #0a1628;
+  border-radius: 6px; padding: 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.dt-chart__title { font-size: 14px; color: #fff; text-align: center; }
+.dt-chart__svg { min-width: 0; }
+.dt-chart__placeholder {
+  display: flex; align-items: center; justify-content: center; min-height: 260px;
+  color: rgba(255, 255, 255, 0.4); font-size: 12.5px; text-align: center; padding: 20px;
+}
+@media (max-width: 900px) {
+  .dt-chart__body { flex-direction: column; }
+  .dt-chart__controls { width: 100%; }
+}
+
+.dt-chart__ycols { border: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.dt-chart__ycols legend { padding: 0; }
+.dt-chart__pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dt-chart__opts { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.dt-chart__num { max-width: 92px; }
+
+.dt-chart__trendrow { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.dt-chart__trendname {
+  flex: 1; min-width: 0; font-size: 11.5px; color: rgba(255, 255, 255, 0.7);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dt-chart__trendrow .ops-select-wrap { flex: 0 0 auto; }
+
+.dt-chart__swatches { display: flex; flex-direction: column; gap: 6px; }
+.dt-chart__swatch { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: rgba(255, 255, 255, 0.7); }
+.dt-chart__swatch input[type='color'] {
+  width: 26px; height: 20px; padding: 0; border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px; background: none; cursor: pointer;
+}
+
+/* Trendline display equations + R² — the point of the trendline feature. */
+.dt-chart__eqs {
+  list-style: none; margin: 0; padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 5px; background: rgba(255, 255, 255, 0.02);
+  display: flex; flex-direction: column; gap: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+}
+.dt-chart__eqname { font-family: var(--font-pixel), monospace; font-size: 7px; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 6px; }
+.dt-chart__eqerr { color: rgba(248, 113, 113, 0.85); font-family: var(--font-body, sans-serif); }
+
+.dt-chart__data { align-self: flex-start; }
+.dt-chart__tablewrap { overflow-x: auto; margin-top: 8px; }
+.dt-chart__table { width: 100%; border-collapse: collapse; font-size: 12.5px; color: rgba(255, 255, 255, 0.82); }
+.dt-chart__table th, .dt-chart__table td {
+  text-align: right; padding: 5px 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); white-space: nowrap;
+}
+.dt-chart__table thead th {
+  font-family: var(--font-pixel), monospace; font-size: 7px; color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.dt-chart__table tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+
+.dt-chart-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 48px 20px;
+}
+
+/* ── Lane strip: Sheets | Code ────────────────────────────────────────────────
+   The top-level lane switch (plan §4). Same segmented shape as the Grid|Chart
+   view toggle, sized a touch larger because it is the more consequential choice. */
+.dt-lanes {
+  display: inline-flex; gap: 2px; align-self: flex-start;
+  border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 6px; padding: 3px; background: #0a1628;
+}
+.dt-lanes__btn {
+  font-family: var(--font-pixel), monospace; font-size: 9px;
+  color: rgba(255, 255, 255, 0.5); padding: 8px 20px; border-radius: 4px;
+  transition: background 0.14s, color 0.14s;
+}
+.dt-lanes__btn:hover { color: rgba(255, 255, 255, 0.85); }
+.dt-lanes__btn.is-active { background: rgba(245, 197, 24, 0.16); color: #f5c518; }
+
+/* ── Code mode ────────────────────────────────────────────────────────────── */
+.dt-code { display: flex; flex-direction: column; gap: 12px; }
+.dt-code__bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dt-code__status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: rgba(255, 255, 255, 0.55); min-height: 16px;
+}
+.dt-code__name { max-width: 340px; }
+.dt-code__body { display: flex; gap: 14px; align-items: stretch; }
+.dt-code__editorwrap { flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.dt-code__editor {
+  width: 100%; min-height: 420px; resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5;
+  color: #e8eef7; background: #0a1628; tab-size: 4;
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 6px; padding: 12px 14px;
+}
+.dt-code__editor:focus { outline: none; border-color: rgba(245, 197, 24, 0.5); }
+.dt-code__output {
+  flex: 1 1 50%; min-width: 0; min-height: 420px; max-height: 620px; overflow: auto;
+  display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: #0a1628;
+  border-radius: 6px; padding: 14px;
+}
+.dt-code__hint { color: rgba(255, 255, 255, 0.4); font-size: 12.5px; }
+.dt-code__figure {
+  max-width: 100%; height: auto; align-self: flex-start;
+  background: #fff; border-radius: 4px; padding: 4px;
+}
+.dt-code__stream,
+.dt-code__error {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.45;
+  border-radius: 5px; padding: 10px 12px;
+}
+.dt-code__stream { color: rgba(255, 255, 255, 0.82); background: rgba(255, 255, 255, 0.03); }
+.dt-code__stream--err { color: rgba(251, 191, 129, 0.92); }
+.dt-code__error {
+  color: rgba(248, 113, 113, 0.95); background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+}
+@media (max-width: 900px) {
+  .dt-code__body { flex-direction: column; }
+  .dt-code__editor,
+  .dt-code__output { min-height: 300px; }
+}
+
+.dt-code-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 48px 20px;
+}
+
+/* ── Lab mode (Phase D) ─────────────────────────────────────────────────── */
+.dt-lab { display: flex; flex-direction: column; gap: 12px; }
+.dt-lab__bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dt-lab__empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 48px 20px;
+}
+.dt-lab__results { display: flex; flex-direction: column; gap: 16px; }
+
+/* The gated Analyze dialog */
+.dt-analyze {
+  display: flex; flex-direction: column; gap: 16px;
+  border: 1px solid rgba(245, 197, 24, 0.28); background: rgba(245, 197, 24, 0.03);
+  border-radius: 8px; padding: 16px;
+}
+.dt-analyze__section { display: flex; flex-direction: column; gap: 8px; }
+.dt-analyze__list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px;
+}
+.dt-analyze__opt {
+  display: flex; flex-direction: column; gap: 3px; text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.14); background: #0a1628;
+  border-radius: 6px; padding: 9px 11px; cursor: pointer; transition: border-color 0.12s;
+}
+.dt-analyze__opt:hover:not(:disabled) { border-color: rgba(245, 197, 24, 0.5); }
+.dt-analyze__opt.is-selected { border-color: #f5c518; background: rgba(245, 197, 24, 0.08); }
+.dt-analyze__opt.is-disabled { opacity: 0.45; cursor: not-allowed; }
+.dt-analyze__opt-label {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #e8eef7;
+}
+.dt-analyze__opt-desc { font-size: 11.5px; color: rgba(255, 255, 255, 0.5); line-height: 1.45; }
+.dt-analyze__soon {
+  font-family: var(--font-pixel, monospace); font-size: 7px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: rgba(245, 197, 24, 0.75);
+  border: 1px solid rgba(245, 197, 24, 0.4); border-radius: 3px; padding: 1px 4px;
+}
+.dt-analyze__cols { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.dt-analyze__unit { color: rgba(255, 255, 255, 0.45); }
+.dt-analyze__opt-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-size: 12.5px; color: rgba(255, 255, 255, 0.75);
+}
+.dt-analyze__opt-row > span { flex: 0 0 auto; }
+.dt-analyze__opt-row .ops-select-wrap,
+.dt-analyze__opt-row .dt-input { flex: 0 1 220px; min-width: 120px; }
+
+/* One saved analysis' results sheet */
+.dt-analysis {
+  display: flex; flex-direction: column; gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: #0a1628;
+  border-radius: 8px; padding: 16px;
+}
+.dt-analysis__head { display: flex; align-items: center; gap: 10px; }
+.dt-analysis__title { flex: 1; font-size: 14px; font-weight: 600; color: #f5c518; }
+.dt-analysis__actions { display: flex; gap: 6px; }
+.dt-analysis__hint { color: rgba(255, 255, 255, 0.42); font-size: 12.5px; }
+.dt-analysis__body { display: flex; flex-direction: column; gap: 14px; }
+.dt-analysis__body.is-stale { opacity: 0.55; }
+
+.dt-analysis__stats {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 0;
+}
+.dt-analysis__stat {
+  display: flex; flex-direction: column; gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 5px; padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.dt-analysis__stat dt {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.45);
+}
+.dt-analysis__stat dd {
+  margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px; color: #e8eef7;
+}
+
+.dt-analysis__tablewrap { overflow-x: auto; }
+.dt-analysis__tabletitle {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5); margin-bottom: 6px;
+}
+.dt-analysis__table { border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
+.dt-analysis__table th, .dt-analysis__table td {
+  border: 1px solid rgba(255, 255, 255, 0.1); padding: 5px 10px; text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #e8eef7;
+}
+.dt-analysis__table th {
+  background: rgba(255, 255, 255, 0.04); color: rgba(255, 255, 255, 0.6);
+  font-weight: 600; text-align: right;
+}
+.dt-analysis__table td:first-child, .dt-analysis__table th:first-child { text-align: left; }
+
+.dt-analysis__assumptions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.dt-analysis__assumptions li {
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.78);
+}
+.dt-analysis__assumptions li.is-pass > svg { color: #4ade80; flex-shrink: 0; }
+.dt-analysis__assumptions li.is-fail > svg { color: #fbbf24; flex-shrink: 0; }
+.dt-analysis__assumption-label { flex: 1; }
+.dt-analysis__assumption-detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.dt-analysis__figure {
+  max-width: 100%; height: auto; align-self: flex-start;
+  background: #fff; border-radius: 4px; padding: 4px;
+}
+
+/* Phase F2: poster layouts (multi-panel A/B/C boards). */
+.dt-posters {
+  display: flex; flex-direction: column; gap: 12px;
+  margin-top: 20px; padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.dt-posters__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.dt-posters__head .dt-analysis__title { display: inline-flex; align-items: center; gap: 6px; }
+.dt-poster {
+  display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px;
+  padding: 10px 12px; background: rgba(255, 255, 255, 0.02);
+}
+.dt-poster__row { display: flex; align-items: center; gap: 8px; }
+.dt-poster__row .dt-input { flex: 1; }
+.dt-poster__grid-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
+.dt-poster__panels { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.dt-poster__panel { min-width: 160px; }
+
+/* Phase F1: per-figure Format + Export tools on the results sheet. */
+.dt-analysis__figtools {
+  display: flex; flex-direction: column; gap: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px;
+}
+.dt-analysis__export {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+}
+.dt-analysis__export .dt-field__label { margin: 0; }
+.dt-analysis__format {
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px;
+  padding: 6px 10px; background: rgba(255, 255, 255, 0.02);
+}
+.dt-analysis__format-summary {
+  cursor: pointer; font-size: 12.5px; color: rgba(255, 255, 255, 0.72);
+  list-style: none;
+}
+.dt-analysis__format-summary::-webkit-details-marker { display: none; }
+.dt-analysis__format-body {
+  display: flex; flex-direction: column; gap: 6px; margin-top: 10px;
+}
+
+.dt-analysis__guide {
+  border: 1px solid rgba(245, 197, 24, 0.22); border-radius: 6px; padding: 8px 12px;
+  background: rgba(245, 197, 24, 0.03);
+}
+.dt-analysis__guide summary {
+  display: flex; align-items: center; gap: 7px; cursor: pointer;
+  font-size: 12.5px; color: #f5c518; list-style: none;
+}
+.dt-analysis__guide summary::-webkit-details-marker { display: none; }
+.dt-analysis__guide-body {
+  font-size: 12.5px; color: rgba(255, 255, 255, 0.7); line-height: 1.55; margin-top: 8px;
+}

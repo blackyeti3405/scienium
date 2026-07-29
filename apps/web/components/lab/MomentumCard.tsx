@@ -8,7 +8,7 @@ interface MomentumStats {
   kpEarned: number
   sourcesReviewed: number
   logsWritten: number
-  experimentsAdded: number
+  datasetsAdded: number
   pointsAdded: number
   daysToNextFair: number | null
   nextFairName: string | null
@@ -27,7 +27,7 @@ interface MomentumCardProps {
 
 /**
  * Dismissible pixel recap card pinned to the lab viewport, showing the team's
- * last-7-days momentum (KP, sources, logs, experiments, data points, days to
+ * last-7-days momentum (KP, sources, logs, datasets, data points, days to
  * next fair). Self-fetches GET /api/team/momentum on mount — no SSR props, no
  * localStorage access here (dismissal persistence is owned by LabScene so this
  * stays presentational and testable). Renders nothing while loading, on error,
@@ -55,7 +55,7 @@ export function MomentumCard({ onDismiss }: MomentumCardProps) {
     stats.kpEarned === 0 &&
     stats.sourcesReviewed === 0 &&
     stats.logsWritten === 0 &&
-    stats.experimentsAdded === 0 &&
+    stats.datasetsAdded === 0 &&
     stats.pointsAdded === 0 &&
     stats.daysToNextFair === null
   if (quiet) return null
@@ -85,7 +85,7 @@ export function MomentumCard({ onDismiss }: MomentumCardProps) {
         <StatRow label="KP EARNED" value={stats.kpEarned.toLocaleString()} accent />
         <StatRow label="SOURCES" value={stats.sourcesReviewed} />
         <StatRow label="LOGS" value={stats.logsWritten} />
-        <StatRow label="EXPERIMENTS" value={stats.experimentsAdded} />
+        <StatRow label="DATASETS" value={stats.datasetsAdded} />
         <StatRow label="DATA POINTS" value={stats.pointsAdded} />
         {stats.daysToNextFair != null && stats.nextFairName != null && (
           <StatRow

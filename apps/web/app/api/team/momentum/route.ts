@@ -8,7 +8,7 @@ import { db } from '@/lib/db'
 
 /**
  * GET /api/team/momentum — a team's rolling last-7-days recap for the lab's
- * "Momentum" card: KP earned, sources reviewed, logs written, experiments +
+ * "Momentum" card: KP earned, sources reviewed, logs written, datasets +
  * data points added, and days to the next fair. Pure aggregate: no writes, no
  * Anthropic call, no new tables. Scoped entirely by ctx.teamId (+ the team's
  * own member ids for the user-keyed KP ledger below).
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     {
       sources_reviewed: number
       logs_written: number
-      experiments_added: number
+      datasets_added: number
       points_added: number
       discovery_kp: number
       codex_kp: number
@@ -46,11 +46,15 @@ export async function GET(req: NextRequest) {
         WHERE v.team_id = ${ctx.teamId} AND v.created_at >= ${since})::int AS sources_reviewed,
       (SELECT COUNT(*) FROM "project_logs" l
         WHERE l.team_id = ${ctx.teamId} AND l.created_at >= ${since})::int AS logs_written,
-      (SELECT COUNT(*) FROM "experiments" e
-        WHERE e.team_id = ${ctx.teamId} AND e.created_at >= ${since})::int AS experiments_added,
-      (SELECT COUNT(*) FROM "measurements" m
-        JOIN "experiments" e ON e.id = m.experiment_id
-        WHERE e.team_id = ${ctx.teamId} AND m.recorded_at >= ${since})::int AS points_added,
+      (SELECT COUNT(*) FROM "datasets" d
+        WHERE d.team_id = ${ctx.teamId} AND d.created_at >= ${since})::int AS datasets_added,
+      -- ponytail: a dataset has no per-ROW timestamp, so every row it holds is
+      -- attributed to the dataset's CREATION time — a paste that grows a
+      -- week-old dataset does not register this week. Faithful per-row
+      -- attribution would need a row-event log, which nothing else wants; the
+      -- week's "data points" is close enough for an ambient recap card.
+      (SELECT COALESCE(SUM(d.row_count), 0) FROM "datasets" d
+        WHERE d.team_id = ${ctx.teamId} AND d.created_at >= ${since})::int AS points_added,
       -- kpEarned: sum ONLY the timestamped, per-award KP ledgers (see note below).
       (SELECT COALESCE(SUM(v.kp_awarded), 0) FROM "discovery_source_visits" v
         WHERE v.team_id = ${ctx.teamId} AND v.created_at >= ${since})::int AS discovery_kp,
@@ -91,7 +95,7 @@ export async function GET(req: NextRequest) {
     kpEarned,
     sourcesReviewed: row?.sources_reviewed ?? 0,
     logsWritten: row?.logs_written ?? 0,
-    experimentsAdded: row?.experiments_added ?? 0,
+    datasetsAdded: row?.datasets_added ?? 0,
     pointsAdded: row?.points_added ?? 0,
     daysToNextFair,
     nextFairName,

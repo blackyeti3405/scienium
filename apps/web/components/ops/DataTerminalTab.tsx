@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, type ComponentType } from 'react'
-import { BookOpen, FlaskConical, LineChart as LineChartIcon, PieChart, ClipboardList, Droplets } from 'lucide-react'
+import { useEffect, useState, type ComponentType } from 'react'
+import { BookOpen, Table2, LineChart as LineChartIcon, PieChart, ClipboardList, Droplets } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import type { LucideIcon } from 'lucide-react'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
-import { ExperimentsView } from './data-terminal/ExperimentsView'
+import { DatasetsView } from './data-terminal/DatasetsView'
 
-type DataTerminalView = 'experiments' | 'guide' | 'charts-guide' | 'plot-guide' | 'methods-guide' | 'data-quality-guide'
+type DataTerminalView = 'data' | 'guide' | 'charts-guide' | 'plot-guide' | 'methods-guide' | 'data-quality-guide'
 
 // The guide panels each pull a large static-content module (plot-guide alone
 // is ~765KB of source), but render only when their sub-tab is selected — so
@@ -24,8 +24,8 @@ const DataQualityGuidePanel = dynamic(() => import('./DataQualityGuidePanel').th
  * One entry per sub-tab: the strip buttons and the view switch below both
  * render from this table, so adding a guide is a one-line entry (key, label,
  * icon, testId, Panel) instead of two hand-copied JSX blocks. `Panel` is
- * omitted for the experiments tab, which renders `ExperimentsView` with no
- * guide wrapper.
+ * omitted for the "Data" tab, which renders `DatasetsView` with no guide
+ * wrapper.
  */
 const SUB_TABS: {
   key: DataTerminalView
@@ -34,18 +34,22 @@ const SUB_TABS: {
   testId: string
   Panel?: ComponentType
 }[] = [
-  { key: 'experiments', label: 'Experiments', icon: FlaskConical, testId: 'experiments-subtab' },
+  { key: 'data', label: 'Data', icon: Table2, testId: 'data-subtab' },
   { key: 'guide', label: 'Stats Guide', icon: BookOpen, testId: 'stats-guide-tab', Panel: StatsGuidePanel },
-  { key: 'charts-guide', label: 'Charts Guide', icon: PieChart, testId: 'charts-guide-tab', Panel: ChartsGuidePanel },
+  // charts-guide is rendered explicitly below (it takes an onStartRecipe prop),
+  // so it carries no generic `Panel` here — the entry drives only its sub-tab button.
+  { key: 'charts-guide', label: 'Charts Guide', icon: PieChart, testId: 'charts-guide-tab' },
   { key: 'plot-guide', label: 'Plot Guide', icon: LineChartIcon, testId: 'plot-guide-tab', Panel: PlotGuidePanel },
   { key: 'methods-guide', label: 'Methods', icon: ClipboardList, testId: 'methods-guide-tab', Panel: MethodsGuidePanel },
   { key: 'data-quality-guide', label: 'Data Quality', icon: Droplets, testId: 'data-quality-guide-tab', Panel: DataQualityGuidePanel },
 ]
 
 /**
- * Data Terminal (spec §14.1) — experiment tracking + graphing for the `working`
- * phase, surfaced as an Operations Hub tab. Records x/y measurements per
- * experiment (optionally grouped into series) and charts them with recharts.
+ * Data Terminal (spec §14.1) — the team's data workbench, surfaced as an
+ * Operations Hub tab. The "Data" sub-tab holds datasets: an N-column table with
+ * typed columns carrying experimental ROLES, which every analysis and chart
+ * lane reads (docs/architecture/data-terminal-revamp-plan.md). It replaces the
+ * old single-x/single-y experiment tracker, which could not represent a CSV.
  *
  * Feature F12 adds a "Stats Guide" sub-tab (static reference content, no API
  * dependency). Features F13/F14 add "Charts Guide" and "Plot Guide" sub-tabs,
@@ -60,8 +64,19 @@ const SUB_TABS: {
  * live behind those branches. Do not move the switch below any early return.
  */
 export function DataTerminalTab() {
-  const [view, setView] = useState<DataTerminalView>('experiments')
-  const ActiveGuidePanel = SUB_TABS.find((t) => t.key === view)?.Panel
+  const [view, setView] = useState<DataTerminalView>('data')
+  // "Start from this recipe" (Charts Guide → dataset): the id of the dataset a
+  // recipe just created, so switching to the Data sub-tab opens it directly.
+  const [openDatasetId, setOpenDatasetId] = useState<string | null>(null)
+  // openDatasetId is one-shot: DatasetsView reads it only as its initial
+  // `selectedId` on mount, so it must be cleared the moment we leave the Data
+  // sub-tab — otherwise the next remount of DatasetsView (Data → Charts Guide
+  // → Data) re-reads the same stale id and re-opens that recipe's dataset
+  // forever instead of showing the list.
+  useEffect(() => {
+    if (view !== 'data') setOpenDatasetId(null)
+  }, [view])
+  const ActiveGuidePanel = view === 'charts-guide' ? null : SUB_TABS.find((t) => t.key === view)?.Panel
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -83,14 +98,25 @@ export function DataTerminalTab() {
         ))}
       </div>
 
-      {ActiveGuidePanel ? (
+      {view === 'charts-guide' ? (
+        <div className="ops-tab-body">
+          <div className="max-w-2xl mx-auto w-full py-2">
+            <ChartsGuidePanel
+              onStartRecipe={(id) => {
+                setOpenDatasetId(id)
+                setView('data')
+              }}
+            />
+          </div>
+        </div>
+      ) : ActiveGuidePanel ? (
         <div className="ops-tab-body">
           <div className="max-w-2xl mx-auto w-full py-2">
             <ActiveGuidePanel />
           </div>
         </div>
       ) : (
-        <ExperimentsView />
+        <DatasetsView openDatasetId={openDatasetId} />
       )}
     </div>
   )

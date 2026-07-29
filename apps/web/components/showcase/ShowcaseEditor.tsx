@@ -68,6 +68,7 @@ export function ShowcaseEditor() {
     repo,
     demos,
     supplements,
+    figure,
     checklist,
     doneCount,
   } = useShowcaseEditor()
@@ -263,6 +264,20 @@ export function ShowcaseEditor() {
                 onError={setError}
               />
             )}
+          </Field>
+
+          <Field label="Data figure · PNG">
+            <FileDrop
+              asset={figure}
+              kind="figure"
+              accept="image/png"
+              label="Upload a data figure"
+              sub="PNG · or use “Attach to showcase” in the Data Terminal"
+              ensureSaved={ensureSaved}
+              onAdded={onAssetAdded}
+              onRemove={removeAsset}
+              onError={setError}
+            />
           </Field>
 
           <Field label={`Demo videos · up to ${MAX_DEMO_VIDEOS}`}>

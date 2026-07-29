@@ -60,13 +60,13 @@ export function LogsSection({ overview }: { overview: Overview }) {
   )
 }
 
-export function ExperimentsSection({ overview }: { overview: Overview }) {
-  const { experiments } = overview
+export function DatasetsSection({ overview }: { overview: Overview }) {
+  const { datasets } = overview
 
-  if (experiments.length === 0) {
+  if (datasets.length === 0) {
     return (
       <Card>
-        <Empty>No experiments yet.</Empty>
+        <Empty>No datasets yet.</Empty>
       </Card>
     )
   }
@@ -74,11 +74,16 @@ export function ExperimentsSection({ overview }: { overview: Overview }) {
   return (
     <Card>
       <ul className="space-y-2">
-        {experiments.map((exp) => (
-          <li key={exp.id} className="flex items-center justify-between text-sm">
-            <span className="text-white/80">{exp.title}</span>
-            <span className="text-white/40 tabular-nums text-xs">
-              {exp._count.measurements} measurement{exp._count.measurements !== 1 ? 's' : ''}
+        {datasets.map((ds) => (
+          <li key={ds.id} className="flex items-center justify-between gap-3 text-sm">
+            <span className="flex items-center gap-2 min-w-0">
+              <span className="text-white/80 truncate">{ds.name}</span>
+              <span className="shrink-0 text-[10px] uppercase tracking-wide text-white/40">
+                {ds.tableType}
+              </span>
+            </span>
+            <span className="text-white/40 tabular-nums text-xs shrink-0">
+              {ds.rowCount} row{ds.rowCount !== 1 ? 's' : ''}
             </span>
           </li>
         ))}

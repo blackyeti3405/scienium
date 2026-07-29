@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { routeHarness, type RoutePolicyHarness } from './harness/route-policy'
 
 /**
- * REFACTOR2 P2-S1 / P2-S2 / P2-S4 — the DETERMINISTIC half.
+ * REFACTOR2 P2-S1 / P2-S4 — the DETERMINISTIC half.
  *
  * The races themselves (two concurrent calls at cap-1) are proven against real
  * PostgreSQL in `test/pg/invariants.pg.test.ts`; an in-memory single-threaded
@@ -10,9 +10,9 @@ import { routeHarness, type RoutePolicyHarness } from './harness/route-policy'
  * assertion here would pass on the broken code too.
  *
  * What lives here is everything that is a decision rather than an interleaving:
- * the caps that did not exist at all before this batch, the overflow flag that
- * replaced a silent truncation, the deck scope that ignored `teamId`, and the
- * curation marker that used to be written for terms that were never stored.
+ * the project-log reference cap that must not refuse an idempotent re-post, the
+ * deck scope that ignored `teamId`, and the curation marker that used to be
+ * written for terms that were never stored.
  */
 
 // Vocabulary build: the paid curation call and the (pure but content-driven)
@@ -29,9 +29,6 @@ vi.mock('@/lib/literature/vocab', () => ({
   VOCAB_TEXT_SLICE_CHARS: 60_000,
 }))
 
-import { GET as experimentsGET, POST as experimentsPOST } from '@/app/api/data-terminal/route'
-import { MAX_EXPERIMENTS_PER_TEAM } from '@/lib/data-terminal/caps'
-import { GET as measurementsGET } from '@/app/api/data-terminal/[id]/measurements/route'
 import { POST as referencesPOST } from '@/app/api/project-log/[id]/references/route'
 import { POST as vocabBuildPOST } from '@/app/api/literature/vocab/build/route'
 
@@ -41,80 +38,6 @@ beforeEach(() => {
   h = routeHarness()
   curated.terms = []
   extracted.terms = []
-})
-
-// ─── P2-S2: the Data Terminal stops losing rows silently ─────────────────────
-
-describe('P2-S2 — experiments are capped at write time, not truncated at read time', () => {
-  function fillExperiments(count: number) {
-    for (let i = 0; i < count; i++) {
-      h.seed('experiment', {
-        id: `exp_${i}`,
-        teamId: h.ids.teamA,
-        title: `Trial ${i}`,
-        description: '',
-        xLabel: 'x',
-        yLabel: 'y',
-        createdAt: new Date(i),
-      })
-    }
-  }
-
-  it('refuses the create that would exceed the cap instead of storing an unreachable row', async () => {
-    fillExperiments(MAX_EXPERIMENTS_PER_TEAM)
-    const body = await h.asStudentA().post(experimentsPOST, {}, { body: { title: 'One too many' } }).expect(409)
-    expect(body.error).toContain(String(MAX_EXPERIMENTS_PER_TEAM))
-    // The refusal is the point: nothing was written that the list cannot show.
-    expect(h.rows('experiment')).toHaveLength(MAX_EXPERIMENTS_PER_TEAM)
-  })
-
-  it('the list take equals the cap, so everything stored is listed', async () => {
-    fillExperiments(MAX_EXPERIMENTS_PER_TEAM)
-    const body = await h.asStudentA().get(experimentsGET).expect(200)
-    expect(body.experiments).toHaveLength(MAX_EXPERIMENTS_PER_TEAM)
-  })
-
-  it('creates normally below the cap', async () => {
-    fillExperiments(3)
-    await h.asStudentA().post(experimentsPOST, {}, { body: { title: 'Trial 4' } }).expect(200)
-    expect(h.rows('experiment')).toHaveLength(4)
-  })
-})
-
-describe('P2-S2 — a measurement list over the cap announces the overflow', () => {
-  const EXP = 'exp_over'
-  const CAP = 2_000
-
-  function seedPoints(count: number) {
-    h.seed('experiment', {
-      id: EXP,
-      teamId: h.ids.teamA,
-      title: 'Overflowing',
-      description: '',
-      xLabel: 'x',
-      yLabel: 'y',
-      createdAt: new Date(0),
-    })
-    for (let i = 0; i < count; i++) {
-      h.seed('measurement', { id: `m_${i}`, experimentId: EXP, x: i, y: i, series: '', note: null })
-    }
-  }
-
-  it('flags `truncated` when more rows exist than the cap returns', async () => {
-    // Exactly the state a pre-fix race could leave behind.
-    seedPoints(CAP + 40)
-    const body = await h.asStudentA().get(measurementsGET, EXP).expect(200)
-    expect(body.measurements).toHaveLength(CAP)
-    expect(body.truncated).toBe(true)
-    expect(body.cap).toBe(CAP)
-  })
-
-  it('does not flag `truncated` at exactly the cap — the healthy path stays quiet', async () => {
-    seedPoints(CAP)
-    const body = await h.asStudentA().get(measurementsGET, EXP).expect(200)
-    expect(body.measurements).toHaveLength(CAP)
-    expect(body.truncated).toBe(false)
-  })
 })
 
 // ─── P2-S1: the reference cap no longer refuses an idempotent re-post ────────

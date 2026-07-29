@@ -14,6 +14,35 @@ const nextConfig = {
   // sharp likewise needs native bindings. Mark both as server-side externals.
   // (Stable name since Next 15 — was experimental.serverComponentsExternalPackages.)
   serverExternalPackages: ['sharp', 'firecrawl'],
+  // Data Terminal Code lane (plan §4): the Pyodide worker imports `pyodide`,
+  // whose loader (`pyodide.mjs`) has runtime-branched dynamic `import('node:*')`
+  // calls for its Node path. In the browser/worker bundle those branches never
+  // execute, but webpack still resolves them and errors on the `node:` scheme
+  // ("UnhandledSchemeError"). So, on the CLIENT build only: strip the `node:`
+  // scheme and stub each module to empty — the browser path uses fetch, and the
+  // wasm/wheels load at runtime from the same-origin proxy, never through
+  // webpack (no `asyncWebAssembly` experiment needed). The server build is
+  // untouched, where these builtins must resolve for real.
+  webpack: (config, { isServer, webpack }) => {
+    if (!isServer) {
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+          resource.request = resource.request.replace(/^node:/, '')
+        }),
+      )
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        'fs/promises': false,
+        path: false,
+        crypto: false,
+        url: false,
+        vm: false,
+        child_process: false,
+      }
+    }
+    return config
+  },
   // The dev-mode DevTools route indicator (a `next dev`-only badge, bottom-left,
   // ~36px) sits at the exact corner `.activity-fab` occupies (globals.css) and
   // steals its clicks — reproduced as e2e/upgrades.spec.ts AC12 timing out in the
@@ -35,15 +64,25 @@ const nextConfig = {
     // — what we embed is far less dangerous than who may embed us.
     // `unsafe-inline` scripts are required by Next's bootstrap without a
     // nonce pipeline; `unsafe-eval` is dev-only (React Refresh needs it).
+    // `'wasm-unsafe-eval'` lets the Data Terminal Code lane instantiate the
+    // Pyodide WASM engine (plan §4). It is the NARROW wasm-only grant — it does
+    // NOT permit JS eval — so it is safe in production, where `'unsafe-eval'` is
+    // absent. Single-threaded Pyodide needs no SharedArrayBuffer, so COOP/COEP
+    // are untouched and the runtime stays same-origin (no connect-src change).
     const csp = [
       "default-src 'self'",
-      `script-src 'self' 'unsafe-inline'${isProd ? '' : " 'unsafe-eval'"} https://*.clerk.accounts.dev https://clerk.scienium.app https://challenges.cloudflare.com`,
+      `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${isProd ? '' : " 'unsafe-eval'"} https://*.clerk.accounts.dev https://clerk.scienium.app https://challenges.cloudflare.com`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
       "connect-src 'self' https://*.clerk.accounts.dev https://clerk.scienium.app https://clerk-telemetry.com",
       "frame-src 'self' https:",
-      "worker-src 'self' blob:",
+      // FIX 1 (defense-in-depth): 'self' only — NO blob:. The Pyodide worker is
+      // a webpack-bundled same-origin chunk (new Worker(new URL('./pyodide.worker.ts',
+      // import.meta.url))), so 'self' covers it. Dropping blob: CSP-kills the
+      // nested blob-worker fresh-realm escape regardless of any JS stub. Grep
+      // confirmed nothing else spawns a blob/SharedWorker (Session Replay is off).
+      "worker-src 'self'",
       "media-src 'self' blob: https:",
       "object-src 'none'",
       "base-uri 'self'",

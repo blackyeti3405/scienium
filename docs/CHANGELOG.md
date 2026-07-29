@@ -5,6 +5,108 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.76.0] — 2026-07-29
+
+The **Data Terminal** is rebuilt from a single-x/single-y experiment tracker into a real
+three-lane analysis workbench over one `Dataset` spine: **Sheets** (interactive JS charts, no
+Python), **Code** (matplotlib in the browser), and **Lab** (scipy/statsmodels statistics +
+publication figures), plus figure craft and showcase attachment. Phases A–F of
+[`docs/architecture/data-terminal-revamp-plan.md`](architecture/data-terminal-revamp-plan.md).
+The phase gate is unchanged — the `data_terminal` feature still unlocks at `working`; only the
+noun changed (experiments → datasets), and the three lanes are ungated relative to each other.
+
+### Removed — the Experiment / Measurement tracker
+
+`Experiment` + `Measurement` are gone. The pair could hold exactly one x and one y, so it could
+not represent a CSV — the thing every real dataset is. `lib/data-terminal/backfill.ts` (pure,
+unit-tested) converts each experiment into a 4-column XY `Dataset` (xLabel/yLabel, series → group,
+note → label) and each measurement into a row; `scripts/backfill-datasets-from-experiments.mjs`
+runs it against the live DB **before** the drop migration. The old routes
+(`api/data-terminal/route.ts`, `[id]`, `[id]/measurements`) and components (`ExperimentsView`,
+`ExperimentDetail`, `NewExperimentForm`, `useExperiments`, `api.ts`, `types.ts`) are deleted, and
+the momentum card + teacher `student-overview` now read `Dataset` (row counts, not experiment
+counts).
+
+### Added — the dataset spine
+
+`Dataset` (`datasets` table) with a `DatasetTableType` enum (XY / Column / Grouped / Contingency /
+Nested / Parts-of-whole / Multiple-variables). `columns` (ColumnSpec[] carrying each column's
+role — X / Y / ±Y / ±X / group / label — and replicate `subcolumnOf` link) and `rows` are jsonb
+because nothing ever queries *inside* the data; it is fetched, analyzed, and written whole. Four
+more JSON columns hang the lanes off the same row: `charts` (Sheets specs), `scripts` (Code-lane
+scripts), `analyses` (Lab analysis specs — inputs only; results recompute, never baked), and
+`layouts` (poster layouts). Caps are **refused at write time behind an advisory lock, never
+truncated at read** (≤50 datasets/team, 5,000 rows × 40 columns, 2 MB cells). CSV import
+generalizes the existing RFC-4180 reader to N columns (no new dependency); column formulas
+(`=col(Mass)/col(Volume)`) evaluate in TypeScript so Sheets mode needs no Python.
+
+### Added — Sheets mode
+
+recharts column/bar, line, scatter, area, and pie charts; **Excel's exact trendline set** (linear,
+logarithmic, polynomial order 2–6, power, exponential, moving average), each closed-form and
+showing its equation and R²; error bars from a column or ±SD/±SEM/±%/fixed; PNG + CSV export. Zero
+Python, so it keeps working where WASM is blocked.
+
+### Added — Code mode (Pyodide in a sandboxed Web Worker)
+
+A matplotlib editor with the dataset preloaded as numpy arrays and a pandas DataFrame. **Python
+runs in a Web Worker via Pyodide** (`lib/data-terminal/runtime/pyodide.worker.ts`), whose wheels
+are served by a **same-origin authenticated proxy**, `api/data-terminal/runtime/[...path]` — never
+a CDN, so it survives school firewalls and keeps CSP at `'self'`. Because a saved script is
+team-shared and re-runs in a *teammate's* browser, the worker is sandboxed by design: network is
+neutralized after the wheels load (`neutralize.ts` kills `fetch`/`XHR`/`WebSocket`/`Worker`/…), the
+**main thread owns the wall-clock timeout** and `terminate()`s a busy worker (WASM can't
+self-interrupt), stdout/figure-count/byte caps are enforced, and there is no `pip install` (only
+the preloaded wheel set). `next.config.mjs` CSP gains `'wasm-unsafe-eval'` and pins
+`worker-src 'self'`; `connect-src` is unchanged because the runtime is same-origin.
+
+### Added — Lab mode (statistics + publication figures)
+
+A **gated Analyze dialog** offers only what the table type permits — **26 analyses across all
+seven table types** (`lib/data-terminal/analyses.ts`, mirroring the trusted Python source of truth
+`runtime/analysis-templates.mjs`, 33 templates): descriptive stats and normality; t-tests and
+their nonparametric partners; one- and two-way ANOVA with nested and repeated-measures variants;
+Kruskal–Wallis; chi-square / Fisher / relative risk; correlation and regression. **Multiple
+comparisons are honest** — you choose which comparisons and get the matching correction (Tukey,
+Dunnett, Šídák / Holm–Šídák / Bonferroni / FDR, or a hand-rolled Dunn's). **Nonlinear regression**
+fits against a domain-organized **15-model equation library** across 9 domains (`equations.ts`:
+lines, exponential, dose–response, enzyme kinetics, binding, growth, peaks, oscillation, power),
+each with initial values expressed as functions of the data, plus model comparison
+(extra-sum-of-squares F test, AICc), ROUT outlier removal, weighting, and standard-curve
+interpolation with CIs. **Global fitting** shares a parameter across several datasets, making "is
+the EC50 actually different?" a testable hypothesis; over-sharing is reported as a rank-deficient
+(ambiguous) parameter rather than confident garbage. Results sheets are **live-linked** (editing a
+datum invalidates and recomputes) and link the matching Stats Guide entry with an assumptions
+checklist evaluated against this dataset's n, normality, and replicate structure.
+
+### Added — figure craft, recipes, showcase attachment
+
+Format Graph (per-dataset symbol/line/error-bar) and Format Axes (range, ticks, log scales, offset
+/ broken axes, secondary Y); **significance brackets generated from the multiple-comparisons
+result**; **multi-panel A/B/C poster layouts** — the science-fair deliverable — with PNG/SVG/PDF
+export at a chosen DPI. **"Open in Code mode"** (`code-bridge.ts`) turns any Sheets or Lab chart
+into the matplotlib that drew it, one direction only, so the figure becomes a script the student
+keeps. Each of the 250 Charts Guide recipes gains **"start from this recipe"**, prefilling the
+builder from its `dataNeeded` name/unit pairs. An exported figure can be attached to the team's
+public showcase as a new **`figure`** `AssetType` (PNG, one per showcase, reusing the existing R2
+upload flow — no new storage env).
+
+### Changed — env, migrations, ops
+
+New **optional** env `PYODIDE_SOURCE` (`local` | `r2`) selects where the runtime proxy serves the
+Pyodide/scipy wheels; unset, it auto-detects (`.pyodide-cache/` if present, else R2). Local dev
+populates the cache once with `node apps/web/scripts/fetch-pyodide.mjs` (~500 MB, gitignored);
+production uploads the same dist to R2 once per version bump with
+`node apps/web/scripts/upload-pyodide-to-r2.mjs` and sets `PYODIDE_SOURCE=r2` (new deploy step,
+SETUP §8.2). No new storage credentials — the figure asset reuses the existing `R2_*` vars.
+Migrations: `data_terminal_datasets`, `drop_experiments`, `dataset_charts`, `dataset_scripts`,
+`dataset_analyses`, `dataset_layouts`, `showcase_figure_asset`. New Vitest coverage for the pure
+layers (formula, trendline, analyses, equations, code-bridge, dataset schema/CSV, backfill) and
+four Playwright specs (`data-terminal-datasets` / `-sheets` / `-code` / `-lab`); the Lab spec loads
+~65 MB of wheels, so it needs `E2E_BUILD=1` and a populated `.pyodide-cache/` (SETUP §"E2E tests").
+
+---
+
 ## [0.75.13] — 2026-07-29
 
 Content-only. One `/codex-pipeline` run authored the whole **Genetics / Genomics** field —

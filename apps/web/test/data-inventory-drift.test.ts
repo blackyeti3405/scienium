@@ -47,7 +47,7 @@ const DELIBERATELY_KEPT = [
   'DiscoveryNode', // ditto, and the tree is shared
   'DiscoverySourceVisit', // the team's once-ever KP claim for a source (P1-S14)
   'SynthesisMatrix',
-  'Experiment',
+  'Dataset', // team's recorded data; `createdByUserId` is attribution
   'TeamShopBuilding',
   'TeamRubricScore',
   'TeacherFeedback', // the teacher's record, not the student's row

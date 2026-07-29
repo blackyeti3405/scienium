@@ -226,11 +226,11 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   })
 
   // ── AC6 ──────────────────────────────────────────────────────────────────────
-  // The drill-down presents logs, experiments, showcase, and activity as
+  // The drill-down presents logs, datasets, showcase, and activity as
   // distinct tabs (not one undivided block). We assert that tab buttons for
-  // Logs, Experiments, Showcase, and Activity all exist, and clicking each
+  // Logs, Datasets, Showcase, and Activity all exist, and clicking each
   // one activates a separate content panel.
-  test('AC6: Logs, Experiments, Showcase, and Activity are distinct tabs', async ({ page }) => {
+  test('AC6: Logs, Datasets, Showcase, and Activity are distinct tabs', async ({ page }) => {
     if (!inScopeStudentId) throw new Error('inScopeStudentId not set — beforeAll failed')
 
     await gotoFresh(page, `/teacher/student/${inScopeStudentId}`)
@@ -240,12 +240,12 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
 
     // All four relevant tab buttons must be present in the tab strip.
     const logsTab = page.getByRole('button', { name: /^logs$/i })
-    const experimentsTab = page.getByRole('button', { name: /^experiments$/i })
+    const datasetsTab = page.getByRole('button', { name: /^datasets$/i })
     const showcaseTab = page.getByRole('button', { name: /^showcase$/i })
     const activityTab = page.getByRole('button', { name: /^activity$/i })
 
     await expect(logsTab).toBeVisible()
-    await expect(experimentsTab).toBeVisible()
+    await expect(datasetsTab).toBeVisible()
     await expect(showcaseTab).toBeVisible()
     await expect(activityTab).toBeVisible()
 
@@ -256,10 +256,10 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
     // The tab strip uses border-[#F5C518] on active. Check the clicked tab has gold border.
     await expect(logsTab).toHaveClass(/border-\[#F5C518\]/)
 
-    // Experiments tab.
-    await experimentsTab.click()
-    await expect(experimentsTab).toHaveClass(/border-\[#F5C518\]/)
-    // Must not show logs-specific content while Experiments is active.
+    // Datasets tab.
+    await datasetsTab.click()
+    await expect(datasetsTab).toHaveClass(/border-\[#F5C518\]/)
+    // Must not show logs-specific content while Datasets is active.
     await expect(logsTab).not.toHaveClass(/border-\[#F5C518\]/)
 
     // Showcase tab.

@@ -132,6 +132,7 @@ export default async function PublicShowcasePage(props: Props) {
   const repo = sc.assets.find((a) => a.assetType === 'repo_link')
   const demos = sc.assets.filter((a) => a.assetType === 'demo_video')
   const supplements = sc.assets.filter((a) => a.assetType === 'supplement')
+  const figure = sc.assets.find((a) => a.assetType === 'figure')
   const labType = sc.team.labType as LabType | null
   const videoEmbed = embedOf(video)
   const headline = sc.shortTitle || sc.title
@@ -228,6 +229,15 @@ export default async function PublicShowcasePage(props: Props) {
           <a href={assetUrl(board.id)} target="_blank" rel="noopener noreferrer" className="sc-show__openpdf">
             <ExternalLink size={13} /> Open board in full
           </a>
+        </section>
+      )}
+      {figure && figure.fileUrl && (
+        <section className="sc-show__section">
+          <h2 className="sc-show__h2">Data figure</h2>
+          <div className="sc-show__quad">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={assetUrl(figure.id)} alt={`${headline} data figure`} />
+          </div>
         </section>
       )}
       {demos.length > 0 && (

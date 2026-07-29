@@ -20,7 +20,7 @@ export function FileDrop({
   onError,
 }: {
   asset?: Asset
-  kind: 'board' | 'quad_chart'
+  kind: 'board' | 'quad_chart' | 'figure'
   accept: string
   label: string
   sub: string

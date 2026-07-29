@@ -29,7 +29,14 @@
  * and the ~2-minute video (link). Optional: a GitHub link, extra demo videos, and
  * supplemental-information links.
  */
-export type ShowcaseAssetType = 'board' | 'quad_chart' | 'video' | 'repo_link' | 'demo_video' | 'supplement'
+export type ShowcaseAssetType =
+  | 'board'
+  | 'quad_chart'
+  | 'video'
+  | 'repo_link'
+  | 'demo_video'
+  | 'supplement'
+  | 'figure'
 
 /** True for single-slot asset types (uploading/adding replaces the existing one). */
 export const SINGLE_SLOT: Record<ShowcaseAssetType, boolean> = {
@@ -39,6 +46,10 @@ export const SINGLE_SLOT: Record<ShowcaseAssetType, boolean> = {
   repo_link: true,
   demo_video: false,
   supplement: false,
+  // One Data Terminal figure per showcase — attaching a new one replaces it.
+  // ponytail: single slot reuses the asset route's existing replace path; add a
+  // MULTI_CAP figure gallery (mirroring the link route) only if teams need several.
+  figure: true,
 }
 
 /** Caps for the optional multi-slot links. */

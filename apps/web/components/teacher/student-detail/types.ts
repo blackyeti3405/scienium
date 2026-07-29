@@ -74,10 +74,12 @@ export interface LogRow {
   followups: { question: string; response: string | null; answeredAt: string | null }[]
 }
 
-export interface ExperimentRow {
+export interface DatasetRow {
   id: string
-  title: string
-  _count: { measurements: number }
+  name: string
+  tableType: string
+  rowCount: number
+  updatedAt: string
 }
 
 export interface ShowcaseRow {
@@ -144,7 +146,7 @@ export interface Overview {
   papers: PaperRow[]
   researchPlan: ResearchPlan | null
   logs: LogRow[]
-  experiments: ExperimentRow[]
+  datasets: DatasetRow[]
   showcase: ShowcaseRow | null
   codex: { lessonsCompleted: number; kp: number; recent: CodexRecentLesson[] }
   fairAssociations: FairAssoc[]

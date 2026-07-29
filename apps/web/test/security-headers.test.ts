@@ -45,8 +45,16 @@ describe('security headers', () => {
     expect(csp).toContain("default-src 'self'")
     // Clerk needs its script + API origins in both modes.
     expect(csp).toContain('clerk.accounts.dev')
-    // The dev-only relaxation must never ship.
-    expect(csp).not.toContain('unsafe-eval')
+    // 'wasm-unsafe-eval' is the intentional NARROW grant (Pyodide WASM); it ships.
+    expect(csp).toContain("'wasm-unsafe-eval'")
+    // The dangerous STANDALONE 'unsafe-eval' (JS eval, dev-only) must never ship.
+    // Matched as a space/semicolon/start-delimited token so 'wasm-unsafe-eval'
+    // does NOT false-positive (SEC review FIX 4).
+    expect(csp).not.toMatch(/(^|[\s;])'unsafe-eval'/)
+    // FIX 1: worker-src is 'self' only — no blob: — so a nested blob-worker
+    // fresh realm (the sandbox escape) is CSP-killed at the source.
+    expect(csp).toContain("worker-src 'self'")
+    expect(csp).not.toMatch(/worker-src[^;]*blob:/)
   })
 
   it('keeps the lockdowns in development (only unsafe-eval is added, HSTS dropped)', async () => {
@@ -54,7 +62,9 @@ describe('security headers', () => {
     const csp = h.get('Content-Security-Policy') ?? ''
     expect(csp).toContain("frame-ancestors 'none'")
     expect(csp).toContain("object-src 'none'")
-    expect(csp).toContain("'unsafe-eval'") // React Refresh
+    // The standalone token IS present in dev (React Refresh); assert it as a
+    // delimited token, not a substring of 'wasm-unsafe-eval' (SEC review FIX 4).
+    expect(csp).toMatch(/(^|[\s;])'unsafe-eval'/) // React Refresh
     expect(h.get('X-Frame-Options')).toBe('DENY')
     expect(h.has('Strict-Transport-Security')).toBe(false)
   })

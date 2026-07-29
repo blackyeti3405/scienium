@@ -161,11 +161,6 @@ afterAll(async () => {
   await db.uploadedAsset.deleteMany({ where: { teamId } }).catch(() => {})
   await db.labCreditClaim.deleteMany({ where: { teamId } }).catch(() => {})
   await db.teamCurrency.deleteMany({ where: { teamId } }).catch(() => {})
-  const experiments = await db.experiment.findMany({ where: { teamId }, select: { id: true } })
-  await db.measurement
-    .deleteMany({ where: { experimentId: { in: experiments.map((e) => e.id) } } })
-    .catch(() => {})
-  await db.experiment.deleteMany({ where: { teamId } }).catch(() => {})
   await db.synthesisMatrix.deleteMany({ where: { teamId } }).catch(() => {})
   await db.topicInterest.deleteMany({ where: { teamId } }).catch(() => {})
   const logs = await db.projectLog.findMany({ where: { teamId }, select: { id: true } })
@@ -281,7 +276,7 @@ describePg('A8 — the retry-generation claim elects exactly one generator', () 
 // Every one of these caps was a `count()` outside the write's transaction. The
 // attack is always the same: two valid calls at cap-1, each seeing the other's
 // slot as free. `Promise.all` on the real handlers reproduces it — before the
-// fix these blocks store cap+1 (measurements: 2,500 points under a 2,000 cap).
+// fix these blocks store cap+1 (e.g. a synthesis matrix over its team cap).
 
 type Handler = (req: NextRequest, route: { params: Promise<unknown> }) => Promise<Response>
 
@@ -306,37 +301,6 @@ async function raceTwo(run: () => Promise<Response>): Promise<number[]> {
 }
 
 describePg('P2-S1 — count-then-create caps admit exactly one caller at cap-1', () => {
-  it('measurements: two concurrent 500-point pastes at 1,500 stored → one 200, one 409', async () => {
-    const { POST } = await import('@/app/api/data-terminal/[id]/measurements/route')
-    const exp = await db.experiment.create({
-      data: { teamId, title: 'PG cap fixture', createdByUserId: userId },
-      select: { id: true },
-    })
-    await db.measurement.createMany({
-      data: Array.from({ length: 1_500 }, (_, i) => ({ experimentId: exp.id, x: i, y: i, series: '' })),
-    })
-    const points = Array.from({ length: 500 }, (_, i) => ({ x: 10_000 + i, y: 1 }))
-    const statuses = await raceTwo(() => post(POST as Handler, { points }, { id: exp.id }))
-    expect(statuses).toEqual([200, 409])
-    expect(await db.measurement.count({ where: { experimentId: exp.id } })).toBe(2_000)
-  })
-
-  it('experiments: two concurrent creates at the team cap → one 200, one 409', async () => {
-    const { POST } = await import('@/app/api/data-terminal/route')
-    const { MAX_EXPERIMENTS_PER_TEAM } = await import('@/lib/data-terminal/caps')
-    const held = await db.experiment.count({ where: { teamId } })
-    await db.experiment.createMany({
-      data: Array.from({ length: MAX_EXPERIMENTS_PER_TEAM - held - 1 }, (_, i) => ({
-        teamId,
-        title: `filler ${i}`,
-        createdByUserId: userId,
-      })),
-    })
-    const statuses = await raceTwo(() => post(POST as Handler, { title: 'race' }))
-    expect(statuses).toEqual([200, 409])
-    expect(await db.experiment.count({ where: { teamId } })).toBe(MAX_EXPERIMENTS_PER_TEAM)
-  })
-
   it('synthesis matrices: two concurrent creates at cap-1 → one 201, one 409', async () => {
     const { POST } = await import('@/app/api/literature/synthesis/route')
     const { MAX_MATRICES_PER_TEAM } = await import('@/lib/literature/synthesis')
