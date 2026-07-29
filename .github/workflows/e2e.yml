@@ -59,7 +59,9 @@ jobs:
         # a more-indented continuation as a literal newline, which the expression
         # parser would then see inside the `${{ }}`.)
         lane: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && fromJSON('["full","compat"]') || fromJSON('["smoke","compat"]') }}
-    timeout-minutes: ${{ matrix.lane == 'full' && 60 || 30 }}
+    # full needed >60 in practice: the 2-core runner does a production build
+    # plus the whole serial suite. 90 is nightly-only cost.
+    timeout-minutes: ${{ matrix.lane == 'full' && 90 || 30 }}
     services:
       postgres:
         image: postgres:16
@@ -175,6 +177,23 @@ jobs:
         # seconds here instead of a red suite after a seven-minute build.
         run: pnpm --filter web verify:e2e
 
+      # The Data Terminal Lab/Code lanes load Pyodide + scipy wheels SAME-ORIGIN
+      # via /api/data-terminal/runtime (CSP stays 'self'; no CDN). The proxy
+      # serves from .pyodide-cache/ when present, else falls back to R2 — which
+      # has no pyodide/ prefix until the one-time §8.2 step-5 upload runs. Without
+      # this step every Lab spec waits 150s for a runtime that 404s forever
+      # (exactly how the 2026-07-29 dispatch burned its whole 60-minute budget).
+      - name: Restore the Pyodide runtime cache
+        if: steps.creds.outputs.have == 'true'
+        id: pyodide-cache
+        uses: actions/cache@v4
+        with:
+          path: apps/web/.pyodide-cache
+          key: pyodide-${{ hashFiles('apps/web/lib/data-terminal/runtime/version.mjs') }}
+      - name: Fetch the Pyodide runtime (~500 MB, cache miss only)
+        if: steps.creds.outputs.have == 'true' && steps.pyodide-cache.outputs.cache-hit != 'true'
+        run: node apps/web/scripts/fetch-pyodide.mjs
+
       - name: Install Playwright browsers
         if: steps.creds.outputs.have == 'true'
         # All three, every lane, unconditionally. `compat` needs chromium because
@@ -210,8 +229,10 @@ jobs:
       # That is what makes uploading screenshots and traces acceptable at all.
       # Retention is 7 days: long enough to debug a red run, short enough that
       # nothing accumulates.
+      # cancelled() included: a lane killed by timeout-minutes is not failure(),
+      # and a timeout is precisely when the partial report matters most.
       - name: Upload Playwright traces, screenshots and report
-        if: failure() && steps.creds.outputs.have == 'true'
+        if: (failure() || cancelled()) && steps.creds.outputs.have == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-${{ matrix.lane }}
