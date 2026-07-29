@@ -80,7 +80,17 @@ jobs:
           version: 11 # must match ci.yml — see the note there
       - uses: actions/setup-node@v4
         with:
-          node-version: 22 # must match ci.yml — pnpm 11 needs Node 22+
+          # 24, not 22 (must match ci.yml). On Node 22, Playwright's synchronous
+          # module hooks are NOT consulted for a `require()` issued from a module
+          # the hooks themselves loaded — so tsconfig `paths` stop applying one
+          # level in, and any app module a spec imports dies on its own `@/…`
+          # import. `vocab-builder.spec.ts` AC4 (`await import(
+          # '../lib/literature/research-guide')`, which imports
+          # `@/lib/guides/filter`) failed with "Cannot find module" on CI and
+          # nowhere else, because dev runs a newer Node. Reproduced and fixed in
+          # a Linux container: node:22 fails, node:24 passes, same tree. Node 24
+          # routes those requires through the hook. See docs/runbooks/e2e.md.
+          node-version: 24
           cache: pnpm
 
       - name: Detect E2E credentials

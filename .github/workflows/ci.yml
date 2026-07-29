@@ -50,7 +50,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22 # pnpm 11 needs a Node builtin (node:sqlite) absent in 20
+          # Floor is 24, not 22: pnpm 11 only needs a Node builtin absent in 20
+          # (node:sqlite), but the E2E lane breaks on 22 — see the note in
+          # e2e.yml. Both workflows must stay on the same major, so the stricter
+          # requirement sets it for everything.
+          node-version: 24
           cache: pnpm
 
       - name: Install

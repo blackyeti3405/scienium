@@ -21,6 +21,9 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'module'
 // One owner for the fixture team's name (importing does not run its CLI).
 import { FIXTURE_TEAM_NAME } from '../prisma/reset-e2e.mjs'
+// The authored ISEF edition — the same module the seeder and the route read, so
+// this check cannot pass against a catalog the route would not serve.
+import { ISEF_EDITION } from '../lib/fairs/forms.ts'
 
 const require = createRequire(import.meta.url)
 const { PrismaClient } = require('@prisma/client')
@@ -114,6 +117,21 @@ try {
     fail(`the fixture class owner has role=${klass.teacher.role}, expected teacher`)
   } else {
     ok(`class "${klass.name}" owned by a teacher identity`)
+  }
+
+  // ── 3. The ISEF forms catalog ────────────────────────────────────────────
+  // Seeded by seed-e2e.mjs because the app only reconciles it from the
+  // maintenance cron, which CI never runs (see that file's section 9). A missing
+  // catalog is invisible until a spec waits out a 15-second timeout on a form
+  // title `GET /api/fairs/forms` can never serve — two seconds here instead.
+  const editionCodes = ISEF_EDITION.forms.map((f) => f.code)
+  const seededForms = await db.formsCatalog.count({ where: { formCode: { in: editionCodes } } })
+  if (seededForms < editionCodes.length) {
+    fail(
+      `forms catalog has ${seededForms}/${editionCodes.length} ISEF ${ISEF_EDITION.season} codes — run: pnpm --filter web seed:e2e`,
+    )
+  } else {
+    ok(`forms catalog — all ${editionCodes.length} ISEF ${ISEF_EDITION.season} codes present`)
   }
 } finally {
   await db.$disconnect()

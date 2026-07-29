@@ -21,7 +21,7 @@ differs by OS, both are given inline as a **macOS / Linux** / **Windows
 # Homebrew (if you don't have it): https://brew.sh
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-brew install git node pnpm python@3.12       # Node 20+, pnpm 9+, Python 3.12
+brew install git node pnpm python@3.12       # Node 24+, pnpm 10+, Python 3.12
 brew install --cask docker                    # OPTIONAL — only for the local-Postgres alternative
 ```
 **Windows (PowerShell)**

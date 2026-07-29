@@ -24,6 +24,15 @@
 // To clear the accumulated content this seeder deliberately never deletes:
 //   pnpm --filter web reset:e2e     (see prisma/reset-e2e.mjs)
 import { createRequire } from 'module'
+// The authored ISEF edition, imported from the app's own module so the codes
+// seeded below can never drift from the ones the route serves (see section 9).
+// `lib/fairs/forms.ts` is pure data with NO imports of its own, which is what
+// lets Node's native type stripping (>= 22.18) load a `.ts` file from this plain
+// ESM script; give that module an import and this line stops working. Loading a
+// `.ts` from a typeless package also trips MODULE_TYPELESS_PACKAGE_JSON, which
+// says nothing actionable here — the `seed:e2e` / `verify:e2e` scripts silence
+// that ONE warning by name so the fixture report stays readable.
+import { ISEF_EDITION } from '../lib/fairs/forms.ts'
 const require = createRequire(import.meta.url)
 const { PrismaClient } = require('@prisma/client')
 
@@ -371,6 +380,50 @@ try {
     placed++
   }
   note('gateway layout', placed === 0 ? 'found' : 'created', `${placed} placement(s)`)
+
+  // ── 9. ISEF forms catalog ─────────────────────────────────────────────────
+  // `FormsCatalog` rows exist to give `TeamFormStatus` a stable id to hang a
+  // checkbox on; every string a student reads comes from the authored edition at
+  // request time. `GET /api/fairs/forms` is a PURE READ (REFACTOR2 P2-S6) — it
+  // serves only the codes the table already has — and the seeding sweep lives on
+  // the maintenance cron (`app/api/cron/papers`, every five minutes in prod).
+  //
+  // CI never runs that cron, and every CI run provisions an EMPTY database, so
+  // the forms tab rendered "Forms progress 0 / 0" and `forms-edition-gate.spec.ts`
+  // waited out its timeout on a form title the route could never serve (the
+  // 2026-07-29 full lane). Dev only ever passed because a cron seeded its database
+  // months ago — exactly the "starts warm" difference this section removes.
+  //
+  // Mirrors `ensureFormsSeeded` (lib/fairs/forms-server.ts) rather than calling
+  // it: that module is `server-only` and pulls in the app's Prisma singleton.
+  const formCodes = ISEF_EDITION.forms.map((f) => f.code)
+  const presentForms = await db.formsCatalog.findMany({
+    where: { formCode: { in: formCodes } },
+    select: { formCode: true },
+  })
+  const haveForms = new Set(presentForms.map((f) => f.formCode))
+  const missingForms = ISEF_EDITION.forms.filter((f) => !haveForms.has(f.code))
+  if (missingForms.length > 0) {
+    await db.formsCatalog.createMany({
+      data: missingForms.map((f) => ({
+        formCode: f.code,
+        name: f.name,
+        description: `Official ISEF ${ISEF_EDITION.season} form.`,
+        templateUrl: ISEF_EDITION.formsUrl,
+        requiredForLevelsJson: [],
+      })),
+      // Race-safe against a concurrent seeder via the unique index on form_code —
+      // and what makes a re-run of this seeder a no-op rather than a P2002.
+      skipDuplicates: true,
+    })
+  }
+  note(
+    `forms catalog: ISEF ${ISEF_EDITION.season}`,
+    missingForms.length === 0 ? 'found' : 'created',
+    missingForms.length === 0
+      ? `${formCodes.length} code(s)`
+      : `${missingForms.length} of ${formCodes.length} code(s) added`,
+  )
 
   // ── Report ────────────────────────────────────────────────────────────────
   const width = Math.max(...report.map((r) => r.node.length))

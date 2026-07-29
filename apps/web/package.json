@@ -17,9 +17,9 @@
     "test:e2e": "E2E_BUILD=1 playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:file": "node scripts/test-e2e-file.mjs",
-    "seed:e2e": "node --env-file=.env.local prisma/seed-e2e.mjs",
+    "seed:e2e": "node --env-file=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON prisma/seed-e2e.mjs",
     "reset:e2e": "node --env-file=.env.local prisma/reset-e2e.mjs",
-    "verify:e2e": "node --env-file=.env.local scripts/verify-e2e-db.mjs",
+    "verify:e2e": "node --env-file=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-e2e-db.mjs",
     "verify:migration-preflights": "node --env-file=.env.local scripts/verify-migration-preflights.mjs"
   },
   "dependencies": {

@@ -22,11 +22,27 @@ pnpm --filter web verify:e2e  # migrations at head + fixture present (2s, no ser
 pnpm --filter web test:e2e    # full suite, production build
 ```
 
+**Node 24 or newer.** The repo's floor is 22 (`package.json` `engines`), but the
+browser suite needs 24: on Node 22, Playwright's synchronous module hooks are not
+consulted for a `require()` issued from a module those hooks themselves loaded, so
+tsconfig `paths` stop applying one level in and any app module a spec imports dies
+on its own `@/…` import (`Cannot find module '@/lib/guides/filter'`). It cost the
+2026-07-29 full lane one failure and was invisible locally, where dev runs a newer
+Node. Both CI workflows pin 24.
+
 The full suite ends with the two bounded cross-browser projects (`firefox-compat`
 / `webkit-compat`, one read-only spec each), so a first run needs all three
 engines installed: `pnpm --filter web exec playwright install`. Chromium-only
 iteration is unaffected — `test:e2e:file` and `--project=chromium` never touch
 them.
+
+WebKit is the one engine that does **not** reuse the saved session: `e2e/api.ts`
+signs it in inside the page on first load (it logs `webkit cannot restore a saved
+Clerk session`), because Clerk's handshake — how every other engine refreshes the
+snapshot's expired `__session` — re-issues `__client_uat` with attributes WebKit's
+cookie jar rejects over plain `http://localhost`, so a restored WebKit session
+handshake-loops to /sign-in and can never recover. Only reproducible on Linux
+(CI); macOS WebKit accepts the cookie.
 
 One spec while iterating:
 
@@ -200,6 +216,16 @@ Clerk id from the Clerk API, rather than aborting. The original refusal was
 right about the risk (a fabricated `clerkUserId` forks a duplicate identity) and
 wrong about the remedy — reading the id from Clerk has neither problem, and it
 is what makes the CI lane possible at all.
+
+It also seeds the **ISEF forms catalog**, which nothing else in a CI run does:
+`GET /api/fairs/forms` is a pure read and the catalog sweep lives on the
+maintenance cron (five-minutely in production, never in CI). A dev database has
+been seeded by that cron for months, so the gap only appeared the first time the
+full suite met an empty database — the forms tab served `0 / 0` and
+`forms-edition-gate.spec.ts` timed out on a title that could not exist. The codes
+come from `lib/fairs/forms.ts` itself, so they cannot drift from the ones the
+route serves, and `verify:e2e` now fails in two seconds if any are missing rather
+than after a seven-minute build.
 
 ## Still open
 

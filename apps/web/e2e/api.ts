@@ -1,4 +1,11 @@
-import type { APIRequestContext, APIResponse, Browser, Page } from '@playwright/test'
+import type {
+  APIRequestContext,
+  APIResponse,
+  Browser,
+  Page,
+  Request,
+  Response,
+} from '@playwright/test'
 import { expect } from '@playwright/test'
 import { clerk, clerkSetup, setupClerkTestingToken } from '@clerk/testing/playwright'
 import { STORAGE, getAccounts, type Role } from './roles'
@@ -69,14 +76,46 @@ export function registerPageRole(page: Page, role: Role): void {
  * why only the specs that call `api.*` / `gotoFresh` on a bare `page` are slow.
  * Booting the app here makes those paths behave the same way: the token is minted
  * live by clerk-js, so the ladder never runs at all.
+ *
+ * On WebKit that boot is a real sign-in instead — see `isWebKit` below.
  */
 async function ensureAppLoaded(page: Page): Promise<void> {
   if (page.url().startsWith(BASE_URL)) return
+  if (isWebKit(page)) {
+    console.warn('[e2e/api] webkit cannot restore a saved Clerk session — signing in in-page')
+    await signInProgrammatically(page)
+    return
+  }
   const role = PAGE_ROLE.get(page) ?? 'leader'
   await page.goto(LANDING[role]).catch(() => {
     // A failed boot is not fatal on its own — the caller's own request (or the
     // recovery ladder behind it) still gets to report the real problem.
   })
+}
+
+/**
+ * WebKit cannot ride a saved Clerk session at all, so it signs in for real.
+ *
+ * A `storageState` snapshot always carries an EXPIRED `__session` (the JWT lives
+ * ~60s; the state was written minutes earlier), and every engine relies on
+ * Clerk's handshake to repair it on the first document request. That handshake
+ * re-issues `__client_uat` over plain `http://localhost` as
+ * `Domain=localhost; SameSite=None` with no `Secure` — which WebKit's cookie jar
+ * will not store (a `Domain` attribute on a single-label host; `SameSite=None`
+ * without `Secure`). CI's trace shows the consequence exactly: the response's
+ * host-only cookies land, `__client_uat` does not, middleware sees a session
+ * token with no `__client_uat`, handshakes again, and loops until Clerk gives up
+ * and redirects to /sign-in. Chromium and Firefox accept the cookie and heal on
+ * the first try, which is why only `webkit-compat` failed.
+ *
+ * Nothing outside the page can put that cookie in WebKit's jar — only clerk-js,
+ * writing host-only cookies from inside the document. So on WebKit the FIRST
+ * navigation is a programmatic sign-in rather than a snapshot restore, which
+ * mints a live token in-page and never needs a handshake. One extra sign-in on
+ * the one read-only spec `webkit-compat` runs; every other project is untouched.
+ */
+function isWebKit(page: Page): boolean {
+  return page.context().browser()?.browserType().name() === 'webkit'
 }
 
 async function refreshClerkSession(page: Page): Promise<void> {
@@ -167,15 +206,32 @@ async function forceSessionRecovery(page: Page): Promise<void> {
  * would otherwise fail.
  */
 async function reauthenticate(page: Page): Promise<void> {
+  console.warn(
+    `[e2e/api] session unrecoverable — re-signing in programmatically as ${PAGE_ROLE.get(page) ?? 'leader'}`,
+  )
+  await signInProgrammatically(page)
+}
+
+/** The sign-in itself, with no "recovery" framing — also the WebKit first-load path. */
+async function signInProgrammatically(page: Page): Promise<void> {
   const role = PAGE_ROLE.get(page) ?? 'leader'
   const acct = getAccounts().find((a) => a.role === role)!
-  console.warn(`[e2e/api] session unrecoverable — re-signing in programmatically as ${role}`)
   // The Testing Token is normally minted by auth.setup.ts's clerkSetup, which
   // runs in a different worker process — fetch one here if this worker lacks it.
   if (!process.env.CLERK_TESTING_TOKEN) {
     await clerkSetup({ publishableKey: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY })
   }
   await setupClerkTestingToken({ page })
+  // Drop the dead session cookies FIRST. We are about to mint a new session, so
+  // the only thing a stale `__session` can still do is make middleware attempt a
+  // handshake on the navigation below — the very repair that cannot complete on
+  // WebKit (see isWebKit above), where it loops to /sign-in and takes the
+  // sign-in page's own `page.goto` down with it. `__clerk_db_jwt` stays: it is
+  // the long-lived dev-browser token clerk-js needs to talk to FAPI.
+  await page
+    .context()
+    .clearCookies({ name: /^__(session|client_uat|refresh)/ })
+    .catch(() => {})
   await page.goto('/')
   await clerk.signOut({ page }).catch(() => {}) // a half-dead session blocks signIn
   await clerk.signIn({
@@ -217,22 +273,42 @@ async function refreshed(
  * the DOCUMENT request through /sign-in, and Clerk's auto-return lands on the
  * fallback surface (/lab) instead of the requested page — the spec then fails
  * on a visibility assertion while sitting on the wrong URL. Refresh before
- * navigating, verify the final path, and re-sign-in + retry once if the
- * navigation was hijacked. Use for leader-page navigations that follow a long
- * detour (e.g. a `withSeedPage` teacher block) in long serial files.
+ * navigating, and re-sign-in + retry once if the navigation was hijacked. Use
+ * for leader-page navigations that follow a long detour (e.g. a `withSeedPage`
+ * teacher block) in long serial files.
  */
 export async function gotoFresh(page: Page, url: string): Promise<void> {
   await ensureAppLoaded(page)
   await refreshClerkSession(page)
+  const res = await page.goto(url)
+  if (!hijackedBySignIn(page, res)) return
+  console.warn(
+    `[e2e/api] navigation to ${url} landed on ${page.url()} (stale session) — re-signing in and retrying`,
+  )
+  await reauthenticate(page)
   await page.goto(url)
-  const targetPath = new URL(url, BASE_URL).pathname
-  if (new URL(page.url()).pathname !== targetPath) {
-    console.warn(
-      `[e2e/api] navigation to ${url} landed on ${page.url()} (stale session) — re-signing in and retrying`,
-    )
-    await reauthenticate(page)
-    await page.goto(url)
+}
+
+/**
+ * Did the auth middleware hijack this navigation? The tell is /sign-in appearing
+ * in it — either as the page we are parked on, or anywhere in the redirect chain
+ * (a stale session 307s the document request to /sign-in, where clerk-js
+ * auto-returns to the fallback surface, so the final URL alone can look
+ * innocent).
+ *
+ * NOT "the final path differs from the requested one", which is what this used
+ * to check: an app redirect is not a hijack. `/dashboard` legitimately redirects
+ * to `/lab`, so `gotoFresh(page, '/dashboard')` declared a stale session and
+ * paid a full programmatic re-sign-in on EVERY call, on every engine — and on
+ * WebKit that pointless second `page.goto` raced the sign-in's own navigation
+ * and failed the spec outright with "interrupted by another navigation".
+ */
+function hijackedBySignIn(page: Page, res: Response | null): boolean {
+  if (page.url().includes('/sign-in')) return true
+  for (let req: Request | null = res?.request() ?? null; req; req = req.redirectedFrom()) {
+    if (req.url().includes('/sign-in')) return true
   }
+  return false
 }
 
 type GetOpts = Parameters<APIRequestContext['get']>[1]
