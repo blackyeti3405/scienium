@@ -4,7 +4,7 @@ import { e2eDb } from './db'
 
 /**
  * Data Terminal — Sheets mode (Chart view), phase B of the revamp.
- * See docs/architecture/data-terminal-revamp-plan.md §3 and §6.
+ * See docs/SPEC.md §7.6 (Data Terminal).
  *
  * Runs on a disposable lab so its dataset rows neither depend on nor damage the
  * shared fixture. The fixture phase is `showcase` (past `working`), so

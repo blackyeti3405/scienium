@@ -10,8 +10,8 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 The **Data Terminal** is rebuilt from a single-x/single-y experiment tracker into a real
 three-lane analysis workbench over one `Dataset` spine: **Sheets** (interactive JS charts, no
 Python), **Code** (matplotlib in the browser), and **Lab** (scipy/statsmodels statistics +
-publication figures), plus figure craft and showcase attachment. Phases A–F of
-[`docs/architecture/data-terminal-revamp-plan.md`](architecture/data-terminal-revamp-plan.md).
+publication figures), plus figure craft and showcase attachment. Phases A–F
+(design captured in `docs/SPEC.md` §7.6 and the architecture feature-map).
 The phase gate is unchanged — the `data_terminal` feature still unlocks at `working`; only the
 noun changed (experiments → datasets), and the three lanes are ungated relative to each other.
 

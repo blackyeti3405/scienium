@@ -24,7 +24,7 @@ import {
  * Code). Team-scoped; every route asserts `data_terminal`, so datasets unlock
  * at the `working` phase exactly as the experiments they replace did.
  *
- * See docs/architecture/data-terminal-revamp-plan.md §1.
+ * See docs/SPEC.md §7.6 (Data Terminal).
  */
 
 export async function GET(req: NextRequest) {

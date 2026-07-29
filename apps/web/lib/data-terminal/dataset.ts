@@ -3,7 +3,7 @@
  * (Sheets / Lab / Code). Pure, DOM-free, no Prisma import, so both the client
  * grid and the API routes validate against exactly the same rules.
  *
- * See docs/architecture/data-terminal-revamp-plan.md §1–2.
+ * See docs/SPEC.md §7.6 (Data Terminal).
  *
  * The load-bearing idea, taken from GraphPad Prism: a column's ROLE and a
  * dataset's TABLE TYPE are not cosmetic. They carry the experimental design, so

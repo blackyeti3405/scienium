@@ -9,7 +9,7 @@
  * Each Experiment was a single-x/single-y tracker: an `xLabel`, a `yLabel`, and
  * measurements optionally grouped by a `series` string with a free-text `note`.
  * That maps exactly onto a 4-column XY dataset — see
- * docs/architecture/data-terminal-revamp-plan.md §1 (the migration paragraph).
+ * docs/SPEC.md §7.6 (Data Terminal).
  *
  * TYPE-ONLY import on purpose: the backfill script is a bare `node` .mjs that
  * imports this file directly. Native node strips TS types but does NOT resolve

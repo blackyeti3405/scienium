@@ -26,7 +26,7 @@ import { safeRelPath, contentTypeFor } from '@/lib/data-terminal/runtime/proxy-p
  * (`pyodide/<version>/…`), chosen by `PYODIDE_SOURCE` and defaulting to whichever
  * is actually present. Assets are content-pinned by version → cached immutably.
  *
- * See docs/architecture/data-terminal-revamp-plan.md §4.
+ * See docs/SPEC.md §7.6 (Data Terminal).
  */
 
 export const runtime = 'nodejs'

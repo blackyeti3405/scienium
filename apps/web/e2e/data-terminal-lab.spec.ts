@@ -4,7 +4,7 @@ import { e2eDb } from './db'
 
 /**
  * Data Terminal — Lab mode (Pyodide + scipy/statsmodels), phase D1 of the revamp.
- * See docs/architecture/data-terminal-revamp-plan.md §2, §5 and §6.
+ * See docs/SPEC.md §7.6 (Data Terminal).
  *
  * Runs on a disposable lab so its datasets neither depend on nor damage the
  * shared fixture. The fixture phase is past `working`, so `data_terminal` is

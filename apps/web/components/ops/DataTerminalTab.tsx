@@ -48,7 +48,7 @@ const SUB_TABS: {
  * Data Terminal (spec §14.1) — the team's data workbench, surfaced as an
  * Operations Hub tab. The "Data" sub-tab holds datasets: an N-column table with
  * typed columns carrying experimental ROLES, which every analysis and chart
- * lane reads (docs/architecture/data-terminal-revamp-plan.md). It replaces the
+ * lane reads (docs/SPEC.md §7.6, Data Terminal). It replaces the
  * old single-x/single-y experiment tracker, which could not represent a CSV.
  *
  * Feature F12 adds a "Stats Guide" sub-tab (static reference content, no API

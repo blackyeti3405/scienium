@@ -4,7 +4,7 @@ import { e2eDb } from './db'
 
 /**
  * Data Terminal — the Data lane (datasets), phase A of the revamp.
- * See docs/architecture/data-terminal-revamp-plan.md.
+ * See docs/SPEC.md §7.6 (Data Terminal).
  *
  * Runs on a disposable lab (`createLab`) so the dataset rows this spec creates
  * neither depend on nor damage the shared fixture. The fixture phase is
