@@ -1,0 +1,18 @@
+-- REFACTOR2 P1-1 — fence AI operation ownership.
+--
+-- `runAiOperation` took over a dead claim with an `updateMany` guarded on
+-- STATUS. A stale operation goes `running` -> `running`, so the predicate was
+-- true for two takers at once and both paid Anthropic; success and failure
+-- writes were keyed on the row id alone, so a worker that returned after its
+-- lease expired overwrote the result of whoever had replaced it.
+--
+-- `claim_token` is the claim identity, the same shape as the paper-job, outbox,
+-- and data-request leases. It is rewritten on every claim including a takeover,
+-- so a compare-and-set on it admits exactly one worker and a revived one
+-- settles nothing.
+--
+-- Backfill: NOT NULL DEFAULT '' rather than nullable. Every existing row is
+-- either finished (nobody will write to it again) or a stale `running` row whose
+-- first taker compares against '' and wins once — the same admit-one behaviour
+-- as a fresh row, with no null-comparison semantics to get wrong.
+ALTER TABLE "ai_operations" ADD COLUMN "claim_token" TEXT NOT NULL DEFAULT '';

@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { getObjectStream } from '@/lib/storage'
 import { db } from '@/lib/db'
-import { canViewShowcase, toShowcaseForView, type ShowcaseAccess } from '@/lib/showcase'
-import { resolveShowcaseViewer } from '@/lib/showcase-server'
+import { canViewShowcase, type ShowcaseAccess } from '@/lib/showcase'
+import { resolveShowcaseViewer, toVerifiedShowcaseForView } from '@/lib/showcase-server'
 
 /**
  * Streams a showcase image (board/visual) from PRIVATE R2 to anyone the
@@ -33,6 +33,13 @@ export async function GET(req: NextRequest) {
           publishedAt: true,
           moderationStatus: true,
           shareToken: true,
+          // The digest inputs, so the approval can be re-verified against the
+          // content actually being served (see `toVerifiedShowcaseForView`).
+          shortTitle: true,
+          title: true,
+          abstract: true,
+          approvedDigest: true,
+          assets: { select: { assetType: true, fileUrl: true, metadataJson: true } },
           team: { select: { members: { select: { user: { select: { schoolId: true } } } } } },
         },
       },
@@ -60,7 +67,7 @@ export async function GET(req: NextRequest) {
   const via: ShowcaseAccess =
     presented && asset.showcase.shareToken === presented ? 'share_token' : 'slug'
 
-  const forView = toShowcaseForView(asset.showcase)
+  const forView = toVerifiedShowcaseForView(asset.showcase)
   if (!canViewShowcase(forView, viewer, via)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }

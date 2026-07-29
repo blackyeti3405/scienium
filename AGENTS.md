@@ -18,8 +18,9 @@ A browser game where student teams run a science-fair research lab — read pape
 ## Pipeline gates
 Run these in order from the repo root. All must pass before a feature is reviewed
 or considered done. (CI runs gates 1-5 in `.github/workflows/ci.yml`; gate 6 runs in
-`.github/workflows/e2e.yml` — a bounded smoke lane on PRs plus the full suite
-nightly/on-demand, both gated on the `E2E_ENV_FILE` repo secret.) During iterative work,
+`.github/workflows/e2e.yml` — smoke + cross-engine compat lanes on PRs, full suite
+nightly/on-demand; missing `E2E_ENV_FILE` credentials FAIL trusted lanes and skip only
+untrusted forks.) During iterative work,
 re-run 1–4 per iteration; run 5 (`next build`, slow) once when the feature is
 otherwise done.
 

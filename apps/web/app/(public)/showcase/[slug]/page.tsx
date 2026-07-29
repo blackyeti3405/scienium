@@ -4,8 +4,13 @@ import { headers } from 'next/headers'
 import { Github, Paperclip, ExternalLink, Eye, Printer } from 'lucide-react'
 import { db } from '@/lib/db'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
-import { canViewShowcase, isSafeHttpUrl, toShowcaseForView, type ShowcaseAccess } from '@/lib/showcase'
-import { viewFingerprint, recordShowcaseView, resolveShowcaseViewer } from '@/lib/showcase-server'
+import { canViewShowcase, isSafeHttpUrl, type ShowcaseAccess } from '@/lib/showcase'
+import {
+  viewFingerprint,
+  recordShowcaseView,
+  resolveShowcaseViewer,
+  toVerifiedShowcaseForView,
+} from '@/lib/showcase-server'
 import { PrintButton } from '@/components/showcase/PrintButton'
 
 interface Props {
@@ -68,7 +73,7 @@ export async function generateMetadata(props: Props) {
   const params = await props.params;
   const found = await loadShowcase(params.slug)
   const viewer = await loadViewer()
-  if (!found || !canViewShowcase(toShowcaseForView(found.sc), viewer, found.via)) {
+  if (!found || !canViewShowcase(toVerifiedShowcaseForView(found.sc), viewer, found.via)) {
     return { title: 'Showcase' }
   }
   const { sc } = found
@@ -95,7 +100,8 @@ export default async function PublicShowcasePage(props: Props) {
   const found = await loadShowcase(params.slug)
   const viewer = await loadViewer()
 
-  if (!found || !canViewShowcase(toShowcaseForView(found.sc), viewer, found.via)) notFound()
+  // Covers the `?print=1` one-pager too — the gate runs before the layout split.
+  if (!found || !canViewShowcase(toVerifiedShowcaseForView(found.sc), viewer, found.via)) notFound()
   const { sc } = found
 
   // `?print=1` only ever selects a layout — the authorization check above runs

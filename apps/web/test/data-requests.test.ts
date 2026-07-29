@@ -15,6 +15,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * Plus the property the whole design turns on: erasure TOMBSTONES the `users`
  * row rather than dropping it, because team-shared work carries a required FK to
  * it — and a tombstone that leaves the name and email behind is not an erasure.
+ *
+ * P1-2 finishes the fence. The claim wrote a token, but the claimed value did
+ * not carry it and no step, terminal, or release write checked it — so a worker
+ * whose lease expired mid-erasure could still mark steps done and report a
+ * completion the new owner was in the middle of performing.
  */
 
 interface RequestRow {
@@ -73,9 +78,17 @@ vi.mock('@clerk/nextjs/server', () => ({
   }),
 }))
 
+/** When held, the export step parks in `heldPuts` until a test releases it —
+ *  a worker frozen inside a step, which is where a lease expires. */
+const putGate = { hold: false }
+const heldPuts: Array<{ finish: () => void; fail: (e: unknown) => void }> = []
+
 vi.mock('@/lib/storage', () => ({
   putObject: async (key: string, body: Buffer) => {
     putObjects.push({ key, bytes: body.byteLength })
+    if (putGate.hold) {
+      await new Promise<void>((finish, fail) => heldPuts.push({ finish, fail }))
+    }
   },
 }))
 
@@ -200,6 +213,32 @@ vi.mock('@/lib/db', () => {
         }
         return { ...row }
       },
+      /**
+       * Honours the RELATION clause the fence relies on: a step is only writable
+       * while its parent request still carries the writer's claim token. The
+       * predicate is read off the real `where`, so removing it from
+       * `workflow.ts` changes what this matches.
+       */
+      updateMany: async ({ where, data }: any) => {
+        const hits = steps.filter((s) => {
+          if (where.id !== undefined && s.id !== where.id) return false
+          if (where.request !== undefined) {
+            const parent = requests.find((r) => r.id === s.requestId)
+            if (!parent || !matchesRequest(parent, where.request)) return false
+          }
+          return true
+        })
+        for (const s of hits) {
+          for (const [k, v] of Object.entries(data)) {
+            if (v && typeof v === 'object' && 'increment' in v) {
+              ;(s as any)[k] += (v as any).increment
+            } else {
+              ;(s as any)[k] = v
+            }
+          }
+        }
+        return { count: hits.length }
+      },
     },
     user: {
       findUnique: async ({ where }: any) => users.find((u) => u.id === where.id) ?? null,
@@ -227,6 +266,13 @@ vi.mock('@/lib/db', () => {
 const { fileDataRequest, decideDataRequest, requestKeyFor, runDataRequests } = await import(
   '@/lib/data-requests/workflow'
 )
+const { logEvent } = await import('@/lib/observability/log')
+
+/** Lets the suspended worker's continuation run before the assertions. */
+const flush = () => new Promise((r) => setTimeout(r, 0))
+/** A worker that expired and wrote nothing announces itself here. */
+const claimLost = () =>
+  vi.mocked(logEvent).mock.calls.filter((c) => c[0]?.event === 'data_request.claim_lost')
 
 const SUBJECT = { id: 'u1', clerkUserId: 'clerk_u1', email: 'a@example.com' }
 
@@ -249,6 +295,9 @@ beforeEach(() => {
   putObjects = []
   clerkError = null
   nextId = 0
+  putGate.hold = false
+  heldPuts.length = 0
+  vi.mocked(logEvent).mockClear()
 })
 
 describe('filing a request', () => {
@@ -384,6 +433,25 @@ describe('the worker', () => {
     expect(requests[0]!.attempts).toBe(3)
   })
 
+  it('a released request keeps its claim check — the release is fenced too', async () => {
+    // The failing worker still owns the row here, so the release must land.
+    const filed = await file('export')
+    await decideDataRequest(filed.id, 'approve')
+    const { db } = (await import('@/lib/db')) as any
+    const realFind = db.user.findUnique
+    db.user.findUnique = async () => {
+      throw new Error('nope')
+    }
+    try {
+      expect(await runDataRequests(10)).toEqual({ completed: 0, failed: 1 })
+    } finally {
+      db.user.findUnique = realFind
+    }
+    expect(requests[0]!.status).toBe('approved')
+    expect(requests[0]!.claimToken).toBeNull()
+    expect(claimLost()).toHaveLength(0)
+  })
+
   it('writes the export bundle to storage rather than handing it to the browser', async () => {
     const filed = await file('export')
     await decideDataRequest(filed.id, 'approve')
@@ -394,5 +462,150 @@ describe('the worker', () => {
     expect(putObjects[0]!.key).toBe(`data-exports/${filed.id}.json`)
     expect(clerkDeletes).toEqual([])
     expect(users[0]!.deletedAt).toBeNull() // an export erases nothing
+  })
+})
+
+describe('a replaced worker cannot alter the request it lost', () => {
+  /**
+   * Claim under worker A, then expire its lease while it sits inside its step.
+   * Every A write from here on must be a no-op.
+   */
+  async function stallPastLease() {
+    const filed = await file('export')
+    await decideDataRequest(filed.id, 'approve')
+    putGate.hold = true
+    const a = runDataRequests(10)
+    await flush()
+    const aToken = requests[0]!.claimToken
+    expect(aToken).not.toBeNull()
+    expect(requests[0]!.status).toBe('running')
+    requests[0]!.claimedAt = new Date(Date.now() - 20 * 60_000)
+    return { a, aToken }
+  }
+
+  it('cannot complete a request the new owner is still running', async () => {
+    const { a, aToken } = await stallPastLease()
+
+    // B takes over and is itself inside the step: the request is `running` for
+    // BOTH, which is exactly what a status-only predicate cannot separate.
+    const b = runDataRequests(10)
+    await flush()
+    const bToken = requests[0]!.claimToken
+    expect(bToken).not.toBe(aToken)
+
+    heldPuts[0]!.finish() // A's step returns at last
+    expect(await a).toEqual({ completed: 0, failed: 0 })
+    expect(requests[0]!.status).toBe('running') // not A's completion to report
+    expect(requests[0]!.claimToken).toBe(bToken)
+    expect(requests[0]!.completedAt).toBeNull()
+    expect(steps[0]!.status).toBe('pending') // nor A's step to mark done
+    expect(claimLost()).toHaveLength(1)
+
+    heldPuts[1]!.finish()
+    expect(await b).toEqual({ completed: 1, failed: 0 })
+    expect(requests[0]!.status).toBe('completed')
+  })
+
+  it('cannot re-record a step the new owner already finished', async () => {
+    const { a } = await stallPastLease()
+
+    // B takes over and runs the request all the way to `completed`.
+    putGate.hold = false
+    expect(await runDataRequests(10)).toEqual({ completed: 1, failed: 0 })
+    expect(requests[0]!.status).toBe('completed')
+    const owned = { detail: steps[0]!.detail, completedAt: steps[0]!.completedAt }
+    const result = requests[0]!.resultJson
+
+    // A returns long AFTER the worker that replaced it settled. The step row has
+    // no status guard of its own — only the parent's claim token stands between
+    // A and overwriting the evidence of what the new owner actually did.
+    heldPuts[0]!.finish()
+    expect(await a).toEqual({ completed: 0, failed: 0 })
+    expect(steps[0]!.detail).toBe(owned.detail)
+    expect(steps[0]!.completedAt).toBe(owned.completedAt)
+    expect(steps[0]!.attempts).toBe(2) // A's own increment, before it lost the row
+    expect(requests[0]!.resultJson).toBe(result)
+    expect(requests[0]!.status).toBe('completed')
+    expect(claimLost()).toHaveLength(1)
+  })
+
+  it('cannot release a request the new owner is mid-way through', async () => {
+    const { a, aToken } = await stallPastLease()
+
+    const b = runDataRequests(10)
+    await flush()
+    const bToken = requests[0]!.claimToken
+    expect(bToken).not.toBe(aToken)
+
+    // A's step FAILS after the takeover. Handing the row back to `approved`
+    // would admit a third worker alongside the one still erasing.
+    heldPuts[0]!.fail(new Error('storage reset'))
+    expect(await a).toEqual({ completed: 0, failed: 1 })
+    expect(requests[0]!.status).toBe('running')
+    expect(requests[0]!.claimToken).toBe(bToken)
+    expect(requests[0]!.lastError).toBeNull()
+    expect(claimLost()).toHaveLength(1)
+
+    heldPuts[1]!.finish()
+    expect(await b).toEqual({ completed: 1, failed: 0 })
+    expect(requests[0]!.status).toBe('completed')
+  })
+
+  it('cannot report a completion after losing the claim at the last moment', async () => {
+    const filed = await file('export')
+    await decideDataRequest(filed.id, 'approve')
+    const { db } = (await import('@/lib/db')) as any
+    const realUpdateMany = db.dataRequestStep.updateMany
+
+    // Steal the row in the narrowest window there is: between the final step's
+    // `done` write and the terminal write. The request is still `running` — for
+    // the NEW owner — so nothing but the token can refuse this completion.
+    db.dataRequestStep.updateMany = async (args: any) => {
+      const out = await realUpdateMany(args)
+      if (args.data?.status === 'done') requests[0]!.claimToken = 'a-newer-worker'
+      return out
+    }
+    try {
+      expect(await runDataRequests(10)).toEqual({ completed: 0, failed: 0 })
+    } finally {
+      db.dataRequestStep.updateMany = realUpdateMany
+    }
+
+    expect(steps[0]!.status).toBe('done') // the step it did own
+    expect(requests[0]!.status).toBe('running') // but not the completion
+    expect(requests[0]!.completedAt).toBeNull()
+    expect(requests[0]!.resultJson).toBeNull()
+    expect(requests[0]!.claimToken).toBe('a-newer-worker')
+    expect(claimLost()).toHaveLength(1)
+  })
+
+  it('stops before the side effect rather than erasing under the new owner', async () => {
+    // The delete path's steps are Clerk, storage, then postgres. A worker that
+    // lost its claim between steps must not run the next one at all — an
+    // erasure has no undo, and the new owner is already doing it.
+    const filed = await file('delete')
+    await decideDataRequest(filed.id, 'approve')
+    const { db } = (await import('@/lib/db')) as any
+    const realUpsert = db.dataRequestStep.upsert
+
+    // Steal the row the moment A asks for its `storage` step.
+    db.dataRequestStep.upsert = async (args: any) => {
+      if (args.where.requestId_target.target === 'storage') {
+        requests[0]!.claimToken = 'a-newer-worker'
+      }
+      return realUpsert(args)
+    }
+    try {
+      expect(await runDataRequests(10)).toEqual({ completed: 0, failed: 0 })
+    } finally {
+      db.dataRequestStep.upsert = realUpsert
+    }
+
+    expect(clerkDeletes).toEqual(['clerk_u1']) // the step it still owned
+    expect(assets.find((x) => x.id === 'a-temp')!.status).toBe('temporary') // not this one
+    expect(deletedRows).toEqual([]) // and nothing was erased
+    expect(users[0]!.deletedAt).toBeNull()
+    expect(requests[0]!.status).toBe('running')
+    expect(claimLost()).toHaveLength(1)
   })
 })

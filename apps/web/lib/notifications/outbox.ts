@@ -19,10 +19,21 @@ import { logEvent } from '@/lib/observability/log'
  * person" a property of PostgreSQL. This module drains that queue under a fenced
  * claim, so two concurrent drains cannot both send the same row.
  *
- * At-most-once, not exactly-once: a process that dies after the provider
- * accepted the message but before the `sent` write leaves the row `sending`, and
- * a later run retries it — one duplicate is a better failure than a reminder
- * silently never arriving. The claim token bounds that to the crash case.
+ * The claim token is ownership, not decoration (P1-2): it travels with the
+ * claimed row and every settlement is a compare-and-set on it, so a drain whose
+ * lease expired and was taken over writes NOTHING. Guarding on status alone is
+ * not enough — the dangerous window is the one where the new owner is itself
+ * `sending`, which a status-only predicate cannot tell apart from the stale
+ * owner's own claim.
+ *
+ * CRASH WINDOW (decided, P1-2). Between the provider accepting the message and
+ * the local `sent` write there is no atomicity to be had: a process that dies in
+ * between leaves the row `sending`, and a later run retries it. Resend supports
+ * idempotency keys, so the retry is deduped AT THE PROVIDER rather than merely
+ * tolerated — `sendNotificationEmail` sends `Idempotency-Key: <row id>`, which is
+ * stable across attempts and across owners precisely so a crash retry and a
+ * taken-over drain's duplicate collapse into the one send Resend already made.
+ * The residual risk is bounded and stated in `lib/notifications/email.ts`.
  */
 
 /** A `sending` row older than this is a crashed drain's and may be retried. */
@@ -38,6 +49,8 @@ export interface OutboxRow {
   subject: string
   body: string
   attempts: number
+  /** This drain's proof of ownership. Every settlement below is a CAS on it. */
+  claimToken: string
 }
 
 /**
@@ -58,6 +71,9 @@ export async function deliverNotificationEmails(limit: number): Promise<number> 
         to: row.recipient,
         subject: row.subject,
         body: row.body,
+        // The ROW id, not this attempt's token: the crash window and the
+        // taken-over-drain duplicate are both "this same row, sent twice".
+        idempotencyKey: row.id,
       })
       await settle(row, ok)
       return ok
@@ -120,30 +136,47 @@ async function claimBatch(limit: number): Promise<OutboxRow[]> {
     data: { status: 'sending', claimToken, claimedAt: now, attempts: { increment: 1 } },
   })
 
-  return db.notificationEmail.findMany({
+  const claimed = await db.notificationEmail.findMany({
     where: { claimToken },
     select: { id: true, recipient: true, subject: true, body: true, attempts: true },
   })
+  // The token travels WITH the work. Re-reading it at settlement time would read
+  // whatever the current owner wrote, which is exactly the thing being checked.
+  return claimed.map((row) => ({ ...row, claimToken }))
 }
 
 /**
  * Terminalize one row. A failure that has used its last attempt is parked as
  * `failed` rather than left to be retried forever; anything else returns to
  * `pending` for the next drain.
+ *
+ * Fenced on the claim token: a drain that was taken over while its provider call
+ * was in flight settles nothing. Without the token this write matches whenever
+ * the row is `sending` — including while the NEW owner is sending it — so a
+ * stale drain could hand a row that is actively being delivered back to
+ * `pending` and invite a third send.
  */
 async function settle(row: OutboxRow, ok: boolean): Promise<void> {
   const exhausted = row.attempts >= MAX_ATTEMPTS
-  await db.notificationEmail
+  const settled = await db.notificationEmail
     .updateMany({
-      where: { id: row.id, status: 'sending' },
+      where: { id: row.id, status: 'sending', claimToken: row.claimToken },
       data: ok
         ? { status: 'sent', sentAt: new Date(), claimToken: null, lastError: null }
         : exhausted
           ? { status: 'failed', claimToken: null, lastError: 'send failed' }
           : { status: 'pending', claimToken: null, claimedAt: null, lastError: 'send failed' },
     })
-    .catch(() => {
-      // The email is already sent or already failed; losing the bookkeeping write
-      // costs at most one retry, and must not fail the drain.
+    // A database blip, not a lost claim: `null` skips the ownership event, and
+    // the lease means the row is retried anyway. Must not fail the drain.
+    .catch(() => null)
+
+  if (settled?.count === 0) {
+    // Ids and a bounded state name only — never the recipient, subject, or body.
+    logEvent({
+      event: 'notification_outbox.claim_lost',
+      outcome: 'error',
+      detail: `row=${row.id} attempted=${ok ? 'sent' : exhausted ? 'failed' : 'pending'}`,
     })
+  }
 }

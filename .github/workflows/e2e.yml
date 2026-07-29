@@ -1,33 +1,42 @@
-# Browser release gates (REFACTOR2 A3).
+# Browser release gates (REFACTOR2 A3, made executable in P1-3).
 #
-# Two lanes:
-#   smoke — every PR: a bounded, production-build Playwright slice using real
-#           pointer input. Fast enough to keep in the merge path.
-#   full  — nightly + on demand: the whole authenticated suite (~30 min,
-#           one worker, serial DB-mutating specs) as the release lane.
+# Three lanes, one job definition (the plumbing below — env, migrate, seed,
+# verify — is identical for all three, and keeping two copies of it in sync is
+# what let this workflow rot into something that could never have run):
+#   smoke  — every PR and every push to a protected branch: a bounded,
+#            production-build slice using real pointer input.
+#   full   — nightly + on demand: the whole authenticated suite (~15-30 min,
+#            one worker, serial DB-mutating specs) as the release lane.
+#   compat — always, alongside the above: ONE read-only spec on Firefox and
+#            WebKit. Engine coverage without tripling a serial suite.
 #
-# Both lanes need the E2E secrets below (a Clerk test instance + the seeded
-# test accounts). When they are not configured (e.g. a fork PR), the lane
-# reports "skipped: secrets not configured" and passes — the gate becomes
-# enforceable the moment the secrets are added to the repository:
+# ## Credentials
 #
-#   E2E_CLERK_PUBLISHABLE_KEY / E2E_CLERK_SECRET_KEY
-#   E2E_LEADER_EMAIL / E2E_LEADER_PASSWORD (+ the other E2E_* creds
-#   .env.local documents — mirror that file into repo secrets)
-#   E2E_ENV_FILE — alternatively, the full .env.local contents as one secret.
+# Every lane needs `E2E_ENV_FILE` — the full apps/web/.env.local contents as one
+# repository secret (Clerk test instance keys + the E2E_* account credentials;
+# its DATABASE_URL/DIRECT_URL are ignored, see "Compose" below).
 #
-# NOTE (2026-07-26 audit): this lane has never executed. The secret is not
-# configured, so both jobs report "skipped" and pass — and had it been
-# configured, seeding would have aborted, because the service database is empty
-# and `seed:e2e` refused to create the Clerk-backed User rows. That refusal is
-# fixed (the ids are now read from the Clerk API). Adding E2E_ENV_FILE is what
-# turns this from a decorative job into an enforceable gate.
+# When it is absent the job FAILS on same-repository PRs, pushes to main and
+# release branches, nightly runs and manual dispatch, and skips silently ONLY
+# for pull requests from forks — where GitHub never exposes secrets at all, so a
+# red X would be noise a contributor cannot act on. Until 2026-07-29 every lane
+# skipped-and-passed instead, which is how a gate that had never once executed
+# stayed green for months.
+#
+# ## Not automated here
+#
+# Requiring this check in branch protection is a repository-settings action for
+# the owner (Settings → Branches → Require status checks). Without it a failing
+# lane is visible but not blocking.
+#
 # See docs/runbooks/e2e.md.
 
 name: E2E
 
 on:
   pull_request:
+  push:
+    branches: [main, 'release/**']
   schedule:
     - cron: '30 8 * * *' # nightly full suite (UTC)
   workflow_dispatch:
@@ -37,10 +46,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  smoke:
-    if: github.event_name == 'pull_request'
+  e2e:
+    name: ${{ matrix.lane }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    strategy:
+      # Lanes are independent runs against independent databases; one red lane
+      # must not cancel the diagnosis of the other.
+      fail-fast: false
+      matrix:
+        # Nightly and manual runs get the release lane; PRs and pushes get the
+        # bounded one. Both always get compat. (One line on purpose — YAML folds
+        # a more-indented continuation as a literal newline, which the expression
+        # parser would then see inside the `${{ }}`.)
+        lane: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && fromJSON('["full","compat"]') || fromJSON('["smoke","compat"]') }}
+    timeout-minutes: ${{ matrix.lane == 'full' && 60 || 30 }}
     services:
       postgres:
         image: postgres:16
@@ -62,34 +81,67 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      - name: Detect E2E secrets
+      - name: Detect E2E credentials
         id: creds
         env:
           E2E_ENV_FILE: ${{ secrets.E2E_ENV_FILE }}
+          # A fork PR is the ONLY run that legitimately has no secrets: GitHub
+          # withholds them from `pull_request` runs whose head repository is not
+          # this one. Everything else is a misconfigured repository.
+          IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
-          if [ -n "$E2E_ENV_FILE" ]; then
-            echo "have=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "have=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::E2E smoke skipped — E2E_ENV_FILE secret not configured."
+          if [ -n "${E2E_ENV_FILE:-}" ]; then
+            echo 'have=true' >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo 'have=false' >> "$GITHUB_OUTPUT"
+          if [ "$IS_FORK_PR" = 'true' ]; then
+            echo '::notice::E2E skipped — fork PR, and repository secrets are never exposed to forks.'
+            exit 0
+          fi
+          echo '::error::E2E_ENV_FILE is not configured, so the browser gate cannot run. Add it under Settings → Secrets and variables → Actions: the full apps/web/.env.local contents (Clerk test instance + E2E_* accounts). See docs/runbooks/e2e.md.'
+          exit 1
+
+      - name: Compose the E2E environment
+        if: steps.creds.outputs.have == 'true'
+        env:
+          E2E_ENV_FILE: ${{ secrets.E2E_ENV_FILE }}
+          # The ONE database for this lane. Written to .env.local AND to
+          # $GITHUB_ENV below, so the Prisma CLI, the seeder, the verifier, the
+          # server under test and the Playwright runner cannot disagree about
+          # which database they are on — a disagreement `preflight` catches, but
+          # only after a full production build.
+          DB_URL: postgresql://scienium:scienium@localhost:5433/scienium_e2e
+        run: |
+          set -euo pipefail
+          # Built in ONE pass, never appended to: apps/web/e2e/env.ts is
+          # first-wins and THROWS when a key is set twice in one file, so the old
+          # "echo the CI DATABASE_URL onto the end" step aborted the run the
+          # moment the secret contained its own (which it always does — it is a
+          # copy of a working .env.local). Drop those two keys, then write ours.
+          printf '%s\n' "$E2E_ENV_FILE" \
+            | grep -Ev '^[[:space:]]*(DATABASE_URL|DIRECT_URL)[[:space:]]*=' \
+            > apps/web/.env.local
+          printf 'DATABASE_URL="%s"\nDIRECT_URL="%s"\n' "$DB_URL" "$DB_URL" >> apps/web/.env.local
+
+          # Any OTHER duplicated key would fail the same way, ~7 minutes later,
+          # inside the Playwright config load. Fail here and name it instead.
+          dupes=$(grep -Eo '^[A-Za-z_][A-Za-z0-9_]*=' apps/web/.env.local | tr -d '=' | sort | uniq -d || true)
+          if [ -n "$dupes" ]; then
+            echo "::error::E2E_ENV_FILE sets these keys more than once: $(echo $dupes | tr '\n' ' ')"
+            exit 1
+          fi
+
+          # Same two values as plain environment variables for every later step.
+          # Needed because nothing agrees on how .env.local is read: the Prisma
+          # CLI loads .env only (never .env.local — the bug this replaces),
+          # `node --env-file` loads it explicitly, and Next loads it for the
+          # server. The environment is the one channel all of them honour.
+          printf 'DATABASE_URL=%s\nDIRECT_URL=%s\n' "$DB_URL" "$DB_URL" >> "$GITHUB_ENV"
 
       - name: Install
         if: steps.creds.outputs.have == 'true'
         run: pnpm install --frozen-lockfile
-
-      - name: Prepare env
-        if: steps.creds.outputs.have == 'true'
-        env:
-          E2E_ENV_FILE: ${{ secrets.E2E_ENV_FILE }}
-        run: |
-          printf '%s\n' "$E2E_ENV_FILE" > apps/web/.env.local
-          # CI overrides: point at the service database regardless of the
-          # secret's local values.
-          {
-            echo 'DATABASE_URL="postgresql://scienium:scienium@localhost:5433/scienium_e2e"'
-            echo 'DIRECT_URL="postgresql://scienium:scienium@localhost:5433/scienium_e2e"'
-          } >> apps/web/.env.local
 
       - name: Build packages + Prisma client
         if: steps.creds.outputs.have == 'true'
@@ -97,120 +149,70 @@ jobs:
           pnpm --filter @scienium/shared-types build
           pnpm --filter web exec prisma generate
 
-      - name: Migrate + seed fixture
+      # ── The pipeline, in order: migrate → identities → fixture → verify → run ──
+
+      - name: Migrate the E2E database
         if: steps.creds.outputs.have == 'true'
-        run: |
-          cd apps/web
-          pnpm exec prisma migrate deploy
-          # The service database is EMPTY on every run, so the Clerk-backed User
-          # rows do not exist. `seed:e2e` materializes them by reading the real
-          # ids from the Clerk API (CLERK_SECRET_KEY); before that it aborted
-          # here, which is why this lane could never have worked.
-          pnpm seed:e2e
-          # No-op on a fresh service DB, but keeps one command sequence between
-          # CI and a local run against the long-lived dev database.
-          pnpm reset:e2e || true
-          pnpm seed:e2e
+        # DATABASE_URL / DIRECT_URL come from $GITHUB_ENV above. `migrate deploy`
+        # applies committed migrations only — it never generates one and never
+        # touches a shadow database.
+        run: pnpm --filter web exec prisma migrate deploy
+
+      - name: Materialize test identities + seed the fixture graph
+        if: steps.creds.outputs.have == 'true'
+        # The service database is EMPTY on every run, so the Clerk-backed User
+        # rows do not exist. seed:e2e materializes them by reading the REAL ids
+        # from the Clerk API (CLERK_SECRET_KEY, from the composed .env.local),
+        # then builds School → Class → Team → members. Idempotent, and there is
+        # nothing to reset on a database created 90 seconds ago.
+        run: pnpm --filter web seed:e2e
+
+      - name: Verify the seeded database
+        if: steps.creds.outputs.have == 'true'
+        # Migration head applied, fixture rows present, and the database
+        # fingerprint printed into the log — the same hash /api/dev/e2e-health
+        # reports, so a run records which database it actually exercised. Two
+        # seconds here instead of a red suite after a seven-minute build.
+        run: pnpm --filter web verify:e2e
 
       - name: Install Playwright browsers
         if: steps.creds.outputs.have == 'true'
-        run: pnpm --filter web exec playwright install --with-deps chromium
+        # All three, every lane, unconditionally. `compat` needs chromium because
+        # `preflight` and `setup` are chromium projects it depends on; `full`
+        # needs firefox/webkit because an unfiltered `playwright test` runs every
+        # configured project, compat ones included. A per-lane list would be one
+        # more thing to forget the next time a project is added.
+        run: pnpm --filter web exec playwright install --with-deps chromium firefox webkit
 
-      - name: Smoke suite (production build, real pointer input)
+      - name: Run the ${{ matrix.lane }} lane
         if: steps.creds.outputs.have == 'true'
-        run: cd apps/web && E2E_BUILD=1 pnpm exec playwright test e2e/F1.spec.ts
+        working-directory: apps/web
+        env:
+          # Production build (`next build && next start`) for every lane: a dev
+          # server flakes by construction over a long serial run. See the comment
+          # in playwright.config.ts.
+          E2E_BUILD: '1'
+        run: |
+          case '${{ matrix.lane }}' in
+            smoke)  pnpm exec playwright test e2e/F1.spec.ts ;;
+            full)   pnpm exec playwright test ;;
+            compat) pnpm exec playwright test --project=firefox-compat --project=webkit-compat ;;
+          esac
 
-      - uses: actions/upload-artifact@v4
-        if: failure()
+      # STUDENT-DATA POLICY: nothing here can contain student data. Every lane
+      # runs against a throwaway CI database seeded with SYNTHETIC fixture
+      # accounts only (E2E School / E2E Class / E2E Test Lab, Clerk test-instance
+      # users) — no production database is ever reachable from this workflow.
+      # That is what makes uploading screenshots and traces acceptable at all.
+      # Retention is 7 days: long enough to debug a red run, short enough that
+      # nothing accumulates.
+      - name: Upload Playwright traces, screenshots and report
+        if: failure() && steps.creds.outputs.have == 'true'
+        uses: actions/upload-artifact@v4
         with:
-          name: smoke-playwright-report
-          path: apps/web/playwright-report
+          name: playwright-${{ matrix.lane }}
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
           retention-days: 7
-
-  full:
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: scienium
-          POSTGRES_PASSWORD: scienium
-          POSTGRES_DB: scienium_e2e
-        ports: ['5433:5432']
-        options: >-
-          --health-cmd "pg_isready -U scienium"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
-      - name: Detect E2E secrets
-        id: creds
-        env:
-          E2E_ENV_FILE: ${{ secrets.E2E_ENV_FILE }}
-        run: |
-          if [ -n "$E2E_ENV_FILE" ]; then
-            echo "have=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "have=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::E2E full lane skipped — E2E_ENV_FILE secret not configured."
-          fi
-
-      - name: Install
-        if: steps.creds.outputs.have == 'true'
-        run: pnpm install --frozen-lockfile
-
-      - name: Prepare env
-        if: steps.creds.outputs.have == 'true'
-        env:
-          E2E_ENV_FILE: ${{ secrets.E2E_ENV_FILE }}
-        run: |
-          printf '%s\n' "$E2E_ENV_FILE" > apps/web/.env.local
-          {
-            echo 'DATABASE_URL="postgresql://scienium:scienium@localhost:5433/scienium_e2e"'
-            echo 'DIRECT_URL="postgresql://scienium:scienium@localhost:5433/scienium_e2e"'
-          } >> apps/web/.env.local
-
-      - name: Build packages + Prisma client
-        if: steps.creds.outputs.have == 'true'
-        run: |
-          pnpm --filter @scienium/shared-types build
-          pnpm --filter web exec prisma generate
-
-      - name: Migrate + seed fixture
-        if: steps.creds.outputs.have == 'true'
-        run: |
-          cd apps/web
-          pnpm exec prisma migrate deploy
-          # The service database is EMPTY on every run, so the Clerk-backed User
-          # rows do not exist. `seed:e2e` materializes them by reading the real
-          # ids from the Clerk API (CLERK_SECRET_KEY); before that it aborted
-          # here, which is why this lane could never have worked.
-          pnpm seed:e2e
-          # No-op on a fresh service DB, but keeps one command sequence between
-          # CI and a local run against the long-lived dev database.
-          pnpm reset:e2e || true
-          pnpm seed:e2e
-
-      - name: Install Playwright browsers
-        if: steps.creds.outputs.have == 'true'
-        run: pnpm --filter web exec playwright install --with-deps chromium
-
-      - name: Full suite (production build)
-        if: steps.creds.outputs.have == 'true'
-        run: cd apps/web && pnpm test:e2e
-
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: full-playwright-report
-          path: apps/web/playwright-report
-          retention-days: 7
+          if-no-files-found: ignore

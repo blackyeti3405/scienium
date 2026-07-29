@@ -32,6 +32,12 @@ Incident owner during the pilot: the project owner (repo owner). Escalation path
    - `llm.call` / `llm.stream` with `"outcome":"error"` — Anthropic failures; `detail` carries `api_<status>`. Check Anthropic status page; 429/529 = rate/overload (self-heals), 401 = key problem.
    - `paper_job.terminal` — papers stuck in error after 3 attempts (see below).
    - `cron.auth_denied` — scheduler misconfiguration or probing.
+   - `notification_outbox.claim_lost` / `data_request.claim_lost` — a worker came back
+     after its lease expired and was refused. One or two around a deploy or a cold start
+     is the fence doing its job; a steady stream means work is routinely outliving its
+     lease (`SEND_LEASE_MS`, `CLAIM_LEASE_MS`) and the lease, not the worker, is wrong.
+   - `email_suppression.recorded` — a reminder hard-bounced or was reported as spam.
+   - `email_webhook.auth_denied` — an unsigned/replayed POST to the Resend webhook.
 3. **Correlate a specific user report** by time + route; `requestId` matches Vercel's own request id (`x-vercel-id`).
 
 ## Feature-disable levers
@@ -52,6 +58,32 @@ There is no feature-flag system. The levers that exist:
 | DB connection errors (`P1001`) | Supabase paused (free tier) or outage | Resume project in Supabase; check their status page |
 | Sign-in broken | Clerk outage or key rotation | Clerk status page; verify env keys match the Clerk instance |
 | LLM spend spike | Check `llm.call` volume by route | Identify the route; if abusive, the per-user `ai` tier (12/min) should already bound it — investigate the caller |
+| One student gets no reminder email | Their address is suppressed after a bounce/complaint | `select * from email_suppressions where email = '…'`; fix the address (or confirm the complaint) and `delete` the row to re-enable |
+| A student got the same reminder twice | Duplicate send — see "Reminder email delivery" below | Expected only around a crash/redeploy mid-drain; if routine, check `notification_outbox.claim_lost` volume |
+
+## Reminder email delivery
+
+Delivery is **at-least-once with provider-side deduplication**, and that is a decision, not
+an accident (REFACTOR2 P1-2).
+
+- The outbox claims a row, sends it, then writes `sent`. A process that dies between the
+  provider accepting the message and that write leaves the row `sending`; once the lease
+  (`SEND_LEASE_MS`, 5 min) expires, another drain retries it. There is no cross-system
+  transaction that can close that window.
+- What closes it in practice: every send carries `Idempotency-Key: <outbox row id>`, and
+  [Resend keeps a key for 24 hours](https://resend.com/docs/dashboard/emails/idempotency-keys),
+  replying with the original response instead of sending again. The key is the ROW id — not
+  the attempt, not the claim token — because the crash retry and a taken-over drain's
+  duplicate are both "this same row, sent again".
+- **Residual risk, accepted:** a row retried more than 24 hours after its first send (a queue
+  parked through a long outage) is outside the key's lifetime and can genuinely deliver
+  twice. A duplicate reminder is a better failure than a silent one; the cap
+  (`MAX_ATTEMPTS`, 3) bounds it.
+- **Suppression:** `POST /api/webhooks/resend` (Svix-signed, `RESEND_WEBHOOK_SECRET`) records
+  `email.bounced` and `email.complained` into `email_suppressions`, and `sendNotificationEmail`
+  refuses any address on that list. Temporary trouble arrives as `email.delivery_delayed` and
+  is deliberately ignored — that is the outbox's retry, not a reason to stop mailing someone.
+  If the secret is unset the route fails closed (503) and **nothing is ever suppressed**.
 
 ## After the incident
 

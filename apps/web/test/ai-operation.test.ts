@@ -14,7 +14,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   findUnique: vi.fn(),
-  update: vi.fn(() => Promise.resolve({})),
   updateMany: vi.fn(),
 }))
 
@@ -24,7 +23,6 @@ vi.mock('@/lib/db', () => ({
     aiOperation: {
       create: mocks.create,
       findUnique: mocks.findUnique,
-      update: mocks.update,
       updateMany: mocks.updateMany,
     },
   },
@@ -43,7 +41,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.create.mockResolvedValue({ id: 'op_1' })
   mocks.updateMany.mockResolvedValue({ count: 1 })
-  mocks.update.mockResolvedValue({})
 })
 
 describe('aiIdempotencyKey', () => {
@@ -66,7 +63,7 @@ describe('runAiOperation', () => {
 
     expect(out).toEqual({ ok: true, result: { score: 90 }, replayed: false })
     expect(run).toHaveBeenCalledOnce()
-    expect(mocks.update).toHaveBeenCalledWith(
+    expect(mocks.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'succeeded', resultJson: { score: 90 } }),
       }),
@@ -108,6 +105,7 @@ describe('runAiOperation', () => {
     mocks.findUnique.mockResolvedValue({
       id: 'op_1',
       status: 'running',
+      claimToken: 'dead_worker',
       resultJson: null,
       createdAt: new Date(Date.now() - 10 * 60_000), // long dead
     })
@@ -117,9 +115,10 @@ describe('runAiOperation', () => {
 
     expect(out).toMatchObject({ ok: true, replayed: false })
     expect(run).toHaveBeenCalledOnce()
-    // Guarded on the status we read, so two takers cannot both proceed.
+    // Compare-and-set on the PREVIOUS claim, not on status: `running` →
+    // `running` matches for two takers, a token match cannot (P1-1).
     expect(mocks.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'op_1', status: 'running' } }),
+      expect.objectContaining({ where: { id: 'op_1', status: 'running', claimToken: 'dead_worker' } }),
     )
   })
 

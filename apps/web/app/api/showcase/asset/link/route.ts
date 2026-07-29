@@ -80,10 +80,15 @@ export const POST = withTeamRoute({ tier: 'mutate', feature: 'showcase' }, async
         const count = await tx.showcaseAsset.count({ where: { showcaseId: showcase.id, assetType } })
         if (count >= cap) throw new SlotCapError(cap)
       }
-      return tx.showcaseAsset.create({
+      const created = await tx.showcaseAsset.create({
         data: { showcaseId: showcase.id, assetType, metadataJson: metadata as Prisma.InputJsonValue },
         select: { id: true, assetType: true, metadataJson: true },
       })
+      // A replaced video/repo/supplement link changes the reviewed revision
+      // (P0-R3) — in the SAME commit as the slot swap, so a crash between the
+      // two can never leave changed public content carrying the old approval.
+      await syncShowcaseRevision(tx, showcase.id, ctx.dbUserId)
+      return created
     })
   } catch (err) {
     if (err instanceof SlotCapError) {
@@ -94,9 +99,6 @@ export const POST = withTeamRoute({ tier: 'mutate', feature: 'showcase' }, async
     }
     throw err
   }
-
-  // A replaced video/repo/supplement link changes the reviewed revision (P0-R3).
-  await syncShowcaseRevision(db, showcase.id, ctx.dbUserId)
 
   return NextResponse.json(
     { asset: { id: asset.id, assetType: asset.assetType, url: null, metadata: asset.metadataJson } },

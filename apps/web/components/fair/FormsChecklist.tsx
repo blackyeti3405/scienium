@@ -90,7 +90,12 @@ export function FormsChecklist({ localFair }: { localFair?: LocalFairRef | null 
       // at all — a 307 to the sign-in page returns HTML, and `r.json()` alone
       // surfaced that as a JSON parse error. Check the status first.
       const d = await r.json().catch(() => ({}))
-      if (!r.ok || d.error) throw new Error(d.error ?? "Couldn't load your forms.")
+      // `r.ok` alone still misses one case: a stale session redirects (307) to
+      // the sign-in PAGE, which `fetch` follows same-origin, landing on a 200
+      // with an HTML body. `d.forms` is then `undefined` and would otherwise
+      // reach `forms.filter` below and crash the render instead of erroring.
+      if (!r.ok || d.error || !Array.isArray(d.forms))
+        throw new Error(d.error ?? "Couldn't load your forms.")
       setForms(d.forms)
       setEdition(d.edition)
     } catch (e) {

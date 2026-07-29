@@ -11,6 +11,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * These tests pin the delivery half: a fenced claim so two drains cannot both
  * send one row, a failure that returns to the queue rather than vanishing, and
  * a cap so a permanently-bad address is parked instead of retried forever.
+ *
+ * P1-2 adds the other half of the fence. Claiming wrote a token but settling
+ * never checked it, so a drain whose lease expired mid-send could still write
+ * the row it no longer owned. The dangerous state is the one where the NEW owner
+ * is itself `sending`: a status-only predicate matches then, which is exactly
+ * when it must not.
  */
 
 interface Row {
@@ -29,14 +35,21 @@ interface Row {
 
 let rows: Row[]
 const sent: string[] = []
+const sentKeys: (string | undefined)[] = []
 const sendResult = { ok: true }
+/** When held, a send parks in `held` until a test releases it — a drain frozen
+ *  inside its provider call, which is the only place a lease can expire. */
+const gate = { hold: false }
+const held: Array<(ok: boolean) => void> = []
 
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/observability/log', () => ({ logEvent: vi.fn() }))
 vi.mock('@/lib/notifications/email', () => ({
-  sendNotificationEmail: async (o: { to: string }) => {
+  sendNotificationEmail: async (o: { to: string; idempotencyKey?: string }) => {
     sent.push(o.to)
-    return sendResult.ok
+    sentKeys.push(o.idempotencyKey)
+    if (!gate.hold) return sendResult.ok
+    return new Promise<boolean>((resolve) => held.push(resolve))
   },
 }))
 
@@ -84,6 +97,14 @@ vi.mock('@/lib/db', () => ({
 }))
 
 import { deliverNotificationEmails } from '@/lib/notifications/outbox'
+import { logEvent } from '@/lib/observability/log'
+
+/** Lets the suspended drain's continuation run before the assertions. */
+const flush = () => new Promise((r) => setTimeout(r, 0))
+/** A drain that expired and wrote nothing announces itself here. */
+const claimLost = () =>
+  vi.mocked(logEvent).mock.calls.filter((c) => c[0]?.event === 'notification_outbox.claim_lost')
+const staleClaimedAt = () => new Date(Date.now() - 10 * 60_000)
 
 function row(over: Partial<Row> = {}): Row {
   return {
@@ -105,7 +126,11 @@ function row(over: Partial<Row> = {}): Row {
 beforeEach(() => {
   rows = []
   sent.length = 0
+  sentKeys.length = 0
   sendResult.ok = true
+  gate.hold = false
+  held.length = 0
+  vi.mocked(logEvent).mockClear()
 })
 
 describe('outbox delivery', () => {
@@ -203,5 +228,92 @@ describe('outbox delivery', () => {
 
     expect(await deliverNotificationEmails(10)).toBe(10)
     expect(sent).toHaveLength(10)
+  })
+
+  it('sends the row id as the provider idempotency key, not the attempt', async () => {
+    // The crash window (provider accepted, `sent` write never landed) and a
+    // taken-over drain's duplicate are both "this row, sent twice". A key that
+    // varied per attempt or per claim would dedupe neither.
+    rows.push(row())
+    await deliverNotificationEmails(10)
+    expect(sentKeys).toEqual([rows[0]!.id])
+
+    rows[0]!.status = 'pending'
+    rows[0]!.attempts = 1
+    await deliverNotificationEmails(10)
+    expect(sentKeys).toEqual([rows[0]!.id, rows[0]!.id])
+  })
+})
+
+describe('a replaced drain cannot settle the row it lost', () => {
+  /** Claim under drain A, then expire its lease while it sits in its send. */
+  async function stallPastLease() {
+    rows.push(row())
+    gate.hold = true
+    const a = deliverNotificationEmails(10)
+    await flush()
+    const aToken = rows[0]!.claimToken
+    expect(aToken).not.toBeNull()
+    rows[0]!.claimedAt = staleClaimedAt()
+    return { a, aToken }
+  }
+
+  it('does not requeue a row while the new owner is still sending it', async () => {
+    const { a, aToken } = await stallPastLease()
+
+    // B takes over and is itself suspended in its provider call: the row is
+    // `sending` for BOTH drains, which is precisely what status cannot tell
+    // apart. Drop the `claimToken` clause from `settle` and this test fails —
+    // A's requeue lands, and a third drain then sends the same email again.
+    const b = deliverNotificationEmails(10)
+    await flush()
+    const bToken = rows[0]!.claimToken
+    expect(bToken).not.toBe(aToken)
+
+    held[0]!(false) // A's send finally fails; A tries to hand the row back
+    await a
+    expect(rows[0]!.status).toBe('sending')
+    expect(rows[0]!.claimToken).toBe(bToken)
+    expect(rows[0]!.claimedAt).not.toBeNull()
+    expect(rows[0]!.lastError).toBeNull()
+    expect(claimLost()).toHaveLength(1)
+
+    held[1]!(true)
+    expect(await b).toBe(1)
+    expect(rows[0]!.status).toBe('sent')
+  })
+
+  it('does not mark sent a row a later drain claimed after the new owner settled', async () => {
+    const { a, aToken } = await stallPastLease()
+
+    // B takes over, fails, and SETTLES the row back to `pending`.
+    gate.hold = false
+    sendResult.ok = false
+    expect(await deliverNotificationEmails(10)).toBe(0)
+    expect(rows[0]!.status).toBe('pending')
+    expect(rows[0]!.claimToken).toBeNull()
+
+    // C then claims it for a fresh attempt and is mid-send.
+    gate.hold = true
+    sendResult.ok = true
+    const c = deliverNotificationEmails(10)
+    await flush()
+    const cToken = rows[0]!.claimToken
+    expect(cToken).not.toBe(aToken)
+
+    // A returns successful long after the drain that replaced it already
+    // settled. Marking this `sent` would credit C's in-flight send to A's claim
+    // and null out the token C still needs.
+    held[0]!(true)
+    await a
+    expect(rows[0]!.status).toBe('sending')
+    expect(rows[0]!.claimToken).toBe(cToken)
+    expect(rows[0]!.sentAt).toBeNull()
+    expect(claimLost()).toHaveLength(1)
+
+    held[1]!(true)
+    expect(await c).toBe(1)
+    expect(rows[0]!.status).toBe('sent')
+    expect(rows[0]!.sentAt).toBeInstanceOf(Date)
   })
 })

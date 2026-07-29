@@ -3,7 +3,7 @@ import { createHash, randomBytes, randomUUID } from 'crypto'
 import { auth } from '@clerk/nextjs/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
-import { slugify, type ShowcaseViewer } from '@/lib/showcase'
+import { slugify, toShowcaseForView, type ShowcaseForView, type ShowcaseViewer } from '@/lib/showcase'
 import { viewFingerprintSalt } from '@/lib/env'
 
 /**
@@ -145,6 +145,40 @@ export async function syncShowcaseRevision(
   }
 
   return { digest, invalidated }
+}
+
+/**
+ * `toShowcaseForView`, with the approval RE-VERIFIED against the content this
+ * read is about to serve — the backstop under `syncShowcaseRevision`.
+ *
+ * Sync is the primary guard, but it is a call every write path has to remember;
+ * this is what happens when one forgets. The digest is recomputed from the rows
+ * just loaded, and if it no longer matches what a teacher approved, the showcase
+ * reads as `pending_review`: the public page and the print one-pager 404, while
+ * the owning team and the reviewing teacher still see their own draft (they
+ * never depended on `approved` in the first place).
+ *
+ * Deliberately read-only — a public page must not write. The stale row is left
+ * for the next write's `syncShowcaseRevision` to correct.
+ */
+export function toVerifiedShowcaseForView(
+  sc: DigestInput & {
+    teamId: string
+    publishedAt: Date | null
+    moderationStatus: string
+    approvedDigest: string | null
+    team: { members: { user: { schoolId: string | null } }[] }
+  },
+): ShowcaseForView {
+  const forView = toShowcaseForView(sc)
+  if (
+    forView.moderationStatus === 'approved' &&
+    requiresReview(sc.privacyLevel) &&
+    sc.approvedDigest !== showcaseContentDigest(sc)
+  ) {
+    return { ...forView, moderationStatus: 'pending_review' }
+  }
+  return forView
 }
 
 /**

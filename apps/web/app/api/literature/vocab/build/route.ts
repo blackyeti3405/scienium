@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
 import { extractCandidates, VOCAB_TEXT_SLICE_CHARS } from '@/lib/literature/vocab'
 import { curateTerms, type CuratedTerm } from '@/lib/literature/vocab-curate'
+import { aiIdempotencyKey, runAiOperation } from '@/lib/ai/operation'
 import type { VocabSource } from '@prisma/client'
 
 // One curation call per paper, and a build may cover several papers. Adaptive
@@ -24,6 +25,11 @@ const VOCAB_MAX_DECK = 200
 // `ai`-tier tick. Uncurated papers are picked up by the next build run (curated
 // papers are skipped for free), so a bounded pass still converges.
 const MAX_CURATIONS_PER_BUILD = 8
+
+/** Curation returned nothing usable. Thrown inside the operation so the row
+ *  records a failed attempt an identical retry can take over, rather than
+ *  storing `[]` as a result to replay. */
+class EmptyCuration extends Error {}
 
 /**
  * POST /api/literature/vocab/build — extracts vocabulary terms from the
@@ -102,29 +108,50 @@ export async function POST(req: NextRequest) {
     }).filter((c) => !existingKeys.has(c.termKey) && !merged.has(c.termKey))
     if (candidates.length === 0) continue
 
-    let curated: CuratedTerm[]
-    try {
-      curations++
-      curated = await curateTerms({
-        paperTitle: paper.title,
-        excerpt: (paper.fullText ?? paper.abstract ?? '').slice(0, VOCAB_TEXT_SLICE_CHARS),
-        candidates,
-      })
-    } catch (err) {
+    curations++
+    // Claim before spending (REFACTOR2 P1-1). The curation marker is written
+    // only AFTER the cards land, so two builds started together — a
+    // double-click, or two tabs — both saw the paper uncurated and both paid.
+    // The operation row is the claim: one attempt runs the call, the other is
+    // told to ask again, and an identical later build replays for free.
+    const op = await runAiOperation<CuratedTerm[]>({
+      operation: 'vocab_curate',
+      idempotencyKey: aiIdempotencyKey(['vocab_curate', paper.id, candidates.map((c) => c.termKey)]),
+      teamId: ctx.teamId,
+      run: async () => {
+        const terms = await curateTerms({
+          paperTitle: paper.title,
+          excerpt: (paper.fullText ?? paper.abstract ?? '').slice(0, VOCAB_TEXT_SLICE_CHARS),
+          candidates,
+        })
+        // An empty result is ambiguous (a truncated/unparseable response also
+        // yields []) — fail the operation so the next build re-runs the call
+        // instead of replaying nothing for this paper forever.
+        if (terms.length === 0) throw new EmptyCuration()
+        return terms
+      },
+    })
+
+    if (!op.ok) {
+      // Another build owns this paper's call, or it produced nothing usable —
+      // either way this paper stays unmarked and the next build picks it up.
+      if (op.reason === 'in_flight' || op.error instanceof EmptyCuration) continue
       // An uncurated deck is the trivial-word deck curation exists to prevent,
-      // so fail loudly rather than falling back to raw candidates.
-      console.error('[vocab-curate] failed for paper', paper.id, err)
+      // so fail loudly rather than falling back to raw candidates. The error
+      // itself is not logged here: the instrumented client already recorded it
+      // payload-free (`errDetail`), and `op.error` is no longer a catch binding
+      // the redaction sweep can vouch for structurally.
+      console.error('[vocab-curate] failed for paper', paper.id)
       return NextResponse.json(
         { error: 'Couldn’t build your deck just now — try again in a moment.' },
         { status: 503 },
       )
     }
+    const curated = op.result
 
-    // Mark the paper only when curation returned terms: an empty result is
-    // ambiguous (a truncated/unparseable response also yields []), so leaving
-    // it unmarked lets the next build retry rather than permanently losing the
-    // paper's vocabulary to one bad response.
-    if (curated.length > 0) newlyCurated.push(paper.id)
+    // Mark the paper only when curation returned terms (always true here — an
+    // empty curation never reaches this point).
+    newlyCurated.push(paper.id)
 
     for (const term of curated) {
       if (!merged.has(term.termKey)) merged.set(term.termKey, { ...term, paperId: paper.id })

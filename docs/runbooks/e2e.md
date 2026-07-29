@@ -18,8 +18,15 @@ not a faster suite._
 ```bash
 pnpm --filter web reset:e2e   # clear the fixture lab's accumulated content
 pnpm --filter web seed:e2e    # rebuild the fixture graph (idempotent)
+pnpm --filter web verify:e2e  # migrations at head + fixture present (2s, no server)
 pnpm --filter web test:e2e    # full suite, production build
 ```
+
+The full suite ends with the two bounded cross-browser projects (`firefox-compat`
+/ `webkit-compat`, one read-only spec each), so a first run needs all three
+engines installed: `pnpm --filter web exec playwright install`. Chromium-only
+iteration is unaffected — `test:e2e:file` and `--project=chromium` never touch
+them.
 
 One spec while iterating:
 
@@ -223,6 +230,17 @@ is what makes the CI lane possible at all.
   session recovery) **never fired once** in the production-build baseline. It
   exists for the `next dev` lane, where an idle page's frozen `storageState`
   token lapses. Worth deleting if a few dev-lane runs confirm the same.
-- **The CI lane is still gated on `E2E_ENV_FILE`** and therefore still reports
-  "skipped: secrets not configured". Adding that secret is what turns any of
-  this into an enforceable gate.
+- **The CI lane still needs `E2E_ENV_FILE`** — but as of P1-3 it no longer
+  skips-and-passes without it. `.github/workflows/e2e.yml` now FAILS on
+  same-repository PRs, pushes to `main`/`release/**`, nightly runs and manual
+  dispatch when the secret is absent, and skips silently only for fork PRs
+  (where GitHub never exposes secrets). Two owner actions remain: **add the
+  secret**, and **require the E2E check in branch protection** (Settings →
+  Branches) — until then a red lane is visible but not blocking.
+  The lane itself is now one job over three matrix lanes (`smoke`, `full`,
+  `compat`), composing `.env.local` in a single pass — the old step appended
+  `DATABASE_URL`/`DIRECT_URL` onto a secret that already contained them, which
+  `e2e/env.ts` rejects as a duplicate key — exporting those two values through
+  `$GITHUB_ENV` so the Prisma CLI (which reads `.env`, never `.env.local`), the
+  seeder, the server and the runner cannot disagree, and running
+  migrate → seed → `verify:e2e` → browser suite in that order.

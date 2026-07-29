@@ -71,6 +71,8 @@ export const serverEnv = {
   RATE_LIMIT_IP_HEADER: lazyOptionalEnv('RATE_LIMIT_IP_HEADER'),
   CRON_SECRET: lazyOptionalEnv('CRON_SECRET'),
   RESEND_API_KEY: lazyOptionalEnv('RESEND_API_KEY'),
+  /** Svix signing secret (`whsec_…`) for the bounce/complaint webhook. */
+  RESEND_WEBHOOK_SECRET: lazyOptionalEnv('RESEND_WEBHOOK_SECRET'),
   NOTIFICATION_EMAIL_FROM: lazyOptionalEnv('NOTIFICATION_EMAIL_FROM'),
   OPENALEX_MAILTO: lazyOptionalEnv('OPENALEX_MAILTO', z.string().email()),
   OPENALEX_API_KEY: lazyOptionalEnv('OPENALEX_API_KEY'),

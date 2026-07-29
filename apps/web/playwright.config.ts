@@ -51,10 +51,17 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: Number(process.env.E2E_WORKERS ?? 1),
-  reporter: process.env.CI ? 'github' : 'list',
+  // In CI, annotate the run inline (github) AND write the HTML report the E2E
+  // workflow uploads on failure — the `github` reporter alone leaves
+  // playwright-report/ empty, so there was nothing to attach to a red run.
+  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL,
     trace: 'on-first-retry',
+    // Traces only exist on the retry; a screenshot of the first failure costs
+    // nothing and is usually the whole diagnosis. Both land in test-results/,
+    // which CI uploads (synthetic fixture accounts only — see e2e.yml).
+    screenshot: 'only-on-failure',
   },
   projects: [
     // Runs FIRST and gates everything: is this the stubbed server, on the same
@@ -83,6 +90,28 @@ export default defineConfig({
         hasTouch: true,
         storageState: STORAGE.leader,
       },
+      dependencies: ['setup'],
+    },
+    // P1-3: a BOUNDED cross-browser lane. The suite is Chromium-only by design —
+    // serial, one shared account, ~15 minutes — so running all of it on three
+    // engines buys flake, not coverage. This is the cheap half: one read-only
+    // spec per engine, enough to catch an engine-level break (a CSS/JS feature
+    // the isometric scene needs, a Clerk session cookie one engine won't
+    // restore). Both reuse the chromium-produced storageState, which is portable
+    // JSON cookies. `preflight` and `setup` still run in chromium, so the CI
+    // compat lane installs all three browsers.
+    {
+      name: 'firefox-compat',
+      // Anchored: a bare /smoke\.spec\.ts/ also matches settings-smoke.spec.ts.
+      testMatch: /[\\/]smoke\.spec\.ts$/,
+      use: { ...devices['Desktop Firefox'], storageState: STORAGE.leader },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'webkit-compat',
+      // Anchored: a bare /smoke\.spec\.ts/ also matches settings-smoke.spec.ts.
+      testMatch: /[\\/]smoke\.spec\.ts$/,
+      use: { ...devices['Desktop Safari'], storageState: STORAGE.leader },
       dependencies: ['setup'],
     },
   ],

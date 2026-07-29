@@ -105,7 +105,15 @@ const ALLOWLIST: Record<string, string[]> = {
   'lib/notifications/outbox.ts': ['sent'],
   'lib/economy/lab-credit.ts': ['attempt'],
   'lib/literature/process-paper.ts': ['paperId', 'attempts'],
-  'lib/data-requests/workflow.ts': ['exhausted', 'request.kind'],
+  // `stage` is one of a handful of hardcoded worker stage names (`release`,
+  // `complete`, `step:<target>` from the `STEPS` registry) — never subject data.
+  'lib/data-requests/workflow.ts': ['exhausted', 'request.kind', 'stage'],
+  // The suppression REASON column: `bounced` | `complained`, written only by the
+  // webhook. The address it belongs to is deliberately not logged.
+  'lib/notifications/email.ts': ['suppressed.reason'],
+  // Same two-value enum, plus the platform request id (see `lib/rate-limit.ts`).
+  // The recipient list is logged as `.length` only.
+  'app/api/webhooks/resend/route.ts': ['reason', 'requestIdFrom(req)'],
   // Registry / enum keys, not free text.
   'lib/fairs/match.ts': ['EDITION_DIGEST'],
   'lib/retention/policies.ts': ['model.key'],

@@ -4,6 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
+import { syncShowcaseRevision } from '@/lib/showcase-server'
 import { MAX_SUPPLEMENTS } from '@/lib/showcase'
 import type { Prisma } from '@prisma/client'
 
@@ -94,7 +95,7 @@ export async function POST(req: NextRequest) {
       if (existing.length - priorWorksCited.length >= MAX_SUPPLEMENTS) {
         throw new SupplementCapError()
       }
-      return tx.showcaseAsset.create({
+      const created = await tx.showcaseAsset.create({
         data: {
           showcaseId: showcase.id,
           assetType: 'supplement',
@@ -102,6 +103,12 @@ export async function POST(req: NextRequest) {
         },
         select: { id: true, assetType: true, metadataJson: true },
       })
+      // The Works Cited supplement is public showcase content, so replacing it
+      // changes the revision a teacher approved (P0-R3) — re-derived in the SAME
+      // commit as the swap, so an approved showcase can never serve a
+      // bibliography nobody reviewed.
+      await syncShowcaseRevision(tx, showcase.id, ctx.dbUserId)
+      return created
     })
   } catch (err) {
     if (err instanceof SupplementCapError) {

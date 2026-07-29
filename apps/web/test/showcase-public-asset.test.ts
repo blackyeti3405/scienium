@@ -30,6 +30,7 @@ vi.mock('@/lib/db', () => ({
 }))
 
 import { GET } from '@/app/api/showcase/public/asset/route'
+import { showcaseContentDigest } from '@/lib/showcase-server'
 
 function assetReq(id = 'asset_1', shareToken?: string): NextRequest {
   const t = shareToken ? `&t=${encodeURIComponent(shareToken)}` : ''
@@ -44,17 +45,28 @@ function asset(overrides: {
   moderationStatus?: string
   fileUrl?: string
   shareToken?: string | null
+  /** Omit to get a showcase whose approval genuinely covers the content below. */
+  approvedDigest?: string | null
 }) {
+  const showcase = {
+    teamId: 'team_1',
+    privacyLevel: overrides.privacyLevel ?? 'private',
+    publishedAt: 'publishedAt' in overrides ? overrides.publishedAt : new Date('2026-01-01'),
+    moderationStatus: overrides.moderationStatus ?? 'approved',
+    shareToken: 'shareToken' in overrides ? overrides.shareToken : SHARE_TOKEN,
+    shortTitle: 'Mould',
+    title: 'Mould growth on bread',
+    abstract: 'We grew mould.',
+    assets: [{ assetType: 'board', fileUrl: 'showcase/team_1/board.png', metadataJson: null }],
+    team: { members: [{ user: { schoolId: 'school_A' } }] },
+  }
   return {
     fileUrl: overrides.fileUrl ?? 'showcase/team_1/board.png',
     assetType: 'board',
     showcase: {
-      teamId: 'team_1',
-      privacyLevel: overrides.privacyLevel ?? 'private',
-      publishedAt: 'publishedAt' in overrides ? overrides.publishedAt : new Date('2026-01-01'),
-      moderationStatus: overrides.moderationStatus ?? 'approved',
-      shareToken: 'shareToken' in overrides ? overrides.shareToken : SHARE_TOKEN,
-      team: { members: [{ user: { schoolId: 'school_A' } }] },
+      ...showcase,
+      approvedDigest:
+        'approvedDigest' in overrides ? overrides.approvedDigest : showcaseContentDigest(showcase),
     },
   }
 }
@@ -108,6 +120,21 @@ describe('public showcase asset privacy', () => {
     expect(res.status).toBe(200)
     expect(mocks.getObjectStream).toHaveBeenCalledWith('showcase/team_1/board.png')
     expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff')
+  })
+
+  // REFACTOR2 P0-R3 backstop: `syncShowcaseRevision` is a call every write path
+  // has to remember, so the read re-derives the digest from the content it is
+  // about to serve. Content that moved on from what the teacher approved reads
+  // as `pending_review` even though the stored flag still says `approved`.
+  it('an approved showcase whose content no longer matches the approved digest 404s', async () => {
+    mocks.assetFindUnique.mockResolvedValue(
+      asset({ privacyLevel: 'public', approvedDigest: 'a'.repeat(64) }),
+    )
+
+    const res = await GET(assetReq())
+
+    expect(res.status).toBe(404)
+    expect(mocks.getObjectStream).not.toHaveBeenCalled()
   })
 
   // REFACTOR2 P0-R2, the direct attack the audit asked for: `schoolId` is set

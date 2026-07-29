@@ -136,8 +136,9 @@ export async function runDataRequests(limit: number): Promise<{ completed: numbe
   try {
     for (const request of await claimRequests(limit)) {
       try {
-        await runOneRequest(request)
-        completed++
+        // A worker that lost the claim counts as neither: the new owner is the
+        // one whose outcome is real.
+        if (await runOneRequest(request)) completed++
       } catch (err) {
         failed++
         await release(request, err)
@@ -159,6 +160,21 @@ interface ClaimedRequest {
   subjectUserId: string
   subjectClerkUserId: string
   attempts: number
+  /** This worker's proof of ownership. Every write below is a CAS on it. */
+  claimToken: string
+}
+
+/**
+ * A write this worker no longer owns. Ids and a bounded stage name only — an
+ * erasure's payload is the densest personal data in the system and never goes
+ * near a log line.
+ */
+function ownershipLost(request: ClaimedRequest, stage: string): void {
+  logEvent({
+    event: 'data_request.claim_lost',
+    outcome: 'error',
+    detail: `request=${request.id} kind=${request.kind} stage=${stage}`,
+  })
 }
 
 /**
@@ -191,7 +207,7 @@ async function claimRequests(limit: number): Promise<ClaimedRequest[]> {
     data: { status: 'running', claimToken, claimedAt: now, attempts: { increment: 1 } },
   })
 
-  return db.dataRequest.findMany({
+  const claimed = await db.dataRequest.findMany({
     where: { claimToken },
     select: {
       id: true,
@@ -201,10 +217,17 @@ async function claimRequests(limit: number): Promise<ClaimedRequest[]> {
       attempts: true,
     },
   })
+  // The token travels WITH the work. Re-reading it later would read whatever the
+  // CURRENT owner wrote, which is the thing every check below has to detect.
+  return claimed.map((request) => ({ ...request, claimToken }))
 }
 
-/** Run every outstanding step for one request, then terminalize it. */
-async function runOneRequest(request: ClaimedRequest): Promise<void> {
+/**
+ * Run every outstanding step for one request, then terminalize it. Returns
+ * false if this worker lost the claim — the request is the new owner's, and
+ * nothing this worker did or would do counts.
+ */
+async function runOneRequest(request: ClaimedRequest): Promise<boolean> {
   const targets = STEPS[request.kind as DataRequestKind] ?? []
   const detail: Record<string, unknown> = {}
 
@@ -222,22 +245,40 @@ async function runOneRequest(request: ClaimedRequest): Promise<void> {
       continue
     }
 
-    await db.dataRequestStep.update({
-      where: { id: step.id },
+    // OWNERSHIP CHECK BEFORE THE SIDE EFFECT, not after it. Steps have no claim
+    // of their own, so they borrow the request's: `request: { claimToken }` is a
+    // relation predicate on the same UPDATE, which a taken-over worker fails.
+    // Placing it here means a stale worker stops BEFORE deleting a Clerk
+    // identity or erasing rows the new owner is already erasing.
+    const owned = await db.dataRequestStep.updateMany({
+      where: { id: step.id, request: { claimToken: request.claimToken } },
       data: { attempts: { increment: 1 } },
     })
+    if (owned.count === 0) {
+      ownershipLost(request, `step:${target}`)
+      return false
+    }
+
     const result = await runStep(target, request)
-    await db.dataRequestStep.update({
-      where: { id: step.id },
+    // Re-checked after the side effect: the lease can expire DURING a step, and
+    // marking a step `done` under the new owner would make it skip work this
+    // worker only half finished.
+    const recorded = await db.dataRequestStep.updateMany({
+      where: { id: step.id, request: { claimToken: request.claimToken } },
       data: { status: 'done', completedAt: new Date(), detail: asJson(result), lastError: null },
     })
+    if (recorded.count === 0) {
+      ownershipLost(request, `step_done:${target}`)
+      return false
+    }
     detail[target] = result
   }
 
   // Terminal write is a CAS on still owning the claim (a taken-over run must not
-  // report a completion it did not perform).
-  await db.dataRequest.updateMany({
-    where: { id: request.id, status: 'running' },
+  // report a completion it did not perform). Status alone cannot say this: the
+  // new owner's row is `running` too.
+  const { count } = await db.dataRequest.updateMany({
+    where: { id: request.id, status: 'running', claimToken: request.claimToken },
     data: {
       status: 'completed',
       completedAt: new Date(),
@@ -246,6 +287,11 @@ async function runOneRequest(request: ClaimedRequest): Promise<void> {
       resultJson: asJson(detail),
     },
   })
+  if (count === 0) {
+    ownershipLost(request, 'complete')
+    return false
+  }
+  return true
 }
 
 /**
@@ -391,6 +437,10 @@ async function erasePostgres(request: ClaimedRequest): Promise<Record<string, un
  * Hand a failed request back. Exhausted attempts park it `failed` rather than
  * leaving it to be retried forever; anything else returns to `approved` for the
  * next run, which resumes at the first step that is not yet `done`.
+ *
+ * Fenced like every other write: a taken-over worker whose step throws must not
+ * park a request the new owner is mid-way through erasing, nor hand it back to
+ * `approved` and invite a third worker in alongside.
  */
 async function release(request: ClaimedRequest, err: unknown): Promise<void> {
   const exhausted = request.attempts >= MAX_ATTEMPTS
@@ -400,12 +450,12 @@ async function release(request: ClaimedRequest, err: unknown): Promise<void> {
     outcome: 'error',
     detail: `request=${request.id} kind=${request.kind} exhausted=${exhausted}`,
   })
-  await db.dataRequest
+  const released = await db.dataRequest
     .updateMany({
-      where: { id: request.id, status: 'running' },
+      where: { id: request.id, status: 'running', claimToken: request.claimToken },
       data: { status: exhausted ? 'failed' : 'approved', claimToken: null, lastError },
     })
-    .catch(() => {
-      // Bookkeeping only — the lease already guarantees the request is retried.
-    })
+    // A database blip, not a lost claim — the lease still guarantees a retry.
+    .catch(() => null)
+  if (released?.count === 0) ownershipLost(request, 'release')
 }

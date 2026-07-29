@@ -5,6 +5,70 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.76.1] — 2026-07-29
+
+Pilot-readiness wave 1 — closes REFACTOR2 rows P0-R3, P1-1, P1-2, the code half of P1-3, and
+P2-4. Two migrations: `20260729010000_ai_operation_claim_token`, `20260729020000_email_suppression`.
+
+### Fixed
+
+- **P0-R3 — showcase approval can no longer be bypassed by asset mutations.** Works Cited
+  export (`api/citations/export`) and asset linking (`api/showcase/asset/link`) now run
+  `syncShowcaseRevision` inside the same transaction as the content write (all other
+  `ShowcaseAsset` write paths audited — already compliant). Defense in depth: public page and
+  public asset-byte reads re-derive the content digest (`toVerifiedShowcaseForView`) and
+  downgrade `approved` → `pending_review` on mismatch, so a future write path that misses sync
+  cannot serve stale-approved content. Regression tests prove the sync write lands inside the
+  interactive transaction, not merely that the synchronizer was called.
+- **P1-1 — AI operation ownership is fenced.** `AiOperation` rows carry a `claimToken`; stale
+  takeover is a compare-and-set on the previous claim identity, success/failure writes are
+  predicated on the active claim, and a replaced worker's late writes are no-ops (`in_flight`
+  to callers). Vocabulary curation now routes its paid `curateTerms` call through the same
+  claim mechanism, closing a double-spend when two builds raced the once-ever marker.
+- **P1-2 — notification and data-request workers are fenced.** Outbox settlement and every
+  data-request step, terminal, and release write now CAS on the claim token (steps borrow the
+  parent request's token via a relation predicate); a stale owner's writes are no-ops that emit
+  a payload-free `claim_lost` event, and the pre-step fence stops a replaced worker *before*
+  destructive side effects.
+- **P2-4 — FormsChecklist auth-redirect crash.** A stale session's fetch follows the sign-in
+  redirect to 200 HTML; the loader now treats a response without a `forms` array as a load
+  failure (error banner + retry) instead of crashing the render. E2E coverage added for
+  unauthorized load, server-error load, retry, and failed-update rollback. (The banner/retry
+  UI itself landed in v0.75.0.)
+- `.gitignore`'s blanket `logs` pattern had hidden `apps/web/lib/logs/project-log-service.ts`
+  from git since v0.31.0 — fresh clones and worktrees could not typecheck. Re-included and
+  committed.
+
+### Added
+
+- **Email delivery contract:** outbox sends carry a Resend `Idempotency-Key` (the outbox row
+  id, 24 h provider-side dedupe), closing the double-send crash window between provider
+  acceptance and the local `sent` write; the residual >24 h risk is documented in
+  `docs/runbooks/incident-response.md`.
+- **Bounce/complaint suppression:** `email_suppressions` table, Svix-signature-verified
+  `api/webhooks/resend` route (node `crypto` HMAC, replay-windowed, fails closed when
+  unconfigured; `RESEND_WEBHOOK_SECRET`), and a fail-closed suppression check inside
+  `sendNotificationEmail` covering every caller.
+- `apps/web/scripts/verify-e2e-db.mjs` (`pnpm --filter web verify:e2e`): asserts the newest
+  migration is applied, the E2E fixture graph exists, and the teacher identity materialized;
+  prints the DB fingerprint.
+
+### Changed
+
+- **P1-3 (code half) — the E2E workflow is executable and enforceable.**
+  `.github/workflows/e2e.yml` rebuilt as one matrix job (smoke+compat on PRs/pushes,
+  full+compat nightly/dispatch): the environment is composed once, duplicate-free, with
+  `DATABASE_URL`/`DIRECT_URL` exported to every step (Prisma migrate previously saw no DB env
+  at all, and appended duplicate keys previously aborted config load); the job order is
+  migrate → seed → `verify:e2e` → browser suite; traces/reports upload on failure (synthetic
+  fixture accounts, 7-day retention); and missing credentials now **fail** trusted lanes
+  (same-repo PRs, nightly, dispatch, push to main/release) instead of skipping green — only
+  untrusted forks skip. Bounded `firefox-compat`/`webkit-compat` Playwright projects run the
+  smoke spec cross-engine. Owner actions remaining (REFACTOR2 owner gates): add the
+  `E2E_ENV_FILE` secret, require the E2E check in branch protection.
+
+---
+
 ## [0.76.0] — 2026-07-29
 
 The **Data Terminal** is rebuilt from a single-x/single-y experiment tracker into a real

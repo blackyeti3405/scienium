@@ -194,6 +194,11 @@ model AiOperation {
   /// Scope for cleanup and cost attribution; not part of the key.
   teamId         String?           @map("team_id")
   status         AiOperationStatus @default(running)
+  /// Fences the claim (REFACTOR2 P1-1), same shape as the paper-job and outbox
+  /// leases. Rewritten on every claim including a stale takeover, so status
+  /// alone is never the compare-and-set (`running` → `running` matches twice)
+  /// and a revived old worker's success/failure write no longer matches.
+  claimToken     String            @default("") @map("claim_token")
   /// The provider result, replayed verbatim to an identical later request.
   resultJson     Json?             @map("result_json")
   createdAt      DateTime          @default(now()) @map("created_at")
@@ -1927,6 +1932,26 @@ model NotificationEmail {
   @@unique([dedupeKey, recipient])
   @@index([status, claimedAt])
   @@map("notification_emails")
+}
+
+/// Addresses this system must not email again (REFACTOR2 P1-2).
+///
+/// Written by the Resend webhook (`app/api/webhooks/resend`) when a message
+/// hard-bounces or the recipient reports it as spam, and consulted by
+/// `sendNotificationEmail` before every send. Both signals are permanent by
+/// definition — Resend reports temporary trouble as `email.delivery_delayed`,
+/// which is the outbox's retry to handle, not a reason to stop mailing someone.
+///
+/// Keyed by the ADDRESS, not by user: an address may outlive the account, and a
+/// complaint attaches to the mailbox that made it.
+model EmailSuppression {
+  /// Lowercased recipient address.
+  email     String   @id
+  /// `bounced` | `complained`
+  reason    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("email_suppressions")
 }
 
 // ─── Science Fair Hub ────────────────────────────────────────────────────────
