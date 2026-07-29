@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 02 Wave 2 complete — 02-02 executed (BattleScreen, type-cycle, leaderboard, team-builder removal); ready for Wave 3 (02-03: E2E + SPEC)"
-last_updated: "2026-07-24T17:00:00.000Z"
-last_activity: 2026-07-24 -- /gsd:execute-phase 2 Wave 2 (02-02) complete: BattleScreen (572 lines), type-cycle tooltip, class leaderboard + API, team-builder removed, lobby visual-pass assessed (SKIPPED), tsc green, all tests pass (18 PvP + 32 existing)
+stopped_at: "Phase 02 complete — all 3 plans executed (02-01 engine/gate, 02-02 BattleScreen/leaderboard, 02-03 E2E + SPEC); ready for Phase 03 (Balance Tuning)"
+last_updated: "2026-07-29T12:00:00.000Z"
+last_activity: 2026-07-29 -- /gsd:execute-phase 2 Wave 3 (02-03) complete: PvP E2E spec (11 tests, 10 AC blocks), SPEC.md §11 updated (Spell Power Meter, symmetric trophies, status corrected), 451 unit tests pass, tsc green, all 11 E2E tests pass
 progress:
-  total_phases: 2
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 3
-  percent: 50
+  total_phases: 3
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 4
+  percent: 66
 ---
 
 # Project State
@@ -26,38 +26,38 @@ See: .planning/ROADMAP.md (created 2026-07-19)
 
 ## Current Position
 
-Phase: 02 (close-spec-gaps-tests) — EXECUTING (Wave 2/3 complete)
-Plan: 3 of 3
-Status: Executing Phase 02 — 02-01 + 02-02 complete, advancing to 02-03 (Wave 3: E2E + SPEC)
-Last activity: 2026-07-24 -- Wave 2 (02-02) complete: BattleScreen playable, leaderboard, type-cycle tooltip
+Phase: 03 (Balance Tuning) — NOT STARTED
+Plan: 4 of 6 complete
+Status: Phase 02 complete — all 3 plans executed successfully. Advancing to Phase 03 (Balance Tuning).
+Last activity: 2026-07-29 -- Wave 3 (02-03) complete: E2E pvp.spec.ts (11 tests), SPEC.md §11 updated, all gates green (451 unit + 11 E2E + tsc)
 
-Progress: [█████░░░░░] 50% (3 of 6 plans across phases)
+Progress: [████████░░] 66% (4 of 6 plans across all 3 phases)
 
 ## Phase Status
 
 | Phase | Plans | Status |
 |-------|-------|--------|
 | 1. Verify-State Audit (Report Only) | 1/1 | **Complete** — audit report committed (`7c6e9e2`); user (Matthew) signed off 2026-07-22; AUDIT-05 no-mutation gate held |
-| 2. Close Spec Gaps + Tests | 2/3 | **In Progress** — 02-01 + 02-02 complete (engine/gate + BattleScreen/leaderboard); advancing to 02-03 (E2E + SPEC). |
-| 3. Balance Tuning | 0/2 | Not started (blocked on Phase 2) |
+| 2. Close Spec Gaps + Tests | 3/3 | **Complete** — 02-01 (engine/gate/matchmaking), 02-02 (BattleScreen/leaderboard/type-cycle), 02-03 (E2E + SPEC). All gates pass: 451 unit tests, 11 E2E tests, tsc clean. |
+| 3. Balance Tuning | 0/2 | Not started (blocked on Phase 2 — now unblocked) |
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 3
-- Average duration: 02-01 = 37 min, 02-02 = 94 min
-- Total execution time: 131 min
+- Total plans completed: 4
+- Average duration: 02-01 = 37 min, 02-02 = 94 min, 02-03 = 135 min
+- Total execution time: 266 min (4.4h)
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Verify-State Audit | 1/1 | — (inline) | — |
-| 2. Close Spec Gaps + Tests | 2/3 (02-01, 02-02) | 66 min | 131 min |
+| 2. Close Spec Gaps + Tests | 3/3 (02-01, 02-02, 02-03) | 266 min | 89 min |
 | 3. Balance Tuning | 0/2 | — | — |
 
-**Recent Trend:** Phase 2 Wave 2 (02-02) delivered the milestone's most visible feature: a playable BattleScreen with defender grid, spell bar, and 15s countdown timer. Class leaderboard live with API route. Type-cycle science tooltip component built. All build+tests green.
+**Recent Trend:** Phase 2 is fully complete. Wave 3 (02-03) closed the milestone's biggest gap: a 10-AC Playwright E2E suite covering every §11 acceptance criterion, and a SPEC.md that accurately describes what was actually built (Spell Power Meter, symmetric trophies, resolved design questions). 451 unit tests + 11 E2E tests + tsc all pass. Phase 3 (Balance Tuning) is now unblocked.
 
 *Updated after each plan completion.*
 
