@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { completeLesson } from '@/lib/ops/codex/complete-service'
+import { incrementDailyTaskCount } from '@/lib/pvp/spell-power'
 
 /**
  * POST /api/ops/codex/complete — thin adapter (Track B P1-2): guard, Zod
@@ -44,6 +45,7 @@ export async function POST(req: NextRequest) {
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status })
   }
+  if (result.passed) incrementDailyTaskCount(ctx.teamId).catch(() => {})
   const { ok: _ok, ...body } = result
   return NextResponse.json(body)
 }

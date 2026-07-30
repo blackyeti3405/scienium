@@ -588,7 +588,7 @@ A dismissible **Momentum** card on the lab home gives the team a one-glance reca
 
 ## 11. PvP Raid System
 
-> **Status:** Design only — **not yet built**. The phase-gate and the raid schema (§11.8) are in place and the API route is stubbed (`app/api/pvp/*` returns `501`), but there is no raid engine, no spell seed data, and no UI. This section is the target design.
+> **Status:** Built, E2E-tested, and spec-verified against this document (§11). The raid engine, Spell Power Meter, type-cycle tooltip, BattleScreen, class leaderboard, matchmaking, quota enforcement, and E2E test suite (§11 acceptance criteria AC1–AC10) are all implemented on the `matthew/pvp-system` branch (commit `e1358ec`, 2026-07-29). Minor open items remain in §18 (per-type spell effects, damage/health scaling per level, visual FX direction) but are deferred to v2.
 >
 > **This design fully replaces the earlier 6v6 turn-based, Pokémon-style battle system** (60 combat characters, shared move pools, sprite evolutions, live/async battles). None of that is planned any more; the old `characters` / `moves` / `character_moves` schema sketch is superseded by §11.8.
 
@@ -661,7 +661,29 @@ Effectiveness applies as a damage multiplier of the **spell's type against each 
   - The loss scales like the gain, inverted: the lower the destruction percentage, the larger the penalty.
 - The exact gain/loss threshold and the loss-scaling formula are **left as tunable balancing values**.
 - **Why losses exist:** raiding poorly carries a real cost, discouraging students from raiding carelessly or spamming raids without a real attempt at destroying the base.
-- Whether the **defender's** trophies also move when their base is raided is an open question (§18).
+- **Defender trophy change (v1):** The defender loses the **same `trophyDelta`** the attacker gains. A raid that earns the attacker +3 trophies costs the defender −3; a poor raid that costs the attacker −5 gives the defender +5 (the attacker's loss is the defender's gain). This is symmetric gain/loss — resolved for v1 as the fairest default. Per BAL-01, asymmetric defender loss may be revisited if pilot data warrants it.
+
+### 11.6.1 Spell Power Meter
+
+All attacker spell damage in a raid is scaled by a **team-scoped Spell Power multiplier**, derived from the attacker team's `TeamDailyTaskDay` rows (§7.5). The meter replaces the earlier "spell level = building level" scaling model for v1 — spell damage is multiplied by the meter tier regardless of which spell is cast.
+
+**Tiers (4 discrete levels):**
+
+| Tier | Tasks Completed | Multiplier | Label |
+|------|----------------|------------|-------|
+| 0 | 0–9 | 0.5× | Dormant |
+| 1 | 10–19 | 1.0× | Warming Up |
+| 2 | 20–29 | 1.5× | Productive |
+| 3 | 30+ | 2.0× | On Fire |
+
+**Mechanics:**
+- The tier is computed fresh on each GET `/api/pvp/spell-power` or GET `/api/pvp` call by querying `team_daily_task_days` rows for the team.
+- Tiers are rounded down (floor): a team with 19 tasks still at tier 1 (Warming Up, 1.0×).
+- The `team_daily_task_days` table is a per-day rollup already populated by the daily Field Codex and Project Log engagement pillars — no new writes needed; the PvP system reads existing data.
+- The spell power multiplier is included in the `resolveCast` damage calculation: `totalDamage = baseDamage × typeEffectiveness × spellPowerMultiplier`, with each building's resulting health clamped to [0, maxHealth].
+- The tier is shown on the PvP lobby as a visual badge (color-coded by tier) so students see their current multiplier before raiding, encouraging daily engagement.
+
+**Tests:** `lib/pvp/combat-engine.test.ts` includes explicit `resolveCast` assertions proving the power multiplier pipe (0.5×, 1.0×, 1.5×, 2.0×) applies correctly across all four tiers (METR-01..05, TEST-03).
 
 ### 11.7 Matchmaking
 
@@ -1245,14 +1267,14 @@ scienium serves minors and calls paid AI APIs, so abuse prevention is a first-cl
 - [ ] Fair Hub: how do we handle students who don't intend to compete at any fair?
 - [ ] Fair Hub: official partnership with Society for Science for a data feed?
 - [ ] Fair Hub: rubric self-assessment — required or fully optional?
-- [ ] PvP: per-type / per-building spell effect differentiation — all spells are the identical AOE damage spell for now; distinct effects are significant creative work being brainstormed separately
-- [ ] PvP: exact trophy gain/loss threshold (~30% destruction?) and the loss-scaling formula
-- [ ] PvP: daily raid cap value, and refind cap — per raid session or per day?
-- [ ] PvP: should the defender's trophies also change when their base is raided?
-- [ ] PvP: building health scaling per level, spell damage/radius/cooldown per level — economy of a 15-second raid
-- [ ] PvP: should a trophy floor cap losses (never drop below zero / a baseline) to avoid demoralizing students?
-- [ ] PvP: bring back ranked tiers (Bronze→Master) and seasonal resets from the old battle design, or keep a plain class trophy count?
-- [ ] PvP: spell visual FX direction — cast animation, blast radius telegraph, building damage states
+- [x] PvP: **per-type / per-building spell effect differentiation** — **DEFERRED to v2.** All spells are the identical AOE damage spell for now; distinct effects are significant creative work being brainstormed separately (PVPEXT-01). Type still matters through the effectiveness multiplier (§11.4).
+- [x] PvP: **trophy gain/loss threshold and formula** — **RESOLVED.** 30% threshold (`TROPHY_GAIN_THRESHOLD`), gain formula: `ceil((% - 30) / 70 * 10)`, loss formula: inverse scaled with `Math.ceil` producing steppy integer losses from −10 (0%) to −1 (29%). See `lib/pvp/combat-engine.ts` `calculateTrophyDelta()`.
+- [x] PvP: **daily raid/refind caps** — **RESOLVED.** 3 raids/day (`MAX_RAIDS_PER_DAY`), 3 refinds/day (`MAX_REFINDS_PER_DAY`). Both are tunable constants in the route; reset is UTC midnight (`todayUtc()`).
+- [x] PvP: **defender trophy change on raid** — **RESOLVED for v1.** Symmetric gain/loss: defender loses the same `trophyDelta` the attacker gains. Asymmetric defender loss (BAL-01) may be revisited if pilot data warrants.
+- [ ] PvP: building health scaling per level, spell damage/radius/cooldown per level — economy of a 15-second raid (v1 uses flat `SPELL_BASE_DAMAGE` and building-level health curves — deferred to v2 balancing)
+- [ ] PvP: trophy floor — should losses never drop below zero or a baseline? (deferred to Phase 3 balancing)
+- [x] PvP: **ranked tiers (Bronze→Master) vs plain class trophy count** — **RESOLVED as plain class trophy count.** Class leaderboard (`/pvp/leaderboard`) shows ranked `currentTrophies` descending within the student's class, no tier system (v1).
+- [ ] PvP: spell visual FX direction — cast animation, blast radius telegraph, building damage states (deferred to v2)
 - [ ] Gateway buildings: final names (must not be "laboratory") and sculpt identities for all 7
 - [ ] Operations Hub: does it unlock at `literature_review` (current assumption) — and if daily pillars are meant to be "day one," how are they reached before the Hub exists?
 - [ ] Science Fair Research building: appears at `discovery` (reference material early) or later, given buildings otherwise appear chronologically?

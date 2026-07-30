@@ -548,6 +548,7 @@ model Team {
   synthesisMatrices     SynthesisMatrix[]
   vocabCards            VocabCard[]
   vocabKpDays           VocabKpDay[]
+  teamDailyTaskDays     TeamDailyTaskDay[]
 
   @@index([classId])
   @@map("teams")
@@ -1405,7 +1406,26 @@ model LabCreditClaim {
 }
 
 // ─── Daily Activities ─────────────────────────────────────────────────────────
+// Rollup of daily task completions across all pillars (Codex, Project Log,
+// Failure Log, Proof of Expertise, etc.). Injected by each pillar's route
+// via lib/pvp/spell-power.ts incrementDailyTaskCount(). Drives the PvP
+// Spell Power Meter (spec §4.4 Option B).
+model TeamDailyTaskDay {
+  teamId String @map("team_id")
+  date DateTime @db.Date
+  tasksCompleted Int @default(0) @map("tasks_completed")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@id([teamId, date])
+  @@map("team_daily_task_days")
+}
+
+
+
 // Field Dispatch was retired in favor of Field Codex (codex_* tables below) —
+
 // its tables were dropped in migration *_drop_field_dispatch.
 
 // Proof of Expertise — a conversational clearance exam (Feature: Clearance Level).

@@ -4,6 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { logActivityBestEffort } from '@/lib/activity/log'
 import { awardDailyLabCredit } from '@/lib/economy/lab-credit'
+import { incrementDailyTaskCount } from '@/lib/pvp/spell-power'
 import { db } from '@/lib/db'
 import { parseFailureBody, stringifyFailureBody } from '@/lib/ops/failure-followup'
 
@@ -87,6 +88,7 @@ export async function POST(req: NextRequest) {
   const parsed = parseFailureBody(entry.body)
 
   logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'log_created', { kind: 'failure' }).catch(console.error)
+  incrementDailyTaskCount(ctx.teamId).catch(() => {})
 
   // +1 LC the first time this member files a log today (real calendar day, team
   // pool). Never blocks the saved log; only a duplicate-claim P2002 counts as

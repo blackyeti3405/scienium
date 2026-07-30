@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { createProjectLogEntry, listProjectLog } from '@/lib/logs/project-log-service'
+import { incrementDailyTaskCount } from '@/lib/pvp/spell-power'
 
 /**
  * /api/project-log — thin adapter (Track B P1-2): select the policy, parse
@@ -53,5 +54,6 @@ export async function POST(req: NextRequest) {
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status })
   }
+  incrementDailyTaskCount(ctx.teamId).catch(() => {})
   return NextResponse.json({ entry: result.entry, lcAward: result.lcAward }, { status: 201 })
 }
