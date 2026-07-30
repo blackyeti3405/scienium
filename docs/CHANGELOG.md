@@ -5,6 +5,35 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.77.0] — 2026-07-30
+
+Integration release: merges `matthew/pvp-system` (the full PvP raid system) and
+`Isaac-features` (the marketing-site revamp) into the mainline. Both branches were
+built against v0.23.0; their work is ported onto the current line (Next 15 params,
+service-seam routes, renamed PvP migration so it sorts last).
+
+### Added
+
+- **PvP raid system** (spec §11, from `matthew/pvp-system`) — lobby with opponent
+  matchmaking and raid quota, playable BattleScreen (defender grid, spell bar,
+  type-effectiveness cycle, 15s raid timer, results overlay), class trophy
+  leaderboard, and the Spell Power Meter: a per-team daily task rollup
+  (`TeamDailyTaskDay`, migration `20260730120000`) fed by the Codex, Project Log,
+  Failure Log, and Proof of Expertise routes via `incrementDailyTaskCount()`,
+  which scales attacker spell damage (0.5×–2×) for the day. Server-authoritative
+  combat: all damage is computed in `/api/pvp/[battleId]/action`; the client only
+  renders returned state. Includes combat-engine unit tests and a 10-block PvP E2E
+  spec. `packages/shared-types/src/pvp.ts` is restored (deleted in v0.31.0 as
+  zero-consumer) and re-exported.
+- **Marketing site revamp** (from `Isaac-features`, entries 0.23.1–0.28.1 on that
+  branch) — rebuilt `/` and `/about`, new `/teachers` and `/pvp` public pages,
+  `components/marketing/*` (hero parallax, journey rail, flip-words, count-up
+  stats, FAQ accordion, screenshot lightbox), real product screenshots under
+  `public/marketing/`, `robots.ts` + `sitemap.ts`, OpenGraph/Twitter card
+  metadata, a skip-to-content link, `:focus-visible` outlines, and a
+  reveal-on-scroll motion system that fully collapses under
+  `prefers-reduced-motion` and renders content without JS.
+
 ## [0.76.5] — 2026-07-30
 
 Pilot-readiness wave 3 — closes REFACTOR2 rows P2-1 (outbound HTTP boundary), P2-2 (client

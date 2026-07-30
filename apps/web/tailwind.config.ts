@@ -12,6 +12,9 @@ const config: Config = {
       fontFamily: {
         sans: ['var(--font-inter)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         pixel: ['var(--font-pixel)', 'monospace'],
+        // Marketing/public pages: characterful, readable — pairs with the pixel
+        // font without the neutral "SaaS" feel of Inter. Game UI stays on `sans`.
+        display: ['var(--font-grotesk)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       colors: {
         border: 'hsl(var(--border))',

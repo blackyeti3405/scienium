@@ -168,12 +168,15 @@ __pycache__/
 .claude/pipeline/
 .claude/tmp/
 
-# Installed Claude Code skills (machine-local; managed by the skill installer)
-.agents/skills/
-.claude/skills/
+# Third-party design/skills toolkit — machine-level, never commit into the repo.
+# (A prior branch accidentally committed ~350 of these files across three dirs.)
+# Already-tracked project skills stay tracked; this only blocks the auto-installed
+# toolkit + its lockfile. Add a genuinely new project skill with `git add -f`.
+skills-lock.json
 .github/hooks/
 .github/skills/
-skills-lock.json
+.agents/skills/
+.claude/skills/
 
 # Python virtualenvs
 .venv/

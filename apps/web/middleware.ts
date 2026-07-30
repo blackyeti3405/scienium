@@ -3,6 +3,11 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 // Public routes that don't require authentication
 const isPublicRoute = createRouteMatcher([
   '/',
+  '/about(.*)', // Public outreach/landing page — no auth required
+  '/pvp', // Marketing explainer for the Battle Arena — exact match only, not /pvp/lobby etc.
+  '/teachers', // Marketing explainer for the teacher dashboard — distinct from /teacher(.*)
+  '/robots.txt', // Crawler directives — must be reachable unauthenticated
+  '/sitemap.xml', // Sitemap — same
   '/sign-in(.*)',
   '/sign-up(.*)',
   '/showcase/(.*)', // Public showcase pages
