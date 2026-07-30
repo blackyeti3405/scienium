@@ -258,7 +258,7 @@ export default function BattlePage({ params }: { params: { id: string } }) {
         <p className="text-slate-300 text-lg font-semibold">Battle data not found</p>
         <p className="text-slate-500 text-sm">This raid may have expired or the session data was lost.</p>
         <button
-          onClick={() => router.push('/pvp')}
+          onClick={() => router.push('/lab')}
           className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
         >
           Return to Lobby
@@ -334,7 +334,7 @@ export default function BattlePage({ params }: { params: { id: string } }) {
 
           {/* Return to Lobby */}
           <button
-            onClick={() => router.push('/pvp')}
+            onClick={() => router.push('/lab')}
             className="w-full px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors"
           >
             Return to Lobby

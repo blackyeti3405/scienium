@@ -3,12 +3,11 @@
 import dynamic from 'next/dynamic'
 import type { ComponentType } from 'react'
 import type { GatewayKey } from '@/lib/sprites/manifest'
-import { StubFeature } from '@/components/lab/StubFeature'
 import { HubPanelSkeleton } from '@/components/ui/skeletons/HubPanelSkeleton'
 
 /**
  * Maps each gateway building to the feature component rendered inside its
- * overlay panel. PvP remains the only intentionally unfinished surface.
+ * overlay panel. All seven gateways are now wired to real features.
  *
  * Keep this as the ONLY place gateway keys map to UI, so the shell stays generic.
  */
@@ -45,6 +44,11 @@ const ShowcaseEditor = dynamic(
   { ssr: false, loading },
 )
 
+const PvpFeature = dynamic(
+  () => import('@/components/pvp/PvpFeature').then((m) => m.PvpFeature),
+  { ssr: false, loading },
+)
+
 export const FEATURE_COMPONENTS: Record<GatewayKey, ComponentType> = {
   discovery: DiscoveryFeature,
 
@@ -52,12 +56,6 @@ export const FEATURE_COMPONENTS: Record<GatewayKey, ComponentType> = {
   literature_review: LiteratureFeature,
   operations_hub: OperationsHubFeature,
   research_plan: ResearchPlanFeature,
-  pvp: () => (
-    <StubFeature
-      title="Battle Arena"
-      description="Raid another lab with spells unlocked by your buildings."
-      route="/pvp/lobby"
-    />
-  ),
+  pvp: PvpFeature,
   showcase: ShowcaseEditor,
 }

@@ -181,3 +181,6 @@ art/.venv/
 # Large / third-party art references (kept local, not versioned)
 art_ref/stardew-valley-*.png
 art_ref/images.jpeg
+
+# Claude Code agent worktrees (local scratch, not app code)
+.claude/worktrees/

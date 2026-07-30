@@ -53,15 +53,16 @@ export function DecorationLayer({ seed = 1 }: { seed?: number }) {
       for (let c = 0; c < cols; c++) {
         const hsh = hash(c, r, seed)
         if (hsh % 100 < 30) continue // ~30% empty slots
-        const jx = ((hsh >> 8) % SLOT) - SLOT / 2 // jitter off the grid
-        const jy = ((hsh >> 15) % SLOT) - SLOT / 2
+        const jx = ((hsh >>> 8) % SLOT) - SLOT / 2 // jitter off the grid
+        const jy = ((hsh >>> 15) % SLOT) - SLOT / 2
         const x = c * SLOT + jx
         const y = r * SLOT + jy
         if (x < -24 || x > w + 24 || y < 0 || y > h + 40) continue
         // Dispersed throughout — no clearing. The building plot (z-index 1) renders
         // ON TOP of this layer (z-index 0), so a placed building simply covers the
         // shrubs/rocks under its footprint.
-        items.push({ id: WEIGHTED[(hsh >> 3) % WEIGHTED.length], x, y })
+        const idx = ((hsh >>> 3) % WEIGHTED.length + WEIGHTED.length) % WEIGHTED.length
+        items.push({ id: WEIGHTED[idx], x, y })
       }
     }
     items.sort((a, b) => a.y - b.y) // back-to-front: paint higher-on-screen first
