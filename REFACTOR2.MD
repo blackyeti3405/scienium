@@ -141,7 +141,7 @@ These items cannot be closed by code alone.
 
 | Gate | Required outcome |
 | --- | --- |
-| CI E2E gate | Add the `E2E_ENV_FILE` repo secret and require the E2E check in branch protection (Settings → Branches). Until the secret exists, trusted lanes fail red by design (v0.76.1). |
+| CI E2E gate | Secret added and workflow proven green 2026-07-30 (run 30502626845: full 354 passed, compat 4/4 incl. WebKit). Remaining: require the `smoke` and `compat` checks in branch protection for `main` (Settings → Branches). |
 | ISEF/forms guidance | A qualified teacher/SRC reviewer signs the active edition digest and expiry; approve season-specific AI-use disclosure text and any authored per-fair requirements. |
 | Fair data | Assign annual refresh ownership, retain source timestamps/digests, alert on stale dates, and fill or explicitly omit missing deadline categories. |
 | Curriculum | Restrict the pilot catalog to independently reviewed fields or complete domain-expert factual, safety, citation, licensing, and age-appropriateness review for every exposed field. |

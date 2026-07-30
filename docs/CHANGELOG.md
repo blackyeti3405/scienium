@@ -5,6 +5,38 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.76.4] — 2026-07-30
+
+CI/test only — the E2E GitHub gate went from never-executed to fully green
+(run 30502626845: full lane 354 passed / 8 justified skips in 33 min; compat 4/4 incl.
+WebKit). Five dispatches, each failure root-caused:
+
+### Fixed
+
+- E2E webServer build OOM: the codex library outgrew the default heap — same 4 GB
+  `NODE_OPTIONS` bump ci.yml already had.
+- Data Terminal Lab specs dead on CI: the Pyodide runtime proxy falls back to R2 when
+  `.pyodide-cache/` is absent, and the one-time Pyodide→R2 upload has never run (now an owner
+  gate). The runner fetches the dist behind `actions/cache` keyed on the pinned version.
+- Forms specs dead on CI: `/api/fairs/forms` is a pure read and catalog seeding lives in the
+  prod cron, so CI's fresh DB stayed empty forever. `seed:e2e` now seeds the 13 ISEF codes
+  idempotently from `lib/fairs/forms.ts`; `verify:e2e` asserts them.
+- `vocab-builder` AC4 module-resolution failure: on Node 22, Playwright's sync module hooks
+  are not consulted for a `require()` issued from a module the hooks themselves loaded, so
+  tsconfig `paths` stop applying one level in (bisected in Docker: node:22 fails, node:24
+  passes). CI Node 22 → 24 in both workflows.
+- WebKit compat auth, two rounds: Linux WebKit refuses the `Domain=localhost` `__client_uat`
+  cookie no matter who sets it (server handshake or clerk-js), so the harness mirrors it into
+  the jar via `addCookies` valued at the session token's `iat`; and Next's post-sign-in RSC
+  fallback fired a hard navigation that aborted in-flight gotos — navigations now settle and
+  retry once (`gotoSettled`). Also fixed engine-agnostic: `gotoFresh` treated the app's own
+  `/dashboard → /lab` redirect as a sign-in hijack and paid a racing re-sign-in on every
+  engine; hijack detection now reads the redirect chain.
+- Full-lane timeout 60 → 90 min (2-core runner); failure artifacts also upload on
+  `cancelled()` so a timeout keeps its partial report.
+
+---
+
 ## [0.76.3] — 2026-07-29
 
 Pilot-readiness wave 2 — closes REFACTOR2 rows P1-5 (security events + observability) and
