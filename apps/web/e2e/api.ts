@@ -94,25 +94,19 @@ async function ensureAppLoaded(page: Page): Promise<void> {
 }
 
 /**
- * WebKit cannot ride a saved Clerk session at all, so it signs in for real.
+ * WebKit cannot ride a saved Clerk session, so it signs in for real.
  *
  * A `storageState` snapshot always carries an EXPIRED `__session` (the JWT lives
- * ~60s; the state was written minutes earlier), and every engine relies on
- * Clerk's handshake to repair it on the first document request. That handshake
- * re-issues `__client_uat` over plain `http://localhost` as
- * `Domain=localhost; SameSite=None` with no `Secure` — which WebKit's cookie jar
- * will not store (a `Domain` attribute on a single-label host; `SameSite=None`
- * without `Secure`). CI's trace shows the consequence exactly: the response's
- * host-only cookies land, `__client_uat` does not, middleware sees a session
- * token with no `__client_uat`, handshakes again, and loops until Clerk gives up
- * and redirects to /sign-in. Chromium and Firefox accept the cookie and heal on
- * the first try, which is why only `webkit-compat` failed.
+ * ~60s; the state was written minutes earlier), and every engine leans on Clerk's
+ * handshake to repair that on the first document request. On WebKit the handshake
+ * is not merely useless but destructive: its host-only `__client_uat=` deletion
+ * IS accepted while the `Domain=localhost` replacement is NOT (see
+ * `mirrorClientUat`), so the one restored cookie that was working is spent and
+ * every following request re-handshakes until Clerk gives up on /sign-in.
  *
- * Nothing outside the page can put that cookie in WebKit's jar — only clerk-js,
- * writing host-only cookies from inside the document. So on WebKit the FIRST
- * navigation is a programmatic sign-in rather than a snapshot restore, which
- * mints a live token in-page and never needs a handshake. One extra sign-in on
- * the one read-only spec `webkit-compat` runs; every other project is untouched.
+ * Signing in inside the page instead mints a live token, so no handshake is ever
+ * attempted and the restored cookie is never destroyed. Costs one extra sign-in
+ * on the one read-only spec `webkit-compat` runs; no other project is touched.
  */
 function isWebKit(page: Page): boolean {
   return page.context().browser()?.browserType().name() === 'webkit'
@@ -238,6 +232,82 @@ async function signInProgrammatically(page: Page): Promise<void> {
     page,
     signInParams: { strategy: 'password', identifier: acct.identifier, password: acct.password },
   })
+  await mirrorClientUat(page)
+  // Land on the role's own surface before returning. clerk-js's `setActive`
+  // navigates to the after-sign-in URL on its own schedule; absorbing that here
+  // means the caller's next `page.goto` (or `page.request`) is not racing it.
+  await gotoSettled(page, LANDING[role])
+}
+
+/**
+ * Put `__client_uat` in the cookie jar by hand when the browser refused to store it.
+ *
+ * Clerk domain-scopes exactly this one cookie (`Domain=localhost`) and leaves the
+ * rest host-only. WebKit's Linux jar drops a `Domain` attribute on a single-label
+ * host, and CI's trace shows the split precisely: from one Set-Cookie response
+ * every host-only cookie lands and `__client_uat` does not — same outcome whether
+ * it comes from Clerk's handshake or from clerk-js in-page, so signing in does not
+ * help either. Middleware then sees a session token with no `__client_uat`,
+ * handshakes, gets the same result, and loops until Clerk gives up on /sign-in.
+ * On Linux WebKit a localhost session can therefore never authenticate unaided.
+ *
+ * Playwright's cookie API writes straight into the jar, past the Set-Cookie domain
+ * rules, so the harness can supply what the browser would not keep. `__client_uat`
+ * only records when the client was last updated, and Clerk re-handshakes solely if
+ * it is NEWER than the session token — so the token's own `iat` is always safe, and
+ * stays safe as clerk-js rotates to later tokens. A no-op on every engine that
+ * accepted the cookie, which is why this needs no engine check.
+ */
+async function mirrorClientUat(page: Page): Promise<void> {
+  const cookies = await page.context().cookies(BASE_URL)
+  if (cookies.some((c) => c.name.startsWith('__client_uat'))) return
+  // One per `__session` cookie: dev instances also carry an instance-suffixed
+  // pair (`__session_-Y45bENH` / `__client_uat_-Y45bENH`), and which pair
+  // middleware reads depends on both being present.
+  const mirrored = []
+  for (const cookie of cookies) {
+    if (cookie.name !== '__session' && !cookie.name.startsWith('__session_')) continue
+    const iat = issuedAt(cookie.value)
+    if (iat === null) continue
+    mirrored.push({
+      name: cookie.name.replace('__session', '__client_uat'),
+      value: String(iat),
+      url: BASE_URL,
+    })
+  }
+  if (mirrored.length === 0) return
+  console.warn(`[e2e/api] browser would not store __client_uat — writing it into the jar directly`)
+  await page.context().addCookies(mirrored)
+}
+
+/** `iat` out of a JWT payload, or null if it is not a JWT we can read. */
+function issuedAt(jwt: string): number | null {
+  try {
+    const payload: unknown = JSON.parse(Buffer.from(jwt.split('.')[1] ?? '', 'base64url').toString())
+    const iat = (payload as { iat?: unknown }).iat
+    return typeof iat === 'number' ? iat : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * `page.goto` that survives a client-side redirect landing mid-navigation.
+ *
+ * clerk-js's post-sign-in `setActive` navigates the Next router to the
+ * after-sign-in URL; when its RSC fetch loses the race Next falls back to a HARD
+ * browser navigation ("Failed to fetch RSC payload … Falling back to browser
+ * navigation" — CI's WebKit console), which aborts whatever `goto` is in flight
+ * and fails the spec with "interrupted by another navigation". The navigation
+ * itself is healthy and a GET is idempotent, so retry once.
+ */
+async function gotoSettled(page: Page, url: string): Promise<Response | null> {
+  try {
+    return await page.goto(url)
+  } catch (error) {
+    if (!/interrupted by another navigation/.test(String(error))) throw error
+    return await page.goto(url)
+  }
 }
 
 async function refreshed(
@@ -280,13 +350,13 @@ async function refreshed(
 export async function gotoFresh(page: Page, url: string): Promise<void> {
   await ensureAppLoaded(page)
   await refreshClerkSession(page)
-  const res = await page.goto(url)
+  const res = await gotoSettled(page, url)
   if (!hijackedBySignIn(page, res)) return
   console.warn(
     `[e2e/api] navigation to ${url} landed on ${page.url()} (stale session) — re-signing in and retrying`,
   )
   await reauthenticate(page)
-  await page.goto(url)
+  await gotoSettled(page, url)
 }
 
 /**

@@ -36,13 +36,24 @@ engines installed: `pnpm --filter web exec playwright install`. Chromium-only
 iteration is unaffected — `test:e2e:file` and `--project=chromium` never touch
 them.
 
-WebKit is the one engine that does **not** reuse the saved session: `e2e/api.ts`
-signs it in inside the page on first load (it logs `webkit cannot restore a saved
-Clerk session`), because Clerk's handshake — how every other engine refreshes the
-snapshot's expired `__session` — re-issues `__client_uat` with attributes WebKit's
-cookie jar rejects over plain `http://localhost`, so a restored WebKit session
-handshake-loops to /sign-in and can never recover. Only reproducible on Linux
-(CI); macOS WebKit accepts the cookie.
+WebKit needs two things no other engine does, both in `e2e/api.ts`, because its
+Linux cookie jar drops any cookie carrying `Domain=localhost` (a single-label
+host) — and `__client_uat` is the one Clerk cookie that is domain-scoped:
+
+1. It does **not** reuse the saved session; it signs in inside the page on first
+   load (logs `webkit cannot restore a saved Clerk session`). Clerk's handshake,
+   how every other engine refreshes the snapshot's expired `__session`, *deletes*
+   the restored `__client_uat` (host-only, accepted) and cannot re-set it
+   (domain-scoped, rejected), so a restored WebKit session handshake-loops to
+   /sign-in forever.
+2. `mirrorClientUat` writes `__client_uat` into the jar with Playwright's cookie
+   API — past the Set-Cookie domain rules — using the session token's `iat`
+   (logs `browser would not store __client_uat`). Without it even a fresh in-page
+   sign-in cannot authenticate, because clerk-js sets that cookie domain-scoped
+   too. A no-op on every engine that accepted the cookie.
+
+Both are Linux-only symptoms; macOS WebKit accepts `Domain=localhost`, so this
+only ever reproduces in CI.
 
 One spec while iterating:
 
