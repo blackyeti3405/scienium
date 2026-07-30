@@ -37,7 +37,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api } from './api'
 import {
   e2eDb,
   e2eTeamId,
@@ -54,7 +54,6 @@ import {
 
 const SECOND_TEAM_NAME = 'E2E PvP Target'
 const POLL_TIMEOUT = 15000
-const POLL_INTERVALS = { intervals: [200, 400, 800] as [number, number, number] }
 
 // ─── Test-wide state: IDs resolved by beforeAll ───────────────────────────────
 
@@ -67,8 +66,6 @@ let secondTeamTrophiesBaseline = 0
 
 // Building keys/seeded spell types for the raid
 const E2E_BUILDING_KEY = 'printing_shop'
-const DEFENDER_BUILDING_KEY = 'workshop'
-const DEFENDER_BUILDING_TYPE = 'applied'
 
 // ─── Seed / cleanup ───────────────────────────────────────────────────────────
 
@@ -127,7 +124,7 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   // quotas, and raid state.
   test.describe.configure({ mode: 'serial', timeout: 90_000 })
 
-  test.beforeAll(async ({ browser }) => {
+  test.beforeAll(async () => {
     secondTeamId = await ensureSecondTeam()
     await ensureE2eTeamHasSpells()
     e2eTeam = await e2eTeamId()
@@ -500,7 +497,7 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
 
     // Cast a spell to get SOME damage on the defender's building, then finalize
     const spellId = session.spellsAvailable[0].id
-    const { status, body: castBody } = await castSpell(page, raidId, spellId, 0, 0)
+    const { status } = await castSpell(page, raidId, spellId, 0, 0)
     expect(status).toBe(200)
 
     // Now finalize via timer expiry

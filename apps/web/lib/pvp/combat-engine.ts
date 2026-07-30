@@ -1,5 +1,4 @@
 import { db } from '@/lib/db'
-import { getSpellPower } from './spell-power'
 import type { LabType, SpellType } from '@scienium/shared-types'
 import type {
   BuildingTarget,

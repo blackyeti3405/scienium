@@ -13,8 +13,6 @@ import {
   resolveCast,
   calculateTrophyDelta,
   typeEffectiveness,
-  isSuperEffective,
-  TROPHY_GAIN_THRESHOLD,
   MAX_TROPHY_GAIN,
   TROPHY_LOSS_THRESHOLD,
   MAX_TROPHY_LOSS,
@@ -109,12 +107,6 @@ describe('resolveCast', () => {
     const spellEmpirical = makeSpell({ id: 'spell-emp', type: 'empirical', damage: 25 })
     const spellTheoretical = makeSpell({ id: 'spell-theo', type: 'theoretical', damage: 25 })
     const spellApplied = makeSpell({ id: 'spell-app', type: 'applied', damage: 25 })
-
-    // empirical > theoretical → 2x super-effective
-    const buildingTheo = makeBuilding({ buildingId: 'bldg-theo', currentHealth: 120, maxHealth: 120, type: 'theoretical' })
-    // theoretical > empirical would be super-effective on the other side, but here theoretical is defender vs applied → 0.5x resist
-    // Actually let me test: empirical attacks theoretical = super effective (2x)
-    const buildingEmp = makeBuilding({ buildingId: 'bldg-emp', currentHealth: 120, maxHealth: 120, type: 'empirical' })
 
     // Test super-effective: empirical attacks theoretical → 2x = 25 * 2 * 1.0 = 50
     let session = makeSession({

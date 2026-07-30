@@ -65,8 +65,8 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   const [defenderBase, setDefenderBase] = useState<BuildingTarget[]>([])
   // Attacker spells
   const [spellsAvailable, setSpellsAvailable] = useState<Spell[]>([])
-  // Server-provided tier/multiplier
-  const [powerTier, setPowerTier] = useState<string>('NONE')
+  // Server-provided attack multiplier (display only — the server applies the
+  // real multiplier per cast)
   const [powerMul, setPowerMul] = useState(1.0)
 
   // Raid temporal state
@@ -104,6 +104,11 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
       // ignore parse errors — fall through to loading
     }
     setLoading(false)
+    // Meter HUD: fetch the team's live tier; best-effort, defaults to 1.0x.
+    fetch('/api/pvp/spell-power')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setPowerMul(d.multiplier) })
+      .catch(() => {})
   }, [raidId])
 
   // ── Timer countdown (client-side only; server authoritative) ────────────
@@ -210,16 +215,6 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
 
   const allDestroyed =
     defenderBase.length > 0 && defenderBase.every((b) => b.currentHealth <= 0)
-
-  // ── Derived: total percent destroyed ────────────────────────────────────
-
-  const totalMaxHealth = defenderBase.reduce((s, b) => s + b.maxHealth, 0)
-  const totalDamage = defenderBase.reduce(
-    (s, b) => s + (b.maxHealth - Math.max(0, b.currentHealth)),
-    0,
-  )
-  const percentDestroyed =
-    totalMaxHealth > 0 ? (totalDamage / totalMaxHealth) * 100 : 0
 
   // ── Power tier label (v1: linear fill) ──────────────────────────────────
 

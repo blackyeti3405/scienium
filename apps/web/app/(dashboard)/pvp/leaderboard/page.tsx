@@ -34,7 +34,6 @@ export default function LeaderboardPage() {
   const [rankings, setRankings] = useState<RankingEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [myTeamId, setMyTeamId] = useState<string | null>(null)
 
   // ── Fetch leaderboard data on mount ────────────────────────────────────
 
@@ -51,17 +50,6 @@ export default function LeaderboardPage() {
         setError(err.message)
       })
       .finally(() => setLoading(false))
-
-    // Try to grab the team's own team ID from the dashboard API for highlighting
-    fetch('/api/pvp')
-      .then((r) => r.json())
-      .then((data) => {
-        // The leaderboard entries contain team names, but we need the team ID.
-        // We'll highlight by comparing team names — the user can identify their row.
-      })
-      .catch(() => {
-        // ignore — row highlighting is a nice-to-have
-      })
   }, [])
 
   // ── Loading state ──────────────────────────────────────────────────────
