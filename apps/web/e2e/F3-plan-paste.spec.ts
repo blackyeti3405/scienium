@@ -39,6 +39,11 @@ import { createLab, type OwnedLab } from './lab'
  *  AC12 — Saving with neither input present surfaces a visible inline error,
  *         no crash / no 500
  *
+ * Plus one REFACTOR2 P2-2 regression at the end of the chain: a review stream
+ * that ends without its terminal `done` event must keep the last good review
+ * rather than leave a truncated partial standing. Both stream bodies are
+ * fulfilled by `page.route`, so the AI endpoint is still never invoked.
+ *
  * Discovery notes (verified live against the running app before writing
  * assertions, not read from source):
  * - The feature only exists inside the "Research Plan" gateway overlay opened
@@ -439,5 +444,84 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
     const dialog = await openResearchPlan(page)
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText('Plan source')).toBeVisible()
+  })
+
+  // ── REFACTOR2 P2-2 ────────────────────────────────────────────────────────
+  // The review stream's terminal-event barrier. Both responses are FULFILLED BY
+  // PLAYWRIGHT (`page.route`), so the review endpoint is still never invoked and
+  // no Anthropic tokens are spent — the same constraint every other test in this
+  // file honours, met by never letting the request leave the browser.
+  test('P2-2: a review stream that ends without its terminal event keeps the last good review', async ({
+    page,
+  }) => {
+    const ndjson = (lines: object[]) => lines.map((l) => JSON.stringify(l) + '\n').join('')
+
+    // A well-formed run: events, then the explicit `done` the service sends.
+    const COMPLETE = ndjson([
+      {
+        type: 'overall',
+        readiness: 'strong',
+        score: 91,
+        summary: `E2E-P2-2-COMPLETE-${RUN_ID}: the review that must survive.`,
+      },
+      { type: 'section', title: 'I. Research Question', score: 10, max: 10, assessment: 'Clear.' },
+      { type: 'strength', text: `E2E-P2-2-STRENGTH-${RUN_ID}` },
+      { type: 'done' },
+    ])
+    // The same run cut off mid-body: real events, no `done`. Reading this to EOF
+    // succeeds, which is exactly why a partial used to be accepted as a result.
+    const TRUNCATED = ndjson([
+      {
+        type: 'overall',
+        readiness: 'early',
+        score: 12,
+        summary: `E2E-P2-2-TRUNCATED-${RUN_ID}: half a review that must NOT stand.`,
+      },
+      { type: 'section', title: 'I. Research Question', score: 1, max: 10, assessment: 'Thin.' },
+    ])
+
+    let body = COMPLETE
+    await page.route('**/api/research-plan/review', (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/x-ndjson; charset=utf-8' },
+        body,
+      }),
+    )
+
+    const dialog = await openResearchPlan(page)
+    const reviewBtn = dialog.getByRole('button', { name: /Review my plan/i })
+    await expect(reviewBtn).toBeEnabled({ timeout: 8000 })
+
+    // 1. A complete run lands.
+    await reviewBtn.click()
+    await expect(dialog.getByText(`E2E-P2-2-COMPLETE-${RUN_ID}`, { exact: false })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(dialog.getByText(`E2E-P2-2-STRENGTH-${RUN_ID}`, { exact: false })).toBeVisible()
+
+    // 2. Re-run against a truncated body.
+    body = TRUNCATED
+    await reviewBtn.click()
+
+    // The dropped connection is reported…
+    await expect(dialog.getByText(/connection dropped/i)).toBeVisible({ timeout: 10_000 })
+    // …the last good review is still the one on screen…
+    await expect(dialog.getByText(`E2E-P2-2-COMPLETE-${RUN_ID}`, { exact: false })).toBeVisible()
+    await expect(dialog.getByText(`E2E-P2-2-STRENGTH-${RUN_ID}`, { exact: false })).toBeVisible()
+    // …and the truncated partial never replaces it.
+    await expect(dialog.getByText(`E2E-P2-2-TRUNCATED-${RUN_ID}`, { exact: false })).toHaveCount(0)
+    // The existing retry affordance is back.
+    await expect(reviewBtn).toBeEnabled()
+
+    // 3. Retrying a complete run still works after the failure.
+    body = COMPLETE
+    await reviewBtn.click()
+    await expect(dialog.getByText(`E2E-P2-2-COMPLETE-${RUN_ID}`, { exact: false })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(dialog.getByText(/connection dropped/i)).toHaveCount(0)
+
+    await page.unroute('**/api/research-plan/review')
   })
 })

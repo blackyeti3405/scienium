@@ -244,6 +244,53 @@ describe('fetchWithRetry — a provider cannot park the invocation', () => {
     expect(elapsed).toBeLessThan(900)
   })
 
+  /**
+   * The drain (`discard`) used to be reasoned about rather than tested —
+   * "socket release is not observable client-side". It isn't, but the CANCEL is:
+   * a `ReadableStream` we construct ourselves reports its own cancellation, and
+   * cancelling the body is exactly what releases the socket. So `fetch` returns
+   * instrumented responses here instead of a real server — this is the one place
+   * where the body, not the socket, is the thing under test.
+   */
+  function stubInstrumentedFetch(statuses: number[]): boolean[] {
+    const cancelled = statuses.map(() => false)
+    let n = 0
+    vi.stubGlobal('fetch', async () => {
+      const i = n++
+      const status = statuses[i] ?? 200
+      const body = new ReadableStream<Uint8Array>({
+        pull: (c) => c.enqueue(new TextEncoder().encode('x'.repeat(64))),
+        cancel: () => {
+          cancelled[i] = true
+        },
+      })
+      return new Response(body, {
+        status,
+        headers: {
+          'content-type': 'application/json',
+          ...(status === 302 ? { location: `${PUBLIC}/hop2` } : {}),
+        },
+      })
+    })
+    return cancelled
+  }
+
+  it('cancels the body of a response it RETRIES past, and leaves the caller theirs', async () => {
+    const cancelled = stubInstrumentedFetch([503, 200])
+    const res = await fetchWithRetry(PUBLIC, { timeoutMs: 2000, backoffMs: 10 })
+    expect(res.status).toBe(200)
+    // The 503 we walked away from is drained; the 200 we hand back is not —
+    // draining that one would hand the caller an unreadable body.
+    expect(cancelled).toEqual([true, false])
+  })
+
+  it('cancels the body of a REDIRECT hop too', async () => {
+    const cancelled = stubInstrumentedFetch([302, 200])
+    const res = await fetchWithRetry(`${PUBLIC}/hop1`, { timeoutMs: 2000 })
+    expect(res.status).toBe(200)
+    expect(cancelled).toEqual([true, false])
+  })
+
   it('refuses a body whose content-type is not what the adapter asked for', async () => {
     const { url } = await trap((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })

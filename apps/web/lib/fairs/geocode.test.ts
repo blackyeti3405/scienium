@@ -18,24 +18,46 @@ import { geocodeZip } from './zip'
  * these stub `global.fetch` to redirect to a real local `node:http` server —
  * the streaming/cap/throttle logic under test is exercised for real; only the
  * DNS hop is skipped.
+ *
+ * P2-1 moved `geocodeZip` onto the shared gateway (`fetchWithRetry`), which is
+ * what brings it under the redirect policy. That policy resolves the hostname,
+ * so the resolver is mocked below — the same seam `lib/discovery/adapters.test.ts`
+ * uses. Nothing else is faked: the redirect refusals, the byte ceiling and the
+ * content-type check below all run for real against a real socket.
  */
 
+vi.mock('node:dns/promises', () => ({
+  lookup: async () => [{ address: '93.184.216.34', family: 4 }],
+}))
+
 const servers: http.Server[] = []
+/** Every request path that actually reached the local server, newest last. */
+let hits: string[] = []
+
 afterEach(async () => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
+  hits = []
   await Promise.all(servers.splice(0).map((s) => new Promise<void>((r) => s.close(() => r()))))
 })
 
 async function serve(handler: http.RequestListener): Promise<string> {
-  const server = http.createServer(handler)
+  const server = http.createServer((req, res) => {
+    hits.push(req.url ?? '')
+    handler(req, res)
+  })
   servers.push(server)
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
 }
 
-function stubFetchTo(url: string): void {
+/** Send Nominatim's path down the socket to `base`, init untouched. */
+function stubFetchTo(base: string): void {
   const realFetch = globalThis.fetch
-  vi.stubGlobal('fetch', (_input: unknown, init?: RequestInit) => realFetch(url, init))
+  vi.stubGlobal('fetch', (input: unknown, init?: RequestInit) => {
+    const u = new URL(String(input))
+    return realFetch(base.replace(/\/$/, '') + u.pathname + u.search, init)
+  })
 }
 
 describe('geocodeZip — caches an identical ZIP instead of re-fetching', () => {
@@ -115,5 +137,80 @@ describe('geocodeZip — the byte ceiling', () => {
     })
     stubFetchTo(url)
     expect(await geocodeZip('99999-oversized')).toBeNull()
+  })
+})
+
+/**
+ * P2-1 — what binding onto the shared gateway actually bought. Each of these
+ * failed to be *possible* before: the raw `fetch` followed redirects itself
+ * (`redirect: 'follow'`, no hop revalidated) and parsed any content-type.
+ */
+describe('geocodeZip — the outbound gateway', () => {
+  it('THE ATTACK: refuses a redirect into our own network, and never dials it', async () => {
+    const url = await serve((req, res) => {
+      if (req.url?.startsWith('/search')) {
+        res.writeHead(302, { location: 'http://169.254.169.254/latest/meta-data/' })
+        return res.end()
+      }
+      res.end('metadata')
+    })
+    stubFetchTo(url)
+
+    expect(await geocodeZip('12345-redirect')).toBeNull()
+    // Not "a response with no coordinates" — the second hop never happened.
+    expect(hits).toHaveLength(1)
+    expect(hits[0]).toContain('/search')
+  })
+
+  it('follows a PUBLIC redirect — the policy is a guard, not a disabled feature', async () => {
+    const url = await serve((req, res) => {
+      if (req.url?.startsWith('/search')) {
+        res.writeHead(302, { location: 'https://93.184.216.34/moved' })
+        return res.end()
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify([{ lat: '38.90', lon: '-77.04' }]))
+    })
+    stubFetchTo(url)
+
+    expect(await geocodeZip('20001-publicredirect')).toEqual([38.9, -77.04])
+    expect(hits).toHaveLength(2)
+  })
+
+  it('refuses a body served as something other than JSON', async () => {
+    const url = await serve((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      // Deliberately a valid, schema-satisfying Nominatim body: the parser would
+      // accept it, so the declared content-type is the ONLY thing that can
+      // refuse it. An HTML captive-portal page is caught twice over and proves
+      // nothing about this guard.
+      res.end(JSON.stringify([{ lat: '41.76', lon: '-72.68' }]))
+    })
+    stubFetchTo(url)
+    expect(await geocodeZip('33333-html')).toBeNull()
+  })
+
+  it('degrades to null on a body that is not JSON syntax', async () => {
+    const url = await serve((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end('[{"lat":"1",')
+    })
+    stubFetchTo(url)
+    expect(await geocodeZip('44444-malformed')).toBeNull()
+  })
+
+  /**
+   * LAST in the file on purpose. Fake timers move `Date.now()` forward past the
+   * throttle's `lastNominatimRequestAt`, so any geocode after this one would sit
+   * out the difference on the real clock.
+   */
+  it('gives up on a provider that never answers instead of hanging the caller', async () => {
+    // Never settles — the per-attempt ceiling is the only thing that can end it.
+    vi.stubGlobal('fetch', () => new Promise<Response>(() => {}))
+    vi.useFakeTimers()
+    const pending = geocodeZip('66666-deadline')
+    await vi.advanceTimersByTimeAsync(1_000) // the 1 req/s queue wait
+    await vi.advanceTimersByTimeAsync(6_000) // …then the 6s ceiling
+    expect(await pending).toBeNull()
   })
 })

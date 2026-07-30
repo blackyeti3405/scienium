@@ -307,3 +307,23 @@ export function parseVideoUrl(raw: string): ParsedVideo | null {
   return null
 }
 
+/**
+ * Render-boundary gate for a STORED embed URL (REFACTOR2 P2-3).
+ *
+ * The link route builds `metadataJson.embedUrl` with `parseVideoUrl`, so a row
+ * written through it always holds one of the two canonical provider URLs. A row
+ * that predates that check — or one edited in the database — does not, and it
+ * would otherwise land verbatim in an `<iframe src>`, which is an arbitrary
+ * origin framed inside the page.
+ *
+ * So the stored value is re-derived through `parseVideoUrl` at the moment it is
+ * rendered: the canonical embed URLs are fixed points of that parser, and
+ * anything else (another host, a `javascript:` scheme, a mangled id) returns
+ * null and renders no iframe at all. Re-deriving rather than host-matching is
+ * deliberate — it reuses the write path's allowlist instead of standing up a
+ * second copy that could drift out of step with it.
+ */
+export function safeEmbedUrl(raw: unknown): string | null {
+  return typeof raw === 'string' ? parseVideoUrl(raw)?.embedUrl ?? null : null
+}
+

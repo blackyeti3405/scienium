@@ -1,9 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireUserContext } from '@/lib/api/route-context'
+import { fetchWithRetry, readJsonCapped } from '@/lib/fetch-retry'
 import { parseJson } from '@/lib/validation'
 
 const ResolveBody = z.object({ url: z.string().trim().min(1).max(2000) }).strict()
+
+/**
+ * oEmbed's answer, PARSED before the title reaches the caller — the old
+ * `data.title` read was a `.json()` with no shape check at all, so a non-string
+ * title (or a body of any size) went straight into the response the client
+ * stores and renders. Only `title` is ours to care about; the rest of oEmbed's
+ * envelope stays unconstrained.
+ */
+const OEmbed = z.object({ title: z.string().trim().min(1).max(300) }).passthrough()
+
+/** oEmbed's JSON is a few hundred bytes; 64 KB is headroom. */
+const MAX_BODY_BYTES = 64 * 1024
 
 // Extracts a YouTube video ID from any common URL shape.
 function extractVideoId(input: string): string | null {
@@ -42,17 +55,23 @@ export async function POST(req: NextRequest) {
 
   let title = 'YouTube video'
   try {
-    const oembed = await fetch(
+    const oembed = await fetchWithRetry(
       `https://www.youtube.com/oembed?url=${encodeURIComponent(
         `https://www.youtube.com/watch?v=${videoId}`,
       )}&format=json`,
-      // Bounded wait — a slow oEmbed endpoint must not hold the request open;
-      // the catch below falls back to the generic title.
-      { cache: 'no-store', signal: AbortSignal.timeout(5_000) },
+      {
+        headers: { Accept: 'application/json' },
+        // Bounded wait — a slow oEmbed endpoint must not hold the request open;
+        // the catch below falls back to the generic title. One attempt, as
+        // before: the title is a nicety, not worth three round-trips.
+        timeoutMs: 5_000,
+        attempts: 1,
+        contentTypes: ['application/json'],
+      },
     )
     if (oembed.ok) {
-      const data = await oembed.json()
-      if (data.title) title = data.title
+      const parsed = OEmbed.safeParse(await readJsonCapped(oembed, MAX_BODY_BYTES))
+      if (parsed.success) title = parsed.data.title
     }
   } catch {
     // Non-fatal — fall back to the generic title; the video still embeds by id.

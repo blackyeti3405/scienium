@@ -3,7 +3,13 @@
 import { useEffect, useState } from 'react'
 import { PROJECT_TYPES } from '@/lib/research-plan/types'
 import { readNdjson } from '@/lib/ndjson'
-import { EMPTY_REVIEW, type PlanReview } from './PlanReviewView'
+import {
+  EMPTY_REVIEW,
+  initReviewStream,
+  reduceReviewEvent,
+  settleStream,
+  type PlanReview,
+} from './review-stream'
 import type { IdeaCheckActivity, IdeaCheckResult } from './IdeaCheckView'
 
 // Mirrors MAX_STORED_TEXT in app/api/research-plan/route.ts — the server truncates
@@ -142,13 +148,17 @@ export function useResearchPlan() {
     }
   }
 
+  /**
+   * The last COMPLETE review, kept out of `review` because `review` doubles as
+   * the live accumulator the rubric rows fill in from. A run that never reaches
+   * its terminal `done` event puts this back (P2-2).
+   */
   async function runReview() {
+    const lastGood = review
     setReviewStreaming(true)
     setReviewError(null)
     setReview(EMPTY_REVIEW)
-    // This review is about the text as it stands now, so whatever staleness the
-    // last load reported no longer applies (P2-S7).
-    setPlan((p) => (p ? { ...p, lastReviewStale: false } : p))
+    let acc = initReviewStream()
     try {
       const res = await fetch('/api/research-plan/review', { method: 'POST' })
       if (!res.ok || !res.body) {
@@ -156,47 +166,39 @@ export function useResearchPlan() {
         throw new Error(d.error ?? 'Review failed')
       }
       await readNdjson(res.body, (e) => {
-        if (e.type === 'error') {
-          setReviewError(e.error)
-          return
-        }
-        setReview((r) => {
-          const cur = r ?? EMPTY_REVIEW
-          switch (e.type) {
-            case 'overall':
-              return { ...cur, overall: { readiness: e.readiness, score: e.score, summary: e.summary } }
-            case 'section':
-              return {
-                ...cur,
-                sections: [
-                  ...cur.sections,
-                  { title: e.title, score: e.score, max: e.max, assessment: e.assessment },
-                ],
-              }
-            case 'strength':
-              return { ...cur, strengths: [...cur.strengths, e.text] }
-            case 'gap':
-              return { ...cur, gaps: [...cur.gaps, e.text] }
-            case 'recommendation':
-              return { ...cur, recommendations: [...cur.recommendations, e.text] }
-            default:
-              return cur
-          }
-        })
+        acc = reduceReviewEvent(acc, e)
+        // Progressive display: the rows appear as they are graded. Whether they
+        // are allowed to STAY is decided below, by the terminal event.
+        setReview(acc.value)
       })
     } catch (err) {
-      setReviewError(err instanceof Error ? err.message : 'Review failed')
-    } finally {
-      setReviewStreaming(false)
+      // A mid-stream disconnect lands here; an EOF with no `done` does not —
+      // `settleStream` catches both.
+      acc = { ...acc, error: acc.error ?? (err instanceof Error ? err.message : 'Review failed') }
     }
+    const settled = settleStream(acc, acc.value, lastGood)
+    setReview(settled.value)
+    setReviewError(settled.error)
+    // Only a completed review supersedes the stored one, so the staleness note
+    // it carried (P2-S7) survives a failed run too.
+    if (!settled.error) setPlan((p) => (p ? { ...p, lastReviewStale: false } : p))
+    setReviewStreaming(false)
   }
 
   async function runIdeaCheck() {
+    const lastGood = idea
     setChecking(true)
     setIdeaError(null)
     setIdea(null)
     setActivity({ status: 'Starting…', searches: [], sources: [] })
-    setPlan((p) => (p ? { ...p, lastIdeaCheckStale: false } : p))
+    // Same terminal-event rule as the review (P2-2): the verdict only exists on
+    // the `done` event, so a truncated run leaves `streamed` null and the last
+    // good verdict is restored rather than blanked.
+    const got: {
+      idea: IdeaCheckResult | null
+      quota: { limit: number; remaining: number } | null
+    } = { idea: null, quota: null }
+    let outcome = { done: false, error: null as string | null }
     try {
       const res = await fetch('/api/research-plan/idea-check', { method: 'POST' })
       if (!res.ok || !res.body) {
@@ -210,15 +212,25 @@ export function useResearchPlan() {
         else if (e.type === 'sources')
           setActivity((a) => ({ ...a, sources: [...a.sources, ...e.items] }))
         else if (e.type === 'done') {
-          setIdea({ verdict: e.verdict, findings: e.findings })
-          setQuota({ limit: e.limit, remaining: e.remaining })
-        } else if (e.type === 'error') setIdeaError(e.error)
+          got.idea = { verdict: e.verdict, findings: e.findings }
+          got.quota = { limit: e.limit, remaining: e.remaining }
+          outcome = { ...outcome, done: true }
+        } else if (e.type === 'error') outcome = { ...outcome, error: e.error }
       })
     } catch (err) {
-      setIdeaError(err instanceof Error ? err.message : 'Idea check failed')
-    } finally {
-      setChecking(false)
+      outcome = {
+        ...outcome,
+        error: outcome.error ?? (err instanceof Error ? err.message : 'Idea check failed'),
+      }
     }
+    const settled = settleStream(outcome, got.idea, lastGood)
+    setIdea(settled.value)
+    setIdeaError(settled.error)
+    if (!settled.error) {
+      if (got.quota) setQuota(got.quota)
+      setPlan((p) => (p ? { ...p, lastIdeaCheckStale: false } : p))
+    }
+    setChecking(false)
   }
 
   const activeType = PROJECT_TYPES.find((t) => t.key === type)

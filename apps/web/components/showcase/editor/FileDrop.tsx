@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { ExternalLink, FileText, FileUp, LayoutGrid, X } from 'lucide-react'
 import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
 import { uploadWithProgress } from '@/lib/uploadWithProgress'
+import { useUploadSlot } from '@/lib/upload-slot'
 import type { Asset, Showcase } from '@/components/showcase/useShowcaseEditor'
 
 /** Board / quad-chart upload block: drop-style picker with an inline progress
@@ -32,27 +33,44 @@ export function FileDrop({
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Mutation identity + unmount barrier (P2-2): the editor can be navigated
+  // away from (or the block replaced) mid-upload. The token stops a completion
+  // that no longer owns this slot from writing an asset into a dead editor;
+  // the signal stops the bytes. Its `temporary` reservation ages out.
+  const slot = useUploadSlot()
 
   async function upload(file: File) {
+    const { token, signal } = slot.begin()
     onError('')
     const saved = await ensureSaved()
-    if (!saved) return
+    if (!saved || !slot.owns(token)) {
+      slot.settle(token)
+      return
+    }
     setUploading(true)
     setProgress(0)
     try {
       const form = new FormData()
       form.append('file', file)
       form.append('kind', kind)
-      const res = await uploadWithProgress('/api/showcase/asset', form, (fraction) =>
-        setProgress(Math.round(fraction * 100)),
+      const res = await uploadWithProgress(
+        '/api/showcase/asset',
+        form,
+        (fraction) => {
+          if (slot.owns(token)) setProgress(Math.round(fraction * 100))
+        },
+        signal,
       )
       const data = (await res.json()) as { asset?: Asset; error?: string }
+      if (!slot.owns(token)) return
       if (!res.ok) throw new Error(data.error ?? 'Upload failed')
       onAdded(data.asset!)
     } catch (err) {
+      if (!slot.owns(token)) return
       onError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
-      setUploading(false)
+      if (slot.owns(token)) setUploading(false)
+      slot.settle(token)
     }
   }
 

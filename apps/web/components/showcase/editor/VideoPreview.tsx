@@ -2,11 +2,16 @@
 
 import { Youtube } from 'lucide-react'
 import { metaUrl, type Asset } from '@/components/showcase/useShowcaseEditor'
+import { safeEmbedUrl } from '@/lib/showcase'
 import { LinkRow } from './LinkRow'
 
 /** The saved project video: inline YouTube embed (when available) + link row. */
 export function VideoPreview({ asset, onRemove }: { asset: Asset; onRemove: (id: string) => void }) {
-  const embed = typeof asset.metadata?.embedUrl === 'string' ? (asset.metadata.embedUrl as string) : null
+  // Re-pinned to the allowlisted provider hosts at the render boundary (P2-3),
+  // the same gate the public page applies — the team's own editor renders the
+  // same stored `embedUrl`, so a legacy row must not frame an arbitrary origin
+  // here either.
+  const embed = safeEmbedUrl(asset.metadata?.embedUrl)
   return (
     <div className="sc-videowrap">
       {embed && (

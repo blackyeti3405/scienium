@@ -5,6 +5,7 @@ import {
   teamSchoolIds,
   isSafeHttpUrl,
   parseVideoUrl,
+  safeEmbedUrl,
   slugify,
   wordCount,
   type ShowcaseForView,
@@ -221,6 +222,40 @@ describe('parseVideoUrl', () => {
     expect(parseVideoUrl('https://evil.com/watch?v=abcdef')).toBeNull()
     expect(parseVideoUrl('javascript:alert(1)')).toBeNull()
     expect(parseVideoUrl('https://youtube.com/watch?v=<script>')).toBeNull()
+  })
+})
+
+// ── safeEmbedUrl: the stored-embed gate at the render boundary (P2-3) ─────────
+// The write path can only ever store a canonical provider embed; these cases are
+// the LEGACY rows it cannot speak for.
+describe('safeEmbedUrl', () => {
+  it('passes the canonical provider embeds through unchanged', () => {
+    expect(safeEmbedUrl('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ')).toBe(
+      'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
+    )
+    expect(safeEmbedUrl('https://player.vimeo.com/video/123456789')).toBe(
+      'https://player.vimeo.com/video/123456789',
+    )
+  })
+  it('re-canonicalizes a named-provider URL stored in another shape', () => {
+    expect(safeEmbedUrl('https://www.youtube.com/embed/dQw4w9WgXcQ')).toBe(
+      'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
+    )
+    expect(safeEmbedUrl('https://vimeo.com/123456789')).toBe('https://player.vimeo.com/video/123456789')
+  })
+  it('rejects every non-provider host', () => {
+    expect(safeEmbedUrl('https://evil.com/embed/dQw4w9WgXcQ')).toBeNull()
+    // Lookalikes: the allowlist matches the host exactly (minus a `www.`).
+    expect(safeEmbedUrl('https://youtube.com.evil.com/embed/dQw4w9WgXcQ')).toBeNull()
+    expect(safeEmbedUrl('https://player.vimeo.com.evil.com/video/123456789')).toBeNull()
+  })
+  it('rejects unsafe schemes and non-strings', () => {
+    expect(safeEmbedUrl('javascript:alert(1)')).toBeNull()
+    expect(safeEmbedUrl('data:text/html,<script>alert(1)</script>')).toBeNull()
+    expect(safeEmbedUrl('//www.youtube-nocookie.com/embed/dQw4w9WgXcQ')).toBeNull()
+    expect(safeEmbedUrl(undefined)).toBeNull()
+    expect(safeEmbedUrl(null)).toBeNull()
+    expect(safeEmbedUrl({ toString: () => 'https://player.vimeo.com/video/123456789' })).toBeNull()
   })
 })
 

@@ -2757,6 +2757,10 @@
   transition: border-color 0.12s, transform 0.08s;
 }
 .sc-show__link:hover { border-color: #7ff2e3; transform: translateY(-1px); }
+/* Unlinkable resource (a stored URL that failed the render-boundary scheme
+   check) — listed, dimmed, and deliberately not hoverable. */
+.sc-show__link--inert { color: rgba(232, 236, 251, 0.5); cursor: default; }
+.sc-show__link--inert:hover { border-color: rgba(255, 255, 255, 0.1); transform: none; }
 .sc-show__link-label { font-weight: 600; font-size: 15px; }
 .sc-show__link-host { font-size: 13px; color: rgba(255, 255, 255, 0.4); }
 .sc-show__link-ext { margin-left: auto; opacity: 0.5; }

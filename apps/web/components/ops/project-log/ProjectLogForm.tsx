@@ -69,6 +69,11 @@ export function ProjectLogForm({
   const [attendeeIds, setAttendeeIds] = useState<string[]>(entry?.attendeeIds ?? [])
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>(entry?.attachmentUrls ?? [])
   const [busy, setBusy] = useState(false)
+  // Save barrier (P2-2): a photo still going out is a consequential unsettled
+  // mutation — saving through it drops it from the entry (and, in create mode,
+  // the post-save reset would silently hand it to the NEXT entry). Cancelling
+  // the form instead unmounts it, which aborts the upload outright.
+  const [uploadPending, setUploadPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const stages = getStages(labType)
@@ -86,6 +91,7 @@ export function ProjectLogForm({
     const plainBody = body.replace(/[*_#>\-\s]/g, '')
     if (!plainBody) { setError('Session notes are required.'); return }
     if (!nextSteps.trim()) { setError('Next steps are required.'); return }
+    if (uploadPending) { setError('A photo is still uploading — give it a second.'); return }
     if (attachmentUrls.length === 0) { setError('At least one photo is required.'); return }
     setBusy(true)
     try {
@@ -186,7 +192,11 @@ export function ProjectLogForm({
           <SectionLabel required>
             Photos <span className="ops-label__hint">— at least one</span>
           </SectionLabel>
-          <AttachmentUploader urls={attachmentUrls} onChange={setAttachmentUrls} />
+          <AttachmentUploader
+            urls={attachmentUrls}
+            onChange={setAttachmentUrls}
+            onPendingChange={setUploadPending}
+          />
         </div>
 
         {error && (
@@ -206,6 +216,8 @@ export function ProjectLogForm({
           busyLabel="Saving…"
           icon={isEdit ? <Check size={11} /> : <Send size={11} />}
           onClick={submit}
+          disabled={uploadPending}
+          title={uploadPending ? 'Wait for the photo to finish uploading' : undefined}
           className="ops-submit-btn"
         >
           {isEdit ? 'Save changes' : 'Save entry'}

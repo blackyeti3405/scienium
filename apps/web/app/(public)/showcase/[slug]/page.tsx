@@ -4,7 +4,7 @@ import { headers } from 'next/headers'
 import { Github, Paperclip, ExternalLink, Eye, Printer } from 'lucide-react'
 import { db } from '@/lib/db'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
-import { canViewShowcase, isSafeHttpUrl, type ShowcaseAccess } from '@/lib/showcase'
+import { canViewShowcase, isSafeHttpUrl, safeEmbedUrl, type ShowcaseAccess } from '@/lib/showcase'
 import {
   viewFingerprint,
   recordShowcaseView,
@@ -139,7 +139,11 @@ export default async function PublicShowcasePage(props: Props) {
   // actually load its own board/quad bytes (P1-R7).
   const assetUrl = (id: string) => assetHref(id, found.via, sc.shareToken)
   const isPdf = (fileUrl: string | null) => !!fileUrl && fileUrl.endsWith('.pdf')
-  const embedOf = (a?: { metadataJson: unknown }) => readMeta<{ embedUrl?: string }>(a)?.embedUrl
+  // Second, independent gate at the render boundary (P2-3): the stored
+  // `embedUrl` is re-pinned to the allowlisted provider hosts before it can
+  // become an `<iframe src>`, so a legacy row holding any other origin frames
+  // nothing.
+  const embedOf = (a?: { metadataJson: unknown }) => safeEmbedUrl(readMeta<{ embedUrl?: string }>(a)?.embedUrl)
 
   const board = sc.assets.find((a) => a.assetType === 'board')
   const quad = sc.assets.find((a) => a.assetType === 'quad_chart')
@@ -328,7 +332,13 @@ function ShowcaseOnePager({
   assetUrl: (id: string) => string
   isPdf: (fileUrl: string | null) => boolean
 }) {
-  const linkUrl = (a?: OnePagerAsset) => readMeta<{ url?: string }>(a)?.url
+  // Same render-boundary rule as `ResourceLink`: the one-pager prints URLs for a
+  // reader to type, so a legacy `javascript:`/`data:` row is dropped rather than
+  // published as something that looks like a link.
+  const linkUrl = (a?: OnePagerAsset) => {
+    const u = readMeta<{ url?: string }>(a)?.url
+    return u && isSafeHttpUrl(u) ? u : undefined
+  }
   const linkLabel = (a?: OnePagerAsset, fallback?: string) => readMeta<{ label?: string }>(a)?.label || fallback
 
   const citedSupplements = supplements.filter((s) => readMeta<{ kind?: string }>(s)?.kind !== 'works_cited')
@@ -420,10 +430,21 @@ function ResourceLink({
 }) {
   const meta = readMeta<{ url?: string; label?: string }>(asset)
   const url = meta?.url
-  // Second, independent gate at the render boundary — the upload path validates
+  const label = meta?.label || fallback
+  if (!url) return null
+  // Second, independent gate at the render boundary — the link route validates
   // the scheme, but a legacy `metadataJson.url` saved before it did must not get
-  // a free pass into an `href` (same rule `SourceReader`/`IdeaCheckView` apply).
-  if (!url || !isSafeHttpUrl(url)) return null
+  // a free pass into an `href`. An unsafe URL degrades to inert text keeping the
+  // label, exactly as `IdeaCheckView`'s `SafeExternalLink` does: the resource is
+  // still listed, it just isn't clickable.
+  if (!isSafeHttpUrl(url)) {
+    return (
+      <span className="sc-show__link sc-show__link--inert">
+        {icon}
+        <span className="sc-show__link-label">{label}</span>
+      </span>
+    )
+  }
   // Parse is guaranteed to succeed: `isSafeHttpUrl` already constructed it.
   const host = new URL(url).hostname.replace(/^www\./, '')
   return (

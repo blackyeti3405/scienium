@@ -8,27 +8,14 @@ import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
 import { fmtDate } from '@/lib/format'
 
 // ─── Types (shared by the student panel and the teacher StudentDetail view) ───
+// Defined in `review-stream.ts` (with the stream accumulator that fills them)
+// so the shape stays importable from node-only unit tests; re-exported here
+// because this component has always been their import site.
 
-export interface PlanReviewSection {
-  title: string
-  score: number
-  max: number
-  assessment: string
-}
-export interface PlanReview {
-  overall: { readiness: string; score: number; summary: string } | null
-  sections: PlanReviewSection[]
-  strengths: string[]
-  gaps: string[]
-  recommendations: string[]
-}
-export const EMPTY_REVIEW: PlanReview = {
-  overall: null,
-  sections: [],
-  strengths: [],
-  gaps: [],
-  recommendations: [],
-}
+import type { PlanReview, PlanReviewSection } from './review-stream'
+
+export { EMPTY_REVIEW } from './review-stream'
+export type { PlanReview, PlanReviewSection }
 
 /**
  * Which side is rendering: 'student' is the live lab panel (pixel chrome,

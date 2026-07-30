@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { readJsonCapped, sleep } from '@/lib/fetch-retry'
+import { fetchWithRetry, readJsonCapped, sleep } from '@/lib/fetch-retry'
 import { LruCache } from '@/lib/lru'
 
 /**
@@ -551,9 +551,19 @@ export async function geocodeZip(
   const result = await throttleNominatim(async () => {
     try {
       const url = `https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(zip)}&countrycodes=us&format=json&limit=1`
-      const res = await fetch(url, {
+      // The shared outbound gateway (REFACTOR2 P2-1): scheme/private-range
+      // checks on the URL AND on every redirect hop, so a Nominatim `302` into
+      // our own network is refused rather than followed. This was the last raw
+      // `fetch` in the app; it stayed raw because routing it through made the
+      // offline unit tests resolve a live hostname — `geocode.test.ts` now mocks
+      // `node:dns/promises`, the same seam `discovery/adapters.test.ts` uses.
+      const res = await fetchWithRetry(url, {
         headers: { 'User-Agent': 'scienium/1.0 (science fair matching)' },
-        signal: AbortSignal.timeout(6000),
+        timeoutMs: 6000,
+        // No retry: the ToS throttle above is per-process, and a retry would
+        // fire inside its own 1s window. A failed geocode degrades to null.
+        attempts: 1,
+        contentTypes: ['application/json'],
       })
       if (!res.ok) return null
       // PARSED, never cast — the pre-fix `results[0].lat` read straight off

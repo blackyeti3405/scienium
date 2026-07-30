@@ -5,6 +5,40 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.76.5] — 2026-07-30
+
+Pilot-readiness wave 3 — closes REFACTOR2 rows P2-1 (outbound HTTP boundary), P2-2 (client
+save/upload barriers), and P2-3 (showcase render boundary). No schema changes.
+
+### Fixed
+
+- **P2-1 — the last three raw outbound adapters** now go through the shared gateway
+  (`fetchWithRetry` + capped readers): discovery search and YouTube oEmbed resolve gained
+  byte caps, content-type allowlists, redirect policy, and zod validation before domain
+  mapping (search keeps its 5-min result cache via the sibling route's LRU pattern); the
+  fairs geocoder (`lib/fairs/zip.ts`) came under redirect revalidation with offline tests.
+  The gateway's resolve-then-connect DNS-rebinding window is now a written, pilot-accepted
+  risk (`docs/SECURITY.md` §3.8) — pinning would require adding undici as a direct
+  dependency; the revisit trigger is the first user-supplied URL fetch, not a date.
+- **P2-2 — upload and stream races.** New `lib/upload-slot.ts`: each upload attempt holds a
+  token + AbortController; completions that no longer own the slot write nothing, removal
+  during upload survives the completion, and unmount aborts the bytes
+  (`uploadWithProgress` now takes a signal). Project-log save is barred while an upload is
+  unsettled (inline error, disabled Save), so a late photo can no longer attach to the next
+  entry. Research-plan streams settle through `settleStream`: only an explicit terminal
+  `done` event may replace the last known-good review/idea-check — truncated EOF,
+  disconnect, or a mid-stream error keeps the previous result and surfaces retry (the
+  server already emitted `done`; the client had been ignoring it).
+- **P2-3 — stored URLs at the render boundary.** Embeds now re-derive through the write
+  path's own `parseVideoUrl` (`safeEmbedUrl`) on the public page, the print one-pager, and
+  the editor preview — a legacy or hand-edited row can no longer frame a non-provider
+  origin. `ResourceLink` renders non-http(s) URLs as inert labeled text instead of links.
+  Regression tests build unsafe legacy rows directly and render the real page. (The
+  request-scoped `cache()` sharing between metadata and page had already landed in
+  v0.76.3.)
+
+---
+
 ## [0.76.4] — 2026-07-30
 
 CI/test only — the E2E GitHub gate went from never-executed to fully green

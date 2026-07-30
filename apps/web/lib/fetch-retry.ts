@@ -47,10 +47,23 @@ export function isPrivateAddress(ip: string): boolean {
  * a provider that answers 302 `Location: http://169.254.169.254/…` is the same
  * SSRF as a provider-supplied URL, and only checking the first hop misses it.
  *
- * ponytail: resolve-then-connect is a TOCTOU window (DNS rebinding can move
- * the name between this lookup and the socket). Closing it needs a custom
- * undici dispatcher that connects to the vetted IP; upgrade to that if we ever
- * fetch a URL a *user* supplied rather than one of ~8 known providers.
+ * ACCEPTED RISK — DNS rebinding (REFACTOR2 P2-1, pilot-accepted, revisit
+ * post-pilot). Resolve-then-connect is a TOCTOU window: the name can move
+ * between this lookup and the socket, so a literal address check here does not
+ * prove the address the kernel finally dials. Closing it means connecting to
+ * the vetted IP ourselves, which means a custom `undici` dispatcher — `fetch`'s
+ * `dispatcher` init option is the only seam, and there is no way to construct
+ * one without adding `undici` as a direct dependency. (Rewriting the URL to the
+ * literal IP and setting `Host` is not an alternative: it breaks TLS SNI and
+ * certificate validation, trading a narrow window for a total one.)
+ *
+ * What bounds it for the pilot: every destination reached through here is one
+ * of ~8 hard-coded provider hosts — arXiv, OpenAlex, Wikipedia, YouTube oEmbed,
+ * Nominatim, MedlinePlus, PatentsView, Semantic Scholar, Google Docs export —
+ * chosen by a literal in our own source, never by a student or a provider
+ * payload. An attacker would have to control the DNS for one of those names, at
+ * which point rebinding is the least of it. Revisit the moment this primitive
+ * fetches a URL a *user* supplied; that is the trigger, not a date.
  */
 export async function assertPublicUrl(input: string | URL): Promise<URL> {
   let url: URL

@@ -8,8 +8,9 @@
 > concrete pilot sign-off still outstanding.
 >
 > Wave 1 (v0.76.1) closed P0-R3, P1-1, P1-2, the code half of P1-3, and P2-4. Wave 2
-> (v0.76.3) closed P1-5 and P1-6. See `docs/CHANGELOG.md`. Owner remainders (E2E secret,
-> branch protection, Resend webhook config) live in the owner gates table.
+> (v0.76.3) closed P1-5 and P1-6. v0.76.4 made the GitHub E2E gate green. Wave 3 (v0.76.5)
+> closed P2-1, P2-2, and P2-3. See `docs/CHANGELOG.md`. Owner remainders (branch
+> protection, Resend webhook config, Pyodide→R2 upload) live in the owner gates table.
 
 ## P1 — correctness, cost, and release integrity
 
@@ -35,62 +36,6 @@ Done when an operator can request, resume, inspect, and prove an export or erasu
 manual database surgery.
 
 ## P2 — hardening and product-quality work
-
-### P2-1 — Finish the outbound HTTP boundary
-
-Most provider traffic uses the shared policy, but raw or incomplete adapters remain:
-
-- `apps/web/app/api/discovery/search/route.ts`
-- `apps/web/app/api/discovery/youtube/resolve/route.ts`
-- `apps/web/lib/fairs/zip.ts`
-
-The discovery routes read provider JSON without the shared byte/content-type/schema boundary.
-The ZIP adapter remains outside redirect revalidation. The shared gateway's
-resolve-then-connect sequence also retains a documented DNS-rebinding window.
-
-Required:
-
-- Route the discovery adapters through the shared gateway and capped readers.
-- Runtime-validate provider output before domain mapping.
-- Bring the ZIP adapter under redirect policy without making unit tests depend on live DNS.
-- Either pin the vetted IP through connection or document and accept the DNS-rebinding risk for
-  the pilot.
-- Add adapter-level tests for oversized bodies, wrong content types, redirect-to-private-host,
-  malformed JSON, deadline exhaustion, and retry-body cleanup.
-
-### P2-2 — Finish client save and upload barriers
-
-Remaining verified async-state gaps:
-
-- Attachment upload completion can re-add a URL the user removed while the upload was in
-  flight.
-- A form can unmount while an upload is in progress without a cancel/commit barrier.
-- Research streaming can accept a truncated EOF as a completed result and can displace the last
-  known-good result.
-
-Required:
-
-- Give uploads mutation identities and cancel or ignore completions that no longer own the
-  attachment slot.
-- Block or explicitly cancel unmount/save while a consequential upload is unsettled.
-- Require an explicit successful terminal stream event before replacing the last good research
-  result.
-- Test removal-during-upload, unmount-during-upload, disconnect, truncated EOF, retry, and
-  stale completion.
-
-### P2-3 — Close remaining showcase render-boundary gaps
-
-`apps/web/app/(public)/showcase/[slug]/page.tsx` repeats showcase/viewer loading between
-metadata and page rendering, and `ResourceLink` does not revalidate stored URLs at the render
-boundary.
-
-Required:
-
-- Cache the request-scoped showcase and viewer loads so metadata and the page share them.
-- Permit only canonical `http`/`https` links at render time, even though current write paths
-  validate them.
-- Keep embeds pinned to the named provider hosts and add regression tests for unsafe legacy
-  rows.
 
 ### P2-5 — Complete phone and browser accessibility coverage
 

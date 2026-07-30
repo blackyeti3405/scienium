@@ -11,6 +11,12 @@ import { defineConfig } from 'vitest/config'
  * guarded server modules (see test/stubs/server-only.ts).
  */
 export default defineConfig({
+  // tsconfig.json keeps `jsx: preserve` for Next's own compiler, which leaves
+  // Vite's transform unable to compile a `.tsx` that a test imports. Tests are
+  // still `.ts` with no JSX of their own — but showcase-render-boundary.test.ts
+  // renders the real public showcase page to static markup, so the components
+  // it pulls in have to compile.
+  oxc: { jsx: { runtime: 'automatic', importSource: 'react' } },
   resolve: {
     tsconfigPaths: true,
     alias: { 'server-only': path.resolve(__dirname, 'test/stubs/server-only.ts') },
