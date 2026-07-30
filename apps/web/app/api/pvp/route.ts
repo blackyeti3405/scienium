@@ -271,6 +271,23 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Scope: the opponent must be a different team in the attacker's own class —
+    // matchmaking only offers those, but this endpoint takes the ID from the
+    // request body, so enforce it here too (cross-class raids would leak base
+    // layouts and drain trophies of arbitrary teams).
+    const [attackerTeam, opponentTeam] = await Promise.all([
+      db.team.findUnique({ where: { id: teamId }, select: { classId: true } }),
+      db.team.findUnique({ where: { id: opponentTeamId }, select: { classId: true } }),
+    ])
+    if (
+      opponentTeamId === teamId ||
+      !attackerTeam?.classId ||
+      !opponentTeam?.classId ||
+      opponentTeam.classId !== attackerTeam.classId
+    ) {
+      return NextResponse.json({ error: 'Opponent not raidable' }, { status: 403 })
+    }
+
     const quota = await getRaidQuota(teamId)
     const raidsRemaining = Math.max(0, MAX_RAIDS_PER_DAY - quota.raidsUsed)
     if (raidsRemaining <= 0) {
