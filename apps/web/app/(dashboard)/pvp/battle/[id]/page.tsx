@@ -81,6 +81,10 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   const [hoveredTarget, setHoveredTarget] = useState<{ x: number; y: number } | null>(null)
   const [casting, setCasting] = useState(false)
 
+  // Prevents duplicate finalize calls when both timer-expiry and all-destroyed
+  // effects fire in the same tick.
+  const finalizingRef = useRef(false)
+
   // used for keyboard focus management
   const gridRef = useRef<HTMLDivElement>(null)
 
@@ -225,15 +229,47 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
     return 'Dormant'
   })()
 
-  // ── Check for auto-complete (all buildings destroyed) ──────────────────
+  // ── Finalize helper (shared by timer-expiry + all-destroyed effects) ──
+
+  const handleFinalize = useCallback(async () => {
+    if (ended || finalizingRef.current) return
+    finalizingRef.current = true
+    try {
+      const r = await fetch(`/api/pvp/${raidId}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'complete' }),
+      })
+      const data = await r.json()
+      if (data.ended && data.result) {
+        setEnded(true)
+        setResult(data.result)
+        if (data.defenderBase) {
+          setDefenderBase(data.defenderBase)
+        }
+      }
+    } catch {
+      // Network error — leave finalizingRef = true so we don't
+      // re-spam; the user can still click a building to trigger a cast
+      // which will finalize via finalizeFromStoredLog.
+    }
+  }, [raidId, ended])
+
+  // ── Timer expiry: auto-finalize when remainingMs hits 0 ─────────────
 
   useEffect(() => {
-    if (allDestroyed && !ended) {
-      // Send a final "check" — the action route will completeRaid
-      // if timer hasn't expired yet. But we can also just wait for
-      // the next cast or timer expiry. Let the cast flow handle it.
+    if (remainingMs <= 0 && !ended && !finalizingRef.current) {
+      handleFinalize()
     }
-  }, [allDestroyed, ended])
+  }, [remainingMs, ended, handleFinalize])
+
+  // ── All-destroyed: auto-finalize without waiting for a click ─────────
+
+  useEffect(() => {
+    if (allDestroyed && !ended && !finalizingRef.current) {
+      handleFinalize()
+    }
+  }, [allDestroyed, ended, handleFinalize])
 
   // ── Loading state ──────────────────────────────────────────────────────
 

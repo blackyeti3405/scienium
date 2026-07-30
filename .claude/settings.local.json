@@ -10,7 +10,12 @@
       "Bash(Format-Table FullName)",
       "Bash(Find \"C:\\\\Code\\\\scienium\\\\apps\\\\web\\\\lib\" -type f -name \"*.ts\" -o -name \"*.tsx\")",
       "Bash(Sort-Object)",
-      "Bash(claude mcp *)"
+      "Bash(claude mcp *)",
+      "Bash(gsd-sdk query *)",
+      "Skill(gsd-execute-phase)",
+      "Bash(git checkout *)",
+      "Bash(docker exec infra-postgres-1 *)",
+      "Bash(pnpm *)"
     ]
   }
 }

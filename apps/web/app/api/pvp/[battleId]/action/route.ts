@@ -72,21 +72,9 @@ export async function POST(
 
   const { action, spellId, x, y, clientTs } = body
 
-  if (action !== 'cast_spell') {
+  if (action !== 'cast_spell' && action !== 'complete') {
     return NextResponse.json(
       { error: `Unknown action: ${action}` },
-      { status: 400 },
-    )
-  }
-
-  if (
-    !spellId ||
-    typeof x !== 'number' ||
-    typeof y !== 'number' ||
-    typeof clientTs !== 'number'
-  ) {
-    return NextResponse.json(
-      { error: 'spellId, x, y, and clientTs are required' },
       { status: 400 },
     )
   }
@@ -110,6 +98,27 @@ export async function POST(
         percentDestroyed: raid.percentDestroyed ?? 0,
         trophiesDelta: raid.trophiesDelta ?? 0,
       },
+      { status: 400 },
+    )
+  }
+
+  // ── complete: finalize the raid from stored state ──────────────────────
+  // No spell cast required — used when the client detects timer expiry or
+  // all buildings destroyed and needs the server to finalize + return results.
+
+  if (action === 'complete') {
+    return await finalizeFromStoredLog(battleId, raid)
+  }
+
+  // Validate cast_spell required fields
+  if (
+    !spellId ||
+    typeof x !== 'number' ||
+    typeof y !== 'number' ||
+    typeof clientTs !== 'number'
+  ) {
+    return NextResponse.json(
+      { error: 'spellId, x, y, and clientTs are required' },
       { status: 400 },
     )
   }
