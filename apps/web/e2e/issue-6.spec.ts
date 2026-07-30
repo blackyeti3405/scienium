@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * Issue 6 — Teacher dashboard revamp (roster restyle + student drill-down).
@@ -26,6 +27,8 @@ import { api, withSeedPage } from './api'
  * feature is read-only.
  */
 
+let lab: OwnedLab
+
 /** Student id discovered in beforeAll from the teacher's roster. */
 let inScopeStudentId: string | null = null
 
@@ -38,23 +41,34 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   // ── Seed ─────────────────────────────────────────────────────────────────────
 
   test.beforeAll(async ({ browser }) => {
+    // Co-members, so the fixture roster resolves to THIS lab. The drill-down
+    // this spec exercises then reads a team whose contents are known, instead
+    // of "the first student who happens to have a team" — which, on a shared
+    // class, could be a real student's real lab.
+    lab = await createLab('teacher-drilldown', true, true)
+
     await withSeedPage(browser, 'teacher', async (page) => {
       const rosterRes = await api.get(page, '/api/teacher/roster')
       if (!rosterRes.ok()) {
         throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
       }
       const { students } = await rosterRes.json()
-      // Find the first student with a team so drill-down has real data.
-      const withTeam = (students as Array<{ studentId: string; teamId: string | null }>).find(
-        (s) => s.teamId !== null,
+      // Narrowed to this lab's own members rather than any team at all.
+      const mine = (students as Array<{ studentId: string; teamId: string | null }>).find(
+        (s) => s.teamId === lab.teamId,
       )
-      inScopeStudentId = withTeam?.studentId ?? (students[0]?.studentId ?? null)
+      inScopeStudentId = mine?.studentId ?? null
       if (!inScopeStudentId) {
         throw new Error(
-          'No students found in teacher roster — DevTeacher must be linked to the dev class.',
+          "This file's disposable lab did not appear in the teacher roster — the E2E teacher " +
+            'account must be linked to the dev class that contains the E2E leader.',
         )
       }
     })
+  })
+
+  test.afterAll(async () => {
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────
@@ -62,7 +76,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   // data fonts (text-sm / text-base on the student name cell, NOT pixel glyphs).
   // Toggling "Needs my attention" reduces / filters visible rows.
   test('AC1: roster readable fonts + attention filter reduces visible rows', async ({ page }) => {
-    await page.goto('/teacher')
+    await gotoFresh(page, '/teacher')
 
     // Wait for the roster to load (at least one student row must be present).
     // Each row is a Link to /teacher/student/<id>; the student name uses text-sm.
@@ -103,7 +117,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   }) => {
     if (!inScopeStudentId) throw new Error('inScopeStudentId not set — beforeAll failed')
 
-    await page.goto('/teacher')
+    await gotoFresh(page, '/teacher')
 
     // Wait for roster rows to appear.
     await expect(page.locator('a[href^="/teacher/student/"]').first()).toBeVisible({
@@ -111,7 +125,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
     })
 
     // Click the specific student row we discovered in beforeAll.
-    await page.goto(`/teacher/student/${inScopeStudentId}`)
+    await gotoFresh(page, `/teacher/student/${inScopeStudentId}`)
 
     // URL must have /teacher/student/<id>.
     await expect(page).toHaveURL(new RegExp(`/teacher/student/${inScopeStudentId}`))
@@ -139,7 +153,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   }) => {
     if (!inScopeStudentId) throw new Error('inScopeStudentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${inScopeStudentId}`)
+    await gotoFresh(page, `/teacher/student/${inScopeStudentId}`)
 
     // Click the Economy tab button.
     const economyTab = page.getByRole('button', { name: /economy/i })
@@ -164,7 +178,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   test('AC4: Buildings tab shows buildings list or explicit empty state', async ({ page }) => {
     if (!inScopeStudentId) throw new Error('inScopeStudentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${inScopeStudentId}`)
+    await gotoFresh(page, `/teacher/student/${inScopeStudentId}`)
 
     const buildingsTab = page.getByRole('button', { name: /buildings/i })
     await expect(buildingsTab).toBeVisible({ timeout: 10000 })
@@ -192,7 +206,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   }) => {
     if (!inScopeStudentId) throw new Error('inScopeStudentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${inScopeStudentId}`)
+    await gotoFresh(page, `/teacher/student/${inScopeStudentId}`)
 
     const litTab = page.getByRole('button', { name: /literature/i })
     await expect(litTab).toBeVisible({ timeout: 10000 })
@@ -212,42 +226,40 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   })
 
   // ── AC6 ──────────────────────────────────────────────────────────────────────
-  // The drill-down presents logs, experiments, showcase, and activity as
+  // The drill-down presents logs, datasets, showcase, and activity as
   // distinct tabs (not one undivided block). We assert that tab buttons for
-  // Logs, Experiments, Showcase, and Activity all exist, and clicking each
+  // Logs, Datasets, Showcase, and Activity all exist, and clicking each
   // one activates a separate content panel.
-  test('AC6: Logs, Experiments, Showcase, and Activity are distinct tabs', async ({ page }) => {
+  test('AC6: Logs, Datasets, Showcase, and Activity are distinct tabs', async ({ page }) => {
     if (!inScopeStudentId) throw new Error('inScopeStudentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${inScopeStudentId}`)
+    await gotoFresh(page, `/teacher/student/${inScopeStudentId}`)
 
     // Wait for tab strip to render.
     await expect(page.getByRole('button', { name: /identity/i })).toBeVisible({ timeout: 10000 })
 
     // All four relevant tab buttons must be present in the tab strip.
     const logsTab = page.getByRole('button', { name: /^logs$/i })
-    const experimentsTab = page.getByRole('button', { name: /^experiments$/i })
+    const datasetsTab = page.getByRole('button', { name: /^datasets$/i })
     const showcaseTab = page.getByRole('button', { name: /^showcase$/i })
     const activityTab = page.getByRole('button', { name: /^activity$/i })
 
     await expect(logsTab).toBeVisible()
-    await expect(experimentsTab).toBeVisible()
+    await expect(datasetsTab).toBeVisible()
     await expect(showcaseTab).toBeVisible()
     await expect(activityTab).toBeVisible()
 
     // Clicking each tab switches the panel — verify that the content area changes.
     // Logs tab: clicking renders log content (or empty state).
     await logsTab.click()
-    // Content panel shows either logs or "No project logs yet."
-    const logsContent = page.getByText(/No project logs yet\.|progress|failure/i)
     // We just need the panel to be active with some content; at minimum the tab is active.
     // The tab strip uses border-[#F5C518] on active. Check the clicked tab has gold border.
     await expect(logsTab).toHaveClass(/border-\[#F5C518\]/)
 
-    // Experiments tab.
-    await experimentsTab.click()
-    await expect(experimentsTab).toHaveClass(/border-\[#F5C518\]/)
-    // Must not show logs-specific content while Experiments is active.
+    // Datasets tab.
+    await datasetsTab.click()
+    await expect(datasetsTab).toHaveClass(/border-\[#F5C518\]/)
+    // Must not show logs-specific content while Datasets is active.
     await expect(logsTab).not.toHaveClass(/border-\[#F5C518\]/)
 
     // Showcase tab.
@@ -257,9 +269,6 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
     // Activity tab.
     await activityTab.click()
     await expect(activityTab).toHaveClass(/border-\[#F5C518\]/)
-
-    // Suppress the unused variable lint warning.
-    void logsContent
   })
 
   // ── AC7 ──────────────────────────────────────────────────────────────────────
@@ -267,7 +276,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   // Uses the teacher's own authenticated page (api.*) to prove it is a scoping
   // failure (not an auth failure), and the endpoint is GET-only.
   test('AC7: IDOR guard — out-of-scope student ID returns HTTP 404', async ({ page }) => {
-    await page.goto('/teacher') // fresh session cookie before api.* calls
+    await gotoFresh(page, '/teacher') // fresh session cookie before api.* calls
 
     // A syntactically valid but non-existent/out-of-scope CUID.
     const fakeId = 'cl000000000000000000000000'
@@ -292,7 +301,7 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
   // separately in the pipeline). We assert the teacher landing page loads
   // correctly to confirm the overall integration is healthy.
   test('AC8: gates pass — teacher dashboard loads without error', async ({ page }) => {
-    await page.goto('/teacher')
+    await gotoFresh(page, '/teacher')
     await expect(page).toHaveURL(/\/teacher/)
     // The page renders the Classes section heading and the Roster section heading.
     await expect(page.getByText('Classes')).toBeVisible({ timeout: 10000 })

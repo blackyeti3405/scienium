@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
+import { ModalBackdrop } from '@/components/ui/ModalBackdrop'
 
 /**
  * Overlay shell a gateway building opens into (arch §8.4). Renders the feature
  * over the dimmed, scroll-locked lab scene in the pixel-art frame language:
- * chunky border, pixel-font title bar, a close button, and Escape-to-close. The
- * scene stays visible behind it; closing returns to the scene.
+ * chunky border, pixel-font title bar, a close button, and Escape-to-close.
+ * Focus is trapped inside and restored to the trigger on close (useModalA11y).
+ * The scene stays visible behind it; closing returns to the scene.
  */
 export function FeaturePanel({
   title,
@@ -19,32 +21,8 @@ export function FeaturePanel({
 }) {
   const closeRef = useRef<HTMLButtonElement>(null)
 
-  // Escape closes; lock background scroll while open.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    closeRef.current?.focus()
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prevOverflow
-    }
-  }, [onClose])
-
   return (
-    <div
-      className="feature-panel__backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      onMouseDown={(e) => {
-        // click outside the panel (on the backdrop) closes
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
+    <ModalBackdrop label={title} onClose={onClose} initialFocusRef={closeRef}>
       <div className="feature-panel">
         <header className="feature-panel__bar">
           <span className="feature-panel__title font-pixel">{title}</span>
@@ -60,6 +38,6 @@ export function FeaturePanel({
         </header>
         <div className="feature-panel__body">{children}</div>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }

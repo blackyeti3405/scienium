@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, openGateway, gotoFresh } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * Rubric self-assessment (Feature F1 — Rubric self-assessment).
@@ -39,47 +40,13 @@ import { api, withSeedPage } from './api'
  * running the reset.
  */
 
+let lab: OwnedLab
+
 const RESEARCH_QUESTION_KEY = 'science:I'
-
-/**
- * Reset science:I to score 0 / notes null, scoped to the leader's team.
- *
- * Called from both beforeAll and afterAll (see the hooks below) on a fresh
- * authed seed page. `api.put` refreshes the Clerk session before firing, so
- * this stays reliable even in afterAll — ~2 minutes into this serial suite,
- * by which point the on-disk STORAGE.leader token is stale and a bare
- * request-context PUT would silently 307 to an HTML sign-in page (Playwright
- * doesn't reject on a 200-with-HTML response) and leave science:I dirty for
- * whatever the last test set it to, breaking the next run's determinism (e.g.
- * AC5's exact "8 / 100" assertion assumes a 0 starting score). The status
- * check asserts the PUT actually succeeded so a broken reset fails loudly
- * instead of silently leaving dirty shared-DB state (PARALLELISM.md:
- * write-touching specs must leave their own data clean).
- */
-async function resetResearchQuestion(page: Page) {
-  const res = await api.put(page, '/api/rubric/self-assessment', {
-    data: { track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 0 },
-  })
-  if (res.status() !== 200) {
-    throw new Error(`resetResearchQuestion PUT failed: ${res.status()} ${await res.text()}`)
-  }
-}
-
-/** Click a building-sprite button by its aria-label (canvas sprites need a JS click). */
-async function clickBuilding(page: Page, ariaLabel: string) {
-  await page.evaluate((label) => {
-    const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-    if (!btn) throw new Error(`Building button not found: ${label}`)
-    btn.click()
-  }, ariaLabel)
-}
 
 /** Open the Science Fair Hub feature panel from /lab (mirrors F3.spec.ts's openLiteratureReview). */
 async function openScienceFairHub(page: Page) {
-  await page.goto('/lab')
-  await page.getByRole('button', { name: 'Open Science Fair' }).waitFor({ state: 'attached', timeout: 10_000 })
-  await clickBuilding(page, 'Open Science Fair')
-  await expect(page.getByRole('dialog', { name: 'Science Fair' })).toBeVisible({ timeout: 5000 })
+  await openGateway(page, 'Science Fair')
 }
 
 /**
@@ -112,26 +79,32 @@ async function fillAndSave(card: import('@playwright/test').Locator, value: stri
 test.describe('Rubric self-assessment (F1)', () => {
   test.describe.configure({ mode: 'serial' })
 
-  test.beforeAll(async ({ browser }) => {
-    await withSeedPage(browser, 'leader', (page) => resetResearchQuestion(page))
+  test.beforeAll(async () => {
+    // A fresh lab has no rubric rows at all, so `science:I` already reads 0 —
+    // which is the precondition the beforeAll reset existed to manufacture, and
+    // the one AC5's exact "8 / 100" assertion depends on.
+    lab = await createLab('f1selfcheck')
   })
 
-  test.afterAll(async ({ browser }) => {
-    await withSeedPage(browser, 'leader', (page) => resetResearchQuestion(page))
+  test.afterAll(async () => {
+    // The afterAll reset was the fragile half: ~2 minutes into a serial file the
+    // on-disk leader token is stale, and a silently-307'd PUT left `science:I`
+    // dirty for the NEXT run. Disposing the lab cannot 307.
+    await lab.dispose()
   })
 
   // ── AC1 ───────────────────────────────────────────────────────────────────
   test('AC1: /fair-hub/rubric renders a self-check surface with no TODO placeholder', async ({
     page,
   }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     await expect(page.getByRole('heading', { name: 'ISEF Rubric' })).toBeVisible({ timeout: 8000 })
     await expect(page.getByText('TODO', { exact: false })).toHaveCount(0)
   })
 
   // ── AC2 ───────────────────────────────────────────────────────────────────
   test('AC2: a "Judge-readiness" total out of 100 is visible', async ({ page }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const readiness = page.getByTestId('judge-readiness')
     await expect(readiness).toBeVisible({ timeout: 8000 })
     await expect(readiness).toContainText(/\/\s*100/)
@@ -139,7 +112,7 @@ test.describe('Rubric self-assessment (F1)', () => {
 
   // ── AC3 ───────────────────────────────────────────────────────────────────
   test('AC3: a scoreable "Research Question" card shows its 10-pt max', async ({ page }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
     await expect(card).toBeVisible({ timeout: 8000 })
     await expect(card).toContainText('Research Question')
@@ -148,7 +121,7 @@ test.describe('Rubric self-assessment (F1)', () => {
 
   // ── AC4 ───────────────────────────────────────────────────────────────────
   test('AC4: saving a score shows a saved indicator without a full reload', async ({ page }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const urlBefore = page.url()
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
     await expect(card).toBeVisible({ timeout: 8000 })
@@ -163,7 +136,7 @@ test.describe('Rubric self-assessment (F1)', () => {
   test('AC5: after saving, the Judge-readiness total reflects the new score without a reload', async ({
     page,
   }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const urlBefore = page.url()
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
     await expect(card).toBeVisible({ timeout: 8000 })
@@ -185,7 +158,7 @@ test.describe('Rubric self-assessment (F1)', () => {
 
   // ── AC6 ───────────────────────────────────────────────────────────────────
   test('AC6: reloading the page shows the saved score persisted from the DB', async ({ page }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
     await expect(card).toBeVisible({ timeout: 8000 })
 
@@ -200,7 +173,7 @@ test.describe('Rubric self-assessment (F1)', () => {
   // ── AC7 ───────────────────────────────────────────────────────────────────
   test('AC7: a saved note persists across reload', async ({ page }) => {
     const noteText = `E2E note ${Date.now()}`
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
     await expect(card).toBeVisible({ timeout: 8000 })
 
@@ -222,7 +195,7 @@ test.describe('Rubric self-assessment (F1)', () => {
 
   // ── AC8 ───────────────────────────────────────────────────────────────────
   test('AC8: a score above the criterion max clamps to the max after save', async ({ page }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
     await expect(card).toBeVisible({ timeout: 8000 })
 
@@ -239,7 +212,7 @@ test.describe('Rubric self-assessment (F1)', () => {
   test('AC9: toggling to Engineering changes criterion I\'s title to "Research Problem"', async ({
     page,
   }) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     const scienceCard = page.locator('[data-criterion-key="science:I"]')
     await expect(scienceCard).toBeVisible({ timeout: 8000 })
     await expect(scienceCard).toContainText('Research Question')
@@ -275,7 +248,7 @@ test.describe('Rubric self-assessment (F1)', () => {
     // the route (a 200 whose body is "<!DOCTYPE ..." instead of JSON — not a
     // route bug). Waiting on judge-readiness confirms the client-side session
     // refresh has actually landed before firing the API request below.
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 8000 })
 
     const res = await api.get(page, '/api/rubric/self-assessment?track=science')
@@ -288,7 +261,7 @@ test.describe('Rubric self-assessment (F1)', () => {
   // ── AC12 ──────────────────────────────────────────────────────────────────
   test('AC12: PUT persists a score that a subsequent team-scoped GET reflects', async ({ page }) => {
     // Same session-refresh rationale as AC11 — see comment there.
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 8000 })
 
     const putRes = await api.put(page, '/api/rubric/self-assessment', {

@@ -24,16 +24,21 @@ describe('phase ordering', () => {
 })
 
 describe('feature gating', () => {
-  it('discovery unlocks discovery + fair_hub only', () => {
+  it('discovery unlocks discovery + fair_hub + buildings only', () => {
     const f = getUnlockedFeatures('discovery')
     expect(f.has('discovery')).toBe(true)
     expect(f.has('fair_hub')).toBe(true)
-    expect(f.has('buildings')).toBe(false)
+    expect(f.has('literature')).toBe(false)
     expect(f.has('showcase')).toBe(false)
   })
 
-  it('working unlocks buildings/pvp and everything earlier', () => {
-    expect(isFeatureUnlocked('working', 'buildings')).toBe(true)
+  it('buildings are never phase-locked — teams arrange the plot from day one', () => {
+    for (const p of PHASE_ORDER) expect(isFeatureUnlocked(p, 'buildings')).toBe(true)
+  })
+
+  it('working unlocks pvp/data_terminal and everything earlier', () => {
+    expect(isFeatureUnlocked('working', 'pvp')).toBe(true)
+    expect(isFeatureUnlocked('working', 'data_terminal')).toBe(true)
     expect(isFeatureUnlocked('working', 'literature')).toBe(true)
     expect(isFeatureUnlocked('working', 'showcase')).toBe(false)
   })
@@ -57,7 +62,7 @@ describe('feature gating', () => {
 describe('assertFeatureUnlocked', () => {
   it('throws PhaseGateError with a 403 status code when locked', () => {
     try {
-      assertFeatureUnlocked('discovery', 'buildings')
+      assertFeatureUnlocked('discovery', 'pvp')
       expect.unreachable('should have thrown')
     } catch (err) {
       expect(err).toBeInstanceOf(PhaseGateError)
@@ -65,7 +70,7 @@ describe('assertFeatureUnlocked', () => {
     }
   })
   it('does not throw when unlocked', () => {
-    expect(() => assertFeatureUnlocked('working', 'buildings')).not.toThrow()
+    expect(() => assertFeatureUnlocked('working', 'pvp')).not.toThrow()
   })
 })
 

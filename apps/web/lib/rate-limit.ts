@@ -1,5 +1,7 @@
+import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { serverEnv } from '@/lib/env'
+import { logEvent, requestIdFrom } from '@/lib/observability/log'
 
 /**
  * Rate limiter — OWASP API4:2023 (Unrestricted Resource Consumption).
@@ -45,6 +47,14 @@ export const RATE_LIMITS = {
   read: { limit: 120, windowMs: 60_000 },
   /** Invite-code redemption — kept low to blunt code brute-forcing. */
   join: { limit: 10, windowMs: 60_000 },
+  /**
+   * Anonymous abuse reports on a public showcase (REFACTOR2 P1-6). Its own tier
+   * rather than a borrowed one so a `rate_limit.denied` line in the drain says
+   * what was denied. Low because reporting is a rare, deliberate act — and
+   * because the caller has no account, so this bucket (keyed on the reporter
+   * hash) is the only per-identity ceiling there is.
+   */
+  report: { limit: 5, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitTier>
 
 export type TierName = keyof typeof RATE_LIMITS
@@ -102,10 +112,15 @@ export class MemoryStore implements RateLimitStore {
  *   PEXPIRE key windowMs NX    → set the window TTL only on the first hit
  *   PTTL key                   → remaining ms, to compute `resetAt`
  *
- * Fails OPEN: if Upstash is unreachable we allow the request (a limiter outage
- * shouldn't take the whole API down) but log it. For a hard guarantee under
- * limiter failure, pair with an edge WAF.
+ * Throws `RateLimitStoreError` when the store can't answer — including an
+ * HTTP 200 whose pipeline elements carry per-command errors or a non-numeric
+ * count. `enforceRateLimit` decides the policy: paid tiers fail CLOSED, read/
+ * mutation tiers fail open (REFACTOR2 P1-R4). Returning a fabricated
+ * `count = 1` here removed the paid ceiling during exactly the outage that
+ * should have stopped cost growth.
  */
+export class RateLimitStoreError extends Error {}
+
 export class UpstashStore implements RateLimitStore {
   constructor(
     private url: string,
@@ -113,6 +128,7 @@ export class UpstashStore implements RateLimitStore {
   ) {}
 
   async incr(key: string, windowMs: number, now: number): Promise<WindowState> {
+    let out: Array<{ result?: unknown; error?: string }>
     try {
       const res = await fetch(`${this.url}/pipeline`, {
         method: 'POST',
@@ -126,16 +142,25 @@ export class UpstashStore implements RateLimitStore {
         signal: AbortSignal.timeout(2_000),
       })
       if (!res.ok) throw new Error(`Upstash HTTP ${res.status}`)
-      const out = (await res.json()) as Array<{ result?: number; error?: string }>
-      const count = Number(out[0]?.result ?? 1)
-      const ttl = Number(out[2]?.result ?? windowMs)
-      const resetAt = now + (Number.isFinite(ttl) && ttl > 0 ? ttl : windowMs)
-      return { count, resetAt }
+      out = (await res.json()) as Array<{ result?: unknown; error?: string }>
     } catch (err) {
-      console.error('[rate-limit] Upstash unreachable — failing open:', err)
-      // Fail open: treat as the first hit of a fresh window (always allowed).
-      return { count: 1, resetAt: now + windowMs }
+      throw new RateLimitStoreError(`Upstash unreachable: ${String(err)}`)
     }
+
+    // A 200 can still carry per-command failures; an unvalidated `?? 1` here
+    // would silently read as "first hit of a fresh window" = always allowed.
+    if (!Array.isArray(out) || out.length < 3) {
+      throw new RateLimitStoreError('Upstash returned a malformed pipeline response')
+    }
+    const failed = out.find((el) => el?.error)
+    if (failed) throw new RateLimitStoreError(`Upstash command error: ${failed.error}`)
+
+    const count = Number(out[0]?.result)
+    if (!Number.isFinite(count)) {
+      throw new RateLimitStoreError('Upstash returned a non-numeric INCR result')
+    }
+    const ttl = Number(out[2]?.result)
+    return { count, resetAt: now + (Number.isFinite(ttl) && ttl > 0 ? ttl : windowMs) }
   }
 }
 
@@ -148,6 +173,26 @@ function createStore(): RateLimitStore {
 
 // Single store instance for the process lifetime.
 const store: RateLimitStore = createStore()
+
+/**
+ * Tiers that trigger paid work (Claude calls). On multi-instance/serverless
+ * hosting the MemoryStore is per-instance — the "12 AI calls/min/user" ceiling
+ * silently becomes `12 × instances` and resets on every cold start, i.e. the
+ * cost cap isn't enforced at all. Rather than ship an unbounded ceiling to
+ * production, these tiers fail CLOSED (503) when no shared store is configured.
+ * Set `RATE_LIMIT_ALLOW_MEMORY=1` to opt out on a single long-lived Node server,
+ * where per-instance memory IS the correct global store.
+ */
+const PAID_TIERS: ReadonlySet<TierName> = new Set(['ai', 'upload'])
+
+function paidTierMisconfigured(tierName: TierName): boolean {
+  return (
+    PAID_TIERS.has(tierName) &&
+    process.env.NODE_ENV === 'production' &&
+    !(store instanceof UpstashStore) &&
+    process.env.RATE_LIMIT_ALLOW_MEMORY !== '1'
+  )
+}
 
 /**
  * The per-IP ceiling is this multiple of the per-user limit. scienium teams are
@@ -224,19 +269,71 @@ export async function enforceRateLimit(
   // asserts a live rate-limit 429; F11-quiz-retry only tolerates one.
   if (process.env.E2E_SKIP_LLM === '1') return null
 
+  // Cost-cap guard: refuse paid tiers in production without a shared store
+  // (see PAID_TIERS). Surfaces the misconfiguration loudly instead of quietly
+  // multiplying the per-student LLM budget by the instance count.
+  if (paidTierMisconfigured(tierName)) {
+    logEvent({
+      event: 'rate_limit.misconfigured',
+      route: req.nextUrl.pathname,
+      requestId: requestIdFrom(req),
+      tier: tierName,
+      outcome: 'error',
+      detail:
+        'paid tier blocked: no shared rate-limit store in production. ' +
+        'Set UPSTASH_REDIS_REST_URL/TOKEN (or RATE_LIMIT_ALLOW_MEMORY=1 on single-instance hosts).',
+    })
+    return NextResponse.json(
+      { error: 'This feature is temporarily unavailable. Please tell your teacher.' },
+      { status: 503 },
+    )
+  }
+
   const tier = RATE_LIMITS[tierName]
   const now = Date.now()
 
   // Per-IP backstop is intentionally generous (see IP_LIMIT_MULTIPLIER); the
   // per-user bucket carries the real limit when the caller is authenticated.
   const ipTier: RateLimitTier = { limit: tier.limit * IP_LIMIT_MULTIPLIER, windowMs: tier.windowMs }
-  const checks = await Promise.all([
-    hit(`${tierName}:ip:${clientIp(req)}`, ipTier, now),
-    ...(userId ? [hit(`${tierName}:user:${userId}`, tier, now)] : []),
-  ])
+  let checks: HitResult[]
+  try {
+    checks = await Promise.all([
+      hit(`${tierName}:ip:${clientIp(req)}`, ipTier, now),
+      ...(userId ? [hit(`${tierName}:user:${userId}`, tier, now)] : []),
+    ])
+  } catch (err) {
+    // Store degraded. Paid tiers fail CLOSED — the whole point of the ceiling is
+    // to bound spend, and a limiter outage is when spend runs away (P1-R4).
+    // Read/mutation tiers fail open: no money at stake, and taking the app down
+    // because Upstash blipped is the worse outcome.
+    const failClosed = PAID_TIERS.has(tierName)
+    logEvent({
+      event: 'rate_limit.store_error',
+      route: req.nextUrl.pathname,
+      requestId: requestIdFrom(req),
+      tier: tierName,
+      userId: userId ?? null,
+      outcome: failClosed ? 'denied' : 'error',
+      detail: err instanceof Error ? err.message : String(err),
+    })
+    if (!failClosed) return null
+    return NextResponse.json(
+      { error: 'This feature is briefly unavailable. Try again in a minute.' },
+      { status: 503, headers: { 'Retry-After': '60' } },
+    )
+  }
 
   const blocked = checks.find((c) => !c.ok)
   if (!blocked) return null
+
+  logEvent({
+    event: 'rate_limit.denied',
+    route: req.nextUrl.pathname,
+    requestId: requestIdFrom(req),
+    tier: tierName,
+    userId: userId ?? null,
+    outcome: 'denied',
+  })
 
   return NextResponse.json(
     { error: 'Too many requests — please slow down and try again in a moment.' },

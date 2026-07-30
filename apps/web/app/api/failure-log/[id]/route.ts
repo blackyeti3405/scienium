@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { db } from '@/lib/db'
+import { parseFailureBody, stringifyFailureBody } from '@/lib/ops/failure-followup'
 
 const Body = z.object({
   happened: z.string().min(1).max(1500),
@@ -11,7 +12,8 @@ const Body = z.object({
 }).strict()
 
 // PATCH — edit a failure entry. Author-only.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
 
@@ -28,7 +30,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const entry = await db.projectLog.update({
     where: { id: existing.id },
     data: {
-      body: JSON.stringify({ happened: data.happened.trim(), learned: data.learned.trim() }),
+      body: stringifyFailureBody(data.happened, data.learned),
       lastEditedByUserId: ctx.dbUserId,
       lastEditedAt: new Date(),
     },
@@ -42,10 +44,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     },
   })
 
-  let parsed = { happened: entry.body, learned: '' }
-  try { parsed = JSON.parse(entry.body) } catch {}
+  const parsed = parseFailureBody(entry.body)
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'failure' }).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'failure' }).catch(console.error)
 
   return NextResponse.json({
     entry: {
@@ -61,7 +62,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 // DELETE — remove a failure entry. Author-only.
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
   if (error) return error
 
@@ -74,7 +76,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
   await db.projectLog.delete({ where: { id: existing.id } })
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'log_deleted', { kind: 'failure' }).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'log_deleted', { kind: 'failure' }).catch(console.error)
 
   return NextResponse.json({ ok: true })
 }

@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { X, Copy, Download, Check, Quote } from 'lucide-react'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
+import { LoadRetry } from '@/components/ui/LoadRetry'
 import { BusyButton } from '@/components/ui/BusyButton'
 
 // ─── #13 Citation Manager — the team's formatted citation library ──────────────
@@ -39,13 +40,29 @@ export function CitationsPanel({ onClose }: { onClose: () => void }) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportMsg, setExportMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  // A failed GET used to `setRows([])`, which renders "No citations yet" — a
+  // team with a full library is told their bibliography is empty and may go
+  // rebuild it by hand (§0.9 Row C2).
+  const [loadError, setLoadError] = useState(false)
+
+  const load = useCallback(() => {
+    setLoadError(false)
+    setRows(null)
+    fetch('/api/citations')
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`citations failed (${r.status})`)
+        return r.json()
+      })
+      .then((d) => setRows(Array.isArray(d.citations) ? d.citations : []))
+      .catch((err) => {
+        console.error('[citations] failed to load:', err)
+        setLoadError(true)
+      })
+  }, [])
 
   useEffect(() => {
-    fetch('/api/citations')
-      .then((r) => r.json())
-      .then((d) => setRows(Array.isArray(d.citations) ? d.citations : []))
-      .catch(() => setRows([]))
-  }, [])
+    load()
+  }, [load])
 
   // Alphabetical by the chosen style's string — real bibliography order.
   const sorted = rows
@@ -94,7 +111,7 @@ export function CitationsPanel({ onClose }: { onClose: () => void }) {
           <Quote size={14} className="text-[#F5C518]" />
           <h2 className="font-pixel text-[10px] text-white">Citations</h2>
           {sorted && (
-            <span className="font-pixel text-[7px] text-white/30 ml-1">{sorted.length}</span>
+            <span className="font-pixel text-[7px] text-white/40 ml-1">{sorted.length}</span>
           )}
         </div>
         <div className="flex items-center gap-4">
@@ -114,7 +131,7 @@ export function CitationsPanel({ onClose }: { onClose: () => void }) {
               </button>
             ))}
           </div>
-          <button onClick={onClose} className="text-white/30 hover:text-white/60 transition-colors">
+          <button onClick={onClose} aria-label="Close Citations" className="text-white/40 hover:text-white/60 transition-colors">
             <X size={13} />
           </button>
         </div>
@@ -122,13 +139,19 @@ export function CitationsPanel({ onClose }: { onClose: () => void }) {
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        {sorted === null ? (
+        {loadError ? (
+          <LoadRetry
+            message="Couldn't load your citations — check your connection."
+            onRetry={load}
+            testId="citations-retry"
+          />
+        ) : sorted === null ? (
           <div className="h-full">
             <LabeledLoader label="Building your citations…" fill="inline" />
           </div>
         ) : sorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-8">
-            <Quote size={20} className="text-white/20" />
+            <Quote size={20} className="text-white/40" />
             <p className="font-pixel text-[8px] text-white/40 leading-loose">
               No citations yet. Upload sources here, or star and promote a paper from the Papers
               tab in Discovery — each one is cited automatically.

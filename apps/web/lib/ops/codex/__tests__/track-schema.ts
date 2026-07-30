@@ -88,7 +88,11 @@ export const TrackSchema = z
   .object({
     slug: z.string(),
     label: z.string(),
-    home: z.boolean(),
+    // `home`/`labType` are still present on the authored content JSON (retired
+    // concept — see lib/ops/codex/index.ts's header) but no longer part of the
+    // runtime CodexTrack type, so both are optional here purely so `.strict()`
+    // keeps accepting the field on disk without CodexTrack needing to carry it.
+    home: z.boolean().optional(),
     labType: z.string().optional(),
     core: Segment,
     branches: z.array(Segment),
@@ -101,5 +105,8 @@ export type TrackSchemaType = z.infer<typeof TrackSchema>
 // If these fail `tsc`, the zod schema and `CodexTrack` (types.ts) have diverged —
 // reconcile them rather than casting past the error.
 type AssertExtends<A extends B, B> = A
-type _SchemaIsATrack = AssertExtends<TrackSchemaType, CodexTrack>
-type _TrackMatchesSchema = AssertExtends<CodexTrack, TrackSchemaType>
+// Exported (never imported anywhere) solely so `noUnusedLocals` doesn't flag a
+// deliberately-unused compile-time check — TS only reports unused LOCALS, not
+// exports, which are part of a module's public surface.
+export type _SchemaIsATrack = AssertExtends<TrackSchemaType, CodexTrack>
+export type _TrackMatchesSchema = AssertExtends<CodexTrack, TrackSchemaType>

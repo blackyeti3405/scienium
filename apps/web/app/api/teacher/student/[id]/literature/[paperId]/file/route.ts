@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeacher, teacherOwnsTeam } from '@/lib/teacher/auth'
+import { pickActiveTeam } from '@/lib/team/context'
 import { db } from '@/lib/db'
-import { getObjectStream } from '@/lib/storage'
+import { streamStoredPdf } from '@/lib/papers/pdf'
 
 /**
  * GET /api/teacher/student/[id]/literature/[paperId]/file
@@ -14,8 +15,9 @@ import { getObjectStream } from '@/lib/storage'
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string; paperId: string } },
+  props: { params: Promise<{ id: string; paperId: string }> }
 ) {
+  const params = await props.params;
   const { ctx, error } = await requireTeacher(req, { tier: 'read' })
   if (error) return error
 
@@ -24,11 +26,10 @@ export async function GET(
     where: { id: params.id, classId: { in: ctx.classIds } },
     select: {
       id: true,
-      activeTeam: { select: { id: true } },
+      activeTeamId: true,
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
-        take: 1,
-        select: { team: { select: { id: true } } },
+        select: { teamId: true, team: { select: { id: true } } },
       },
     },
   })
@@ -37,7 +38,9 @@ export async function GET(
     return NextResponse.json({ error: 'Student not found in your classes' }, { status: 404 })
   }
 
-  const teamId = student.activeTeam?.id ?? student.teamMemberships[0]?.team.id ?? null
+  // Resolve through membership (never a bare activeTeam) — a stale activeTeamId
+  // must not pick a team the student has since left.
+  const teamId = pickActiveTeam(student.activeTeamId, student.teamMemberships)?.id ?? null
   if (!teamId) {
     return NextResponse.json({ error: 'Student not found in your classes' }, { status: 404 })
   }
@@ -58,31 +61,5 @@ export async function GET(
     return NextResponse.json({ error: 'PDF not available' }, { status: 404 })
   }
 
-  const safeName = paper.title.replace(/[^\w.-]+/g, '_').slice(0, 80) || 'paper'
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/pdf',
-    'Content-Disposition': `inline; filename="${safeName}.pdf"`,
-    'Cache-Control': 'private, max-age=3600',
-  }
-
-  // Preferred path: stream the object straight from R2.
-  if (paper.pdfKey) {
-    try {
-      const { body, contentLength } = await getObjectStream(paper.pdfKey)
-      if (contentLength != null) headers['Content-Length'] = String(contentLength)
-      return new NextResponse(body, { status: 200, headers })
-    } catch (err) {
-      console.error('[r2] teacher PDF stream failed:', err)
-      return NextResponse.json({ error: 'PDF not available' }, { status: 502 })
-    }
-  }
-
-  // Legacy fallback: bytes stored in Postgres (pre-migration rows).
-  if (paper.pdfData) {
-    const bytes = paper.pdfData as Buffer
-    headers['Content-Length'] = String(bytes.length)
-    return new NextResponse(new Uint8Array(bytes), { status: 200, headers })
-  }
-
-  return NextResponse.json({ error: 'PDF not available' }, { status: 404 })
+  return streamStoredPdf(paper, '[r2] teacher PDF stream failed:')
 }

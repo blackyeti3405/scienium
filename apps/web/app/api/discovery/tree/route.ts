@@ -3,14 +3,14 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { hostToTier } from '@/lib/discovery/credibility'
-import { sanitizeAbstract } from '@/lib/discovery/sanitize'
-import { awardDiscoveryVisit } from '@/lib/discovery/awardVisit'
-import { logActivity } from '@/lib/activity/log'
+import { hydrateTree, createTreeNodes, TreeGraphError } from '@/lib/discovery/tree-service'
+import { consumeDestructive, proposeDestructive } from '@/lib/api/destructive-proposal'
 
 // Bounded batch of client-generated nodes; `.strict()` rejects extra fields.
 // `source` nodes (Discovery v2 Papers tab) carry external metadata fields that the
-// server re-derives (host + tier) before persisting — see the POST $transaction.
+// server re-derives (host + tier) before persisting — see createTreeNodes.
+// `article` nodes (The Conversation / journalism RSS) carry their own metadata
+// fields; `html` is re-sanitized server-side on this write path too.
 const TreeBody = z
   .object({
     nodes: z
@@ -20,16 +20,24 @@ const TreeBody = z
             id: z.string().trim().min(1).max(64),
             title: z.string().max(500),
             parentId: z.string().trim().max(64).nullable(),
-            source: z.enum(['wikipedia', 'youtube', 'source']).optional(),
+            source: z.enum(['wikipedia', 'youtube', 'source', 'article']).optional(),
             videoId: z.string().trim().max(32).optional(),
             // ── source-node fields (only read when source === 'source') ──
-            platform: z.enum(['arxiv', 'pubmed', 'pmc']).optional(),
+            platform: z.enum(['arxiv', 'pubmed', 'pmc', 'openalex']).optional(),
             externalId: z.string().trim().max(64).optional(),
             sourceUrl: z.string().trim().max(2000).optional(),
             sourceHost: z.string().trim().max(255).optional(),
             authors: z.array(z.string().max(300)).max(50).optional(),
             abstract: z.string().max(20000).optional(),
             publishedAt: z.string().trim().max(64).optional(),
+            // ── article-node fields (only read when source === 'article') ──
+            provider: z.enum(['the_conversation', 'journalism', 'explainer', 'patents']).optional(),
+            renderMode: z.enum(['full', 'linkout']).optional(),
+            sourceName: z.string().trim().max(120).optional(),
+            articleUrl: z.string().trim().max(2000).optional(),
+            excerpt: z.string().max(2000).optional(),
+            html: z.string().max(200000).optional(),
+            articleAuthor: z.string().trim().max(300).optional(),
           })
           .strict(),
       )
@@ -38,104 +46,13 @@ const TreeBody = z
   })
   .strict()
 
-// `sourceUrl` is persisted and later rendered as an <a href>. Allow only real
-// navigable schemes — reject javascript:/data:/etc. (defense-in-depth: source
-// nodes normally come from our own resolve route, which only emits https URLs).
-function isHttpUrl(u: string): boolean {
-  try {
-    const { protocol } = new URL(u)
-    return protocol === 'http:' || protocol === 'https:'
-  } catch {
-    return false
-  }
-}
-
 // ─── GET: load the team's discovery tree ─────────────────────────────────────
 
 export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 
-  const rows = await db.discoveryNode.findMany({
-    where: { teamId: ctx.teamId },
-    orderBy: { visitedAt: 'asc' },
-    select: {
-      id: true,
-      parentId: true,
-      sourceType: true,
-      wikipediaTitle: true,
-      youtubeVideoId: true,
-      youtubeTitle: true,
-      externalId: true,
-      paperId: true,
-      starred: true,
-      interestLevel: true,
-      visitedAt: true,
-      // Left-join the source side-row so the tree + reader hydrate without a
-      // second fetch (host/tier/url/title/abstract all present up front).
-      externalSource: {
-        select: {
-          platform: true,
-          externalId: true,
-          sourceUrl: true,
-          sourceTitle: true,
-          sourceAuthors: true,
-          sourceHost: true,
-          publishedAt: true,
-          credibilityTier: true,
-          abstract: true,
-          reflection: true,
-        },
-      },
-    },
-  })
-
-  // Derive `depth` (parent-chain length) and `explored` (has children) so the
-  // client store gets the same shape it had in localStorage.
-  const byId = new Map(rows.map((r) => [r.id, r]))
-  const hasChildren = new Set(rows.map((r) => r.parentId).filter(Boolean) as string[])
-
-  function depthOf(id: string): number {
-    let d = 0
-    let cur = byId.get(id)
-    while (cur?.parentId) {
-      d += 1
-      cur = byId.get(cur.parentId)
-    }
-    return d
-  }
-
-  const nodes = rows.map((r) => {
-    const es = r.externalSource
-    return {
-      id: r.id,
-      title: es?.sourceTitle ?? r.wikipediaTitle ?? r.youtubeTitle ?? '',
-      source: r.sourceType,
-      videoId: r.youtubeVideoId ?? undefined,
-      parentId: r.parentId,
-      depth: depthOf(r.id),
-      starred: r.starred,
-      // #11: student-set interest tier ('high'|'mid'|'low'|null) — a separate
-      // visual channel from `credibilityTier`, surfaced on every GET so it
-      // persists across reload (never localStorage).
-      interestLevel: r.interestLevel ?? null,
-      explored: hasChildren.has(r.id),
-      addedAt: r.visitedAt.getTime(),
-      // Source-node metadata (undefined for wiki/youtube rows).
-      externalId: r.externalId ?? undefined,
-      platform: es?.platform ?? undefined,
-      sourceUrl: es?.sourceUrl ?? undefined,
-      sourceHost: es?.sourceHost ?? undefined,
-      credibilityTier: es?.credibilityTier ?? undefined,
-      abstract: es?.abstract ?? undefined,
-      authors: es?.sourceAuthors ?? undefined,
-      publishedAt: es?.publishedAt ? es.publishedAt.toISOString() : undefined,
-      reflection: es?.reflection ?? undefined,
-      // #13: promotion marker (hides the Promote control once set).
-      paperId: r.paperId ?? null,
-    }
-  })
-
+  const nodes = await hydrateTree(ctx.teamId)
   return NextResponse.json({ nodes })
 }
 
@@ -145,128 +62,91 @@ export async function POST(req: NextRequest) {
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
 
-  const { data, error } = await parseJson(req, TreeBody)
+  // Raised above the shared MAX_BODY_BYTES (P2-S8): an `article` node carries up
+  // to 200 000 chars of sanitized `html` plus a 20 000-char abstract, so a small
+  // batch of them clears the default 256 KiB ceiling legitimately. This is still
+  // two orders of magnitude below the schema's theoretical worst case (200 × ~223 KB)
+  // — the zod caps below remain the semantic bound; this is only the allocation guard.
+  const { data, error } = await parseJson(req, TreeBody, { maxBytes: 4 * 1024 * 1024 })
   if (error) return error
-  const incoming = data.nodes
 
-  // wiki/youtube go through the bulk createMany path UNCHANGED. `source` nodes
-  // each need an atomic node + side-row write, so they're split out below.
-  const plain = incoming.filter((n) => (n.source ?? 'wikipedia') !== 'source')
-  const sources = incoming.filter((n) => n.source === 'source')
-
-  // Running total of KP credited on this request (wiki/youtube first-visits).
-  // `source` nodes award later, on reflection completion — never on create.
-  let kpAwarded = 0
-
-  if (plain.length > 0) {
-    await db.discoveryNode.createMany({
-      data: plain.map((n) => {
-        const source = n.source ?? 'wikipedia'
-        return {
-          id: n.id,
-          teamId: ctx.teamId,
-          parentId: n.parentId,
-          sourceType: source,
-          wikipediaTitle: source === 'wikipedia' ? n.title : null,
-          youtubeTitle: source === 'youtube' ? n.title : null,
-          youtubeVideoId: source === 'youtube' ? n.videoId ?? null : null,
-          visitedByUserId: ctx.dbUserId,
-        }
-      }),
-      skipDuplicates: true,
-    })
-
-    // First-visit KP for wiki/youtube nodes. `createMany` can't tell us which
-    // rows were actually inserted (vs skipped as dupes), so the visit ledger's
-    // @@unique([teamId, nodeId]) is the sole idempotency gate: a P2002 in
-    // awardDiscoveryVisit makes re-clicks / re-branches free. Tier is null
-    // (base ×1). Each award is its own $transaction so one capped/dup node can't
-    // roll back another's credit. Wiki/youtube nodes carry no tier.
-    for (const n of plain) {
-      try {
-        const { kpAwarded: got } = await db.$transaction((tx) =>
-          awardDiscoveryVisit(tx, { teamId: ctx.teamId, userId: ctx.dbUserId, nodeId: n.id, tier: null }),
-        )
-        kpAwarded += got
-      } catch (err) {
-        console.error('[discovery/tree] visit award skipped:', err)
-      }
+  let kpAwarded: number
+  try {
+    // Rejects foreign-team parents and cycles before any write (P1-R10). A
+    // failed node is now an error, not a logged exception behind `{ ok: true }`.
+    // Activity recording happens INSIDE createTreeNodes now, in the same
+    // transaction as each node's KP mint (REFACTOR2 P1-R5) — see tree-service.ts.
+    ;({ kpAwarded } = await createTreeNodes({
+      teamId: ctx.teamId,
+      userId: ctx.dbUserId,
+      nodes: data.nodes,
+    }))
+  } catch (err) {
+    if (err instanceof TreeGraphError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
     }
-  }
-
-  // ── Source-node branch (atomic node + externalSource side-row) ──────────────
-  // Each source node is created in a $transaction so the node and its metadata
-  // row are all-or-nothing (epic §"Client coupling"). Host + tier are RE-DERIVED
-  // server-side from the URL/host (anti-forgery — never trust client-sent tier).
-  // Dedup via @@unique([teamId, externalId]): a team can't double-add a work; the
-  // second attempt is a no-op (the client navigates to the existing node).
-  for (const n of sources) {
-    // Guard required fields (zod makes them optional since they're source-only).
-    if (!n.externalId || !n.platform || !n.sourceUrl || !n.sourceHost) continue
-    // sourceUrl is rendered as an href — drop non-http(s) schemes (XSS defense).
-    if (!isHttpUrl(n.sourceUrl)) continue
-
-    const existing = await db.discoveryNode.findFirst({
-      where: { teamId: ctx.teamId, externalId: n.externalId },
-      select: { id: true },
-    })
-    if (existing) continue // dedup: skip, client already knows the existing node
-
-    const tier = hostToTier(n.sourceHost) // server is the sole tier authority
-    const publishedAt = n.publishedAt ? new Date(n.publishedAt) : null
-
-    try {
-      await db.$transaction(async (tx) => {
-        await tx.discoveryNode.create({
-          data: {
-            id: n.id,
-            teamId: ctx.teamId,
-            parentId: n.parentId,
-            sourceType: 'source',
-            externalId: n.externalId,
-            visitedByUserId: ctx.dbUserId,
-          },
-        })
-        await tx.externalSource.create({
-          data: {
-            discoveryNodeId: n.id,
-            platform: n.platform!,
-            externalId: n.externalId!,
-            sourceUrl: n.sourceUrl!,
-            sourceTitle: n.title,
-            sourceAuthors: n.authors ?? [],
-            sourceHost: n.sourceHost!,
-            publishedAt: Number.isNaN(publishedAt?.getTime()) ? null : publishedAt,
-            credibilityTier: tier,
-            // Sanitize on THIS write path too — the resolve route sanitizes, but the
-            // tree POST is independently reachable, so a crafted abstract must be
-            // scrubbed here before it's stored + rendered via dangerouslySetInnerHTML.
-            abstract: n.abstract ? sanitizeAbstract(n.abstract) : null,
-          },
-        })
-      })
-    } catch (err) {
-      // A concurrent insert can still trip the unique constraint — treat as dedup.
-      console.error('[discovery/tree] source node create skipped:', err)
-    }
-  }
-
-  if (kpAwarded > 0) {
-    logActivity(ctx.teamId, ctx.dbUserId, 'discovery_kp_awarded', {
-      kp: kpAwarded,
-      nodeCount: plain.length,
-    }).catch(console.error)
+    throw err
   }
 
   return NextResponse.json({ ok: true, kpAwarded })
 }
 
 // ─── DELETE: reset the whole tree for the team ───────────────────────────────
-
+//
+// TWO-PHASE, server-owned (REFACTOR2 P1-R1). This used to wipe every node the
+// moment any member called it — shared work, destroyed by a bare request, with
+// the only confirmation living in a UI dialog the caller need never open.
+//
+//   - Without `?token=`: destroys nothing. Returns 409 with the node count and a
+//     single-use proposal token so the client can show a real warning.
+//   - With a valid `?token=`: consumes the proposal and wipes.
+//
+// The proposal is bound to the actor, the team, and the exact node set that
+// existed when it was issued, so a token minted for a 3-node tree cannot be
+// replayed later to wipe 300.
 export async function DELETE(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
   if (error) return error
 
-  await db.discoveryNode.deleteMany({ where: { teamId: ctx.teamId } })
-  return NextResponse.json({ ok: true })
+  const nodes = await db.discoveryNode.findMany({
+    where: { teamId: ctx.teamId },
+    select: { id: true },
+  })
+  const nodeIds = nodes.map((n) => n.id)
+
+  // Nothing to destroy — no confirmation theatre for a no-op.
+  if (nodeIds.length === 0) return NextResponse.json({ ok: true, removedCount: 0 })
+
+  const token = req.nextUrl.searchParams.get('token')
+  if (!token) {
+    const proposalToken = await proposeDestructive({
+      teamId: ctx.teamId,
+      actorUserId: ctx.dbUserId,
+      command: 'discovery_tree_reset',
+      targetIds: nodeIds,
+    })
+    return NextResponse.json(
+      { requiresConfirmation: true, proposalToken, nodeCount: nodeIds.length },
+      { status: 409 },
+    )
+  }
+
+  const consumed = await consumeDestructive({
+    token,
+    teamId: ctx.teamId,
+    actorUserId: ctx.dbUserId,
+    command: 'discovery_tree_reset',
+    targetIds: nodeIds,
+  })
+  if (!consumed.ok) {
+    return NextResponse.json(
+      { error: 'That reset confirmation is no longer valid. Try again.' },
+      { status: 409 },
+    )
+  }
+
+  const removed = await db.discoveryNode.deleteMany({
+    where: { teamId: ctx.teamId, id: { in: nodeIds } },
+  })
+  return NextResponse.json({ ok: true, removedCount: removed.count })
 }

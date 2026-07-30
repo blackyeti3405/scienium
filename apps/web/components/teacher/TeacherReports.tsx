@@ -1,19 +1,22 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts'
+import dynamic from 'next/dynamic'
 import { PHASE_INFO, PHASE_ORDER, type Phase } from '@/lib/phase'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
-import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
 import { PrintButton } from '@/components/showcase/PrintButton'
+import { TeacherPanelState } from './TeacherPanelState'
+import { TruncationNotice } from './TruncationNotice'
+
+// Code-split (PERF-10): recharts is ~100KB and only these two bar charts use it,
+// so the chart module loads on demand instead of riding in the eager bundle.
+const ReportBarChart = dynamic(
+  () => import('./ReportBarChart').then((m) => m.ReportBarChart),
+  {
+    ssr: false,
+    loading: () => <PixelSkeleton variant="box" h="h-[220px]" w="w-full" />,
+  },
+)
 
 interface ProficiencyRow {
   teamId: string
@@ -44,6 +47,8 @@ interface ReportsResponse {
   kpDistribution: KpBucket[]
   proficiency: ProficiencyRow[]
   pacing: PacingRow[]
+  truncated?: boolean
+  limit?: number
   generatedAt: string
 }
 
@@ -65,36 +70,15 @@ export function TeacherReports() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) {
-    return (
-      <div className="max-w-6xl mx-auto space-y-8">
-        <div className="space-y-3">
-          <PixelSkeleton variant="line" h="h-3" w="w-24" />
-          <PixelSkeleton variant="box" h="h-20" w="w-full" />
-        </div>
-        <div className="space-y-3">
-          <PixelSkeleton variant="line" h="h-3" w="w-20" />
-          <PanelListSkeleton rows={4} />
-        </div>
-      </div>
-    )
-  }
-
-  if (loadError) {
-    return (
-      <div className="max-w-6xl mx-auto">
-        <div className="border border-dashed border-red-400/25 rounded-lg py-12 text-center space-y-1">
-          <p className="text-sm text-red-400">{loadError}</p>
-        </div>
-      </div>
-    )
+  if (loading || loadError) {
+    return <TeacherPanelState loading={loading} error={loadError} skeletonRows={4} />
   }
 
   if (!data || data.hasClasses === false || data.studentCount === 0) {
     return (
       <div className="max-w-6xl mx-auto tr-report">
         <div className="border border-dashed border-white/10 rounded-lg py-12 text-center">
-          <p className="text-sm text-white/30">
+          <p className="text-sm text-white/40">
             No class data yet — share a class code so students can join.
           </p>
         </div>
@@ -113,6 +97,10 @@ export function TeacherReports() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 tr-report">
+      {/* P2-1: a bounded report may cover fewer students than the class scope
+          holds — say so rather than presenting a subset as the whole class. */}
+      {data.truncated && <TruncationNotice limit={data.limit ?? data.studentCount} noun="students" />}
+
       {/* Summary row — the page header (eyebrow + <h1>) lives in page.tsx, this
           is the report-specific summary line + print action underneath it. */}
       <div className="flex items-start justify-between gap-4">
@@ -132,20 +120,12 @@ export function TeacherReports() {
         <h2 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
           Phase distribution
         </h2>
-        <div style={{ width: '100%', height: 220 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={phaseChartData} margin={{ top: 8, right: 12, bottom: 8, left: 4 }}>
-              <CartesianGrid stroke="#ffffff12" />
-              <XAxis dataKey="label" tick={{ fill: '#ffffff70', fontSize: 10 }} />
-              <YAxis allowDecimals={false} tick={{ fill: '#ffffff70', fontSize: 10 }} />
-              <Tooltip
-                contentStyle={{ background: '#0d1b2e', border: '1px solid #ffffff20', fontSize: 12 }}
-                labelStyle={{ color: '#ffffffaa' }}
-              />
-              <Bar dataKey="count" fill={BAR_COLOR} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <ReportBarChart
+          data={phaseChartData}
+          xKey="label"
+          barColor={BAR_COLOR}
+          label="Phase distribution"
+        />
       </section>
 
       {/* Proficiency heat-map */}
@@ -157,11 +137,11 @@ export function TeacherReports() {
           Proficiency by team
         </h2>
         {data.proficiency.length === 0 ? (
-          <p className="text-sm text-white/30">No proficiency data yet.</p>
+          <p className="text-sm text-white/40">No proficiency data yet.</p>
         ) : (
           <table className="w-full text-sm text-white/80 border-collapse">
             <thead>
-              <tr className="font-pixel text-[8px] text-white/35 uppercase">
+              <tr className="font-pixel text-[8px] text-white/40 uppercase">
                 <th className="text-left py-1.5 px-2">Team</th>
                 <th className="text-right py-1.5 px-2">Distinct papers mastered</th>
                 <th className="text-right py-1.5 px-2">Distinct papers in progress</th>
@@ -198,20 +178,12 @@ export function TeacherReports() {
         <h2 className="font-pixel text-[10px] text-[#F5C518] uppercase tracking-widest">
           KP distribution
         </h2>
-        <div style={{ width: '100%', height: 220 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data.kpDistribution} margin={{ top: 8, right: 12, bottom: 8, left: 4 }}>
-              <CartesianGrid stroke="#ffffff12" />
-              <XAxis dataKey="label" tick={{ fill: '#ffffff70', fontSize: 10 }} />
-              <YAxis allowDecimals={false} tick={{ fill: '#ffffff70', fontSize: 10 }} />
-              <Tooltip
-                contentStyle={{ background: '#0d1b2e', border: '1px solid #ffffff20', fontSize: 12 }}
-                labelStyle={{ color: '#ffffffaa' }}
-              />
-              <Bar dataKey="count" fill="#4FD1C5" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <ReportBarChart
+          data={data.kpDistribution}
+          xKey="label"
+          barColor="#4FD1C5"
+          label="KP distribution"
+        />
       </section>
 
       {/* Phase pacing */}
@@ -223,7 +195,7 @@ export function TeacherReports() {
           Days in current phase
         </h2>
         {data.pacing.length === 0 ? (
-          <p className="text-sm text-white/30">No teams yet.</p>
+          <p className="text-sm text-white/40">No teams yet.</p>
         ) : (
           <ul className="space-y-1.5">
             {data.pacing.map((row) => {

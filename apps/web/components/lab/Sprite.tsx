@@ -7,7 +7,6 @@ interface SpriteProps {
   entry: SpriteEntry
   /** Override the CSS scale (default: entry.scale). */
   scale?: number
-  className?: string
 }
 
 /**
@@ -19,7 +18,7 @@ interface SpriteProps {
  *   with the same dimensions, so layout never breaks during development
  * - The placeholder matches the sprite's placeholder color from the manifest
  */
-export function Sprite({ entry, scale, className = '' }: SpriteProps) {
+export function Sprite({ entry, scale }: SpriteProps) {
   const [imgError, setImgError] = useState(false)
   const s = scale ?? entry.scale
   const displayW = entry.srcWidth * s
@@ -32,7 +31,6 @@ export function Sprite({ entry, scale, className = '' }: SpriteProps) {
         height={displayH}
         color={entry.placeholderColor}
         label={entry.description}
-        className={className}
       />
     )
   }
@@ -45,7 +43,6 @@ export function Sprite({ entry, scale, className = '' }: SpriteProps) {
       width={displayW}
       height={displayH}
       onError={() => setImgError(true)}
-      className={className}
       style={{
         imageRendering: 'pixelated',
         width: displayW,
@@ -63,16 +60,15 @@ interface PlaceholderSpriteProps {
   height: number
   color: string
   label: string
-  className?: string
 }
 
-function PlaceholderSprite({ width, height, color, label, className = '' }: PlaceholderSpriteProps) {
+function PlaceholderSprite({ width, height, color, label }: PlaceholderSpriteProps) {
   return (
     <div
       role="img"
       aria-label={label}
       title={label}
-      className={`inline-flex items-center justify-center border border-black/20 ${className}`}
+      className="inline-flex items-center justify-center border border-black/20"
       style={{
         width,
         height,

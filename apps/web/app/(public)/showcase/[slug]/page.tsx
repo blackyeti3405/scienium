@@ -1,38 +1,61 @@
+import { cache } from 'react'
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
-import { auth } from '@clerk/nextjs/server'
 import { Github, Paperclip, ExternalLink, Eye, Printer } from 'lucide-react'
 import { db } from '@/lib/db'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
+import { canViewShowcase, isSafeHttpUrl, safeEmbedUrl, type ShowcaseAccess } from '@/lib/showcase'
 import {
-  canViewShowcase,
-  teamSchoolIds,
-  type ShowcaseViewer,
-  type ShowcaseForView,
-  type PrivacyLevel,
-} from '@/lib/showcase'
-import { viewFingerprint } from '@/lib/showcase-server'
+  viewFingerprint,
+  recordShowcaseView,
+  resolveShowcaseViewer,
+  toVerifiedShowcaseForView,
+} from '@/lib/showcase-server'
 import { PrintButton } from '@/components/showcase/PrintButton'
+import { ReportButton } from '@/components/showcase/ReportButton'
+
+/**
+ * Never rendered from a cache (REFACTOR2 P1-6). `auth()` and `headers()` make
+ * this dynamic today; this PINS it, so a takedown can never be served out of a
+ * render cache there is no way to purge. It is also what makes the asset
+ * route's `private` cache header the only cached copy of anything here.
+ */
+export const dynamic = 'force-dynamic'
 
 interface Props {
-  params: { slug: string }
-  searchParams: { print?: string }
+  params: Promise<{ slug: string }>
+  searchParams: Promise<{ print?: string }>
 }
 
-async function resolveViewer(): Promise<ShowcaseViewer | null> {
-  const { userId } = await auth()
-  if (!userId) return null
-  const u = await db.user.findUnique({
-    where: { clerkUserId: userId },
-    select: { schoolId: true, teamMemberships: { select: { teamId: true } } },
-  })
-  if (!u) return { userId, schoolId: null, teamIds: [] }
-  return { userId, schoolId: u.schoolId, teamIds: u.teamMemberships.map((m) => m.teamId) }
+/** Asset stream URL, carrying the share token when the page was opened by one. */
+function assetHref(id: string, via: ShowcaseAccess, shareToken: string | null): string {
+  const base = `/api/showcase/public/asset?id=${id}`
+  return via === 'share_token' && shareToken
+    ? `${base}&t=${encodeURIComponent(shareToken)}`
+    : base
 }
 
-async function loadShowcase(slug: string) {
-  return db.showcase.findUnique({
-    where: { slug },
+/** Null-safe narrowing of an asset's `metadataJson` (stored as JSON, typed loosely). */
+function readMeta<T>(a?: { metadataJson: unknown }): T | undefined {
+  return a && typeof a.metadataJson === 'object' && a.metadataJson ? (a.metadataJson as T) : undefined
+}
+
+/**
+ * Resolve `/showcase/<param>` by EITHER the public slug or the secret share
+ * token, and report which matched (REFACTOR2 P1-R7).
+ *
+ * `link_only` used to be reachable at the same title-derived slug as a public
+ * showcase, whose only unguessable part is six hex characters. Presenting the
+ * 128-bit token is now the sole anonymous way into a `link_only` showcase;
+ * `canViewShowcase` decides using `via`.
+ *
+ * `cache()`d because `generateMetadata` and the page body each resolve the same
+ * slug during one request — without it every public showcase view ran this
+ * query set twice.
+ */
+const loadShowcase = cache(async function loadShowcase(param: string) {
+  const sc = await db.showcase.findFirst({
+    where: { OR: [{ slug: param }, { shareToken: param }] },
     include: {
       assets: { orderBy: { uploadedAt: 'asc' } },
       team: {
@@ -45,19 +68,29 @@ async function loadShowcase(slug: string) {
       _count: { select: { views: true } },
     },
   })
-}
+  if (!sc) return null
+  // A token match wins: the slug is public, so only an exact token match may
+  // upgrade the caller's access.
+  const via: ShowcaseAccess = sc.shareToken === param ? 'share_token' : 'slug'
+  return { sc, via }
+})
 
-export async function generateMetadata({ params }: Props) {
-  const sc = await loadShowcase(params.slug)
-  const viewer = await resolveViewer()
-  if (!sc || !canViewShowcase(toForView(sc), viewer)) {
+/** Same request, same viewer — deduped for the `generateMetadata` + page pair. */
+const loadViewer = cache(resolveShowcaseViewer)
+
+export async function generateMetadata(props: Props) {
+  const params = await props.params;
+  const found = await loadShowcase(params.slug)
+  const viewer = await loadViewer()
+  if (!found || !canViewShowcase(toVerifiedShowcaseForView(found.sc), viewer, found.via)) {
     return { title: 'Showcase' }
   }
+  const { sc } = found
   const headline = sc.shortTitle || sc.title
   // OG image must be an image — use the quad chart only when it's an image file.
   const quad = sc.assets.find((a) => a.assetType === 'quad_chart')
   const ogImage = quad && quad.fileUrl && !quad.fileUrl.endsWith('.pdf')
-    ? [{ url: `/api/showcase/public/asset?id=${quad.id}` }]
+    ? [{ url: assetHref(quad.id, found.via, sc.shareToken) }]
     : undefined
   return {
     title: headline,
@@ -70,27 +103,15 @@ export async function generateMetadata({ params }: Props) {
   }
 }
 
-function toForView(sc: {
-  teamId: string
-  privacyLevel: string
-  publishedAt: Date | null
-  moderationStatus: string
-  team: { members: { user: { schoolId: string | null } }[] }
-}): ShowcaseForView {
-  return {
-    teamId: sc.teamId,
-    privacyLevel: sc.privacyLevel as PrivacyLevel,
-    publishedAt: sc.publishedAt,
-    moderationStatus: sc.moderationStatus,
-    teamSchoolIds: teamSchoolIds(sc.team.members),
-  }
-}
+export default async function PublicShowcasePage(props: Props) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
+  const found = await loadShowcase(params.slug)
+  const viewer = await loadViewer()
 
-export default async function PublicShowcasePage({ params, searchParams }: Props) {
-  const sc = await loadShowcase(params.slug)
-  const viewer = await resolveViewer()
-
-  if (!sc || !canViewShowcase(toForView(sc), viewer)) notFound()
+  // Covers the `?print=1` one-pager too — the gate runs before the layout split.
+  if (!found || !canViewShowcase(toVerifiedShowcaseForView(found.sc), viewer, found.via)) notFound()
+  const { sc } = found
 
   // `?print=1` only ever selects a layout — the authorization check above runs
   // first and identically either way, so the flag can never leak a private or
@@ -103,25 +124,26 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
   const isOwner = !!viewer && viewer.teamIds.includes(sc.teamId)
   if (!printMode && !isOwner) {
     try {
-      const h = headers()
+      const h = await headers()
       const ip = (h.get('x-forwarded-for')?.split(',')[0] ?? h.get('x-real-ip') ?? 'unknown').trim()
       const fp = viewFingerprint(ip, h.get('user-agent') ?? '')
-      const seen = await db.showcaseView.findFirst({
-        where: { showcaseId: sc.id, visitorFingerprint: fp },
-        select: { id: true },
-      })
-      if (!seen) await db.showcaseView.create({ data: { showcaseId: sc.id, visitorFingerprint: fp } })
+      // One row per visitor per UTC day (A13) — duplicate-safe under
+      // concurrent first loads via the unique key inside recordShowcaseView.
+      await recordShowcaseView(sc.id, fp)
     } catch {
       // View tracking must never break the page.
     }
   }
 
-  const assetUrl = (id: string) => `/api/showcase/public/asset?id=${id}`
+  // Carry the share token onto every asset request, so a `link_only` page can
+  // actually load its own board/quad bytes (P1-R7).
+  const assetUrl = (id: string) => assetHref(id, found.via, sc.shareToken)
   const isPdf = (fileUrl: string | null) => !!fileUrl && fileUrl.endsWith('.pdf')
-  const embedOf = (a?: { metadataJson: unknown }) =>
-    a && typeof a.metadataJson === 'object' && a.metadataJson
-      ? (a.metadataJson as { embedUrl?: string }).embedUrl
-      : undefined
+  // Second, independent gate at the render boundary (P2-3): the stored
+  // `embedUrl` is re-pinned to the allowlisted provider hosts before it can
+  // become an `<iframe src>`, so a legacy row holding any other origin frames
+  // nothing.
+  const embedOf = (a?: { metadataJson: unknown }) => safeEmbedUrl(readMeta<{ embedUrl?: string }>(a)?.embedUrl)
 
   const board = sc.assets.find((a) => a.assetType === 'board')
   const quad = sc.assets.find((a) => a.assetType === 'quad_chart')
@@ -129,6 +151,7 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
   const repo = sc.assets.find((a) => a.assetType === 'repo_link')
   const demos = sc.assets.filter((a) => a.assetType === 'demo_video')
   const supplements = sc.assets.filter((a) => a.assetType === 'supplement')
+  const figure = sc.assets.find((a) => a.assetType === 'figure')
   const labType = sc.team.labType as LabType | null
   const videoEmbed = embedOf(video)
   const headline = sc.shortTitle || sc.title
@@ -137,11 +160,7 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
   // a `supplement` asset whose metadata carries `kind: 'works_cited'` + the full
   // text — inline that text on the one-pager rather than only linking to it.
   const worksCited = supplements
-    .map((s) =>
-      typeof s.metadataJson === 'object' && s.metadataJson
-        ? (s.metadataJson as { kind?: string; text?: string })
-        : null,
-    )
+    .map((s) => readMeta<{ kind?: string; text?: string }>(s))
     .find((m) => m?.kind === 'works_cited')?.text ?? null
 
   if (printMode) {
@@ -181,7 +200,6 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
           </a>
         </div>
       </header>
-
       {/* Quad chart — the one-page summary, shown prominently. */}
       {quad && (
         <div className="sc-show__quad">
@@ -191,16 +209,14 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
             </div>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={assetUrl(quad.id)} alt={`${headline} quad chart`} />
+            (<img src={assetUrl(quad.id)} alt={`${headline} quad chart`} />)
           )}
         </div>
       )}
-
       <section className="sc-show__section">
         <h2 className="sc-show__h2">Abstract</h2>
         <p className="sc-show__abstract">{sc.abstract}</p>
       </section>
-
       {videoEmbed && (
         <section className="sc-show__section">
           <h2 className="sc-show__h2">Video</h2>
@@ -216,7 +232,6 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
           </div>
         </section>
       )}
-
       {board && (
         <section className="sc-show__section">
           <h2 className="sc-show__h2">Project board</h2>
@@ -235,7 +250,15 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
           </a>
         </section>
       )}
-
+      {figure && figure.fileUrl && (
+        <section className="sc-show__section">
+          <h2 className="sc-show__h2">Data figure</h2>
+          <div className="sc-show__quad">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={assetUrl(figure.id)} alt={`${headline} data figure`} />
+          </div>
+        </section>
+      )}
       {demos.length > 0 && (
         <section className="sc-show__section">
           <h2 className="sc-show__h2">Demo videos</h2>
@@ -258,7 +281,6 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
           </div>
         </section>
       )}
-
       {(repo || supplements.length > 0) && (
         <section className="sc-show__section">
           <h2 className="sc-show__h2">Resources</h2>
@@ -270,8 +292,13 @@ export default async function PublicShowcasePage({ params, searchParams }: Props
           </div>
         </section>
       )}
+      {/* Report path (P1-6) — only on a page a stranger is actually looking at.
+          The team previewing its own draft has a teacher; a `link_only` viewer
+          reports through the token they were given, which is the identifier
+          they have. */}
+      {!isOwner && <ReportButton showcase={found.via === 'share_token' ? sc.shareToken! : sc.slug} />}
     </article>
-  )
+  );
 }
 
 type OnePagerAsset = { id: string; fileUrl: string | null; metadataJson: unknown }
@@ -305,19 +332,16 @@ function ShowcaseOnePager({
   assetUrl: (id: string) => string
   isPdf: (fileUrl: string | null) => boolean
 }) {
-  const linkUrl = (a?: OnePagerAsset) =>
-    a && typeof a.metadataJson === 'object' && a.metadataJson
-      ? (a.metadataJson as { url?: string }).url
-      : undefined
-  const linkLabel = (a?: OnePagerAsset, fallback?: string) =>
-    (a && typeof a.metadataJson === 'object' && a.metadataJson
-      ? (a.metadataJson as { label?: string }).label
-      : undefined) || fallback
+  // Same render-boundary rule as `ResourceLink`: the one-pager prints URLs for a
+  // reader to type, so a legacy `javascript:`/`data:` row is dropped rather than
+  // published as something that looks like a link.
+  const linkUrl = (a?: OnePagerAsset) => {
+    const u = readMeta<{ url?: string }>(a)?.url
+    return u && isSafeHttpUrl(u) ? u : undefined
+  }
+  const linkLabel = (a?: OnePagerAsset, fallback?: string) => readMeta<{ label?: string }>(a)?.label || fallback
 
-  const citedSupplements = supplements.filter((s) => {
-    const meta = typeof s.metadataJson === 'object' && s.metadataJson ? (s.metadataJson as { kind?: string }) : null
-    return meta?.kind !== 'works_cited'
-  })
+  const citedSupplements = supplements.filter((s) => readMeta<{ kind?: string }>(s)?.kind !== 'works_cited')
 
   const links: { label: string; url: string }[] = []
   const videoUrl = linkUrl(video)
@@ -337,7 +361,6 @@ function ShowcaseOnePager({
           Back to showcase
         </a>
       </div>
-
       <header className="sc-onepager__header">
         <h1 className="sc-onepager__title">{headline}</h1>
         {sc.shortTitle && sc.title && sc.title !== sc.shortTitle && (
@@ -348,7 +371,6 @@ function ShowcaseOnePager({
           {labType && <span className="font-pixel"> · {LAB_TYPE_LABELS[labType]}</span>}
         </p>
       </header>
-
       {quad && (
         <div className="sc-onepager__quad">
           {isPdf(quad.fileUrl) ? (
@@ -363,20 +385,18 @@ function ShowcaseOnePager({
             </a>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
+            (<img
               src={assetUrl(quad.id)}
               alt={`${headline} quad chart`}
               data-onepager-quad="img"
-            />
+            />)
           )}
         </div>
       )}
-
       <section className="sc-onepager__section">
         <h2 className="sc-onepager__h2 font-pixel">Abstract</h2>
         <p className="sc-onepager__abstract">{sc.abstract}</p>
       </section>
-
       {links.length > 0 && (
         <section className="sc-onepager__section">
           <h2 className="sc-onepager__h2 font-pixel">Links</h2>
@@ -389,7 +409,6 @@ function ShowcaseOnePager({
           </ul>
         </section>
       )}
-
       {worksCited && (
         <section className="sc-onepager__cited">
           <h2 className="sc-onepager__h2 font-pixel">Works Cited</h2>
@@ -397,7 +416,7 @@ function ShowcaseOnePager({
         </section>
       )}
     </article>
-  )
+  );
 }
 
 function ResourceLink({
@@ -409,17 +428,25 @@ function ResourceLink({
   icon: React.ReactNode
   fallback: string
 }) {
-  const meta = (typeof asset.metadataJson === 'object' && asset.metadataJson) as
-    | { url?: string; label?: string }
-    | null
+  const meta = readMeta<{ url?: string; label?: string }>(asset)
   const url = meta?.url
+  const label = meta?.label || fallback
   if (!url) return null
-  let host = ''
-  try {
-    host = new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    /* ignore */
+  // Second, independent gate at the render boundary — the link route validates
+  // the scheme, but a legacy `metadataJson.url` saved before it did must not get
+  // a free pass into an `href`. An unsafe URL degrades to inert text keeping the
+  // label, exactly as `IdeaCheckView`'s `SafeExternalLink` does: the resource is
+  // still listed, it just isn't clickable.
+  if (!isSafeHttpUrl(url)) {
+    return (
+      <span className="sc-show__link sc-show__link--inert">
+        {icon}
+        <span className="sc-show__link-label">{label}</span>
+      </span>
+    )
   }
+  // Parse is guaranteed to succeed: `isSafeHttpUrl` already constructed it.
+  const host = new URL(url).hostname.replace(/^www\./, '')
   return (
     <a href={url} target="_blank" rel="noopener noreferrer nofollow" className="sc-show__link">
       {icon}

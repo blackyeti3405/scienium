@@ -5,6 +5,7 @@ import { UserButton } from '@clerk/nextjs'
 import { FlaskConical, Settings } from 'lucide-react'
 import { PHASE_INFO, LAB_TYPE_LABELS, type Phase, type LabType } from '@/lib/phase'
 import { NotificationBell } from './NotificationBell'
+import { BugReportButton } from '@/components/ui/BugReportButton'
 import { LabProfileSettings } from '@/components/settings/LabProfileSettings'
 
 export interface Currency {
@@ -70,6 +71,7 @@ export function StatusStrip({
           {phaseInfo.label.toUpperCase()}
         </span>
         <NotificationBell />
+        <BugReportButton />
         {onOpenSettings && (
           <button
             type="button"
@@ -81,7 +83,7 @@ export function StatusStrip({
             <Settings size={16} />
           </button>
         )}
-        <UserButton afterSignOutUrl="/">
+        <UserButton>
           {/* A custom page must be a DIRECT child of <UserButton> — Clerk ignores
               wrapper components, so the page slot is inlined here, not abstracted. */}
           <UserButton.UserProfilePage

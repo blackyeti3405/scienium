@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { db } from '@/lib/db'
+import { lockAggregate } from '@/lib/db-lock'
 
 // v1 is log↔log linking only (progress entries linking to other progress
 // entries) — see plan-F6.md. Both endpoints of a reference must belong to the
@@ -16,7 +17,8 @@ const Body = z.object({
 }).strict()
 
 // POST — create a reference FROM entry [id] TO another progress entry.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
 
@@ -43,30 +45,35 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!from) return NextResponse.json({ error: 'Entry not found' }, { status: 404 })
   if (!to) return NextResponse.json({ error: 'Linked entry not found' }, { status: 404 })
 
-  // Storage cap — analogous to attachmentUrls.max(20).
-  const existingCount = await db.projectLogReference.count({
-    where: { projectLogId: params.id },
+  // Storage cap — analogous to attachmentUrls.max(20). Counted and written
+  // under one advisory lock (REFACTOR2 P2-S1): a count outside the write's
+  // transaction let two concurrent links both claim the last slot.
+  //
+  // The count excludes THIS target, so re-posting a link that already exists
+  // stays idempotent even at the cap (it consumes no new slot), and
+  // `skipDuplicates` replaces the P2002 catch — a unique violation raised
+  // inside a transaction would abort it rather than read as success.
+  const stored = await db.$transaction(async (tx) => {
+    await lockAggregate(tx, `project-log-refs:${params.id}`)
+    const others = await tx.projectLogReference.count({
+      where: { projectLogId: params.id, referencesLogId: { not: data.targetId } },
+    })
+    if (others >= MAX_OUTGOING_REFERENCES) return false
+    await tx.projectLogReference.createMany({
+      data: [{ projectLogId: params.id, referencesLogId: data.targetId }],
+      skipDuplicates: true,
+    })
+    return true
   })
-  if (existingCount >= MAX_OUTGOING_REFERENCES) {
+
+  if (!stored) {
     return NextResponse.json(
       { error: `This entry already links the maximum of ${MAX_OUTGOING_REFERENCES} entries` },
       { status: 400 },
     )
   }
 
-  try {
-    await db.projectLogReference.create({
-      data: { projectLogId: params.id, referencesLogId: data.targetId },
-    })
-  } catch (err) {
-    // P2002 = the composite PK (projectLogId, referencesLogId) already exists —
-    // idempotent create, treat as success rather than error.
-    if (!(typeof err === 'object' && err !== null && 'code' in err && (err as { code?: string }).code === 'P2002')) {
-      throw err
-    }
-  }
-
-  logActivity(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'progress' }).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'progress' }).catch(console.error)
 
   // entryNumber is oldest-first index+1 across the team's progress entries —
   // same derivation as the read path (GET /api/project-log).
@@ -89,7 +96,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 }
 
 // DELETE — remove the reference FROM entry [id] TO ?targetId=<id>.
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
   if (error) return error
 

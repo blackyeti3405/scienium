@@ -10,29 +10,16 @@ import { CODEX_TRACKS, loadTrack } from '@/lib/ops/codex/index'
 import { unitUnlocked, fluencyTier } from '@/lib/ops/codex/engine'
 import type { CodexTrack, Lesson, Segment } from '@/lib/ops/codex/types'
 import { LessonExperience } from './codex/LessonExperience'
+import { fetchCodexProgress, type CodexProgressPayload } from './codex/codexApi'
+import { ApiError } from '@/lib/api/client'
 
 // ─── Server payload shapes ──────────────────────────────────────────────────
 
-interface ProgressRow {
-  trackSlug: string
-  lessonId: string
-  completed: boolean
-  bestScore: number
-  kpAwarded: number
-  completedAt: string | null
-}
-
-interface RecommendedTrackPayload {
-  trackSlug: string
-  branchSlugs: string[]
-  rationale: string
-}
-
-interface ProgressPayload {
-  progress: ProgressRow[]
-  dailyCap: { limit: number; completedToday: number }
-  studyPlan: { tracks: RecommendedTrackPayload[]; manualTrackSlugs: string[]; generatedAt: string } | null
-}
+// Derived from the runtime schema in ./codex/codexApi, so the types cannot drift
+// from what is actually validated at the boundary.
+type ProgressPayload = CodexProgressPayload
+type ProgressRow = ProgressPayload['progress'][number]
+type RecommendedTrackPayload = NonNullable<ProgressPayload['studyPlan']>['tracks'][number]
 
 const FLUENCY_LABEL: Record<string, string> = {
   novice: 'Novice',
@@ -42,10 +29,6 @@ const FLUENCY_LABEL: Record<string, string> = {
 }
 
 // ─── Home view ──────────────────────────────────────────────────────────────
-
-function trackFluency(track: CodexTrack, completedLessonIds: Set<string>) {
-  return fluencyTier(track, completedLessonIds)
-}
 
 function trackProgressPct(track: CodexTrack, completedLessonIds: Set<string>): number {
   const lessons = [track.core, ...track.branches].flatMap((s) => s.units.flatMap((u) => u.lessons))
@@ -77,7 +60,7 @@ function TrackCard({
   rationale?: string
   onOpen: () => void
 }) {
-  const tier = trackFluency(track, completedLessonIds)
+  const tier = fluencyTier(track, completedLessonIds)
   const pct = trackProgressPct(track, completedLessonIds)
   const next = findNextLesson(track, completedLessonIds)
 
@@ -97,7 +80,7 @@ function TrackCard({
       {rationale && <p className="text-sm text-white/55 mt-1.5 leading-snug">{rationale}</p>}
       <div className="mt-2.5">
         <PixelProgressBar value={pct} />
-        <span className="font-pixel text-[6px] text-white/30 mt-1 block">{pct}% complete</span>
+        <span className="font-pixel text-[6px] text-white/40 mt-1 block">{pct}% complete</span>
       </div>
       {next && (
         <div data-testid="codex-next-lesson" className="mt-2 font-pixel text-[7px] text-white/45">
@@ -137,17 +120,35 @@ function CodexHome({
   const manualSlugs = studyPlan?.manualTrackSlugs ?? []
   const memberSlugs = Array.from(new Set([...recommendedSlugs, ...manualSlugs]))
 
+  /**
+   * `Promise.all` was all-or-nothing: ONE slug the bundle no longer knows — a
+   * study plan holds slugs, and a Codex merge can rename a track — rejected the
+   * whole batch, so EVERY card stayed a pulsing skeleton forever. Reproduced
+   * against the original: three slugs, one bad, zero tracks loaded. Settle each
+   * one on its own; a track that cannot load simply does not appear.
+   */
   useEffect(() => {
     const slugsToLoad = browseAll ? CODEX_TRACKS.map((t) => t.slug) : memberSlugs
     const missing = slugsToLoad.filter((slug) => !loadedTracks[slug])
     if (missing.length === 0) return
-    Promise.all(missing.map((slug) => loadTrack(slug).then((track) => [slug, track] as const))).then((entries) => {
+    let cancelled = false
+    Promise.all(
+      missing.map((slug) =>
+        loadTrack(slug)
+          .then((track) => [slug, track] as const)
+          .catch(() => null),
+      ),
+    ).then((entries) => {
+      if (cancelled) return
       setLoadedTracks((prev) => {
         const next = { ...prev }
-        for (const [slug, track] of entries) next[slug] = track
+        for (const entry of entries) if (entry) next[entry[0]] = entry[1]
         return next
       })
     })
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [browseAll, memberSlugs.join(',')])
 
@@ -156,15 +157,15 @@ function CodexHome({
       <div className="max-w-2xl mx-auto w-full space-y-4 py-2">
         <div className="flex items-center justify-between">
           <span className="font-pixel text-[9px] text-[#F5C518] uppercase tracking-widest">Your Study Plan</span>
-          <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest">
+          <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest">
             {dailyCap.completedToday}/{dailyCap.limit} lessons today
           </span>
         </div>
 
         {memberSlugs.length === 0 ? (
           <div className="border border-dashed border-white/15 py-8 text-center">
-            <Sparkles size={20} className="text-white/20 mx-auto mb-2" />
-            <span className="font-pixel text-[8px] text-white/35 block mb-3">
+            <Sparkles size={20} className="text-white/40 mx-auto mb-2" />
+            <span className="font-pixel text-[8px] text-white/40 block mb-3">
               No study plan yet — generate one tailored to your project.
             </span>
             <BusyButton
@@ -310,7 +311,7 @@ function TrackView({
               <div key={unit.id} data-testid="codex-unit" className="border border-white/10 bg-[#0a1628]">
                 <div className="px-3 py-2 border-b border-white/5 flex items-center justify-between">
                   <span className="font-pixel text-[8px] text-white/70">{unit.label}</span>
-                  {!unlocked && <Lock size={11} className="text-white/25" />}
+                  {!unlocked && <Lock size={11} className="text-white/40" />}
                 </div>
                 <div className="divide-y divide-white/5">
                   {unit.lessons.map((lesson, idx) => {
@@ -330,9 +331,9 @@ function TrackView({
                         {done ? (
                           <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
                         ) : clickable ? (
-                          <ChevronRight size={13} className="text-white/25 shrink-0" />
+                          <ChevronRight size={13} className="text-white/40 shrink-0" />
                         ) : (
-                          <Lock size={12} className="text-white/20 shrink-0" />
+                          <Lock size={12} className="text-white/40 shrink-0" />
                         )}
                       </button>
                     )
@@ -364,23 +365,52 @@ export function CodexTab() {
   const [payload, setPayload] = useState<ProgressPayload | null>(null)
   const [view, setView] = useState<View>({ kind: 'home' })
   const [activeTrack, setActiveTrack] = useState<CodexTrack | null>(null)
+  /** A track that could not be opened — an error with a way BACK, not a spinner. */
+  const [trackError, setTrackError] = useState<string | null>(null)
   const [generatingPlan, setGeneratingPlan] = useState(false)
   const [planError, setPlanError] = useState<string | null>(null)
 
-  const refresh = useCallback(() => {
-    return fetch('/api/ops/codex/progress')
-      .then((r) => r.json())
-      .then((d: ProgressPayload) => setPayload(d))
-      .catch(() => setLoadError('Could not load the Field Codex. Please refresh.'))
+  const refresh = useCallback(async () => {
+    try {
+      setPayload(await fetchCodexProgress())
+      setLoadError(null)
+    } catch (err) {
+      // The status IS checked now (see codexApi) — an error body used to be
+      // committed as the payload and the tab threw on the next render.
+      setLoadError(
+        err instanceof ApiError ? err.message : 'Could not load the Field Codex. Please refresh.',
+      )
+    }
   }, [])
 
   useEffect(() => {
     refresh().finally(() => setLoading(false))
   }, [refresh])
 
+  /**
+   * Load the track behind the current view.
+   *
+   * Two failures the original had, both ending in a spinner with no way out:
+   * `loadTrack` REJECTS on a slug it does not know (study-plan rows persist
+   * slugs, so a renamed or removed track is exactly that) and there was no
+   * `.catch`; and two loads in flight could resolve oldest-last, leaving
+   * `activeTrack` pointing at the track the student had already left while the
+   * render guard `activeTrack.slug !== view.slug` held the loader up for good —
+   * nothing re-triggers the effect. `cancelled` retires the loser.
+   */
   useEffect(() => {
-    if (view.kind === 'track' || view.kind === 'lesson') {
-      loadTrack(view.slug).then(setActiveTrack)
+    if (view.kind !== 'track' && view.kind !== 'lesson') return
+    let cancelled = false
+    setTrackError(null)
+    loadTrack(view.slug)
+      .then((track) => {
+        if (!cancelled) setActiveTrack(track)
+      })
+      .catch(() => {
+        if (!cancelled) setTrackError('This track could not be opened. It may have been renamed.')
+      })
+    return () => {
+      cancelled = true
     }
   }, [view])
 
@@ -406,7 +436,7 @@ export function CodexTab() {
   if (loadError || !payload) {
     return (
       <div className="ops-tab-body items-center justify-center text-center">
-        <BookOpen size={20} className="text-white/25 mb-2" />
+        <BookOpen size={20} className="text-white/40 mb-2" />
         <span className="font-pixel text-[8px] text-white/40">{loadError ?? 'Could not load the Field Codex.'}</span>
       </div>
     )
@@ -423,6 +453,22 @@ export function CodexTab() {
         planError={planError}
         onOpenTrack={(slug) => setView({ kind: 'track', slug })}
       />
+    )
+  }
+
+  if (trackError) {
+    return (
+      <div className="ops-tab-body items-center justify-center text-center gap-3">
+        <BookOpen size={20} className="text-white/40" />
+        <span className="font-pixel text-[8px] text-white/40 max-w-[280px]">{trackError}</span>
+        <button
+          type="button"
+          onClick={() => setView({ kind: 'home' })}
+          className="font-pixel text-[8px] text-[#F5C518] hover:brightness-125"
+        >
+          Back to the Codex
+        </button>
+      </div>
     )
   }
 

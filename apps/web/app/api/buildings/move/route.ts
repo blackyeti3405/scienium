@@ -1,7 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireTeamContext } from '@/lib/api/route-context'
-import { parseJson } from '@/lib/validation'
+import { withTeamRoute } from '@/lib/api/with-route'
 import { moveBuilding } from '@/lib/buildings/service'
 import { PLOT_RADIUS } from '@/lib/plot'
 
@@ -18,17 +17,11 @@ const MoveBody = z
   })
   .strict()
 
-export async function POST(req: NextRequest) {
-  const { ctx, error: guardError } = await requireTeamContext(req, {
-    tier: 'mutate',
-    feature: 'buildings',
-  })
-  if (guardError) return guardError
-
-  const { data, error } = await parseJson(req, MoveBody)
-  if (error) return error
-
-  const result = await moveBuilding(ctx.teamId, data)
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
-  return NextResponse.json({ ok: true })
-}
+export const POST = withTeamRoute(
+  { tier: 'mutate', feature: 'buildings', body: MoveBody },
+  async ({ ctx, data }) => {
+    const result = await moveBuilding(ctx.teamId, data)
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
+    return NextResponse.json({ ok: true })
+  },
+)

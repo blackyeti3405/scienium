@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
+import { useLatest } from '@/lib/hooks/useLatest'
 
 interface ArticleData {
   title: string
@@ -22,24 +23,60 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
   const [article, setArticle] = useState<ArticleData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Reading level: English or Simple English (simple.wikipedia.org — shorter
+  // sentences, plainer vocabulary; great for younger or ELL readers). Sticky
+  // across articles within the session; a Simple edition that lacks the
+  // article surfaces the API's not-found message with the toggle still visible.
+  const [lang, setLang] = useState<'en' | 'simple'>('en')
   const contentRef = useRef<HTMLDivElement>(null)
+  const begin = useLatest()
 
-  // Fetch article whenever title changes
+  // Fetch article whenever the title or reading level changes. Guarded:
+  // toggling Simple English twice, or clicking a wiki link mid-load, leaves two
+  // fetches in flight, and the slower one used to paint over the newer article
+  // (§0.9 Row C1) — so the reader showed a different article than the toggle
+  // and the title bar said it was showing.
   useEffect(() => {
     if (!title) return
+    const stale = begin()
     setLoading(true)
     setError(null)
     setArticle(null)
 
-    fetch(`/api/discovery/article?title=${encodeURIComponent(title)}`)
+    fetch(`/api/discovery/article?title=${encodeURIComponent(title)}&lang=${lang}`)
       .then((r) => r.json())
       .then((data: ArticleData & { error?: string }) => {
+        if (stale()) return
         if (data.error) throw new Error(data.error)
         setArticle(data)
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [title])
+      .catch((e: Error) => {
+        if (!stale()) setError(e.message)
+      })
+      .finally(() => {
+        if (!stale()) setLoading(false)
+      })
+  }, [title, lang, begin])
+
+  const langToggle = (
+    <button
+      onClick={() => setLang((l) => (l === 'en' ? 'simple' : 'en'))}
+      aria-pressed={lang === 'simple'}
+      title={
+        lang === 'simple'
+          ? 'Reading Simple English Wikipedia — click for the full English article'
+          : 'Switch to Simple English Wikipedia (plainer language, shorter articles)'
+      }
+      data-testid="wiki-lang-toggle"
+      className={`font-pixel text-[7px] px-2 py-1.5 rounded-sm border transition-colors shrink-0 ${
+        lang === 'simple'
+          ? 'bg-[#F5C518] text-[#0d1b2e] border-[#F5C518]'
+          : 'text-white/50 border-white/15 hover:text-white/80'
+      }`}
+    >
+      Simple English {lang === 'simple' ? '✓' : ''}
+    </button>
+  )
 
   // Intercept wiki link clicks via event delegation.
   // `article` is in deps so this effect re-runs once the HTML renders into the DOM.
@@ -83,6 +120,8 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
         <span className="text-2xl">⚠️</span>
         <p className="font-pixel text-[9px]">Could not load article</p>
         <p className="text-sm text-white/40">{error}</p>
+        {/* Simple English has far fewer articles — leave the way back visible. */}
+        <div className="mt-2">{langToggle}</div>
       </div>
     )
   }
@@ -109,17 +148,18 @@ export function WikiReader({ title, pendingLinks, starred, onLinkToggle, onStar 
           )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
+          {langToggle}
           <button
             onClick={onStar}
             title={starred ? 'Unstar this article' : 'Star this article'}
             className={`text-xl transition-colors ${
-              starred ? 'text-[#F5C518]' : 'text-white/30 hover:text-[#F5C518]/70'
+              starred ? 'text-[#F5C518]' : 'text-white/40 hover:text-[#F5C518]/70'
             }`}
           >
             {starred ? '★' : '☆'}
           </button>
           <a
-            href={`https://en.wikipedia.org/wiki/${encodeURIComponent(article.normalizedTitle.replace(/ /g, '_'))}`}
+            href={`https://${lang}.wikipedia.org/wiki/${encodeURIComponent(article.normalizedTitle.replace(/ /g, '_'))}`}
             target="_blank"
             rel="noopener noreferrer"
             className="font-pixel text-[7px] text-white/40 hover:text-[#F5C518] transition-colors"

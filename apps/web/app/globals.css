@@ -427,10 +427,26 @@
   border: 0;
   padding: 0;
   line-height: 0;
+  /* The button box is a transparent rectangle overlapping neighbours; it never
+     captures pointer events itself. The clipped __hit child (below) is the real
+     hit target, so a pointer click resolves to the building under the cursor
+     rather than whichever rectangle is stacked on top. Keyboard activation is
+     unaffected — it doesn't route through pointer-events. */
+  pointer-events: none;
 }
-.plot-building--interactive { cursor: pointer; }
-.plot-building--inert { pointer-events: none; }
-.plot-building--arrange { cursor: grab; }
+.plot-building__hit {
+  position: relative;
+  display: block;
+  pointer-events: auto;
+  /* Silhouette hitbox: trims the transparent corners that cause a front
+     building to intercept clicks meant for the one behind it. ponytail: one
+     generic iso-building polygon for every sprite (not per-sprite silhouettes);
+     tighten per-sprite only if a specific building still mis-hits. */
+  clip-path: polygon(28% 0, 72% 0, 92% 20%, 92% 84%, 72% 100%, 28% 100%, 8% 84%, 8% 20%);
+}
+.plot-building--interactive .plot-building__hit { cursor: pointer; }
+.plot-building--inert .plot-building__hit { pointer-events: none; }
+.plot-building--arrange .plot-building__hit { cursor: grab; }
 .plot-building__art {
   position: relative;
   display: block;
@@ -447,6 +463,18 @@
   0%, 100% { transform: rotate(-1.5deg); }
   50% { transform: rotate(1.5deg); }
 }
+/* Keyboard placement cursor — a real, invisible-until-focused <button> moved
+   across cells by arrow keys. Sized to one cell's diamond bounding box and
+   positioned like the grid polygons/ghost preview above. Its visible focus
+   ring comes from the app-wide `:focus-visible` rule further down this file. */
+.plot-cursor {
+  position: absolute;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
 /* The translucent building attached to the cursor while placing/moving.
    Anchored at the sprite's top-left (JS-computed), matching placed buildings. */
 .plot-ghost {
@@ -902,6 +930,22 @@
 }
 .shop-panel__shelf::-webkit-scrollbar-thumb:hover { background: #3a4060; }
 .shop-panel__shelf { scrollbar-color: #2a3048 #0b0e18; }
+
+/* Always-visible pixel scrollbar for scroll regions where the macOS overlay
+   scrollbar's hide-when-idle behavior hides the fact that there's more content
+   (e.g. the synthesis source picker and matrix grid). Works on both axes. */
+.styled-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.styled-scroll::-webkit-scrollbar-track { background: #0b0e18; }
+.styled-scroll::-webkit-scrollbar-thumb {
+  background: #2a3048;
+  border: 2px solid #0b0e18;
+  border-radius: 2px;
+}
+.styled-scroll::-webkit-scrollbar-thumb:hover { background: #3a4060; }
+.styled-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3048 #0b0e18;
+}
 
 /* Square building card: image, name, cost, description. */
 .shop-card {
@@ -1430,7 +1474,7 @@
 .ops-tab-btn {
   padding: 14px 18px 12px;
   font-size: 8px;
-  color: rgba(255, 255, 255, 0.38);
+  color: rgba(255, 255, 255, 0.4);
   border-bottom: 2px solid transparent;
   transition: color 0.14s, border-color 0.14s;
   letter-spacing: 0.4px;
@@ -1548,7 +1592,7 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  color: rgba(255, 255, 255, 0.38);
+  color: rgba(255, 255, 255, 0.4);
   border-radius: 5px;
   border: 1px solid transparent;
   transition: color 0.12s, background 0.12s, border-color 0.12s;
@@ -1576,7 +1620,7 @@
   margin-bottom: 9px;
 }
 .ops-label__req { color: #f5c518; margin-left: 3px; }
-.ops-label__hint { color: rgba(255, 255, 255, 0.25); text-transform: none; }
+.ops-label__hint { color: rgba(255, 255, 255, 0.4); text-transform: none; }
 
 /* ── Plain textarea (next steps, failure) ─────────────────────────────────── */
 .ops-textarea {
@@ -1596,7 +1640,7 @@
   border-color: rgba(245, 197, 24, 0.55);
   box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.08);
 }
-.ops-textarea::placeholder { color: rgba(255, 255, 255, 0.22); }
+.ops-textarea::placeholder { color: rgba(255, 255, 255, 0.4); }
 
 /* ── Rich editor ──────────────────────────────────────────────────────────── */
 .ops-editor {
@@ -1640,7 +1684,7 @@
 .ops-editor__hint {
   margin-left: auto;
   font-size: 6px;
-  color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.4);
   letter-spacing: 0.3px;
 }
 
@@ -1672,7 +1716,7 @@
 .ops-prose.is-editor-empty:first-child::before,
 .ops-prose p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
-  color: rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.4);
   float: left;
   height: 0;
   pointer-events: none;
@@ -1709,7 +1753,7 @@
   right: 11px;
   top: 50%;
   transform: translateY(-50%);
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.4);
   pointer-events: none;
 }
 
@@ -1836,7 +1880,7 @@
   justify-content: center;
   gap: 4px;
   min-height: 150px;
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.4);
 }
 
 /* ── Timeline ─────────────────────────────────────────────────────────────── */
@@ -2256,7 +2300,8 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.5);
 }
-.clr-rung__theme { font-size: 6px; color: rgba(255, 255, 255, 0.4); text-align: center; }
+/* A9 readability floor: was 6px @ 40% white — unreadable classroom chrome. */
+.clr-rung__theme { font-size: 8px; color: rgba(255, 255, 255, 0.6); text-align: center; }
 .clr-rung--done { border-color: rgba(94, 240, 138, 0.4); background: rgba(94, 240, 138, 0.08); }
 .clr-rung--done .clr-rung__pip { color: #0d1b2e; background: #5ef08a; border-color: #5ef08a; }
 .clr-rung--done .clr-rung__theme { color: rgba(94, 240, 138, 0.8); }
@@ -2523,7 +2568,8 @@
 .sc-prog__bar { height: 4px; background: rgba(255, 255, 255, 0.08); border-radius: 3px; overflow: hidden; }
 .sc-prog__fill { height: 100%; background: linear-gradient(90deg, #7ff2e3, #5ef08a); transition: width 0.3s ease; }
 .sc-prog__chips { display: flex; flex-wrap: wrap; gap: 8px 14px; }
-.sc-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 6px; color: rgba(255, 255, 255, 0.4); letter-spacing: 0.4px; }
+/* A9 readability floor: was 6px @ 40% white — unreadable classroom chrome. */
+.sc-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 8px; color: rgba(255, 255, 255, 0.6); letter-spacing: 0.4px; }
 .sc-chip__dot {
   width: 14px; height: 14px; display: flex; align-items: center; justify-content: center;
   border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.2); flex-shrink: 0;
@@ -2541,14 +2587,14 @@
   transition: border-color 0.14s, box-shadow 0.14s;
 }
 .sc-input:focus { border-color: rgba(245, 197, 24, 0.55); box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.08); }
-.sc-input::placeholder { color: rgba(255, 255, 255, 0.22); }
+.sc-input::placeholder { color: rgba(255, 255, 255, 0.4); }
 .sc-input--multiline { resize: vertical; line-height: 1.6; min-height: 0; }
 
 /* Field header: label on the left, live counter on the right (same baseline). */
 .sc-fhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
 .sc-fhead .ops-label { margin-bottom: 0; }
 .sc-req { color: #f5c518; margin-left: 4px; }
-.sc-count { font-size: 11px; color: rgba(255, 255, 255, 0.32); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.sc-count { font-size: 11px; color: rgba(255, 255, 255, 0.4); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .sc-count--max { color: #ff8a8a; }
 .sc-textarea--error { border-color: rgba(255, 138, 138, 0.6) !important; }
 
@@ -2583,7 +2629,7 @@
   cursor: pointer; transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
 .sc-drop:hover { border-color: #f5c518; color: #f5c518; background: rgba(245, 197, 24, 0.04); }
-.sc-drop__sub { font-size: 10px; color: rgba(255, 255, 255, 0.3); }
+.sc-drop__sub { font-size: 10px; color: rgba(255, 255, 255, 0.4); }
 
 /* Uploaded file preview (uniform 150px box + action bar) */
 .sc-file { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; overflow: hidden; background: #0a1628; }
@@ -2649,7 +2695,7 @@
   padding: 24px;
   text-align: center;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.4);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -2711,6 +2757,10 @@
   transition: border-color 0.12s, transform 0.08s;
 }
 .sc-show__link:hover { border-color: #7ff2e3; transform: translateY(-1px); }
+/* Unlinkable resource (a stored URL that failed the render-boundary scheme
+   check) — listed, dimmed, and deliberately not hoverable. */
+.sc-show__link--inert { color: rgba(232, 236, 251, 0.5); cursor: default; }
+.sc-show__link--inert:hover { border-color: rgba(255, 255, 255, 0.1); transform: none; }
 .sc-show__link-label { font-weight: 600; font-size: 15px; }
 .sc-show__link-host { font-size: 13px; color: rgba(255, 255, 255, 0.4); }
 .sc-show__link-ext { margin-left: auto; opacity: 0.5; }
@@ -2870,6 +2920,55 @@
 }
 .sc-show__printlink:hover { color: #7ff2e3; }
 
+/* ── Report control (REFACTOR2 P1-6) ──────────────────────────────────────── */
+/* Quiet by default and quiet when open: a report path has to be findable
+   without competing with the project it sits under. Native <details>, so the
+   open/close state, keyboard handling and screen-reader semantics are the
+   browser's. */
+.sc-report { margin: 40px auto 0; max-width: 860px; font-size: 8px; }
+.sc-report__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.35);
+  list-style: none;
+  transition: color 0.12s;
+}
+.sc-report__toggle::-webkit-details-marker { display: none; }
+.sc-report__toggle:hover { color: rgba(255, 255, 255, 0.7); }
+.sc-report__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 22, 40, 0.6);
+}
+.sc-report__label { color: rgba(255, 255, 255, 0.45); width: 100%; }
+.sc-report__select {
+  background: #0d1b2e;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e8ecfb;
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+}
+.sc-report__select:focus { border-color: rgba(245, 197, 24, 0.6); }
+.sc-report__send {
+  border: 1px solid rgba(245, 197, 24, 0.4);
+  background: rgba(245, 197, 24, 0.1);
+  color: rgba(245, 197, 24, 0.85);
+  padding: 7px 12px;
+  transition: border-color 0.12s;
+}
+.sc-report__send:hover:not(:disabled) { border-color: rgba(245, 197, 24, 0.8); }
+.sc-report__send:disabled { opacity: 0.45; }
+.sc-report__error { color: #f87171; }
+.sc-report--done { margin-top: 40px; color: rgba(255, 255, 255, 0.4); text-align: center; }
+
 /* ── Showcase one-pager (?print=1) — screen rendering ─────────────────────── */
 /* Compact single-page summary meant for the browser's native print/Save-as-PDF.
    Chrome bits (action bar, lab label) use font-pixel; body/article text (title,
@@ -2973,4 +3072,807 @@
   }
 
   @page { margin: 0.5in; }
+}
+
+/* ── Sentry User Feedback widget ("Report a bug") ─────────────────────────────
+   The widget renders in a shadow root, so only CSS custom properties set on
+   its host element reach inside (an outer-document rule on the host beats the
+   widget's own `:host` defaults). Colors live in the `themeDark` object in
+   instrumentation-client.ts; these are the bits that theme object can't carry.
+
+   The BASE font is the game's body font, deliberately: if Sentry ever renames
+   the internal classes that BugReportButton upgrades to pixel chrome, the
+   dialog degrades to readable Inter rather than something broken. */
+#sentry-feedback {
+  --font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-size: 14px;
+  --border: 1px solid rgba(255, 255, 255, 0.15);
+  --box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+}
+
+
+/* ── Accessibility floor (A9) ──────────────────────────────────────────────
+   1. Visible keyboard focus, app-wide. Mouse/touch interaction is unaffected
+      (`:focus-visible` only matches keyboard-driven focus), so the pixel
+      aesthetic stays intact while keyboard users can finally see where they
+      are. Gold matches the app accent.
+   2. Blanket reduced-motion fallback: the named per-animation fallbacks above
+      stay, but any animation NOT individually handled also collapses. */
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #f5c518 !important;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Data Terminal — Data lane (dataset grid) ─────────────────────────────────
+   The grid needs the full panel width, so this lane deliberately does NOT use
+   `.ops-tab-body` (max-width 720px) — a spreadsheet squeezed into a reading
+   column is the one layout that makes a dataset unusable. */
+.dt-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 24px;
+  width: 100%;
+}
+.dt-pane > * { flex-shrink: 0; }
+
+.dt-toolbar { display: flex; align-items: center; gap: 10px; }
+.dt-toolbar__spacer { flex: 1; }
+.dt-back {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--font-pixel), monospace; font-size: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  transition: color 0.14s;
+}
+.dt-back:hover { color: rgba(255, 255, 255, 0.75); }
+
+.dt-savestate {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-pixel), monospace; font-size: 7px;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+
+.dt-listhead { display: flex; align-items: center; justify-content: space-between; }
+
+.dt-titlebar { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.dt-title-input {
+  flex: 1; min-width: 200px;
+  background: transparent; border: none; border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff; font-size: 19px; padding: 5px 2px; outline: none;
+  transition: border-color 0.14s;
+}
+.dt-title-input:focus { border-bottom-color: rgba(245, 197, 24, 0.6); }
+.dt-tabletype { display: flex; flex-direction: column; gap: 4px; min-width: 190px; }
+.dt-tabletype__blurb {
+  font-size: 12px; color: rgba(255, 255, 255, 0.45); margin-top: -6px; line-height: 1.5;
+}
+
+/* ── Buttons and fields ──────────────────────────────────────────────────── */
+.dt-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-pixel), monospace; font-size: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.6);
+  padding: 8px 12px; border-radius: 5px;
+  transition: border-color 0.14s, color 0.14s, background 0.14s;
+}
+.dt-btn:hover:not(:disabled) { border-color: rgba(245, 197, 24, 0.55); color: #f5c518; }
+.dt-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.dt-btn--primary {
+  background: #f5c518; border-color: #f5c518; color: #0d1b2e;
+}
+.dt-btn--primary:hover:not(:disabled) { filter: brightness(1.1); color: #0d1b2e; }
+.dt-btn--ghost { border-color: transparent; padding: 6px 9px; }
+.dt-btn--danger { align-self: flex-start; border-color: rgba(248, 113, 113, 0.35); color: rgba(248, 113, 113, 0.85); }
+.dt-btn--danger:hover:not(:disabled) { border-color: rgba(248, 113, 113, 0.8); color: #f87171; }
+
+.dt-icon-btn {
+  color: rgba(255, 255, 255, 0.4); padding: 6px; border-radius: 5px;
+  transition: color 0.14s, background 0.14s;
+}
+.dt-icon-btn:hover { color: rgba(255, 255, 255, 0.85); background: rgba(255, 255, 255, 0.06); }
+.dt-icon-btn--danger:hover { color: #f87171; }
+
+.dt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.dt-field { display: flex; flex-direction: column; gap: 5px; }
+.dt-field__label {
+  font-family: var(--font-pixel), monospace; font-size: 7px;
+  color: rgba(255, 255, 255, 0.45); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.dt-field__hint { font-size: 11.5px; color: rgba(255, 255, 255, 0.4); line-height: 1.55; }
+.dt-field__error { font-size: 11.5px; color: #f87171; line-height: 1.5; }
+.dt-field__ok {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: #6ee7b7; line-height: 1.5;
+}
+.dt-input {
+  background: #0a1628; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 5px;
+  color: #fff; font-size: 13px; padding: 8px 10px; outline: none;
+  transition: border-color 0.14s, box-shadow 0.14s; width: 100%;
+}
+.dt-input:focus { border-color: rgba(245, 197, 24, 0.55); box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.08); }
+.dt-input--mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+
+.dt-banner {
+  display: flex; align-items: center; gap: 9px;
+  border: 1px solid rgba(245, 197, 24, 0.4); background: rgba(245, 197, 24, 0.06);
+  color: rgba(255, 255, 255, 0.8); font-size: 12px; line-height: 1.5;
+  padding: 10px 12px; border-radius: 6px;
+}
+.dt-banner--danger { border-color: rgba(248, 113, 113, 0.45); background: rgba(248, 113, 113, 0.07); }
+.dt-banner span { flex: 1; }
+
+/* ── Dataset list ────────────────────────────────────────────────────────── */
+.dt-list { display: flex; flex-direction: column; gap: 8px; }
+.dt-list__row {
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1); background: #0a1628;
+  border-radius: 6px; padding: 11px 12px;
+  transition: border-color 0.14s;
+}
+.dt-list__row:hover { border-color: rgba(255, 255, 255, 0.25); }
+.dt-list__open { flex: 1; text-align: left; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dt-list__name { font-size: 14px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-list__meta {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-pixel), monospace; font-size: 7px; color: rgba(255, 255, 255, 0.4);
+}
+.dt-chip {
+  border: 1px solid rgba(245, 197, 24, 0.35); color: rgba(245, 197, 24, 0.85);
+  border-radius: 3px; padding: 2px 5px; font-size: 7px;
+}
+.dt-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 42px 20px;
+}
+
+/* ── New-dataset form ────────────────────────────────────────────────────── */
+.dt-newform {
+  display: flex; flex-direction: column; gap: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px; padding: 16px;
+}
+.dt-typepicker { display: flex; flex-direction: column; gap: 8px; border: none; padding: 0; margin: 0; }
+.dt-typepicker__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 7px; }
+.dt-typecard {
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 5px;
+  padding: 11px 9px; text-align: center;
+  transition: border-color 0.14s, background 0.14s, color 0.14s;
+  color: rgba(255, 255, 255, 0.65);
+}
+.dt-typecard:hover { border-color: rgba(255, 255, 255, 0.3); color: rgba(255, 255, 255, 0.9); }
+.dt-typecard.is-selected {
+  border-color: #f5c518; background: rgba(245, 197, 24, 0.1); color: #f5c518;
+}
+.dt-typecard__label { font-family: var(--font-pixel), monospace; font-size: 7.5px; line-height: 1.5; }
+
+/* ── Import panel ────────────────────────────────────────────────────────── */
+.dt-import {
+  display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px; padding: 14px;
+}
+.dt-import textarea { resize: vertical; }
+
+/* ── Workspace: grid + column panel ──────────────────────────────────────── */
+.dt-workspace { display: flex; gap: 14px; align-items: flex-start; }
+.dt-workspace > .dt-grid { flex: 1; min-width: 0; }
+.dt-colpanel {
+  width: 268px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 12px;
+  border: 1px solid rgba(245, 197, 24, 0.3); background: rgba(245, 197, 24, 0.03);
+  border-radius: 6px; padding: 14px;
+}
+.dt-colpanel__head { display: flex; align-items: center; justify-content: space-between; }
+.dt-colpanel__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dt-colpanel__grid > .dt-field:nth-child(n + 3) { grid-column: span 2; }
+.dt-colpanel__help {
+  font-size: 11.5px; color: rgba(255, 255, 255, 0.5); line-height: 1.55;
+  border-left: 2px solid rgba(245, 197, 24, 0.4); padding-left: 9px;
+}
+.dt-formula-row { display: flex; gap: 6px; align-items: center; }
+.dt-formula-row .dt-input { flex: 1; }
+
+@media (max-width: 900px) {
+  .dt-workspace { flex-direction: column; }
+  .dt-colpanel { width: 100%; }
+}
+
+/* ── The grid itself ─────────────────────────────────────────────────────── */
+.dt-grid {
+  border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px;
+  background: #0a1628; overflow: hidden; outline: none;
+}
+.dt-grid:focus-visible { border-color: rgba(245, 197, 24, 0.5); box-shadow: 0 0 0 3px rgba(245, 197, 24, 0.08); }
+.dt-grid-empty {
+  border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 6px;
+  padding: 40px; text-align: center;
+}
+.dt-grid__scroll { overflow: auto; }
+/* Sticky VERTICALLY only, so the titles stay put as rows scroll but travel with
+   their columns when the table is scrolled sideways. */
+.dt-grid__head {
+  display: flex; width: max-content; min-width: 100%;
+  position: sticky; top: 0; z-index: 2;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14); background: #0d1b2e;
+}
+.dt-grid__body { position: relative; width: max-content; min-width: 100%; }
+.dt-grid__row { display: flex; position: absolute; left: 0; width: max-content; min-width: 100%; }
+
+.dt-grid__gutter {
+  width: 44px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-pixel), monospace; font-size: 7px;
+  color: rgba(255, 255, 255, 0.28);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  background: #0d1b2e;
+}
+.dt-grid__gutter--head { height: 46px; }
+
+.dt-grid__header {
+  width: 132px; flex-shrink: 0; height: 46px;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px;
+  padding: 0 9px; text-align: left;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.14s;
+}
+.dt-grid__header:hover { background: rgba(255, 255, 255, 0.04); }
+.dt-grid__header.is-active { background: rgba(245, 197, 24, 0.1); }
+.dt-grid__header-name {
+  font-size: 12.5px; color: rgba(255, 255, 255, 0.9);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dt-grid__header-meta { display: flex; align-items: center; gap: 5px; }
+.dt-grid__unit { font-size: 10px; color: rgba(255, 255, 255, 0.35); }
+.dt-grid__fx {
+  font-family: ui-monospace, monospace; font-size: 9px; font-style: italic;
+  color: rgba(110, 231, 183, 0.85);
+}
+.dt-role {
+  font-family: var(--font-pixel), monospace; font-size: 6px; letter-spacing: 0.04em;
+  border-radius: 2px; padding: 2px 3px; line-height: 1;
+}
+.dt-role--x { background: rgba(144, 205, 244, 0.16); color: #90cdf4; }
+.dt-role--y { background: rgba(245, 197, 24, 0.16); color: #f5c518; }
+.dt-role--yErr, .dt-role--xErr { background: rgba(246, 135, 179, 0.16); color: #f687b3; }
+.dt-role--group { background: rgba(79, 209, 197, 0.16); color: #4fd1c5; }
+.dt-role--label { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.55); }
+.dt-role--ignore { background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.3); }
+
+.dt-grid__cell {
+  width: 132px; flex-shrink: 0;
+  display: flex; align-items: center; padding: 0 9px;
+  font-size: 12.5px; color: rgba(255, 255, 255, 0.82);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: cell;
+}
+.dt-grid__cell.is-number { justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.dt-grid__cell.is-computed { color: rgba(110, 231, 183, 0.85); }
+.dt-grid__cell.is-cursor { box-shadow: inset 0 0 0 2px #f5c518; background: rgba(245, 197, 24, 0.06); }
+.dt-grid__input {
+  width: 100%; height: 100%;
+  background: #0d1b2e; border: none; outline: none;
+  color: #fff; font-size: 12.5px; font-family: inherit;
+  padding: 0; text-align: inherit;
+}
+
+.dt-rowcount {
+  font-family: var(--font-pixel), monospace; font-size: 7px;
+  color: rgba(255, 255, 255, 0.3); letter-spacing: 0.06em;
+}
+
+/* Import panel's header override. */
+.dt-check {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; color: rgba(255, 255, 255, 0.6); cursor: pointer;
+}
+.dt-check input { accent-color: #f5c518; width: 14px; height: 14px; }
+
+/* List skeleton — same geometry as `.dt-list__row` so the loaded list does not
+   shift when it replaces this. */
+.dt-skel { pointer-events: none; }
+.dt-skel__bar {
+  height: 13px; border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
+  animation: dt-skel-pulse 1.4s ease-in-out infinite;
+}
+@keyframes dt-skel-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dt-skel__bar { animation: none; }
+}
+
+/* A computed cell is written by its formula, never typed into — the cursor says so. */
+.dt-grid__cell.is-computed { cursor: default; }
+
+/* Fills the width left over by the fixed-width columns, so the table's rules run
+   the full span of the panel instead of stopping mid-air. */
+.dt-grid__filler { flex: 1 1 auto; min-width: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.dt-grid__head .dt-grid__filler { border-bottom: none; }
+/* The row-number gutter was rgba(…,0.28) — below 3:1 against #0d1b2e and the one
+   column a student scans to find their place. */
+.dt-grid__gutter { color: rgba(255, 255, 255, 0.5); }
+
+/* ── Sheets mode: Grid | Chart view toggle ───────────────────────────────────
+   Grid and Chart are two views of the ONE Sheets lane (plan §3), so the toggle
+   is a small segmented control, not a lane strip. */
+.dt-viewtoggle {
+  display: inline-flex; gap: 2px; align-self: flex-start;
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 6px; padding: 2px; background: #0a1628;
+}
+.dt-viewtoggle__btn {
+  font-family: var(--font-pixel), monospace; font-size: 8px;
+  color: rgba(255, 255, 255, 0.5); padding: 7px 16px; border-radius: 4px;
+  transition: background 0.14s, color 0.14s;
+}
+.dt-viewtoggle__btn:hover { color: rgba(255, 255, 255, 0.85); }
+.dt-viewtoggle__btn.is-active { background: rgba(245, 197, 24, 0.14); color: #f5c518; }
+
+/* ── Chart builder ───────────────────────────────────────────────────────── */
+.dt-chart { display: flex; flex-direction: column; gap: 12px; }
+.dt-chart__bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dt-chart__body { display: flex; gap: 14px; align-items: flex-start; }
+.dt-chart__controls {
+  width: 264px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px; padding: 14px;
+}
+.dt-chart__canvas {
+  flex: 1; min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: #0a1628;
+  border-radius: 6px; padding: 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.dt-chart__title { font-size: 14px; color: #fff; text-align: center; }
+.dt-chart__svg { min-width: 0; }
+.dt-chart__placeholder {
+  display: flex; align-items: center; justify-content: center; min-height: 260px;
+  color: rgba(255, 255, 255, 0.4); font-size: 12.5px; text-align: center; padding: 20px;
+}
+@media (max-width: 900px) {
+  .dt-chart__body { flex-direction: column; }
+  .dt-chart__controls { width: 100%; }
+}
+
+.dt-chart__ycols { border: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.dt-chart__ycols legend { padding: 0; }
+.dt-chart__pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dt-chart__opts { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.dt-chart__num { max-width: 92px; }
+
+.dt-chart__trendrow { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.dt-chart__trendname {
+  flex: 1; min-width: 0; font-size: 11.5px; color: rgba(255, 255, 255, 0.7);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dt-chart__trendrow .ops-select-wrap { flex: 0 0 auto; }
+
+.dt-chart__swatches { display: flex; flex-direction: column; gap: 6px; }
+.dt-chart__swatch { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: rgba(255, 255, 255, 0.7); }
+.dt-chart__swatch input[type='color'] {
+  width: 26px; height: 20px; padding: 0; border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px; background: none; cursor: pointer;
+}
+
+/* Trendline display equations + R² — the point of the trendline feature. */
+.dt-chart__eqs {
+  list-style: none; margin: 0; padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 5px; background: rgba(255, 255, 255, 0.02);
+  display: flex; flex-direction: column; gap: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+}
+.dt-chart__eqname { font-family: var(--font-pixel), monospace; font-size: 7px; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 6px; }
+.dt-chart__eqerr { color: rgba(248, 113, 113, 0.85); font-family: var(--font-body, sans-serif); }
+
+.dt-chart__data { align-self: flex-start; }
+.dt-chart__tablewrap { overflow-x: auto; margin-top: 8px; }
+.dt-chart__table { width: 100%; border-collapse: collapse; font-size: 12.5px; color: rgba(255, 255, 255, 0.82); }
+.dt-chart__table th, .dt-chart__table td {
+  text-align: right; padding: 5px 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); white-space: nowrap;
+}
+.dt-chart__table thead th {
+  font-family: var(--font-pixel), monospace; font-size: 7px; color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.dt-chart__table tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+
+.dt-chart-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 48px 20px;
+}
+
+/* ── Lane strip: Sheets | Code ────────────────────────────────────────────────
+   The top-level lane switch (plan §4). Same segmented shape as the Grid|Chart
+   view toggle, sized a touch larger because it is the more consequential choice. */
+.dt-lanes {
+  display: inline-flex; gap: 2px; align-self: flex-start;
+  border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 6px; padding: 3px; background: #0a1628;
+}
+.dt-lanes__btn {
+  font-family: var(--font-pixel), monospace; font-size: 9px;
+  color: rgba(255, 255, 255, 0.5); padding: 8px 20px; border-radius: 4px;
+  transition: background 0.14s, color 0.14s;
+}
+.dt-lanes__btn:hover { color: rgba(255, 255, 255, 0.85); }
+.dt-lanes__btn.is-active { background: rgba(245, 197, 24, 0.16); color: #f5c518; }
+
+/* ── Code mode ────────────────────────────────────────────────────────────── */
+.dt-code { display: flex; flex-direction: column; gap: 12px; }
+.dt-code__bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dt-code__status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: rgba(255, 255, 255, 0.55); min-height: 16px;
+}
+.dt-code__name { max-width: 340px; }
+.dt-code__body { display: flex; gap: 14px; align-items: stretch; }
+.dt-code__editorwrap { flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.dt-code__editor {
+  width: 100%; min-height: 420px; resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5;
+  color: #e8eef7; background: #0a1628; tab-size: 4;
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 6px; padding: 12px 14px;
+}
+.dt-code__editor:focus { outline: none; border-color: rgba(245, 197, 24, 0.5); }
+.dt-code__output {
+  flex: 1 1 50%; min-width: 0; min-height: 420px; max-height: 620px; overflow: auto;
+  display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: #0a1628;
+  border-radius: 6px; padding: 14px;
+}
+.dt-code__hint { color: rgba(255, 255, 255, 0.4); font-size: 12.5px; }
+.dt-code__figure {
+  max-width: 100%; height: auto; align-self: flex-start;
+  background: #fff; border-radius: 4px; padding: 4px;
+}
+.dt-code__stream,
+.dt-code__error {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.45;
+  border-radius: 5px; padding: 10px 12px;
+}
+.dt-code__stream { color: rgba(255, 255, 255, 0.82); background: rgba(255, 255, 255, 0.03); }
+.dt-code__stream--err { color: rgba(251, 191, 129, 0.92); }
+.dt-code__error {
+  color: rgba(248, 113, 113, 0.95); background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+}
+@media (max-width: 900px) {
+  .dt-code__body { flex-direction: column; }
+  .dt-code__editor,
+  .dt-code__output { min-height: 300px; }
+}
+
+.dt-code-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 48px 20px;
+}
+
+/* ── Lab mode (Phase D) ─────────────────────────────────────────────────── */
+.dt-lab { display: flex; flex-direction: column; gap: 12px; }
+.dt-lab__bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dt-lab__empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 48px 20px;
+}
+.dt-lab__results { display: flex; flex-direction: column; gap: 16px; }
+
+/* The gated Analyze dialog */
+.dt-analyze {
+  display: flex; flex-direction: column; gap: 16px;
+  border: 1px solid rgba(245, 197, 24, 0.28); background: rgba(245, 197, 24, 0.03);
+  border-radius: 8px; padding: 16px;
+}
+.dt-analyze__section { display: flex; flex-direction: column; gap: 8px; }
+.dt-analyze__list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px;
+}
+.dt-analyze__opt {
+  display: flex; flex-direction: column; gap: 3px; text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.14); background: #0a1628;
+  border-radius: 6px; padding: 9px 11px; cursor: pointer; transition: border-color 0.12s;
+}
+.dt-analyze__opt:hover:not(:disabled) { border-color: rgba(245, 197, 24, 0.5); }
+.dt-analyze__opt.is-selected { border-color: #f5c518; background: rgba(245, 197, 24, 0.08); }
+.dt-analyze__opt.is-disabled { opacity: 0.45; cursor: not-allowed; }
+.dt-analyze__opt-label {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #e8eef7;
+}
+.dt-analyze__opt-desc { font-size: 11.5px; color: rgba(255, 255, 255, 0.5); line-height: 1.45; }
+.dt-analyze__soon {
+  font-family: var(--font-pixel, monospace); font-size: 7px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: rgba(245, 197, 24, 0.75);
+  border: 1px solid rgba(245, 197, 24, 0.4); border-radius: 3px; padding: 1px 4px;
+}
+.dt-analyze__cols { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.dt-analyze__unit { color: rgba(255, 255, 255, 0.45); }
+.dt-analyze__opt-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-size: 12.5px; color: rgba(255, 255, 255, 0.75);
+}
+.dt-analyze__opt-row > span { flex: 0 0 auto; }
+.dt-analyze__opt-row .ops-select-wrap,
+.dt-analyze__opt-row .dt-input { flex: 0 1 220px; min-width: 120px; }
+
+/* One saved analysis' results sheet */
+.dt-analysis {
+  display: flex; flex-direction: column; gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: #0a1628;
+  border-radius: 8px; padding: 16px;
+}
+.dt-analysis__head { display: flex; align-items: center; gap: 10px; }
+.dt-analysis__title { flex: 1; font-size: 14px; font-weight: 600; color: #f5c518; }
+.dt-analysis__actions { display: flex; gap: 6px; }
+.dt-analysis__hint { color: rgba(255, 255, 255, 0.42); font-size: 12.5px; }
+.dt-analysis__body { display: flex; flex-direction: column; gap: 14px; }
+.dt-analysis__body.is-stale { opacity: 0.55; }
+
+.dt-analysis__stats {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 0;
+}
+.dt-analysis__stat {
+  display: flex; flex-direction: column; gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 5px; padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.dt-analysis__stat dt {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.45);
+}
+.dt-analysis__stat dd {
+  margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px; color: #e8eef7;
+}
+
+.dt-analysis__tablewrap { overflow-x: auto; }
+.dt-analysis__tabletitle {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5); margin-bottom: 6px;
+}
+.dt-analysis__table { border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
+.dt-analysis__table th, .dt-analysis__table td {
+  border: 1px solid rgba(255, 255, 255, 0.1); padding: 5px 10px; text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #e8eef7;
+}
+.dt-analysis__table th {
+  background: rgba(255, 255, 255, 0.04); color: rgba(255, 255, 255, 0.6);
+  font-weight: 600; text-align: right;
+}
+.dt-analysis__table td:first-child, .dt-analysis__table th:first-child { text-align: left; }
+
+.dt-analysis__assumptions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.dt-analysis__assumptions li {
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.78);
+}
+.dt-analysis__assumptions li.is-pass > svg { color: #4ade80; flex-shrink: 0; }
+.dt-analysis__assumptions li.is-fail > svg { color: #fbbf24; flex-shrink: 0; }
+.dt-analysis__assumption-label { flex: 1; }
+.dt-analysis__assumption-detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.dt-analysis__figure {
+  max-width: 100%; height: auto; align-self: flex-start;
+  background: #fff; border-radius: 4px; padding: 4px;
+}
+
+/* Phase F2: poster layouts (multi-panel A/B/C boards). */
+.dt-posters {
+  display: flex; flex-direction: column; gap: 12px;
+  margin-top: 20px; padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.dt-posters__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.dt-posters__head .dt-analysis__title { display: inline-flex; align-items: center; gap: 6px; }
+.dt-poster {
+  display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px;
+  padding: 10px 12px; background: rgba(255, 255, 255, 0.02);
+}
+.dt-poster__row { display: flex; align-items: center; gap: 8px; }
+.dt-poster__row .dt-input { flex: 1; }
+.dt-poster__grid-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
+.dt-poster__panels { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.dt-poster__panel { min-width: 160px; }
+
+/* Phase F1: per-figure Format + Export tools on the results sheet. */
+.dt-analysis__figtools {
+  display: flex; flex-direction: column; gap: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px;
+}
+.dt-analysis__export {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+}
+.dt-analysis__export .dt-field__label { margin: 0; }
+.dt-analysis__format {
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px;
+  padding: 6px 10px; background: rgba(255, 255, 255, 0.02);
+}
+.dt-analysis__format-summary {
+  cursor: pointer; font-size: 12.5px; color: rgba(255, 255, 255, 0.72);
+  list-style: none;
+}
+.dt-analysis__format-summary::-webkit-details-marker { display: none; }
+.dt-analysis__format-body {
+  display: flex; flex-direction: column; gap: 6px; margin-top: 10px;
+}
+
+.dt-analysis__guide {
+  border: 1px solid rgba(245, 197, 24, 0.22); border-radius: 6px; padding: 8px 12px;
+  background: rgba(245, 197, 24, 0.03);
+}
+.dt-analysis__guide summary {
+  display: flex; align-items: center; gap: 7px; cursor: pointer;
+  font-size: 12.5px; color: #f5c518; list-style: none;
+}
+.dt-analysis__guide summary::-webkit-details-marker { display: none; }
+.dt-analysis__guide-body {
+  font-size: 12.5px; color: rgba(255, 255, 255, 0.7); line-height: 1.55; margin-top: 8px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   MARKETING MOTION SYSTEM  (homepage /, /about)
+   Relevant motion only: scroll reveals the journey, the lab drifts quietly,
+   real numbers count up. All of it collapses under prefers-reduced-motion.
+   See DESIGN.md › Motion.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Reveal-on-scroll — PROGRESSIVE ENHANCEMENT. The hidden "from" state applies
+   ONLY once JS is confirmed (html.js, set by the inline script in layout.tsx).
+   Without JS, in SSR/headless snapshots, or if IntersectionObserver never fires,
+   content renders fully visible — motion enhances, it never gates content.
+   Reveal.tsx flips data-reveal to "in". --reveal-delay lets a pair stagger. */
+.js [data-reveal]:not([data-reveal='in']) {
+  opacity: 0;
+  transform: translateY(12px);
+}
+[data-reveal] {
+  transition:
+    opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+/* Ambient float for hero pixel buildings — slow, small, out-of-phase per
+   building via --float-dur / --float-delay. Never a spin. */
+@keyframes mkt-float {
+  0%,
+  100% { transform: translateY(0); }
+  50%  { transform: translateY(-7px); }
+}
+.mkt-float {
+  animation: mkt-float var(--float-dur, 6s) ease-in-out infinite;
+  animation-delay: var(--float-delay, 0s);
+}
+
+/* Isometric hero tile field: a flat grass plate the buildings sit on. */
+.mkt-iso-plate {
+  background-image: url('/sprites/tiles/grass_2.png');
+  background-size: 48px 48px;
+  image-rendering: pixelated;
+}
+
+/* Crisp pixel scaling for any sprite scaled up on the marketing pages. */
+.mkt-pixel {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* Gentle guide-line that draws the journey rail as you scroll. */
+.mkt-rail-fill {
+  transform-origin: top;
+  transform: scaleY(var(--rail, 0));
+  transition: transform 0.15s linear;
+}
+
+/* Accordion (FAQ / Category List) — CSS-only expand via grid-template-rows,
+   no JS height measuring. The row height is animated, not just opacity, so
+   .mkt-accordion-panel must itself be a grid track. */
+.mkt-accordion-panel {
+  display: grid;
+  transition: grid-template-rows 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Flip Words (game-layer headline) — short fade + rise per word swap. */
+@keyframes mkt-flip-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.mkt-flip-in {
+  animation: mkt-flip-in 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Lightbox (Shot zoom) — quick fade, respects reduced-motion below. */
+@keyframes mkt-lightbox-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.mkt-lightbox {
+  animation: mkt-lightbox-in 0.2s ease-out;
+}
+
+/* CountUp 3D flip-in — same progressive-enhancement pattern as [data-reveal]
+   above: the folded "from" state applies ONLY once JS is confirmed (html.js),
+   so no-JS/SSR clients see the real stat immediately, never hidden edge-on.
+   One flip of the whole number (not a per-digit odometer — flipping through
+   every intermediate value at 60fps would be chaotic, not tasteful), timed to
+   the count-up starting. */
+.js [data-flip]:not([data-flip='in']) {
+  transform: rotateX(-90deg);
+}
+[data-flip] {
+  display: inline-block;
+  transform-origin: center bottom;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mkt-flip-scene {
+  display: inline-block;
+  perspective: 300px;
+}
+
+/* Accordion +/− indicator — a real 3D coin-flip between two faces (not just a
+   text swap), tied to an actual state change (expanded/collapsed). Same
+   mechanism as the CountUp flip, scaled down. */
+.mkt-accordion-flip-scene {
+  display: inline-block;
+  perspective: 200px;
+}
+.mkt-accordion-flip {
+  position: relative;
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  transform-style: preserve-3d;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mkt-accordion-flip__face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+}
+.mkt-accordion-flip__face--back {
+  transform: rotateX(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal],
+  [data-reveal='in'] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .mkt-float { animation: none !important; }
+  .mkt-accordion-panel { transition: none !important; }
+  .mkt-flip-in { animation: none !important; }
+  [data-flip] { transform: none !important; transition: none !important; }
+  .mkt-accordion-flip { transition: none !important; }
+  .mkt-lightbox { animation: none !important; }
 }

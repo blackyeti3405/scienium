@@ -4,7 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { awardDiscoveryVisit } from '@/lib/discovery/awardVisit'
-import { logActivity } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 
 // ── PATCH /api/discovery/sources/[id]/reflection ──────────────────────────────
 // Persists the ONE-line reflection ("In one sentence, what did they find?") onto
@@ -18,7 +18,8 @@ const ReflectionBody = z
   .object({ reflection: z.string().trim().max(500) })
   .strict()
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error } = await requireTeamContext(req, { tier: 'mutate' })
   if (error) return error
 
@@ -63,14 +64,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         tier: node.externalSource!.credibilityTier,
       })
       kpAwarded = res.kpAwarded
+      // Durable (REFACTOR2 P1-R5): the KP mint and its teacher-visible record
+      // commit together — a crash between them can't leave KP awarded with no
+      // evidence it happened.
+      if (kpAwarded > 0) {
+        await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'discovery_kp_awarded', {
+          kp: kpAwarded,
+          nodeCount: 1,
+        })
+      }
     }
   })
-
-  if (kpAwarded > 0) {
-    logActivity(ctx.teamId, ctx.dbUserId, 'discovery_kp_awarded', { kp: kpAwarded, nodeCount: 1 }).catch(
-      console.error,
-    )
-  }
 
   return NextResponse.json({ ok: true, reflection: reflection || null, kpAwarded })
 }

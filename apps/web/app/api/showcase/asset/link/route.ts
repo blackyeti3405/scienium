@@ -1,8 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireTeamContext } from '@/lib/api/route-context'
+import { withTeamRoute } from '@/lib/api/with-route'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
+import { lockAggregate } from '@/lib/db-lock'
+import { syncShowcaseRevision } from '@/lib/showcase-server'
 import {
   isSafeHttpUrl,
   parseVideoUrl,
@@ -28,10 +30,17 @@ const MULTI_CAP: Partial<Record<ShowcaseAssetType, number>> = {
   supplement: MAX_SUPPLEMENTS,
 }
 
-export async function POST(req: NextRequest) {
-  const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate', feature: 'showcase' })
-  if (guardError) return guardError
+/** Thrown inside the slot transaction when a multi-slot cap is full → 409. */
+class SlotCapError extends Error {
+  constructor(readonly cap: number) {
+    super('slot cap reached')
+  }
+}
 
+// Body is parsed inside the handler (not hoisted into the wrapper) so the
+// "save your showcase first" 409 still precedes any body-shape 400, exactly as
+// before this route moved onto withTeamRoute.
+export const POST = withTeamRoute({ tier: 'mutate', feature: 'showcase' }, async ({ req, ctx }) => {
   const showcase = await db.showcase.findUnique({ where: { teamId: ctx.teamId }, select: { id: true } })
   if (!showcase) {
     return NextResponse.json({ error: 'Save your showcase details first.' }, { status: 409 })
@@ -54,25 +63,45 @@ export async function POST(req: NextRequest) {
     metadata = { url: data.url, label: data.label ?? '' }
   }
 
-  if (SINGLE_SLOT[assetType]) {
-    // Replace any existing of this single-slot type.
-    await db.showcaseAsset.deleteMany({ where: { showcaseId: showcase.id, assetType } })
-  } else {
-    // Enforce the cap on multi-slot types.
-    const cap = MULTI_CAP[assetType] ?? 0
-    const count = await db.showcaseAsset.count({ where: { showcaseId: showcase.id, assetType } })
-    if (count >= cap) {
-      return NextResponse.json({ error: `Up to ${cap} ${assetType === 'demo_video' ? 'demo videos' : 'links'}.` }, { status: 409 })
+  // Slot invariants enforced ATOMICALLY (A12): the per-(showcase, slot)
+  // advisory lock serializes concurrent submissions, so a single slot can't be
+  // duplicated by delete-then-create races and a multi-slot cap can't be
+  // exceeded by count-then-create races.
+  let asset: { id: string; assetType: string; metadataJson: unknown }
+  try {
+    asset = await db.$transaction(async (tx) => {
+      await lockAggregate(tx, `showcase-slot:${showcase.id}:${assetType}`)
+      if (SINGLE_SLOT[assetType]) {
+        // Replace any existing of this single-slot type.
+        await tx.showcaseAsset.deleteMany({ where: { showcaseId: showcase.id, assetType } })
+      } else {
+        // Enforce the cap on multi-slot types.
+        const cap = MULTI_CAP[assetType] ?? 0
+        const count = await tx.showcaseAsset.count({ where: { showcaseId: showcase.id, assetType } })
+        if (count >= cap) throw new SlotCapError(cap)
+      }
+      const created = await tx.showcaseAsset.create({
+        data: { showcaseId: showcase.id, assetType, metadataJson: metadata as Prisma.InputJsonValue },
+        select: { id: true, assetType: true, metadataJson: true },
+      })
+      // A replaced video/repo/supplement link changes the reviewed revision
+      // (P0-R3) — in the SAME commit as the slot swap, so a crash between the
+      // two can never leave changed public content carrying the old approval.
+      await syncShowcaseRevision(tx, showcase.id, ctx.dbUserId)
+      return created
+    })
+  } catch (err) {
+    if (err instanceof SlotCapError) {
+      return NextResponse.json(
+        { error: `Up to ${err.cap} ${assetType === 'demo_video' ? 'demo videos' : 'links'}.` },
+        { status: 409 },
+      )
     }
+    throw err
   }
-
-  const asset = await db.showcaseAsset.create({
-    data: { showcaseId: showcase.id, assetType, metadataJson: metadata as Prisma.InputJsonValue },
-    select: { id: true, assetType: true, metadataJson: true },
-  })
 
   return NextResponse.json(
     { asset: { id: asset.id, assetType: asset.assetType, url: null, metadata: asset.metadataJson } },
     { status: 201 },
   )
-}
+})

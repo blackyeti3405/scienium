@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
   Plus,
   Copy,
   Check,
-  AlertCircle,
+  X,
   Clock,
   Activity,
   Users,
@@ -14,12 +14,14 @@ import {
   BookOpen,
   GraduationCap,
   Bell,
+  RefreshCw,
 } from 'lucide-react'
 import { PHASE_INFO, PHASE_ORDER, type Phase } from '@/lib/phase'
 import { StatTile } from '@/components/ui/Card'
 import { BusyButton } from '@/components/ui/BusyButton'
-import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
-import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
+import { useCopyToClipboard } from '@/components/ops/guide-chrome'
+import { TeacherPanelState } from './TeacherPanelState'
+import { TruncationNotice } from './TruncationNotice'
 
 interface RosterStudent {
   studentId: string
@@ -33,12 +35,19 @@ interface RosterStudent {
   flags: { status: 'on_track' | 'unlogged' | 'stale' | null }
 }
 
+interface PendingRequest {
+  id: string
+  studentName: string
+  requestedAt: string
+}
+
 interface ClassRow {
   id: string
   name: string
   joinCode: string | null
   school?: { name: string }
   _count?: { users: number }
+  pendingRequests?: PendingRequest[]
 }
 
 interface RosterResponse {
@@ -46,6 +55,8 @@ interface RosterResponse {
   hasClasses: boolean
   phaseCounts?: Record<string, number>
   attentionCount?: number
+  truncated?: boolean
+  limit?: number
 }
 
 export function TeacherRoster() {
@@ -53,6 +64,8 @@ export function TeacherRoster() {
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [phaseCounts, setPhaseCounts] = useState<Record<string, number>>({})
   const [attentionCount, setAttentionCount] = useState(0)
+  // P2-1: the roster read is bounded, so it may be partial — never silently.
+  const [truncated, setTruncated] = useState<{ limit: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [attentionOnly, setAttentionOnly] = useState(false)
@@ -60,13 +73,28 @@ export function TeacherRoster() {
   // shares the team as "Nudged" for the rest of the session.
   const [nudged, setNudged] = useState<Record<string, 'idle' | 'sending' | 'done'>>({})
   const [nudgeError, setNudgeError] = useState<Record<string, string | undefined>>({})
+  // A class-join approval enrols the student server-side, but that student
+  // still won't appear in `students` below until the roster is re-fetched —
+  // ClassManager only ever patched its OWN `classes` state (the count/pending
+  // list), never this component's roster. Surfaced separately from the
+  // full-page `loadError` so one failed background refresh after an approval
+  // doesn't blank the whole panel that was just successfully used.
+  const [rosterRefreshError, setRosterRefreshError] = useState<string | null>(null)
 
-  useEffect(() => {
-    Promise.all([
-      fetch('/api/teacher/roster').then((r) => {
-        if (!r.ok) throw new Error('roster fetch failed')
-        return r.json() as Promise<RosterResponse>
-      }),
+  async function fetchRoster(): Promise<RosterResponse> {
+    const r = await fetch('/api/teacher/roster')
+    if (!r.ok) throw new Error('roster fetch failed')
+    return r.json()
+  }
+
+  // Extracted so a failed initial load has a real retry (not just a dead-end
+  // message), same shape as LiteratureFeature's (v0.59.0) and CodexTab's
+  // (v0.58.0) load failures.
+  const load = useCallback(() => {
+    setLoading(true)
+    setLoadError(null)
+    return Promise.all([
+      fetchRoster(),
       fetch('/api/teacher/class').then((r) => {
         if (!r.ok) throw new Error('class fetch failed')
         return r.json()
@@ -76,10 +104,31 @@ export function TeacherRoster() {
         setStudents(roster.students ?? [])
         setPhaseCounts(roster.phaseCounts ?? {})
         setAttentionCount(roster.attentionCount ?? 0)
+        setTruncated(roster.truncated ? { limit: roster.limit ?? roster.students.length } : null)
         setClasses(cls.classes ?? [])
       })
       .catch(() => setLoadError('Could not load your roster. Try refreshing the page.'))
       .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const refreshRosterAfterApproval = useCallback(() => {
+    setRosterRefreshError(null)
+    return fetchRoster()
+      .then((roster) => {
+        setStudents(roster.students ?? [])
+        setPhaseCounts(roster.phaseCounts ?? {})
+        setAttentionCount(roster.attentionCount ?? 0)
+        setTruncated(roster.truncated ? { limit: roster.limit ?? roster.students.length } : null)
+      })
+      .catch(() =>
+        setRosterRefreshError(
+          'Approved — but the roster below may be out of date. Try again to see the new student.',
+        ),
+      )
   }, [])
 
   const hasAttention = (s: RosterStudent) =>
@@ -104,35 +153,29 @@ export function TeacherRoster() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="max-w-6xl mx-auto space-y-8">
-        <div className="space-y-3">
-          <PixelSkeleton variant="line" h="h-3" w="w-24" />
-          <PixelSkeleton variant="box" h="h-20" w="w-full" />
-        </div>
-        <div className="space-y-3">
-          <PixelSkeleton variant="line" h="h-3" w="w-20" />
-          <PanelListSkeleton rows={5} />
-        </div>
-      </div>
-    )
-  }
-
-  if (loadError) {
-    return (
-      <div className="max-w-6xl mx-auto">
-        <div className="border border-dashed border-red-400/25 rounded-lg py-12 text-center space-y-1">
-          <p className="text-sm text-red-400">{loadError}</p>
-        </div>
-      </div>
-    )
+  if (loading || loadError) {
+    return <TeacherPanelState loading={loading} error={loadError} skeletonRows={5} onRetry={load} />
   }
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
+      {truncated && <TruncationNotice limit={truncated.limit} noun="students" />}
+
+      {rosterRefreshError && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-2.5">
+          <span className="text-sm text-amber-300">{rosterRefreshError}</span>
+          <button
+            type="button"
+            onClick={() => void refreshRosterAfterApproval()}
+            className="shrink-0 text-sm text-white/60 border border-white/20 rounded-md px-3 py-1 hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
       {/* Classes manager */}
-      <ClassManager classes={classes} onCreated={(c) => setClasses((list) => [c, ...list])} />
+      <ClassManager classes={classes} setClasses={setClasses} onApproved={refreshRosterAfterApproval} />
 
       {/* Overview stat tiles */}
       {students.length > 0 && (
@@ -184,7 +227,7 @@ export function TeacherRoster() {
 
         {visible.length === 0 ? (
           <div className="border border-dashed border-white/10 rounded-lg py-12 text-center">
-            <p className="text-sm text-white/30">
+            <p className="text-sm text-white/40">
               {students.length === 0
                 ? 'No students yet — share a class code so students can join.'
                 : 'No students need attention right now.'}
@@ -194,19 +237,19 @@ export function TeacherRoster() {
           <div className="border border-white/10 bg-[#0a1628] rounded-lg overflow-hidden">
             {/* Table header */}
             <div className="hidden sm:grid grid-cols-[1fr_8rem_9rem_5rem_9rem] gap-3 px-4 py-2.5 bg-white/[0.02] border-b border-white/10">
-              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider">
+              <span className="font-pixel text-[10px] text-white/40 uppercase tracking-wider">
                 Student
               </span>
-              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider">
+              <span className="font-pixel text-[10px] text-white/40 uppercase tracking-wider">
                 Team
               </span>
-              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider">
+              <span className="font-pixel text-[10px] text-white/40 uppercase tracking-wider">
                 Phase
               </span>
-              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider text-right">
+              <span className="font-pixel text-[10px] text-white/40 uppercase tracking-wider text-right">
                 Papers
               </span>
-              <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider text-right">
+              <span className="font-pixel text-[10px] text-white/40 uppercase tracking-wider text-right">
                 Flags
               </span>
             </div>
@@ -226,20 +269,20 @@ export function TeacherRoster() {
                     </span>
                     <span className="w-32 sm:w-auto text-sm text-white/50 truncate">
                       {s.teamName ?? (
-                        <span className="text-white/25 italic text-xs">No team</span>
+                        <span className="text-white/40 italic text-xs">No team</span>
                       )}
                     </span>
                     <span className="w-28 sm:w-auto">
                       {phaseInfo ? (
                         <span className="text-sm text-white/70">{phaseInfo.label}</span>
                       ) : (
-                        <span className="text-sm text-white/25 italic">—</span>
+                        <span className="text-sm text-white/40 italic">—</span>
                       )}
                     </span>
                     <span className="text-sm tabular-nums text-white/40 sm:text-right">
                       {s.readyPapers > 0 ? (
                         <span className="inline-flex items-center gap-1">
-                          <BookOpen size={12} className="text-white/25" />
+                          <BookOpen size={12} className="text-white/40" />
                           {s.readyPapers}
                         </span>
                       ) : (
@@ -312,16 +355,25 @@ export function TeacherRoster() {
 
 function ClassManager({
   classes,
-  onCreated,
+  setClasses,
+  onApproved,
 }: {
   classes: ClassRow[]
-  onCreated: (c: ClassRow) => void
+  setClasses: React.Dispatch<React.SetStateAction<ClassRow[]>>
+  /** Called after a join request is APPROVED — the roster (owned by the
+   *  parent) needs its own re-fetch, since approval only enrols the student
+   *  server-side and this component only ever patches its own `classes`. */
+  onApproved: () => void
 }) {
   const [name, setName] = useState('')
   const [schoolName, setSchoolName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState<string | null>(null)
+  const { copied, copy, error: clipboardError } = useCopyToClipboard()
+  const [copiedCode, setCopiedCode] = useState<string | null>(null)
+  const [regenerating, setRegenerating] = useState<string | null>(null)
+  // Requests currently being decided, so their buttons disable individually.
+  const [deciding, setDeciding] = useState<Set<string>>(new Set())
 
   async function create() {
     if (!name.trim() || busy) return
@@ -335,7 +387,7 @@ function ClassManager({
       })
       const out = await res.json()
       if (!res.ok) throw new Error(out.error ?? 'Could not create class')
-      onCreated(out.class)
+      setClasses((list) => [out.class, ...list])
       setName('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
@@ -344,11 +396,73 @@ function ClassManager({
     }
   }
 
-  function copy(code: string) {
-    navigator.clipboard?.writeText(code).then(() => {
-      setCopied(code)
-      setTimeout(() => setCopied(null), 1500)
-    })
+  // `copied`/`clipboardError` are shared across every code button in this list
+  // (one hook instance), so `copiedCode` tracks WHICH code was last attempted —
+  // otherwise every card's checkmark/error would light up together.
+  function handleCopy(code: string) {
+    setCopiedCode(code)
+    void copy(code)
+  }
+
+  // Regenerate a class's join code — instantly revokes the old (leaked) code.
+  async function regenerate(classId: string) {
+    if (regenerating) return
+    setRegenerating(classId)
+    setError(null)
+    try {
+      const res = await fetch(`/api/teacher/class/${classId}/code`, { method: 'POST' })
+      const out = await res.json()
+      if (!res.ok) throw new Error(out.error ?? 'Could not regenerate code')
+      setClasses((list) => list.map((c) => (c.id === classId ? { ...c, joinCode: out.joinCode } : c)))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not regenerate code')
+    } finally {
+      setRegenerating(null)
+    }
+  }
+
+  // Approve or deny a pending join request. On approve the student count bumps
+  // and the row is removed; on deny the row is just removed.
+  async function decide(classId: string, requestId: string, decision: 'approve' | 'deny') {
+    if (deciding.has(requestId)) return
+    setDeciding((s) => new Set(s).add(requestId))
+    setError(null)
+    try {
+      const res = await fetch(`/api/teacher/class/requests/${requestId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision }),
+      })
+      const out = await res.json()
+      if (!res.ok) throw new Error(out.error ?? 'Could not update request')
+      setClasses((list) =>
+        list.map((c) =>
+          c.id === classId
+            ? {
+                ...c,
+                pendingRequests: (c.pendingRequests ?? []).filter((r) => r.id !== requestId),
+                _count:
+                  decision === 'approve'
+                    ? { users: (c._count?.users ?? 0) + 1 }
+                    : c._count,
+              }
+            : c,
+        ),
+      )
+      // Approval enrols the student server-side, but this component only just
+      // patched ITS OWN `classes` state above — the parent's roster (the
+      // actual student list/table) is a separate fetch and would otherwise
+      // stay stale until a page reload.
+      if (decision === 'approve') onApproved()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update request')
+    } finally {
+      setDeciding((s) => {
+        const next = new Set(s)
+        next.delete(requestId)
+        return next
+      })
+    }
   }
 
   return (
@@ -362,29 +476,81 @@ function ClassManager({
           {classes.map((c) => (
             <div
               key={c.id}
-              className="flex items-center justify-between border border-white/10 bg-[#0a1628] rounded-lg px-4 py-3"
+              className="flex flex-col gap-3 border border-white/10 bg-[#0a1628] rounded-lg px-4 py-3"
             >
-              <div>
-                <span className="text-sm font-medium text-white block">{c.name}</span>
-                <span className="text-xs text-white/35">
-                  {c._count?.users ?? 0} students
-                  {c.school?.name ? ` · ${c.school.name}` : ''}
-                </span>
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-medium text-white block">{c.name}</span>
+                  <span className="text-xs text-white/40">
+                    {c._count?.users ?? 0} students
+                    {c.school?.name ? ` · ${c.school.name}` : ''}
+                  </span>
+                </div>
+                {c.joinCode && (
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(c.joinCode!)}
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-[#F5C518] tracking-widest hover:brightness-110 transition-all cursor-pointer"
+                        title="Copy class code"
+                      >
+                        {c.joinCode}
+                        {copied && copiedCode === c.joinCode ? (
+                          <Check size={13} className="text-emerald-400" />
+                        ) : (
+                          <Copy size={13} />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => regenerate(c.id)}
+                        disabled={regenerating === c.id}
+                        className="text-white/40 hover:text-[#F5C518] disabled:opacity-40 transition-colors cursor-pointer"
+                        title="Regenerate code (revokes the current one)"
+                      >
+                        <RefreshCw size={13} className={regenerating === c.id ? 'animate-spin' : ''} />
+                      </button>
+                    </div>
+                    {clipboardError && copiedCode === c.joinCode && (
+                      <span className="text-[11px] text-red-400">{clipboardError}</span>
+                    )}
+                  </div>
+                )}
               </div>
-              {c.joinCode && (
-                <button
-                  type="button"
-                  onClick={() => copy(c.joinCode!)}
-                  className="inline-flex items-center gap-1.5 text-sm font-medium text-[#F5C518] tracking-widest hover:brightness-110 transition-all cursor-pointer"
-                  title="Copy class code"
-                >
-                  {c.joinCode}
-                  {copied === c.joinCode ? (
-                    <Check size={13} className="text-emerald-400" />
-                  ) : (
-                    <Copy size={13} />
-                  )}
-                </button>
+
+              {/* Pending join requests — the teacher-approval gate. */}
+              {(c.pendingRequests?.length ?? 0) > 0 && (
+                <div className="border-t border-white/10 pt-2 space-y-1.5">
+                  <span className="text-[11px] font-medium text-amber-300/80 flex items-center gap-1.5">
+                    <Clock size={11} /> {c.pendingRequests!.length} awaiting approval
+                  </span>
+                  {c.pendingRequests!.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-white/80 truncate">{r.studentName}</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => decide(c.id, r.id, 'approve')}
+                          disabled={deciding.has(r.id)}
+                          className="inline-flex items-center gap-1 text-xs text-emerald-300 border border-emerald-400/30 rounded px-2 py-1 hover:bg-emerald-400/10 disabled:opacity-40 transition-colors cursor-pointer"
+                          title="Approve"
+                        >
+                          <Check size={12} /> Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => decide(c.id, r.id, 'deny')}
+                          disabled={deciding.has(r.id)}
+                          className="inline-flex items-center gap-1 text-xs text-white/50 border border-white/15 rounded px-2 py-1 hover:bg-white/5 disabled:opacity-40 transition-colors cursor-pointer"
+                          title="Deny"
+                        >
+                          <X size={12} /> Deny
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           ))}
@@ -399,14 +565,14 @@ function ClassManager({
             onChange={(e) => setName(e.target.value)}
             placeholder="New class name (e.g. Period 3 Biology)"
             maxLength={80}
-            className="flex-1 min-w-[180px] bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25 transition-colors"
+            className="flex-1 min-w-[180px] bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 transition-colors"
           />
           <input
             value={schoolName}
             onChange={(e) => setSchoolName(e.target.value)}
             placeholder="School (optional)"
             maxLength={120}
-            className="min-w-[140px] bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25 transition-colors"
+            className="min-w-[140px] bg-[#0d1b2e] border border-white/15 rounded-md text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 transition-colors"
           />
           <BusyButton
             busy={busy}

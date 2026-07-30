@@ -1,14 +1,20 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { fetchWithRetry, readJsonCapped } from '@/lib/fetch-retry'
 import sanitizeHtml from 'sanitize-html'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireUserContext } from '@/lib/api/route-context'
 import { LruCache } from '@/lib/lru'
+import { logEvent } from '@/lib/observability/log'
 // Shared XSS allowlist (also used by the Discovery v2 source path for abstracts).
 // See lib/discovery/sanitize.ts — do NOT fork a looser allowlist.
 import { ARTICLE_SANITIZE_OPTS, TITLE_SANITIZE_OPTS } from '@/lib/discovery/sanitize'
 
-const WIKI_API = 'https://en.wikipedia.org/w/api.php'
-const WIKI_REST = 'https://en.wikipedia.org/api/rest_v1'
+// Reading-level toggle: English or Simple English (same MediaWiki API, a
+// different subdomain). The `lang` query param is a validated enum — never
+// interpolated from raw input.
+const WIKI_HOSTS = { en: 'en.wikipedia.org', simple: 'simple.wikipedia.org' } as const
+type WikiLang = keyof typeof WIKI_HOSTS
+const wikiApi = (lang: WikiLang) => `https://${WIKI_HOSTS[lang]}/w/api.php`
+const wikiRest = (lang: WikiLang) => `https://${WIKI_HOSTS[lang]}/api/rest_v1`
 
 // Wikimedia's User-Agent policy requires a descriptive UA with contact info for
 // server-side requests. A missing / generic UA gets throttled or IP-blocked,
@@ -34,42 +40,31 @@ const CACHE_TTL_MS = 1000 * 60 * 30 // 30 minutes
 const CACHE_MAX_ENTRIES = 500
 const cache = new LruCache<ArticlePayload>(CACHE_MAX_ENTRIES, CACHE_TTL_MS)
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
 /** Fetch with a descriptive UA + retry/backoff for transient 429 / 5xx errors. */
-async function wikiFetch(url: string, attempt = 0): Promise<Response> {
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': UA,
-      Accept: 'application/json',
-    },
+const wikiFetch = (url: string) =>
+  fetchWithRetry(url, {
+    headers: { 'User-Agent': UA, Accept: 'application/json' },
+    timeoutMs: 8_000,
+    contentTypes: ['application/json'],
   })
 
-  // Retry on rate-limit / transient server errors (up to 2 retries)
-  if ((res.status === 429 || res.status >= 500) && attempt < 2) {
-    const retryAfter = Number(res.headers.get('retry-after'))
-    const backoff = Number.isFinite(retryAfter) && retryAfter > 0
-      ? retryAfter * 1000
-      : 400 * 2 ** attempt // 400ms, 800ms
-    await sleep(backoff)
-    return wikiFetch(url, attempt + 1)
-  }
-
-  return res
-}
+// The largest English Wikipedia articles render a few MB of HTML; 16 MB is
+// headroom. Uncapped `res.json()` buffered whatever arrived (REFACTOR2 P2-S10).
+const MAX_BODY_BYTES = 16 * 1024 * 1024
 
 export async function GET(req: NextRequest) {
-  // Auth-gated by middleware; resolve the user so this Wikipedia proxy is limited
-  // per-user (shared-NAT classrooms aren't punished) and isn't a free hop.
-  const { userId } = await auth()
-  const limited = await enforceRateLimit(req, 'read', userId)
-  if (limited) return limited
+  // Rate-limited per-user (shared-NAT classrooms aren't punished) so this
+  // Wikipedia proxy isn't a free hop.
+  const { error } = await requireUserContext(req, { tier: 'read' })
+  if (error) return error
 
   const title = req.nextUrl.searchParams.get('title')
   if (!title) return NextResponse.json({ error: 'title required' }, { status: 400 })
+  const lang: WikiLang = req.nextUrl.searchParams.get('lang') === 'simple' ? 'simple' : 'en'
 
-  // ── Serve from cache when fresh ──────────────────────────────────────────────
-  const cached = cache.get(title)
+  // ── Serve from cache when fresh (keyed per language edition) ────────────────
+  const cacheKey = `${lang}:${title}`
+  const cached = cache.get(cacheKey)
   if (cached) {
     return NextResponse.json(cached)
   }
@@ -86,7 +81,7 @@ export async function GET(req: NextRequest) {
       redirects: '1',
     })
 
-    const parseRes = await wikiFetch(`${WIKI_API}?${parseParams}`)
+    const parseRes = await wikiFetch(`${wikiApi(lang)}?${parseParams}`)
 
     if (!parseRes.ok) {
       // Surface the real status so rate-limits (429) are diagnosable
@@ -94,11 +89,20 @@ export async function GET(req: NextRequest) {
         parseRes.status === 429
           ? 'Wikipedia is rate-limiting requests — please wait a moment and retry.'
           : `Wikipedia API error (HTTP ${parseRes.status})`
-      console.error(`[discovery/article] "${title}" → HTTP ${parseRes.status}`)
+      // The requested title is REQUEST-DERIVED free text (A7 / P2-S11) — a
+      // student's reading trail, and an attacker-chosen string. Log the status
+      // and a length, never the title itself.
+      logEvent({
+        event: 'discovery.article_fetch_failed',
+        route: '/api/discovery/article',
+        provider: 'wikipedia',
+        outcome: 'error',
+        detail: `http=${parseRes.status} titleLen=${title.length}`,
+      })
       return NextResponse.json({ error: detail }, { status: 502 })
     }
 
-    const parseData = (await parseRes.json()) as {
+    const parseData = (await readJsonCapped(parseRes, MAX_BODY_BYTES)) as {
       parse?: { title: string; displaytitle: string; text: { '*': string } }
       error?: { code: string; info: string }
     }
@@ -111,10 +115,10 @@ export async function GET(req: NextRequest) {
     let description: string | undefined
     try {
       const summaryRes = await wikiFetch(
-        `${WIKI_REST}/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`,
+        `${wikiRest(lang)}/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`,
       )
       if (summaryRes.ok) {
-        const s = (await summaryRes.json()) as { description?: string }
+        const s = (await readJsonCapped(summaryRes, MAX_BODY_BYTES)) as { description?: string }
         description = s.description
       }
     } catch {
@@ -128,10 +132,10 @@ export async function GET(req: NextRequest) {
       html:            processWikiHtml(parseData.parse.text['*']),
     }
 
-    // Cache under both the requested title and the canonical title
-    cache.set(title, payload)
+    // Cache under both the requested title and the canonical title (per edition)
+    cache.set(cacheKey, payload)
     if (payload.normalizedTitle !== title) {
-      cache.set(payload.normalizedTitle, payload)
+      cache.set(`${lang}:${payload.normalizedTitle}`, payload)
     }
 
     return NextResponse.json(payload)

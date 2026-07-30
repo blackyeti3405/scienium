@@ -1,7 +1,17 @@
 {
   "acoustics-sound": "b741e09aeff36c2ecea931c211798f5ae4d08e685caf1dd9f13240f316336707",
-  "astronomy-astrophysics": "a1191953dd28dcdb447c0cf341e12adc67c4f2f99c7e372b27d112d09deb0af4",
+  "astronomy-astrophysics": "3a98d6cffbc6372ae819e91362ea8530dc741c622277fa71189aa27ad3adf236",
   "chemistry": "8aaa830e5f5ddaf6a40a3a50a73b87b9267e44a472eb37afd342879797f9b7dd",
   "classical-mechanics-physics": "51d7e62ab7b783e1f1d879d9e2a5cbf46ca2b1651d55c439159c0d1be97d4478",
-  "gait-biomechanics": "52cd924bd46eae08aca924c71ad02793a0a941fe30d868673435fae6b3fe2bbf"
+  "clinical-medicine-pharmacology": "cf21bc226d5a720e3703330c2e0925e2c5a7427892ff4754f034e2a122874c74",
+  "computer-science-algorithms": "1cd4d0d05c342227dd1fe44f60ba21ed7908f836ce8ed95f2aacc090ce3659d6",
+  "data-science-ml-metrics": "12cf122eb5ea4c2ca65f5156d96b7901331d8b6b9392d1414965a86a6df1933a",
+  "ecology": "2d8cd1e76e008ab9f188ec7c9f2d541b88cb9a4fc5a004f8fdafff32c4f5f3af",
+  "electronics-electrical-engineering": "d9e4de54b7dbe6553121722f5ee449d784f1fefc1af258ad672f18b9b91115a0",
+  "environmental-earth-science": "8347149ea43c0fde5418116854b010a902b2ea0cb314349f381d752682bc5887",
+  "epidemiology-medicine": "bf8d0b0e0c5cb47ee21e41b7c580efa9ed1b3a02df0778dd64c64c9bb91fc092",
+  "fluid-dynamics-aerodynamics": "af93b6f46ad148da5858f9fc1a786e94b9f0fd31b904801ec14eb718a10ae133",
+  "gait-biomechanics": "52cd924bd46eae08aca924c71ad02793a0a941fe30d868673435fae6b3fe2bbf",
+  "genetics-genomics": "760c2783ee448bc860e13dea10dd1571fb43252daf0edc053de47557720368df",
+  "geology-seismology": "9611a1b960ea880372fb602c44c66269d6d6bfca91ea418eea45c301d11331ac"
 }

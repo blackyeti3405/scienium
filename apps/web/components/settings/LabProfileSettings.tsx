@@ -1,11 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useFinalTopic } from '@/components/discovery/hooks/useFinalTopic'
+import { TopicConfirmModals } from '@/components/discovery/TopicConfirmModals'
 import { RefreshCw, Link2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { PROJECT_TYPES } from '@/lib/research-plan/types'
+import { LoadRetry } from '@/components/ui/LoadRetry'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
+import { MyDataSection } from './MyDataSection'
+import { RemindersSection } from './RemindersSection'
+import { getResearchPlanSummary } from './api'
 
 interface SettingsData {
   name: string | null
@@ -37,22 +43,29 @@ export function LabProfileSettings() {
   const [zip, setZip] = useState('')
   const [researchIdea, setResearchIdea] = useState('')
 
-  // ── Research topic state ────────────────────────────────────────────────────
-  const [topic, setTopic] = useState<string | null>(null)
-  const [topicDraft, setTopicDraft] = useState('')
-  const [topicEditing, setTopicEditing] = useState(false)
-  const [topicPaperCount, setTopicPaperCount] = useState(0)
-  const [savingTopic, setSavingTopic] = useState(false)
-  const [topicConfirm, setTopicConfirm] = useState<{
-    newTopic: string
-    paperCount: number
-  } | null>(null)
-  const [topicWipeResult, setTopicWipeResult] = useState<{
-    removedCount: number
-    removedTitles: string[]
-  } | null>(null)
-  const [topicError, setTopicError] = useState<string | null>(null)
-  const [topicLoaded, setTopicLoaded] = useState(false)
+  // ── Research topic — the SHARED load/save/confirm-wipe flow (useFinalTopic,
+  // also Discovery's). Settings ignores the KP/interest toasts, so both
+  // callbacks are no-ops; the editor-open button seeds the draft itself.
+  const {
+    finalTopic: topic,
+    topicPaperCount,
+    topicLoaded,
+    topicLoadError,
+    retryLoadTopic,
+    editingTopic: topicEditing,
+    setEditingTopic: setTopicEditing,
+    topicDraft,
+    setTopicDraft,
+    savingTopic,
+    topicSaveError: topicError,
+    topicConfirm,
+    setTopicConfirm,
+    topicRemovalConfirm,
+    setTopicRemovalConfirm,
+    topicWipeResult,
+    setTopicWipeResult,
+    saveTopic,
+  } = useFinalTopic({ onKpAwarded: () => {}, onInterestConnect: () => {} })
 
   // ── Research plan state ─────────────────────────────────────────────────────
   const [planDocUrl, setPlanDocUrl] = useState('')
@@ -63,6 +76,12 @@ export function LabProfileSettings() {
   const [savingPlan, setSavingPlan] = useState(false)
   const [planError, setPlanError] = useState<string | null>(null)
   const [planLoaded, setPlanLoaded] = useState(false)
+  // A failed load is distinct from "loaded, no plan connected yet" — the old
+  // `.catch(() => {})` (and a non-2xx body, which never even reached the catch
+  // since `d.plan` just came back undefined) made a network blip look exactly
+  // like a team that had never connected a doc, silently discarding whatever
+  // was already synced from the form (§0.7).
+  const [planLoadError, setPlanLoadError] = useState(false)
 
   // ── Load settings ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -83,24 +102,12 @@ export function LabProfileSettings() {
       .finally(() => setLoading(false))
   }, [])
 
-  // ── Load research topic (independent of settings fetch) ─────────────────────
-  useEffect(() => {
-    fetch('/api/discovery/topic')
-      .then((r) => r.json())
-      .then((d: { topic?: string | null; paperCount?: number }) => {
-        setTopic(d.topic ?? null)
-        setTopicPaperCount(d.paperCount ?? 0)
-        setTopicDraft(d.topic ?? '')
-      })
-      .catch(() => {})
-      .finally(() => setTopicLoaded(true))
-  }, [])
-
   // ── Load research plan (independent of settings fetch) ──────────────────────
-  useEffect(() => {
-    fetch('/api/research-plan')
-      .then((r) => r.json())
-      .then((d: { plan?: { googleDocUrl?: string | null; projectType?: string | null; projectSubtype?: string | null; lastSyncedAt?: string | null; hasText?: boolean } }) => {
+  const loadPlan = useCallback(() => {
+    setPlanLoaded(false)
+    setPlanLoadError(false)
+    return getResearchPlanSummary()
+      .then((d) => {
         if (d.plan) {
           setPlanDocUrl(d.plan.googleDocUrl ?? '')
           setPlanType(d.plan.projectType ?? null)
@@ -109,9 +116,15 @@ export function LabProfileSettings() {
           setPlanHasText(d.plan.hasText ?? false)
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        setPlanLoadError(true)
+      })
       .finally(() => setPlanLoaded(true))
   }, [])
+
+  useEffect(() => {
+    void loadPlan()
+  }, [loadPlan])
 
   // ── Save profile / lab ───────────────────────────────────────────────────────
   async function save() {
@@ -162,40 +175,6 @@ export function LabProfileSettings() {
     }
   }
 
-  // ── Save research topic (mirrors DiscoveryFeature.saveTopic exactly) ─────────
-  async function saveTopic(topicVal: string, confirmWipe = false) {
-    setSavingTopic(true)
-    setTopicError(null)
-    try {
-      const res = await fetch('/api/discovery/topic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: topicVal, confirmWipe }),
-      })
-      const d = await res.json()
-      if (res.status === 409 && d.requiresConfirmation) {
-        // Server says papers exist — ask the user to confirm before wiping
-        setTopicConfirm({ newTopic: topicVal, paperCount: d.paperCount })
-        return
-      }
-      if (!res.ok) {
-        setTopicError(d.error ?? 'Could not save topic')
-        return
-      }
-      setTopic(d.topic ?? null)
-      setTopicDraft(d.topic ?? '')
-      setTopicEditing(false)
-      setTopicConfirm(null)
-      if (d.removedCount > 0) {
-        setTopicWipeResult({ removedCount: d.removedCount, removedTitles: d.removedTitles })
-      }
-    } catch (err: unknown) {
-      setTopicError(err instanceof Error ? err.message : 'Could not save topic')
-    } finally {
-      setSavingTopic(false)
-    }
-  }
-
   // ── Save research plan ───────────────────────────────────────────────────────
   async function savePlan() {
     setSavingPlan(true)
@@ -235,45 +214,20 @@ export function LabProfileSettings() {
   return (
     <div className="bg-[#0d1b2e] text-white p-5 flex flex-col gap-6 min-w-[300px] relative">
 
-      {/* ── Topic-change confirmation overlay ────────────────────────────────── */}
-      {topicConfirm && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 rounded-sm">
-          <div className="bg-[#0d1b2e] border border-white/20 rounded-sm p-6 max-w-sm w-full mx-4 flex flex-col gap-4">
-            <h3 className="font-pixel text-[9px] text-white">Change research topic?</h3>
-            <div className="text-[13px] text-white/70 leading-relaxed flex flex-col gap-2">
-              <p>
-                You&apos;re changing your topic to{' '}
-                <span className="text-[#F5C518] font-medium">&ldquo;{topicConfirm.newTopic}&rdquo;</span>.
-              </p>
-              <p>
-                You have{' '}
-                <span className="text-white font-medium">
-                  {topicConfirm.paperCount} source{topicConfirm.paperCount !== 1 ? 's' : ''}
-                </span>{' '}
-                in your literature review. Sources that aren&apos;t relevant to your new topic will
-                be removed. Sources that apply to both topics will be kept.
-              </p>
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => setTopicConfirm(null)}
-                className="flex-1 font-pixel text-[8px] border border-white/20 text-white/60 py-2.5 hover:border-white/40 hover:text-white/80 transition-colors"
-              >
-                Cancel
-              </button>
-              <BusyButton
-                busy={savingTopic}
-                busyLabel="Updating…"
-                showSpinner={false}
-                onClick={() => saveTopic(topicConfirm.newTopic, true)}
-                className="flex-1 font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] py-2.5 hover:brightness-110 disabled:opacity-50 transition-all"
-              >
-                Change topic
-              </BusyButton>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Topic-change / topic-removal confirm modals — shared with Discovery
+          (both drive the useFinalTopic-shaped state). */}
+      <TopicConfirmModals
+        variant="settings"
+        topicConfirm={topicConfirm}
+        topicRemovalConfirm={topicRemovalConfirm}
+        savingTopic={savingTopic}
+        onCancelTopicChange={() => setTopicConfirm(null)}
+        onConfirmTopicChange={(newTopic) => saveTopic(newTopic, true)}
+        onCancelTopicRemoval={() => setTopicRemovalConfirm(null)}
+        onConfirmTopicRemoval={(newTopic, paperIds, proposalToken) =>
+          saveTopic(newTopic, true, paperIds, proposalToken)
+        }
+      />
 
       {/* ── Your profile section — skeletons independently while /api/settings
           is in flight, instead of gating the whole form on one fetch. ────────── */}
@@ -300,7 +254,7 @@ export function LabProfileSettings() {
               onChange={(e) => setName(e.target.value)}
               maxLength={80}
               placeholder="Your name"
-              className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
+              className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm"
             />
           </div>
 
@@ -313,7 +267,7 @@ export function LabProfileSettings() {
               onChange={(e) => setSchool(e.target.value)}
               maxLength={120}
               placeholder="High school name"
-              className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
+              className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm"
             />
           </div>
         </div>
@@ -333,14 +287,14 @@ export function LabProfileSettings() {
             Your lab
           </h3>
           {!data?.isLead && (
-            <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest">
+            <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest">
               Lead only
             </span>
           )}
         </div>
 
         {!data?.isLead && (
-          <p className="font-pixel text-[7px] text-white/35 leading-loose">
+          <p className="font-pixel text-[7px] text-white/40 leading-loose">
             Only the lab lead can edit lab settings.
           </p>
         )}
@@ -355,7 +309,7 @@ export function LabProfileSettings() {
             maxLength={80}
             placeholder="Lab name"
             disabled={!data?.isLead}
-            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
           />
         </div>
 
@@ -369,10 +323,10 @@ export function LabProfileSettings() {
             maxLength={10}
             placeholder="90089"
             disabled={!data?.isLead}
-            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
           />
           {data?.state && (
-            <span className="font-pixel text-[7px] text-white/35">
+            <span className="font-pixel text-[7px] text-white/40">
               Current: {data.zip} · {data.state}
             </span>
           )}
@@ -387,9 +341,9 @@ export function LabProfileSettings() {
             onChange={(e) => setResearchIdea(e.target.value)}
             maxLength={500}
             placeholder="e.g. I'm investigating how soil pH affects plant growth rate…"
-            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
+            className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm"
           />
-          <span className="font-pixel text-[7px] text-white/25 leading-loose">
+          <span className="font-pixel text-[7px] text-white/40 leading-loose">
             Editing this does not change your assigned lab type.
           </span>
         </div>
@@ -418,7 +372,15 @@ export function LabProfileSettings() {
       )}
 
       {/* ── Research topic section — independent fetch, own skeleton ─────────── */}
-      {!topicLoaded ? (
+      {topicLoadError ? (
+        // Never fall through to the editor on a failed load: it would show an
+        // empty "Current topic" for a team that has one (§0.9 Row C2).
+        <LoadRetry
+          message="Couldn't load your research topic."
+          onRetry={retryLoadTopic}
+          testId="settings-topic-retry"
+        />
+      ) : !topicLoaded ? (
         <div className="flex flex-col gap-4" data-testid="settings-topic-skeleton">
           <PixelSkeleton variant="line" h="h-4" w="w-32" />
           <PixelSkeleton variant="box" h="h-9" w="w-full" />
@@ -440,7 +402,7 @@ export function LabProfileSettings() {
                 <span className="text-sm text-white/90 flex-1">{topic}</span>
               </div>
             ) : (
-              <p className="font-pixel text-[7px] text-white/35 leading-loose">
+              <p className="font-pixel text-[7px] text-white/40 leading-loose">
                 No topic set yet — choose your final research topic here.
               </p>
             )}
@@ -469,7 +431,7 @@ export function LabProfileSettings() {
                 }}
                 maxLength={200}
                 placeholder="State your final research topic…"
-                className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
+                className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm"
               />
             </div>
             <div className="flex items-center gap-2">
@@ -514,7 +476,7 @@ export function LabProfileSettings() {
             </div>
             <button
               onClick={() => setTopicWipeResult(null)}
-              className="text-white/30 hover:text-white/60 shrink-0 font-pixel text-[8px]"
+              className="text-white/40 hover:text-white/60 shrink-0 font-pixel text-[8px]"
             >
               ✕
             </button>
@@ -523,7 +485,7 @@ export function LabProfileSettings() {
 
         {/* Paper count hint when topic is set */}
         {topic && topicPaperCount > 0 && (
-          <p className="font-pixel text-[7px] text-white/30 leading-loose">
+          <p className="font-pixel text-[7px] text-white/40 leading-loose">
             {topicPaperCount} source{topicPaperCount !== 1 ? 's' : ''} in your literature review
           </p>
         )}
@@ -537,6 +499,21 @@ export function LabProfileSettings() {
           <PixelSkeleton variant="box" h="h-9" w="w-full" />
           <PixelSkeleton variant="box" h="h-9" w="w-full" />
         </div>
+      ) : planLoadError ? (
+        <div className="flex flex-col gap-3" data-testid="settings-plan-load-error">
+          <h3 className="font-pixel text-[9px] text-white/90 uppercase tracking-widest border-b border-white/10 pb-2">
+            Research plan
+          </h3>
+          <p className="font-pixel text-[7px] text-red-400 leading-loose">
+            Couldn&apos;t load your research plan — check your connection.
+          </p>
+          <button
+            onClick={() => void loadPlan()}
+            className="self-start font-pixel text-[7px] text-white/40 hover:text-white/70 border border-white/15 rounded-sm px-3 py-1.5 transition-colors"
+          >
+            Try again
+          </button>
+        </div>
       ) : (
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between border-b border-white/10 pb-2">
@@ -544,7 +521,7 @@ export function LabProfileSettings() {
             Research plan
           </h3>
           {planHasText && planLastSyncedAt && (
-            <span className="font-pixel text-[7px] text-white/30">
+            <span className="font-pixel text-[7px] text-white/40">
               synced {formatDistanceToNow(new Date(planLastSyncedAt), { addSuffix: true })}
             </span>
           )}
@@ -589,7 +566,7 @@ export function LabProfileSettings() {
                 }`}
               >
                 <span className="block text-[13px] text-white/85">{s.label}</span>
-                <span className="block font-pixel text-[6px] text-white/35 mt-0.5">{s.blurb}</span>
+                <span className="block font-pixel text-[6px] text-white/40 mt-0.5">{s.blurb}</span>
               </button>
             ))}
           </div>
@@ -600,7 +577,7 @@ export function LabProfileSettings() {
           <label className="font-pixel text-[7px] text-white/50 uppercase tracking-widest flex items-center gap-1">
             <Link2 size={9} className="text-[#F5C518]" /> Google Doc URL
           </label>
-          <p className="font-pixel text-[7px] text-white/30 leading-loose">
+          <p className="font-pixel text-[7px] text-white/40 leading-loose">
             Paste an &ldquo;Anyone with the link&rdquo; Google Doc URL.
           </p>
           <div className="flex items-center gap-2">
@@ -608,7 +585,7 @@ export function LabProfileSettings() {
               value={planDocUrl}
               onChange={(e) => setPlanDocUrl(e.target.value)}
               placeholder="https://docs.google.com/document/d/…"
-              className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/30 rounded-sm"
+              className="flex-1 bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm"
             />
             <BusyButton
               busy={savingPlan}
@@ -627,6 +604,12 @@ export function LabProfileSettings() {
         </div>
       </div>
       )}
+
+      {/* ── Deadline reminders — per-member windows + destination (§13.7) ────── */}
+      <RemindersSection />
+
+      {/* ── Your data — export / erasure requests (REFACTOR2 P1-R9) ──────────── */}
+      <MyDataSection />
     </div>
   )
 }

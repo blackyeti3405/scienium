@@ -116,7 +116,7 @@ export function LessonCheckpoint({
           <div key={current.id} className="codex-q-enter mt-7">
             <p className="text-[17px] leading-snug text-white font-medium">{current.prompt}</p>
             {current.kind === 'mc' && (
-              <p className="font-pixel text-[7px] text-white/35 uppercase tracking-widest mt-2 mb-3">Choose 1 answer</p>
+              <p className="font-pixel text-[7px] text-white/40 uppercase tracking-widest mt-2 mb-3">Choose 1 answer</p>
             )}
             <div className={current.kind === 'mc' ? '' : 'mt-4'}>
               {current.kind === 'mc' && (

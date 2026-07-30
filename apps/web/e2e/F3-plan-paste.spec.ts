@@ -1,14 +1,20 @@
 import { test, expect, type Page } from '@playwright/test'
-import { STORAGE } from './roles'
-import { api } from './api'
+import { api, gotoFresh } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * F3 — Research Plan paste-text fallback.
  * One test per acceptance criterion (12 criteria total, per
  * .claude/pipeline/plan-F3.md — the CURRENT, overwritten "paste-text" F3, not
  * the earlier shipped "pixel dialogs" F3 covered by e2e/F3.spec.ts).
- * Runs as the default `chromium` project (authenticated lab leader / devuser1,
- * "E2E Test Lab").
+ * Runs as the default `chromium` project (authenticated lab leader), on a
+ * disposable per-file lab (`createLab`, e2e/lab.ts) rather than the shared
+ * "E2E Test Lab" — this file's own ACs are inherently a sequential state
+ * machine (AC5 reads what AC4 saved, AC8/AC9 reload it, AC10/AC11 mutate it
+ * further), so `mode: 'serial'` stays (no other spec touches
+ * `research_plans`, so this was never cross-spec pollution). A fresh, empty
+ * ResearchPlan row also makes AC7's idea-check quota deterministic (3/3,
+ * never partially consumed by another suite sharing the old fixture team).
  *
  * NOTE: intentionally a DIFFERENT filename from the shipped e2e/F3.spec.ts —
  * this spec never touches that file's routes/fixtures.
@@ -33,6 +39,11 @@ import { api } from './api'
  *  AC12 — Saving with neither input present surfaces a visible inline error,
  *         no crash / no 500
  *
+ * Plus one REFACTOR2 P2-2 regression at the end of the chain: a review stream
+ * that ends without its terminal `done` event must keep the last good review
+ * rather than leave a truncated partial standing. Both stream bodies are
+ * fulfilled by `page.route`, so the AI endpoint is still never invoked.
+ *
  * Discovery notes (verified live against the running app before writing
  * assertions, not read from source):
  * - The feature only exists inside the "Research Plan" gateway overlay opened
@@ -44,10 +55,10 @@ import { api } from './api'
  *   "projectSubtype: Expected string, received null" otherwise) — this is
  *   pre-existing, unconditional validation, not new F3 behavior, so every
  *   save in this suite selects Engineering -> Robotics & Control first.
- * - GET /api/research-plan returned `{ plan: null, ... }` for this team before
- *   any test/discovery mutation ran — confirmed empty, no pre-existing
- *   Google-doc-connected row to preserve. beforeAll re-confirms this and
- *   afterAll restores it (best-effort, since there is no DELETE endpoint).
+ * - The disposable lab's ResearchPlan row starts genuinely absent (`plan: null`)
+ *   — `createLab` seeds no research-plan row — so there is no pre-existing
+ *   Google-doc-connected row to preserve and no restore-on-teardown needed;
+ *   `lab.dispose()` deletes the whole team.
  * - The doc-sync path needs a real, publicly reachable "Anyone with the link"
  *   Google Doc. There is no project fixture for this, so AC11 uses Google's
  *   own official, permanently public "Docs API Quickstart" sample document
@@ -67,25 +78,12 @@ const PASTE_TEXT_V2 = `[E2E-F3-${RUN_ID}-edited] Revised hypothesis: increasing 
 const PUBLIC_DOC_URL =
   'https://docs.google.com/document/d/195j9eDD3ccgjQRttHhJPymLJUCOUjs-jmwTrekvdjFE/edit'
 
-/** Snapshot of the team's plan row before this suite touches it (for restore). */
-let originalPlan: unknown = null
-
-/** Click a building-sprite button by its aria-label (canvas sprites need a JS click — see upgrades.spec.ts / rubric-self-assessment.spec.ts). */
-async function clickBuilding(page: Page, ariaLabel: string) {
-  await page.evaluate((label) => {
-    const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-    if (!btn) throw new Error(`Building button not found: ${label}`)
-    btn.click()
-  }, ariaLabel)
-}
+let lab: OwnedLab
 
 /** Open the Research Plan feature panel from /lab. */
 async function openResearchPlan(page: Page) {
-  await page.goto('/lab')
-  await page
-    .getByRole('button', { name: 'Open Research Plan' })
-    .waitFor({ state: 'attached', timeout: 10_000 })
-  await clickBuilding(page, 'Open Research Plan')
+  await gotoFresh(page, '/lab')
+  await page.getByRole('button', { name: 'Open Research Plan' }).click({ timeout: 10_000 })
   const dialog = page.getByRole('dialog', { name: 'Research Plan' })
   await expect(dialog).toBeVisible({ timeout: 5000 })
   // Wait past the dynamic-import fallback AND the panel's own initial GET
@@ -127,85 +125,18 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
   // run concurrently or later ACs would race earlier ones' saves.
   test.describe.configure({ mode: 'serial' })
 
-  // ── Seed / snapshot ────────────────────────────────────────────────────────
+  // ── Disposable lab ─────────────────────────────────────────────────────────
+  // A fresh team per file run (e2e/lab.ts) instead of the shared "E2E Test
+  // Lab": this file's own ResearchPlan row starts genuinely empty, so there is
+  // no pre-existing state to snapshot/restore, and teardown is just deleting
+  // the team.
 
-  test.beforeAll(async ({ browser }) => {
-    // Navigate first (fresh page) before any page.request call — the stored
-    // Clerk JWT can be stale this early only if a prior suite ran first in the
-    // same worker; a goto forces a session-cookie refresh regardless.
-    const page = await browser.newPage({ storageState: STORAGE.leader })
-    try {
-      await page.goto('/lab')
-      const res = await api.get(page, '/api/research-plan')
-      if (res.status() !== 200) {
-        throw new Error(`beforeAll snapshot GET failed: ${res.status()} ${await res.text()}`)
-      }
-      const body = await res.json()
-      originalPlan = body.plan
-    } finally {
-      await page.close()
-    }
+  test.beforeAll(async () => {
+    lab = await createLab('F3-plan-paste')
   })
 
-  test.afterAll(async ({ browser }) => {
-    // Restore the team's plan row to its pre-suite state. There is no DELETE
-    // endpoint on /api/research-plan, so "restore" means: if the row was
-    // originally empty (plan: null, the case this suite found and is the only
-    // case it can create from scratch), leave a clearly-marked, harmless
-    // paste row rather than the AI-review/idea-check byproducts of this run
-    // is not applicable here (this feature adds no new AI route). If the row
-    // originally had a Google Doc URL, reconnect exactly that URL so the team
-    // ends on the same active source it started with (best-effort — the
-    // route can't literally null out lastSyncedText once ANY row exists).
-    const page = await browser.newPage({ storageState: STORAGE.leader })
-    try {
-      await page.goto('/lab')
-      const original = originalPlan as null | {
-        googleDocUrl: string | null
-        projectType: string | null
-        projectSubtype: string | null
-        activeSource: 'google_doc' | 'paste' | null
-      }
-
-      if (original && original.activeSource === 'google_doc' && original.googleDocUrl) {
-        const res = await api.post(page, '/api/research-plan', {
-          data: {
-            googleDocUrl: original.googleDocUrl,
-            projectType: original.projectType ?? undefined,
-            projectSubtype: original.projectSubtype ?? undefined,
-          },
-        })
-        if (res.status() !== 200) {
-          throw new Error(
-            `afterAll restore (google_doc) failed loudly: ${res.status()} ${await res.text()}`,
-          )
-        }
-      } else if (original === null) {
-        // Genuinely started empty (this suite's own beforeAll confirmed
-        // `plan: null`). There is no way to delete the row this suite's
-        // tests create back to `null` through the public API (no DELETE
-        // endpoint — same limitation e2e/F1.spec.ts documents for
-        // TeacherFeedback). Leave the row in the same benign, clearly
-        // E2E-tagged paste state the suite's own tests already exercise so
-        // a human/teacher glancing at this team's plan sees obviously-fake
-        // E2E content, not silently-orphaned data.
-        const res = await api.post(page, '/api/research-plan', {
-          data: {
-            planText: `[E2E-F3-${RUN_ID}] cleanup marker — this row started empty; the E2E suite could not delete it back to empty (no DELETE endpoint exists).`,
-            projectType: 'engineering',
-            projectSubtype: 'robotics',
-          },
-        })
-        if (res.status() !== 200) {
-          throw new Error(`afterAll cleanup-marker save failed loudly: ${res.status()} ${await res.text()}`)
-        }
-      }
-      // else: original had some other shape (e.g. paste-sourced already) —
-      // nothing further to reconcile; the suite's own last test already left
-      // the row in a valid, non-crashing state.
-    } finally {
-      await page.close()
-    }
+  test.afterAll(async () => {
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────
@@ -363,7 +294,16 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
     await expect(dialog.locator('button', { hasText: 'Save text' })).toHaveCount(0)
 
     await textarea.fill(PASTE_TEXT_V2)
+    // Wait for the update's own POST: the "synced ... ago" text can already be
+    // visible from a prior save, so asserting it alone lets the test race ahead
+    // into "Close" + reopen while THIS save is still in flight — reopening then
+    // reads whatever the server had before the write landed (AC10's own comment
+    // above documents the identical trap for its own save).
+    const postResponse = page.waitForResponse(
+      (res) => res.url().includes('/api/research-plan') && res.request().method() === 'POST',
+    )
     await updateBtn.click()
+    expect((await postResponse).status()).toBe(200)
     await expect(dialog.getByText(/synced .* ago/i)).toBeVisible({ timeout: 8000 })
 
     // Reload (close + reopen the panel) — edit-in-place must persist.
@@ -488,7 +428,7 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
     // neither ... present" scenario the criterion describes. This proves the
     // server-side guard behind that disabled-button UX is real (not merely
     // client-side theatre) and degrades cleanly, not with a 500.
-    await page.goto('/lab') // fresh session cookie before the request call
+    await gotoFresh(page, '/lab') // fresh session cookie before the request call
     const res = await api.post(page, '/api/research-plan', {
       data: { projectType: 'engineering', projectSubtype: 'robotics' },
     })
@@ -504,5 +444,84 @@ test.describe('F3 — Research Plan paste-text fallback', () => {
     const dialog = await openResearchPlan(page)
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText('Plan source')).toBeVisible()
+  })
+
+  // ── REFACTOR2 P2-2 ────────────────────────────────────────────────────────
+  // The review stream's terminal-event barrier. Both responses are FULFILLED BY
+  // PLAYWRIGHT (`page.route`), so the review endpoint is still never invoked and
+  // no Anthropic tokens are spent — the same constraint every other test in this
+  // file honours, met by never letting the request leave the browser.
+  test('P2-2: a review stream that ends without its terminal event keeps the last good review', async ({
+    page,
+  }) => {
+    const ndjson = (lines: object[]) => lines.map((l) => JSON.stringify(l) + '\n').join('')
+
+    // A well-formed run: events, then the explicit `done` the service sends.
+    const COMPLETE = ndjson([
+      {
+        type: 'overall',
+        readiness: 'strong',
+        score: 91,
+        summary: `E2E-P2-2-COMPLETE-${RUN_ID}: the review that must survive.`,
+      },
+      { type: 'section', title: 'I. Research Question', score: 10, max: 10, assessment: 'Clear.' },
+      { type: 'strength', text: `E2E-P2-2-STRENGTH-${RUN_ID}` },
+      { type: 'done' },
+    ])
+    // The same run cut off mid-body: real events, no `done`. Reading this to EOF
+    // succeeds, which is exactly why a partial used to be accepted as a result.
+    const TRUNCATED = ndjson([
+      {
+        type: 'overall',
+        readiness: 'early',
+        score: 12,
+        summary: `E2E-P2-2-TRUNCATED-${RUN_ID}: half a review that must NOT stand.`,
+      },
+      { type: 'section', title: 'I. Research Question', score: 1, max: 10, assessment: 'Thin.' },
+    ])
+
+    let body = COMPLETE
+    await page.route('**/api/research-plan/review', (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/x-ndjson; charset=utf-8' },
+        body,
+      }),
+    )
+
+    const dialog = await openResearchPlan(page)
+    const reviewBtn = dialog.getByRole('button', { name: /Review my plan/i })
+    await expect(reviewBtn).toBeEnabled({ timeout: 8000 })
+
+    // 1. A complete run lands.
+    await reviewBtn.click()
+    await expect(dialog.getByText(`E2E-P2-2-COMPLETE-${RUN_ID}`, { exact: false })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(dialog.getByText(`E2E-P2-2-STRENGTH-${RUN_ID}`, { exact: false })).toBeVisible()
+
+    // 2. Re-run against a truncated body.
+    body = TRUNCATED
+    await reviewBtn.click()
+
+    // The dropped connection is reported…
+    await expect(dialog.getByText(/connection dropped/i)).toBeVisible({ timeout: 10_000 })
+    // …the last good review is still the one on screen…
+    await expect(dialog.getByText(`E2E-P2-2-COMPLETE-${RUN_ID}`, { exact: false })).toBeVisible()
+    await expect(dialog.getByText(`E2E-P2-2-STRENGTH-${RUN_ID}`, { exact: false })).toBeVisible()
+    // …and the truncated partial never replaces it.
+    await expect(dialog.getByText(`E2E-P2-2-TRUNCATED-${RUN_ID}`, { exact: false })).toHaveCount(0)
+    // The existing retry affordance is back.
+    await expect(reviewBtn).toBeEnabled()
+
+    // 3. Retrying a complete run still works after the failure.
+    body = COMPLETE
+    await reviewBtn.click()
+    await expect(dialog.getByText(`E2E-P2-2-COMPLETE-${RUN_ID}`, { exact: false })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(dialog.getByText(/connection dropped/i)).toHaveCount(0)
+
+    await page.unroute('**/api/research-plan/review')
   })
 })

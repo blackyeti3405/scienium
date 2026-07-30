@@ -1,10 +1,10 @@
 # scienium
 
-A browser game where student teams run a science-fair research lab — read papers, take quizzes, discover sources, run experiments, and present at a fair (plus teacher tools and a PvP minigame). Headed for a real classroom pilot, so cost, polish, and durability matter.
+A browser game where student teams run a science-fair research lab — read papers, take quizzes, discover sources, run experiments, and present at a fair (plus teacher tools; a PvP minigame is planned but not yet built). Headed for a real classroom pilot, so cost, polish, and durability matter.
 
 ## Stack
 - pnpm monorepo: `apps/web` (the app), `packages/shared-types` (build first — others import it), `packages/config`.
-- Next.js 14 (App Router) + TypeScript. Prisma + PostgreSQL. Clerk auth. Anthropic SDK for LLM features. AWS S3 for uploads. Vitest for tests.
+- Next.js 15 (App Router) + TypeScript. Prisma + PostgreSQL. Clerk auth. Anthropic SDK for LLM features. AWS S3 for uploads. Vitest for tests.
 - `apps/web/app` route groups: `(auth) (dashboard) (onboarding) (public) (teacher)` + `api/`. Data is team-scoped: School → Class → Team → TeamMember.
 
 ## House rules — apply to all code you generate
@@ -17,15 +17,19 @@ A browser game where student teams run a science-fair research lab — read pape
 
 ## Pipeline gates
 Run these in order from the repo root. All must pass before a feature is reviewed
-or considered done. (This is exactly how CI runs them.) During iterative work,
-re-run 1–3 per iteration; run 4 (`next build`, slow) once when the feature is
+or considered done. (CI runs gates 1-5 in `.github/workflows/ci.yml`; gate 6 runs in
+`.github/workflows/e2e.yml` — smoke + cross-engine compat lanes on PRs, full suite
+nightly/on-demand; missing `E2E_ENV_FILE` credentials FAIL trusted lanes and skip only
+untrusted forks.) During iterative work,
+re-run 1–4 per iteration; run 5 (`next build`, slow) once when the feature is
 otherwise done.
 
 1. pnpm --filter @scienium/shared-types build   # prereq: typecheck errors without it
-2. pnpm --filter web typecheck                   # tsc --noEmit
-3. pnpm --filter web lint                         # next lint
-4. pnpm --filter web build                        # next build; loads apps/web/.env.local automatically
-5. pnpm --filter web test:e2e                     # Playwright E2E in a real logged-in browser; needs the dev DB up + E2E_* creds in .env.local
+2. pnpm --filter web check:integrity              # rejects control bytes (NUL etc.) in authored source
+3. pnpm --filter web typecheck                   # tsc --noEmit
+4. pnpm --filter web lint                         # next lint
+5. pnpm --filter web build                        # next build; loads apps/web/.env.local automatically
+6. pnpm --filter web test:e2e                     # Playwright E2E in a real logged-in browser; needs the dev DB up + E2E_* creds in .env.local
    # If teacher-flow specs fail their roster precondition, restore the DB fixture graph first: pnpm --filter web seed:e2e (idempotent; see docs/SETUP.md "E2E tests")
 
 ## Parallelism

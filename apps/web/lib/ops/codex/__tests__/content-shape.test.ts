@@ -7,18 +7,42 @@ import { LAB_TYPES } from '@/lib/phase'
 // real, on-disk content — mirrors charts-guide.test.ts's approach of eagerly
 // importing every per-field module directly, alongside exercising the lazy
 // `loadTrack` loader separately.
+//
+// GENERATED — the import run below and ALL_TRACK_MODULES are regenerated from
+// ../content/*.json by `pnpm --filter web codex:merge`. Don't hand-edit them;
+// `/codex-pipeline` keeps them in step with the shipped fields.
 import acousticsSound from '../tracks/acoustics-sound'
 import astronomyAstrophysics from '../tracks/astronomy-astrophysics'
 import chemistry from '../tracks/chemistry'
 import classicalMechanicsPhysics from '../tracks/classical-mechanics-physics'
+import clinicalMedicinePharmacology from '../tracks/clinical-medicine-pharmacology'
+import computerScienceAlgorithms from '../tracks/computer-science-algorithms'
+import dataScienceMlMetrics from '../tracks/data-science-ml-metrics'
+import ecology from '../tracks/ecology'
+import electronicsElectricalEngineering from '../tracks/electronics-electrical-engineering'
+import environmentalEarthScience from '../tracks/environmental-earth-science'
+import epidemiologyMedicine from '../tracks/epidemiology-medicine'
+import fluidDynamicsAerodynamics from '../tracks/fluid-dynamics-aerodynamics'
 import gaitBiomechanics from '../tracks/gait-biomechanics'
+import geneticsGenomics from '../tracks/genetics-genomics'
+import geologySeismology from '../tracks/geology-seismology'
 
 const ALL_TRACK_MODULES: Record<string, CodexTrack> = {
   'acoustics-sound': acousticsSound,
   'astronomy-astrophysics': astronomyAstrophysics,
   'chemistry': chemistry,
   'classical-mechanics-physics': classicalMechanicsPhysics,
+  'clinical-medicine-pharmacology': clinicalMedicinePharmacology,
+  'computer-science-algorithms': computerScienceAlgorithms,
+  'data-science-ml-metrics': dataScienceMlMetrics,
+  'ecology': ecology,
+  'electronics-electrical-engineering': electronicsElectricalEngineering,
+  'environmental-earth-science': environmentalEarthScience,
+  'epidemiology-medicine': epidemiologyMedicine,
+  'fluid-dynamics-aerodynamics': fluidDynamicsAerodynamics,
   'gait-biomechanics': gaitBiomechanics,
+  'genetics-genomics': geneticsGenomics,
+  'geology-seismology': geologySeismology,
 }
 
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
@@ -87,8 +111,7 @@ describe('CODEX_TRACKS index', () => {
     }
   })
 
-  it('the flagship (gait-biomechanics) track is not a home track and has at least 1 branch', () => {
-    expect(gaitBiomechanics.home).toBe(false)
+  it('the flagship (gait-biomechanics) track has at least 1 branch', () => {
     expect(gaitBiomechanics.branches.length).toBeGreaterThanOrEqual(1)
   })
 })

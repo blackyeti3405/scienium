@@ -1,10 +1,22 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireUserContext } from '@/lib/api/route-context'
+import { fetchWithRetry, readJsonCapped } from '@/lib/fetch-retry'
 import { parseJson } from '@/lib/validation'
 
 const ResolveBody = z.object({ url: z.string().trim().min(1).max(2000) }).strict()
+
+/**
+ * oEmbed's answer, PARSED before the title reaches the caller — the old
+ * `data.title` read was a `.json()` with no shape check at all, so a non-string
+ * title (or a body of any size) went straight into the response the client
+ * stores and renders. Only `title` is ours to care about; the rest of oEmbed's
+ * envelope stays unconstrained.
+ */
+const OEmbed = z.object({ title: z.string().trim().min(1).max(300) }).passthrough()
+
+/** oEmbed's JSON is a few hundred bytes; 64 KB is headroom. */
+const MAX_BODY_BYTES = 64 * 1024
 
 // Extracts a YouTube video ID from any common URL shape.
 function extractVideoId(input: string): string | null {
@@ -28,12 +40,9 @@ function extractVideoId(input: string): string | null {
 // Resolves a pasted YouTube URL → { videoId, title } using the public oEmbed
 // endpoint (no API key, no quota). Done server-side to avoid CORS.
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   // Mutating + triggers an external oEmbed fetch — moderate per-user + per-IP limit.
-  const limited = await enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
+  const { error: guardError } = await requireUserContext(req, { tier: 'mutate' })
+  if (guardError) return guardError
 
   const { data, error } = await parseJson(req, ResolveBody)
   if (error) return error
@@ -46,15 +55,23 @@ export async function POST(req: NextRequest) {
 
   let title = 'YouTube video'
   try {
-    const oembed = await fetch(
+    const oembed = await fetchWithRetry(
       `https://www.youtube.com/oembed?url=${encodeURIComponent(
         `https://www.youtube.com/watch?v=${videoId}`,
       )}&format=json`,
-      { cache: 'no-store' },
+      {
+        headers: { Accept: 'application/json' },
+        // Bounded wait — a slow oEmbed endpoint must not hold the request open;
+        // the catch below falls back to the generic title. One attempt, as
+        // before: the title is a nicety, not worth three round-trips.
+        timeoutMs: 5_000,
+        attempts: 1,
+        contentTypes: ['application/json'],
+      },
     )
     if (oembed.ok) {
-      const data = await oembed.json()
-      if (data.title) title = data.title
+      const parsed = OEmbed.safeParse(await readJsonCapped(oembed, MAX_BODY_BYTES))
+      if (parsed.success) title = parsed.data.title
     }
   } catch {
     // Non-fatal — fall back to the generic title; the video still embeds by id.

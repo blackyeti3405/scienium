@@ -1,3 +1,4 @@
+import 'server-only'
 import { db } from '@/lib/db'
 import type { Prisma } from '@prisma/client'
 
@@ -12,6 +13,7 @@ export type ActivityAction =
   | 'source_promoted'
   | 'phase_advanced'
   | 'member_joined'
+  | 'member_left'
   | 'plan_synced'
   | 'plan_reviewed'
   | 'idea_checked'
@@ -24,12 +26,79 @@ export type ActivityAction =
   | 'log_edited'
   | 'log_deleted'
   | 'codex_lesson_completed'
+  | 'explanation_passed'
+  | 'synthesis_checked'
+  | 'vocab_term_mastered'
 
 /**
- * Appends a team activity entry. Fire-and-forget safe: awaiting is optional;
- * never throws so it can't break the calling request.
+ * Actions that are part of a team's PROGRESSION or a teacher's history of what a
+ * lab did — the ones a teacher may be looking at when they ask "did this student
+ * actually do the work". Losing one of these is losing evidence, so they belong
+ * in the same transaction as the domain change (`recordActivity`).
+ *
+ * Everything not listed here is ambient telemetry: nice in the feed, harmless to
+ * drop, and correctly written with `logActivityBestEffort`.
  */
-export async function logActivity(
+export const DURABLE_ACTIVITY_ACTIONS: ReadonlySet<ActivityAction> = new Set([
+  'quiz_passed',
+  'explanation_passed',
+  'codex_lesson_completed',
+  'clearance_raised',
+  'phase_advanced',
+  'showcase_published',
+  'member_joined',
+  'topic_locked',
+  'discovery_kp_awarded',
+  'building_purchased',
+  'building_sold',
+  'building_upgraded',
+  'source_promoted',
+  'vocab_term_mastered',
+])
+
+/** The subset of the Prisma client a transactional activity write needs. */
+type ActivityWriter = {
+  activityFeed: { create(args: { data: Record<string, unknown> }): Promise<unknown> }
+}
+
+/**
+ * Append an activity entry INSIDE the caller's transaction (REFACTOR2 P1-R5).
+ *
+ * Throws on failure — deliberately. The point is that the feed row and the thing
+ * it records either both land or neither does: if a student's KP moved, the
+ * teacher-visible evidence that it moved must not be able to go missing on its
+ * own. That is the transactional-outbox property the audit asked for, in its
+ * simplest correct form (same transaction, so there is nothing to reconcile).
+ *
+ * Use `logActivityBestEffort` for ambient telemetry.
+ */
+export async function recordActivity(
+  tx: ActivityWriter,
+  teamId: string,
+  userId: string,
+  action: ActivityAction,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  await tx.activityFeed.create({
+    data: {
+      teamId,
+      userId,
+      actionType: action,
+      payloadJson: payload as Prisma.InputJsonValue,
+    },
+  })
+}
+
+/**
+ * Append a team activity entry, swallowing any failure.
+ *
+ * EXPLICITLY named best-effort (REFACTOR2 P1-R5). This used to be called
+ * `logActivity`, which read like a durability guarantee at 28 of its 29 call
+ * sites while actually being `.catch(console.error)` — gameplay and
+ * teacher-visible history with no contract at all. The name is now the contract:
+ * if losing this entry would matter, you want `recordActivity` in a transaction.
+ */
+export async function logActivityBestEffort(
   teamId: string,
   userId: string,
   action: ActivityAction,
@@ -45,7 +114,7 @@ export async function logActivity(
       },
     })
   } catch {
-    // Activity logging must never break the main request path.
+    // Ambient telemetry must never break the main request path.
   }
 }
 
@@ -74,6 +143,8 @@ export function describeActivity(action: string, payload: Record<string, unknown
       return `advanced the lab to ${payload.toPhase ?? 'the next phase'}${payload.labType ? ` · assigned ${payload.labType}` : ''}`
     case 'member_joined':
       return 'joined the lab'
+    case 'member_left':
+      return 'left the lab'
     case 'plan_synced':
       return 'synced the research plan'
     case 'plan_reviewed':
@@ -98,6 +169,12 @@ export function describeActivity(action: string, payload: Record<string, unknown
       return `deleted a ${payload.kind === 'failure' ? 'failure' : 'project'} log entry`
     case 'codex_lesson_completed':
       return `completed a Field Codex lesson${payload.trackSlug ? ` (${payload.trackSlug})` : ''}`
+    case 'explanation_passed':
+      return `explained "${payload.paperTitle ?? 'a paper'}" back to Vega (${payload.score ?? '?'}%)`
+    case 'synthesis_checked':
+      return `ran a synthesis check (${payload.missed ?? 0} missed)`
+    case 'vocab_term_mastered':
+      return `mastered the term "${payload.term ?? 'a key term'}"`
     default:
       return action.replace(/_/g, ' ')
   }

@@ -18,25 +18,37 @@ import type { ResolvedSource } from '@/lib/discovery/sources'
 // never hang on a 429/stall. SERVER is the sole authority on host/tier/abstract.
 const ResolveBody = z
   .object({
-    platform: z.enum(['arxiv', 'pubmed']),
+    platform: z.enum(['arxiv', 'pubmed', 'openalex']),
     externalId: z.string().trim().min(1).max(64),
   })
   .strict()
 
-function bareId(platform: 'arxiv' | 'pubmed', externalId: string): string {
-  return platform === 'arxiv'
-    ? normalizeArxivId(externalId)
-    : externalId.replace(/^pmid:/i, '').trim()
+type Platform = 'arxiv' | 'pubmed' | 'openalex'
+
+function bareId(platform: Platform, externalId: string): string {
+  if (platform === 'arxiv') return normalizeArxivId(externalId)
+  if (platform === 'pubmed') return externalId.replace(/^pmid:/i, '').trim()
+  return externalId.replace(/^openalex:/i, '').trim()
 }
 
-function urlFor(platform: 'arxiv' | 'pubmed', arxivId: string | null, pmid: string | null): string {
-  return platform === 'arxiv'
-    ? `https://arxiv.org/abs/${arxivId ?? ''}`
-    : `https://pubmed.ncbi.nlm.nih.gov/${pmid ?? ''}/`
+function urlFor(
+  platform: Platform,
+  arxivId: string | null,
+  pmid: string | null,
+  doi: string | null,
+  openAlexId: string | null,
+): string {
+  if (platform === 'arxiv') return `https://arxiv.org/abs/${arxivId ?? ''}`
+  if (platform === 'pubmed') return `https://pubmed.ncbi.nlm.nih.gov/${pmid ?? ''}/`
+  // openalex works: the DOI resolves to the publisher/repository landing page;
+  // the OpenAlex work page is the always-available fallback.
+  if (doi) return doi.startsWith('http') ? doi : `https://doi.org/${doi}`
+  const w = (openAlexId ?? '').match(/(W\d+)\s*$/)?.[1]
+  return `https://openalex.org/${w ?? ''}`
 }
 
 function toResolved(w: {
-  platform: 'arxiv' | 'pubmed'
+  platform: Platform
   externalId: string
   title: string
   authors: string[]
@@ -46,6 +58,8 @@ function toResolved(w: {
   publishedAt: string | null
   arxivId: string | null
   pmid: string | null
+  doi: string | null
+  openAlexId: string | null
 }): ResolvedSource {
   return {
     platform: w.platform,
@@ -54,7 +68,7 @@ function toResolved(w: {
     authors: w.authors,
     host: w.host,
     tier: w.tier,
-    url: urlFor(w.platform, w.arxivId, w.pmid),
+    url: urlFor(w.platform, w.arxivId, w.pmid, w.doi, w.openAlexId),
     abstract: w.abstract || null,
     publishedAt: w.publishedAt,
   }
@@ -68,7 +82,8 @@ export async function POST(req: NextRequest) {
   if (error) return error
   const { platform } = data
   const bare = bareId(platform, data.externalId)
-  const externalId = platform === 'arxiv' ? `arxiv:${bare}` : `pmid:${bare}`
+  const externalId =
+    platform === 'arxiv' ? `arxiv:${bare}` : platform === 'pubmed' ? `pmid:${bare}` : `openalex:${bare}`
 
   try {
     // Cache-first (populated by the search box) — instant, no network.
@@ -86,6 +101,8 @@ export async function POST(req: NextRequest) {
           publishedAt: cached.publishedAt,
           arxivId: cached.arxivId,
           pmid: cached.pmid,
+          doi: cached.doi,
+          openAlexId: cached.openAlexId,
         }),
       )
     }

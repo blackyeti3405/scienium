@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeacher, teacherOwnsTeam } from '@/lib/teacher/auth'
+import { pickActiveTeam } from '@/lib/team/context'
 import { db } from '@/lib/db'
-import { QUIZ_PASS_THRESHOLD, type QuizQuestion } from '@/lib/literature/quiz'
+import { QUIZ_PASS_THRESHOLD, mapGradedQuizSession } from '@/lib/literature/quiz'
 
 /**
  * GET /api/teacher/student/[id]/literature/[paperId]
@@ -15,8 +16,9 @@ import { QUIZ_PASS_THRESHOLD, type QuizQuestion } from '@/lib/literature/quiz'
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string; paperId: string } },
+  props: { params: Promise<{ id: string; paperId: string }> }
 ) {
+  const params = await props.params;
   const { ctx, error } = await requireTeacher(req, { tier: 'read' })
   if (error) return error
 
@@ -25,11 +27,10 @@ export async function GET(
     where: { id: params.id, classId: { in: ctx.classIds } },
     select: {
       id: true,
-      activeTeam: { select: { id: true } },
+      activeTeamId: true,
       teamMemberships: {
         orderBy: { joinedAt: 'desc' },
-        take: 1,
-        select: { team: { select: { id: true } } },
+        select: { teamId: true, team: { select: { id: true } } },
       },
     },
   })
@@ -38,7 +39,9 @@ export async function GET(
     return NextResponse.json({ error: 'Student not found in your classes' }, { status: 404 })
   }
 
-  const teamId = student.activeTeam?.id ?? student.teamMemberships[0]?.team.id ?? null
+  // Resolve through membership (never a bare activeTeam) — a stale activeTeamId
+  // must not pick a team the student has since left.
+  const teamId = pickActiveTeam(student.activeTeamId, student.teamMemberships)?.id ?? null
   if (!teamId) {
     return NextResponse.json({ error: 'Student not found in your classes' }, { status: 404 })
   }
@@ -91,16 +94,12 @@ export async function GET(
   } | null = null
 
   if (quizSession) {
-    const rawQuestions = quizSession.questionsJson as unknown as QuizQuestion[]
-    // Strip grading key — never expose to client.
-    const questions = rawQuestions.map((q, i) => ({
-      id: q.id ?? `q${i + 1}`,
-      prompt: q.prompt,
-      focus: q.focus,
-    }))
-
-    // Match attempts back to questions by prompt text (same logic as student route).
-    const byPrompt = new Map(quizSession.attempts.map((a) => [a.question, a]))
+    // Strip grading key, match attempts back to questions by prompt text —
+    // shared with the student route (lib/literature/quiz.ts).
+    const { questions, answers, results } = mapGradedQuizSession(
+      quizSession.questionsJson,
+      quizSession.attempts,
+    )
 
     quiz = {
       score: quizSession.score ?? 0,
@@ -108,13 +107,8 @@ export async function GET(
       threshold: QUIZ_PASS_THRESHOLD,
       gradedAt: quizSession.gradedAt!.toISOString(),
       questions,
-      answers: Object.fromEntries(
-        questions.map((q) => [q.id, byPrompt.get(q.prompt)?.response ?? '']),
-      ),
-      results: questions.map((q) => {
-        const a = byPrompt.get(q.prompt)
-        return { questionId: q.id, score: a?.score ?? 0, rationale: a?.evaluation ?? '' }
-      }),
+      answers,
+      results,
     }
   }
 

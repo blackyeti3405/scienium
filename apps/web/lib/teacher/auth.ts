@@ -1,8 +1,13 @@
+import 'server-only'
 import { auth, currentUser } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { resolveAuthoritativeRole } from '@/lib/teacher/role'
 import { enforceRateLimit, type TierName } from '@/lib/rate-limit'
+import { assertSameOrigin, logDenied } from '@/lib/api/route-context'
+import { recordSecurityEvent } from '@/lib/observability/security-event'
+import { resolvePrimaryEmail } from '@/lib/onboarding/profile'
+import { MAX_TEACHER_CLASS_SCOPE, overflowTake } from '@/lib/teacher/caps'
 
 // Re-exported so the role decision has one public home on the teacher guard; the
 // implementation lives in the import-free role module so it stays unit-testable.
@@ -33,7 +38,6 @@ export interface TeacherContext {
   dbUserId: string
   /** Class ids this teacher owns; the scope for every roster/validation query. */
   classIds: string[]
-  role: 'teacher' | 'admin'
 }
 
 export type TeacherGuard =
@@ -48,13 +52,27 @@ export async function requireTeacher(
   req: NextRequest,
   opts: { tier: TierName },
 ): Promise<TeacherGuard> {
+  // Every refusal below goes through `logDenied` (REFACTOR2 P1-5). This guard
+  // emitted NOTHING before: the highest-privilege surface in the app was also
+  // the only one whose refusals left no trace, so "is somebody probing the
+  // teacher routes" had no answer anywhere. It reuses the team guard's emitter
+  // rather than a local one, so a teacher denial and a student denial are the
+  // same event shape and the repeated-denial alert counts them together.
   const { userId, sessionClaims } = await auth()
   if (!userId) {
+    logDenied(req, opts.tier, 'unauthenticated', 401, null)
     return { ctx: null, error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   }
 
   const limited = await enforceRateLimit(req, opts.tier, userId)
   if (limited) return { ctx: null, error: limited }
+
+  // CSRF: mutating teacher routes are cookie-authenticated too (SEC-11).
+  const crossOrigin = assertSameOrigin(req)
+  if (crossOrigin) {
+    logDenied(req, opts.tier, 'cross_origin', 403, userId)
+    return { ctx: null, error: crossOrigin }
+  }
 
   // Role: the DB is the source of truth. For an existing row we ignore the claim
   // entirely, so a downgraded teacher whose token still says "teacher" is denied.
@@ -66,16 +84,18 @@ export async function requireTeacher(
   })
   const role = resolveAuthoritativeRole(user?.role, claimRole, !!user)
   if (!role) {
+    // The one denial in this file worth alerting on by itself: a signed-in
+    // student repeatedly hitting teacher routes is not a typo.
+    logDenied(req, opts.tier, 'not_teacher', 403, userId)
     return { ctx: null, error: NextResponse.json({ error: 'Teacher access required' }, { status: 403 }) }
   }
 
   // Ensure a User row backs this teacher (a claim-only teacher may have no row yet).
   if (!user) {
     const clerkUser = await currentUser()
-    const email =
-      clerkUser?.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
-      clerkUser?.emailAddresses[0]?.emailAddress
+    const email = resolvePrimaryEmail(clerkUser)
     if (!email) {
+      logDenied(req, opts.tier, 'no_email', 400, userId)
       return { ctx: null, error: NextResponse.json({ error: 'No email on account' }, { status: 400 }) }
     }
     user = await db.user.create({
@@ -87,29 +107,89 @@ export async function requireTeacher(
       },
       select: { id: true, role: true },
     })
+    // A teacher row minted from a Clerk CLAIM rather than from the onboarding
+    // route — the one path where the privilege is granted without a request that
+    // asked for it. Recorded separately for exactly that reason.
+    void recordSecurityEvent({
+      kind: 'provision.teacher_role',
+      outcome: 'ok',
+      actorType: 'teacher',
+      actorUserId: user.id,
+      targetType: 'user',
+      targetId: user.id,
+      reason: 'claim_bootstrap',
+    })
   }
 
-  const classes = await db.class.findMany({ where: { teacherId: user.id }, select: { id: true } })
+  // Bounded (P2-1): this runs on EVERY teacher request, so the read needs a
+  // ceiling. It used to `take: 200` and hand the truncated list on as
+  // `ctx.classIds` — a SILENT TRUNCATION OF AN AUTHORIZATION SCOPE. The 201st
+  // class does not go missing from a list a teacher can scroll; it drops out of
+  // every WHERE clause below, so that class's students 404 from the roster,
+  // from `student/[id]`, and from every ownership check, with nothing anywhere
+  // saying why. A scope that cannot be represented must be REFUSED, not
+  // half-answered — probe one past the limit and say so.
+  const classes = await db.class.findMany({
+    where: { teacherId: user.id },
+    select: { id: true },
+    take: overflowTake(MAX_TEACHER_CLASS_SCOPE),
+  })
+  if (classes.length > MAX_TEACHER_CLASS_SCOPE) {
+    logDenied(req, opts.tier, 'class_scope_overflow', 409, userId)
+    return {
+      ctx: null,
+      error: NextResponse.json(
+        {
+          error: `You own more than ${MAX_TEACHER_CLASS_SCOPE} classes, which is more than this view can load safely. Archive the classes you no longer teach, or contact support.`,
+        },
+        { status: 409 },
+      ),
+    }
+  }
 
   return {
-    ctx: { userId, dbUserId: user.id, classIds: classes.map((c) => c.id), role },
+    ctx: { userId, dbUserId: user.id, classIds: classes.map((c) => c.id) },
     error: null,
   }
 }
 
 /**
- * Verify a team falls within the teacher's scope through its explicit
- * `Team.classId`. Backfilled for all teams whose lead has a class (migration
- * 20260709000000), so no lead-class fallback is needed. An empty class scope is
- * never in-scope.
+ * Verify a team falls within the teacher's scope through its MEMBERS: a teacher
+ * owns a team if at least one of its members is in one of the teacher's classes.
+ *
+ * Class membership is per-student (a lab can span multiple schools/classes — each
+ * student in their own class), so ownership can't be read off a single
+ * `Team.classId`. A team's shared artifacts (rubric, feedback, nudges, papers,
+ * showcase) are visible to EVERY teacher who owns ≥1 member; a student's
+ * INDIVIDUAL pages stay gated on that student's own class in the per-student
+ * routes (`student/[id]…`), so a teammate's teacher can't open them. An empty
+ * class scope is never in-scope.
  */
 export async function teacherOwnsTeam(classIds: string[], teamId: string): Promise<boolean> {
   if (classIds.length === 0) return false
   const team = await db.team.findFirst({
-    where: { id: teamId, classId: { in: classIds } },
+    where: { id: teamId, members: { some: { user: { classId: { in: classIds } } } } },
     select: { id: true },
   })
-  return !!team
+  if (team) return true
+
+  // ARCHIVED TEAMS (REFACTOR2 P1-R8). Scope is derived from LIVE membership, so
+  // a team archived when its last member left would drop out of the teacher's
+  // view entirely — taking the class's work product with it. That is the
+  // opposite of what archiving is for. The membership event log is the record of
+  // who was on it, so a teacher keeps read access to a team a student of theirs
+  // was once on. Deliberately archived-only: a live team a student LEFT must
+  // still fall out of scope, which is the stale-authorization hole this finding
+  // was about in the first place.
+  const archived = await db.team.findFirst({
+    where: {
+      id: teamId,
+      archivedAt: { not: null },
+      membershipEvents: { some: { user: { classId: { in: classIds } } } },
+    },
+    select: { id: true },
+  })
+  return !!archived
 }
 
 /**

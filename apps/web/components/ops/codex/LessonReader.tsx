@@ -75,7 +75,7 @@ export function LessonReader({
               <span className="inline-flex items-center gap-1">
                 <Clock size={10} /> {lesson.readingMinutes} min read
               </span>
-              <span className="text-white/15">·</span>
+              <span className="text-white/40">·</span>
               <span>{lesson.sections.length} sections</span>
               {completed && (
                 <span className="inline-flex items-center gap-1 text-emerald-400">

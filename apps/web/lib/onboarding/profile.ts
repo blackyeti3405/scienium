@@ -1,7 +1,26 @@
-import { clerkClient } from '@clerk/nextjs/server'
+import 'server-only'
+import { clerkClient, currentUser } from '@clerk/nextjs/server'
+import type { ClassJoinRequestStatus } from '@prisma/client'
 import { db } from '@/lib/db'
+import { lockAggregate } from '@/lib/db-lock'
 import { normalizeInviteCode } from '@/lib/team/invite'
-import type { Prisma } from '@prisma/client'
+import { recordClassEvent } from '@/lib/onboarding/class-membership'
+
+type ClerkUser = Awaited<ReturnType<typeof currentUser>>
+
+/**
+ * Resolve a Clerk user's email: their primary address, falling back to the
+ * first address on the account. Shared by every path that mints a `User` row
+ * from a Clerk identity (create-a-lab onboarding, teacher onboarding, join-a-lab,
+ * and the teacher guard's on-demand row creation), so the fallback rule lives
+ * in exactly one place.
+ */
+export function resolvePrimaryEmail(clerkUser: ClerkUser | null | undefined): string | undefined {
+  return (
+    clerkUser?.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
+    clerkUser?.emailAddresses[0]?.emailAddress
+  )
+}
 
 /**
  * School + classroom resolution shared by every path that creates a User row
@@ -31,88 +50,197 @@ export interface ClassMatch {
   schoolId: string
 }
 
-/** Resolve a classroom by its join code, or null if the code matches nothing. */
+/**
+ * Resolve a classroom by its join code, or null if the code matches nothing.
+ * Expired codes resolve null too (SEC2-003) — indistinguishable from an
+ * invalid code by design (generic response; no oracle for probing), and a
+ * code without an expiry fails CLOSED (every mint sets one; a null can only
+ * mean pre-migration drift).
+ */
 export async function resolveClass(code: string | null | undefined): Promise<ClassMatch | null> {
   const trimmed = code?.trim()
   if (!trimmed) return null
   const klass = await db.class.findUnique({
     where: { joinCode: normalizeInviteCode(trimmed) },
-    select: { id: true, schoolId: true },
+    select: { id: true, schoolId: true, joinCodeExpiresAt: true },
   })
-  return klass ? { classId: klass.id, schoolId: klass.schoolId } : null
+  if (!klass) return null
+  if (!klass.joinCodeExpiresAt || klass.joinCodeExpiresAt <= new Date()) return null
+  return { classId: klass.id, schoolId: klass.schoolId }
 }
 
 /**
- * Assign a user's school and (optionally) classroom from a typed high-school name
- * and/or a class join code. A valid class code takes precedence for the school.
- * No-ops silently when neither is provided so it's safe to call unconditionally.
- * Returns the matched class id (if any) so callers can report it.
+ * Assign a user's school from their typed high-school name, and — when a class
+ * code matches — file a PENDING class-join request instead of enrolling directly
+ * (the teacher must approve; see `requestClassJoin`). No-ops silently when
+ * neither is provided so it's safe to call unconditionally.
+ *
+ * Class membership is per-student: entering a code never changes the student's
+ * own school (they keep the one they typed) — the class's school is applied only
+ * on approval. `classId` in the return is always null (enrollment happens on
+ * approval); `pendingClassId` reports the class a request was filed against.
  */
 export async function applySchoolAndClass(
   dbUserId: string,
   opts: { highSchool?: string | null; classCode?: string | null },
-): Promise<{ classId: string | null }> {
+): Promise<{ classId: null; pendingClassId: string | null }> {
+  const schoolId = await resolveSchool(opts.highSchool)
+  if (schoolId) {
+    await db.user.update({ where: { id: dbUserId }, data: { schoolId } })
+  }
+
   const classMatch = await resolveClass(opts.classCode)
-  const schoolId = classMatch?.schoolId ?? (await resolveSchool(opts.highSchool))
-
-  if (!schoolId && !classMatch) return { classId: null }
-
-  await db.user.update({
-    where: { id: dbUserId },
-    data: {
-      ...(schoolId ? { schoolId } : {}),
-      ...(classMatch ? { classId: classMatch.classId } : {}),
-    },
-  })
-  return { classId: classMatch?.classId ?? null }
+  const pendingClassId = classMatch ? await requestClassJoin(dbUserId, classMatch.classId) : null
+  return { classId: null, pendingClassId }
 }
 
 /**
- * The classroom a lab belongs to — its lead's class. A lab is "in" a teacher's
- * class through its lead, so the lead's class (and school) defines the whole
- * lab's class. Returns null when the lead hasn't joined a class.
+ * File (or refresh) a student's PENDING request to join a class. Returns the
+ * classId when a request is now pending, or null when no request was needed
+ * because the student is already enrolled in that class.
+ *
+ * - Already in the class → no-op (returns null).
+ * - Existing approved/denied/pending row → reset to `pending` (a re-request after
+ *   a denial, or a fresh code entry, re-opens it for the teacher).
  */
-export async function teamLeadClass(
-  teamId: string,
-): Promise<{ classId: string; schoolId: string } | null> {
-  const team = await db.team.findUnique({
-    where: { id: teamId },
-    select: {
-      class: { select: { id: true, schoolId: true } },
-      teamLead: { select: { classId: true, schoolId: true } },
-    },
-  })
-  const classId = team?.class?.id ?? team?.teamLead.classId
-  const schoolId = team?.class?.schoolId ?? team?.teamLead.schoolId
-  return classId && schoolId ? { classId, schoolId } : null
-}
-
-/**
- * Enroll a whole lab into a classroom: copy the class + school onto every team
- * member, so a lab can never straddle teacher authorization boundaries. Returns
- * the number of members enrolled or moved.
- */
-export async function enrollTeamInClass(
-  teamId: string,
+export async function requestClassJoin(
+  dbUserId: string,
   classId: string,
-  schoolId: string,
-  client: Pick<Prisma.TransactionClient, 'team' | 'user'> = db,
-): Promise<number> {
-  await client.team.update({ where: { id: teamId }, data: { classId } })
-  const { count } = await client.user.updateMany({
-    where: { teamMemberships: { some: { teamId } } },
-    data: { classId, schoolId },
+): Promise<string | null> {
+  const user = await db.user.findUnique({ where: { id: dbUserId }, select: { classId: true } })
+  if (user?.classId === classId) return null // already enrolled — nothing to request
+
+  // The upsert RESETS `decidedAt`/`decidedByUserId`, so the request row cannot
+  // carry history — which is why the event log exists (P1-R8, class half).
+  await db.$transaction(async (tx) => {
+    await tx.classJoinRequest.upsert({
+      where: { classId_userId: { classId, userId: dbUserId } },
+      create: { classId, userId: dbUserId, status: 'pending' },
+      update: { status: 'pending', decidedAt: null, decidedByUserId: null },
+    })
+    await recordClassEvent(tx, {
+      classId,
+      userId: dbUserId,
+      event: 'requested',
+      actorUserId: dbUserId,
+    })
   })
-  return count
+  return classId
 }
 
+/** What a class-join decision actually committed. */
+export type ClassDecisionOutcome =
+  | { committed: true; decision: 'approve' | 'deny' }
+  /** Someone already decided this request; `status` is the state that stands. */
+  | { committed: false; status: ClassJoinRequestStatus }
+
 /**
- * Dev-only default high school. The pilot's dev account (Santa Clara High School)
- * is pre-filled so local onboarding/teacher flows have a real school without
- * manual entry. Inert in production.
+ * Decide a class-join request — the ONE path for both approve and deny (P1-S2).
+ *
+ * The old split had contradictory terminal states. The route pre-read
+ * `status: 'pending'` and then acted on that stale snapshot: approval re-read
+ * inside its transaction and returned silently when the row had moved on (while
+ * the route still answered `{ ok: true }`), and denial wrote **unconditionally**
+ * with no status predicate. Approve-then-deny therefore left the student
+ * enrolled — `User.classId` set — against a request marked `denied`.
+ *
+ * Everything now hangs off one compare-and-set:
+ *
+ *   - the transition is `updateMany` predicated on `status: 'pending'`, so only
+ *     the first decision commits and the loser learns what actually stands;
+ *   - approval takes a per-student lock before touching `User.classId`, so two
+ *     teachers approving into different classes serialize instead of racing to
+ *     last-writer-wins;
+ *   - any other approved request for that student is marked `superseded`, so the
+ *     database never holds two `approved` rows describing one `classId`.
+ *
+ * Denial deliberately does NOT un-enrol an already-approved student: that is a
+ * class-removal command, which belongs to the membership lifecycle still open as
+ * P1-R8. Refusing the stale decision is the honest answer here.
+ *
+ * The caller must have already verified the request belongs to a class this
+ * teacher owns.
  */
-export const DEV_DEFAULT_HIGH_SCHOOL =
-  process.env.NODE_ENV !== 'production' ? 'Santa Clara High School' : ''
+export async function decideClassJoin(
+  requestId: string,
+  decidedByUserId: string,
+  decision: 'approve' | 'deny',
+): Promise<ClassDecisionOutcome> {
+  return db.$transaction(async (tx) => {
+    const request = await tx.classJoinRequest.findUnique({
+      where: { id: requestId },
+      select: { id: true, classId: true, userId: true, status: true },
+    })
+    if (!request) return { committed: false, status: 'denied' as ClassJoinRequestStatus }
+
+    // Serialize competing decisions about THIS student's single class slot.
+    await lockAggregate(tx, `class-membership:${request.userId}`)
+
+    const applied = await tx.classJoinRequest.updateMany({
+      where: { id: requestId, status: 'pending' },
+      data: {
+        status: decision === 'approve' ? 'approved' : 'denied',
+        decidedAt: new Date(),
+        decidedByUserId,
+      },
+    })
+    if (applied.count !== 1) {
+      // Lost the race (or the row was never pending). Report what stands rather
+      // than claiming success for a write that did not happen.
+      const fresh = await tx.classJoinRequest.findUnique({
+        where: { id: requestId },
+        select: { status: true },
+      })
+      return { committed: false, status: fresh?.status ?? request.status }
+    }
+
+    if (decision === 'approve') {
+      const klass = await tx.class.findUniqueOrThrow({
+        where: { id: request.classId },
+        select: { id: true, schoolId: true },
+      })
+
+      // Class membership is per-student (ADR-004): approval enrols ONLY the
+      // requester, never teammates or the team row.
+      await tx.user.update({
+        where: { id: request.userId },
+        data: { classId: klass.id, schoolId: klass.schoolId },
+      })
+
+      // `User.classId` holds one class, so a prior approval elsewhere no longer
+      // describes reality. Mark it superseded — not denied; no teacher refused it.
+      const displaced = await tx.classJoinRequest.findMany({
+        where: { userId: request.userId, status: 'approved', id: { not: requestId } },
+        select: { classId: true },
+      })
+      await tx.classJoinRequest.updateMany({
+        where: { userId: request.userId, status: 'approved', id: { not: requestId } },
+        data: { status: 'superseded', decidedAt: new Date(), decidedByUserId },
+      })
+      // Each displaced enrolment ENDED — and an authorization that ended with no
+      // record of ending is exactly what P1-R8 is about. Null actor: the system
+      // displaced it, no teacher chose to.
+      for (const prior of displaced) {
+        await recordClassEvent(tx, {
+          classId: prior.classId,
+          userId: request.userId,
+          event: 'superseded',
+          actorUserId: null,
+          reason: 'approved_into_another_class',
+        })
+      }
+    }
+
+    await recordClassEvent(tx, {
+      classId: request.classId,
+      userId: request.userId,
+      event: decision === 'approve' ? 'approved' : 'denied',
+      actorUserId: decidedByUserId,
+    })
+
+    return { committed: true, decision }
+  })
+}
 
 /**
  * Mirror a user's display name into their Clerk profile (first/last name) so the

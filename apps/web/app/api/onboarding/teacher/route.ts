@@ -1,10 +1,11 @@
-import { auth, currentUser, clerkClient } from '@clerk/nextjs/server'
+import { currentUser, clerkClient } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireUserContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { resolveSchool, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { recordSecurityEvent } from '@/lib/observability/security-event'
+import { resolvePrimaryEmail, resolveSchool, syncClerkDisplayName } from '@/lib/onboarding/profile'
 
 // `.strict()` rejects any field other than name + highSchool — role and userId
 // must never come from the body; the caller's identity comes from auth() only.
@@ -16,11 +17,9 @@ const TeacherOnboardingBody = z
   .strict()
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = await enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
+  const { ctx, error: guardError } = await requireUserContext(req, { tier: 'mutate' })
+  if (guardError) return guardError
+  const { userId } = ctx
 
   const clerkUser = await currentUser()
   if (!clerkUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -29,10 +28,8 @@ export async function POST(req: NextRequest) {
   if (error) return error
   const { name, highSchool } = data
 
-  // Resolve email — primary first, fallback to index 0 (mirrors /api/onboarding).
-  const email =
-    clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
-    clerkUser.emailAddresses[0]?.emailAddress
+  // Resolve email — primary first, fallback to index 0.
+  const email = resolvePrimaryEmail(clerkUser)
 
   if (!email) return NextResponse.json({ error: 'No email on Clerk account' }, { status: 400 })
 
@@ -79,6 +76,21 @@ export async function POST(req: NextRequest) {
   // clerkClient is async in Clerk v5 — must be called before .users access.
   const cc = await clerkClient()
   await cc.users.updateUserMetadata(userId, { publicMetadata: { role: 'teacher' } })
+
+  // The largest privilege grant in the app, recorded durably (REFACTOR2 P1-5):
+  // a teacher can read every student's individual work in their classes.
+  // `dedupeKey` is the user id, so the idempotent re-submit this route
+  // deliberately allows appends exactly one row however many times it is called.
+  await recordSecurityEvent({
+    kind: 'provision.teacher_role',
+    outcome: 'ok',
+    actorType: 'teacher',
+    actorUserId: user.id,
+    targetType: 'user',
+    targetId: user.id,
+    reason: 'teacher_onboarding',
+    dedupeKey: `teacher_role:${user.id}`,
+  })
 
   return NextResponse.json({ ok: true })
 }

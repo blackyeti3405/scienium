@@ -6,64 +6,28 @@ import {
   PAPER_ANATOMY,
   READING_ORDER,
 } from '@/lib/literature/research-guide'
-import type { GlossaryCategory } from '@/lib/literature/research-guide'
+import { describeGuideIntegrity } from '@/test/helpers/guide-integrity'
 
 // ---------------------------------------------------------------------------
-// Content shape invariants — cheap guard that the 70-item authored glossary
-// and 8-section paper anatomy stay well-formed as they're edited over time.
-// Mirrors lib/data-terminal/stats-guide.test.ts.
+// Content shape invariants. The assertions shared with the other six authored
+// guides live in test/helpers/guide-integrity.ts; what stays below is what is
+// true of the RESEARCH glossary / paper anatomy alone.
 // ---------------------------------------------------------------------------
 
-const VALID_CATEGORIES = new Set<GlossaryCategory>(GLOSSARY_CATEGORIES.map((c) => c.key))
-const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
+describeGuideIntegrity('RESEARCH_GLOSSARY', RESEARCH_GLOSSARY, {
+  categoryField: 'category',
+  categories: GLOSSARY_CATEGORIES.map((c) => c.key),
+  requiredFields: ['term', 'definition', 'example', 'whyItMatters'],
+  proseFields: ['definition'],
+  minEntries: 70,
+})
+
+describeGuideIntegrity('PAPER_ANATOMY', PAPER_ANATOMY, {
+  requiredFields: ['name', 'purpose', 'whatToLookFor', 'readingStrategyNote', 'variantNote'],
+  minEntries: 8,
+})
 
 describe('RESEARCH_GLOSSARY content shape', () => {
-  it('has exactly 70 entries', () => {
-    expect(RESEARCH_GLOSSARY).toHaveLength(70)
-  })
-
-  it('every id is unique', () => {
-    const ids = RESEARCH_GLOSSARY.map((t) => t.id)
-    expect(new Set(ids).size).toBe(ids.length)
-  })
-
-  it('every id is slug-safe (lowercase, digits, single hyphens)', () => {
-    for (const t of RESEARCH_GLOSSARY) {
-      expect(t.id).toMatch(SLUG_RE)
-    }
-  })
-
-  it('every category is one of GLOSSARY_CATEGORIES', () => {
-    for (const t of RESEARCH_GLOSSARY) {
-      expect(VALID_CATEGORIES.has(t.category)).toBe(true)
-    }
-  })
-
-  it('each of the 6 categories is represented at least once', () => {
-    for (const cat of GLOSSARY_CATEGORIES) {
-      const count = RESEARCH_GLOSSARY.filter((t) => t.category === cat.key).length
-      expect(count).toBeGreaterThan(0)
-    }
-  })
-
-  it('every term has non-empty term, definition, example, and whyItMatters', () => {
-    for (const t of RESEARCH_GLOSSARY) {
-      expect(t.term.trim().length).toBeGreaterThan(0)
-      expect(t.definition.trim().length).toBeGreaterThan(0)
-      expect(t.example.trim().length).toBeGreaterThan(0)
-      expect(t.whyItMatters.trim().length).toBeGreaterThan(0)
-    }
-  })
-
-  it('every definition is genuinely detailed (2+ sentences), not a one-line tooltip', () => {
-    for (const t of RESEARCH_GLOSSARY) {
-      const sentenceCount = t.definition
-        .split(/[.!?]+(?:\s|$)/)
-        .filter((s) => s.trim().length > 0).length
-      expect(sentenceCount).toBeGreaterThanOrEqual(2)
-    }
-  })
-
   it('includes all named required terms from the brief', () => {
     const ids = new Set(RESEARCH_GLOSSARY.map((t) => t.id))
     const required = [
@@ -97,28 +61,6 @@ describe('RESEARCH_GLOSSARY content shape', () => {
 // ---------------------------------------------------------------------------
 
 describe('PAPER_ANATOMY content shape', () => {
-  it('has exactly 8 entries', () => {
-    expect(PAPER_ANATOMY).toHaveLength(8)
-  })
-
-  it('every id is unique and slug-safe', () => {
-    const ids = PAPER_ANATOMY.map((s) => s.id)
-    expect(new Set(ids).size).toBe(ids.length)
-    for (const id of ids) {
-      expect(id).toMatch(SLUG_RE)
-    }
-  })
-
-  it('every section has non-empty name, purpose, whatToLookFor, readingStrategyNote, and variantNote', () => {
-    for (const s of PAPER_ANATOMY) {
-      expect(s.name.trim().length).toBeGreaterThan(0)
-      expect(s.purpose.trim().length).toBeGreaterThan(0)
-      expect(s.whatToLookFor.trim().length).toBeGreaterThan(0)
-      expect(s.readingStrategyNote.trim().length).toBeGreaterThan(0)
-      expect(s.variantNote.trim().length).toBeGreaterThan(0)
-    }
-  })
-
   it('includes the expected 8 IMRaD-style section names', () => {
     const names = new Set(PAPER_ANATOMY.map((s) => s.name))
     for (const name of [

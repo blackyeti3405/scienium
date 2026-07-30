@@ -43,18 +43,24 @@ export type Feature =
   | 'literature'     // Literature review, library, citation graph
   | 'research_plan'  // Research planning tools
   | 'daily'          // Field Codex, Proof of Expertise, Project Log, Failure Log
-  | 'buildings'      // Lab building purchases and upgrades
+  | 'buildings'      // Lab building purchases, upgrades, and rearranging
   | 'pvp'            // PvP raid system (spec §11)
   | 'data_terminal'  // Experiment tracking + graphing (Operations Hub tab)
   | 'showcase'       // Showcase Wing (public portfolio)
 
 // Which new features each phase unlocks (additive — cumulative after ordering)
+//
+// `buildings` is deliberately unlocked from the very first phase: the plot is
+// the team's home screen, and arranging it is expression, not progression. KP
+// cost and each building's `minClearance` are the real limits on what a team
+// can put down — the phase gate only ever added a second, redundant lock that
+// made the shop and ARRANGE controls look live while every write 403'd.
 const PHASE_UNLOCKS: Record<Phase, Feature[]> = {
-  discovery:          ['discovery', 'fair_hub'],
+  discovery:          ['discovery', 'fair_hub', 'buildings'],
   lab_selection:      ['lab_selection'],
   literature_review:  ['literature', 'daily'],
   research_planning:  ['research_plan'],
-  working:            ['buildings', 'pvp', 'data_terminal'],
+  working:            ['pvp', 'data_terminal'],
   showcase:           ['showcase'],
 }
 
@@ -96,7 +102,7 @@ export const FEATURE_MIN_PHASE: Record<Feature, Phase> = {
   literature:     'literature_review',
   research_plan:  'research_planning',
   daily:          'literature_review',
-  buildings:      'working',
+  buildings:      'discovery',
   pvp:            'working',
   data_terminal:  'working',
   showcase:       'showcase',

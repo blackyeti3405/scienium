@@ -1,3 +1,5 @@
+import 'server-only'
+import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 
 /**
@@ -12,11 +14,19 @@ import { db } from '@/lib/db'
 
 export const FAILURE_FOLLOWUP_DAILY_LIMIT = 10
 
-/** Count how many AI follow-ups have been generated today for a team (since local midnight). */
-export async function followupsUsedToday(teamId: string): Promise<number> {
+/**
+ * Count how many AI follow-ups have been generated today for a team (since local
+ * midnight). Accepts a transaction client so the count and the claim that
+ * follows it commit together — read outside a transaction, the cap is advisory
+ * (P1-S7).
+ */
+export async function followupsUsedToday(
+  teamId: string,
+  client: Prisma.TransactionClient | typeof db = db,
+): Promise<number> {
   const start = new Date()
   start.setHours(0, 0, 0, 0)
-  return db.projectLogFollowup.count({
+  return client.projectLogFollowup.count({
     where: {
       createdAt: { gte: start },
       log: { teamId, entryType: 'failure' },
@@ -57,4 +67,16 @@ export function mapFollowup(row: {
     response: row.response,
     answeredAt: row.answeredAt ? row.answeredAt.toISOString() : null,
   }
+}
+
+/** Decode a failure entry's stored JSON body, falling back to the raw body as `happened` on parse failure. */
+export function parseFailureBody(body: string): { happened: string; learned: string } {
+  let parsed = { happened: body, learned: '' }
+  try { parsed = JSON.parse(body) } catch {}
+  return parsed
+}
+
+/** Encode a failure entry's `{ happened, learned }` fields for storage. */
+export function stringifyFailureBody(happened: string, learned: string): string {
+  return JSON.stringify({ happened: happened.trim(), learned: learned.trim() })
 }

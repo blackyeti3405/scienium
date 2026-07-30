@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useLabCurrency } from '@/lib/labCurrency'
+import { useLabCurrency } from '@/components/lab/labCurrency'
+import { buildRetryAnswers, deriveFailedQuestionIds } from './quizDerive'
+import { getQuizHistory } from './api'
 import type { Paper, QuizQuestionView, GradeResult, QuizPhase } from './types'
 
 /**
@@ -27,32 +29,39 @@ export function usePaperQuiz(paper: Paper, onProficiencyEarned?: () => void) {
   const [retryLoading, setRetryLoading] = useState(false)
 
   // On open: if a graded quiz already exists, show those past answers + feedback
-  // (they stay accessible). Otherwise generate a fresh quiz.
+  // (they stay accessible). Otherwise land on `idle` and WAIT — generating a
+  // quiz is a paid Anthropic call and must follow a student pressing the button.
+  //
+  // Two ways the old effect spent that money unasked: it fell through to
+  // `generateQuiz()` on `session: null` with no click at all, and it read
+  // `data.session` off an unvalidated body, so a malformed-but-200 response
+  // reached the same branch. `getQuizHistory` parses the body, so a bad one
+  // throws into the catch and becomes a retryable error instead.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`/api/papers/${paper.id}/quiz`)
-        const data = await res.json()
+        const { session } = await getQuizHistory(paper.id)
         if (cancelled) return
-        if (data.session) {
-          const s = data.session
-          setQuiz({ sessionId: s.sessionId, questions: s.questions })
-          setAnswers(s.answers ?? {})
-          setResults({
-            score: s.score,
-            passed: s.passed,
-            threshold: s.threshold,
-            results: s.results,
-          })
-          setHasPastResults(true)
-          setPhase('results')
+        if (!session) {
+          setPhase('idle')
           return
         }
-      } catch {
-        // fall through to generate
+        setQuiz({ sessionId: session.sessionId, questions: session.questions })
+        setAnswers(session.answers ?? {})
+        setResults({
+          score: session.score,
+          passed: session.passed,
+          threshold: session.threshold,
+          results: session.results,
+        })
+        setHasPastResults(true)
+        setPhase('results')
+      } catch (err) {
+        if (cancelled) return
+        setQuizError(err instanceof Error ? err.message : 'Could not load your quiz')
+        setPhase('idle')
       }
-      if (!cancelled) generateQuiz()
     })()
     return () => {
       cancelled = true
@@ -105,9 +114,7 @@ export function usePaperQuiz(paper: Paper, onProficiencyEarned?: () => void) {
   }
 
   /** Ids of questions scored below the pass threshold on the latest grading. */
-  const failedQuestionIds = new Set(
-    (results?.results ?? []).filter((r) => r.score < (results?.threshold ?? 70)).map((r) => r.questionId),
-  )
+  const failedQuestionIds = deriveFailedQuestionIds(results)
 
   // Enter targeted-retry mode: fetch (idempotently — generates once, server-
   // side) the one fresh extra question so the retry form can show it with its
@@ -119,9 +126,14 @@ export function usePaperQuiz(paper: Paper, onProficiencyEarned?: () => void) {
     setRetryLoading(true)
     setPhase('retry')
     try {
-      const res = await fetch(
-        `/api/papers/${paper.id}/quiz/retry?sessionId=${encodeURIComponent(quiz.sessionId)}`,
-      )
+      // POST, not GET: preparing generates the fresh question, which costs money
+      // (REFACTOR2 P2-S6). Still idempotent server-side — re-entering the retry
+      // view returns the same question rather than paying again.
+      const res = await fetch(`/api/papers/${paper.id}/quiz/retry/prepare`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: quiz.sessionId }),
+      })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to prepare retry')
       const extra = (data.questions as QuizQuestionView[]).find((q) => q.id === data.newQuestionId)
@@ -144,13 +156,7 @@ export function usePaperQuiz(paper: Paper, onProficiencyEarned?: () => void) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: quiz.sessionId,
-          answers: [
-            ...Array.from(failedQuestionIds).map((questionId) => ({
-              questionId,
-              response: retryAnswers[questionId] ?? '',
-            })),
-            { questionId: newQuestion.id, response: retryAnswers[newQuestion.id] ?? '' },
-          ],
+          answers: buildRetryAnswers(failedQuestionIds, newQuestion.id, retryAnswers),
         }),
       })
       const data = await res.json()
@@ -200,7 +206,6 @@ export function usePaperQuiz(paper: Paper, onProficiencyEarned?: () => void) {
     submitQuiz,
     startRetry,
     submitRetry,
-    failedQuestionIds,
     allAnswered,
     failedQuestions,
     allRetryAnswered,

@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate, firstText } from '@/lib/ai/spend'
+import { logEvent } from '@/lib/observability/log'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { db } from '@/lib/db'
+import { lockAggregate } from '@/lib/db-lock'
+import { Prisma } from '@prisma/client'
 import {
   FAILURE_FOLLOWUP_DAILY_LIMIT,
   followupsUsedToday,
@@ -14,6 +17,12 @@ import {
 
 // Server-side only; the Anthropic key never reaches the browser.
 
+/** A claim whose generation never completed is reclaimable after this long. */
+const STALE_CLAIM_MS = 2 * 60_000
+
+/** Thrown inside the claim transaction so the 429 is mapped outside it. */
+class DailyLimitError extends Error {}
+
 const PatchBody = z.object({
   response: z.string().trim().min(1).max(1500),
 }).strict()
@@ -22,7 +31,8 @@ const PatchBody = z.object({
 // Per-entry cap: N=1 (a followup row already means no regeneration allowed).
 // Per-team daily cap: FAILURE_FOLLOWUP_DAILY_LIMIT generations/day.
 // Rate-limit tier: `ai` (12/min per-user, generous per-IP).
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'ai' })
   if (guardError) return guardError
 
@@ -41,24 +51,64 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Entry not found' }, { status: 404 })
   }
 
-  // Per-entry N=1 cap.
-  if (entry.followups.length > 0) {
-    return NextResponse.json(
-      { error: 'You already dug deeper on this entry' },
-      { status: 409 },
-    )
+  // Fast path for the ordinary "already dug deeper" case. NOT the enforcement —
+  // the unique index below is; this just saves a round trip on the common case.
+  if (entry.followups.some((f) => f.question !== '')) {
+    return NextResponse.json({ error: 'You already dug deeper on this entry' }, { status: 409 })
   }
 
-  // Per-team daily cap.
-  const usedToday = await followupsUsedToday(ctx.teamId)
-  if (usedToday >= FAILURE_FOLLOWUP_DAILY_LIMIT) {
-    return NextResponse.json(
-      {
-        error: `Your team has reached the daily limit of ${FAILURE_FOLLOWUP_DAILY_LIMIT} AI follow-up questions. Try again tomorrow.`,
-      },
-      { status: 429 },
-    )
+  // ── CLAIM BEFORE SPENDING (REFACTOR2 P1-S7) ────────────────────────────────
+  // Both caps used to be pre-reads taken before the paid call with nothing
+  // behind them: two concurrent requests both saw "no follow-up yet" and "under
+  // the daily limit", both paid Anthropic, and both inserted. The claim row and
+  // its unique `projectLogId` are now the enforcement, and the daily count runs
+  // under a per-team lock so concurrent claims for DIFFERENT entries serialize.
+  //
+  // A claim carries `question: ''` until the model answers. That is also the
+  // recovery marker: a claim left empty by a crashed request is reclaimable
+  // after STALE_CLAIM_MS instead of blocking the entry forever.
+  try {
+    await db.$transaction(async (tx) => {
+      await lockAggregate(tx, `followup-daily:${ctx.teamId}`)
+
+      const stale = await tx.projectLogFollowup.findFirst({
+        where: {
+          projectLogId: entry.id,
+          question: '',
+          createdAt: { lt: new Date(Date.now() - STALE_CLAIM_MS) },
+        },
+        select: { id: true },
+      })
+      if (stale) await tx.projectLogFollowup.delete({ where: { id: stale.id } })
+
+      const usedToday = await followupsUsedToday(ctx.teamId, tx)
+      if (usedToday >= FAILURE_FOLLOWUP_DAILY_LIMIT) throw new DailyLimitError()
+
+      await tx.projectLogFollowup.create({
+        data: { projectLogId: entry.id, question: '', response: null, answeredAt: null },
+      })
+    })
+  } catch (err) {
+    if (err instanceof DailyLimitError) {
+      return NextResponse.json(
+        {
+          error: `Your team has reached the daily limit of ${FAILURE_FOLLOWUP_DAILY_LIMIT} AI follow-up questions. Try again tomorrow.`,
+        },
+        { status: 429 },
+      )
+    }
+    // The unique index is the per-entry cap — a loser here has spent nothing.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      return NextResponse.json({ error: 'You already dug deeper on this entry' }, { status: 409 })
+    }
+    throw err
   }
+
+  /** Releases the claim so a failed generation does not burn the entry. */
+  const releaseClaim = () =>
+    db.projectLogFollowup
+      .deleteMany({ where: { projectLogId: entry.id, question: '' } })
+      .catch(() => {})
 
   // Parse the stored JSON body for this failure entry.
   let happened = ''
@@ -82,9 +132,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // delimited inside <entry> tags — never embedded in the system prompt.
     let aiResponse
     try {
-      aiResponse = await anthropic().messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 150,
+      aiResponse = await aiCreate('failure_followup', {
+        // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
+        // and thinking shares this `max_tokens` budget. Disabled to preserve the
+        // cost, latency, and output length this route was tuned for.
+        // `max_tokens` was also raised ~1.5x: Sonnet 5's tokenizer
+        // spends ~30% more tokens on the same text, so a budget tuned against
+        // 4.6 truncates. That is not a visible error — it silently cuts the
+        // response mid-sentence (it broke idea-check's JSON verdict outright).
+        thinking: { type: 'disabled' },
+        max_tokens: 256,
         system: FOLLOWUP_SYSTEM,
         messages: [
           {
@@ -97,11 +154,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       })
     } catch (err) {
       console.error('[failure-followup] Anthropic call failed:', err)
+      await releaseClaim()
       return NextResponse.json({ error: 'Failed to generate follow-up question' }, { status: 502 })
     }
 
     // Defensive output handling: first line, stripped of wrapping quotes/backticks, capped at 300.
-    const raw = aiResponse.content[0]?.type === 'text' ? aiResponse.content[0].text : ''
+    const raw = firstText(aiResponse)
     question = raw
       .split('\n')[0]!
       .trim()
@@ -109,19 +167,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .slice(0, 300)
 
     if (!question) {
-      console.error('[failure-followup] Empty question from model:', raw.slice(0, 200))
+      // Model output can quote the student's failure log — log lengths only (A7).
+      logEvent({
+        event: 'failure_followup.empty_question',
+        outcome: 'error',
+        detail: `len=${raw.length}`,
+      })
+      await releaseClaim()
       return NextResponse.json({ error: 'Failed to generate follow-up question' }, { status: 502 })
     }
   }
 
-  // Persist the followup (response starts null — unanswered).
-  const followupRow = await db.projectLogFollowup.create({
-    data: {
-      projectLogId: entry.id,
-      question,
-      response: null,
-      answeredAt: null,
-    },
+  // Fill the claim we already hold — never a second insert.
+  const followupRow = await db.projectLogFollowup.update({
+    where: { projectLogId: entry.id },
+    data: { question },
     select: { id: true, question: true, response: true, answeredAt: true },
   })
 
@@ -130,7 +190,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
 // PATCH — store the student's answer to an existing follow-up question.
 // No LLM call here; uses `mutate` tier.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
 
@@ -148,25 +209,28 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Follow-up not found' }, { status: 404 })
   }
 
-  // N=1 answer: once a response is saved it cannot be overwritten.
-  if (followupRow.response !== null) {
+  // N=1 answer, enforced by the PREDICATE rather than the pre-read above (P1-S7):
+  // two concurrent submissions both saw `response: null` and the second silently
+  // overwrote the first. `updateMany` with `response: null` makes the database
+  // decide, so the loser is told rather than winning by arriving late.
+  const claimed = await db.projectLogFollowup.updateMany({
+    where: { id: followupRow.id, response: null },
+    data: { response: data.response, answeredAt: new Date() },
+  })
+  if (claimed.count !== 1) {
     return NextResponse.json(
       { error: 'This follow-up has already been answered' },
       { status: 409 },
     )
   }
 
-  const updated = await db.projectLogFollowup.update({
+  const updated = await db.projectLogFollowup.findUniqueOrThrow({
     where: { id: followupRow.id },
-    data: {
-      response: data.response,
-      answeredAt: new Date(),
-    },
     select: { id: true, question: true, response: true, answeredAt: true },
   })
 
   // Best-effort activity log.
-  logActivity(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'failure' }).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'log_edited', { kind: 'failure' }).catch(console.error)
 
   return NextResponse.json({ followup: mapFollowup(updated) })
 }

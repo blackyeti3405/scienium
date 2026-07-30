@@ -12,7 +12,7 @@ export default function RubricPage() {
     <div className="min-h-screen bg-[#0d1b2e] text-white">
       <div className="px-6 py-4 border-b border-white/10">
         <h1 className="font-pixel text-[10px] text-white">ISEF Rubric</h1>
-        <p className="font-pixel text-[7px] text-white/35 mt-1">
+        <p className="font-pixel text-[7px] text-white/40 mt-1">
           Score your project against the judging criteria before the fair
         </p>
       </div>

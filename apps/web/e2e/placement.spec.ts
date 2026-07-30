@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test'
-import { deleteE2eBuilding, setE2eKnowledgePoints } from './db'
+import { setE2eKnowledgePoints } from './db'
+import { createLab, type OwnedLab } from './lab'
+
+let lab: OwnedLab
 
 /**
  * Building placement (Clash-of-Clans style) on the lab plot. Exercises the parts
@@ -9,22 +12,24 @@ import { deleteE2eBuilding, setE2eKnowledgePoints } from './db'
  * survives a reload (DB persistence).
  */
 
-// Isometric transform — must match lib/plot.ts.
-const STEP_X = 68
-const STEP_Y = 34
-const CLUSTER_Y = -12
+import { STEP_X, STEP_Y, CLUSTER_Y } from '@/lib/plot'
+import { gotoFresh } from './api'
 
 test.beforeAll(async () => {
-  await deleteE2eBuilding('printing_shop')
-  await setE2eKnowledgePoints(100_000)
+  // A disposable lab starts with no shop buildings, so the stale-row delete
+  // this used to open with is gone — and so is the coordination with
+  // upgrades.spec.ts, which placed its Robotics Bay at (-3,3) purely to avoid
+  // colliding with this file's printing_shop at (3,3) on the SHARED plot.
+  lab = await createLab('placement')
+  await setE2eKnowledgePoints(100_000, lab.teamId)
 })
 
 test.afterAll(async () => {
-  await deleteE2eBuilding('printing_shop')
+  await lab.dispose()
 })
 
 test('shop shows gateways as placed and economy buildings as placeable', async ({ page }) => {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
   await page.getByRole('button', { name: 'Open buildings shop' }).click()
 
   // The 7 gateways appear greyed-out as "Already placed".
@@ -36,7 +41,7 @@ test('shop shows gateways as placed and economy buildings as placeable', async (
 })
 
 test('arrange mode toggles and a gateway can be moved and persists', async ({ page }) => {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
 
   // Enter arrange mode → the edit banner appears.
   await page.getByRole('button', { name: 'Arrange buildings' }).click()
@@ -90,7 +95,7 @@ test('arrange mode toggles and a gateway can be moved and persists', async ({ pa
 })
 
 test('an economy building can be placed (purchased) and sold for a refund', async ({ page }) => {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
 
   // Place the 3D Printing Shop (the user's centering example) from the shop —
   // buying happens on drop.
@@ -134,9 +139,9 @@ test('an economy building can be placed (purchased) and sold for a refund', asyn
   await page.getByRole('button', { name: 'Done arranging' }).click()
 
   // Sell via the new regular-mode menu: click the building to open .plot-menu,
-  // then click .plot-menu__sell. Use JS click to bypass pointer interception from
-  // overlapping isometric z-order.
-  await page.getByRole('button', { name: '3D Printing Shop' }).evaluate((el) => (el as HTMLButtonElement).click())
+  // then click .plot-menu__sell. A real pointer click lands thanks to the
+  // silhouette hitbox (LabPlot `.plot-building__hit`).
+  await page.getByRole('button', { name: '3D Printing Shop' }).click()
   await expect(page.locator('.plot-menu')).toBeVisible()
   await page.locator('.plot-menu__sell').click()
   await expect(page.getByText(/Sold 3D Printing Shop for .* KP/)).toBeVisible()

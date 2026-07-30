@@ -3,9 +3,57 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
+import { NotificationBell } from '@/components/lab/NotificationBell'
 
 type Mode = 'create' | 'join'
 type AccountType = 'student' | 'teacher'
+
+/** "Your name" + "High school" fields — identical in the student and teacher
+ *  forms below. Shared so the placeholder/maxLength/styling can't drift
+ *  between the two branches. */
+function NameAndSchoolFields({
+  name,
+  setName,
+  highSchool,
+  setHighSchool,
+}: {
+  name: string
+  setName: (v: string) => void
+  highSchool: string
+  setHighSchool: (v: string) => void
+}) {
+  return (
+    <>
+      <div className="space-y-1.5">
+        <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
+          Your name
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          placeholder="Rig Saini"
+          className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
+          High school
+        </label>
+        <input
+          type="text"
+          value={highSchool}
+          onChange={(e) => setHighSchool(e.target.value)}
+          placeholder="Santa Clara High School"
+          maxLength={120}
+          className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
+        />
+      </div>
+    </>
+  )
+}
 
 export default function OnboardingPage() {
   const { user } = useUser()
@@ -123,11 +171,19 @@ export default function OnboardingPage() {
 
   return (
     <div className="max-w-md w-full space-y-8">
-      <div>
-        <h1 className="font-pixel text-white text-lg">Welcome to scienium</h1>
-        <p className="font-pixel text-white/40 text-[9px] mt-2">
-          Set up your researcher profile to get started.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-pixel text-white text-lg">Welcome to scienium</h1>
+          <p className="font-pixel text-white/40 text-[9px] mt-2">
+            Set up your researcher profile to get started.
+          </p>
+        </div>
+        {/* The one place a student with NO live team can read their bell
+            (HANDOFF #4/#5). A notice that their class or lab membership ended
+            is written when they may hold no team at all, and this is where
+            those notices link to. Renders nothing for an account that has no
+            user row yet. */}
+        <NotificationBell />
       </div>
 
       {/* Student / Teacher top-level account type toggle */}
@@ -175,37 +231,16 @@ export default function OnboardingPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-1.5">
-              <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-                Your name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                placeholder="Rig Saini"
-                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
-              />
-            </div>
+            <NameAndSchoolFields
+              name={name}
+              setName={setName}
+              highSchool={highSchool}
+              setHighSchool={setHighSchool}
+            />
 
             <div className="space-y-1.5">
               <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-                High school
-              </label>
-              <input
-                type="text"
-                value={highSchool}
-                onChange={(e) => setHighSchool(e.target.value)}
-                placeholder="Santa Clara High School"
-                maxLength={120}
-                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-                Class code <span className="text-white/25">(optional · from your teacher)</span>
+                Class code <span className="text-white/40">(optional · from your teacher)</span>
               </label>
               <input
                 type="text"
@@ -213,7 +248,7 @@ export default function OnboardingPage() {
                 onChange={(e) => setClassCode(e.target.value.toUpperCase())}
                 placeholder="MRB-2026"
                 maxLength={32}
-                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.2em] px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30 placeholder:tracking-normal"
+                className="w-full bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.2em] px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40 placeholder:tracking-normal"
               />
             </div>
 
@@ -228,11 +263,11 @@ export default function OnboardingPage() {
                   onChange={(e) => setTeamName(e.target.value)}
                   required
                   placeholder="Saini Research Lab"
-                  className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
+                  className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
                 />
                 <div className="space-y-1.5 pt-3">
                   <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-                    ZIP code <span className="text-white/25">(optional · finds your fairs)</span>
+                    ZIP code <span className="text-white/40">(optional · finds your fairs)</span>
                   </label>
                   <input
                     type="text"
@@ -240,7 +275,7 @@ export default function OnboardingPage() {
                     onChange={(e) => setZip(e.target.value)}
                     placeholder="90089"
                     maxLength={10}
-                    className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
+                    className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
                   />
                 </div>
               </div>
@@ -256,9 +291,9 @@ export default function OnboardingPage() {
                   required
                   placeholder="K7M9QP"
                   maxLength={8}
-                  className="w-full bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.3em] px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30 placeholder:tracking-normal"
+                  className="w-full bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.3em] px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40 placeholder:tracking-normal"
                 />
-                <p className="font-pixel text-[7px] text-white/30 leading-loose">
+                <p className="font-pixel text-[7px] text-white/40 leading-loose">
                   Ask your lab lead for the code shown in their Team panel.
                 </p>
               </div>
@@ -285,33 +320,12 @@ export default function OnboardingPage() {
         </>
       ) : (
         <form onSubmit={handleTeacherSubmit} className="space-y-5">
-          <div className="space-y-1.5">
-            <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-              Your name
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              placeholder="Rig Saini"
-              className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-              High school
-            </label>
-            <input
-              type="text"
-              value={highSchool}
-              onChange={(e) => setHighSchool(e.target.value)}
-              placeholder="Santa Clara High School"
-              maxLength={120}
-              className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/30"
-            />
-          </div>
+          <NameAndSchoolFields
+            name={name}
+            setName={setName}
+            highSchool={highSchool}
+            setHighSchool={setHighSchool}
+          />
 
           {error && <p className="font-pixel text-[8px] text-red-400">{error}</p>}
 

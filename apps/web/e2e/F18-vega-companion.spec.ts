@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * F18 — "Study with Vega" persistent project-scoped study companion (Ops Hub),
@@ -17,10 +18,12 @@ import { api, withSeedPage } from './api'
  * used by the failure-log followup route and the F13/F11 quiz routes. No real
  * LLM call is made anywhere in this spec.
  *
- * Cleanup: this spec's own sent messages are deleted from `VegaStudyMessage`
- * (team-shared table) in afterAll, scoped ONLY to rows created by this run
- * (tracked by exact content string + a run-unique marker), never a blanket
- * delete — the fixture team's thread may carry state from earlier runs.
+ * Fixture: this file owns a DISPOSABLE LAB (`createLab`, e2e/lab.ts) created
+ * WITH co-members, because AC4b's whole claim is that a co-member on the same
+ * team sees the shared thread — the student fixture has to actually be on the
+ * lab the leader is driving. `dispose()` purges the thread, which replaces the
+ * marker-and-requestId reconstruction the old cleanup needed to avoid stranding
+ * assistant replies in a team-shared table (35 had accumulated).
  *
  * Criterion → test mapping (plan's Acceptance criteria):
  *  AC1 — Tab visible; clicking renders the chat panel with a Vega greeting
@@ -45,60 +48,30 @@ import { api, withSeedPage } from './api'
  */
 
 const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
-const TEAM_NAME = 'E2E Test Lab'
 const RUN_ID = Date.now()
-
-/** Click a building-sprite button by its aria-label — bypasses the isometric
- *  z-index overlap that blocks Playwright's coordinate-based clicks. */
-async function clickBuilding(page: Page, ariaLabel: string) {
-  await page.evaluate((label) => {
-    const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-    if (!btn) throw new Error(`Building button not found: ${label}`)
-    btn.click()
-  }, ariaLabel)
-}
 
 /** Open the Operations Hub feature panel from /lab and switch to the "Study
  *  with Vega" tab. */
 async function openVegaTab(page: Page) {
-  await page.goto('/lab')
-  await page.getByRole('button', { name: 'Open Operations Hub' }).waitFor({ state: 'attached' })
-  await clickBuilding(page, 'Open Operations Hub')
+  await gotoFresh(page, '/lab')
+  await page.getByRole('button', { name: 'Open Operations Hub' }).click({ timeout: 10_000 })
   await expect(page.getByRole('dialog', { name: 'Operations Hub' })).toBeVisible({ timeout: 5000 })
   await page.getByTestId('vega-tab').click()
 }
 
-let teamId: string | null = null
+let lab: OwnedLab
 
 test.describe('F18 — Study with Vega', () => {
   test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      const team = await db.team.findFirst({ where: { name: TEAM_NAME }, select: { id: true } })
-      if (!team) throw new Error(`E2E team '${TEAM_NAME}' not found — run pnpm --filter web seed:e2e first.`)
-      teamId = team.id
-    } finally {
-      await db.$disconnect()
-    }
+    // `true` for co-members: AC4b signs in as the student fixture and asserts
+    // it sees this thread, which is only meaningful if it is on this team.
+    lab = await createLab('vega-study', true, true)
   })
 
   test.afterAll(async () => {
-    if (!teamId) return
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      // Scoped ONLY to this run's own fixture content (via the RUN_ID marker
-      // embedded in every message this spec sends) — never a blanket delete
-      // of the team-shared thread.
-      await db.vegaStudyMessage.deleteMany({
-        where: { teamId, content: { contains: `[E2E F18 ${RUN_ID}]` } },
-      })
-    } finally {
-      await db.$disconnect()
-    }
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────
@@ -259,33 +232,12 @@ test.describe('F18 — Study with Vega', () => {
     expect(body.reply.toLowerCase()).toMatch(/can't write|cannot write|let's work through|together/)
   })
 
-  // ── AC6 ──────────────────────────────────────────────────────────────────
-  test('AC6 (static): the POST route enforces the "ai" rate-limit tier', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routeSrc = fs.readFileSync(
-      path.join(__dirname, '..', 'app', 'api', 'ops', 'vega-study', 'route.ts'),
-      'utf8',
-    )
-    const occurrences = routeSrc.match(/requireTeamContext\(req,\s*\{\s*tier:\s*'ai'\s*\}\)/g) ?? []
-    expect(occurrences.length).toBeGreaterThanOrEqual(1)
-  })
-
-  // ── AC7 ──────────────────────────────────────────────────────────────────
-  test('AC7 (static): the project-context system block is prompt-cached with cache_control: ephemeral', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routeSrc = fs.readFileSync(
-      path.join(__dirname, '..', 'app', 'api', 'ops', 'vega-study', 'route.ts'),
-      'utf8',
-    )
-    expect(routeSrc).toMatch(/cache_control:\s*\{\s*type:\s*'ephemeral'\s*\}/)
-    expect(routeSrc).toContain('STUDY_INSTRUCTIONS')
-  })
+  // AC6-AC7 (static source assertions) MOVED to vitest — see
+  // `test/ai-route-cost-shape.test.ts` (rate tier, cache-block count).
 
   // ── AC8 ──────────────────────────────────────────────────────────────────
   test('AC8: a message over 8000 chars is rejected 400 before reaching Claude', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.post(page, '/api/ops/vega-study', {
       data: { message: 'x'.repeat(8001) },
     })
@@ -297,7 +249,7 @@ test.describe('F18 — Study with Vega', () => {
   test('AC8b: a client-supplied messages array is rejected — the server owns the thread', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     // The old injection vector: sending a full history (with fabricated assistant
     // turns). The route now accepts ONLY { message }, so a messages array is
     // rejected before any Claude call — a client cannot seed the persisted context.

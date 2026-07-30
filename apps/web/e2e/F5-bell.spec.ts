@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
-import { STORAGE } from './roles'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * F5 — Notification bell: all five kinds first-class.
@@ -38,45 +38,15 @@ import { api, withSeedPage } from './api'
 const SEED_TITLE = 'New feedback from your teacher'
 const SEED_BODY = '[E2E F5 seed] Nice progress on your literature review!'
 
-/** Seeded notification id (set in beforeAll, read in tests, cleaned up in afterAll). */
-let seededNotificationId: string | null = null
-
-/** Student base URL for API calls in beforeAll/afterAll. */
-const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
-
 /** The five canonical kinds the map must cover — mirrors the schema comment at prisma/schema.prisma:917. */
+let lab: OwnedLab
+
 const CANONICAL_KINDS = ['fair_deadline', 'urgency', 'teacher_feedback', 'phase_reviewed', 'showcase_reviewed']
-
-/**
- * Preferred E2E test-team id by convention (matches F1.spec.ts / upgrades.spec.ts),
- * with a fallback to any team present in the roster — the roster's actual team id
- * is a DB-generated cuid (e.g. cmr1du8fs0002gn0jmvlvy8e8), not this literal, so the
- * exact-match branch is aspirational/documentary and the fallback is load-bearing.
- * Single source of truth so beforeAll and every re-seed helper resolve identically.
- */
-const PREFERRED_TEST_TEAM_ID = 'e2e_test_lab_01'
-
-function resolveTeamId(students: Array<{ teamId: string | null }>): string | null {
-  return (
-    students.find((s) => s.teamId === PREFERRED_TEST_TEAM_ID)?.teamId ??
-    students.find((s) => s.teamId)?.teamId ??
-    null
-  )
-}
 
 /** POST one extra teacher_feedback notification for the E2E team, via the teacher session. */
 async function seedExtraFeedback(page: Page, bodySuffix: string): Promise<void> {
-  const rosterRes = await api.get(page, '/api/teacher/roster')
-  if (!rosterRes.ok()) {
-    throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
-  }
-  const { students } = await rosterRes.json()
-  const teamId = resolveTeamId(students)
-  if (!teamId) {
-    throw new Error('resolveTeamId found no team in roster for extra-feedback seeding.')
-  }
   const feedRes = await api.post(page, '/api/teacher/feedback', {
-    data: { teamId, targetType: 'team', body: `${SEED_BODY} ${bodySuffix}` },
+    data: { teamId: lab.teamId, targetType: 'team', body: `${SEED_BODY} ${bodySuffix}` },
   })
   if (!feedRes.ok()) {
     throw new Error(`Extra feedback seed failed: ${feedRes.status()} ${await feedRes.text()}`)
@@ -91,25 +61,16 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
   // ── Seed / teardown ───────────────────────────────────────────────────────────
 
   test.beforeAll(async ({ browser }) => {
-    await withSeedPage(browser, 'teacher', async (page) => {
-      const rosterRes = await api.get(page, '/api/teacher/roster')
-      if (!rosterRes.ok()) {
-        throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
-      }
-      const { students } = await rosterRes.json()
-      const teamId = resolveTeamId(students)
-      if (!teamId) {
-        throw new Error(
-          'No team found in teacher roster — E2E teacher account must be linked to the dev class that contains the E2E leader team.',
-        )
-      }
+    // Co-members, so the teacher's scope resolves to this lab. Roster discovery
+    // is gone from both seeding paths — the team is the one this file made.
+    // It also starts with ZERO notifications, which is what makes the bell's
+    // unread-count assertions mean something rather than counting whatever
+    // earlier runs left unread.
+    lab = await createLab('bell', true, true)
 
+    await withSeedPage(browser, 'teacher', async (page) => {
       const feedRes = await api.post(page, '/api/teacher/feedback', {
-        data: {
-          teamId,
-          targetType: 'team',
-          body: SEED_BODY,
-        },
+        data: { teamId: lab.teamId, targetType: 'team', body: SEED_BODY },
       })
       if (!feedRes.ok()) {
         throw new Error(`Feedback seed failed: ${feedRes.status()} ${await feedRes.text()}`)
@@ -133,55 +94,20 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
           'Seeded teacher_feedback notification not found via GET /api/notifications — the feedback route may not have created it.',
         )
       }
-      seededNotificationId = seeded.id
     })
   })
 
-  test.afterAll(async ({ browser }) => {
-    // Cleanup: mark the seeded notification read so it does not remain as
-    // unread badge noise for subsequent runs/specs. There is no DELETE route.
-    if (!seededNotificationId) {
-      console.warn('F5 afterAll: no seededNotificationId to clean up — nothing to mark read.')
-      return
-    }
-    // Use a real page (not a bare API request context) and navigate first, per
-    // the codebase's own Clerk-JWT-expiry guard (see F4.spec.ts:518): by the time
-    // afterAll runs, the leader's saved storageState token can be stale, and a
-    // stale-token API call can come back with an HTML redirect/error page on a
-    // 2xx-range status rather than a clean 401 — res.ok() alone is not a reliable
-    // signal here, so the JSON parse is guarded and failure is reported loudly.
-    const context = await browser.newContext({ storageState: STORAGE.leader, baseURL: BASE_URL })
-    const page = await context.newPage()
-    try {
-      await page.goto('/lab')
-      const res = await api.post(page, '/api/notifications', {
-        data: { ids: [seededNotificationId] },
-      })
-      if (!res.ok()) {
-        console.warn(
-          `F5 afterAll cleanup FAILED for notification ${seededNotificationId}: HTTP ${res.status()} — it may remain unread.`,
-        )
-        return
-      }
-      let updated: number | undefined
-      try {
-        updated = (await res.json()).updated
-      } catch (parseErr) {
-        console.warn(
-          `F5 afterAll cleanup FAILED for notification ${seededNotificationId}: response was not JSON (${String(parseErr)}) — it may remain unread.`,
-        )
-        return
-      }
-      // eslint-disable-next-line no-console
-      console.log(`F5 afterAll cleanup: marked ${updated} seeded notification(s) read.`)
-    } finally {
-      await context.close()
-    }
+  test.afterAll(async () => {
+    // The notifications go with the lab. This replaces a teardown that could
+    // only MARK the seeded row read (there is no DELETE route) through a
+    // stale-JWT-prone authenticated POST whose own comment admits `res.ok()`
+    // is not a reliable signal for it.
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────
   test('AC1: clicking the bell opens the notifications panel within 2s', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const bell = page.getByRole('button', { name: /^Notifications/ })
     await expect(bell).toBeVisible()
     await bell.click()
@@ -190,7 +116,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
   // ── AC2 ──────────────────────────────────────────────────────────────────────
   test('AC2: seeded teacher_feedback item shows a "Feedback" label chip', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: /^Notifications/ }).click()
     const panel = page.locator('.notif-bell__panel')
     await expect(panel).toBeVisible()
@@ -202,7 +128,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
   // ── AC3 ──────────────────────────────────────────────────────────────────────
   test('AC3: seeded teacher_feedback item title is prefixed by the 💬 icon', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: /^Notifications/ }).click()
     const panel = page.locator('.notif-bell__panel')
     await expect(panel).toBeVisible()
@@ -215,7 +141,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
   test('AC4: a fair_deadline item, if present, shows "Deadline" chip + 📅 icon', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.get(page, '/api/notifications')
     expect(res.status()).toBe(200)
     const { items } = await res.json()
@@ -240,7 +166,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
   // ── AC5 ──────────────────────────────────────────────────────────────────────
   test('AC5: an urgency item, if present, shows "Nudge" chip + ⚠ icon', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.get(page, '/api/notifications')
     expect(res.status()).toBe(200)
     const { items } = await res.json()
@@ -266,7 +192,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
   // openItem's linkUrl navigation fires regardless of prior read state, so this
   // assertion holds whether or not an earlier test already read the seeded item.
   test('AC6: clicking the seeded item navigates to /lab?panel=feedback', async ({ page }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: /^Notifications/ }).click()
     const panel = page.locator('.notif-bell__panel')
     await expect(panel).toBeVisible()
@@ -279,7 +205,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     page,
     browser,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
 
     // Ensure there is at least one unread item to click: if the seeded item was
     // already read by AC6 above (serial order), re-seed a second teacher_feedback
@@ -301,7 +227,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     if (!unreadItem) {
       await withSeedPage(browser, 'teacher', (p) => seedExtraFeedback(p, '(AC7 re-seed)'))
 
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
       const res2 = await api.get(page, '/api/notifications')
       const json2 = await res2.json()
       unreadItem = (
@@ -318,7 +244,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
 
     expect(unreadItem, 'expected at least one unread notification to exist for AC7').toBeTruthy()
 
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     // Read the true unread count from the API (the badge caps its display at
     // "9+", so the DOM text alone cannot be trusted to compute an exact N-1).
     const countRes = await api.get(page, '/api/notifications')
@@ -367,7 +293,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     page,
     browser,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
 
     // Ensure there is at least one unread item so "Mark all read" is present and
     // meaningfully exercised; re-seed if the shared seeded item is already read.
@@ -379,7 +305,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
     if (!hasUnread) {
       await withSeedPage(browser, 'teacher', (p) => seedExtraFeedback(p, '(AC8 re-seed)'))
 
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
       const res2 = await api.get(page, '/api/notifications')
       const json2 = await res2.json()
       extraSeededId = (
@@ -387,7 +313,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
       ).find((n) => n.readAt === null && n.body?.includes('AC8 re-seed'))?.id ?? null
     }
 
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: /^Notifications/ }).click()
     const panel = page.locator('.notif-bell__panel')
     await expect(panel).toBeVisible()
@@ -408,7 +334,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
   test('AC9: seeded item label chip uses pixel chrome (font-pixel, uppercase)', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     await page.getByRole('button', { name: /^Notifications/ }).click()
     const panel = page.locator('.notif-bell__panel')
     await expect(panel).toBeVisible()
@@ -427,7 +353,7 @@ test.describe('F5 — Notification bell: all five kinds first-class', () => {
   test('AC10: GET /api/notifications only returns the five canonical kind values', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.get(page, '/api/notifications')
     expect(res.status()).toBe(200)
     const json = await res.json()

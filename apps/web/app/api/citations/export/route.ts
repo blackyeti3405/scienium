@@ -3,8 +3,13 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
+import { lockAggregate } from '@/lib/db-lock'
+import { syncShowcaseRevision } from '@/lib/showcase-server'
 import { MAX_SUPPLEMENTS } from '@/lib/showcase'
 import type { Prisma } from '@prisma/client'
+
+/** Thrown inside the slot transaction when the supplement cap is full → 409. */
+class SupplementCapError extends Error {}
 
 // ── POST /api/citations/export (#13) ──────────────────────────────────────────
 // Build a "Works Cited" bibliography (chosen style) from the team's citations and
@@ -54,34 +59,6 @@ export async function POST(req: NextRequest) {
     .sort((a, b) => a.localeCompare(b))
   const text = `Works Cited (${STYLE_LABEL[style]})\n\n${lines.join('\n')}`
 
-  // Replace any prior works-cited supplement so re-export overwrites (JSON filters
-  // are awkward in Prisma → fetch the team's supplements, filter in JS by kind,
-  // delete by id set, then create the fresh one). Enforce the supplement cap.
-  const existing = await db.showcaseAsset.findMany({
-    where: { showcaseId: showcase.id, assetType: 'supplement' },
-    select: { id: true, metadataJson: true },
-  })
-  const priorWorksCited = existing.filter(
-    (a) =>
-      a.metadataJson &&
-      typeof a.metadataJson === 'object' &&
-      !Array.isArray(a.metadataJson) &&
-      (a.metadataJson as Record<string, unknown>).kind === 'works_cited',
-  )
-  if (priorWorksCited.length > 0) {
-    await db.showcaseAsset.deleteMany({
-      where: { id: { in: priorWorksCited.map((a) => a.id) } },
-    })
-  }
-
-  const remaining = existing.length - priorWorksCited.length
-  if (remaining >= MAX_SUPPLEMENTS) {
-    return NextResponse.json(
-      { error: `Up to ${MAX_SUPPLEMENTS} supplement links.` },
-      { status: 409 },
-    )
-  }
-
   const metadata = {
     kind: 'works_cited',
     style,
@@ -90,14 +67,58 @@ export async function POST(req: NextRequest) {
     text,
   }
 
-  const asset = await db.showcaseAsset.create({
-    data: {
-      showcaseId: showcase.id,
-      assetType: 'supplement',
-      metadataJson: metadata as Prisma.InputJsonValue,
-    },
-    select: { id: true, assetType: true, metadataJson: true },
-  })
+  // Replace any prior works-cited supplement so re-export overwrites (JSON filters
+  // are awkward in Prisma → fetch the team's supplements, filter in JS by kind,
+  // delete by id set, then create the fresh one). The whole replace + cap check
+  // runs atomically under the supplement slot lock (A12) so a concurrent link
+  // submission can't slip past the cap or duplicate the works-cited entry.
+  let asset: { id: string; assetType: string; metadataJson: unknown }
+  try {
+    asset = await db.$transaction(async (tx) => {
+      await lockAggregate(tx, `showcase-slot:${showcase.id}:supplement`)
+      const existing = await tx.showcaseAsset.findMany({
+        where: { showcaseId: showcase.id, assetType: 'supplement' },
+        select: { id: true, metadataJson: true },
+      })
+      const priorWorksCited = existing.filter(
+        (a) =>
+          a.metadataJson &&
+          typeof a.metadataJson === 'object' &&
+          !Array.isArray(a.metadataJson) &&
+          (a.metadataJson as Record<string, unknown>).kind === 'works_cited',
+      )
+      if (priorWorksCited.length > 0) {
+        await tx.showcaseAsset.deleteMany({
+          where: { id: { in: priorWorksCited.map((a) => a.id) } },
+        })
+      }
+      if (existing.length - priorWorksCited.length >= MAX_SUPPLEMENTS) {
+        throw new SupplementCapError()
+      }
+      const created = await tx.showcaseAsset.create({
+        data: {
+          showcaseId: showcase.id,
+          assetType: 'supplement',
+          metadataJson: metadata as Prisma.InputJsonValue,
+        },
+        select: { id: true, assetType: true, metadataJson: true },
+      })
+      // The Works Cited supplement is public showcase content, so replacing it
+      // changes the revision a teacher approved (P0-R3) — re-derived in the SAME
+      // commit as the swap, so an approved showcase can never serve a
+      // bibliography nobody reviewed.
+      await syncShowcaseRevision(tx, showcase.id, ctx.dbUserId)
+      return created
+    })
+  } catch (err) {
+    if (err instanceof SupplementCapError) {
+      return NextResponse.json(
+        { error: `Up to ${MAX_SUPPLEMENTS} supplement links.` },
+        { status: 409 },
+      )
+    }
+    throw err
+  }
 
   return NextResponse.json(
     { asset: { id: asset.id, assetType: asset.assetType, metadata: asset.metadataJson } },

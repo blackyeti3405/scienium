@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
-import { clientIp, enforceRateLimit, MemoryStore, UpstashStore, RATE_LIMITS } from '@/lib/rate-limit'
+import { clientIp, enforceRateLimit, MemoryStore, RateLimitStoreError, UpstashStore, RATE_LIMITS } from '@/lib/rate-limit'
 
 function reqWith(headers: Record<string, string>): NextRequest {
   return new NextRequest('http://localhost/api/x', { headers })
@@ -92,8 +92,10 @@ describe('MemoryStore — fixed-window semantics', () => {
   })
 })
 
-describe('UpstashStore — REST pipeline + fail-open', () => {
+describe('UpstashStore — REST pipeline + degraded-store policy (P1-R4)', () => {
   afterEach(() => vi.unstubAllGlobals())
+
+  const store = () => new UpstashStore('https://example.upstash.io', 'tok')
 
   it('parses INCR count and computes resetAt from PTTL', async () => {
     vi.stubGlobal(
@@ -102,26 +104,57 @@ describe('UpstashStore — REST pipeline + fail-open', () => {
         new Response(JSON.stringify([{ result: 3 }, { result: 0 }, { result: 42_000 }]), { status: 200 }),
       ),
     )
-    const s = new UpstashStore('https://example.upstash.io', 'tok')
     const now = 5_000
-    expect(await s.incr('k', 60_000, now)).toEqual({ count: 3, resetAt: now + 42_000 })
+    expect(await store().incr('k', 60_000, now)).toEqual({ count: 3, resetAt: now + 42_000 })
   })
 
-  it('fails OPEN (allows) when Upstash is unreachable', async () => {
+  // The old store swallowed every one of these into `count: 1` — "first hit of
+  // a fresh window", i.e. always allowed. It must surface instead so the caller
+  // can decide per tier.
+  it('throws when Upstash is unreachable', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network down') }))
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const s = new UpstashStore('https://example.upstash.io', 'tok')
-    const now = 5_000
-    expect(await s.incr('k', 60_000, now)).toEqual({ count: 1, resetAt: now + 60_000 })
-    expect(errSpy).toHaveBeenCalled()
-    errSpy.mockRestore()
+    await expect(store().incr('k', 60_000, 0)).rejects.toBeInstanceOf(RateLimitStoreError)
   })
 
-  it('fails OPEN on a non-200 response', async () => {
+  it('throws on a non-200 response', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 500 })))
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    const s = new UpstashStore('https://example.upstash.io', 'tok')
-    const r = await s.incr('k', 30_000, 0)
-    expect(r.count).toBe(1)
+    await expect(store().incr('k', 30_000, 0)).rejects.toBeInstanceOf(RateLimitStoreError)
+  })
+
+  it('throws on an HTTP-200 pipeline element error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify([{ error: 'ERR wrong type' }, { result: 1 }, { result: 1 }]), { status: 200 }),
+    ))
+    await expect(store().incr('k', 30_000, 0)).rejects.toBeInstanceOf(RateLimitStoreError)
+  })
+
+  it('throws on a non-numeric INCR result', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify([{ result: 'OK' }, { result: 1 }, { result: 1 }]), { status: 200 }),
+    ))
+    await expect(store().incr('k', 30_000, 0)).rejects.toBeInstanceOf(RateLimitStoreError)
+  })
+})
+
+describe('enforceRateLimit — degraded store fails closed only for paid tiers', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.resetModules() })
+
+  async function withBrokenUpstash(tier: 'ai' | 'read') {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://example.upstash.io')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'tok')
+    vi.stubEnv('E2E_SKIP_LLM', '')
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network down') }))
+    vi.resetModules()
+    const mod = await import('@/lib/rate-limit')
+    return mod.enforceRateLimit(reqWith({ 'x-real-ip': freshIp() }), tier, freshUser())
+  }
+
+  it('503s a paid tier rather than handing out a free Anthropic call', async () => {
+    const res = await withBrokenUpstash('ai')
+    expect(res?.status).toBe(503)
+  })
+
+  it('lets a read through — no money at stake', async () => {
+    expect(await withBrokenUpstash('read')).toBeNull()
   })
 })

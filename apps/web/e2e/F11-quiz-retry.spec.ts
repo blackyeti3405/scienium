@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withRateLimitRetry, openLiteratureReview, gotoFresh } from './api'
+import { createLab, type OwnedLab } from './lab'
+import { e2eDb } from './db'
 
 /**
  * F11 — Vega quiz-miss review + targeted retry loop (Literature Review).
@@ -32,7 +34,7 @@ import { api, withSeedPage } from './api'
  *  - POST /api/papers/[id]/quiz always returns the same 5-question fixture set.
  *  - POST /api/papers/[id]/quiz/grade always scores every answer 40 (< 70) —
  *    the seeded first attempt always FAILS, enabling the retry path.
- *  - GET/POST /api/papers/[id]/quiz/retry always score every re-graded answer 90
+ *  - POST /api/papers/[id]/quiz/retry[/prepare] always score every re-graded answer 90
  *    (>= 70) — a retry always deterministically PASSES, capped at 95 (RETRY_SCORE_CAP).
  *  No Anthropic call is made anywhere in this spec.
  *
@@ -44,52 +46,28 @@ import { api, withSeedPage } from './api'
  * Discovery-source promotion, both of which have side effects/dependencies out
  * of scope for this spec, and re-opening an already-graded paper's Q&A panel
  * shows the past `results` phase directly rather than a fresh quiz form).
- * The team is resolved by its seeded name "E2E Test Lab" (its id is a
- * generated cuid, not a fixed constant — see prisma/seed-e2e.mjs), and
- * `teamLeadId` resolves the leader's internal dbUserId (Team.teamLeadId, per
- * prisma/schema.prisma). Every seeded paper id is tracked and deleted in
- * afterAll via the app's own DELETE /api/papers/[id] route (cascades quiz
- * sessions/attempts/proficiency), never touching another team's data.
+ * This file owns a DISPOSABLE LAB (`createLab`, e2e/lab.ts): the papers, quiz
+ * sessions, attempts and proficiency rows it creates live in a team that exists
+ * only for this file and is purged in `afterAll`. That replaces both the
+ * name-lookup of the shared fixture and the per-paper DELETE cleanup loop —
+ * `dispose()` runs the same ordered inventory `reset:e2e` does, so nothing has
+ * to be tracked and a crash leaves a stray lab for the sweep rather than
+ * fixture papers for the next spec.
  */
 
-const TEAM_NAME = 'E2E Test Lab'
 const RUN_ID = Date.now()
 
-const seededPaperIds: string[] = []
-let teamId: string | null = null
-let teamLeadId: string | null = null
+let lab: OwnedLab
 
 test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      const team = await db.team.findFirst({ where: { name: TEAM_NAME }, select: { id: true, teamLeadId: true } })
-      if (!team) {
-        throw new Error(`E2E team '${TEAM_NAME}' not found — run pnpm --filter web seed:e2e first.`)
-      }
-      teamId = team.id
-      teamLeadId = team.teamLeadId
-    } finally {
-      await db.$disconnect()
-    }
+    lab = await createLab('quiz-retry')
   })
 
-  test.afterAll(async ({ browser }) => {
-    if (seededPaperIds.length === 0) return
-    // Self-clean via the app's own delete path — withSeedPage opens a fresh
-    // authed page so clerk-js mints a live token, keeping the DELETE calls off a
-    // stale JWT (Clerk expiry, see F4.spec.ts).
-    await withSeedPage(browser, 'leader', async (page) => {
-      for (const id of seededPaperIds) {
-        const res = await api.delete(page, `/api/papers/${id}`)
-        if (!res.ok()) {
-          console.warn(`F11 afterAll: cleanup DELETE /api/papers/${id} returned ${res.status()}`)
-        }
-      }
-    })
+  test.afterAll(async () => {
+    await lab.dispose()
   })
 
   // ── Seeding helper ─────────────────────────────────────────────────────────
@@ -97,78 +75,30 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   /**
    * Creates ONE fresh, dedicated `status: 'ready'` Paper for a single test
    * (title unique per call via a counter, so tests never collide) and returns
-   * its id + title. Tracked in `seededPaperIds` for afterAll cleanup.
+   * its id + title. No tracking needed — the disposable lab takes it with it.
    */
   let paperCounter = 0
   async function seedFreshPaper(): Promise<{ id: string; title: string }> {
-    if (!teamId || !teamLeadId) throw new Error('beforeAll did not resolve the E2E team')
     paperCounter += 1
     const title = `[E2E F11] Quiz retry fixture ${RUN_ID}-${paperCounter}`
-    const { PrismaClient } = await import('@prisma/client')
-    const db = new PrismaClient()
-    try {
-      const paper = await db.paper.create({
-        data: {
-          teamId,
-          title,
-          authors: ['E2E, Fixture'],
-          abstract: 'Deterministic E2E fixture paper for the F11 quiz-retry spec.',
-          sourceType: 'pdf',
-          status: 'ready',
-          fullText: 'This is a deterministic E2E fixture paper body for the F11 quiz-retry spec.',
-          contentHash: `e2e-f11-quiz-retry-${RUN_ID}-${paperCounter}`,
-          uploadedByUserId: teamLeadId,
-        },
-        select: { id: true },
-      })
-      seededPaperIds.push(paper.id)
-      return { id: paper.id, title }
-    } finally {
-      await db.$disconnect()
-    }
+    const paper = await e2eDb.paper.create({
+      data: {
+        teamId: lab.teamId,
+        title,
+        authors: ['E2E, Fixture'],
+        abstract: 'Deterministic E2E fixture paper for the F11 quiz-retry spec.',
+        sourceType: 'pdf',
+        status: 'ready',
+        fullText: 'This is a deterministic E2E fixture paper body for the F11 quiz-retry spec.',
+        contentHash: `e2e-f11-quiz-retry-${RUN_ID}-${paperCounter}`,
+        uploadedByUserId: lab.leaderUserId,
+      },
+      select: { id: true },
+    })
+    return { id: paper.id, title }
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-
-  /**
-   * The quiz generate/grade/retry routes all enforce the shared 'ai' rate-limit
-   * tier (12 requests / 60s per user — see lib/rate-limit.ts, and AC10 above).
-   * This spec's 13 tests each drive 2-5 of those calls in quick succession, which
-   * can outrun that budget well before a fixed window resets. Rather than
-   * weakening any assertion, every action that can legitimately 429 under this
-   * spec's own call volume is retried, waiting exactly the route's own
-   * `Retry-After` (seconds) before trying again — the SAME real rate limiter
-   * AC10 documents, never bypassed, mocked, or waited-around with a blind guess.
-   */
-  async function withRateLimitRetry<T>(
-    action: () => Promise<{ status: number; retryAfterSeconds: number; result: T }>,
-  ): Promise<T> {
-    for (;;) {
-      const { status, retryAfterSeconds, result } = await action()
-      if (status !== 429) return result
-      const waitMs = Math.max(1000, retryAfterSeconds * 1000) + 250
-      // eslint-disable-next-line no-console
-      console.log(`[F11 spec] hit the ai-tier rate limit; waiting ${waitMs}ms (Retry-After) before retrying…`)
-      await new Promise((resolve) => setTimeout(resolve, waitMs))
-    }
-  }
-
-  /** Click a building-sprite button by aria-label (bypasses isometric z-index overlap). */
-  async function clickBuilding(page: Page, ariaLabel: string) {
-    await page.evaluate((label) => {
-      const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-      if (!btn) throw new Error(`Building button not found: ${label}`)
-      btn.click()
-    }, ariaLabel)
-  }
-
-  /** Open the Literature Review panel from /lab. */
-  async function openLiteratureReview(page: Page) {
-    await page.goto('/lab')
-    await page.getByRole('button', { name: 'Open Literature Review' }).waitFor({ state: 'attached' })
-    await clickBuilding(page, 'Open Literature Review')
-    await expect(page.getByRole('dialog', { name: 'Literature Review' })).toBeVisible({ timeout: 5000 })
-  }
 
   /**
    * Open a given fixture paper's Q&A panel from the paper list, by title.
@@ -177,8 +107,13 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
    * matching GET" — waitForResponse resolves on whichever one finishes) before
    * returning: the "Comprehension Quiz" header label renders unconditionally
    * even while that fetch is still in flight (`loading` phase), so callers
-   * that need the SETTLED phase (results vs. a fresh quiz form) must wait on
-   * the network response itself, not that static label.
+   * that need the SETTLED phase must wait on the network response itself, not
+   * that static label.
+   *
+   * Settling means `results` (a graded session exists) or `idle` (none does).
+   * `idle` is NOT a quiz form — since v0.75.5 the panel no longer generates a
+   * quiz on mount, because that POST is a paid Vega call and must follow a
+   * student pressing "Start the quiz". `submitFailingFirstAttempt` presses it.
    */
   async function openQAPanel(page: Page, title: string, paperId: string) {
     await openLiteratureReview(page)
@@ -205,10 +140,11 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   }
 
   /**
-   * Seeds a brand-new paper, opens its Q&A panel (always a fresh quiz — never
-   * graded before), answers every question, submits, and waits for the FAILED
-   * results view. Returns the paper id/title so the caller can keep driving
-   * the retry flow or make further API assertions against the same paper.
+   * Seeds a brand-new paper, opens its Q&A panel, presses "Start the quiz"
+   * (the panel opens on `idle` — generation is a paid call and waits for the
+   * click), answers every question, submits, and waits for the FAILED results
+   * view. Returns the paper id/title so the caller can keep driving the retry
+   * flow or make further API assertions against the same paper.
    *
    * Wrapped in `withRateLimitRetry`: if the 'ai'-tier window (see AC10) is
    * exhausted by this spec's own prior calls, the grade POST 429s — the panel
@@ -219,6 +155,16 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   async function submitFailingFirstAttempt(page: Page): Promise<{ id: string; title: string }> {
     const paper = await seedFreshPaper()
     await openQAPanel(page, paper.title, paper.id)
+    await withRateLimitRetry(async () => {
+      const generateResponse = page.waitForResponse(
+        (res) => res.url().endsWith(`/api/papers/${paper.id}/quiz`) && res.request().method() === 'POST',
+      )
+      // "retry" is the same action after a 429 — a failed generation leaves the
+      // panel in the `quiz` phase behind its error banner, not back on `idle`.
+      await page.getByRole('button', { name: /^(Start the quiz|retry)$/ }).click()
+      const res = await generateResponse
+      return { status: res.status(), retryAfterSeconds: Number(res.headers()['retry-after'] ?? 60), result: res }
+    }, 'F11 spec')
     await expect(page.getByPlaceholder('Your answer…').first()).toBeVisible({ timeout: 10000 })
     await answerAllQuizQuestions(page)
     await withRateLimitRetry(async () => {
@@ -228,7 +174,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
       await page.getByRole('button', { name: 'Submit for grading' }).click()
       const res = await gradeResponse
       return { status: res.status(), retryAfterSeconds: Number(res.headers()['retry-after'] ?? 60), result: res }
-    })
+    }, 'F11 spec')
     await expect(page.getByText('Not quite — try again')).toBeVisible({ timeout: 10000 })
     return paper
   }
@@ -242,13 +188,17 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
    */
   async function clickFixMyMisses(page: Page, paperId: string) {
     await withRateLimitRetry(async () => {
-      const retryGetResponse = page.waitForResponse(
-        (res) => res.url().includes(`/api/papers/${paperId}/quiz/retry?`) && res.request().method() === 'GET',
+      // Preparation is a POST now — it generates the fresh question and that
+      // costs money, so it may not ride on a GET (REFACTOR2 P2-S6).
+      const retryPrepareResponse = page.waitForResponse(
+        (res) =>
+          res.url().endsWith(`/api/papers/${paperId}/quiz/retry/prepare`) &&
+          res.request().method() === 'POST',
       )
       await page.getByRole('button', { name: 'Fix my misses' }).click()
-      const res = await retryGetResponse
+      const res = await retryPrepareResponse
       return { status: res.status(), retryAfterSeconds: Number(res.headers()['retry-after'] ?? 60), result: res }
-    })
+    }, 'F11 spec')
     await expect(page.locator('textarea')).toHaveCount(6, { timeout: 10000 })
   }
 
@@ -280,7 +230,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
       const retryAfterSeconds = Number(res.headers()['retry-after'] ?? 60)
       const result = status === 200 ? await res.json() : null
       return { status, retryAfterSeconds, result }
-    })
+    }, 'F11 spec')
   }
 
   /**
@@ -296,7 +246,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
       const status = res.status()
       const retryAfterSeconds = Number(res.headers()['retry-after'] ?? 60)
       return { status, retryAfterSeconds, result: res }
-    })
+    }, 'F11 spec')
   }
 
   // ── AC1 ──────────────────────────────────────────────────────────────────
@@ -428,7 +378,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   }) => {
     const paper = await seedFreshPaper()
     // Navigate first to establish session cookies before any page.request call.
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await requestWithRateLimitRetry(() =>
       api.post(page, `/api/papers/${paper.id}/quiz/retry`, {
         data: { sessionId: 'not-a-real-session-id', answers: [{ questionId: 'q1', response: 'x' }] },
@@ -445,7 +395,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
     page,
   }) => {
     const paper = await seedFreshPaper()
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
 
     // Ungraded session: generate a fresh quiz (POST /quiz) but never grade it.
     const genRes = await requestWithRateLimitRetry(() => api.post(page, `/api/papers/${paper.id}/quiz`))
@@ -503,27 +453,8 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
     expect(retryOnAlreadyPassed.status()).toBe(409)
   })
 
-  // ── AC10 ─────────────────────────────────────────────────────────────────
-  test('AC10 (static): the retry route enforces the "ai" rate-limit tier', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.join(
-      __dirname,
-      '..',
-      'app',
-      'api',
-      'papers',
-      '[id]',
-      'quiz',
-      'retry',
-      'route.ts',
-    )
-    const source = fs.readFileSync(routePath, 'utf8')
-    const occurrences = source.match(/requireTeamContext\(req,\s*\{\s*tier:\s*'ai'\s*\}\)/g) ?? []
-    // Both the GET (idempotent generation) and POST (grading) handlers enforce
-    // the 'ai' tier — a superset of "the retry route enforces 'ai'", not a gap.
-    expect(occurrences.length).toBeGreaterThanOrEqual(1)
-  })
+  // AC10 (static: the retry route's 'ai' rate tier) MOVED to vitest — see
+  // `test/ai-route-cost-shape.test.ts`.
 
   // ── AC11 ─────────────────────────────────────────────────────────────────
   test('AC11: after a passing retry, reloading the Q&A panel shows the pass state and full question set', async ({
@@ -582,32 +513,7 @@ test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
   })
 
   // ── AC13 ─────────────────────────────────────────────────────────────────
-  test('AC13 (static): retry makes at most one generation + one grading call, both paper-cached', async () => {
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const routePath = path.join(
-      __dirname,
-      '..',
-      'app',
-      'api',
-      'papers',
-      '[id]',
-      'quiz',
-      'retry',
-      'route.ts',
-    )
-    const source = fs.readFileSync(routePath, 'utf8')
-
-    // Exactly one generation call site and one grading call site through the
-    // shared lazy Anthropic client, each with a cached paper-text system block.
-    const messagesCreateCalls = source.match(/anthropic\(\)\.messages\.create\(/g) ?? []
-    expect(messagesCreateCalls.length).toBe(2) // one generate, one grade
-
-    const cacheControlOccurrences = source.match(/cache_control:\s*\{\s*type:\s*'ephemeral'\s*\}/g) ?? []
-    expect(cacheControlOccurrences.length).toBe(2)
-
-    // No full 5-question regenerate helper is referenced from this route file.
-    expect(source).not.toMatch(/QUIZ_QUESTION_COUNT\s*\}\s*questions/)
-    expect(source).toContain('ensureNewQuestion')
-  })
+  // AC13 (static source assertion) MOVED to vitest — see
+  // `test/ai-route-cost-shape.test.ts` (call-site counts, cache prefix) and its
+  // "thin adapter" case for the route file.
 })

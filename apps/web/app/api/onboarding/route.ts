@@ -1,12 +1,13 @@
-import { auth, currentUser } from '@clerk/nextjs/server'
+import { currentUser } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireUserContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
+import { recordSecurityEventTx } from '@/lib/observability/security-event'
 import { db } from '@/lib/db'
 import { pickActiveTeam } from '@/lib/team/context'
 import { isValidZip, zipToState, geocodeZip } from '@/lib/fairs/zip'
-import { applySchoolAndClass, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { applySchoolAndClass, resolvePrimaryEmail, syncClerkDisplayName } from '@/lib/onboarding/profile'
 
 // Names are capped so a client can't store unbounded text; `.strict()` rejects
 // any field other than these.
@@ -21,11 +22,9 @@ const OnboardingBody = z
   .strict()
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const limited = await enforceRateLimit(req, 'mutate', userId)
-  if (limited) return limited
+  const { ctx, error: guardError } = await requireUserContext(req, { tier: 'mutate' })
+  if (guardError) return guardError
+  const { userId } = ctx
 
   const clerkUser = await currentUser()
   if (!clerkUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -39,9 +38,7 @@ export async function POST(req: NextRequest) {
   const locationState = locationZip ? zipToState(locationZip) : null
   const locationCoords = locationZip ? await geocodeZip(locationZip) : null
 
-  const email =
-    clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
-    clerkUser.emailAddresses[0]?.emailAddress
+  const email = resolvePrimaryEmail(clerkUser)
 
   if (!email) return NextResponse.json({ error: 'No email on Clerk account' }, { status: 400 })
 
@@ -67,9 +64,7 @@ export async function POST(req: NextRequest) {
 
   // Ingest the student's high school (find-or-create) and optional classroom.
   // Non-fatal — a school lookup hiccup must not block lab creation.
-  const profile = await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => ({
-    classId: null,
-  }))
+  await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => {})
 
   // Mirror the display name into Clerk so the avatar/account match from day one.
   await syncClerkDisplayName(userId, user.name)
@@ -79,7 +74,8 @@ export async function POST(req: NextRequest) {
       data: {
         name: teamName.trim(),
         teamLeadId: user.id,
-        classId: profile.classId,
+        // ADR-004: `Team.classId` is vestigial — class membership is per
+        // student. New teams never populate it.
         phase: 'literature_review',
         locationZip,
         locationState,
@@ -90,6 +86,20 @@ export async function POST(req: NextRequest) {
       },
     })
     await tx.user.update({ where: { id: user.id }, data: { activeTeamId: created.id } })
+    // Provisioning is an authority event (REFACTOR2 P1-5): this is where a lab —
+    // and its first lead — comes into existence. Nothing else in the app records
+    // that, and `Team.createdAt` cannot say who did it. In the same transaction,
+    // so a rolled-back creation leaves no claim that one happened.
+    await recordSecurityEventTx(tx, {
+      kind: 'provision.team',
+      outcome: 'ok',
+      actorType: 'user',
+      actorUserId: user.id,
+      targetType: 'team',
+      targetId: created.id,
+      scopeId: created.id,
+      reason: 'student_onboarding',
+    })
     return created
   })
 

@@ -323,7 +323,6 @@ function makeSegment(id: string, kind: 'core' | 'branch', units: Unit[]): Segmen
 const testTrack: CodexTrack = {
   slug: 'test-track',
   label: 'Test Track',
-  home: false,
   core: makeSegment('core', 'core', [
     makeUnit('core-u1', ['core-u1-l1', 'core-u1-l2']),
     makeUnit('core-u2', ['core-u2-l1']),

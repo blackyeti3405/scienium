@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage } from './api'
+import { api, withSeedPage, gotoFresh } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * F2 — Failure Log AI "dig deeper" Socratic follow-up.
@@ -28,6 +29,8 @@ import { api, withSeedPage } from './api'
  *   in the app DELETE route — reported to coder); entry is left in DB.
  */
 
+let lab: OwnedLab
+
 /** The seeded failure entry id (set in beforeAll). */
 let seededId: string | null = null
 
@@ -42,7 +45,7 @@ const MY_ANSWER = 'We should check if ambient light interfered with the sensor r
 
 /** Navigate to the Operations Hub and switch to the Failure Log tab. */
 async function openFailureLog(page: Page) {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
   await page.getByRole('button', { name: 'Open Operations Hub' }).click()
   await page.getByRole('button', { name: /Failure Log/i }).click()
 }
@@ -62,6 +65,9 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
   // ── Seed / teardown ─────────────────────────────────────────────────────────
 
   test.beforeAll(async ({ browser }) => {
+    // Created BEFORE any browser work: it repoints the leader's `activeTeamId`,
+    // so the seed POST below lands on this file's own lab.
+    lab = await createLab('failure-followup')
     await withSeedPage(browser, 'leader', async (page) => {
       const res = await api.post(page, '/api/failure-log', {
         data: { happened: SEED_HAPPENED, learned: SEED_LEARNED },
@@ -74,14 +80,11 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
     })
   })
 
-  test.afterAll(async ({ browser }) => {
-    if (!seededId) return
-    await withSeedPage(browser, 'leader', async (page) => {
-      // The FK cascade-delete fix (migration 20260621060000_followup_cascade_delete)
-      // means DELETE on a failure entry now also removes any child ProjectLogFollowup
-      // rows. This cleanup is therefore reliable regardless of follow-up state.
-      await api.delete(page, `/api/failure-log/${seededId}`).catch(() => {})
-    })
+  test.afterAll(async () => {
+    // The entry and any `ProjectLogFollowup` children go with the lab, so the
+    // authenticated DELETE this used to depend on — and its "reliable
+    // regardless of follow-up state" caveat — are no longer load-bearing.
+    await lab.dispose()
   })
 
   // ── AC1 ─────────────────────────────────────────────────────────────────────
@@ -207,7 +210,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
   test('AC6: After a full page reload, the question and saved answer are still shown (DB persisted)', async ({
     page,
   }) => {
-    await page.goto('/lab') // navigate away first
+    await gotoFresh(page, '/lab') // navigate away first
     await openFailureLog(page)
 
     const card = seedCard(page)
@@ -239,7 +242,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
   test('AC8: POST /api/failure-log/{id}/followup with a cross-team id returns 404', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.post(page, '/api/failure-log/clxxxxxxxxxxxxxxxxxxxxxxx/followup')
     expect(res.status()).toBe(404)
     const json = await res.json()
@@ -250,7 +253,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
   test('AC9: A second POST on an entry with an existing follow-up returns 409', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const res = await api.post(page, `/api/failure-log/${seededId}/followup`)
     expect(res.status()).toBe(409)
     const json = await res.json()
@@ -259,6 +262,14 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
 
   // ── AC10 ────────────────────────────────────────────────────────────────────
   test('AC10: Exceeding the per-team daily cap (10/day) returns 429', async ({ page }) => {
+    // ~21 sequential authenticated round trips when the day's quota is EMPTY.
+    // It used to fit the 30s default only because the shared fixture lab arrived
+    // with the cap already filled by previous runs — `neededToFill` was 0 and the
+    // loop never ran. Once `reset:e2e` started clearing that accumulated state
+    // the test did its actual work for the first time and timed out. A test that
+    // passes only because of leftovers is not passing.
+    test.setTimeout(120_000)
+
     // Strategy:
     // 1. Count how many followups the team has already generated today.
     // 2. Seed just enough entries to push the count to 10, calling POST /followup
@@ -267,7 +278,7 @@ test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
     // 4. Clean up all seeded entries (cascade-delete handles child followup rows).
     const DAILY_LIMIT = 10
 
-    await page.goto('/lab') // fresh session cookie before page.request calls
+    await gotoFresh(page, '/lab') // fresh session cookie before page.request calls
 
     // Count followups used today by fetching all entries and counting those with
     // a followup created on or after local midnight.

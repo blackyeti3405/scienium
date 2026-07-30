@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Search, ChevronDown } from 'lucide-react'
 
 /**
@@ -13,9 +13,38 @@ import { Search, ChevronDown } from 'lucide-react'
  * unaffected. Each panel keeps its own layout order, copy, and filter call.
  */
 
+/**
+ * Copy-to-clipboard state for a "Copy" button — clears the "Copied" state
+ * after 1.5s.
+ *
+ * `navigator.clipboard.writeText` rejects on an insecure context (no
+ * `Clipboard` object at all — the optional chaining below then short-circuits
+ * before `.writeText` is even called) and when the user/browser denies the
+ * permission (the promise itself rejects). Both used to be swallowed with no
+ * caller-visible signal at all: a click that silently did nothing, with no
+ * way to tell "it worked" from "it didn't". `error` surfaces that failure so
+ * a caller can show it instead of leaving the student/teacher guessing.
+ */
+export function useCopyToClipboard() {
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function copy(text: string) {
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard unavailable')
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setError(null)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setError('Could not copy — copy it manually.')
+    }
+  }
+  return { copied, copy, error }
+}
+
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-pixel text-[6px] text-white/35 uppercase tracking-widest mb-1">{children}</p>
+    <p className="font-pixel text-[6px] text-white/40 uppercase tracking-widest mb-1">{children}</p>
   )
 }
 
@@ -33,13 +62,13 @@ export function GuideSearchInput({
 }) {
   return (
     <div className="relative">
-      <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+      <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
       <input
         data-testid={testId}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-[#0a1628] border border-white/15 text-white text-sm pl-9 pr-3 py-2.5 outline-none focus:border-[#F5C518]/60 placeholder:text-white/25"
+        className="w-full bg-[#0a1628] border border-white/15 text-white text-sm pl-9 pr-3 py-2.5 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40"
       />
     </div>
   )
@@ -84,7 +113,7 @@ export function GuideResultCount({
   children: React.ReactNode
 }) {
   return (
-    <span data-testid={testId} className="font-pixel text-[7px] text-white/35 uppercase tracking-widest">
+    <span data-testid={testId} className="font-pixel text-[7px] text-white/40 uppercase tracking-widest">
       {children}
     </span>
   )
@@ -100,7 +129,7 @@ export function GuideEmptyState({
 }) {
   return (
     <div data-testid={testId} className="border border-dashed border-white/15 py-10 text-center">
-      <span className="font-pixel text-[8px] text-white/30">{children}</span>
+      <span className="font-pixel text-[8px] text-white/40">{children}</span>
     </div>
   )
 }
@@ -141,7 +170,7 @@ export function GuideBox({
       >
         <ChevronDown
           size={13}
-          className={`shrink-0 mt-0.5 text-white/30 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+          className={`shrink-0 mt-0.5 text-white/40 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">

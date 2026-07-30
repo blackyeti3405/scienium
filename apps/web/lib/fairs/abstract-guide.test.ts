@@ -6,32 +6,32 @@ import {
 } from '@/lib/fairs/abstract-guide'
 import { ISEF_CATEGORIES } from '@/lib/fairs/categories'
 import { ABSTRACT_WORD_MAX, wordCount } from '@/lib/showcase'
+import { describeGuideIntegrity } from '@/test/helpers/guide-integrity'
 
 // ---------------------------------------------------------------------------
-// Content shape invariants — cheap guard that the authored abstract guide
-// (structure template, don't-include list, worked examples) stays
-// well-formed as it's edited over time. Mirrors research-guide.test.ts.
+// Content shape invariants. The assertions shared with the other six authored
+// guides live in test/helpers/guide-integrity.ts; what stays below is what is
+// true of the ABSTRACT guide alone.
 // ---------------------------------------------------------------------------
 
-const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
+describeGuideIntegrity('ABSTRACT_STRUCTURE', ABSTRACT_STRUCTURE, {
+  requiredFields: ['guidance', 'commonMistake'],
+  proseFields: ['guidance'],
+  minEntries: 5,
+})
 
-function sentenceCount(text: string): number {
-  return text.split(/[.!?]+(?:\s|$)/).filter((s) => s.trim().length > 0).length
-}
+describeGuideIntegrity('ABSTRACT_DONT_INCLUDE', ABSTRACT_DONT_INCLUDE, {
+  requiredFields: ['rule', 'why'],
+  minEntries: 6,
+})
+
+describeGuideIntegrity('ABSTRACT_EXAMPLES', ABSTRACT_EXAMPLES, {
+  requiredFields: ['title', 'body', 'critique'],
+  proseFields: ['critique'],
+  minEntries: 3,
+})
 
 describe('ABSTRACT_STRUCTURE content shape', () => {
-  it('has exactly 5 entries', () => {
-    expect(ABSTRACT_STRUCTURE).toHaveLength(5)
-  })
-
-  it('ids are unique and slug-safe', () => {
-    const ids = ABSTRACT_STRUCTURE.map((s) => s.id)
-    expect(new Set(ids).size).toBe(ids.length)
-    for (const id of ids) {
-      expect(id).toMatch(SLUG_RE)
-    }
-  })
-
   it('ids equal the 5 role slugs in order', () => {
     expect(ABSTRACT_STRUCTURE.map((s) => s.id)).toEqual([
       'purpose',
@@ -42,43 +42,17 @@ describe('ABSTRACT_STRUCTURE content shape', () => {
     ])
   })
 
-  it('every guidance is 2+ sentences', () => {
-    for (const s of ABSTRACT_STRUCTURE) {
-      expect(sentenceCount(s.guidance)).toBeGreaterThanOrEqual(2)
-    }
-  })
-
-  it('every entry has at least 2 sentenceStarters and a non-empty commonMistake', () => {
+  it('every entry has at least 2 non-empty sentenceStarters', () => {
     for (const s of ABSTRACT_STRUCTURE) {
       expect(s.sentenceStarters.length).toBeGreaterThanOrEqual(2)
       for (const starter of s.sentenceStarters) {
         expect(starter.trim().length).toBeGreaterThan(0)
       }
-      expect(s.commonMistake.trim().length).toBeGreaterThan(0)
     }
   })
 })
 
 describe('ABSTRACT_DONT_INCLUDE content shape', () => {
-  it('has at least 6 entries', () => {
-    expect(ABSTRACT_DONT_INCLUDE.length).toBeGreaterThanOrEqual(6)
-  })
-
-  it('ids are unique and slug-safe', () => {
-    const ids = ABSTRACT_DONT_INCLUDE.map((d) => d.id)
-    expect(new Set(ids).size).toBe(ids.length)
-    for (const id of ids) {
-      expect(id).toMatch(SLUG_RE)
-    }
-  })
-
-  it('every rule and why is non-empty', () => {
-    for (const d of ABSTRACT_DONT_INCLUDE) {
-      expect(d.rule.trim().length).toBeGreaterThan(0)
-      expect(d.why.trim().length).toBeGreaterThan(0)
-    }
-  })
-
   it('includes an acknowledgments rule', () => {
     expect(ABSTRACT_DONT_INCLUDE.some((d) => /acknowledg/i.test(d.rule) || /acknowledg/i.test(d.why))).toBe(true)
   })
@@ -89,18 +63,6 @@ describe('ABSTRACT_DONT_INCLUDE content shape', () => {
 })
 
 describe('ABSTRACT_EXAMPLES content shape', () => {
-  it('has exactly 3 entries', () => {
-    expect(ABSTRACT_EXAMPLES).toHaveLength(3)
-  })
-
-  it('ids are unique and slug-safe', () => {
-    const ids = ABSTRACT_EXAMPLES.map((e) => e.id)
-    expect(new Set(ids).size).toBe(ids.length)
-    for (const id of ids) {
-      expect(id).toMatch(SLUG_RE)
-    }
-  })
-
   it('the 3 categoryCodes are distinct and each exists in ISEF_CATEGORIES', () => {
     const codes = ABSTRACT_EXAMPLES.map((e) => e.categoryCode)
     expect(new Set(codes).size).toBe(codes.length)
@@ -135,16 +97,4 @@ describe('ABSTRACT_EXAMPLES content shape', () => {
     }
   })
 
-  it('every critique is 2+ sentences', () => {
-    for (const e of ABSTRACT_EXAMPLES) {
-      expect(sentenceCount(e.critique)).toBeGreaterThanOrEqual(2)
-    }
-  })
-
-  it('every title and body is non-empty', () => {
-    for (const e of ABSTRACT_EXAMPLES) {
-      expect(e.title.trim().length).toBeGreaterThan(0)
-      expect(e.body.trim().length).toBeGreaterThan(0)
-    }
-  })
 })

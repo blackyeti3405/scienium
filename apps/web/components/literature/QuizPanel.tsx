@@ -4,6 +4,7 @@ import { Award, RotateCcw, MessageSquare } from 'lucide-react'
 import { PixelSpinner } from '@/components/ui/PixelSpinner'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
 import { BusyButton } from '@/components/ui/BusyButton'
+import { DEFAULT_PASS_THRESHOLD } from './quizDerive'
 import type { usePaperQuiz } from './usePaperQuiz'
 
 /**
@@ -11,6 +12,31 @@ import type { usePaperQuiz } from './usePaperQuiz'
  * retry views. Presentational: all state + actions come from `usePaperQuiz`
  * (owned by `QAPanel`). The chat phase is rendered by `PaperChat`, not here.
  */
+
+/** Vega's rationale + strong-answer teaching note — shared by the results and retry views. */
+function QAExplain({ rationale, strongAnswer }: { rationale?: string; strongAnswer?: string }) {
+  return (
+    <>
+      {rationale && (
+        <p className="text-[13px] text-white/45 leading-relaxed pl-5 italic">
+          <span className="font-pixel text-[6px] text-[#F5C518]/40 uppercase tracking-widest block mb-0.5 not-italic">
+            Vega
+          </span>
+          {rationale}
+        </p>
+      )}
+      {strongAnswer && (
+        <p className="text-[13px] text-white/60 leading-relaxed pl-5">
+          <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest block mb-0.5">
+            What a strong answer covers
+          </span>
+          {strongAnswer}
+        </p>
+      )}
+    </>
+  )
+}
+
 export function QuizPanel({
   phase,
   setPhase,
@@ -33,6 +59,36 @@ export function QuizPanel({
 }: ReturnType<typeof usePaperQuiz>) {
   return (
     <>
+      {/* Idle — no graded quiz yet (or the history read failed). Writing one is
+          a paid Vega call, so it waits for the student to ask; the panel used to
+          fire it on mount. */}
+      {phase === 'idle' && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
+          {quizError ? (
+            <div className="w-full px-3 py-2 bg-red-500/15 border border-red-500/30 rounded-sm">
+              <span className="font-pixel text-[7px] text-red-300 leading-loose">{quizError}</span>
+            </div>
+          ) : (
+            <>
+              <Award size={22} className="text-[#F5C518]/60" />
+              <p className="font-pixel text-[8px] text-white/60 leading-loose">
+                Ready when you are
+              </p>
+              <p className="text-[13px] text-white/50 leading-relaxed max-w-[260px]">
+                Read the paper first. Vega will write a short comprehension quiz on it — answer
+                in your own words to earn proficiency for this source.
+              </p>
+            </>
+          )}
+          <button
+            onClick={generateQuiz}
+            className="font-pixel text-[8px] bg-[#F5C518] text-[#0d1b2e] px-5 py-2.5 rounded-sm hover:brightness-110 transition-all"
+          >
+            {quizError ? 'Try again' : 'Start the quiz'}
+          </button>
+        </div>
+      )}
+
       {/* Loading — quiz generation (long LLM wait, no form to preserve yet) */}
       {phase === 'loading' && (
         <LabeledLoader label="Vega is writing your quiz…" tone="vega" fill="flex-1" />
@@ -57,9 +113,9 @@ export function QuizPanel({
           <div
             className={`flex-1 overflow-y-auto p-4 flex flex-col gap-5 transition-opacity ${phase === 'grading' ? 'opacity-50 pointer-events-none' : ''}`}
           >
-            <p className="font-pixel text-[7px] text-white/35 leading-loose">
+            <p className="font-pixel text-[7px] text-white/40 leading-loose">
               Answer in your own words to demonstrate you understood this paper. Pass mark:{' '}
-              {results?.threshold ?? 70}%.
+              {results?.threshold ?? DEFAULT_PASS_THRESHOLD}%.
             </p>
             {quiz?.questions.map((q, i) => (
               <div key={q.id} className="flex flex-col gap-2">
@@ -73,7 +129,7 @@ export function QuizPanel({
                   rows={3}
                   placeholder="Your answer…"
                   readOnly={phase === 'grading'}
-                  className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
+                  className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/40 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
                 />
               </div>
             ))}
@@ -145,7 +201,7 @@ export function QuizPanel({
                     </p>
                     <span
                       className={`font-pixel text-[8px] shrink-0 ${
-                        (r?.score ?? 0) >= 70
+                        (r?.score ?? 0) >= (results.threshold ?? DEFAULT_PASS_THRESHOLD)
                           ? 'text-green-400'
                           : (r?.score ?? 0) >= 40
                             ? 'text-yellow-400'
@@ -157,28 +213,13 @@ export function QuizPanel({
                   </div>
                   {answers[q.id] && (
                     <p className="text-[13px] text-white/70 leading-relaxed pl-5 border-l border-white/10 ml-1">
-                      <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest block mb-0.5">
+                      <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest block mb-0.5">
                         Your answer
                       </span>
                       {answers[q.id]}
                     </p>
                   )}
-                  {r?.rationale && (
-                    <p className="text-[13px] text-white/45 leading-relaxed pl-5 italic">
-                      <span className="font-pixel text-[6px] text-[#F5C518]/40 uppercase tracking-widest block mb-0.5 not-italic">
-                        Vega
-                      </span>
-                      {r.rationale}
-                    </p>
-                  )}
-                  {r?.strongAnswer && (
-                    <p className="text-[13px] text-white/60 leading-relaxed pl-5">
-                      <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest block mb-0.5">
-                        What a strong answer covers
-                      </span>
-                      {r.strongAnswer}
-                    </p>
-                  )}
+                  <QAExplain rationale={r?.rationale} strongAnswer={r?.strongAnswer} />
                 </div>
               )
             })}
@@ -219,7 +260,7 @@ export function QuizPanel({
               <div
                 className={`flex-1 overflow-y-auto p-4 flex flex-col gap-5 transition-opacity ${phase === 'retrying' ? 'opacity-50 pointer-events-none' : ''}`}
               >
-                <p className="font-pixel text-[7px] text-white/35 leading-loose">
+                <p className="font-pixel text-[7px] text-white/40 leading-loose">
                   Fix your missed questions, plus one new question. Pass mark: {results?.threshold ?? 70}%.
                 </p>
                 {failedQuestions.map((q, i) => {
@@ -232,28 +273,13 @@ export function QuizPanel({
                       </div>
                       {answers[q.id] && (
                         <p className="text-[13px] text-white/50 leading-relaxed pl-5 border-l border-white/10 ml-1">
-                          <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest block mb-0.5">
+                          <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest block mb-0.5">
                             Your previous answer
                           </span>
                           {answers[q.id]}
                         </p>
                       )}
-                      {r?.rationale && (
-                        <p className="text-[13px] text-white/45 leading-relaxed pl-5 italic">
-                          <span className="font-pixel text-[6px] text-[#F5C518]/40 uppercase tracking-widest block mb-0.5 not-italic">
-                            Vega
-                          </span>
-                          {r.rationale}
-                        </p>
-                      )}
-                      {r?.strongAnswer && (
-                        <p className="text-[13px] text-white/60 leading-relaxed pl-5">
-                          <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest block mb-0.5">
-                            What a strong answer covers
-                          </span>
-                          {r.strongAnswer}
-                        </p>
-                      )}
+                      <QAExplain rationale={r?.rationale} strongAnswer={r?.strongAnswer} />
                       <textarea
                         value={retryAnswers[q.id] ?? ''}
                         onChange={(e) =>
@@ -262,7 +288,7 @@ export function QuizPanel({
                         rows={3}
                         placeholder="Your new answer…"
                         readOnly={phase === 'retrying'}
-                        className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
+                        className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/40 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
                       />
                     </div>
                   )
@@ -274,7 +300,7 @@ export function QuizPanel({
                         {failedQuestions.length + 1}.
                       </span>
                       <p className="text-sm text-white/85 leading-relaxed">{newQuestion.prompt}</p>
-                      <span className="font-pixel text-[6px] text-white/30 uppercase tracking-widest shrink-0">
+                      <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest shrink-0">
                         New
                       </span>
                     </div>
@@ -286,7 +312,7 @@ export function QuizPanel({
                       rows={3}
                       placeholder="Your answer…"
                       readOnly={phase === 'retrying'}
-                      className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
+                      className="bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/40 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm resize-y"
                     />
                   </div>
                 )}

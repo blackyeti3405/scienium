@@ -21,11 +21,22 @@ interface Props {
   onAdd: (text: string) => Promise<void> | void
   onRemove: (id: string) => void
   onSeed: (text: string) => void
+  /** The list failed to load — say so instead of rendering the empty state. */
+  loadError?: boolean
+  onRetryLoad?: () => void
 }
 
 const MAX_PER_USER = 3
 
-export function InterestSeeds({ interests, currentUserId, onAdd, onRemove, onSeed }: Props) {
+export function InterestSeeds({
+  interests,
+  currentUserId,
+  onAdd,
+  onRemove,
+  onSeed,
+  loadError,
+  onRetryLoad,
+}: Props) {
   const [draft, setDraft] = useState('')
   const [adding, setAdding] = useState(false)
 
@@ -53,11 +64,11 @@ export function InterestSeeds({ interests, currentUserId, onAdd, onRemove, onSee
           <span className="text-[#F5C518]">★</span>
           Team interests
         </h2>
-        <span className={`font-pixel text-[7px] tabular-nums ${atCap ? 'text-[#F5C518]' : 'text-white/35'}`}>
+        <span className={`font-pixel text-[7px] tabular-nums ${atCap ? 'text-[#F5C518]' : 'text-white/40'}`}>
           {mineCount} / {MAX_PER_USER} added
         </span>
       </div>
-      <p className="font-pixel text-[7px] text-white/35 leading-loose">
+      <p className="font-pixel text-[7px] text-white/40 leading-loose">
         Add 1–3 topics you&apos;re curious about to get one-tap starts.
       </p>
 
@@ -73,7 +84,7 @@ export function InterestSeeds({ interests, currentUserId, onAdd, onRemove, onSee
           disabled={atCap || adding}
           placeholder={atCap ? 'You’ve added 3 interests' : 'e.g. volcanoes, black holes…'}
           aria-label="Add a team interest"
-          className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 rounded-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 disabled:opacity-40"
+          className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/40 rounded-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 disabled:opacity-40"
         />
         <BusyButton
           busy={adding}
@@ -87,8 +98,24 @@ export function InterestSeeds({ interests, currentUserId, onAdd, onRemove, onSee
       </div>
 
       {/* Chips */}
-      {interests.length === 0 ? (
-        <p className="font-pixel text-[7px] text-white/25 leading-loose">
+      {loadError && interests.length === 0 ? (
+        // Not "no interests yet": the list never arrived (§0.9 Row C2).
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="font-pixel text-[7px] text-red-300 leading-loose" role="alert">
+            Couldn&apos;t load your team&apos;s interests.
+          </p>
+          {onRetryLoad && (
+            <button
+              type="button"
+              onClick={onRetryLoad}
+              className="font-pixel text-[7px] border border-white/20 text-white/60 px-2.5 py-1.5 rounded-sm hover:border-[#F5C518]/50 hover:text-[#F5C518] transition-colors"
+            >
+              Try again
+            </button>
+          )}
+        </div>
+      ) : interests.length === 0 ? (
+        <p className="font-pixel text-[7px] text-white/40 leading-loose">
           No interests yet — add one above to seed your first start.
         </p>
       ) : (
@@ -114,14 +141,14 @@ export function InterestSeeds({ interests, currentUserId, onAdd, onRemove, onSee
                   <button
                     aria-label={`Remove interest ${it.text}`}
                     onClick={() => onRemove(it.id)}
-                    className="shrink-0 text-white/30 hover:text-red-400 transition-colors leading-none px-1"
+                    className="shrink-0 text-white/40 hover:text-red-400 transition-colors leading-none px-1"
                     title="Remove"
                   >
                     ×
                   </button>
                 ) : (
                   <span
-                    className="shrink-0 font-pixel text-[6px] text-white/25 uppercase tracking-wide pr-1"
+                    className="shrink-0 font-pixel text-[6px] text-white/40 uppercase tracking-wide pr-1"
                     title="Added by a teammate"
                   >
                     teammate

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
-import { logActivity } from '@/lib/activity/log'
+import { recordActivity } from '@/lib/activity/log'
 import {
   SHORT_TITLE_MAX,
   TITLE_MAX,
@@ -12,9 +12,17 @@ import {
   wordCount,
   type PrivacyLevel,
 } from '@/lib/showcase'
-import { makeSlug } from '@/lib/showcase-server'
+import {
+  makeShareToken,
+  makeSlug,
+  requiresReview,
+  syncShowcaseRevision,
+} from '@/lib/showcase-server'
 
-const PRIVACY = ['public', 'school_only', 'link_only', 'private'] as const
+// `school_only` is deliberately NOT accepted — it authorized on a self-asserted
+// `User.schoolId` (REFACTOR2 P0-R2). Legacy rows still hold the value and now
+// read as private; nothing new can be written with it.
+const PRIVACY = ['public', 'link_only', 'private'] as const
 
 // Asset types whose bytes are streamed (board PDF, quad chart PDF/image).
 const STREAMABLE = new Set(['board', 'quad_chart'])
@@ -30,6 +38,7 @@ function serialize(sc: {
   publishedAt: Date | null
   moderationStatus: string
   moderationNote: string | null
+  shareToken: string | null
   assets: { id: string; assetType: string; fileUrl: string | null; metadataJson: unknown }[]
   views?: number
   team?: { name: string; labType: string | null }
@@ -45,6 +54,13 @@ function serialize(sc: {
     publishedAt: sc.publishedAt,
     moderationStatus: sc.moderationStatus,
     moderationNote: sc.moderationNote,
+    // The URL the team should actually hand out. `link_only` is reachable ONLY
+    // through the 128-bit share token (P1-R7); the slug is a public identifier
+    // and opens nothing unlisted.
+    shareUrl:
+      sc.privacyLevel === 'link_only' && sc.shareToken
+        ? `/showcase/${sc.shareToken}`
+        : `/showcase/${sc.slug}`,
     views: sc.views ?? 0,
     team: sc.team,
     assets: sc.assets.map((a) => ({
@@ -92,6 +108,8 @@ const PutBody = z
     abstract: z.string().trim().max(ABSTRACT_MAX).optional(),
     privacyLevel: z.enum(PRIVACY).optional(),
     published: z.boolean().optional(),
+    /** Mint a fresh share token — revokes every link handed out so far (P1-R7). */
+    rotateShareToken: z.boolean().optional(),
   })
   .strict()
 
@@ -147,9 +165,9 @@ export async function PUT(req: NextRequest) {
         { status: 400 },
       )
     }
-    // Public showcases require teacher approval before appearing in the gallery.
-    // link_only / school_only / private are self-serve (auto-approved).
-    if (nextPrivacy === 'public') {
+    // Reviewed modes require teacher approval before the content is reachable.
+    // link_only / private are self-serve — see `requiresReview` for why.
+    if (requiresReview(nextPrivacy)) {
       publishFields = {
         publishedAt: existing?.publishedAt ?? new Date(),
         moderationStatus: 'pending_review',
@@ -169,44 +187,79 @@ export async function PUT(req: NextRequest) {
     // unconditionally (ANY transition to public must go through moderation,
     // closing the link_only→public bypass), or immediately approve when moving
     // away from public.
-    if (nextPrivacy === 'public') {
+    if (requiresReview(nextPrivacy)) {
       publishFields = { publishedAt: existing.publishedAt, moderationStatus: 'pending_review', moderationNote: null }
     } else {
       publishFields = { publishedAt: existing.publishedAt, moderationStatus: 'approved' }
     }
   }
 
-  const sc = existing
-    ? await db.showcase.update({
-        where: { teamId: ctx.teamId },
-        data: {
-          ...(data.shortTitle !== undefined ? { shortTitle: nextShort } : {}),
-          ...(data.title !== undefined ? { title: nextTitle } : {}),
-          ...(data.abstract !== undefined ? { abstract: nextAbstract } : {}),
-          ...(data.privacyLevel !== undefined ? { privacyLevel: nextPrivacy } : {}),
-          ...(publishFields ?? {}),
-        },
-        include: includeFull,
-      })
-    : await db.showcase.create({
-        data: {
-          teamId: ctx.teamId,
-          slug: makeSlug(nextShort || nextTitle),
-          shortTitle: nextShort,
-          title: nextTitle,
-          abstract: nextAbstract,
-          privacyLevel: nextPrivacy,
-          ...(publishFields ?? {}),
-        },
-        include: includeFull,
-      })
+  // One transaction (REFACTOR2 P1-R5): the showcase write, its revision sync,
+  // the moderation event, and (on publish) the durable activity record all
+  // commit together. No paid/network call happens in here — everything above
+  // this point (validation, the `existing` read) already ran.
+  const sc = await db.$transaction(async (tx) => {
+    const saved = existing
+      ? await tx.showcase.update({
+          where: { teamId: ctx.teamId },
+          data: {
+            ...(data.shortTitle !== undefined ? { shortTitle: nextShort } : {}),
+            ...(data.title !== undefined ? { title: nextTitle } : {}),
+            ...(data.abstract !== undefined ? { abstract: nextAbstract } : {}),
+            ...(data.privacyLevel !== undefined ? { privacyLevel: nextPrivacy } : {}),
+            // Rotation is the revocation mechanism: there is no way to un-share a
+            // link that has already been copied, only to invalidate it. Also
+            // back-fills a token for a showcase created before P1-R7.
+            ...(data.rotateShareToken || !existing.shareToken
+              ? { shareToken: makeShareToken() }
+              : {}),
+            ...(publishFields ?? {}),
+          },
+          include: includeFull,
+        })
+      : await tx.showcase.create({
+          data: {
+            teamId: ctx.teamId,
+            slug: makeSlug(nextShort || nextTitle),
+            shareToken: makeShareToken(),
+            shortTitle: nextShort,
+            title: nextTitle,
+            abstract: nextAbstract,
+            privacyLevel: nextPrivacy,
+            ...(publishFields ?? {}),
+          },
+          include: includeFull,
+        })
 
-  if (data.published === true) {
-    logActivity(ctx.teamId, ctx.dbUserId, 'showcase_published', {
-      title: sc.shortTitle || sc.title,
-      slug: sc.slug,
-    }).catch(console.error)
-  }
+    // Re-derive the content digest and, if this edit moved an approved showcase
+    // away from the revision a teacher signed off, return it to review (P0-R3).
+    const { digest } = await syncShowcaseRevision(tx, saved.id, ctx.dbUserId)
 
-  return NextResponse.json({ showcase: serialize({ ...sc, views: sc._count.views, team: sc.team }) })
+    // Record the submission against the exact revision being submitted, so the
+    // moderation history can always be traced to reviewed content.
+    if (publishFields?.moderationStatus === 'pending_review') {
+      await tx.showcaseModerationEvent.create({
+        data: { showcaseId: saved.id, digest, action: 'submitted', actorUserId: ctx.dbUserId },
+      })
+    } else if (data.published === false) {
+      await tx.showcaseModerationEvent.create({
+        data: { showcaseId: saved.id, digest, action: 'unpublished', actorUserId: ctx.dbUserId },
+      })
+    }
+
+    if (data.published === true) {
+      await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'showcase_published', {
+        title: saved.shortTitle || saved.title,
+        slug: saved.slug,
+      })
+    }
+
+    return saved
+  })
+
+  // Re-read so the client sees the post-sync moderation state rather than the
+  // pre-sync one it would otherwise render as "still approved".
+  const fresh = await db.showcase.findUnique({ where: { id: sc.id }, include: includeFull })
+  const out = fresh ?? sc
+  return NextResponse.json({ showcase: serialize({ ...out, views: out._count.views, team: out.team }) })
 }

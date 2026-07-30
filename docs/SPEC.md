@@ -1,7 +1,7 @@
 # scienium — Product Specification
 
 > **Status:** In Development (feature-complete on the student-facing core; teacher tooling minimal for pilot)
-> **Last Updated:** 2026-07-06
+> **Last Updated:** 2026-07-15
 > **Initial Scale Target:** ~120 students (single school pilot)
 
 ---
@@ -76,7 +76,7 @@ free student-clicked advances. There is no teacher phase-validation step.
 ### 5.1 Purpose
 Mimics how real researchers stumble into ideas — exploring tangentially related material across many fields without commitment. Discovery occurs **before lab type selection**, so exploration is unconstrained by discipline.
 
-Discovery is a shared **forest** of source-tagged exploration trees (Wikipedia + YouTube + academic Papers), persisted per team in the database so it survives logout/login and is shared across the team. A left-pane toggle switches between the three source explorers and a fourth **Discovery Tree** full-window view (§5.7). Reaching a new node the first time also earns the team KP (capped daily), so exploration feeds the economy — see §5.8.
+Discovery is a shared **forest** of source-tagged exploration trees (Wikipedia + YouTube + academic Papers + Articles), persisted per team in the database so it survives logout/login and is shared across the team. A left-pane toggle switches between the four source explorers and a fifth **Discovery Tree** full-window view (§5.7). Reaching a new node the first time also earns the team KP (capped daily), so exploration feeds the economy — see §5.8.
 
 ### 5.2 Wikipedia Exploration
 - The student **chooses their own starter article** by typing a topic into a search bar (autocomplete-assisted via Wikipedia's API)
@@ -84,6 +84,11 @@ Discovery is a shared **forest** of source-tagged exploration trees (Wikipedia +
 - Going several levels deep exposes the student to dozens of interconnected topics
 - Nothing is rejected for being off-topic
 - All visited articles are auto-logged and visualized as a branching tree
+- **Reading-level toggle (implemented):** a **Simple English** switch in the reader swaps
+  the source to `simple.wikipedia.org` — same MediaWiki API, plainer vocabulary and shorter
+  articles for younger or ELL readers. The setting sticks across articles for the session,
+  caches are keyed per edition, and the toggle stays visible on a not-found (Simple English
+  covers far fewer topics, so returning to full English must always be one click away)
 
 ### 5.3 YouTube Exploration (implemented)
 Students can chase YouTube rabbit holes alongside Wikipedia. A **📄 Wiki / ▶ YouTube** toggle switches the left pane to a video viewer.
@@ -95,9 +100,10 @@ Students can chase YouTube rabbit holes alongside Wikipedia. A **📄 Wiki / ▶
 
 ### 5.4 Academic Papers Exploration (implemented)
 Alongside Wikipedia and YouTube, students can explore **real academic literature** during Discovery via the **📄 Papers** tab. This is the `source` node type (the earlier `paper` type stayed reserved).
-- A search box queries **arXiv and PubMed** (via OpenAlex + NCBI E-utilities); results are shown with title, authors, host, and a **credibility tier** badge so students learn to weigh source quality.
+- **One merged search** (no platform segmentation): a single box queries arXiv, PubMed, and the broader **open-access literature** concurrently via OpenAlex, interleaving the relevance-sorted lists with peer-reviewed rows leading. Each row carries a **credibility tier** badge (Peer-reviewed / Preprint / Open access) so students learn to weigh source quality, **review articles** are badged and floated to the top (a survey is the best first read), and a **Preprints ✓/✗** toggle filters preprints client-side. Works with neither an arXiv id nor a PMID — open-access journal articles, bioRxiv/medRxiv/PsyArXiv-style preprints — resolve on the `openalex` platform, keyed by their OpenAlex work id, with the tier derived from venue metadata (repository → preprint, DOAJ-indexed journal → peer-reviewed, else open access).
 - Opening a work adds it to the forest as a **source node** and shows an in-app reader with the abstract; the student can jot a one-line reflection ("what did they find?").
-- From an open source node the student can **explore its citation neighbourhood** — references it cites and papers that cite it — branching those into the tree, so the forest can grow along real citation links.
+- From an open source node the student can **explore its citation neighbourhood** — references it cites and papers that cite it — branching those into the tree, so the forest can grow along real citation links. All platforms resolve through the same OpenAlex path (keyless, doesn't throttle datacenter IPs; the old NCBI `elink` endpoint is unused), and **no neighbour is dropped**: a cited work outside arXiv/PubMed becomes a branchable `openalex:`-scheme chip instead of silently disappearing from the lanes.
+- **TL;DR + influence-ranked citations (implemented).** Opening a source node also surfaces a one-line **TL;DR** — Semantic Scholar's own extractive summary, shown as "TL;DR · via Semantic Scholar" — and re-ranks the Cited-by lane so citations Semantic Scholar flags as **influential** lead the list. Keyless by default (an optional `S2_API_KEY` just raises the rate limit); zero LLM calls on scienium's side, and a TL;DR that isn't available (or an S2 error) is simply omitted rather than blocking the reader. `openalex`-platform nodes enrich via their **DOI** (S2 has no OpenAlex-id lookup); a work without one degrades to plain lanes.
 - A starred, unpromoted source node can be **promoted straight into the Literature Review** as a paper, carrying its metadata over — connecting Discovery to the next phase.
 - Fetched metadata is cached team-agnostically (`external_works`) so reopening a work never re-hits an external API.
 
@@ -130,13 +136,28 @@ Reaching a node for the **first time** earns the team a small amount of KP, logg
 - Official YouTube IFrame embed for playback
 
 **Academic Papers integration:**
-- `GET /api/discovery/sources/search` queries arXiv/PubMed via OpenAlex + NCBI; `POST /api/discovery/sources/resolve` records the picked work (server-authoritative host/tier) and caches it in `external_works`
+- `GET /api/discovery/sources/search` runs the merged OpenAlex search (three concurrent sweeps: arXiv, PubMed, `is_oa:true`; deduped PubMed > arXiv > OA, reviews floated first; `platform=arxiv|pubmed` still honored for scoped callers); `POST /api/discovery/sources/resolve` records the picked work on its `arxiv`/`pubmed`/`openalex` platform (server-authoritative host/tier) and caches it in `external_works`
 - `GET /api/discovery/sources/[id]/citations` returns the references / cited-by neighbourhood; `POST /api/discovery/source/[id]/promote` promotes a starred source into a Literature-Review paper; `POST /api/discovery/sources/[id]/reflection` saves the one-liner
+- PubMed's neighbourhood now resolves through `resolvePubmedWork()` (`lib/discovery/openalex.ts`), mirroring the existing `resolveArxivWork()` path; the old NCBI `elink.fcgi`-based `elinkRefs` / `elinkCitedIn` (`lib/discovery/ncbi.ts`) are no longer called from any route
+- `GET /api/discovery/sources/[id]/citations` additionally enriches from **Semantic Scholar** (`lib/discovery/semanticscholar.ts`) — a cached TL;DR per work plus a stable partition of the Cited-by lane moving S2-flagged "influential" citations to the front. Keyless by default (optional `S2_API_KEY`); both lookups are single-attempt and degrade silently (empty/unordered) on any error, each backed by a 60-minute LRU cache
 
 **Persistence:**
 - Tree stored as an adjacency list in `discovery_nodes` (team-scoped), with `source_type` (wikipedia | youtube | source), `wikipedia_title` / `youtube_video_id` + `youtube_title`, `starred`, and `interest_level`; academic metadata lives in the 1:1 `external_sources` side-row
 - CRUD via `GET/POST/DELETE /api/discovery/tree` and `PATCH/DELETE /api/discovery/tree/[id]` (PATCH toggles `starred` and cycles `interest_level`); the client store hydrates from the DB
 - Final topic stored on `teams.topic` via `GET/POST /api/discovery/topic`; free-text interests via `GET/POST /api/discovery/interests`
+
+### 5.10 Article Sources — *implemented*
+
+A fourth browsable source type alongside Wikipedia, YouTube, and Papers, reachable via the **📰 Articles** tab — the `article` node type (`DiscoverySource` enum), backed by its own `ArticleSource` side-row rather than `external_sources`.
+
+- **Seven feeds, two render modes.** Three **The Conversation** feeds (Environment, Health, Technology) render **full articles in-app** — the sanitized article HTML is shown verbatim, with a persistent byline and a "Republished from {source} under **CC BY-ND**" attribution line, matching The Conversation's republishing terms. Four science-journalism feeds — **Quanta Magazine**, **Science News**, **Scientific American**, and **Knowable Magazine** (Annual Reviews' journalism arm, written from expert-reviewed review papers) — carry teasers only in their RSS, so they render as **link-out cards**: an excerpt plus a "Read the full article at {source} ↗" button pointing at the original.
+- **"Look it up" — two search-driven lanes** alongside the RSS feeds (the query box becomes a live search instead of a keyword filter):
+  - **Health topics (MedlinePlus)** — NIH's plain-language consumer-health encyclopedia, searched via its keyless XML web service (`lib/discovery/medlineplus.ts`). Summaries are NLM-authored **US-government public-domain** works, so they render full in-app with a "Source: MedlinePlus (NIH) — content in the public domain" line (the CC BY-ND notice is provider-gated and never shown here). Cards carry the new **`reference` credibility tier** (purple badge): authoritative background reading whose caveat tells students to cite the primary research it summarizes; visits earn base-rate KP (×1) so the incentive still points at papers.
+  - **Prior art (patents)** — "has someone built this before?", the question engineering-fair judges ask. Backed by the PatentsView Search API when the optional `PATENTSVIEW_API_KEY` is set; keyless mode degrades to a well-formed Google Patents search link-out card. Always **link-out only** — patent text is never rendered in-app.
+- Browsing (`GET /api/discovery/articles/browse`) is public RSS metadata and not team-scoped; adding a picked article to the tree (`POST /api/discovery/articles/resolve`, persisted via the same team-scoped `POST /api/discovery/tree`) is team-scoped like every other node.
+- Any HTML rendered in-app — including full-article bodies — is run through the shared `ARTICLE_SANITIZE_OPTS` allowlist (`lib/discovery/sanitize.ts`), the same trust boundary already used for Wikipedia and paper abstracts.
+- **Not promotable to Papers.** The promote route only accepts `source`-type nodes carrying an `external_source` row; an `article` node (which carries an `ArticleSource` row instead) is rejected by that same check, so article reading stays open-ended rather than feeding the Literature Review gate.
+- No LLM anywhere in the pipeline — pure fetch/search, sanitize, and display.
 
 ---
 
@@ -194,10 +215,10 @@ The citation graph (and its supporting embeddings + HDBSCAN clustering) has been
 
 **PDF processing pipeline (as built):**
 1. Client uploads PDF → `POST /api/papers` (Next.js, multipart/form-data)
-2. Server extracts text locally with `unpdf` (in-process, ~250ms, zero tokens); the raw PDF bytes are stored in `papers.pdf_data`
-3. `papers` row created with `status = processing`; extracted text stored in `full_text`; `file_url` set to `/api/papers/[id]/file` (authenticated route that streams the stored PDF inline to the viewer)
-4. Async Claude call (`claude-sonnet-4-6`) extracts `{ title, authors, abstract }` from the first ~24k chars
-5. Paper marked `ready`; client polls `GET /api/papers/[id]` every 3 seconds
+2. Server validates size + PDF magic bytes, **inspects for active content** (`lib/pdf/sanitize.ts` — rejects JS/launch actions/embedded files/XFA/encryption/page bombs), then extracts text locally with `unpdf` (in-process, zero tokens); the raw PDF bytes are uploaded to private R2 (`papers.pdf_key`; legacy rows may still stream from `papers.pdf_data`)
+3. `papers` row created with `status = processing`; extracted text stored in `full_text`; `file_url` set to `/api/papers/[id]/file` (authenticated route that streams the stored PDF inline to the viewer with `nosniff`)
+4. The metadata extraction (Claude **Haiku** — sufficient for `{ title, authors, abstract }` from the first ~24k chars) is **awaited before responding** (`maxDuration: 60`), so on serverless the paper comes back ready rather than frozen `pending`; citation rows are created at ready-time
+5. The response returns the processed title/status directly; a claim-based `paper_processing_jobs` queue with backed-off retries (and `/api/cron/papers`) recovers any job that outlives the request. The client also polls `GET /api/papers/[id]` as a fallback
 
 **Quiz:**
 - `POST /api/papers/[id]/quiz` generates questions (paper prompt-cached + rubric); session + keys stored in `paper_quiz_sessions`
@@ -205,20 +226,51 @@ The citation graph (and its supporting embeddings + HDBSCAN clustering) has been
 - `GET /api/papers` / `GET /api/papers/[id]` return the **current user's** proficiency; `GET /api/papers/[id]/quiz` returns the last graded session so results reload
 
 **Q&A chat:**
-- `GET/POST /api/papers/[id]/chat` — full paper text as a prompt-cached system block (first message full cost, follow-ups ~10%)
+- `GET/POST /api/papers/[id]/chat` — the paper text is the **first**, byte-identical prompt-cached system block (shared across chat → quiz → grade → retry so the cache prefix is reused; first message full cost, follow-ups ~10%), with a cache breakpoint on the newest history turns
+- Chat is **server-owned**: the client posts only its new message and the server rebuilds bounded history from committed rows, so a client can't inject assistant turns
 - Messages persist to `paper_chat_messages` (per user); replies rendered as Markdown
-- Persistence is best-effort so a DB hiccup never drops a generated reply
 
 **Delete:** `DELETE /api/papers/[id]` removes the paper and cascades its quiz sessions/attempts, chat messages, and relevance notes.
-
-**Planned enhancements:**
-- R2 file storage for PDFs (replacing the in-DB stream); `papers.file_url` → signed R2 URLs
-- Optionally move quiz generation/grading into the Python worker (`/papers/process`, `/papers/quiz`)
 
 **Scalability:**
 - 120 students × 25 papers = 3,000 lifetime processings (not concurrent)
 - Total LLM cost estimate: ~$150–200 for full pilot cohort
-- Background job queue (BullMQ on Redis) planned for async processing
+- Ingestion is a claim-based `paper_processing_jobs` queue with attempt caps and backed-off retries; the papers cron drains a full classroom's backlog
+
+### 6.8 Synthesis Matrix — *implemented*
+
+A structured comparison grid for cross-reading 2–4 of the team's own **ready** sources side by side, reachable via a **Synthesis** button in the Literature Review header.
+
+- **Discipline-adaptive columns.** Column sets are seeded from one of 7 static, authored templates keyed to the team's `labType` (one per lab type, plus a discipline-neutral `general` fallback) — e.g. Volt Lab starts with *Device / system, Design approach, Test setup, Performance metric, Reported value, Limitation*. The template is only a **seed**: students can rename, add, remove, and reorder columns freely, and may pick a different template at create time (useful when a project cuts across disciplines). No LLM call is involved in seeding.
+- **The grid** is a team-shared artifact — any teammate may edit any cell (attribution is tracked, access is not restricted to the creator) — with one row per selected source and cells saved as the student types (save-on-blur). Cells are stored one row per `(matrix, paper, column)` rather than as a single JSON blob, so two teammates editing different cells at the same time never clobber each other's writes.
+- **"Check my synthesis" (Vega).** One Claude call reads the selected papers' **abstracts** (falling back to a short slice of the full text when an abstract is missing) — never the full papers — keeping the check to a few cents. Vega reports where the sources **agree**, where they **contradict** each other, cells that **misread** a source, and **gaps** the source set leaves unanswered — each finding flagged "you caught this" or "you MISSED this" depending on whether the student's own cells already said it. The same call also proposes up to 3 columns worth adding (a one-click "+ Add"), at no extra cost. An unedited grid replays its last verdict instead of paying for another call.
+- **A check always grades the grid on screen.** Cells save on blur, and the click that starts a check blurs the cell being typed in — so the check first saves everything still unsaved, in one write, and only then asks Vega. If a cell could not be saved, the check refuses to run rather than grading the older text. If a teammate edits the grid while Vega is reading, the verdict is still shown (it answers what was sent) but is not kept as the matrix's standing check and earns no KP, and the panel says why.
+- **Reward:** a flat **25 KP** on a matrix's first successful check, paid on at most **2 matrices per team** (a team may still *create* up to 5 matrices — the cap applies to paid checks, not to the grids themselves) — the model never influences the KP amount. The claim is a WHERE-gated update taken behind a **team-scoped Postgres advisory lock**, so two concurrent checks against two different unpaid matrices of the same team can't both slip past the cap.
+
+### 6.9 Explain It Back (Feynman Mode) — *implemented*
+
+A Feynman-technique check reachable from the Q&A split view (an "Explain it back" tab, available both before and after the quiz) that asks the student to teach the paper back in their own words rather than just answer questions about it.
+
+- The student writes a plain-language explanation of the paper (40–4,000 characters). Vega (Claude Sonnet) grades it against the paper's full text on two axes — **accuracy** and **completeness** (0–100 each, both must clear 70 to pass) — and returns a short list of **correct points**, **missed points**, **misconceptions**, and a single **follow-up question**. It never rewrites the explanation for the student.
+- On a fail (or just to improve), the student revises the **same draft** in place and resubmits — unlimited attempts, each persisted (`PaperExplanationAttempt`: attempt number, text, scores, verdict).
+- **Reward:** a flat **25 KP**, once-ever per (paper, student) pair — awarded via a WHERE-gated claim (`kp_awarded = 0 → 25`) rather than a caught unique-violation, so a retried request can never double-pay.
+- **Cost control:** grading reuses the **same cached paper-text system block** as the chat/quiz/grade/retry routes (byte-identical prefix, so the ~30k-token cache entry is shared across all of them) — the explain check adds essentially no incremental prompt cost beyond the paper's first read.
+- Per-student, like quiz proficiency — `PaperExplanation` is keyed `(paperId, userId)`.
+
+Backed by `POST /api/papers/[id]/explain` (`lib/literature/explain.ts` for grading logic and constants), `components/literature/ExplainPanel.tsx` + `useExplainBack.ts`, wired into `QAPanel.tsx`.
+
+### 6.10 Vocabulary Builder — *implemented*
+
+A spaced-repetition vocabulary deck built per student from the terms in their team's own papers, reachable as a panel in the Literature Review. Extraction is mechanical; **one bounded LLM curation step** picks what's worth learning and writes the missing definitions.
+
+- **Term extraction is pure local computation** (`lib/literature/vocab.ts`): a **Schwartz-Hearst** acronym/expansion matcher, a scan against **four authored dictionaries** — the research glossary and the Stats / Methods / Data-Quality guides — and repeated-phrase detection produce up to ~60 candidates per paper. No model involved.
+- **Curation is the ONE LLM step** (`lib/literature/vocab-curate.ts`): a single Sonnet call per paper (structured output) selects at most 12 candidates worth a card — frequency can't tell "series elastic actuator" from "foot" — and writes a 1–3 sentence, paper-grounded definition for each candidate that lacks an authored one (`llm_definition` source, attributed "How your paper uses it" on the card). **Authored dictionary definitions are never rewritten** — kept byte-identical (E2E-asserted). The build route runs on the paid `ai` tier, caps curation at 8 papers per request, and records a **once-ever `VocabPaperCuration` marker** per (student, paper) so re-building never re-bills a paper; the 200-card deck cap is enforced before paying for curation that couldn't be inserted.
+- **Leitner SRS.** Five boxes, review intervals 1/2/4/8/16 days; an easy review jumps two boxes, a miss drops back to box 1. Reviewing a card before it's due is rejected with **409** (anti-farm) rather than silently allowed — including the concurrent case: the schedule write is a compare-and-set on the exact `dueAt` the request graded, so two simultaneous grades of one due card produce one review, not two. Up to 20 due cards surface per day.
+- **Reward:** **3 KP per card**, once-ever on first reaching the mastery box (box 4 of 5), capped at **12 KP/student/day**. The Leitner schedule update (box, due date, review count) is written **outside** the KP transaction, in its own statement — so if the KP claim is rejected by the daily cap, the review still "counts" and the card still advances; only the payout is skipped.
+- Per-student, **per-lab** deck — `VocabCard` is unique on `(userId, teamId, termKey)` and every read, review, delete and capacity check is scoped the same way. (Until v0.75.3 the uniqueness was global per student while everything else was team-scoped, so a student in a second lab had their build filtered against a deck they could not see and the term surfaced in neither.) The daily cap ledger is `VocabKpDay`.
+- The 200-card cap is re-read **inside** the deck's advisory lock at insert time, and a paper's once-ever `VocabPaperCuration` marker is written only when every term it contributed was actually stored — marking a paper whose terms were dropped at capacity would bury them permanently.
+
+Backed by `POST /api/literature/vocab/build` (extraction), `GET /api/literature/vocab/deck`, `POST /api/literature/vocab/review`, `DELETE /api/literature/vocab/cards/[id]`; `components/literature/VocabPanel.tsx` + `useVocabDeck.ts`.
 
 ---
 
@@ -228,15 +280,16 @@ The daily pillars below — Field Codex, Proof of Expertise, and Project Log / F
 
 ### 7.1 Field Codex (~5–10 min/day) — *implemented*
 The daily learning pillar (it replaced the retired Field Dispatch — a daily LLM-generated reflection prompt — with a real curriculum):
-- A library of **authored, typed lesson tracks** — one track per scientific field, 1:1 with the Data Terminal Charts-Guide taxonomy (29 fields planned; authored incrementally via the `.claude/codex-pipeline/` content pipeline). Each track is a **Core segment plus subfield branches**; segments contain sequentially-gated units of ~6 lessons, and every lesson ends with a **3–5-question checkpoint** (multiple-choice / ordering / matching) graded locally at an 80% pass bar — **zero LLM at read or grade time**.
+- A library of **authored, typed lesson tracks** — one track per scientific field, 1:1 with the Data Terminal Charts-Guide taxonomy (29 fields planned, each a Core + 5 subfields = 6 segments; authored incrementally via the `.claude/codex-pipeline/` content pipeline — **14/29 fields fully authored, 84/174 segments shipped, 3,840 lessons** as of this release). The most recently completed field is **Genetics / Genomics** — Core plus Bioinformatics & Sequence Analysis, Genome Editing & Genetic Engineering, Human & Medical Genetics, Population & Evolutionary Genomics, and Transcriptomics & Gene Expression — 275 lessons in total. Each track is a **Core segment plus subfield branches**; segments contain sequentially-gated units of ~6 lessons, and every lesson ends with a **3–5-question checkpoint** (multiple-choice / ordering / matching) graded locally at an 80% pass bar — **zero LLM at read or grade time**.
 - Lessons carry a worked example and a "why judges ask this" framing tying each concept to fair judging.
 - **Reward:** KP per first-ever lesson pass, capped per student per day (`lib/ops/codex/engine.ts` owns the constants), minted atomically with the same once-ever payment-ledger discipline as the rest of the economy.
-- A **Study Plan** (the feature's only LLM call, 2 regenerations/team/day) routes the team to the most relevant tracks for their project; teams without one default to their lab type's field list.
+- A **Study Plan** (the feature's only LLM call, 2 regenerations/team/day) routes the team to the most relevant tracks for their project; teams without one default to their lab type's field list. Regeneration is cached on a hash of topic + research idea + plan text, and the write is conditional on that source: a generation started against an older topic is discarded rather than allowed to overwrite a newer one that already finished.
 - Content lives as data (`apps/web/lib/ops/codex/content/<slug>.json`), built into thin code-split wrappers (`tracks/<slug>.ts`) via `pnpm --filter web codex:build`; a content-shape unit test plus a zod/checksum generated-content test gate every authored track.
 
 ### 7.2 Proof of Expertise (~3–5 min) — *implemented*
 - A short **clearance exam** about the team's own project: a small fixed set of free-response questions generated and graded by Vega (Claude Sonnet) against a tunable rubric, using the team's real project context.
 - Exams are tiered; each targets a clearance level, and difficulty escalates as the team advances.
+- **Resumable, and the save is guaranteed.** Each answer is persisted as it is given, so a student can close the panel and pick the exam up later. "Save & exit" **waits** for that write and refuses to leave if the server did not take it, saying so — an exam is graded work, and losing an answer to a dropped connection while the button promised "resume anytime" is not an acceptable failure.
 - **Reward:** raises the team's **Clearance Level** (a high-water mark — a teammate's earlier pass already counts) plus a KP bonus on a genuine raise. Clearance gates which buildings can be purchased (§8).
 
 ### 7.3 Project Log (~2–5 min) — *implemented*
@@ -283,9 +336,29 @@ A specialized Project Log entry type for documenting failed experiments, dead en
 - Both Project and Failure entries live in the same `project_logs` table, distinguished by the `entry_type` enum (`progress | failure`) — keeps queries simple and the Failure Wall is just a filtered view. Progress entries use the structured columns (`next_steps`, `attendee_ids`, `attachment_urls`); failure entries store their two prompts as JSON in `body`. Shared editing is supported by `last_edited_by_user_id` + `last_edited_at`; image attachments are private R2 objects served via an authenticated streaming route (`/api/project-log/attachment/view`).
 
 ### 7.6 Data Terminal — *implemented*
-The **Data Terminal** tab is where students record, graph, and learn how to present their results. It has two clearly separated layers, with different unlock rules:
+The **Data Terminal** tab is where students record, analyze, graph, and learn how to present their results. It has two layers with different unlock rules: a **workbench** over the team's datasets (phase-gated to `working`) and five **reference guides** (always available). The workbench is three interchangeable **lanes** over one shared dataset — Sheets, Code, and Lab — plus the figure-craft and showcase tooling that turns an analysis into a poster panel. It replaces the earlier single-x/single-y experiment tracker, which could hold exactly one x and one y and so could not represent a CSV.
 
-**Experiment tracking (phase-gated to `working`).** An experiment is a titled x/y dataset; measurements are its points, optionally grouped into series. Students log data as they collect it and see it plotted. This layer unlocks at the **Working** phase (once real data collection begins) and is locked before then with an explanatory screen (`experiments` / `measurements` tables).
+**The dataset spine (phase-gated to `working`).** A dataset is a spreadsheet with typed columns, each carrying an experimental **role** (X / Y / ±Y / ±X / group / label / ignore) and, for wide replicate layouts, a link to the column it repeats. Above the columns sits a **table type** — XY, Column, Grouped, Contingency, Nested, Parts of whole, Multiple variables — chosen when the dataset is created; it decides which roles are legal and, in Lab mode, which analyses the Analyze dialog may offer and which chart families are drawable, so a Column table can never be handed a correlation. That gating is the accessibility mechanism borrowed from GraphPad Prism: the structure carries the experimental design, so error bars are derived rather than configured and replication is visible to the statistics instead of assumed away — a nested table's n is its number of groups, not its number of measurements.
+
+Students type into the grid, paste from a spreadsheet, or import a CSV; a column may carry a **formula** over other columns (`=col(Mass) / col(Volume)`), evaluated in TypeScript and recomputed whenever its inputs change (so Sheets mode never needs Python). Edits autosave, and because a dataset is team-shared, every write carries the copy's version stamp — a save based on a stale copy is refused rather than silently discarding a teammate's work. This layer unlocks at the **Working** phase (once real data collection begins) and is locked before then with an explanatory screen (`datasets` table).
+
+Bounds are **caps refused at write time, never truncations at read time**: a lab holds at most **50 datasets**, a dataset at most **5,000 rows × 40 columns**, and 2 MB of stored cells — the count and the write run in one transaction behind an advisory lock, so concurrent saves cannot exceed them. An import that overruns a cap says how many rows or columns it dropped rather than truncating silently.
+
+**Three lanes over one dataset.** All three are open to everyone — a team picks the tool, not a tier, and the lanes are ungated relative to each other:
+
+- **Sheets mode** — instant, interactive, and **zero Python**, so it keeps working on a school network where WASM is blocked. Editable grid; select columns → column/bar, line, scatter, area, or pie; titles, axis labels, legend, colors, gridlines, axis min/max, log scale, data labels; error bars from a column or ±SD/±SEM/±%/fixed; **Excel's exact trendline set** (linear, logarithmic, polynomial order 2–6, power, exponential, moving average), each showing its equation and R²; PNG + CSV export. Rendered with recharts.
+- **Code mode** — a matplotlib editor with the active dataset preloaded as numpy arrays and a pandas DataFrame whose column names match the grid. Run, figure output (SVG on screen, PNG/PDF on export), an stdout/stderr panel, save a script per chart, download `.py`. **Python runs in a Web Worker via Pyodide**, whose wheels are served by a **same-origin authenticated proxy** — never a CDN, so it survives school firewalls without widening the CSP to a third-party host. Because a saved script is team-shared and re-runs in a *teammate's* browser, the worker is **sandboxed by design**: no DOM or Clerk-session handle, network blocked, a hard wall-clock timeout that `terminate()`s the worker, stdout/figure-count caps, and only the preloaded wheel set (no `pip install`).
+- **Lab mode** — statistics in Python (scipy, statsmodels), figures in matplotlib. A **gated Analyze dialog** offers only what the table type permits, across a library of analyses spanning all seven table types: descriptive stats and normality; one-sample / unpaired / paired t and their nonparametric partners (Mann–Whitney, Wilcoxon); one- and two-way ANOVA with nested and repeated-measures variants; Kruskal–Wallis; chi-square, Fisher's exact, relative risk and odds ratio; correlation and linear/multiple regression. **Multiple comparisons are done honestly** — you choose *which* comparisons (all pairs, versus a control, selected, trend) and get the matching correction (Tukey, Dunnett, Šídák / Holm–Šídák / Bonferroni / FDR, or Dunn's for the nonparametric case), rather than running every pairwise test and reporting the one that worked. It also fits **nonlinear regression** against a domain-organized **equation library** (lines, polynomials, exponential decay/association/growth, dose–response EC50/IC50, Hill, Michaelis–Menten and enzyme-kinetics variants, binding, logistic/Gompertz growth, Gaussian/Lorentzian peaks, sine/damped-sine oscillation, power laws, and a user-defined equation), each carrying **initial values expressed as functions of the data** — the difference between converging and not. Fits report best-fit ± SE, 95% CI, R²/adjusted R², RMSE, **model comparison (extra-sum-of-squares F test, AICc)**, residual and adequacy checks, weighting, **ROUT outlier identification**, and **standard-curve interpolation of unknowns with CIs** (the ELISA / calibrated-probe workflow). Parameters can be fixed, bounded, or **shared across several datasets — global fitting**, which turns "is the EC50 actually different between treatments?" into a testable hypothesis rather than an eyeball comparison; over-sharing is reported as a rank-deficient (ambiguous) parameter rather than emitted as confident garbage.
+
+**Results sheets are live-linked objects** (Prism's model, not one-shot output): every analysis re-runs from the dataset and is never baked, so editing a datum invalidates the dependent analyses and charts and they recompute. Each results sheet **links the matching Stats Guide entry** and shows an assumptions checklist assembled from the Methods and Data Quality guides, **evaluated against this dataset's** n, normality, and replicate structure — content scienium already owns, at zero LLM cost, and the thing paid tools linking to a static checklist cannot match.
+
+**Figure craft.** Lab-mode figures carry per-dataset **Format Graph** (symbol shape/size/fill, line style, error-bar direction) and **Format Axes** (range, major/minor ticks, log10/log2/ln, offset and broken axes, secondary Y); **significance brackets are generated from the multiple-comparisons result** rather than drawn by hand; and several saved analyses compose into **multi-panel A/B/C poster layouts** — a poster board is the deliverable of a science fair, so layout is a shipping requirement, not polish. Figures export as PNG/SVG/PDF at a chosen DPI. Any Sheets- or Lab-mode chart can be **opened in Code mode** as the generated matplotlib that drew it — one direction only; edited code never parses back into the GUI — so the figure becomes a script the student keeps after the fair.
+
+**Charts Guide recipes as templates.** Each of the 250 Charts Guide recipes carries structured `dataNeeded` name/unit pairs and a reference rendering, so **"start from this recipe"** tells a team which columns to collect and prefills the builder.
+
+**Showcase figure attachment.** An exported Data Terminal figure can be attached to the team's public showcase page as an optional **`figure` asset**, alongside the existing report and repo-link assets (stored in the same private R2 bucket and streamed through the authenticated asset route).
+
+**The phase gate is unchanged** — only the noun changed (experiments → datasets). The same `data_terminal` feature gate in `lib/phase.ts` unlocks the workbench at the `working` phase, exactly when the old Experiments tab did; the three lanes are ungated relative to each other, and all five reference guides below stay open in every phase.
 
 **Reference guides (always available, no phase gate).** Five built-in, offline reference libraries teach data literacy and are deliberately reachable in **every** phase — a student planning a study can consult them before they own a single data point:
 - **Stats Guide** — a catalog of **65** statistics measures (mean/median through t-tests, ANOVA, regression, classification metrics, and FDR, plus nonparametric tests, regression diagnostics, epidemiology, Bayesian, and agreement/reliability measures), organized by category. Each entry gives a plain-language definition, when to use it, the formula (with a term-by-term breakdown), a small sample dataset, and a self-contained, verified Python snippet with its exact printed output.
@@ -469,9 +542,9 @@ The Research Plan gateway (unlocked at `research_planning`) turns a team's plan 
 
 Whichever was **last saved** is the active source (recorded in `last_synced_source`); the review and idea-check below run against it identically regardless of source.
 
-**Project-type review.** The student picks an ISEF track — **Engineering** or **Science** — and a subtype (robotics, software, electrical, mechanical, materials / biology, chemistry, physics, environmental, behavioral). Each choice selects a rubric composed from a track base (`_engineering.md` / `_science.md`, the ISEF five-section criteria) plus subtype emphasis (e.g. robotics → motor type, current draw, battery runtime, multi-trial testing). "Review my plan" streams a structured critique that **fills in live** — the five rubric rows grade in one at a time with filling bars, then Strengths / Gaps / Next-steps columns populate. The result is persisted (`research_plans.last_review_json`) and replaced on each re-review.
+**Project-type review.** The student picks an ISEF track — **Engineering** or **Science** — and a subtype (robotics, software, electrical, mechanical, materials / biology, chemistry, physics, environmental, behavioral). Each choice selects a rubric composed from a track base (`_engineering.md` / `_science.md`, the ISEF five-section criteria) plus subtype emphasis (e.g. robotics → motor type, current draw, battery runtime, multi-trial testing). "Review my plan" streams a structured critique that **fills in live** — the five rubric rows grade in one at a time with filling bars, then Strengths / Gaps / Next-steps columns populate. The result is persisted (`research_plans.last_review_json`) and replaced on each re-review. One review runs per team at a time (a second gets **409**), and the write is conditional on the plan text and type/subtype being unchanged since the review started — edit the plan mid-review and the critique is discarded with a "your plan changed" message rather than shown as current.
 
-**"Has this idea been done before?"** A web-search agent (Claude + the Anthropic native `web_search` tool) reads the synced plan, runs a handful of searches, and returns a **novel / refine / reject** verdict with prior work, how the project could still differ, a recommendation, and citations. The UI shows each **search query and the sources as they happen**. Rate-limited to **3 runs per day per team** (`idea_checks` ledger); the latest result is persisted (`research_plans.last_idea_check_json`) and replaced on each re-run.
+**"Has this idea been done before?"** A web-search agent (Claude + the Anthropic native `web_search` tool) reads the synced plan, runs a handful of searches, and returns a **novel / refine / reject** verdict with prior work, how the project could still differ, a recommendation, and citations. The UI shows each **search query and the sources as they happen**. Rate-limited to **3 runs per day per team** (`idea_checks` ledger) — the cap is exact, not advisory: one check runs per team at a time (a second gets **409**) and the day's count is read while holding that claim. As with the review, the verdict is written only if the plan text is unchanged since the search began; the search is counted against the cap either way, because it was paid for. The latest result is persisted (`research_plans.last_idea_check_json`) and replaced on each re-run.
 
 Tune review rigor by editing the markdown in `lib/research-plan/rubrics/` — no code changes.
 
@@ -491,6 +564,7 @@ Students can work solo or in shared-laboratory teams (up to `max_members`, defau
 - **Cost scaling:** building-shop prices scale with the live member count (`baseCost × members`), shown as a `×N · N-student lab` badge — offsetting the extra earning
 - Currencies (KP, Clearance, LC) accumulate into one shared team total, displayed the same for every member
 - Discovery trees stay team-shared; literature proficiency stays individually earned
+- **Class membership is per-student.** A lab is just the set of its members, so it may span multiple classes and schools — each member is in their own teacher's class. Joining a class is a *request* the owning teacher approves (§15.6); approval enrols only that student and never rewrites teammates' class or school
 
 ### 10.3 Attribution
 Every action records the acting user. A team activity feed (`activity_feed`, surfaced in the Activity panel) shows recent actions: *"Maya uploaded *Quantum Entanglement and Bell Inequalities*"* / *"Devon upgraded the Optics Laboratory to level 4."* / *"Aisha added a failure log entry."* / *"Devon deleted a project log entry."* Logged action types include paper upload/delete, quiz pass, topic change/lock, discovery KP awarded, source promoted to Literature Review, clearance raised, phase advance, plan sync, member join, building purchase/upgrade/sell, showcase published, and project/failure log create/edit/delete (`log_created | log_edited | log_deleted`). Because deletes remove the underlying row, the feed is the durable audit trail for who removed an entry; in-place entries additionally show a **"last edited by"** attribution.
@@ -503,9 +577,10 @@ Every action records the acting user. A team activity feed (`activity_feed`, sur
 A dismissible **Momentum** card on the lab home gives the team a one-glance recap of their **last 7 days**: KP earned (summed across discovery visits and Field Codex lessons), sources reviewed, project logs written, experiments added, data points recorded, and **days until the next fair**. It is pure aggregation — **no LLM call** — and computes the next-fair countdown directly from the static fair dataset (`nextFairFromDataset()`) rather than the seeded tables, so it never touches the fair-seeding path. Dismissal is remembered **per ISO week** (localStorage), so the card returns fresh each week to re-surface momentum. Backed by `GET /api/team/momentum`.
 
 ### 10.6 Technical Implementation
-- `teams` (with `max_members`) + `team_members`; join codes in `team_invites`
+- `teams` (with `max_members`) + `team_members`; single-use lab join codes in `team_invites` (7-day expiry, burn on use)
 - Per-student proficiency in `paper_proficiency` (`@@id([paper_id, user_id])`); shared resources carry `team_id`
-- `GET /api/team` backs the Team panel (roster, capacity, the lead's active code, phase-advance gate); `POST /api/team/invite` + `/api/team/join` handle codes
+- Per-student class membership: `users.class_id` (one class each) + `class_join_requests` (`pending | approved | denied`) for the teacher-approval gate. `Team.class_id` is vestigial and no longer authoritative
+- `GET /api/team` backs the Team panel (roster, capacity, the lead's active code, the caller's own class); `POST /api/team/invite` + `/api/team/join` handle lab codes; `POST /api/class/join` files a class-join request
 - All actions carry `created_by_user_id` for attribution
 - Initial sync: 15s polling on activity feed; at scale: Supabase Realtime or Pusher WebSocket
 
@@ -513,7 +588,7 @@ A dismissible **Momentum** card on the lab home gives the team a one-glance reca
 
 ## 11. PvP Raid System
 
-> **Status:** Design only — **not yet built**. The phase-gate and the raid schema (§11.8) are in place and the API route is stubbed (`app/api/pvp/*` returns `501`), but there is no raid engine, no spell seed data, and no UI. This section is the target design.
+> **Status:** Built, E2E-tested, and spec-verified against this document (§11). The raid engine, Spell Power Meter, type-cycle tooltip, BattleScreen, class leaderboard, matchmaking, quota enforcement, and E2E test suite (§11 acceptance criteria AC1–AC10) are all implemented on the `matthew/pvp-system` branch (commit `e1358ec`, 2026-07-29). Minor open items remain in §18 (per-type spell effects, damage/health scaling per level, visual FX direction) but are deferred to v2.
 >
 > **This design fully replaces the earlier 6v6 turn-based, Pokémon-style battle system** (60 combat characters, shared move pools, sprite evolutions, live/async battles). None of that is planned any more; the old `characters` / `moves` / `character_moves` schema sketch is superseded by §11.8.
 
@@ -586,7 +661,29 @@ Effectiveness applies as a damage multiplier of the **spell's type against each 
   - The loss scales like the gain, inverted: the lower the destruction percentage, the larger the penalty.
 - The exact gain/loss threshold and the loss-scaling formula are **left as tunable balancing values**.
 - **Why losses exist:** raiding poorly carries a real cost, discouraging students from raiding carelessly or spamming raids without a real attempt at destroying the base.
-- Whether the **defender's** trophies also move when their base is raided is an open question (§18).
+- **Defender trophy change (v1):** The defender loses the **same `trophyDelta`** the attacker gains. A raid that earns the attacker +3 trophies costs the defender −3; a poor raid that costs the attacker −5 gives the defender +5 (the attacker's loss is the defender's gain). This is symmetric gain/loss — resolved for v1 as the fairest default. Per BAL-01, asymmetric defender loss may be revisited if pilot data warrants it.
+
+### 11.6.1 Spell Power Meter
+
+All attacker spell damage in a raid is scaled by a **team-scoped Spell Power multiplier**, derived from the attacker team's `TeamDailyTaskDay` rows (§7.5). The meter replaces the earlier "spell level = building level" scaling model for v1 — spell damage is multiplied by the meter tier regardless of which spell is cast.
+
+**Tiers (4 discrete levels):**
+
+| Tier | Tasks Completed | Multiplier | Label |
+|------|----------------|------------|-------|
+| 0 | 0–9 | 0.5× | Dormant |
+| 1 | 10–19 | 1.0× | Warming Up |
+| 2 | 20–29 | 1.5× | Productive |
+| 3 | 30+ | 2.0× | On Fire |
+
+**Mechanics:**
+- The tier is computed fresh on each GET `/api/pvp/spell-power` or GET `/api/pvp` call by querying `team_daily_task_days` rows for the team.
+- Tiers are rounded down (floor): a team with 19 tasks still at tier 1 (Warming Up, 1.0×).
+- The `team_daily_task_days` table is a per-day rollup already populated by the daily Field Codex and Project Log engagement pillars — no new writes needed; the PvP system reads existing data.
+- The spell power multiplier is included in the `resolveCast` damage calculation: `totalDamage = baseDamage × typeEffectiveness × spellPowerMultiplier`, with each building's resulting health clamped to [0, maxHealth].
+- The tier is shown on the PvP lobby as a visual badge (color-coded by tier) so students see their current multiplier before raiding, encouraging daily engagement.
+
+**Tests:** `lib/pvp/combat-engine.test.ts` includes explicit `resolveCast` assertions proving the power multiplier pipe (0.5×, 1.0×, 1.5×, 2.0×) applies correctly across all four tiers (METR-01..05, TEST-03).
 
 ### 11.7 Matchmaking
 
@@ -673,8 +770,17 @@ The editor's abstract field carries an **Abstract Structure guide** *(implemente
 - Showcase Wing feature unlocks when the team reaches the `showcase` phase (self-paced advancement to school/regional competition)
 - Available even if the student doesn't advance further — reaching this phase acknowledges the level most projects reach
 - For minors, **public publishing requires verified parental consent** (separate from initial app consent)
-- For school-only publishing, **teacher approval is required**
-- Showcases can be edited or unpublished at any time by the team
+- **`link_only` sharing uses a secret 128-bit share token**, not the public slug
+  (v0.35.1, P1-R7): the share URL is `/showcase/<token>`, the same token gates the
+  board/quad-chart byte stream, and "New link" rotates it to revoke every link already
+  handed out. The slug is a public identifier and opens only `public` showcases
+- ~~For school-only publishing, teacher approval is required~~ — the `school_only`
+  level was **withdrawn** in v0.34.0 (REFACTOR2 P0-R2): it authorized on a self-entered
+  school name. Existing rows read as team-only
+- Showcases can be edited or unpublished at any time by the team — but **editing an
+  approved public showcase returns it to review** (v0.35.0, P0-R3): approval names a
+  content digest covering the title, abstract, privacy level, and every asset, so a
+  changed or replaced board/quad/video invalidates the prior decision
 
 ### 12.5 Gallery
 
@@ -780,13 +886,13 @@ The 22 ISEF categories are listed with descriptions to help students identify wh
 This is particularly useful because students often pick a category mismatched to their actual project, hurting their chances. The category matcher recommends the best fit based on the student's topic and methodology.
 
 ### 13.5 Forms & Requirements
-Comprehensive checklist of required ISEF forms (1, 1A, 1B, 2, 3, 4, 5, 6, 7) and equivalent forms for regional/state levels:
+Checklist of the ISEF forms for the active season (2027: 1, 1A, 1B, 2A, 2B, 2C, 3, 4, 5A, 5B, 6A, 6B, 7) and equivalent forms for regional/state levels. Note the 2026→2027 renumbering: Form 1C and Form 2 are retired, and 2A/2B/2C are new:
 
 - Particularly highlighted: SRC/IRB forms for human subjects, vertebrate animal research, hazardous chemicals/devices, etc.
 - Form templates downloadable directly from the app
 - Completion status tracked per team
 - Deadline reminders tied to each form
-- **(Implemented)** the Forms checklist tracks **12 ISEF forms**, each expandable into a full in-app guide (what it is, who needs it, section-by-section walkthrough — `ISEF_FORM_GUIDES` in `lib/fairs/forms.ts`), plus a **hazard-class primer** (4 classes, `lib/fairs/safety.ts`) so teams can tell which conditional forms apply to their project
+- **(Implemented, deliberately narrowed in v0.34.0)** the Forms checklist tracks the **13 ISEF 2027 forms** as a personal status tracker (not started / in progress / complete). It shows each form's **official code and title only**, linked to the official form. It does **not** tell a student which forms their project needs or when each is signed: that guidance was materially wrong (REFACTOR2 P0-R4) and is now fail-closed behind the edition gate in `lib/fairs/forms.ts` (v0.75.9): `GET /api/fairs/forms` runs every form through `servedForms()`, which withholds applicability copy unless the edition is signed by a qualified teacher/SRC reviewer, unedited since that signature (`reviewedDigest`), and still inside `expiresAt`. The response reports which of those it is as `edition.guidance` (`reviewed` / `unreviewed` / `stale_review` / `expired`) and the panel renders the matching notice pointing at the official forms and rules. The notice also names the team's matched regional/affiliated fair when there is one: **a local fair's own forms, signatures and deadlines take precedence over the ISEF catalog**, and the app says so rather than implying the list is final. The **hazard-class primer** (4 classes, `lib/fairs/safety.ts`) is generic lab-safety reference and is unaffected
 
 ### 13.6 Project Board Specifications
 - Standard tri-fold board dimensions and display rules
@@ -795,15 +901,55 @@ Comprehensive checklist of required ISEF forms (1, 1A, 1B, 2, 3, 4, 5, 6, 7) and
 - Cross-linked from the Showcase Wing so students can prepare both physical and digital presentations side by side
 
 ### 13.7 Reminders & Notifications
-- An in-app **notification bell** (implemented) surfaces the team's notifications, each rendered with a kind-specific icon, accent, and chip label. Five notification **kinds** exist (stored as a string on `notifications`, deduped by `dedupe_key`): **`fair_deadline`** (deadline reminder), **`urgency`** (nudge — e.g. a teacher nudge, §15), **`teacher_feedback`**, **`phase_reviewed`** (a phase-advance request was reviewed), and **`showcase_reviewed`**.
-- Per-user notification preferences (`notification_prefs`) hold email opt-in and the days-before-deadline reminder schedule (default: 30 / 14 / 7 / 1 day prior).
-- *(Planned)* the automated engine that actually **fires** deadline reminders on a schedule and detects **smart urgency** (Project Log state vs. time remaining before a fair) — the bell and preference plumbing exist; the cron/urgency producer does not yet.
+- An in-app **notification bell** (implemented) surfaces the team's notifications, each rendered with a kind-specific icon, accent, and chip label. The active notification **kinds** (stored as a string on `notifications`, deduped by `dedupe_key`) are **`fair_deadline`** (deadline reminder), **`urgency`** (nudge — e.g. a teacher nudge, §15), **`teacher_feedback`**, and **`showcase_reviewed`**, and **`membership_changed`** (a class or team membership of the recipient's ended or changed hands — addressed to that student alone, and readable even when they hold no team, including from `/onboarding`). (A `phase_reviewed` enum value remains but is unused since phase advancement became self-paced.)
+- Per-user notification preferences (`notification_prefs`) hold email opt-in and the days-before-deadline reminder schedule (default: 30 / 14 / 7 / 1 day prior), edited in the settings **Reminders** panel. They are genuinely per member: the bell shows the union of the team's windows, while each member's *email* is filtered to the windows they saved.
+- **There is no destination field.** Reminder mail goes to `User.email`, the address mirrored from the Clerk identity; a member cannot type one. The old free-text destination was verified against nothing (REFACTOR2 §0.8).
+- **Read state is per member** (`notification_reads`), so one teammate clearing the bell does not clear it for everyone.
+- *(Implemented)* the automated engine that **fires** deadline reminders on a schedule and detects **smart urgency** (Project Log state vs. time remaining before a fair) — `app/api/cron/notifications/route.ts`, registered in `vercel.json` at 07:00 daily. Reminder brackets are 30/14/7/1 days; `notifications.dedupe_key` makes re-runs and caught-up missed runs idempotent; teams are streamed in id-ordered pages with bounded concurrency and a 50s run budget. Optional email delivery goes out through Resend (`lib/notifications/email.ts`) for members who opt in — a no-op when `RESEND_API_KEY` is unset, so the in-app channel never depends on email infra.
+
+### 13.8 Bug Reporting — *implemented*
+A **"Report a bug"** button sits in the lab's top strip (beside the notification bell) and in
+the teacher header, so a stuck student or teacher is never more than one click from telling us
+what broke. It opens Sentry's User Feedback form, styled to the game (pixel chrome, navy +
+gold, message textarea in the body font).
+
+- **Anonymous and text-only by design** — no name/email fields and no screenshot capture,
+  matching the project's minors-privacy posture (Session Replay is likewise never enabled).
+  A report submitted right after an error is automatically linked to that error in Sentry.
+- The button renders only when a Sentry DSN is configured, so local dev and the E2E suite
+  see clean chrome.
+- Reports land in the Sentry project's **User Feedback** view; operator triage is covered by
+  `docs/runbooks/incident-response.md`.
 - *(Planned)* optional email and push delivery.
 
-### 13.8 Technical Implementation
+### 13.9 Your Data — export & erasure requests — *implemented*
+
+Settings → **Your data** lets a student ask for a copy of their data or for its erasure.
+Neither happens on the click.
+
+- **Filing is an ask, not an action.** The request is recorded and queued for review; nothing is
+  exported or deleted until an operator approves it. In a school setting the authority to erase
+  a minor's record belongs to the school, so there is deliberately no in-app approve button —
+  approval is an operator command behind the cron secret.
+- **Deletion is two-step in the UI** and states its consequence before the second click: the
+  account and everything personal in it (quizzes, proficiencies, vocabulary, chats,
+  notifications) go; **the lab's shared work — papers, logs, the showcase — stays with the team**,
+  because those artifacts belong to the whole team (§10.3 attribution).
+- **A copy is delivered through the school**, never downloaded from the page or emailed. The
+  bundle is written to private storage for the operator to hand over.
+- Re-clicking the same day replays the same request rather than queueing another.
+- Erasure blanks the student's name, email, and sign-in identity; the account row itself is
+  retained as a tombstone so their teammates' shared work does not break.
+- Age-based cleanup of pseudonymous and operational records is governed by a per-model retention
+  table. It ships with one window set (showcase visitor fingerprints, 90 days); the rest await
+  qualified FERPA/COPPA review — see `docs/TODO.md` → "Retention windows".
+
+Operator procedure: `docs/runbooks/data-export-delete.md`.
+
+### 13.10 Technical Implementation
 
 **Data sources (as built):**
-- **268-entry fair dataset** in `content/fairs/dataset.ts` scraped from the Society for Science affiliated-fair directory: 1 ISEF + 40 state + 227 regional fairs. Every entry has `websiteUrl` (linked directly from the directory), city-level `latitude`/`longitude` (184 Nominatim-geocoded, 60 manually fixed), a stable `seed_key`, and the year's event/deadline dates where available. `ensureFairsSeeded()` in `lib/fairs/match.ts` upserts idempotently on first `GET /api/fairs/match` call
+- **Fair dataset** in `content/fairs/dataset.json` (behind a thin typed `dataset.ts` wrapper) scraped from the Society for Science affiliated-fair directory: 1 ISEF + 40 state + 227 regional fairs. Every entry has `websiteUrl` (linked directly from the directory), city-level `latitude`/`longitude` (184 Nominatim-geocoded, 60 manually fixed), a stable `seed_key`, and the year's event/deadline dates where available. `ensureFairsSeeded()` in `lib/fairs/match.ts` reconciles idempotently on the first `GET /api/fairs/match` of each process, gated on a digest of the authored edition — so a correction that does not change the number of fairs still lands. A fair dropped from a later edition is retired and stops being matched (its history rows stay), and a fair whose dates a Firecrawl sync has corrected keeps them: the static dataset only refreshes rows that are still untouched defaults
 - **All dates are estimated.** `POST /api/fairs/[id]/sync-deadlines` fetches the fair's `websiteUrl` via Firecrawl and has Claude extract dates into a `fair_events` row marked `estimated`; per-fair verification required before promoting to `confirmed`
 - *Future:* annual admin refresh; official Society for Science data feed
 
@@ -871,7 +1017,7 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 | **Building Purchases** | `working` | KP-based; building catalog available |
 | **Building Upgrades** | `working` | Levels 1–15; KP every level + LC at tier-ups (→4/7/10/15); no clearance cap (§9.2) |
 | **PvP Raids** | `working` | Daily raid cap; random matchmaking with limited refinds (§11) |
-| **Data Terminal — Experiments** | `working` | Experiment/measurement tracking + graphing |
+| **Data Terminal — Datasets** | `working` | Three-lane dataset workbench (Sheets / Code / Lab) — analysis + graphing (§7.6) |
 | **Data Terminal — Reference Guides** | `discovery` | Stats / Charts / Plot guides; always available, no phase gate (§7.6) |
 | **Rubric Self-Check** | `discovery` | Judge-readiness /100 against the ISEF rubric (§13.3); Fair Hub is always available |
 | **Showcase Wing** | `showcase` | Public-facing portfolio system |
@@ -883,7 +1029,7 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 
 ## 15. Teacher Dashboard
 
-> **Status (as built):** the teacher dashboard is **live for the pilot core**. Implemented today (route group `app/(teacher)/`, API under `app/api/teacher/`): the **Class Roster** (one row per student, with phase, last-activity, and attention flags — `unlogged` / `stale` for working-phase teams, pending phase-advance requests), the **Validations** queue (approve/reject a phase-advance request; approval atomically bumps the team's phase, notifies the team, and writes an audit row), **Showcase moderation**, a **phase-adaptive student detail view** (including read-only literature access), teacher **feedback**, and a daily **nudge** (§15.11). Reports, bulk actions, and richer per-phase analytics remain deferred to post-pilot. The design below describes the full intended dashboard; the "Pilot Phase Minimum" (§15.11) is what actually ships now.
+> **Status (as built):** the teacher dashboard is **live for the pilot core**. Implemented today (route group `app/(teacher)/`, API under `app/api/teacher/`): the **Class Roster** (one row per student, with phase, last-activity, and attention flags — `unlogged` / `stale` for working-phase teams), the **class-join request queue** (approve/deny students who entered the class code; approval enrols only that student), **class-code regeneration** (revokes a leaked code), **Showcase moderation**, a **phase-adaptive student detail view** (including read-only literature access), teacher **feedback**, and a daily **nudge** (§15.11). The student detail view also carries the membership authority a teacher can exercise: **Remove from class** (v0.52.0), **Make lab lead** (v0.75.0 — a teacher may reassign the lead of a lab they own, which the lead's own hand-over cannot help with when that lead has stopped showing up), and a **Class history** tab reading the append-only class-membership log, scoped to the teacher's own classes. A teacher removal now notifies the student in-app rather than leaving them to notice. Phase advancement is **self-paced** — teams advance themselves once they meet each phase's criteria, so there is no teacher phase-advance approval (the former Validations queue and its `phase_advance_requests` table were removed). Reports are in-app; bulk actions and richer per-phase analytics remain deferred to post-pilot. The design below describes the full intended dashboard; the "Pilot Phase Minimum" (§15.11) is what actually ships now.
 
 ### 15.1 Purpose
 The teacher dashboard is the central tool for educators running scienium. Its design philosophy reflects the reality of how teachers actually use software: they have 10 minutes between classes, not 2 hours after school, so the dashboard must surface what needs attention rather than requiring browsing through all students.
@@ -909,7 +1055,7 @@ The dashboard home is a roster of every student in the teacher's class. Each row
 **Attention triggers:**
 | Trigger | Indicator |
 |---|---|
-| Phase-advance request pending >2 days | Yellow dot |
+| Class-join request pending | Yellow dot |
 | No Project Log activity in >5 days | Yellow dot |
 | Showcase awaiting review | Orange dot |
 | Fair deadline within 7 days with stale progress | Red dot |
@@ -927,10 +1073,12 @@ Each student appears as a single row — even team members. This is because teac
 | Tab | Purpose |
 |---|---|
 | **Roster** | Class-wide overview (default home) |
-| **Validations** | Phase-advance request queue with badge count |
+| **Class Requests** | Pending class-join requests to approve/deny, with badge count |
 | **Showcase Review** | Showcase items awaiting moderation |
-| **Class Settings** | Manage roster, teams, fair targets |
-| **Reports** | On-demand exportable progress summaries |
+| **Class Settings** | Class code (with regenerate), fair targets, notification prefs |
+| **Reports** | In-app class-wide progress summaries |
+
+(There is no Validations tab — phase advancement is self-paced.)
 
 ### 15.5 Student Detail View (Phase-Adaptive)
 
@@ -961,17 +1109,27 @@ When the teacher clicks a student, the view adapts to that student's current pha
 - Privacy level, parental consent status (for minors)
 - *Teacher actions:* approve for school-public, request changes, leave inline feedback
 
-### 15.6 Validation Workflows
+### 15.6 Approval Workflows
 
-Phase-advance approval is the teacher's most consequential interaction. The teacher-gated transitions are **research_planning → working** (data collection start) and **working → showcase** (competition advancement); the earlier literature_review gate is a mechanical 25-source check that needs no teacher action. A student *requests* an advancement and the teacher approves it. The flow:
+Phase advancement is **self-paced**: teams advance themselves through the phase sequence once they meet each phase's completion criteria (choose a final topic → literature review; all 25 sources proficient → the rest of the lab). There is **no teacher phase-advance approval** — the former Validations queue and its `phase_advance_requests` table were removed.
 
-1. Teacher sees pending requests via roster indicators or the Validations tab
-2. Clicks a pending phase-advance card
-3. Sees the relevant evidence in context:
-   - **→ Working (data collection):** recent Project Log entries, explicit "data collection underway" confirmation checkbox (the most easily falsifiable, so the teacher may need to ask the student to demonstrate in person)
-   - **→ Showcase (competition advancement):** confirmation of advancement to a school/regional fair
-4. Approves, requests changes, or rejects with a note
-5. On approval: the `phase_advance_requests` row is marked approved and the team's phase is bumped, unlocking the next set of features
+The teacher approval that *does* exist is **class enrolment**. Because class membership is per-student and a lab can span classes/schools, joining a class is a request, not an automatic enrolment:
+
+1. A student enters the teacher's class code (at onboarding or from the Team panel); this files a `class_join_requests` row (`pending`) rather than enrolling
+2. The teacher sees pending requests via the roster indicator or the **Class Requests** tab
+3. The teacher **approves** (enrols only that student — sets their `class_id` + school, leaving teammates untouched) or **denies** the request
+4. The decision is a **compare-and-set on the pending state** (v0.36.0, P1-S2): only the first decision commits, and a second one gets a 409 naming the state that stands rather than a false success. Approval takes a per-student lock before writing `class_id`, so two teachers approving into different classes serialize; the earlier approval is then marked `superseded` — distinct from `denied`, since no teacher refused it. Denial does **not** un-enrol an already-approved student: that is class removal, a separate lifecycle command
+5. A leaked or over-shared class code can be **regenerated** from Class Settings, immediately invalidating the old one
+
+Once a student is in a teacher's class, that teacher can see the student's individual work *and* any lab the student is on (shared team artifacts are visible to every teacher who owns a member); a teammate's personal pages stay private to that teammate's own teacher.
+
+**Enrolment can end** — *implemented v0.52.0*. Because teacher visibility is derived from class membership, ending the membership is what ends the access, and all three ways of doing it clear both together:
+
+- **The student withdraws** a pending request they filed by mistake (it can no longer sit in a teacher's queue forever). A withdrawal cannot undo a decision the teacher already made.
+- **The student leaves** the class from the Team panel. They keep their lab and all of their work; their teacher simply stops seeing it. The panel says exactly that before the second click.
+- **The teacher removes** a student, from the student's detail page. The student keeps their lab and work and leaves the roster; the teacher loses access until the student joins one of their classes again. This is deliberately a separate command from *denying* a request — denying something already approved and removing an enrolled student are different acts.
+
+Every transition — request, approve, deny, withdraw, revoke, supersede — is written to an append-only class-membership log with who did it and when. The request row itself is live state (a re-request resets its decision fields), so it can say where a student stands but never what happened.
 
 ### 15.7 Feedback & Annotations
 
@@ -991,9 +1149,18 @@ A dedicated tab for items awaiting moderation:
 
 Teacher can approve, request changes, or reject with a reason. Approved items go live; rejected items return to the student with the teacher's feedback.
 
+**(As built, v0.35.0)** A decision binds to the revision the teacher reviewed. The queue returns
+the showcase's `contentDigest` plus every asset with a direct link (and marks any required asset
+that is missing), and "View submission" renders the exact pending revision — `canViewShowcase`
+grants the team's own teacher every revision in every state, so the reviewer can open the board,
+quad chart, and video before deciding. The decision echoes the digest back and the update is a
+compare-and-set on it, so a submission edited mid-review is refused with 409 rather than
+approved. Every decision, submission, unpublish, and revision invalidation is appended to
+`showcase_moderation_events` with its digest, actor, and note.
+
 ### 15.9 Class Settings
-- Add/remove students from class
-- Group students into teams or allow student-led team formation
+- View the class join code and **regenerate** it (revokes a leaked/over-shared code; the code is otherwise long-lived and does not expire)
+- Approve/deny pending class-join requests (also surfaced as the Class Requests queue)
 - Set class-wide fair targets (which regional/state fair the class is competing in)
 - Configure notification preferences (email digest frequency, urgency thresholds)
 
@@ -1006,7 +1173,7 @@ Teacher can approve, request changes, or reject with a reason. Approved items go
 For the 120-student pilot, the dashboard ships with the essentials, and these are **built**:
 - Class Roster with phase indicators and attention triggers (`unlogged` / `stale`)
 - Student Detail View (phase-adaptive, incl. read-only literature access)
-- Validations queue (phase-advance approve/reject with atomic phase bump + team notification + audit row)
+- Class-join request queue (approve/deny; approval enrols only that student) + class-code regeneration
 - Showcase moderation queue
 - Teacher feedback on entries
 - **Nudge (implemented):** on a roster row flagged `unlogged` or `stale`, the teacher can send a one-tap nudge. It creates an `urgency` notification for that team (surfaced on the student notification bell, §13.7) and writes a `teacher_feedback` audit row. It is IDOR-guarded (the teacher must own the team's class) and deduped to **one per team per day** (a repeat tap simply reports "already nudged"); an optional short note can be attached. The row shows a "Nudged" badge after sending.
@@ -1016,25 +1183,26 @@ Reports, advanced analytics, and bulk actions are deferred until pilot feedback 
 ### 15.12 Technical Implementation
 
 **Authorization:**
-- Teacher role distinct from student role (`role` enum on `users` table)
-- Teachers can only access students in their assigned classes (enforced via Postgres RLS)
+- Teacher role distinct from student role (`role` enum on `users` table); the DB row is authoritative (a stale Clerk claim can't override a downgrade)
+- Individual-student access is gated on the student's own `class_id ∈ the teacher's classes`; team-level artifacts are authorized by **membership** (`teacherOwnsTeam` — a teacher owns any team with ≥1 member in their classes), so a cross-school lab is visible to both owning teachers
+- Application-level scoping today; Postgres RLS remains deferred pre-pilot defense-in-depth (see `SECURITY.md`)
 - Admin role separately defined for school-level access
 
-**New tables:**
+**Tables (current):**
 ```
-teacher_class_assignments  id, teacher_user_id, class_id, role (primary | co_teacher), assigned_at
-teacher_validations        id, team_id, validation_type (analyst | experimenter | presenter | pioneer),
-                           status (pending | approved | rejected | changes_requested),
-                           submitted_at, reviewed_by_user_id, reviewed_at, notes, evidence_snapshot_json
+class                      id, school_id, name, teacher_id, join_code (unique, regenerable)
+class_join_requests        id, class_id, user_id, status (pending | approved | denied),
+                           created_at, decided_at, decided_by_user_id   -- @@unique([class_id, user_id])
 teacher_feedback           id, team_id, target_type (paper | project_log | failure_log | lab_note | showcase),
                            target_id, body, created_by_user_id, created_at, resolved
-showcase_review_queue      id, showcase_id, status, flagged_reasons_json,
-                           reviewed_by_user_id, reviewed_at, decision, decision_notes
 ```
+Showcase moderation state lives on the `showcase` row itself (`moderation_status`, plus
+`content_digest` / `approved_digest` for revision binding), with an append-only
+`showcase_moderation_events` history — not a separate queue table. There is no `teacher_class_assignments` (a class has one `teacher_id`) and no `teacher_validations` (phase advancement is self-paced).
 
 **UI components:**
-- Reuses student-facing visualization components (`DiscoveryTree`, `LabView`, `ProjectLogTimeline`) wrapped in a teacher-context provider
-- New components: `ClassRoster`, `AttentionIndicator`, `StudentDetailView`, `PhaseAdapter` (switches view based on student's current phase), `ValidationQueue`, `ValidationCard`, `FeedbackEditor`, `ShowcaseReviewQueue`
+- Reuses student-facing visualization components (`DiscoveryTree`, lab views, `ProjectLogTimeline`) wrapped in teacher context
+- Components: `TeacherRoster`, `StudentDetail` (thin container + `student-detail/` sections + `useStudentOverview`), the class-join request queue + regenerate-code control, `FeedbackEditor`, `ShowcaseModerationQueue`, and `TeacherReports` (with a `next/dynamic` chart)
 
 **Performance:**
 - Roster view loads aggregated data via a single API call returning counts, last activity, and attention flags — not the full data for each student
@@ -1042,8 +1210,8 @@ showcase_review_queue      id, showcase_id, status, flagged_reasons_json,
 - For pilot scale, no caching needed; at larger scale, cache roster aggregates per teacher with 60-second TTL
 
 **Notifications:**
-- Daily morning email digest summarizing pending validations and urgent attention items
-- In-app banner when entering the dashboard if there are new validations to review
+- Daily morning email digest summarizing pending class-join requests and urgent attention items
+- In-app indicator when there are new class-join requests to review
 - Configurable per teacher
 
 **File structure (teacher routes):**
@@ -1069,13 +1237,16 @@ showcase_review_queue      id, showcase_id, status, flagged_reasons_json,
 
 ### 17.1 Security & Abuse Prevention
 
-scienium serves minors and calls paid AI APIs, so abuse prevention is a first-class requirement, not an afterthought. (Implementation details live in `ARCHITECTURE.md` §7.)
+scienium serves minors and calls paid AI APIs, so abuse prevention is a first-class requirement, not an afterthought. (Implementation details live in `ARCHITECTURE.md` §5 and §10; the pre-pilot checklist is in `SECURITY.md`.)
 
-- **Rate limiting on all endpoints.** Every API route is rate-limited per authenticated user (with a coarse per-IP backstop tuned so a shared school/NAT network isn't penalized). The AI-backed actions — paper chat, quiz generation/grading, research-plan review, "has this been done before?" idea-check, and fair-deadline reads — are capped tightly because each call costs money; runaway or scripted use is throttled with a friendly "slow down" response rather than a hard failure. Idea-checks keep their per-team daily cap (3/day). Invite-code redemption is throttled to make code guessing impractical.
-- **Strict input validation.** All user input is validated against a schema: correct types, sensible length limits, and rejection of unexpected fields. Oversized or malformed submissions are refused with a clear error.
-- **Safe file uploads.** Uploaded research PDFs have a size cap and are verified to actually be PDFs (not just by their claimed type). *(Open: virus scanning and video-size caps for the Showcase phase — see §18.)*
-- **No secrets in the browser.** All third-party API keys (AI, storage) are used only on the server; none are ever shipped to the client, and internal error details are never returned in API responses.
-- **Untrusted external content is sanitized.** Externally-sourced HTML (e.g. Wikipedia articles in Discovery) is run through an allowlist sanitizer before display, so it can't inject scripts.
+- **Rate limiting on all endpoints.** Every API route is rate-limited per authenticated user (with a coarse per-IP backstop tuned so a shared school/NAT network isn't penalized). The AI-backed actions — paper chat, quiz generation/grading, research-plan review, "has this been done before?" idea-check, and fair-deadline reads — are capped tightly because each call costs money; runaway or scripted use is throttled with a friendly "slow down" response. On serverless/multi-instance production the paid tiers **fail closed** without a shared (Upstash) counter, so the per-student cost cap can't silently multiply by instance count. Idea-checks keep their per-team daily cap (3/day). Invite/join-code redemption is throttled to make code guessing impractical.
+- **Strict input validation.** All user input is validated against a strict Zod schema: correct types, sensible length limits (shared `boundedText` / `cuid` / `httpUrl` helpers), and rejection of unexpected fields. Identity/authority fields are never honored from a request body.
+- **Same-origin writes (CSRF).** Because Clerk sessions ride on cookies, every mutating request is same-origin-checked in the shared guards, so a cross-site page can't drive a write with the user's ambient session.
+- **Safe file uploads.** Uploaded research PDFs have a size cap, are verified to actually be PDFs by magic bytes, and are **inspected for active content** (JavaScript, launch/open actions, embedded files, XFA, encryption, page bombs) before being stored or parsed; the stored bytes are served with `nosniff`. *(Open: virus scanning and video-size caps for the Showcase phase — see §18.)*
+- **Attachments are capabilities, not URLs.** Project-log photos are referenced by an `UploadedAsset` id; the view route authorizes through the team-scoped ledger row, so a client can't point at another team's object.
+- **No secrets in the browser.** All third-party API keys (AI, storage) are used only on the server; a compiler-enforced `server-only` boundary fails the build if a client module imports one, and internal error details are never returned in API responses.
+- **Untrusted content is sanitized and fenced.** Externally-sourced HTML (e.g. Wikipedia articles in Discovery) is run through an allowlist sanitizer before display; untrusted student/PDF text sent to the LLM is fenced as "data, not instructions"; and AI output that could touch KP/score/clearance is parsed and server-clamped.
+- **Scheduled jobs are authenticated in constant time.** Cron routes require a bearer secret compared with `timingSafeEqual` (min 32 chars in production), and a static test asserts every cron route enforces it.
 
 ---
 
@@ -1084,7 +1255,7 @@ scienium serves minors and calls paid AI APIs, so abuse prevention is a first-cl
 - [ ] Team Clearance Level: average, highest, or weighted?
 - [ ] Visual/aesthetic direction of the virtual lab
 - [ ] Discovery depth soft cap to prevent infinite branching
-- [ ] File size and length caps for uploads (PDFs now capped at 20 MB; **video caps for Showcase still open**) + virus scanning for untrusted uploads
+- [ ] File size and length caps for uploads (PDFs capped at 20 MB; **Showcase video needs no cap — it is a YouTube/Vimeo URL via `showcase/asset/link`, never stored bytes**) + virus scanning for untrusted uploads; still open: a per-team storage quota (no quota exists today, only per-minute rate limits)
 - [ ] Exact KP and LC costs — economy balancing
 - [ ] Accessibility (screen readers, color contrast, language support)
 - [ ] Team disbanding: fork policy for individual members?
@@ -1096,14 +1267,14 @@ scienium serves minors and calls paid AI APIs, so abuse prevention is a first-cl
 - [ ] Fair Hub: how do we handle students who don't intend to compete at any fair?
 - [ ] Fair Hub: official partnership with Society for Science for a data feed?
 - [ ] Fair Hub: rubric self-assessment — required or fully optional?
-- [ ] PvP: per-type / per-building spell effect differentiation — all spells are the identical AOE damage spell for now; distinct effects are significant creative work being brainstormed separately
-- [ ] PvP: exact trophy gain/loss threshold (~30% destruction?) and the loss-scaling formula
-- [ ] PvP: daily raid cap value, and refind cap — per raid session or per day?
-- [ ] PvP: should the defender's trophies also change when their base is raided?
-- [ ] PvP: building health scaling per level, spell damage/radius/cooldown per level — economy of a 15-second raid
-- [ ] PvP: should a trophy floor cap losses (never drop below zero / a baseline) to avoid demoralizing students?
-- [ ] PvP: bring back ranked tiers (Bronze→Master) and seasonal resets from the old battle design, or keep a plain class trophy count?
-- [ ] PvP: spell visual FX direction — cast animation, blast radius telegraph, building damage states
+- [x] PvP: **per-type / per-building spell effect differentiation** — **DEFERRED to v2.** All spells are the identical AOE damage spell for now; distinct effects are significant creative work being brainstormed separately (PVPEXT-01). Type still matters through the effectiveness multiplier (§11.4).
+- [x] PvP: **trophy gain/loss threshold and formula** — **RESOLVED.** 30% threshold (`TROPHY_GAIN_THRESHOLD`), gain formula: `ceil((% - 30) / 70 * 10)`, loss formula: inverse scaled with `Math.ceil` producing steppy integer losses from −10 (0%) to −1 (29%). See `lib/pvp/combat-engine.ts` `calculateTrophyDelta()`.
+- [x] PvP: **daily raid/refind caps** — **RESOLVED.** 3 raids/day (`MAX_RAIDS_PER_DAY`), 3 refinds/day (`MAX_REFINDS_PER_DAY`). Both are tunable constants in the route; reset is UTC midnight (`todayUtc()`).
+- [x] PvP: **defender trophy change on raid** — **RESOLVED for v1.** Symmetric gain/loss: defender loses the same `trophyDelta` the attacker gains. Asymmetric defender loss (BAL-01) may be revisited if pilot data warrants.
+- [ ] PvP: building health scaling per level, spell damage/radius/cooldown per level — economy of a 15-second raid (v1 uses flat `SPELL_BASE_DAMAGE` and building-level health curves — deferred to v2 balancing)
+- [ ] PvP: trophy floor — should losses never drop below zero or a baseline? (deferred to Phase 3 balancing)
+- [x] PvP: **ranked tiers (Bronze→Master) vs plain class trophy count** — **RESOLVED as plain class trophy count.** Class leaderboard (`/pvp/leaderboard`) shows ranked `currentTrophies` descending within the student's class, no tier system (v1).
+- [ ] PvP: spell visual FX direction — cast animation, blast radius telegraph, building damage states (deferred to v2)
 - [ ] Gateway buildings: final names (must not be "laboratory") and sculpt identities for all 7
 - [ ] Operations Hub: does it unlock at `literature_review` (current assumption) — and if daily pillars are meant to be "day one," how are they reached before the Hub exists?
 - [ ] Science Fair Research building: appears at `discovery` (reference material early) or later, given buildings otherwise appear chronologically?

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
-import { deleteE2eDiscoveryNodes, deleteE2eDiscoveryNodesByTitle } from './db'
-import { api } from './api'
+import { api, gotoFresh } from './api'
+import { createLab, type OwnedLab } from './lab'
+import { dismissHome, openDiscovery } from './discovery-helpers'
 
 /**
  * F11 — Discovery interest color-coding + full-window Discovery Tree view +
@@ -59,6 +60,8 @@ const DARK_BG_RGB = 'rgb(13, 27, 46)' // #0d1b2e
 // serial run (not yet deleted — cleanup only runs once in afterAll) would
 // otherwise satisfy a `button:has-text(...)` title match ambiguously and
 // silently pick the wrong row for the tree-index assertion.
+let lab: OwnedLab
+
 const WIKI_TOPIC = 'Photosynthesis'
 const WIKI_TOPIC_2 = 'Volcano'
 
@@ -139,16 +142,6 @@ async function seedInterest(page: Page, nodeId: string, level: 'high' | 'mid' | 
     .toBe(level)
 }
 
-/** Dismiss the Discovery home screen to reach the main explorer (mirrors papers-tab.spec.ts). */
-async function dismissHome(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /Continue Exploring|Start Exploring/ }).click()
-}
-
-async function openDiscovery(page: Page): Promise<void> {
-  await page.goto('/discovery')
-  await dismissHome(page)
-}
-
 function treeTab(page: Page) {
   return page.getByTestId('tree-tab')
 }
@@ -193,17 +186,22 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   // section membership between tests.
   test.describe.configure({ mode: 'serial', timeout: 90_000 })
 
-  // Track every node this spec creates so afterAll can self-clean regardless
-  // of which tests passed/failed (self-cleaning per .claude/PARALLELISM.md).
+  // Still tracked — but for LOGIC, not cleanup: AC14/AC15 identify the root a
+  // test just created by excluding the ones earlier tests made, and a disposable
+  // lab does not answer that question.
   const createdNodeIds: string[] = []
 
   test.beforeAll(async () => {
-    await deleteE2eDiscoveryNodesByTitle(TAG, [WIKI_TOPIC, WIKI_TOPIC_2])
+    // The lab starts with an empty tree, which retires the title-prefix
+    // pre-clean this used to need: nothing can survive from a crashed run,
+    // because the lab a crashed run used is a different lab.
+    lab = await createLab('discotree')
   })
 
   test.afterAll(async () => {
-    await deleteE2eDiscoveryNodes(createdNodeIds)
-    console.log(`[F11 cleanup] afterAll removed ${createdNodeIds.length} seeded node(s).`)
+    // `dispose()` removes the nodes with the lab, including the parent/child
+    // descendants `deleteE2eDiscoveryNodes` had to walk by hand.
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────
@@ -225,7 +223,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     // The tree SVG renders only for a NON-empty tree (DiscoveryTree shows an
     // empty-state placeholder at nodes.length === 0), so seed a root first —
     // otherwise this asserts against ambient tree state that a fresh fixture lacks.
-    await page.goto('/discovery')
+    await gotoFresh(page, '/discovery')
     const nodeId = await seedRoot(page, seedTitle('tree-view'))
     createdNodeIds.push(nodeId)
     await page.reload() // settle the seeded node past the mount-time hydrate race
@@ -246,7 +244,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     // it (per F4.spec.ts:518 / the Clerk-JWT-expiry convention, and MEMORY.md's
     // "Scienium E2E conventions" note — this applies even to a test's FIRST
     // page.request, not just ones late in the test body).
-    await page.goto('/discovery')
+    await gotoFresh(page, '/discovery')
 
     const nodeId = await seedRoot(page, seedTitle('unmarked'))
     createdNodeIds.push(nodeId)
@@ -268,7 +266,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
 
   // ── AC4 ──────────────────────────────────────────────────────────────────────
   test('AC4: clicking a swatch cycles it to "high" (green circle) with a 200 PATCH', async ({ page }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const nodeId = await seedRoot(page, seedTitle('cycle-high'))
     createdNodeIds.push(nodeId)
 
@@ -307,7 +305,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC5: clicking the same swatch again cycles it to "mid" (orange triangle), non-color shape differs from high', async ({
     page,
   }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const nodeId = await seedRoot(page, seedTitle('cycle-mid'))
     createdNodeIds.push(nodeId)
     // Seed straight to "high" (the PATCH contract AC4 already exercises live)
@@ -347,7 +345,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC6: a third click cycles it to "low" (red square), visibly distinct from the orange mid state', async ({
     page,
   }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const nodeId = await seedRoot(page, seedTitle('cycle-low'))
     createdNodeIds.push(nodeId)
     // Seed straight to "mid" (the none->high->mid transitions are AC4/AC5's
@@ -386,7 +384,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC7: after marking a node "high" and reloading, the swatch still reads data-interest="high" (DB-persisted)', async ({
     page,
   }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const nodeId = await seedRoot(page, seedTitle('persist-high'))
     createdNodeIds.push(nodeId)
     await seedInterest(page, nodeId, 'high')
@@ -414,7 +412,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     // full reload — measured at ~29s of the default 30s budget on a clean
     // tree, so any dev-mode compile cost tips it over. Give it real headroom.
     test.slow()
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const highId = await seedRoot(page, seedTitle('tier-high'))
     const midId = await seedRoot(page, seedTitle('tier-mid'))
     const lowId = await seedRoot(page, seedTitle('tier-low'))
@@ -447,7 +445,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC9: within the "high" tier, rows are ordered by ascending tree index (tree 1 above tree 2)', async ({
     page,
   }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     // Two SEPARATE trees (each its own root), each with a high-marked node.
     const tree1RootId = await seedRoot(page, seedTitle('tree1-root'))
     const tree2RootId = await seedRoot(page, seedTitle('tree2-root'))
@@ -478,12 +476,12 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
 
   // ── AC10 ─────────────────────────────────────────────────────────────────────
   test('AC10: GET /api/discovery/tree includes the marked node\'s interestLevel: "high"', async ({ page }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const nodeId = await seedRoot(page, seedTitle('get-serializer'))
     createdNodeIds.push(nodeId)
     await seedInterest(page, nodeId, 'high')
 
-    await page.goto('/discovery') // re-navigate: refresh the JWT again before the assertion GET
+    await gotoFresh(page, '/discovery') // re-navigate: refresh the JWT again before the assertion GET
     const res = await api.get(page, '/api/discovery/tree')
     expect(res.status()).toBe(200)
     const body = await res.json()
@@ -494,7 +492,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
 
   // ── AC11 ─────────────────────────────────────────────────────────────────────
   test('AC11: PATCH on a foreign/fake node id returns 404 (team-scoped IDOR guard)', async ({ page }) => {
-    await page.goto('/discovery')
+    await gotoFresh(page, '/discovery')
     const res = await api.patch(page, '/api/discovery/tree/clxxxxxxxxxxxxxxxxxxxxxxx', {
       data: { interestLevel: 'high' },
     })
@@ -503,11 +501,11 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
 
   // ── AC12 ─────────────────────────────────────────────────────────────────────
   test('AC12: PATCH with an invalid interestLevel value returns 400 (zod enum rejects it)', async ({ page }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     const nodeId = await seedRoot(page, seedTitle('invalid-body'))
     createdNodeIds.push(nodeId)
 
-    await page.goto('/discovery') // re-navigate: refresh the JWT again before the assertion PATCH
+    await gotoFresh(page, '/discovery') // re-navigate: refresh the JWT again before the assertion PATCH
     const res = await api.patch(page, `/api/discovery/tree/${nodeId}`, {
       data: { interestLevel: 'purple' },
     })
@@ -532,7 +530,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC14: clicking "New tree" then opening a source creates a new root; root count increases by exactly 1', async ({
     page,
   }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     // Ensure at least one existing root/tree is present before the flow.
     const existingRootId = await seedRoot(page, seedTitle('pre-existing-root'))
     createdNodeIds.push(existingRootId)
@@ -552,7 +550,12 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     // file-header note on why this, not Papers, is used here).
     const searchInput = page.getByPlaceholder(/Search another starting topic/)
     await searchInput.fill(WIKI_TOPIC)
-    const optionLocator = page.getByRole('button', { name: WIKI_TOPIC, exact: true })
+    // `option`, not `button`: v0.75.8 gave TopicSearch the full combobox /
+    // listbox / option attribute set (§0.9 "Keyboard/name defects"), so each
+    // result's <button> now carries an explicit role="option" that overrides
+    // its implicit button role. Same element, same click — the accessible role
+    // is what changed, and the spec was pinning the implicit one.
+    const optionLocator = page.getByRole('option', { name: WIKI_TOPIC, exact: true })
     await expect(optionLocator).toBeVisible({ timeout: 10000 })
 
     const treePostPromise = page.waitForResponse(
@@ -579,7 +582,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
   test('AC15: after the new-tree flow, the topic list shows the new topic under a greater tree index', async ({
     page,
   }) => {
-    await page.goto('/discovery') // navigate before any page.request (Clerk JWT convention)
+    await gotoFresh(page, '/discovery') // navigate before any page.request (Clerk JWT convention)
     // Rebuild the AC14 scenario end-to-end within this test so it stands alone
     // (its own root/tree, marked "high" so it lands in a single, easy-to-scope
     // tier section for the assertion).
@@ -603,7 +606,7 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     // can't ambiguously satisfy the text-match below.
     const searchInput = page.getByPlaceholder(/Search another starting topic/)
     await searchInput.fill(WIKI_TOPIC_2)
-    const optionLocator = page.getByRole('button', { name: WIKI_TOPIC_2, exact: true })
+    const optionLocator = page.getByRole('option', { name: WIKI_TOPIC_2, exact: true }) // see AC14
     await expect(optionLocator).toBeVisible({ timeout: 10000 })
 
     const treePostPromise = page.waitForResponse(

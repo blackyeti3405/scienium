@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { ModalBackdrop } from '@/components/ui/ModalBackdrop'
 import { X, MessageSquare, CheckCircle } from 'lucide-react'
 import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
+import { timeAgo } from '@/components/ops/log-shared'
 
 export interface FeedbackItem {
   id: string
@@ -13,17 +15,6 @@ export interface FeedbackItem {
   resolved: boolean
   createdAt: string
   teacher: { name: string | null }
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const s = Math.floor(diff / 1000)
-  if (s < 60) return `${s}s ago`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  return `${Math.floor(h / 24)}d ago`
 }
 
 function targetLabel(targetType: string): string {
@@ -58,26 +49,22 @@ export function FeedbackPanel({
   const [error, setError] = useState<string | null>(null)
   const [patching, setPatching] = useState<string | null>(null)
 
-  // Escape + scroll lock, mirroring TeamPanel
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    closeRef.current?.focus()
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prevOverflow
-    }
-  }, [onClose])
+  // Monotonic freshness token: bumped by every LOCAL mutation (optimistic
+  // toggle or its revert). A load captures the token when its request STARTS
+  // and drops its response if the token moved — a GET requested before the
+  // user's click must never overwrite the newer optimistic state when it lands
+  // late (dev StrictMode's double-mount makes this a guaranteed duplicate
+  // in-flight load; on a slow network it happens in production too — the F1
+  // AC5 flake).
+  const stateVersionRef = useRef(0)
 
   const loadFeedback = useCallback(async () => {
+    const startedAtVersion = stateVersionRef.current
     try {
       const res = await fetch('/api/team/feedback')
       if (!res.ok) throw new Error('Could not load feedback')
       const data = await res.json()
+      if (stateVersionRef.current !== startedAtVersion) return // stale — a mutation won
       setItems(data.items)
       onUnresolvedCount?.(data.unresolvedCount)
       onDataChange?.(data)
@@ -88,16 +75,20 @@ export function FeedbackPanel({
     }
   }, [onDataChange, onUnresolvedCount])
 
+  // `initialData` is a warm-start SEED only (applied via useState above). It
+  // must never re-sync on prop change: LabScene's mount-time warm-up fetch can
+  // resolve seconds later (dev-server compile latency) with data requested
+  // BEFORE the user's latest action, and re-applying it here clobbered the
+  // optimistic resolved-state right after a click (F1 AC5 flake). Once open,
+  // this panel owns freshness; the parent hears about changes via onDataChange.
   useEffect(() => {
-    if (initialData) {
-      setItems(initialData.items)
-      setLoading(false)
-      return
-    }
-    void loadFeedback()
-  }, [initialData, loadFeedback])
+    if (!initialData) void loadFeedback()
+    // Mount-only by design — see above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function toggleResolved(item: FeedbackItem, resolved: boolean) {
+    stateVersionRef.current++ // anything loaded before this click is now stale
     setPatching(item.id)
     // Optimistic update
     const next = items.map((i) => (i.id === item.id ? { ...i, resolved } : i))
@@ -113,6 +104,7 @@ export function FeedbackPanel({
         body: JSON.stringify({ id: item.id, resolved }),
       })
       if (!res.ok) {
+        stateVersionRef.current++
         // Revert on failure — functional updater avoids clobbering a concurrent item's optimistic state
         setItems((prev) => {
           const reverted = prev.map((i) => (i.id === item.id ? { ...i, resolved: !resolved } : i))
@@ -123,6 +115,7 @@ export function FeedbackPanel({
         })
       }
     } catch {
+      stateVersionRef.current++
       // Revert on failure — functional updater avoids clobbering a concurrent item's optimistic state
       setItems((prev) => {
         const reverted = prev.map((i) => (i.id === item.id ? { ...i, resolved: !resolved } : i))
@@ -137,15 +130,7 @@ export function FeedbackPanel({
   }
 
   return (
-    <div
-      className="feature-panel__backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Teacher Feedback"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
+    <ModalBackdrop label="Teacher Feedback" onClose={onClose} initialFocusRef={closeRef}>
       <div className="flex flex-col w-[min(480px,94vw)] max-h-[80vh] bg-[#0d1b2e] text-white border-[3px] border-[#2a3048] rounded-[4px] overflow-hidden shadow-[0_0_0_3px_#10131f,0_18px_60px_rgba(0,0,0,0.6)]">
         {/* Header */}
         <header className="flex items-center justify-between px-4 py-3 border-b-[3px] border-[#2a3048] bg-[#0f1320] shrink-0">
@@ -172,7 +157,7 @@ export function FeedbackPanel({
           )}
 
           {!loading && !error && items.length === 0 && (
-            <p className="font-pixel text-[8px] text-white/30 text-center py-10 px-6">
+            <p className="font-pixel text-[8px] text-white/40 text-center py-10 px-6">
               No feedback from your teacher yet.
             </p>
           )}
@@ -192,11 +177,11 @@ export function FeedbackPanel({
                     <span className="font-pixel text-[8px] text-[#F5C518]">
                       {item.teacher.name ?? 'Your teacher'}
                     </span>
-                    <span className="font-pixel text-[7px] text-white/30">·</span>
-                    <span className="font-pixel text-[7px] text-white/30">
+                    <span className="font-pixel text-[7px] text-white/40">·</span>
+                    <span className="font-pixel text-[7px] text-white/40">
                       {timeAgo(item.createdAt)}
                     </span>
-                    <span className="font-pixel text-[7px] text-white/30">·</span>
+                    <span className="font-pixel text-[7px] text-white/40">·</span>
                     <span className="font-pixel text-[7px] text-[#7ff2e3]/60">
                       {targetLabel(item.targetType)}
                     </span>
@@ -216,7 +201,7 @@ export function FeedbackPanel({
                         busy={patching === item.id}
                         showSpinner={false}
                         onClick={() => toggleResolved(item, false)}
-                        className="font-pixel text-[7px] text-white/30 hover:text-white/60 transition-colors disabled:opacity-40"
+                        className="font-pixel text-[7px] text-white/40 hover:text-white/60 transition-colors disabled:opacity-40"
                       >
                         undo
                       </BusyButton>
@@ -236,6 +221,6 @@ export function FeedbackPanel({
           )}
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }

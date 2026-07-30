@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
+import { ModalBackdrop } from '@/components/ui/ModalBackdrop'
 import { Settings, X } from 'lucide-react'
 import { LabProfileSettings } from './LabProfileSettings'
 
@@ -13,30 +14,8 @@ import { LabProfileSettings } from './LabProfileSettings'
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null)
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    closeRef.current?.focus()
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prevOverflow
-    }
-  }, [onClose])
-
   return (
-    <div
-      className="feature-panel__backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Settings"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
+    <ModalBackdrop label="Settings" onClose={onClose} initialFocusRef={closeRef}>
       <div className="flex flex-col w-[min(440px,94vw)] max-h-[85vh] bg-[#0d1b2e] text-white border-[3px] border-[#2a3048] rounded-[4px] overflow-hidden shadow-[0_0_0_3px_#10131f,0_18px_60px_rgba(0,0,0,0.6)]">
         <header className="flex items-center justify-between px-4 py-3 border-b-[3px] border-[#2a3048] bg-[#0f1320] shrink-0">
           <span className="font-pixel text-[10px] text-[#e8ecfb] flex items-center gap-2">
@@ -56,6 +35,6 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           <LabProfileSettings />
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }

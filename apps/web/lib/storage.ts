@@ -1,5 +1,5 @@
+import 'server-only'
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { serverEnv } from '@/lib/env'
 
 // The R2 client is built lazily on first use (never at import) and memoized, so a
@@ -15,20 +15,6 @@ function r2(): S3Client {
       secretAccessKey: serverEnv.R2_SECRET_ACCESS_KEY(),
     },
   }))
-}
-
-export async function getUploadSignedUrl(key: string, contentType: string): Promise<string> {
-  const command = new PutObjectCommand({
-    Bucket: serverEnv.R2_BUCKET_NAME(),
-    Key: key,
-    ContentType: contentType,
-  })
-  return getSignedUrl(r2(), command, { expiresIn: 3600 })
-}
-
-export async function getDownloadSignedUrl(key: string): Promise<string> {
-  const command = new GetObjectCommand({ Bucket: serverEnv.R2_BUCKET_NAME(), Key: key })
-  return getSignedUrl(r2(), command, { expiresIn: 3600 })
 }
 
 // ─── Server-side object access ────────────────────────────────────────────────

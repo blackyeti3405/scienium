@@ -60,7 +60,7 @@ export function SectionTabs({ tabs }: { tabs: Tab[] }) {
                     }`}
                   >
                     {t.icon && (
-                      <span className={`shrink-0 ${isActive ? 'text-[#F5C518]' : 'text-white/35'}`}>
+                      <span className={`shrink-0 ${isActive ? 'text-[#F5C518]' : 'text-white/40'}`}>
                         {t.icon}
                       </span>
                     )}

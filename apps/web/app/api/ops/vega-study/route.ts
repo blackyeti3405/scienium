@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { buildStudyContext, STUDY_INSTRUCTIONS } from '@/lib/ops/vega-study-context'
-import { anthropic } from '@/lib/anthropic'
+import { aiCreate, firstText } from '@/lib/ai/spend'
+import { buildChatTurns, runChatTurn } from '@/lib/chat/thread'
 
 // The server owns the team's shared study thread. A request carries ONE new user
 // turn; history is loaded from the database (keyed by teamId only — team-shared),
@@ -46,81 +46,83 @@ export async function POST(req: NextRequest) {
     select: { role: true, content: true },
   })
   // Team-shared: concurrent teammate posts interleave user/assistant rows by
-  // createdAt, so the bounded window can begin on an assistant turn. Anthropic
-  // requires the first message to be a user turn, so trim any leading assistant
-  // rows before prepending the history to the new user message.
-  const priorAsc = prior.reverse()
-  let head = 0
-  while (head < priorAsc.length && priorAsc[head].role !== 'user') head++
-  const convo = [
-    ...priorAsc.slice(head).map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user' as const, content: message },
-  ]
+  // createdAt, so the bounded window can begin on an assistant turn — see
+  // buildChatTurns for the trim + BLK-6 cache_control breakpoints.
+  const convo = buildChatTurns(prior, message)
 
-  // Persist the user turn as `pending` before the paid call.
-  const requestId = randomUUID()
-  const userRow = await db.vegaStudyMessage.create({
-    data: {
-      teamId: ctx.teamId,
-      userId: ctx.dbUserId,
-      role: 'user',
-      content: message,
-      status: 'pending',
-      requestId,
-    },
-    select: { id: true },
-  })
-
-  let reply: string
-  let usageJson: { inputTokens: number; outputTokens: number } | undefined
-  // E2E test-mode short-circuit: skip the real Anthropic call when E2E_SKIP_LLM=1
-  // (set by the Playwright config, never in a normal dev server or production).
-  if (process.env.E2E_SKIP_LLM === '1') {
-    reply =
-      "That's a great question to dig into — but I can't write that deliverable for you. Let's work through it together: what's the core idea you're trying to explain, in your own words?"
-  } else {
-    try {
+  const result = await runChatTurn({
+    createPending: (requestId) =>
+      db.vegaStudyMessage.create({
+        data: {
+          teamId: ctx.teamId,
+          userId: ctx.dbUserId,
+          role: 'user',
+          content: message,
+          status: 'pending',
+          requestId,
+        },
+        select: { id: true },
+      }),
+    callAnthropic: async () => {
+      // E2E test-mode short-circuit: skip the real Anthropic call when E2E_SKIP_LLM=1
+      // (set by the Playwright config, never in a normal dev server or production).
+      if (process.env.E2E_SKIP_LLM === '1') {
+        return {
+          reply:
+            "That's a great question to dig into — but I can't write that deliverable for you. Let's work through it together: what's the core idea you're trying to explain, in your own words?",
+          usageJson: undefined,
+        }
+      }
       const context = await buildStudyContext(ctx.teamId)
-      const response = await anthropic().messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
+      const response = await aiCreate('vega_study', {
+        // Sonnet 5 runs adaptive thinking when `thinking` is omitted (4.6 did not),
+        // and thinking shares this `max_tokens` budget. Disabled to preserve the
+        // cost, latency, and output length this route was tuned for.
+        // `max_tokens` was also raised ~1.5x: Sonnet 5's tokenizer
+        // spends ~30% more tokens on the same text, so a budget tuned against
+        // 4.6 truncates. That is not a visible error — it silently cuts the
+        // response mid-sentence (it broke idea-check's JSON verdict outright).
+        thinking: { type: 'disabled' },
+        max_tokens: 1536,
         system: [
           { type: 'text', text: STUDY_INSTRUCTIONS },
           { type: 'text', text: context, cache_control: { type: 'ephemeral' } },
         ],
         messages: convo,
       })
-      reply = response.content[0].type === 'text' ? response.content[0].text : ''
-      usageJson = {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
+      // First TEXT block, not `content[0]` (P2-S9) — see the chat route.
+      const reply = firstText(response)
+      return {
+        reply,
+        usageJson: {
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+        },
       }
-    } catch (err) {
-      console.error('[vega-study] error:', err)
-      await db.vegaStudyMessage
-        .update({ where: { id: userRow.id }, data: { status: 'error', error: 'Chat failed' } })
-        .catch(() => {})
-      return NextResponse.json({ error: 'Chat failed' }, { status: 500 })
-    }
-  }
+    },
+    onError: (err) => console.error('[vega-study] error:', err),
+    markError: (userRowId) =>
+      db.vegaStudyMessage.update({ where: { id: userRowId }, data: { status: 'error', error: 'Chat failed' } }),
+    complete: (userRowId, usageJson, reply, requestId) =>
+      db.$transaction([
+        db.vegaStudyMessage.update({
+          where: { id: userRowId },
+          data: { status: 'complete', tokenUsageJson: usageJson },
+        }),
+        db.vegaStudyMessage.create({
+          data: {
+            teamId: ctx.teamId,
+            userId: ctx.dbUserId,
+            role: 'assistant',
+            content: reply,
+            status: 'complete',
+            requestId,
+            tokenUsageJson: usageJson,
+          },
+        }),
+      ]),
+  })
 
-  await db.$transaction([
-    db.vegaStudyMessage.update({
-      where: { id: userRow.id },
-      data: { status: 'complete', tokenUsageJson: usageJson },
-    }),
-    db.vegaStudyMessage.create({
-      data: {
-        teamId: ctx.teamId,
-        userId: ctx.dbUserId,
-        role: 'assistant',
-        content: reply,
-        status: 'complete',
-        requestId,
-        tokenUsageJson: usageJson,
-      },
-    }),
-  ])
-
-  return NextResponse.json({ reply })
+  if (!result.ok) return NextResponse.json({ error: 'Chat failed' }, { status: 500 })
+  return NextResponse.json({ reply: result.reply })
 }

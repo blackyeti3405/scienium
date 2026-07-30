@@ -10,7 +10,7 @@
 > Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
 > Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
 
-**Progress: 5 / 29 fields · 30 / 174 segments.**
+**Progress: 15 / 29 fields · 90 / 174 segments.**
 
 ---
 
@@ -54,85 +54,85 @@
 - [x] projectile-ballistics
 - [x] rotational-mechanics
 
-## clinical-medicine-pharmacology ⬜
+## clinical-medicine-pharmacology ✅
 *Clinical Medicine / Pharmacology*
 
-- [ ] Core
-- [ ] cardiovascular-pharmacology
-- [ ] clinical-pharmacokinetics-dosing
-- [ ] endocrine-metabolic-pharmacology
-- [ ] neuropsychopharmacology
-- [ ] toxicology-adverse-effects
+- [x] Core
+- [x] cardiovascular-pharmacology
+- [x] clinical-pharmacokinetics-dosing
+- [x] endocrine-metabolic-pharmacology
+- [x] neuropsychopharmacology
+- [x] toxicology-adverse-effects
 
-## computer-science-algorithms ⬜
+## computer-science-algorithms ✅
 *Computer Science / Algorithms*
 
-- [ ] Core
-- [ ] complexity-computability
-- [ ] data-structures-design
-- [ ] graph-algorithms
-- [ ] randomized-heuristic-algorithms
-- [ ] sorting-searching-selection
+- [x] Core
+- [x] complexity-computability
+- [x] data-structures-design
+- [x] graph-algorithms
+- [x] randomized-heuristic-algorithms
+- [x] sorting-searching-selection
 
-## data-science-ml-metrics ⬜
+## data-science-ml-metrics ✅
 *Data Science / ML Metrics*
 
-- [ ] Core
-- [ ] classification-eval
-- [ ] fairness-robustness
-- [ ] model-interpretability
-- [ ] regression-forecasting-eval
-- [ ] unsupervised-clustering-eval
+- [x] Core
+- [x] classification-eval
+- [x] fairness-robustness
+- [x] model-interpretability
+- [x] regression-forecasting-eval
+- [x] unsupervised-clustering-eval
 
-## ecology ⬜
+## ecology ✅
 *Ecology*
 
-- [ ] Core
-- [ ] behavioral-ecology
-- [ ] community-ecology
-- [ ] conservation-restoration-ecology
-- [ ] population-ecology
-- [ ] urban-human-impact-ecology
+- [x] Core
+- [x] behavioral-ecology
+- [x] community-ecology
+- [x] conservation-restoration-ecology
+- [x] population-ecology
+- [x] urban-human-impact-ecology
 
-## electronics-electrical-engineering ⬜
+## electronics-electrical-engineering ✅
 *Electronics / Electrical Engineering*
 
-- [ ] Core
-- [ ] analog-circuit-design
-- [ ] digital-logic-embedded
-- [ ] power-electronics
-- [ ] rf-antennas
-- [ ] sensors-instrumentation
+- [x] Core
+- [x] analog-circuit-design
+- [x] digital-logic-embedded
+- [x] power-electronics
+- [x] rf-antennas
+- [x] sensors-instrumentation
 
-## environmental-earth-science ⬜
+## environmental-earth-science ✅
 *Environmental / Earth Science*
 
-- [ ] Core
-- [ ] air-quality-atmosphere
-- [ ] climate-change-carbon
-- [ ] pollution-remediation-waste
-- [ ] soil-land-degradation
-- [ ] water-quality-hydrology
+- [x] Core
+- [x] air-quality-atmosphere
+- [x] climate-change-carbon
+- [x] pollution-remediation-waste
+- [x] soil-land-degradation
+- [x] water-quality-hydrology
 
-## epidemiology-medicine ⬜
+## epidemiology-medicine ✅
 *Epidemiology / Medicine*
 
-- [ ] Core
-- [ ] biostatistics-clinical-trials
-- [ ] chronic-disease-epidemiology
-- [ ] infectious-disease-modeling
-- [ ] outbreak-investigation
-- [ ] public-health-surveillance
+- [x] Core
+- [x] biostatistics-clinical-trials
+- [x] chronic-disease-epidemiology
+- [x] infectious-disease-modeling
+- [x] outbreak-investigation
+- [x] public-health-surveillance
 
-## fluid-dynamics-aerodynamics ⬜
+## fluid-dynamics-aerodynamics ✅
 *Fluid Dynamics / Aerodynamics*
 
-- [ ] Core
-- [ ] boundary-layers-transition-separation
-- [ ] external-aero-lift-drag
-- [ ] hydrodynamics-open-channel-free-surface
-- [ ] internal-pipe-duct-flow
-- [ ] unsteady-vortex-wake-flows
+- [x] Core
+- [x] boundary-layers-transition-separation
+- [x] external-aero-lift-drag
+- [x] hydrodynamics-open-channel-free-surface
+- [x] internal-pipe-duct-flow
+- [x] unsteady-vortex-wake-flows
 
 ## gait-biomechanics ✅
 *Gait Biomechanics*
@@ -144,25 +144,25 @@
 - [x] prosthetics-orthotics-gait
 - [x] wearable-gait-sensing
 
-## genetics-genomics ⬜
+## genetics-genomics ✅
 *Genetics / Genomics*
 
-- [ ] Core
-- [ ] bioinformatics-sequence-analysis
-- [ ] genome-editing-genetic-engineering
-- [ ] human-medical-genetics
-- [ ] population-evolutionary-genomics
-- [ ] transcriptomics-gene-expression
+- [x] Core
+- [x] bioinformatics-sequence-analysis
+- [x] genome-editing-genetic-engineering
+- [x] human-medical-genetics
+- [x] population-evolutionary-genomics
+- [x] transcriptomics-gene-expression
 
-## geology-seismology ⬜
+## geology-seismology ✅
 *Geology / Seismology*
 
-- [ ] Core
-- [ ] geotechnical-engineering-geology
-- [ ] mineralogy-petrology
-- [ ] sedimentology-stratigraphy
-- [ ] seismology-earthquake-science
-- [ ] structural-geology-geophysics
+- [x] Core
+- [x] geotechnical-engineering-geology
+- [x] mineralogy-petrology
+- [x] sedimentology-stratigraphy
+- [x] seismology-earthquake-science
+- [x] structural-geology-geophysics
 
 ## immunology-microbiology ⬜
 *Immunology / Microbiology*

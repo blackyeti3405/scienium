@@ -1,3 +1,4 @@
+import 'server-only'
 import { db } from '@/lib/db'
 import { LAB_TYPE_LABELS, type LabType } from '@/lib/phase'
 

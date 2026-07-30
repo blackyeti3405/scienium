@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
 import { CODEX_DAILY_LESSON_CAP } from '@/lib/ops/codex/engine'
+import { todayUtc } from '@/lib/date'
 
 /**
  * GET /api/ops/codex/progress — this student's Field Codex progress, scoped
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
   if (error) return error
 
-  const todayUtc = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()))
+  const today = todayUtc()
 
   const [progressRows, kpDay, studyPlan] = await Promise.all([
     db.codexLessonProgress.findMany({
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
     }),
     db.codexKpDay.findUnique({
       where: {
-        userId_teamId_day: { userId: ctx.dbUserId, teamId: ctx.teamId, day: todayUtc },
+        userId_teamId_day: { userId: ctx.dbUserId, teamId: ctx.teamId, day: today },
       },
       select: { lessonsCompleted: true },
     }),

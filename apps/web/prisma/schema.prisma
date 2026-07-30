@@ -11,43 +11,59 @@ datasource db {
 // ─── Users & Org ─────────────────────────────────────────────────────────────
 
 model User {
-  id          String   @id @default(cuid())
-  clerkUserId String   @unique @map("clerk_user_id")
-  name        String
-  email       String   @unique
-  schoolId    String?  @map("school_id")
-  classId     String?  @map("class_id")
-  activeTeamId String? @map("active_team_id")
-  role        UserRole @default(student)
-  isMinor     Boolean  @default(true) @map("is_minor")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id           String    @id @default(cuid())
+  clerkUserId  String    @unique @map("clerk_user_id")
+  name         String
+  email        String    @unique
+  schoolId     String?   @map("school_id")
+  classId      String?   @map("class_id")
+  activeTeamId String?   @map("active_team_id")
+  role         UserRole  @default(student)
+  isMinor      Boolean   @default(true) @map("is_minor")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  /// Erasure tombstone (REFACTOR2 P1-R9). The row is NOT dropped: team-shared
+  /// work the student authored — project logs, discovery nodes, the synthesis
+  /// matrix, purchased buildings — carries a required FK to it, and the runbook's
+  /// policy is that team artifacts stay with the team. So erasure deletes the
+  /// per-student rows, blanks `name`/`email`/`clerkUserId` to non-routable
+  /// placeholders, and stamps this. See lib/data-requests/inventory.ts.
+  deletedAt    DateTime? @map("deleted_at")
 
-  school               School?                 @relation(fields: [schoolId], references: [id])
-  class                Class?                  @relation(fields: [classId], references: [id])
-  activeTeam           Team?                   @relation("activeTeam", fields: [activeTeamId], references: [id], onDelete: SetNull)
-  schoolsAdministered  School[]                @relation("schoolAdmin")
-  teamsLed             Team[]                  @relation("teamLead")
-  classesTeaching      Class[]                 @relation("classTeacher")
-  teamMemberships      TeamMember[]
-  projectLogEntries    ProjectLog[]
-  projectLogEdits      ProjectLog[]            @relation("projectLogEditor")
-  discoveryNodes       DiscoveryNode[]
-  expertiseAttempts    ExpertiseAttempt[]
-  expertiseExams       ExpertiseExam[]
-  shopPurchases        TeamShopBuilding[]
-  labCreditClaims      LabCreditClaim[]
-  rubricAssessments    RubricSelfAssessment[]
-  teamRubricScores     TeamRubricScore[]
-  activityFeedEntries  ActivityFeed[]
-  paperProficiencies   PaperProficiency[]
-  teacherFeedbackGiven TeacherFeedback[]       @relation("teacherFeedbackAuthor")
-  notifications        Notification[]
-  notificationPref     NotificationPref?
-  experiments          Experiment[]            @relation("experimentAuthor")
-  codexLessonProgress  CodexLessonProgress[]
-  codexKpDays          CodexKpDay[]
-  vegaStudyMessages    VegaStudyMessage[]
-  uploadedAssets       UploadedAsset[]
+  school                School?                @relation(fields: [schoolId], references: [id])
+  class                 Class?                 @relation(fields: [classId], references: [id])
+  activeTeam            Team?                  @relation("activeTeam", fields: [activeTeamId], references: [id], onDelete: SetNull)
+  schoolsAdministered   School[]               @relation("schoolAdmin")
+  teamsLed              Team[]                 @relation("teamLead")
+  classesTeaching       Class[]                @relation("classTeacher")
+  classJoinRequests     ClassJoinRequest[]
+  classMembershipEvents ClassMembershipEvent[]
+  teamMemberships       TeamMember[]
+  membershipEvents      TeamMembershipEvent[]
+  projectLogEntries     ProjectLog[]
+  projectLogEdits       ProjectLog[]           @relation("projectLogEditor")
+  discoveryNodes        DiscoveryNode[]
+  expertiseAttempts     ExpertiseAttempt[]
+  expertiseExams        ExpertiseExam[]
+  shopPurchases         TeamShopBuilding[]
+  labCreditClaims       LabCreditClaim[]
+  rubricAssessments     RubricSelfAssessment[]
+  teamRubricScores      TeamRubricScore[]
+  activityFeedEntries   ActivityFeed[]
+  paperProficiencies    PaperProficiency[]
+  paperExplanations     PaperExplanation[]
+  teacherFeedbackGiven  TeacherFeedback[]      @relation("teacherFeedbackAuthor")
+  notifications         Notification[]
+  notificationReads     NotificationRead[]
+  notificationPref      NotificationPref?
+  datasets              Dataset[]              @relation("datasetAuthor")
+  codexLessonProgress   CodexLessonProgress[]
+  codexKpDays           CodexKpDay[]
+  vegaStudyMessages     VegaStudyMessage[]
+  uploadedAssets        UploadedAsset[]
+  synthesisMatrices     SynthesisMatrix[]
+  vocabCards            VocabCard[]
+  vocabKpDays           VocabKpDay[]
+  vocabPaperCurations   VocabPaperCuration[]
 
   @@index([activeTeamId])
   @@index([classId])
@@ -76,86 +92,463 @@ model School {
   @@map("schools")
 }
 
-// A teacher's classroom. Students join with the reusable `joinCode` (unlike the
-// single-use team invite, a classroom code is long-lived so a whole class can
-// redeem it). The teacher owns it via `teacherId`.
+// A teacher's classroom. Students REQUEST to join with the reusable `joinCode`
+// (long-lived so a whole class can use one code); the teacher must approve each
+// request before the student is enrolled (see ClassJoinRequest). The teacher can
+// regenerate `joinCode` to revoke a leaked code. The teacher owns it via `teacherId`.
+// Codes expire (SEC2-003): `joinCodeExpiresAt` is set on every mint (default 30
+// days — see lib/team/invite.ts); resolveClass treats an expired or
+// missing-expiry code as not-found, and regeneration renews.
 model Class {
-  id        String   @id @default(cuid())
-  schoolId  String   @map("school_id")
-  name      String
-  teacherId String   @map("teacher_id")
-  joinCode  String?  @unique @map("join_code")
-  createdAt DateTime @default(now()) @map("created_at")
-  school    School   @relation(fields: [schoolId], references: [id])
-  teacher   User     @relation("classTeacher", fields: [teacherId], references: [id])
-  users     User[]
-  teams     Team[]
+  id                String                 @id @default(cuid())
+  schoolId          String                 @map("school_id")
+  name              String
+  teacherId         String                 @map("teacher_id")
+  joinCode          String?                @unique @map("join_code")
+  joinCodeExpiresAt DateTime?              @map("join_code_expires_at")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  school            School                 @relation(fields: [schoolId], references: [id])
+  teacher           User                   @relation("classTeacher", fields: [teacherId], references: [id])
+  users             User[]
+  teams             Team[]
+  joinRequests      ClassJoinRequest[]
+  membershipEvents  ClassMembershipEvent[]
 
   @@index([teacherId])
   @@map("classes")
 }
 
+// A student's pending/decided request to join a classroom (the teacher-approval
+// gate). Entering a class code anywhere — the explicit join, onboarding, or
+// team-join — creates a `pending` row here instead of enrolling directly; the
+// teacher approves or denies it. One row per (class, student): a re-request or a
+// decision updates it in place rather than accumulating history.
+model ClassJoinRequest {
+  id              String                 @id @default(cuid())
+  classId         String                 @map("class_id")
+  userId          String                 @map("user_id")
+  status          ClassJoinRequestStatus @default(pending)
+  createdAt       DateTime               @default(now()) @map("created_at")
+  decidedAt       DateTime?              @map("decided_at")
+  // The teacher who approved/denied it (scalar — no back-relation needed).
+  decidedByUserId String?                @map("decided_by_user_id")
+
+  class Class @relation(fields: [classId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([classId, userId])
+  @@index([classId, status])
+  @@map("class_join_requests")
+}
+
+/// A server-issued, single-use permission to run ONE destructive command
+/// (REFACTOR2 P1-R1).
+///
+/// Destructive confirmations used to be client assertions: `POST
+/// /api/discovery/topic` accepted `confirmWipe` and an arbitrary
+/// `confirmRemoveIds` array, so a direct caller could skip both server-proposed
+/// phases and delete any ready paper ids it knew. A boolean the client sends is
+/// not a capability.
+///
+/// The server now proposes (phase 1), stores what it proposed as a digest, and
+/// will only execute a phase-2 request that presents the matching token AND the
+/// exact same payload. Binding actor, team, command, old/new topic, target ids,
+/// and expiry — and consuming the row transactionally — is what makes the
+/// confirmation the server's, not the caller's.
+model DestructiveProposal {
+  /// The opaque token handed to the client. Unguessable by construction (cuid).
+  id            String    @id @default(cuid())
+  teamId        String    @map("team_id")
+  /// `User.id` of the member who requested the proposal. Only they may consume it.
+  actorUserId   String    @map("actor_user_id")
+  /// Which command this authorizes, e.g. `topic_paper_removal`.
+  command       String
+  /// SHA-256 over the exact proposed payload — a changed target set will not match.
+  payloadDigest String    @map("payload_digest")
+  expiresAt     DateTime  @map("expires_at")
+  /// Set once, by the consuming transaction. A second attempt finds it non-null.
+  consumedAt    DateTime? @map("consumed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, command, expiresAt])
+  @@map("destructive_proposals")
+}
+
+/// Append-only security ledger (REFACTOR2 P1-5).
+///
+/// `lib/observability/log.ts` answers "what happened in the last few days" from
+/// the Vercel drain. It cannot answer "who was made lead of that lab in March,
+/// and by whom" — logs expire, and the domain rows that would tell you have all
+/// been overwritten by then. This table is the durable half: one row per
+/// consequential authority change, destructive command, moderation decision, and
+/// refusal.
+///
+/// THREE PROPERTIES, each deliberate:
+///
+///  1. **No relations.** Every id here is a bare string — `actorUserId`,
+///     `targetId`, `teamId` carry NO foreign key. That is the whole point: an
+///     audit trail a domain delete can take with it is not an audit trail. A FK
+///     would either cascade (erasing the record of the very act being recorded)
+///     or restrict (making the audit trail block the teardown it is documenting).
+///     `test/pg/invariants.pg.test.ts` pins that no cascade edge reaches this
+///     table.
+///  2. **Append-only.** `lib/observability/security-event.ts` exports exactly one
+///     write and no update or delete. There is no `updatedAt`, and nothing in the
+///     app mutates a row after `create`.
+///  3. **Payload-free by construction.** There is no title, note, body, or
+///     message column. `reason` is a snake_case token sanitized at the sink
+///     (`^[a-z0-9][a-z0-9_.:-]{0,63}$`), so student prose cannot land here
+///     whatever a future call site passes.
+model SecurityEvent {
+  id          String   @id @default(cuid())
+  /// Bounded event name from `SecurityEventKind`, e.g. `authority.role_changed`.
+  kind        String
+  /// `ok` | `denied` | `error`. Alert rules only ever consider the non-`ok` ones.
+  outcome     String
+  /// `user` | `teacher` | `system` | `anonymous` — who the actor was, when the
+  /// actor id itself is null (a signed-out denial, a cron probe, a worker).
+  actorType   String   @map("actor_type")
+  /// `User.id`, or the Clerk id when the request never resolved a row. No FK.
+  actorUserId String?  @map("actor_user_id")
+  /// What the act was performed ON: `team_member`, `showcase`, `class`, …
+  targetType  String?  @map("target_type")
+  targetId    String?  @map("target_id")
+  /// The team OR class the act happened within — one column, because a class
+  /// membership change and a team membership change are the same kind of fact at
+  /// two levels, and the alert rules group by "which group is this about"
+  /// regardless of which. Ids are globally unique cuids, so nothing is ambiguous.
+  scopeId     String?  @map("scope_id")
+  /// Correlates to `LogEvent.requestId` and Vercel's own `x-vercel-id`.
+  requestId   String?  @map("request_id")
+  /// Bounded token — `removed_by_lead`, `phase_locked`. Never free text.
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  /// Idempotency key for events emitted from retried work (a worker dead letter,
+  /// a daily budget alert). Unique, so a retry writes the event exactly once;
+  /// NULL for the events that legitimately repeat, since Postgres treats NULLs
+  /// as distinct.
+  dedupeKey   String?  @unique @map("dedupe_key")
+
+  /// The alert-threshold window queries: kind + outcome over a recent window.
+  @@index([kind, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("security_events")
+}
+
+/// Result replay for one paid provider call (REFACTOR2 P1-R3, and the replay
+/// half of P1-R11 / P1-S6 / P1-R2).
+///
+/// Claim columns (`retryGradeClaimedAt`, `advanceClaimedAt`, the follow-up row)
+/// stop two callers paying at the same time, but they cannot answer the other
+/// question: a caller that retries after a timeout, or arrives second, has no
+/// way to get the result the first call already paid for. It either pays again
+/// or fails. This table stores the outcome against a hash of the INPUTS, so an
+/// identical request replays instead of re-spending.
+model AiOperation {
+  id             String            @id @default(cuid())
+  /// Which paid workflow, e.g. `quiz_retry_grade`.
+  operation      String
+  /// SHA-256 over the exact inputs that determine the result.
+  idempotencyKey String            @map("idempotency_key")
+  /// Scope for cleanup and cost attribution; not part of the key.
+  teamId         String?           @map("team_id")
+  status         AiOperationStatus @default(running)
+  /// Fences the claim (REFACTOR2 P1-1), same shape as the paper-job and outbox
+  /// leases. Rewritten on every claim including a stale takeover, so status
+  /// alone is never the compare-and-set (`running` → `running` matches twice)
+  /// and a revived old worker's success/failure write no longer matches.
+  claimToken     String            @default("") @map("claim_token")
+  /// The provider result, replayed verbatim to an identical later request.
+  resultJson     Json?             @map("result_json")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  completedAt    DateTime?         @map("completed_at")
+
+  @@unique([operation, idempotencyKey])
+  @@index([status, createdAt])
+  @@map("ai_operations")
+}
+
+// One row per paid provider call (REFACTOR2 P1-R3, budget half). Token counts
+// were already logged by the instrumented client, but logs evaporate — these
+// rows are queryable and join to class and school through `Team`, so per-class
+// and per-school cost attribution is a GROUP BY rather than a feature.
+//
+// NOT enforcement: nothing reads these to refuse work yet. Caps are set from
+// real classroom data, not from a guess (docs/TODO.md → "AI cost review").
+model AiUsage {
+  id                       String   @id @default(cuid())
+  /// Which paid call, from `AiOperationName` — the same key that picks the model.
+  operation                String
+  /// The model actually used, recorded rather than re-derived: the registry may
+  /// have changed since, and a historical row must stay true to what it bought.
+  model                    String
+  /// Null for cron-driven work with no request scope. Attribution, not ownership.
+  teamId                   String?  @map("team_id")
+  userId                   String?  @map("user_id")
+  /// The three input buckets are DISJOINT — `inputTokens` is the uncached
+  /// remainder, not the total. Cached reads bill at 0.1x, writes at 1.25x.
+  inputTokens              Int      @default(0) @map("input_tokens")
+  outputTokens             Int      @default(0) @map("output_tokens")
+  cacheReadInputTokens     Int      @default(0) @map("cache_read_input_tokens")
+  cacheCreationInputTokens Int      @default(0) @map("cache_creation_input_tokens")
+  /// Micro-dollars ($1 = 1,000,000). Integer — money in floats rounds wrong.
+  costMicros               Int      @default(0) @map("cost_micros")
+  /// Which price list produced `costMicros`, so a rate change cannot silently
+  /// rewrite history.
+  rateVersion              String   @map("rate_version")
+  /// 'ok' | 'error' — a failed call still spent time and often input tokens.
+  outcome                  String
+  /// UTC day bucket, so spend rolls up on one calendar boundary everywhere.
+  day                      DateTime @db.Date
+  createdAt                DateTime @default(now()) @map("created_at")
+
+  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, day])
+  @@index([day])
+  @@index([operation, day])
+  @@map("ai_usage")
+}
+
+enum AiOperationStatus {
+  running
+  succeeded
+  /// The call failed; an identical request may try again rather than replay.
+  failed
+
+  @@map("ai_operation_status")
+}
+
+// ─── Data requests and retention (REFACTOR2 P1-R9) ───────────────────────────
+
+/// A subject's request for a copy of their data, or for its erasure.
+///
+/// Filing a request is NOT the erasure. Nothing destructive runs until an
+/// operator approves (`POST /api/cron/data-requests`), because in a school
+/// setting the authority to erase a minor's record belongs to the school, not
+/// to whoever is signed in. The request is the durable record that the ask
+/// happened and what was done about it.
+///
+/// **No foreign key to `users`, on purpose.** This row has to outlive the row it
+/// erased — the same reason `NotificationRunTeam` carries a bare `team_id`.
+/// `subjectClerkUserId` and `subjectEmail` are snapshotted for the same reason:
+/// after the `postgres` step runs there is no readable identity left to look up.
+model DataRequest {
+  id                 String    @id @default(cuid())
+  /// `export` | `delete`
+  kind               String
+  subjectUserId      String    @map("subject_user_id")
+  subjectClerkUserId String    @map("subject_clerk_user_id")
+  subjectEmail       String    @map("subject_email")
+  /// Who filed it. The subject themself today; a teacher or operator later.
+  requestedByUserId  String    @map("requested_by_user_id")
+  /// JSON-framed digest of {kind, subjectUserId, utcDay}. Re-clicking the button
+  /// replays the same row instead of queueing a second erasure.
+  requestKey         String    @unique @map("request_key")
+  /// `requested` | `approved` | `running` | `completed` | `failed` | `rejected`
+  status             String    @default("requested")
+  decidedAt          DateTime? @map("decided_at")
+  decidedNote        String?   @map("decided_note")
+  /// Fences the worker claim, same shape as the paper-job and outbox leases.
+  claimToken         String?   @map("claim_token")
+  claimedAt          DateTime? @map("claimed_at")
+  completedAt        DateTime? @map("completed_at")
+  attempts           Int       @default(0)
+  lastError          String?   @map("last_error")
+  /// Export only: the object key of the bundle and its per-model row counts.
+  resultJson         Json?     @map("result_json")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  steps DataRequestStep[]
+
+  @@index([status, claimedAt])
+  @@index([subjectUserId])
+  @@map("data_requests")
+}
+
+/// One row per external system a request has to touch — the outbox that makes
+/// the workflow resumable. Clerk, storage, and PostgreSQL fail independently;
+/// without a per-target record, a crash after the Clerk delete would re-run it
+/// (404) or, worse, a crash before the storage step would silently skip it.
+/// `(requestId, target)` unique is what makes a re-run idempotent.
+model DataRequestStep {
+  id          String      @id @default(cuid())
+  requestId   String      @map("request_id")
+  /// `export_bundle` | `clerk` | `storage` | `postgres`
+  target      String
+  /// `pending` | `done` | `failed`
+  status      String      @default("pending")
+  attempts    Int         @default(0)
+  /// What the step actually did — row counts, object keys. Evidence, not a log.
+  detail      Json?
+  lastError   String?     @map("last_error")
+  completedAt DateTime?   @map("completed_at")
+  request     DataRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, target])
+  @@map("data_request_steps")
+}
+
+/// Per-model retention windows. **Ships empty, on purpose.**
+///
+/// Every number that belongs here needs qualified FERPA/COPPA input this project
+/// does not have (docs/TODO.md → "Retention windows"). The registry in
+/// `lib/retention/policies.ts` declares which models CAN be pruned and how; a row
+/// here is the number that turns one on. No row and no registry default means
+/// that model is never pruned — the fail-safe direction is "keep".
+model RetentionPolicy {
+  /// Registry key from `lib/retention/policies.ts`, e.g. `showcase_view`.
+  key        String   @id
+  /// Null parks the model explicitly: reviewed, decided not to prune.
+  retainDays Int?     @map("retain_days")
+  note       String?
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("retention_policies")
+}
+
+enum ClassJoinRequestStatus {
+  pending
+  approved
+  denied
+  /// A later approval into a DIFFERENT class replaced this one. `User.classId`
+  /// holds exactly one class, so two `approved` rows for the same student would
+  /// be a contradiction: one of them no longer describes reality (P1-S2).
+  /// Distinct from `denied`, which means a teacher actually refused.
+  superseded
+  /// The STUDENT withdrew their own pending request (P1-R8, class half).
+  /// Distinct from `denied`: nobody refused them.
+  withdrawn
+  /// The TEACHER un-enrolled an approved student, or the student left. The
+  /// enrolment happened and then ended — which `denied` would misstate.
+  revoked
+
+  @@map("class_join_request_status")
+}
+
+/// Append-only log of every class-membership transition (REFACTOR2 P1-R8, class
+/// half) — the class counterpart of `TeamMembershipEvent`.
+///
+/// `ClassJoinRequest` is LIVE STATE: it mutates in place, and a re-request even
+/// resets `decidedAt`/`decidedByUserId`. So the row answers "where does this
+/// student stand" and nothing answers "what happened, when, and who did it".
+/// That matters because teacher scope is derived from `User.classId`: a
+/// membership that ended is an authorization that ended, and there was no record
+/// of it ending.
+model ClassMembershipEvent {
+  id          String   @id @default(cuid())
+  classId     String   @map("class_id")
+  userId      String   @map("user_id")
+  /// requested | approved | denied | withdrawn | revoked | superseded | left
+  event       String
+  /// Who caused it: the student on a request/withdraw/leave, the teacher on a
+  /// decision or revocation, null when the system did it (a supersede).
+  actorUserId String?  @map("actor_user_id")
+  /// Free text — `approved_into_another_class`, `removed_by_teacher`.
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  class Class @relation(fields: [classId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([classId, createdAt])
+  @@index([userId, createdAt])
+  @@map("class_membership_events")
+}
+
 // ─── Teams ───────────────────────────────────────────────────────────────────
 
 model Team {
-  id            String       @id @default(cuid())
-  name          String
-  teamLeadId    String       @map("team_lead_id")
-  classId       String?      @map("class_id")
-  labType       LabType?     @map("lab_type")
-  topic         String?
-  phase         ProjectPhase @default(discovery)
+  id               String       @id @default(cuid())
+  name             String
+  teamLeadId       String       @map("team_lead_id")
+  // VESTIGIAL (ADR-004): class membership is per-student (User.classId); labs may
+  // span classes/schools. Never read this for authorization — teacher access is
+  // membership-based (lib/teacher/auth.ts::teacherOwnsTeam). Kept for old rows only.
+  classId          String?      @map("class_id")
+  labType          LabType?     @map("lab_type")
+  topic            String?
+  phase            ProjectPhase @default(discovery)
+  // When the team ENTERED its current phase (REFACTOR2 P2-S14). Teacher phase
+  // pacing used to be computed from `createdAt`, so "days in current phase" was
+  // really the team's age — a lab that advanced this morning read as three weeks
+  // behind. Stamped by both compare-and-set transitions in
+  // app/api/team/advance-phase/route.ts; backfilled to `createdAt` for rows that
+  // predate the column, and readers still fall back to `createdAt` for safety.
   // Cap on how many students may join this lab. Building costs scale with the
   // live member count (lib/shop.ts), so a bigger team earns more KP but pays more.
-  maxMembers    Int          @default(3) @map("max_members")
+  maxMembers       Int          @default(3) @map("max_members")
   // US location (Feature 3) — drives Science Fair matching. ZIP is captured at
   // onboarding; `locationState` is the 2-letter code derived from it (lib/fairs/zip.ts).
-  locationZip   String?      @map("location_zip")
-  locationState String?      @map("location_state")
+  locationZip      String?      @map("location_zip")
+  locationState    String?      @map("location_state")
   // Geocoded coordinates for the team's ZIP — more accurate than state centroid
   // for ordering regional fairs. Set at onboarding / location update via Nominatim.
-  locationLat   Float?       @map("location_lat")
-  locationLng   Float?       @map("location_lng")
+  locationLat      Float?       @map("location_lat")
+  locationLng      Float?       @map("location_lng")
   // One-sentence research idea submitted at the end of lit review — used to
   // auto-assign lab type via Haiku classification before entering research_planning.
-  researchIdea  String?      @map("research_idea")
-  createdAt     DateTime     @default(now()) @map("created_at")
+  researchIdea     String?      @map("research_idea")
+  // Claim stamp electing ONE payer for the literature_review -> research_planning
+  // advance (REFACTOR2 P1-R2). That transition runs a paid Haiku classification
+  // and used to finish with an UNCONDITIONAL update, so two clicks paid twice and
+  // a slow response could overwrite a newer phase — rolling the team backwards.
+  advanceClaimedAt DateTime?    @map("advance_claimed_at")
+  // Per-team AI kill switch (REFACTOR2 P1-R3). Set to stop this lab's paid calls
+  // without touching anyone else's; the global switch is `AI_KILL_SWITCH`.
+  aiDisabledAt     DateTime?    @map("ai_disabled_at")
+  // Set when the LAST member leaves (REFACTOR2 P1-R8). The team's work — papers,
+  // showcase, logs, uploaded PDFs — is the class's product, so a student walking
+  // away must not destroy it. An archived team is read-only, still visible to the
+  // teacher, and cannot be joined.
+  archivedAt       DateTime?    @map("archived_at")
+  phaseEnteredAt   DateTime?    @default(now()) @map("phase_entered_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
 
-  teamLead        User                    @relation("teamLead", fields: [teamLeadId], references: [id])
-  class           Class?                  @relation(fields: [classId], references: [id], onDelete: SetNull)
-  activeUsers     User[]                  @relation("activeTeam")
-  members         TeamMember[]
-  currency        TeamCurrency?
-  buildings       TeamBuilding[]
-  shopBuildings   TeamShopBuilding[]
-  gatewayPlacements TeamGatewayPlacement[]
-  labCreditClaims LabCreditClaim[]
-  expertiseExams  ExpertiseExam[]
-  discoveryNodes  DiscoveryNode[]
-  topicInterests  TopicInterest[]
+  teamLead              User                   @relation("teamLead", fields: [teamLeadId], references: [id])
+  class                 Class?                 @relation(fields: [classId], references: [id], onDelete: SetNull)
+  activeUsers           User[]                 @relation("activeTeam")
+  members               TeamMember[]
+  aiUsage               AiUsage[]
+  membershipEvents      TeamMembershipEvent[]
+  currency              TeamCurrency?
+  buildings             TeamBuilding[]
+  shopBuildings         TeamShopBuilding[]
+  gatewayPlacements     TeamGatewayPlacement[]
+  labCreditClaims       LabCreditClaim[]
+  expertiseExams        ExpertiseExam[]
+  discoveryNodes        DiscoveryNode[]
+  topicInterests        TopicInterest[]
   discoverySourceVisits DiscoverySourceVisit[]
-  discoveryKpDays DiscoveryKpDay[]
-  discoveryTopicBonus DiscoveryTopicBonus?
-  papers          Paper[]
-  citations       Citation[]
-  projectLogs     ProjectLog[]
-  invites         TeamInvite[]
-  researchPlan    ResearchPlan?
-  ideaChecks      IdeaCheck[]
-  pvpTrophies     PvpTrophies?
-  pvpRaidQuota    PvpRaidQuota[]
-  showcase        Showcase?
-  formStatuses    TeamFormStatus[]
-  activityFeed    ActivityFeed[]
-  teacherFeedback TeacherFeedback[]
-  notifications   Notification[]
-  experiments     Experiment[]
-  teamRubricScores TeamRubricScore[]
-  codexLessonProgress CodexLessonProgress[]
-  codexKpDays     CodexKpDay[]
-  studyPlan       TeamStudyPlan?
-  vegaStudyMessages VegaStudyMessage[]
-  uploadedAssets  UploadedAsset[]
+  discoveryKpDays       DiscoveryKpDay[]
+  discoveryTopicBonus   DiscoveryTopicBonus?
+  papers                Paper[]
+  citations             Citation[]
+  projectLogs           ProjectLog[]
+  invites               TeamInvite[]
+  destructiveProposals  DestructiveProposal[]
+  researchPlan          ResearchPlan?
+  ideaChecks            IdeaCheck[]
+  pvpTrophies           PvpTrophies?
+  pvpRaidQuota          PvpRaidQuota[]
+  showcase              Showcase?
+  formStatuses          TeamFormStatus[]
+  activityFeed          ActivityFeed[]
+  teacherFeedback       TeacherFeedback[]
+  notifications         Notification[]
+  datasets              Dataset[]
+  teamRubricScores      TeamRubricScore[]
+  codexLessonProgress   CodexLessonProgress[]
+  codexKpDays           CodexKpDay[]
+  studyPlan             TeamStudyPlan?
+  vegaStudyMessages     VegaStudyMessage[]
+  uploadedAssets        UploadedAsset[]
+  synthesisMatrices     SynthesisMatrix[]
+  vocabCards            VocabCard[]
+  vocabKpDays           VocabKpDay[]
+  teamDailyTaskDays     TeamDailyTaskDay[]
 
   @@index([classId])
   @@map("teams")
@@ -178,6 +571,17 @@ model TeamInvite {
   @@map("team_invites")
 }
 
+// LIVE memberships only (REFACTOR2 P1-R8). A departure DELETES the row and
+// appends a `TeamMembershipEvent`, rather than leaving a tombstone behind a
+// `leftAt` flag.
+//
+// That choice is about safety, not tidiness. Teacher visibility is derived from
+// membership — `teacherOwnsTeam`, the roster, showcase moderation — across ~25
+// query sites, several of them nested reads (`team.members.some(...)`) that no
+// Prisma extension can intercept. A soft-delete flag would mean one forgotten
+// `leftAt: null` filter is not untidy data, it is a teacher still able to see a
+// team they no longer teach. Live-only makes every one of those queries correct
+// by construction, and the audit trail lives where an audit trail belongs.
 model TeamMember {
   userId   String     @map("user_id")
   teamId   String     @map("team_id")
@@ -187,8 +591,48 @@ model TeamMember {
   team     Team       @relation(fields: [teamId], references: [id])
 
   @@id([userId, teamId])
+  // ONE TEAM AT A TIME, enforced by the database (REFACTOR2 §0.7, v0.71.0).
+  //
+  // The rule has been true since v0.48.0 but only in application code:
+  // `leaveOtherTeams` runs inside the join transaction, so the app never writes
+  // a second row. Everything downstream assumes it — `pickActiveTeam`, the
+  // teacher roster, and `lib/teacher/student-overview.ts`, whose §0.7 defect was
+  // exactly a team and a role read from two different membership rows.
+  //
+  // `@@id([userId, teamId])` permits a second row; only this does not. Adding it
+  // means a bug, a manual fix, or a future migration cannot quietly reintroduce
+  // the state four call sites are written against. It is deliberately a
+  // COMMITMENT: a student can never belong to two labs, and adding that back
+  // would need this constraint dropped on purpose rather than by accident.
+  @@unique([userId])
   @@index([teamId])
   @@map("team_members")
+}
+
+/// Append-only membership history (REFACTOR2 P1-R8) — actor, reason, timestamp
+/// for every join, departure, removal, and lead transfer. This is the revocation
+/// record the audit asked for: `TeamMember` says who is on a team NOW, this says
+/// how they got there and who ended it.
+model TeamMembershipEvent {
+  id          String      @id @default(cuid())
+  teamId      String      @map("team_id")
+  userId      String      @map("user_id")
+  /// joined | left | removed | lead_transferred | team_archived
+  event       String
+  /// The role held at the moment of the event, where one applies.
+  role        MemberRole?
+  /// Who caused it: the member themselves on a leave, the lead on a removal,
+  /// null when the system did it (e.g. auto-transfer of a departing lead).
+  actorUserId String?     @map("actor_user_id")
+  /// Free text — `switched_team`, `removed_by_lead`, `last_member_left`.
+  reason      String?
+  createdAt   DateTime    @default(now()) @map("created_at")
+  user        User        @relation(fields: [userId], references: [id])
+  team        Team        @relation(fields: [teamId], references: [id])
+
+  @@index([teamId, createdAt])
+  @@index([userId, createdAt])
+  @@map("team_membership_events")
 }
 
 enum MemberRole {
@@ -260,6 +704,9 @@ model DiscoveryNode {
   children       DiscoveryNode[] @relation("tree")
   // 1:1 side-row for `source` nodes (arXiv / PubMed metadata). Null for wiki/youtube.
   externalSource ExternalSource?
+  // 1:1 side-row for `article` nodes (The Conversation / journalism RSS). Null
+  // for every other source type.
+  articleSource  ArticleSource?
   // #13 wires the reserved `paperId` column: a promoted source node points at its
   // real Paper. SetNull so deleting the Paper doesn't cascade-delete the node.
   paper          Paper?          @relation("promotedFrom", fields: [paperId], references: [id], onDelete: SetNull)
@@ -276,6 +723,7 @@ enum DiscoverySource {
   youtube
   paper
   source
+  article
 
   @@map("discovery_source")
 }
@@ -284,6 +732,9 @@ enum ExternalPlatform {
   arxiv
   pubmed
   pmc
+  // Works with neither an arXiv id nor a PMID (open-access journal articles,
+  // non-arXiv preprint servers) — keyed by their OpenAlex work id (W…).
+  openalex
 
   @@map("external_platform")
 }
@@ -292,6 +743,9 @@ enum CredibilityTier {
   peer_reviewed
   preprint
   open_access
+  // Plain-language background from an authoritative source (MedlinePlus/NIH
+  // explainers) — for understanding, not for citing as primary research.
+  reference
 
   @@map("credibility_tier")
 }
@@ -319,6 +773,34 @@ model ExternalSource {
   discoveryNode DiscoveryNode @relation(fields: [discoveryNodeId], references: [id], onDelete: Cascade)
 
   @@map("external_sources")
+}
+
+// Metadata side-row for `article` nodes — The Conversation (CC BY-ND, full
+// in-app render) and science-journalism RSS (link-out card). A dedicated
+// table (not a generalized ExternalSource) — articles fit neither
+// `ExternalPlatform` nor `CredibilityTier`, and isolating the table keeps this
+// feature from touching the paper/citation path. `provider`/`renderMode` are
+// plain Strings validated by zod in-route (interestLevel-style — no enum
+// churn). `html` is re-sanitized server-side on every write path (resolve AND
+// tree POST) with the shared `ARTICLE_SANITIZE_OPTS` allowlist before it is
+// ever stored. Deleted with the node.
+model ArticleSource {
+  id              String    @id @default(cuid())
+  discoveryNodeId String    @unique @map("discovery_node_id")
+  provider        String // 'the_conversation' | 'journalism'
+  renderMode      String    @map("render_mode") // 'full' | 'linkout'
+  sourceName      String    @map("source_name") // attribution label: "The Conversation", "Quanta Magazine"
+  title           String
+  author          String?
+  url             String // canonical outbound (http(s), validated)
+  excerpt         String? // linkout card summary (sanitized/stripped)
+  html            String? // full sanitized article HTML (renderMode 'full' only)
+  publishedAt     DateTime? @map("published_at")
+  resolvedAt      DateTime  @default(now()) @map("resolved_at")
+
+  discoveryNode DiscoveryNode @relation(fields: [discoveryNodeId], references: [id], onDelete: Cascade)
+
+  @@map("article_sources")
 }
 
 // Shared, team-agnostic cache of works fetched from OpenAlex (Phase B). Populated by
@@ -409,41 +891,45 @@ model DiscoveryTopicBonus {
 // ─── Literature ──────────────────────────────────────────────────────────────
 
 model Paper {
-  id               String      @id @default(cuid())
-  teamId           String      @map("team_id")
+  id               String           @id @default(cuid())
+  teamId           String           @map("team_id")
   title            String
   authors          String[]
   abstract         String?
-  sourceType       PaperSource @map("source_type")
-  fileUrl          String?     @map("file_url")
-  contentHash      String?     @map("content_hash")
-  fullText         String?     @map("full_text")
+  sourceType       PaperSource      @map("source_type")
+  fileUrl          String?          @map("file_url")
+  contentHash      String?          @map("content_hash")
+  fullText         String?          @map("full_text")
   // List-view metadata, computed once at upload so the paper list never has to
   // read `fullText` to derive a DOI/credibility badge. `sourceHost` is the
   // origin host for externally-sourced papers (null for self-uploaded PDFs).
-  doi              String?         @map("doi")
+  doi              String?          @map("doi")
   credibilityTier  CredibilityTier? @map("credibility_tier")
-  sourceHost       String?         @map("source_host")
+  sourceHost       String?          @map("source_host")
   // PDF binary lives in Cloudflare R2; `pdfKey` is the object key (see lib/storage.ts).
   // `pdfData` is the legacy in-DB blob, kept only as a fallback for rows uploaded
   // before the R2 migration — new uploads leave it null and a cleanup migration
   // can drop it once all rows are backfilled.
-  pdfKey           String?     @map("pdf_key")
-  pdfData          Bytes?      @map("pdf_data")
-  status           PaperStatus @default(pending)
-  uploadedByUserId String      @map("uploaded_by_user_id")
-  createdAt        DateTime    @default(now()) @map("created_at")
+  pdfKey           String?          @map("pdf_key")
+  pdfData          Bytes?           @map("pdf_data")
+  status           PaperStatus      @default(pending)
+  uploadedByUserId String           @map("uploaded_by_user_id")
+  createdAt        DateTime         @default(now()) @map("created_at")
 
-  team           Team                 @relation(fields: [teamId], references: [id])
-  quizSessions   PaperQuizSession[]
-  quizAttempts   PaperQuizAttempt[]
-  relevanceNotes PaperRelevanceNote[]
-  chatMessages   PaperChatMessage[]
-  proficiencies  PaperProficiency[]
-  processingJob PaperProcessingJob?
+  team                Team                      @relation(fields: [teamId], references: [id])
+  quizSessions        PaperQuizSession[]
+  quizAttempts        PaperQuizAttempt[]
+  relevanceNotes      PaperRelevanceNote[]
+  chatMessages        PaperChatMessage[]
+  proficiencies       PaperProficiency[]
+  explanations        PaperExplanation[]
+  explanationAttempts PaperExplanationAttempt[]
+  processingJob       PaperProcessingJob?
   // #13: the source node this Paper was promoted from (if any) + its formatted citation.
-  promotedFromNode DiscoveryNode?     @relation("promotedFrom")
-  citation       Citation?
+  promotedFromNode    DiscoveryNode?            @relation("promotedFrom")
+  citation            Citation?
+  vocabCards          VocabCard[]
+  vocabPaperCurations VocabPaperCuration[]
 
   // DB-level duplicate-upload guard. Postgres treats NULL content hashes as
   // distinct, so non-PDF/legacy papers (null hash) are unaffected; two uploads of
@@ -470,6 +956,10 @@ model PaperProcessingJob {
   attempts    Int                 @default(0)
   lastError   String?             @map("last_error")
   claimedAt   DateTime?           @map("claimed_at")
+  // Fences the claim (P1-S5). Rewritten on every claim, including a stale
+  // takeover, so a revived old worker's terminal write no longer matches and is
+  // discarded instead of overwriting the new owner's outcome.
+  claimToken  String?             @map("claim_token")
   completedAt DateTime?           @map("completed_at")
   // Earliest time a retryable (`failed`, attempts remaining) job may be re-claimed
   // — set to a backoff on each failure so retries space out instead of hammering.
@@ -507,12 +997,107 @@ model PaperProficiency {
   @@map("paper_proficiency")
 }
 
-model PaperChatMessage {
-  id        String   @id @default(cuid())
+// Feynman-mode "explain it back": the student's own-words explanation of a source,
+// graded by Vega AGAINST the paper for accuracy + completeness. Per-STUDENT (like
+// PaperProficiency), not per-team. This row is also the once-ever KP claim: its
+// composite PK is the unique constraint the WHERE-gated ON CONFLICT claim needs.
+model PaperExplanation {
+  paperId           String   @map("paper_id")
+  userId            String   @map("user_id")
+  attemptCount      Int      @default(0) @map("attempt_count")
+  // Best `overall` (mean of clamped accuracy+completeness) achieved, 0-100.
+  bestScore         Int      @default(0) @map("best_score")
+  passed            Boolean  @default(false)
+  // High-water of KP already claimed from this source's explanation (0 or EXPLAIN_KP_AWARD).
+  kpAwarded         Int      @default(0) @map("kp_awarded")
+  // The most recent submission + verdict — what the panel reloads into the revise form.
+  latestText        String   @map("latest_text")
+  latestVerdictJson Json     @map("latest_verdict_json")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  paper Paper @relation(fields: [paperId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@id([paperId, userId])
+  @@map("paper_explanations")
+}
+
+// One row per submission — the revise-loop history. Carries no KP.
+model PaperExplanationAttempt {
+  id           String   @id @default(cuid())
+  // `(paperId, userId, attemptNo)` is UNIQUE (REFACTOR2 P1-S6): the sequence used
+  // to be derived from a read taken BEFORE a multi-second paid call, so two
+  // concurrent submissions minted the same attempt number. It is now derived
+  // under the lock; this constraint makes that structural rather than a habit.
+  paperId      String   @map("paper_id")
+  userId       String   @map("user_id")
+  attemptNo    Int      @map("attempt_no")
+  text         String
+  accuracy     Int      @default(0)
+  completeness Int      @default(0)
+  overall      Int      @default(0)
+  passed       Boolean  @default(false)
+  verdictJson  Json     @map("verdict_json")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  paper Paper @relation(fields: [paperId], references: [id])
+
+  @@unique([paperId, userId, attemptNo])
+  @@index([paperId, userId, createdAt])
+  @@map("paper_explanation_attempts")
+}
+
+// Synthesis Matrix (Literature Review): a team-shared comparison grid across
+// 2-4 of the team's ready papers, with discipline-adaptive columns seeded
+// from a static per-labType template (content/literature/synthesis-templates)
+// and fully student-editable thereafter. `lastCheckJson` carries a PERF-7-style
+// replay cache (`{ inputHash, verdict }`) so re-checking an unedited grid never
+// pays for another Anthropic call. `kpAwarded` is flat and server-set — the
+// model never emits a number that reaches the economy.
+model SynthesisMatrix {
+  id              String    @id @default(cuid())
+  teamId          String    @map("team_id")
+  title           String    @default("Synthesis Matrix")
+  templateId      String    @map("template_id")
+  columnsJson     Json      @map("columns_json")
+  paperIds        String[]  @map("paper_ids")
+  lastCheckJson   Json?     @map("last_check_json")
+  lastCheckedAt   DateTime? @map("last_checked_at")
+  kpAwarded       Int       @default(0) @map("kp_awarded")
+  createdByUserId String    @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  team      Team            @relation(fields: [teamId], references: [id])
+  createdBy User            @relation(fields: [createdByUserId], references: [id])
+  cells     SynthesisCell[]
+
+  @@index([teamId, updatedAt])
+  @@map("synthesis_matrices")
+}
+
+// One grid cell, its own row (NOT a `cellsJson` blob) so two teammates editing
+// different cells never clobber each other — a single JSON blob would be
+// last-write-wins across the whole grid.
+model SynthesisCell {
+  matrixId  String   @map("matrix_id")
   paperId   String   @map("paper_id")
-  userId    String   @map("user_id")
-  role      MessageRole
-  content   String
+  columnId  String   @map("column_id")
+  text      String   @default("")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  matrix SynthesisMatrix @relation(fields: [matrixId], references: [id], onDelete: Cascade)
+
+  @@id([matrixId, paperId, columnId])
+  @@map("synthesis_cells")
+}
+
+model PaperChatMessage {
+  id             String            @id @default(cuid())
+  paperId        String            @map("paper_id")
+  userId         String            @map("user_id")
+  role           MessageRole
+  content        String
   // Server-owned turn lifecycle: `pending` is written before the paid LLM call,
   // `complete` after a successful reply, `error` if the call failed — so the paid
   // call and the visible/history state never silently diverge.
@@ -520,8 +1105,8 @@ model PaperChatMessage {
   requestId      String?           @map("request_id")
   error          String?
   tokenUsageJson Json?             @map("token_usage_json")
-  createdAt DateTime @default(now()) @map("created_at")
-  paper     Paper    @relation(fields: [paperId], references: [id])
+  createdAt      DateTime          @default(now()) @map("created_at")
+  paper          Paper             @relation(fields: [paperId], references: [id])
 
   @@index([paperId, userId, createdAt])
   @@map("paper_chat_messages")
@@ -562,15 +1147,25 @@ enum PaperStatus {
 // A single quiz attempt: a generated set of questions (with keys) and, once
 // submitted, the per-question grades and aggregate result.
 model PaperQuizSession {
-  id            String    @id @default(cuid())
-  paperId       String    @map("paper_id")
-  userId        String    @map("user_id")
+  id                  String    @id @default(cuid())
+  paperId             String    @map("paper_id")
+  userId              String    @map("user_id")
   // [{ id, prompt, focus, key }] — `key` is server-only, never sent to client
-  questionsJson Json      @map("questions_json")
-  score         Int? // aggregate 0-100, set on grading
-  passed        Boolean   @default(false)
-  gradedAt      DateTime? @map("graded_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
+  questionsJson       Json      @map("questions_json")
+  score               Int? // aggregate 0-100, set on grading
+  passed              Boolean   @default(false)
+  gradedAt            DateTime? @map("graded_at")
+  // A8: claim stamp electing ONE retry-question generator under concurrency.
+  // Set via a conditional update before the paid generation call; cleared when
+  // the generated question commits (or the claim is released on failure).
+  // Stale claims (crashed generator) are taken over after a timeout.
+  retryGenClaimedAt   DateTime? @map("retry_gen_claimed_at")
+  // P1-R11: the same election, one step later. Retry GRADING had no claim at
+  // all — two concurrent submits both loaded the failed session and both paid
+  // Anthropic before the advisory lock, which protected only the KP maths that
+  // ran after the money was spent.
+  retryGradeClaimedAt DateTime? @map("retry_grade_claimed_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
 
   paper    Paper              @relation(fields: [paperId], references: [id])
   attempts PaperQuizAttempt[]
@@ -640,27 +1235,34 @@ model Citation {
 // active source (`lastSyncedSource`). The project type/subtype selects the rubric
 // the AI review grades against.
 model ResearchPlan {
-  teamId            String    @id @map("team_id")
-  googleDocUrl      String?   @map("google_doc_url")
-  projectType       String?   @map("project_type") // 'engineering' | 'science'
-  projectSubtype    String?   @map("project_subtype") // e.g. 'robotics', 'biology'
-  lastSyncedText    String?   @map("last_synced_text")
-  lastSyncedAt      DateTime? @map("last_synced_at")
+  teamId             String    @id @map("team_id")
+  googleDocUrl       String?   @map("google_doc_url")
+  projectType        String?   @map("project_type") // 'engineering' | 'science'
+  projectSubtype     String?   @map("project_subtype") // e.g. 'robotics', 'biology'
+  lastSyncedText     String?   @map("last_synced_text")
+  lastSyncedAt       DateTime? @map("last_synced_at")
   // Which input last populated `lastSyncedText` — 'google_doc' | 'paste'. Nullable:
   // existing rows predate this column and are treated as 'google_doc' at read time
   // (every prior row's text came from a doc). "Last-saved wins" — a single POST
   // sets exactly this + lastSyncedText together (see app/api/research-plan/route.ts).
-  lastSyncedSource  String?   @map("last_synced_source")
+  lastSyncedSource   String?   @map("last_synced_source")
   // Latest AI review of the synced plan; replaced on each re-review so it
   // persists across reloads and never piles up.
-  lastReviewJson    Json?     @map("last_review_json")
-  lastReviewedAt    DateTime? @map("last_reviewed_at")
+  lastReviewJson     Json?     @map("last_review_json")
+  lastReviewedAt     DateTime? @map("last_reviewed_at")
   // Latest idea-check result ({ verdict, findings }); replaced on each re-run.
   // (The `IdeaCheck` table is only the per-day rate-limit ledger.)
-  lastIdeaCheckJson Json?     @map("last_idea_check_json")
-  lastIdeaCheckAt   DateTime? @map("last_idea_check_at")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  lastIdeaCheckJson  Json?     @map("last_idea_check_json")
+  lastIdeaCheckAt    DateTime? @map("last_idea_check_at")
+  // Pre-call claims for the two paid plan workflows (P1-S9). One review and one
+  // idea check per team at a time: the claim is taken BEFORE the provider call,
+  // released on failure, and taken over after its TTL. It is also what makes the
+  // idea-check daily cap exact rather than advisory — the count is read while
+  // holding it, so no second run can be counting at the same moment.
+  reviewClaimedAt    DateTime? @map("review_claimed_at")
+  ideaCheckClaimedAt DateTime? @map("idea_check_claimed_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   team Team @relation(fields: [teamId], references: [id])
 
@@ -753,12 +1355,16 @@ model TeamShopBuilding {
   costPaid          Int      @default(0) @map("cost_paid")
 
   // Upgrade level (1 = freshly placed; increments via POST /api/buildings/upgrade).
-  level       Int      @default(1)
+  level Int @default(1)
 
   team        Team @relation(fields: [teamId], references: [id])
   purchasedBy User @relation(fields: [purchasedByUserId], references: [id])
 
   @@unique([teamId, buildingKey])
+  // One building per plot cell (SEC-DB): the durable backstop behind the
+  // service-layer advisory lock. NULL pos (owned-but-unplaced) rows are exempt
+  // — Postgres treats NULLs as distinct in unique indexes.
+  @@unique([teamId, posX, posY])
   @@map("team_shop_buildings")
 }
 
@@ -800,7 +1406,26 @@ model LabCreditClaim {
 }
 
 // ─── Daily Activities ─────────────────────────────────────────────────────────
+// Rollup of daily task completions across all pillars (Codex, Project Log,
+// Failure Log, Proof of Expertise, etc.). Injected by each pillar's route
+// via lib/pvp/spell-power.ts incrementDailyTaskCount(). Drives the PvP
+// Spell Power Meter (spec §4.4 Option B).
+model TeamDailyTaskDay {
+  teamId String @map("team_id")
+  date DateTime @db.Date
+  tasksCompleted Int @default(0) @map("tasks_completed")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@id([teamId, date])
+  @@map("team_daily_task_days")
+}
+
+
+
 // Field Dispatch was retired in favor of Field Codex (codex_* tables below) —
+
 // its tables were dropped in migration *_drop_field_dispatch.
 
 // Proof of Expertise — a conversational clearance exam (Feature: Clearance Level).
@@ -809,21 +1434,21 @@ model LabCreditClaim {
 // passing (>= threshold) raises `TeamCurrency.clearanceLevel`. Mirrors the paper
 // quiz's session/attempt split (PaperQuizSession / PaperQuizAttempt).
 model ExpertiseExam {
-  id            String    @id @default(cuid())
-  teamId        String    @map("team_id")
-  userId        String    @map("user_id")
+  id               String              @id @default(cuid())
+  teamId           String              @map("team_id")
+  userId           String              @map("user_id")
   // Clearance level this exam attempts to reach (current + 1).
-  targetLevel   Int       @map("target_level")
+  targetLevel      Int                 @map("target_level")
   // [{ id, prompt, focus, key }] — `key` is the server-only grading guidance.
-  questionsJson Json      @map("questions_json")
+  questionsJson    Json                @map("questions_json")
   // In-progress answers ({ [questionId]: response }) + how far the student has
   // got, persisted as they go so an ungraded exam can be RESUMED after closing
   // the panel (rather than regenerating a fresh one). Null until the first answer.
-  answersJson   Json?     @map("answers_json")
-  progressIndex Int       @default(0) @map("progress_index")
-  score         Int? // aggregate 0-100, set on grading
-  passed        Boolean   @default(false)
-  gradedAt      DateTime? @map("graded_at")
+  answersJson      Json?               @map("answers_json")
+  progressIndex    Int                 @default(0) @map("progress_index")
+  score            Int? // aggregate 0-100, set on grading
+  passed           Boolean             @default(false)
+  gradedAt         DateTime?           @map("graded_at")
   // Grading lifecycle. `active` = answerable/regradable; `grading` = a request
   // has claimed it and the paid Claude call is in flight (a second concurrent
   // grade is refused, so the LLM is never called twice for one exam); `graded` =
@@ -916,11 +1541,25 @@ model UploadedAsset {
   createdAt      DateTime            @default(now()) @map("created_at")
   attachedAt     DateTime?           @map("attached_at")
   deletedAt      DateTime?           @map("deleted_at")
+  /// When the reclaim sweep took this row for physical deletion (REFACTOR2
+  /// P1-R12). A `deleting` row whose lease has aged out is retryable; without
+  /// it, a crash between the status write and the R2 call left a LIVE object
+  /// behind a terminal `deleted` row that no future sweep would ever select.
+  deleteLeaseAt  DateTime?           @map("delete_lease_at")
+  /// How many times the sweep has tried this object. Surfaces a poison object
+  /// instead of retrying it silently forever.
+  deleteAttempts Int                 @default(0) @map("delete_attempts")
 
-  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// RESTRICT, not Cascade (REFACTOR2 P1-R12). Cascading deleted the ledger row
+  /// the moment a team was removed — destroying the only record of an R2 object
+  /// BEFORE anything could delete it, leaving a permanent, untracked orphan.
+  /// Restrict makes that a loud failure instead: a future team-deletion command
+  /// must retire the team's assets first, which is the correct order anyway.
+  team Team @relation(fields: [teamId], references: [id], onDelete: Restrict)
   user User @relation(fields: [userId], references: [id])
 
   @@index([teamId, status, createdAt])
+  @@index([status, attachedToType, attachedToId])
   @@index([attachedToType, attachedToId])
   @@map("uploaded_assets")
 }
@@ -929,6 +1568,9 @@ enum UploadedAssetStatus {
   temporary
   attached
   orphaned
+  /// Claimed by the reclaim sweep, object not yet confirmed gone. The ONLY
+  /// state from which a physical delete may run, and retryable by lease age.
+  deleting
   deleted
 
   @@map("uploaded_asset_status")
@@ -943,7 +1585,12 @@ enum ProjectLogEntry {
 
 model ProjectLogFollowup {
   id           String     @id @default(cuid())
-  projectLogId String     @map("project_log_id")
+  /// UNIQUE (REFACTOR2 P1-S7): the route promised "one follow-up per entry" but
+  /// enforced it with a pre-read before the paid Anthropic call, so two
+  /// concurrent requests could both pay and both insert. The row now doubles as
+  /// the CLAIM — created before the model call, so losing the insert costs
+  /// nothing.
+  projectLogId String     @unique @map("project_log_id")
   question     String
   response     String?
   answeredAt   DateTime?  @map("answered_at")
@@ -972,14 +1619,14 @@ model ProjectLogReference {
 // Free-text feedback a teacher attaches to a team (optionally to a specific
 // target like a project log or paper). Visible to the team in their own view.
 model TeacherFeedback {
-  id            String   @id @default(cuid())
-  teamId        String   @map("team_id")
-  teacherUserId String   @map("teacher_user_id")
+  id            String         @id @default(cuid())
+  teamId        String         @map("team_id")
+  teacherUserId String         @map("teacher_user_id")
   targetType    FeedbackTarget @map("target_type")
-  targetId      String?  @map("target_id")
+  targetId      String?        @map("target_id")
   body          String
-  resolved      Boolean  @default(false)
-  createdAt     DateTime @default(now()) @map("created_at")
+  resolved      Boolean        @default(false)
+  createdAt     DateTime       @default(now()) @map("created_at")
 
   team    Team @relation(fields: [teamId], references: [id])
   teacher User @relation("teacherFeedbackAuthor", fields: [teacherUserId], references: [id])
@@ -1002,24 +1649,64 @@ enum FeedbackTarget {
 // An in-app notification. `userId` null means the whole team. `dedupeKey` is
 // UNIQUE so the daily cron is idempotent — re-running never double-inserts the
 // same "regional fair in 7 days" reminder.
+/// One notification EVENT. `dedupeKey` is globally unique, so the row is the
+/// event — which is what `NotificationEmail` joins on, and the reason read state
+/// lives in `NotificationRead` rather than being fanned out per member
+/// (REFACTOR2 P2-S3).
+///
+/// `teamId` is NULLABLE (HANDOFF #4/#5): a notice about a membership that ENDED
+/// has to reach a student who, by the time it is written, may have no live team
+/// at all. Team-wide rows (`userId` null) still carry one; a notice addressed to
+/// a person carries whichever team it is about, or none.
 model Notification {
-  id        String    @id @default(cuid())
-  teamId    String    @map("team_id")
-  userId    String?   @map("user_id")
+  id        String           @id @default(cuid())
+  teamId    String?          @map("team_id")
+  userId    String?          @map("user_id")
   kind      NotificationKind
   title     String
   body      String
-  linkUrl   String?   @map("link_url")
-  dedupeKey String    @unique @map("dedupe_key")
-  readAt    DateTime? @map("read_at")
-  createdAt DateTime  @default(now()) @map("created_at")
+  linkUrl   String?          @map("link_url")
+  dedupeKey String           @unique @map("dedupe_key")
+  createdAt DateTime         @default(now()) @map("created_at")
 
-  team Team  @relation(fields: [teamId], references: [id])
-  user User? @relation(fields: [userId], references: [id])
+  team Team? @relation(fields: [teamId], references: [id])
+  /// CASCADE, not the implicit SET NULL (REFACTOR2 P2-6). `userId = null` does
+  /// not mean "nobody" here — it means TEAM-WIDE (see the bell's predicate in
+  /// `app/api/notifications/route.ts`). So nulling this column on a user delete
+  /// silently re-addressed that student's private notice — "You were removed
+  /// from <class>" — to every remaining member of the team it names. A personal
+  /// notice belongs to its subject: when they are gone, so is it. This matches
+  /// what erasure already does explicitly (`lib/data-requests/inventory.ts`
+  /// deletes `notifications` by `userId`); the cascade is what covers the raw
+  /// deletes erasure does not run, e.g. an end-of-pilot teardown.
+  user  User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reads NotificationRead[]
 
-  @@index([teamId, readAt, createdAt])
-  @@index([userId, readAt, createdAt])
+  // The feed lists by recency alone (ORDER BY createdAt).
+  @@index([teamId, createdAt])
+  @@index([userId, createdAt])
   @@map("notifications")
+}
+
+/// Per-member read receipt (REFACTOR2 P2-S3).
+///
+/// `Notification.readAt` was ONE column on a row every teammate reads, so the
+/// first member to open the bell cleared the badge for all of them. Receipts
+/// instead of fan-out because the notification row IS the event: `dedupeKey` is
+/// globally unique and `NotificationEmail.dedupeKey` joins on it, so fanning one
+/// team notice into N rows would have to make that key per-user and break the
+/// join that makes email delivery at-most-once.
+model NotificationRead {
+  notificationId String   @map("notification_id")
+  userId         String   @map("user_id")
+  readAt         DateTime @default(now()) @map("read_at")
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@id([notificationId, userId])
+  @@index([userId])
+  @@map("notification_reads")
 }
 
 enum NotificationKind {
@@ -1028,15 +1715,28 @@ enum NotificationKind {
   teacher_feedback
   phase_reviewed
   showcase_reviewed
+  /// A class or team membership of the recipient's ENDED or changed hands
+  /// (REFACTOR2 P1-R8). Its own kind so the bell can render it distinctly and
+  /// retention can be set for it separately from teacher comments.
+  membership_changed
 
   @@map("notification_kind")
 }
 
+/// Per-member reminder settings.
+///
+/// There is deliberately NO destination column (REFACTOR2 §0.8). It used to hold
+/// any syntactically valid address the member typed, verified against nothing —
+/// a student could point school reminder mail at a stranger. Clerk is the
+/// identity source of truth and the only address it has verified for a user is
+/// the one mirrored into `User.email`, so that is the only address reminders go
+/// to and there is nothing left to verify.
 model NotificationPref {
   userId       String   @id @map("user_id")
   emailEnabled Boolean  @default(false) @map("email_enabled")
-  email        String?
-  // Days-before-deadline to fire reminders at (default 30/14/7/1).
+  // Days-before-deadline to fire reminders at (default 30/14/7/1). Honoured
+  // per member by the cron (P2-S3) — the team's bell shows the union, each
+  // member's EMAIL is filtered to the windows they chose.
   deadlineDays Int[]    @default([30, 14, 7, 1]) @map("deadline_days")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -1047,40 +1747,82 @@ model NotificationPref {
 
 // ─── Data Terminal ───────────────────────────────────────────────────────────
 
-// Experiment tracking + graphing (unlocked at `working`). An experiment is a
-// titled x/y dataset; measurements are its points, optionally grouped by series.
-model Experiment {
-  id              String   @id @default(cuid())
-  teamId          String   @map("team_id")
-  title           String
-  description     String   @default("")
-  xLabel          String   @default("x") @map("x_label")
-  yLabel          String   @default("y") @map("y_label")
-  createdByUserId String   @map("created_by_user_id")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+// Prism's table type, chosen before data is entered. It is not cosmetic: it
+// decides which analyses the Analyze dialog may offer and which graph families
+// are drawable, so a Column table can never be handed a correlation. That
+// gating is the accessibility mechanism the whole Lab mode rests on — see
+// docs/architecture/data-terminal-revamp-plan.md §2.
+//
+// `survival` is deliberately absent: Kaplan-Meier is rare at fair level and
+// would be dead weight to gate against.
+enum DatasetTableType {
+  xy
+  column
+  grouped
+  contingency
+  nested
+  parts_of_whole
+  multiple_variables
 
-  team         Team          @relation(fields: [teamId], references: [id])
-  createdBy    User          @relation("experimentAuthor", fields: [createdByUserId], references: [id])
-  measurements Measurement[]
-
-  @@index([teamId, createdAt])
-  @@map("experiments")
+  @@map("dataset_table_type")
 }
 
-model Measurement {
-  id           String   @id @default(cuid())
-  experimentId String   @map("experiment_id")
-  series       String   @default("")
-  x            Float
-  y            Float
-  note         String?
-  recordedAt   DateTime @default(now()) @map("recorded_at")
+// A team's working dataset — the single spine under all three Data Terminal
+// lanes (Sheets / Lab / Code). Replaces the Experiment + Measurement pair,
+// which could hold exactly one x and one y and so could not represent a CSV.
+//
+// `rows` is jsonb rather than a row-per-point table because NOTHING ever
+// queries inside the data: it is fetched whole, analyzed whole, and written
+// whole. A `measurements`-style child table would buy indexing nobody uses and
+// cost a join on every read.
+//
+// `columns` is a ColumnSpec[] (lib/data-terminal/dataset.ts) carrying each
+// column's role (x / y / yErr / xErr / group / label) and, for replicates, the
+// `subcolumnOf` link. Roles are what make error bars DERIVED rather than
+// configured, and what make replication visible to the analyses — a nested
+// table's n is the number of groups, not the number of measurements.
+//
+// Team-scoped and gated by the `data_terminal` feature (lib/phase.ts), so
+// datasets unlock at `working` exactly as the experiments they replace did.
+model Dataset {
+  id              String           @id @default(cuid())
+  teamId          String           @map("team_id")
+  name            String
+  tableType       DatasetTableType @default(xy) @map("table_type")
+  // Original upload filename, kept so a re-import can be recognised.
+  sourceFilename  String?          @map("source_filename")
+  // ColumnSpec[] — see lib/data-terminal/dataset.ts.
+  columns         Json
+  // (string | number | null)[][], row-major, aligned to `columns`.
+  rows            Json
+  // SheetsChartSpec[] — Sheets-mode chart builder specs (Phase B). Null until
+  // the first chart is built; kept whole because charts are drawn client-side
+  // and nothing ever queries inside them. See lib/data-terminal/sheets-chart.ts.
+  charts          Json?
+  // CodeScriptSpec[] — Code-lane scripts (`{ id, name, code }`, Phase C). Same
+  // jsonb-not-a-child-table reasoning as `charts`: scripts run client-side in a
+  // Pyodide worker and nothing queries inside them. Null until the first save.
+  scripts         Json?
+  // AnalysisSpec[] — Lab-mode analysis specs (`{ id, analysisId, columnIds,
+  // options }`, Phase D). INPUTS only; the result is re-computed in the browser
+  // and never stored (Prism's live-linked results sheet). Null until the first.
+  analyses        Json?
+  // LayoutSpec[] — poster layouts (`{ id, name, rows, cols, panels: [{analysisId}] }`,
+  // Phase F2). Each composes several SAVED analyses into one multi-panel figure
+  // (a science-fair poster board); panels reference `analyses[].id`. Same
+  // jsonb-not-a-child-table reasoning as the arrays above. Null until the first.
+  layouts         Json?
+  // Denormalised `rows.length`, so the list route never ships the data.
+  rowCount        Int              @default(0) @map("row_count")
+  createdByUserId String           @map("created_by_user_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  experiment Experiment @relation(fields: [experimentId], references: [id])
+  team      Team @relation(fields: [teamId], references: [id])
+  createdBy User @relation("datasetAuthor", fields: [createdByUserId], references: [id])
 
-  @@index([experimentId, recordedAt])
-  @@map("measurements")
+  @@index([teamId, createdAt])
+  @@map("datasets")
 }
 
 // ─── Showcase ────────────────────────────────────────────────────────────────
@@ -1100,12 +1842,125 @@ model Showcase {
   moderationStatus ModerationStatus @default(draft) @map("moderation_status")
   moderationNote   String?          @map("moderation_note")
   moderatedAt      DateTime?        @map("moderated_at")
+  // Revision binding (REFACTOR2 P0-R3). `contentDigest` covers every field and
+  // asset a reviewer would have seen; `approvedDigest` is the revision a teacher
+  // actually approved. `approved` only means "approved as served" while the two
+  // are equal — `syncShowcaseRevision` re-derives the digest after every write
+  // and resets the status when they diverge.
+  contentDigest    String           @default("") @map("content_digest")
+  approvedDigest   String?          @map("approved_digest")
+  /// Bearer secret for `link_only` sharing (REFACTOR2 P1-R7). `slug` is a
+  /// PUBLIC identifier — title-derived plus six hex characters — and was never
+  /// a defensible secret for anonymous access to a minor's work. Anonymous
+  /// `link_only` reads must present this instead. Rotating it revokes every
+  /// previously shared link.
+  shareToken       String?          @unique @map("share_token")
+  /// Post-publication takedown (REFACTOR2 P1-6). Deliberately NOT a
+  /// `ModerationStatus` value: a takedown is an operational act on top of
+  /// whatever review state the showcase was in, and keeping them separate is
+  /// what makes a restore a single `takedownAt = null` rather than a guess at
+  /// which status to put back. Nothing is deleted when this is set — the row,
+  /// its assets, its reports and its moderation history are the evidence.
+  takedownAt       DateTime?        @map("takedown_at")
+  /// Why, as a `ShowcaseReportReason` slug. Bounded taxonomy, never prose.
+  takedownReason   String?          @map("takedown_reason")
 
-  team   Team            @relation(fields: [teamId], references: [id])
-  assets ShowcaseAsset[]
-  views  ShowcaseView[]
+  team             Team                      @relation(fields: [teamId], references: [id])
+  assets           ShowcaseAsset[]
+  views            ShowcaseView[]
+  moderationEvents ShowcaseModerationEvent[]
 
   @@map("showcases")
+}
+
+/// Append-only moderation history. Rows are never updated or deleted, so a
+/// decision can always be traced to the exact revision it applied to.
+model ShowcaseModerationEvent {
+  id          String                   @id @default(cuid())
+  showcaseId  String                   @map("showcase_id")
+  /// The `Showcase.contentDigest` this event applied to.
+  digest      String
+  action      ShowcaseModerationAction
+  /// `User.id` of the teacher who decided, or null for system/team-triggered events.
+  actorUserId String?                  @map("actor_user_id")
+  note        String?
+  createdAt   DateTime                 @default(now()) @map("created_at")
+
+  /// RESTRICT, not CASCADE (REFACTOR2 P1-6). This table is the answer to "who
+  /// approved that public page, and who took it down" — the question an
+  /// operator gets asked about content that has since been removed. Under
+  /// CASCADE, deleting the showcase erased that answer, which made the history
+  /// exactly as durable as the thing it was supposed to outlive. A delete is now
+  /// a LOUD refusal (the posture `test/pg/invariants.pg.test.ts` already pins
+  /// for the other audit trails) rather than a silent erasure.
+  showcase Showcase @relation(fields: [showcaseId], references: [id], onDelete: Restrict)
+
+  @@index([showcaseId, createdAt])
+  @@map("showcase_moderation_events")
+}
+
+/// One abuse report against a PUBLISHED showcase (REFACTOR2 P1-6).
+///
+/// No foreign key, on purpose — same rule as `SecurityEvent`: the evidence that
+/// a page was reported has to survive the removal of the page. `showcaseId` is a
+/// bare id.
+///
+/// Carries NO free text. The reason is a bounded enum and the reporter is a
+/// salted hash, never an IP: enough to dedupe and to count, not enough to
+/// identify, and nothing a reporter can type that a teacher would then read.
+model ShowcaseReport {
+  id           String               @id @default(cuid())
+  /// Bare `Showcase.id` — no FK (see above).
+  showcaseId   String               @map("showcase_id")
+  /// The `Showcase.contentDigest` that was live when the report was filed, so a
+  /// reviewer can tell whether they are looking at the reported revision.
+  digest       String
+  reason       ShowcaseReportReason
+  /// Salted SHA-256 of the reporter's IP (`reporterHash` in lib/showcase-server.ts).
+  /// Dedupe key material, not an identity.
+  reporterHash String               @map("reporter_hash")
+  /// Null while OPEN. Set when a teacher acts on it (takedown or dismissal) —
+  /// one nullable column instead of a status string, because "is it open" is the
+  /// only question asked of it.
+  resolvedAt   DateTime?            @map("resolved_at")
+  createdAt    DateTime             @default(now()) @map("created_at")
+
+  /// One report per (reporter, showcase, reason): a reload or a rage-click adds
+  /// nothing, and the count a teacher sees is a count of PEOPLE, not of clicks.
+  @@unique([showcaseId, reporterHash, reason])
+  @@index([showcaseId, createdAt])
+  @@map("showcase_reports")
+}
+
+/// The whole reporting vocabulary. An enum rather than a string column so the
+/// database itself refuses anything outside it (and so the UI, the route and the
+/// takedown reason all read from one list — `SHOWCASE_REPORT_REASONS`).
+enum ShowcaseReportReason {
+  inappropriate
+  harassment
+  privacy
+  copyright
+  spam
+  other
+
+  @@map("showcase_report_reason")
+}
+
+enum ShowcaseModerationAction {
+  submitted
+  approved
+  rejected
+  /// The team changed a covered field or asset after approval; the approval no
+  /// longer applies and the showcase returned to review.
+  revision_invalidated
+  unpublished
+  /// Staff pulled a published showcase out of public serving (P1-6). Appended
+  /// last, matching the `ALTER TYPE … ADD VALUE` order in the migration.
+  taken_down
+  /// …and put it back.
+  restored
+
+  @@map("showcase_moderation_action")
 }
 
 enum PrivacyLevel {
@@ -1149,6 +2004,7 @@ enum AssetType {
   visual // (legacy, unused)
   report // (legacy, unused)
   repo_link // optional GitHub / code link
+  figure // optional Data Terminal figure (exported chart/analysis PNG) — appended last to match the ADD VALUE migration order
 
   @@map("asset_type")
 }
@@ -1158,29 +2014,125 @@ model ShowcaseView {
   showcaseId         String   @map("showcase_id")
   visitorFingerprint String   @map("visitor_fingerprint")
   viewedAt           DateTime @default(now()) @map("viewed_at")
+  // A13: UTC day bucket for the documented "one view per visitor per day"
+  // contract. The unique key makes concurrent first loads duplicate-safe and
+  // turns the old lifetime dedupe into true per-day dedupe.
+  day                DateTime @map("day") @db.Date
   showcase           Showcase @relation(fields: [showcaseId], references: [id])
 
+  @@unique([showcaseId, visitorFingerprint, day])
   @@index([showcaseId, viewedAt])
   @@map("showcase_views")
+}
+
+// A4: durable record of which teams the daily notification pass has CHECKED
+// for a given UTC day — drafts produced or not. Continuation runs (the cron
+// now fires many times a day) skip finished teams via this table, and a day's
+// coverage is provable instead of inferred from notification side effects
+// (which zero-draft teams never produce). Rows are per-day working state, not
+// history; the cron prunes old days. No FK on purpose: a deleted team's rows
+// age out harmlessly.
+model NotificationRunTeam {
+  id          String    @id @default(cuid())
+  runDay      DateTime  @map("run_day") @db.Date
+  teamId      String    @map("team_id")
+  /// When this team was CLAIMED (not when it finished — see `completedAt`).
+  checkedAt   DateTime  @default(now()) @map("checked_at")
+  // ── Claim-before-work (REFACTOR2 P1-R5) ──────────────────────────────────
+  // The row used to be written AFTER processing, so two overlapping runs both
+  // read the same unchecked roster and both processed — and both emailed. The
+  // notification unique key stopped duplicate ROWS; nothing stopped the second
+  // email, because the send was driven by the pre-insert "fresh" list.
+  /// Fences the claim: a run only processes teams whose row carries ITS token.
+  claimToken  String    @default("") @map("claim_token")
+  /// Null while in flight. A claim with no completion, older than the lease, is
+  /// a crashed run's and is taken over rather than stranding the team all day.
+  completedAt DateTime? @map("completed_at")
+
+  @@unique([runDay, teamId])
+  @@index([runDay, completedAt])
+  @@map("notification_run_teams")
+}
+
+/// Email outbox (REFACTOR2 P1-R5). Sends used to happen inline, driven by the
+/// list of notifications a run believed were fresh — so a duplicated run
+/// duplicated the email even though the notification row was deduped.
+///
+/// Enqueued in the SAME transaction as the notification rows, then delivered by
+/// a claimed pass. `(dedupeKey, recipient)` unique is the event key that makes
+/// at-most-once delivery a property of the database rather than of timing.
+model NotificationEmail {
+  id         String    @id @default(cuid())
+  /// The notification's `dedupeKey` — the event this email is about.
+  dedupeKey  String    @map("dedupe_key")
+  recipient  String
+  subject    String
+  body       String
+  /// pending | sending | sent | failed
+  status     String    @default("pending")
+  attempts   Int       @default(0)
+  /// Fences the delivery claim, same shape as the paper-job lease.
+  claimToken String?   @map("claim_token")
+  claimedAt  DateTime? @map("claimed_at")
+  sentAt     DateTime? @map("sent_at")
+  lastError  String?   @map("last_error")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@unique([dedupeKey, recipient])
+  @@index([status, claimedAt])
+  @@map("notification_emails")
+}
+
+/// Addresses this system must not email again (REFACTOR2 P1-2).
+///
+/// Written by the Resend webhook (`app/api/webhooks/resend`) when a message
+/// hard-bounces or the recipient reports it as spam, and consulted by
+/// `sendNotificationEmail` before every send. Both signals are permanent by
+/// definition — Resend reports temporary trouble as `email.delivery_delayed`,
+/// which is the outbox's retry to handle, not a reason to stop mailing someone.
+///
+/// Keyed by the ADDRESS, not by user: an address may outlive the account, and a
+/// complaint attaches to the mailbox that made it.
+model EmailSuppression {
+  /// Lowercased recipient address.
+  email     String   @id
+  /// `bounced` | `complained`
+  reason    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("email_suppressions")
 }
 
 // ─── Science Fair Hub ────────────────────────────────────────────────────────
 
 model Fair {
-  id           String    @id @default(cuid())
-  name         String
-  level        FairLevel
-  state        String?
-  county       String?
-  country      String    @default("US")
-  websiteUrl   String?   @map("website_url")
-  parentFairId String?   @map("parent_fair_id")
+  id                 String    @id @default(cuid())
+  name               String
+  level              FairLevel
+  state              String?
+  county             String?
+  country            String    @default("US")
+  websiteUrl         String?   @map("website_url")
+  parentFairId       String?   @map("parent_fair_id")
   // Representative coordinates (host city / state centre) for nearest-fair
   // matching against a team's location (Feature 3, lib/fairs/match.ts).
-  latitude     Float?
-  longitude    Float?
+  latitude           Float?
+  longitude          Float?
   // Stable natural key from the seed dataset, so re-seeding upserts in place.
-  seedKey      String?   @unique @map("seed_key")
+  seedKey            String?   @unique @map("seed_key")
+  // Set when a seeded key disappears from the authored edition (P1-R16). The row
+  // stays — events, team interests, and notifications reference it, and it is
+  // the true history of a team that entered — but matching skips it.
+  retiredAt          DateTime? @map("retired_at")
+  // ── Paid-sync control (REFACTOR2 P1-S10) ────────────────────────────────
+  // `Fair`/`FairEvent` are GLOBAL rows shared by every team, but any student
+  // matched to the fair could trigger a paid Firecrawl crawl and race the write.
+  /// Claim stamp electing ONE crawler; conditional, with a TTL for a dead claim.
+  syncClaimedAt      DateTime? @map("sync_claimed_at")
+  /// When a crawl last completed — the cooldown that stops repeat spend.
+  lastSyncedAt       DateTime? @map("last_synced_at")
+  /// `User.id` that triggered the last crawl. Provenance for a shared row.
+  lastSyncedByUserId String?   @map("last_synced_by_user_id")
 
   events     FairEvent[]
   userAssocs FairUserAssociation[]
@@ -1284,17 +2236,17 @@ model RubricSelfAssessment {
 // the two coexist instead of colliding into one overwritten row. Existing rows
 // default/backfill to 'student' (they were all authored by students pre-F10).
 model TeamRubricScore {
-  id              String   @id @default(cuid())
-  teamId          String   @map("team_id")
+  id              String           @id @default(cuid())
+  teamId          String           @map("team_id")
   track           RubricTrack
-  criterionKey    String   @map("criterion_key") // e.g. "science:III"
+  criterionKey    String           @map("criterion_key") // e.g. "science:III"
   score           Int // 0..maxScore for that criterion (validated server-side against ISEF_RUBRIC)
   notes           String?
   scorerRole      RubricScorerRole @default(student) @map("scorer_role")
-  updatedByUserId String   @map("updated_by_user_id")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-  team            Team     @relation(fields: [teamId], references: [id])
-  updatedBy       User     @relation(fields: [updatedByUserId], references: [id])
+  updatedByUserId String           @map("updated_by_user_id")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  team            Team             @relation(fields: [teamId], references: [id])
+  updatedBy       User             @relation(fields: [updatedByUserId], references: [id])
 
   @@unique([teamId, criterionKey, scorerRole])
   @@map("team_rubric_scores")
@@ -1327,7 +2279,7 @@ model IsefCategory {
 model FormsCatalog {
   id                    String           @id @default(cuid())
   name                  String
-  formCode              String           @map("form_code")
+  formCode              String           @unique @map("form_code")
   requiredForLevelsJson Json             @map("required_for_levels_json")
   templateUrl           String?          @map("template_url")
   description           String
@@ -1471,19 +2423,121 @@ model CodexKpDay {
   @@map("codex_kp_days")
 }
 
+// ─── Vocabulary builder ───────────────────────────────────────────────────
+// Per-student spaced-repetition deck of terms EXTRACTED from the team's own
+// Paper.fullText/abstract (Schwartz-Hearst acronym pairing, repeated
+// technical n-grams, and authored-dictionary hits — see lib/literature/
+// vocab.ts). Zero LLM: nothing here is ever model-generated.
+
+enum VocabSource {
+  research_glossary
+  stats_guide
+  methods_guide
+  data_quality_guide
+  paper_definition // the paper itself defines it (validated acronym expansion)
+  paper_context // no grounded definition exists — show the paper's own sentence
+  llm_definition // written at build time by vocab-curate.ts, grounded in the paper's own sentence (kept as `quote`)
+
+  @@map("vocab_source")
+}
+
+// Per-STUDENT deck card (like PaperProficiency, each member builds their own),
+// lifted from a team-scoped Paper. `definition` is ALWAYS grounded: either an
+// authored dictionary entry (`sourceEntryId`) or verbatim paper text (`quote`).
+// Nothing here is ever model-generated.
+//
+// `onDelete: Cascade` on `paperId` is intentional: deleting a paper drops the
+// cards lifted from it. If the term also appears in a surviving paper, the
+// next "Build deck" re-adds it — self-healing.
+// Once-ever curation marker: one row = "this student's deck has already paid
+// the curation call for this paper". The build route skips marked papers, so
+// re-building never re-bills a paper — curation deliberately rejects trivial
+// candidates, so "all candidates carded" (the old skip test) is never true and
+// cannot serve as the marker. Written only after a curation call returns terms.
+model VocabPaperCuration {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  paperId   String   @map("paper_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id])
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, paperId])
+  @@map("vocab_paper_curations")
+}
+
+model VocabCard {
+  id             String      @id @default(cuid())
+  userId         String      @map("user_id")
+  teamId         String      @map("team_id")
+  paperId        String      @map("paper_id")
+  termKey        String      @map("term_key") // canonicalKey() — the dedupe key
+  term           String
+  aliases        String[]    @default([])
+  definition     String
+  source         VocabSource
+  sourceEntryId  String?     @map("source_entry_id")
+  quote          String? // VERBATIM sentence from the paper
+  box            Int         @default(1)
+  dueAt          DateTime    @map("due_at")
+  lastReviewedAt DateTime?   @map("last_reviewed_at")
+  reviewCount    Int         @default(0) @map("review_count")
+  lapses         Int         @default(0)
+  kpAwarded      Int         @default(0) @map("kp_awarded") // once-ever high-water (0 → VOCAB_KP_PER_TERM)
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  user  User  @relation(fields: [userId], references: [id])
+  team  Team  @relation(fields: [teamId], references: [id])
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  // One card per term per student PER LAB (REFACTOR2 P2-S4). This was
+  // (userId, termKey) — global per student — while deck/review/delete were all
+  // team-scoped, so a student in a second lab had their build filtered against
+  // a deck they could not see and the term never appeared at all.
+  @@unique([userId, teamId, termKey])
+  @@index([userId, teamId, dueAt]) // "today's due cards"
+  @@index([paperId])
+  @@map("vocab_cards")
+}
+
+// Daily KP cap ledger, PER STUDENT — a direct copy of CodexKpDay's shape and
+// its atomic WHERE-gated increment. Counts KP (not cards) so the cap is a
+// money cap.
+model VocabKpDay {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  teamId    String   @map("team_id")
+  day       DateTime @db.Date
+  kpAwarded Int      @default(0) @map("kp_awarded")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([userId, teamId, day])
+  @@map("vocab_kp_days")
+}
+
 // Cached "Study Plan" — one Haiku classification of the team's topic/research
 // idea/plan into recommended tracks + branches, re-runnable with a daily cap.
 // 1:1 on Team. `manualTrackSlugs` lets a student add tracks the classifier
 // didn't recommend, without another LLM call.
 model TeamStudyPlan {
-  teamId           String    @id @map("team_id")
-  tracksJson       Json      @map("tracks_json")
-  sourceHash       String    @map("source_hash")
-  generatedAt      DateTime  @default(now()) @map("generated_at")
-  runsToday        Int       @default(0) @map("runs_today")
-  runsDay          DateTime? @db.Date @map("runs_day")
-  manualTrackSlugs String[]  @default([]) @map("manual_track_slugs")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  teamId            String    @id @map("team_id")
+  tracksJson        Json      @map("tracks_json")
+  sourceHash        String    @map("source_hash")
+  // The source hash the CURRENT in-flight generation is working from, stamped
+  // when the daily slot is reserved (P1-S9). The commit is a compare-and-set on
+  // it, so a slow generation started against an older topic can no longer land
+  // on top of a newer one that already finished.
+  pendingSourceHash String?   @map("pending_source_hash")
+  generatedAt       DateTime  @default(now()) @map("generated_at")
+  runsToday         Int       @default(0) @map("runs_today")
+  runsDay           DateTime? @map("runs_day") @db.Date
+  manualTrackSlugs  String[]  @default([]) @map("manual_track_slugs")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   team Team @relation(fields: [teamId], references: [id])
 
@@ -1500,17 +2554,17 @@ model TeamStudyPlan {
 // filters by teamId ONLY. Contrast with PaperChatMessage, which IS per-user
 // because paper comprehension is graded per-student.
 model VegaStudyMessage {
-  id        String   @id @default(cuid())
-  teamId    String   @map("team_id")
-  userId    String   @map("user_id")
-  role      MessageRole
-  content   String
+  id             String            @id @default(cuid())
+  teamId         String            @map("team_id")
+  userId         String            @map("user_id")
+  role           MessageRole
+  content        String
   // See PaperChatMessage: server-owned turn lifecycle (pending → complete/error).
   status         ChatMessageStatus @default(complete)
   requestId      String?           @map("request_id")
   error          String?
   tokenUsageJson Json?             @map("token_usage_json")
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
 
   team Team @relation(fields: [teamId], references: [id])
   user User @relation(fields: [userId], references: [id])

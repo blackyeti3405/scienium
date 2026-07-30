@@ -7,11 +7,21 @@ export const metadata = {
   description: 'Browse student STEM project showcases on scienium.',
 }
 
+/**
+ * Never rendered from a cache (REFACTOR2 P1-6). Reading `searchParams` already
+ * makes this dynamic today, so this changes nothing at runtime — it PINS it.
+ * A takedown has to be reflected on the next request, and the failure mode it
+ * guards against is silent: adding `revalidate` or dropping the filter param
+ * would freeze a taken-down card into a cached gallery with nothing to purge.
+ */
+export const dynamic = 'force-dynamic'
+
 interface Props {
-  searchParams: { lab?: string }
+  searchParams: Promise<{ lab?: string }>
 }
 
-export default async function GalleryPage({ searchParams }: Props) {
+export default async function GalleryPage(props: Props) {
+  const searchParams = await props.searchParams;
   const labFilter =
     searchParams.lab && (LAB_TYPES as readonly string[]).includes(searchParams.lab)
       ? (searchParams.lab as LabType)
@@ -23,6 +33,11 @@ export default async function GalleryPage({ searchParams }: Props) {
       privacyLevel: 'public',
       moderationStatus: 'approved',
       publishedAt: { not: null },
+      // Taken down (P1-6). The gate in `canViewShowcase` covers everything that
+      // VIEWS a showcase; a listing has no viewer to gate, so the filter is
+      // here. Without it a taken-down page keeps its title and thumbnail on the
+      // gallery wall while the page itself 404s.
+      takedownAt: null,
       ...(labFilter ? { team: { labType: labFilter } } : {}),
     },
     orderBy: { publishedAt: 'desc' },

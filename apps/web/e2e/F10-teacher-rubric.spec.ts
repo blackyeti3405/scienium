@@ -6,7 +6,8 @@ import {
   type Page,
 } from '@playwright/test'
 import { STORAGE } from './roles'
-import { api, withSeedPage } from './api'
+import { api, registerPageRole, withSeedPage, gotoFresh } from './api'
+import { createLab, type OwnedLab } from './lab'
 
 /**
  * F10 (this batch) — Teacher-side rubric scoring + comparison + anchor content.
@@ -51,25 +52,15 @@ import { api, withSeedPage } from './api'
 const RESEARCH_QUESTION_KEY = 'science:I'
 const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 
-/** Team id + a student id inside it, discovered from the teacher roster in beforeAll. */
+let lab: OwnedLab
+
+/** Team id + a student id inside it, resolved in beforeAll. */
 let teamId: string | null = null
 let studentId: string | null = null
 
 async function refreshTeacherSession(page: Page) {
-  await page.goto('/teacher')
+  await gotoFresh(page, '/teacher')
   await expect(page.getByText('Class Roster')).toBeVisible({ timeout: 20_000 })
-}
-
-async function resetTeacherScore(browser: Browser, teamIdToReset: string) {
-  await withSeedPage(browser, 'teacher', async (page) => {
-    await refreshTeacherSession(page)
-    const res = await api.put(page, '/api/teacher/rubric', {
-      data: { teamId: teamIdToReset, track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score: 0 },
-    })
-    if (res.status() !== 200) {
-      throw new Error(`resetTeacherScore PUT failed: ${res.status()} ${await res.text()}`)
-    }
-  })
 }
 
 /**
@@ -88,7 +79,7 @@ async function resetTeacherScore(browser: Browser, teamIdToReset: string) {
  */
 async function seedStudentScore(browser: Browser, score: number) {
   await withSeedPage(browser, 'leader', async (page) => {
-    await page.goto('/fair-hub/rubric')
+    await gotoFresh(page, '/fair-hub/rubric')
     await expect(page.getByTestId('judge-readiness')).toBeVisible({ timeout: 20_000 })
     const res = await api.put(page, '/api/rubric/self-assessment', {
       data: { track: 'science', criterionKey: RESEARCH_QUESTION_KEY, score },
@@ -109,7 +100,14 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   // block. test.use() cannot be called from inside an async test body.
   test.use({ storageState: STORAGE.teacher })
 
+  // Session recovery must re-auth these fixture pages as the teacher.
+  test.beforeEach(({ page }) => registerPageRole(page, 'teacher'))
+
   test.beforeAll(async ({ browser }) => {
+    // Co-members, so the teacher roster resolves to THIS lab.
+    lab = await createLab('f10tscoring', true, true)
+    teamId = lab.teamId
+
     await withSeedPage(browser, 'teacher', async (page) => {
       await refreshTeacherSession(page)
       const rosterRes = await api.get(page, '/api/teacher/roster')
@@ -117,27 +115,26 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
         throw new Error(`Roster fetch failed: ${rosterRes.status()} ${await rosterRes.text()}`)
       }
       const { students } = await rosterRes.json()
-      const withTeam = (
+      const mine = (
         students as Array<{ studentId: string; teamId: string | null }>
-      ).find((s) => s.teamId !== null)
-      if (!withTeam?.teamId) {
+      ).find((s) => s.teamId === lab.teamId)
+      if (!mine) {
         throw new Error(
-          'No team found in teacher roster — E2E teacher account must be linked to the dev class ' +
-            'that contains the E2E leader team. Run `pnpm --filter web seed:e2e` to restore the fixture.',
+          "This file's disposable lab did not appear in the teacher roster — the E2E teacher " +
+            'account must be linked to the dev class that contains the E2E leader. ' +
+            'Run `pnpm --filter web seed:e2e` to restore the fixture.',
         )
       }
-      teamId = withTeam.teamId
-      studentId = withTeam.studentId
+      studentId = mine.studentId
     })
-
-    // Belt-and-suspenders: start from a known-clean teacher score.
-    await resetTeacherScore(browser, teamId!)
+    // The "belt-and-suspenders reset to a known-clean teacher score" is gone: a
+    // fresh lab has no rubric rows, so `science:I` already reads 0.
   })
 
-  test.afterAll(async ({ browser }) => {
-    if (!teamId) return
-    await resetTeacherScore(browser, teamId)
-    await seedStudentScore(browser, 0)
+  test.afterAll(async () => {
+    // Replaces resetting the teacher AND student scores back to 0 — both rows
+    // are team-scoped and go with the lab.
+    await lab.dispose()
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────
@@ -146,7 +143,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -159,7 +156,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   test('AC2: the card shows a low/mid/high anchor description and a talking point', async ({ page }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -176,7 +173,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   test('AC3: saving a teacher score of 7 shows a saved badge without a full page reload', async ({ page }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -201,7 +198,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   test('AC4: after saving 7, the teacher-total header is at least 7 / 100 without a reload', async ({ page }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -234,7 +231,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -261,7 +258,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
     const noteText = `E2E teacher note ${Date.now()}`
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -288,7 +285,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -320,7 +317,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
     // Seed a student self-check score of 9 via the leader session for the SAME team.
     await seedStudentScore(browser, 9)
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const card = page.locator(`[data-criterion-key="${RESEARCH_QUESTION_KEY}"]`)
@@ -350,7 +347,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   }) => {
     if (!studentId) throw new Error('studentId not set — beforeAll failed')
 
-    await page.goto(`/teacher/student/${studentId}`)
+    await gotoFresh(page, `/teacher/student/${studentId}`)
     await page.getByRole('button', { name: 'Rubric' }).first().click()
 
     const scienceCard = page.locator('[data-criterion-key="science:I"]')

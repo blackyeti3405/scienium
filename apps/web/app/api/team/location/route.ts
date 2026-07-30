@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireTeamContext } from '@/lib/api/route-context'
-import { parseJson, zipString } from '@/lib/validation'
+import { withTeamRoute, RouteError } from '@/lib/api/with-route'
+import { zipString } from '@/lib/validation'
 import { zipToState, geocodeZip } from '@/lib/fairs/zip'
 import { db } from '@/lib/db'
 
@@ -11,33 +11,25 @@ const LocationBody = z.object({ zip: zipString }).strict()
  * POST /api/team/location — set/update the team's US location from a ZIP code
  * (Feature 3a). Derives the 2-letter state used for fair matching.
  */
-export async function POST(req: NextRequest) {
-  const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
-  if (guardError) return guardError
+export const POST = withTeamRoute(
+  { tier: 'mutate', body: LocationBody },
+  async ({ ctx, data }) => {
+    const { zip } = data
+    const state = zipToState(zip)
+    if (!state) throw new RouteError("That ZIP doesn't map to a US state we recognize", 400)
 
-  const { data, error } = await parseJson(req, LocationBody)
-  if (error) return error
-  const { zip } = data
+    const coords = await geocodeZip(zip)
 
-  const state = zipToState(zip)
-  if (!state) {
-    return NextResponse.json(
-      { error: "That ZIP doesn't map to a US state we recognize" },
-      { status: 400 },
-    )
-  }
+    await db.team.update({
+      where: { id: ctx.teamId },
+      data: {
+        locationZip: zip,
+        locationState: state,
+        locationLat: coords?.[0] ?? null,
+        locationLng: coords?.[1] ?? null,
+      },
+    })
 
-  const coords = await geocodeZip(zip)
-
-  await db.team.update({
-    where: { id: ctx.teamId },
-    data: {
-      locationZip: zip,
-      locationState: state,
-      locationLat: coords?.[0] ?? null,
-      locationLng: coords?.[1] ?? null,
-    },
-  })
-
-  return NextResponse.json({ zip, state })
-}
+    return NextResponse.json({ zip, state })
+  },
+)

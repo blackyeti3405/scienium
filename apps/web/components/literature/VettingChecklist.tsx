@@ -26,7 +26,7 @@ export function VettingChecklist({ tier }: { tier?: CredibilityTier | null }) {
       >
         <ChevronDown
           size={11}
-          className={`shrink-0 text-white/30 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          className={`shrink-0 text-white/40 transition-transform ${expanded ? 'rotate-180' : ''}`}
         />
         <ShieldCheck size={11} className="text-[#F5C518]/60 shrink-0" />
         <span className="font-pixel text-[7px] text-white/50 uppercase tracking-widest">

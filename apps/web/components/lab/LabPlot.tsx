@@ -9,6 +9,8 @@ import {
   ALL_CELLS,
   CLUSTER_Y,
   FOOT_HALF_Y,
+  STEP_X,
+  STEP_Y,
   cellKey,
   cellToScreen,
   depth,
@@ -19,6 +21,7 @@ import {
 } from '@/lib/plot'
 import type { SpriteEntry } from '@/lib/sprites/manifest'
 import type { LabType } from '@/lib/phase'
+import { useElementSize } from '@/lib/hooks/useElementSize'
 
 /** Sprites render at 2× on the plot (64px source → 128px). */
 const PLOT_SCALE = 2
@@ -98,24 +101,44 @@ export function LabPlot({
   onSelectEconomy,
 }: LabPlotProps) {
   const ref = useRef<HTMLDivElement>(null)
+  const cursorRef = useRef<HTMLButtonElement>(null)
   const suppressClickRef = useRef(false)
-  const [dims, setDims] = useState({ w: 0, h: 0 })
+  const suppressClickTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const dims = useElementSize(ref)
   const [hover, setHover] = useState<IsoPos | null>(null)
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const measure = () => setDims({ w: el.clientWidth, h: el.clientHeight })
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
+  // Clear the suppress-click timer on unmount so a pending 0ms reset never fires
+  // after the plot (and its refs) are gone.
+  useEffect(() => () => clearTimeout(suppressClickTimerRef.current), [])
 
-  // Clear the hover preview whenever the ghost goes away.
+  // Identifies the active ghost by what it IS (kind + key), not by the `ghost`
+  // object reference — a new plain object is built on every parent render
+  // whether or not the ghost actually changed, and keying off that would
+  // re-focus/reset the keyboard cursor on unrelated re-renders (a toast, a
+  // burst animation, ...).
+  const ghostId = ghost ? `${ghost.kind}:${ghost.key}` : null
+
+  // Seed (or clear) the hover cell when a ghost starts (or ends). A pick-up
+  // already seeds `hover` to the building's own cell (see onPointerDownItem /
+  // the keyboard branch of onClickItem below); this only supplies a default
+  // for a brand-new placement, which has no existing cell to start from.
   useEffect(() => {
-    if (!ghost) setHover(null)
-  }, [ghost])
+    setHover((prev) => (ghostId ? prev ?? { gx: 0, gy: 0 } : null))
+  }, [ghostId])
+
+  // Move keyboard focus onto the placement cursor as soon as a ghost is
+  // attached — otherwise it is a new focusable element a keyboard user would
+  // have no way to discover. Symmetrically, once a ghost that WAS active goes
+  // away (a commit, Escape, or a right-click cancel — every exit is a `ghost`
+  // → null transition, wherever it originates), focus returns to the plot
+  // itself rather than being dropped to <body>. `prevGhostId` guards the
+  // initial mount (ghostId starts null; nothing should steal focus then).
+  const prevGhostId = useRef<string | null>(null)
+  useEffect(() => {
+    if (ghostId) cursorRef.current?.focus()
+    else if (prevGhostId.current) ref.current?.focus()
+    prevGhostId.current = ghostId
+  }, [ghostId])
 
   const centerX = dims.w / 2
   const centerY = dims.h / 2 + CLUSTER_Y
@@ -204,8 +227,18 @@ export function LabPlot({
     function onClickItem(e: React.MouseEvent) {
       if (ghost) return // drops are handled by the container
       e.stopPropagation()
-      if (arrangeMode) return // pointer-down picks up immediately
-      else if (kind === 'gateway') onOpenGateway(item.key)
+      if (arrangeMode) {
+        // A pointer click's pick-up already ran on pointerdown below. A
+        // KEYBOARD activation (Enter/Space on this real <button>) has no
+        // pointerdown of its own and fires a click with `detail === 0` — the
+        // only path a keyboard user has into arrange-mode pick-up.
+        if (e.detail === 0) {
+          setHover({ gx: item.gx, gy: item.gy })
+          onPick(kind, item.key, { gx: item.gx, gy: item.gy })
+        }
+        return
+      }
+      if (kind === 'gateway') onOpenGateway(item.key)
       else onSelectEconomy(item.key) // regular click on an economy building → Sell/Upgrade menu
     }
 
@@ -214,9 +247,11 @@ export function LabPlot({
       e.preventDefault()
       e.stopPropagation()
       suppressClickRef.current = true
-      window.setTimeout(() => {
+      clearTimeout(suppressClickTimerRef.current)
+      suppressClickTimerRef.current = setTimeout(() => {
         suppressClickRef.current = false
       }, 0)
+      setHover({ gx: item.gx, gy: item.gy })
       onPick(kind, item.key, { gx: item.gx, gy: item.gy })
     }
 
@@ -252,8 +287,14 @@ export function LabPlot({
         title={tooltip}
         aria-label={name}
       >
-        <span className="plot-building__art">
-          <Sprite entry={sprite} scale={PLOT_SCALE} />
+        {/* The button box is a transparent rectangle that overlaps neighbours in
+            iso; restrict the actual pointer-hit region to the sprite silhouette
+            (clip-path clips hit-testing too) so a real click lands on the
+            building under the cursor, not a neighbour's transparent corner. */}
+        <span className="plot-building__hit">
+          <span className="plot-building__art">
+            <Sprite entry={sprite} scale={PLOT_SCALE} />
+          </span>
         </span>
         {kind === 'economy' && (
           <span className="plot-level font-pixel">L{item.level ?? 1}</span>
@@ -279,6 +320,52 @@ export function LabPlot({
         ? getBuildingSprite(labType, shopBuilding(ghost.key)?.sprite ?? '', ghost.level ?? 1)
         : null
     : null
+  const ghostLabel = ghost
+    ? ghost.kind === 'gateway'
+      ? GATEWAY_LABEL.get(ghost.key) ?? ghost.key
+      : shopBuilding(ghost.key)?.name ?? ghost.key
+    : null
+
+  /**
+   * Keyboard placement — the accessible path onto the same grid a pointer drop
+   * uses. Arrow keys move the (already-existing) `hover` cell one step along
+   * each grid axis; Enter/Space commits through the SAME `onDrop` callback and
+   * the SAME `isPlaceable`/`occupied` check a pointer click uses below, so a
+   * cell can never be legal by one input method and not the other. Escape is
+   * NOT handled here — the ghost is already cancelled from anywhere by the
+   * document-level Escape listener in usePlotBuildings.
+   */
+  function onCursorKeyDown(e: React.KeyboardEvent) {
+    if (!hover) return
+    switch (e.key) {
+      case 'ArrowUp':
+        e.preventDefault()
+        setHover({ gx: hover.gx, gy: hover.gy - 1 })
+        break
+      case 'ArrowDown':
+        e.preventDefault()
+        setHover({ gx: hover.gx, gy: hover.gy + 1 })
+        break
+      case 'ArrowLeft':
+        e.preventDefault()
+        setHover({ gx: hover.gx - 1, gy: hover.gy })
+        break
+      case 'ArrowRight':
+        e.preventDefault()
+        setHover({ gx: hover.gx + 1, gy: hover.gy })
+        break
+      case 'Enter':
+      case ' ':
+        e.preventDefault()
+        // Invalid cell: do nothing, same as an invalid pointer click (per spec).
+        // Focus return to the plot on commit is handled by the ghostId effect
+        // above (the same path Escape/right-click cancel already use).
+        if (isPlaceable(hover.gx, hover.gy, occupied)) onDrop(hover.gx, hover.gy)
+        break
+      default:
+        break
+    }
+  }
 
   const renderedItems = useMemo(
     () =>
@@ -294,6 +381,7 @@ export function LabPlot({
   return (
     <div
       ref={ref}
+      tabIndex={-1}
       className={`lab-plot${gridVisible ? ' lab-plot--editing' : ''}`}
       onMouseMove={handleMouseMove}
       onClick={handleClick}
@@ -317,6 +405,38 @@ export function LabPlot({
       )}
 
       {renderedItems}
+
+      {/* Keyboard placement target: a single real <button> moved across cells by
+          arrow keys (roving cursor, not one focusable element per cell — the
+          grid is 7×7 and a 49-stop tab sequence would be its own accessibility
+          problem). Its accessible name states the destination in the terms the
+          verdict asked for; its visible focus ring comes free from the app-wide
+          `:focus-visible` rule (globals.css) since it's a real button. */}
+      {ghost && hover && (
+        (() => {
+          const { dx, dy } = cellToScreen(hover.gx, hover.gy)
+          const cx = centerX + dx
+          const cy = centerY + dy
+          return (
+            <button
+              ref={cursorRef}
+              type="button"
+              className="plot-cursor"
+              style={{
+                left: cx - STEP_X,
+                top: cy - STEP_Y,
+                width: STEP_X * 2,
+                height: STEP_Y * 2,
+                zIndex: 20 + depth(hover.gx, hover.gy) * 2 + 2,
+              }}
+              onKeyDown={onCursorKeyDown}
+              aria-label={`Place ${ghostLabel} at column ${hover.gx}, row ${hover.gy}${
+                hoverValid ? '' : ' — occupied, choose another cell'
+              }`}
+            />
+          )
+        })()
+      )}
 
       {ghost && ghostSprite && hover && (() => {
         const { dx, dy } = cellToScreen(hover.gx, hover.gy)

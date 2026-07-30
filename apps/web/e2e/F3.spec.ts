@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, withSeedPage, uploadLogAttachment } from './api'
-import fs from 'node:fs'
-import path from 'node:path'
+import { api, withSeedPage, uploadLogAttachment, openGateway, openLiteratureReview, gotoFresh } from './api'
+import { createLab, type OwnedLab } from './lab'
+import { e2eDb } from './db'
 
 /**
  * F3 — Pixel-native confirm/alert dialogs.
@@ -18,11 +18,13 @@ import path from 'node:path'
  *  AC7  — Ops Hub failure-log delete shows in-app confirm dialog; confirming removes entry
  *  AC8  — Discovery "Start over" shows in-app confirm dialog; cancel leaves tree; confirm clears
  *  AC9  — Delete failure shows alert-variant dialog (single OK button) instead of native alert
- *  AC10 — Grep: zero remaining native confirm()/alert() call sites in apps/web/components
+ *  AC10 — Enforced by ESLint's `no-alert` rule (.eslintrc.json) at gate 4, not
+ *         re-tested here — see apps/web/.eslintrc.json.
  *
  * Seeding strategy:
- *  - Papers: POST /api/dev/fill-papers (dev-only endpoint) ensures ≥1 paper exists, then GET
- *    /api/papers to identify a deletable paper.
+ *  - Papers: run-tagged rows created directly via e2eDb (the dev-only
+ *    /api/dev/fill-papers route 403s under the production-build E2E server, and
+ *    seeding 25 papers over HTTP blew the 30s hook budget on a loaded dev server).
  *  - Project log: POST /api/project-log with a real uploaded attachment. For
  *    multi-member teams the currentUserId (from GET /api/project-log) is passed as attendeeId.
  *  - Failure log: POST /api/failure-log (same pattern as F2).
@@ -31,53 +33,21 @@ import path from 'node:path'
 const RUN_ID = Date.now().toString(36)
 
 // ── Seeded resource ids (set in beforeAll, cleaned up in afterAll) ─────────────
-let seededPaperIds: string[] = []
 let seededProjectLogId: string | null = null
 let seededFailureId: string | null = null
+let lab: OwnedLab
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Click a building-sprite button by its aria-label using JavaScript's
- * element.click() — bypasses the isometric z-index overlap that prevents
- * Playwright's coordinate-based pointer events from reaching the correct button.
- */
-async function clickBuilding(page: Page, ariaLabel: string) {
-  await page.evaluate((label) => {
-    const btn = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
-    if (!btn) throw new Error(`Building button not found: ${label}`)
-    btn.click()
-  }, ariaLabel)
-}
-
-/** Open the Literature Review feature panel from /lab. */
-async function openLiteratureReview(page: Page) {
-  await page.goto('/lab')
-  // Wait for the building sprites to render before trying to open.
-  await page.getByRole('button', { name: 'Open Literature Review' }).waitFor({ state: 'attached' })
-  await clickBuilding(page, 'Open Literature Review')
-  // Wait for the Literature Review panel (FeaturePanel) to actually open.
-  await expect(page.getByRole('dialog', { name: 'Literature Review' })).toBeVisible({ timeout: 5000 })
-}
-
 /** Open the Operations Hub feature panel from /lab and switch to a given tab. */
 async function openOpsHub(page: Page, tab: 'Project Log' | 'Failure Log') {
-  await page.goto('/lab')
-  await page.getByRole('button', { name: 'Open Operations Hub' }).waitFor({ state: 'attached' })
-  await clickBuilding(page, 'Open Operations Hub')
-  // Wait for the Operations Hub panel to open before clicking the tab.
-  await expect(page.getByRole('dialog', { name: 'Operations Hub' })).toBeVisible({ timeout: 5000 })
+  await openGateway(page, 'Operations Hub')
   await page.getByRole('button', { name: tab }).click()
 }
 
 /** Open the Discovery feature panel from /lab, then click through the home screen. */
 async function openDiscovery(page: Page) {
-  await page.goto('/lab')
-  await page.getByRole('button', { name: 'Open Discovery' }).waitFor({ state: 'attached' })
-  await clickBuilding(page, 'Open Discovery')
-  // Wait for the Discovery panel to open.
-  const panel = page.getByRole('dialog', { name: 'Discovery' })
-  await expect(panel).toBeVisible({ timeout: 5000 })
+  await openGateway(page, 'Discovery')
   // Dismiss the home screen (shows "Start Exploring" or "Continue Exploring")
   const continueBtn = page.getByRole('button', { name: /Exploring/i })
   await expect(continueBtn).toBeVisible({ timeout: 5000 })
@@ -90,44 +60,31 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
   test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async ({ browser }) => {
+    lab = await createLab('confirm-dialogs')
     await withSeedPage(browser, 'leader', async (page) => {
-      // 1. Ensure papers exist (dev fill endpoint creates up to 25 fake ones).
-      const fillRes = await api.post(page, '/api/dev/fill-papers')
-      if (!fillRes.ok()) {
-        throw new Error(`fill-papers failed: ${fillRes.status()} ${await fillRes.text()}`)
-      }
-
-      // 2. Fetch the paper list.
-      const papersRes = await api.get(page, '/api/papers')
-      if (!papersRes.ok()) {
-        throw new Error(`GET /api/papers failed: ${papersRes.status()}`)
-      }
-      const { papers } = await papersRes.json()
-      const readyPapers = (papers as Array<{ id: string; status: string }>).filter(
-        (p) => p.status === 'ready',
-      )
-
-      if (readyPapers.length < 3) {
-        throw new Error(`Need ≥3 ready papers for F3 tests; got ${readyPapers.length}`)
-      }
-
-      // If we have exactly 25 papers (locked), delete one via the API so that delete
-      // buttons become visible in the UI (the feature hides them when locked at 25/25).
-      // We track the ids we might delete during tests.
-      const TOTAL_SLOTS = 25
-      if (readyPapers.length >= TOTAL_SLOTS) {
-        // Delete the last paper to bring the count to 24, unlocking the delete buttons.
-        const toRemove = readyPapers[readyPapers.length - 1]
-        await api.delete(page, `/api/papers/${toRemove.id}`)
-        // Re-fetch to get updated list.
-        const refreshRes = await api.get(page, '/api/papers')
-        const { papers: refreshed } = await refreshRes.json()
-        seededPaperIds = (refreshed as Array<{ id: string; status: string }>)
-          .filter((p) => p.status === 'ready')
-          .map((p) => p.id)
-      } else {
-        seededPaperIds = readyPapers.map((p) => p.id)
-      }
+      // Seed ready papers DIRECTLY in the DB — the dev-only /api/dev/fill-papers
+      // route 403s under the production-build E2E server (hard-gated on
+      // NODE_ENV, correctly), and 25 sequential HTTP creates regularly blew the
+      // 30s hook budget on a loaded dev server.
+      //
+      // A disposable lab starts with ZERO papers, which deletes the whole
+      // arithmetic this block used to carry: the pre-count, the `24 - existing`
+      // clamp, the "library locked at 25" guard, and the stale-row deleteMany
+      // that had to run before counting. Six papers, every run, no conditions —
+      // AC4 permanently deletes one and every AC still sees ≥3.
+      await e2eDb.paper.createMany({
+        data: Array.from({ length: 6 }, (_, i) => ({
+          teamId: lab.teamId,
+          title: `[E2E-F3-${RUN_ID}] Fake Paper ${i + 1}`,
+          authors: ['E2E Fixture'],
+          abstract: 'Auto-generated F3 fixture paper.',
+          sourceType: 'pdf' as const,
+          status: 'ready' as const,
+          fullText: `Placeholder text for F3 confirm-dialog fixture paper ${i + 1}.`,
+          contentHash: `e2e-f3-${RUN_ID}-${i}`,
+          uploadedByUserId: lab.leaderUserId,
+        })),
+      })
 
       // 3. Seed one project-log entry. The POST requires at least one attachmentUrl
       //    (a genuine upload — team-prefixed key + `temporary` ledger row; a fabricated
@@ -169,22 +126,12 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
     })
   })
 
-  test.afterAll(async ({ browser }) => {
-    await withSeedPage(browser, 'leader', async (page) => {
-      // Clean up any papers that weren't deleted during the tests. The dev fill
-      // creates persistent papers — we delete only the ones we noted.
-      for (const id of seededPaperIds) {
-        await api.delete(page, `/api/papers/${id}`).catch(() => {})
-      }
-
-      if (seededProjectLogId) {
-        await api.delete(page, `/api/project-log/${seededProjectLogId}`).catch(() => {})
-      }
-
-      if (seededFailureId) {
-        await api.delete(page, `/api/failure-log/${seededFailureId}`).catch(() => {})
-      }
-    })
+  test.afterAll(async () => {
+    // Papers, the project log, the failure entry and the uploaded attachment all
+    // belong to the disposable lab, so one dispose() retires the lot — replacing
+    // a tagged deleteMany plus two authenticated HTTP deletes that each had to
+    // succeed for the next run to start clean.
+    await lab.dispose()
   })
 
   // ── AC1 ───────────────────────────────────────────────────────────────────────
@@ -275,8 +222,8 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
   test('AC4: clicking confirm closes dialog and removes the paper from the list', async ({
     page,
   }) => {
-    // Use the first paper id tracked in seededPaperIds for this test.
-    // The paper was filled via /api/dev/fill-papers so it has a known title pattern.
+    // Use the first delete button in the list — the DB-seeded fixture papers
+    // (RUN_ID-tagged, see beforeAll) guarantee at least one is present.
     await openLiteratureReview(page)
 
     const deleteBtns = page.getByTitle('Delete source')
@@ -311,7 +258,7 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
   // Pressing Escape while the dialog is open dismisses it without deleting anything.
   test('AC5: pressing Escape dismisses the dialog without deleting', async ({ page }) => {
     // Fetch the current paper count via API before opening the UI.
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const resBefore = await api.get(page, '/api/papers')
     const { papers: papersBefore } = await resBefore.json()
     const countBefore = (papersBefore as Array<{ id: string }>).length
@@ -333,9 +280,14 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
     // The confirm dialog must disappear.
     await expect(dialog).not.toBeVisible()
 
+    // …and ONLY the confirm dialog. One Escape closes the TOPMOST dialog, not
+    // every dialog on the modal stack (§0.9 Row A): the Literature Review panel
+    // the student opened the confirm from must still be there. Before the stack
+    // in `useModalA11y`, both `document` keydown listeners fired on one Escape
+    // and the whole feature panel vanished under the student.
+    await expect(page.locator('.feature-panel__backdrop[role="dialog"]')).toBeVisible()
+
     // The paper was NOT deleted — verify via API that the count is unchanged.
-    // (Escape may also close the FeaturePanel due to both listeners on document;
-    //  we verify the data-level outcome: no paper was removed.)
     const resAfter = await api.get(page, '/api/papers')
     const { papers: papersAfter } = await resAfter.json()
     expect((papersAfter as Array<{ id: string }>).length).toBe(countBefore)
@@ -460,7 +412,7 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
   test('AC9: delete failure shows alert-variant dialog with single OK button', async ({ page }) => {
     // We'll use the failure-log path since it's easier to seed fresh.
     // Seed a new failure entry for this test.
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const seedRes = await api.post(page, '/api/failure-log', {
       data: {
         happened: `[E2E-F3-AC9-${RUN_ID}] Entry to trigger alert-variant test.`,
@@ -516,71 +468,4 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
     await api.delete(page, `/api/failure-log/${ac9Entry.id}`).catch(() => {})
   })
 
-  // ── AC10 ──────────────────────────────────────────────────────────────────────
-  // A static grep over apps/web/components finds zero NATIVE confirm()/alert()
-  // call sites (test files excluded). The native calls use string arguments:
-  //   confirm("Delete ...")   alert('Could not delete...')
-  // The custom useConfirm hook calls use object arguments:
-  //   await confirm({ title: '...', ... })   await alert({ title: '...', ... })
-  // So we detect the native pattern by checking for confirm/alert followed by
-  // an opening quote or template literal (the old before-F3 form), excluding
-  // comment lines, the ConfirmDialog implementation itself, and test files.
-  test('AC10: no native confirm() or alert() call sites remain in apps/web/components', async () => {
-    const componentsDir = path.resolve(__dirname, '../components')
-
-    // Recursively collect all .tsx and .ts files under components/.
-    function collectFiles(dir: string): string[] {
-      const results: string[] = []
-      for (const name of fs.readdirSync(dir)) {
-        const full = path.join(dir, name)
-        const stat = fs.statSync(full)
-        if (stat.isDirectory()) {
-          results.push(...collectFiles(full))
-        } else if (/\.(tsx?|jsx?)$/.test(name) && !/\.test\.\w+$/.test(name)) {
-          results.push(full)
-        }
-      }
-      return results
-    }
-
-    const files = collectFiles(componentsDir)
-    const violations: string[] = []
-
-    // Native confirm/alert pattern: the call takes a string literal or template literal
-    // as its first argument — e.g. confirm("Delete?") or alert(`Error`).
-    // The custom hook version always takes an object: confirm({ ... }) or alert({ ... }).
-    // We flag lines that have confirm( or alert( followed by a quote/backtick (native form).
-    // We also exclude: comment lines, JSDoc (lines starting with * ), import lines,
-    // and the javascript:alert() URL-safety string (per plan out-of-scope).
-    const nativePattern = /\b(?:confirm|alert)\s*\(\s*[`'"]/
-
-    for (const file of files) {
-      const content = fs.readFileSync(file, 'utf-8')
-      const lines = content.split('\n')
-      lines.forEach((line, i) => {
-        if (!nativePattern.test(line)) return
-
-        // Exclude javascript:alert(1) URL-safety test strings (out of scope per plan).
-        if (line.includes('javascript:alert(')) return
-
-        const trimmed = line.trimStart()
-        // Skip comment lines and JSDoc lines.
-        if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return
-        // Skip import declarations.
-        if (trimmed.startsWith('import')) return
-
-        violations.push(`${file}:${i + 1}: ${line.trim()}`)
-      })
-    }
-
-    if (violations.length > 0) {
-      throw new Error(
-        `Found ${violations.length} native confirm()/alert() call site(s) in apps/web/components:\n` +
-          violations.join('\n'),
-      )
-    }
-
-    // All native call sites have been replaced — pass.
-    expect(violations).toHaveLength(0)
-  })
 })

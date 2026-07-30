@@ -6,6 +6,7 @@ import { ISEF_RUBRIC } from '@/lib/fairs/isef-rubric'
 import type { RubricTrackKey } from '@/lib/fairs/rubric-scoring'
 import { PanelListSkeleton } from '@/components/ui/skeletons/PanelListSkeleton'
 import { BusyButton } from '@/components/ui/BusyButton'
+import { TrackToggle, ChecklistItems } from './RubricControls'
 
 interface CriterionRow {
   key: string
@@ -81,20 +82,7 @@ export function RubricSelfCheck() {
         <h3 className="font-pixel text-[9px] text-white flex items-center gap-1.5">
           <Trophy size={11} className="text-[#F5C518]" /> Rubric Self-check
         </h3>
-        <div className="flex items-center gap-1 border border-white/15 rounded-sm overflow-hidden">
-          {ISEF_RUBRIC.map((t) => (
-            <button
-              key={t.key}
-              data-track={t.key}
-              onClick={() => setTrack(t.key)}
-              className={`font-pixel text-[7px] px-3 py-1.5 transition-colors ${
-                track === t.key ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/45 hover:text-white/70'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TrackToggle value={track} onChange={setTrack} testAttr />
       </div>
 
       {/* Judge-readiness total */}
@@ -219,16 +207,7 @@ function CriterionCard({
           <span className="font-pixel text-[8px] text-white/40 shrink-0">{row.maxScore} pts</span>
         </div>
 
-        {items && items.length > 0 && (
-          <ul className="flex flex-col gap-1">
-            {items.map((it, i) => (
-              <li key={i} className="flex gap-1.5 text-[12px] text-white/55 leading-relaxed">
-                <span className="text-green-400/60 shrink-0 mt-[1px]">✓</span>
-                {it}
-              </li>
-            ))}
-          </ul>
-        )}
+        {items && items.length > 0 && <ChecklistItems items={items} />}
 
         {/* Score + notes controls */}
         <div className="flex items-center gap-3">
@@ -247,7 +226,7 @@ function CriterionCard({
             onBlur={save}
             className="w-16 bg-[#0a1628] border border-white/20 text-white text-sm px-2 py-1.5 outline-none focus:border-[#F5C518]/60 rounded-sm"
           />
-          <span className="font-pixel text-[7px] text-white/30">/ {row.maxScore}</span>
+          <span className="font-pixel text-[7px] text-white/40">/ {row.maxScore}</span>
 
           <BusyButton
             busy={saving}
@@ -274,13 +253,13 @@ function CriterionCard({
           rows={2}
           maxLength={1000}
           placeholder="Notes — what still needs work here?"
-          className="w-full bg-[#0a1628] border border-white/15 text-white text-[13px] px-3 py-2 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/25 resize-none rounded-sm"
+          className="w-full bg-[#0a1628] border border-white/15 text-white text-[13px] px-3 py-2 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40 resize-none rounded-sm"
         />
 
         {saveError && <p className="font-pixel text-[7px] text-red-400 leading-loose">{saveError}</p>}
 
         {row.updatedByName && !saveError && (
-          <p className="font-pixel text-[6px] text-white/25">Last updated by {row.updatedByName}</p>
+          <p className="font-pixel text-[6px] text-white/40">Last updated by {row.updatedByName}</p>
         )}
       </div>
     </div>

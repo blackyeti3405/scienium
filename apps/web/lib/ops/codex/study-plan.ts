@@ -17,7 +17,9 @@
  * is responsible for the sourceHash-based cache check + the 2/team/day cap
  * BEFORE ever calling this function.
  */
-import { anthropic } from '@/lib/anthropic'
+import { z } from 'zod'
+import { aiCreate, parseModelOutput } from '@/lib/ai/spend'
+import { logEvent } from '@/lib/observability/log'
 import { CODEX_TRACKS, labTypeFields, loadTrack } from './index'
 import type { LabType } from '@/lib/phase'
 
@@ -120,10 +122,9 @@ export async function recommendTracks(input: StudyPlanInput): Promise<Recommende
     .map((t) => `- "${t.slug}" (${t.label})${t.branchSlugs.length > 0 ? ` — branches: ${t.branchSlugs.map((b) => `"${b}"`).join(', ')}` : ' — no branches (Core only)'}`)
     .join('\n')
 
-  let raw = ''
+  let response
   try {
-    const response = await anthropic().messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    response = await aiCreate('study_plan_tracks', {
       max_tokens: 700,
       system: `You recommend Field Codex curriculum tracks for a student science-fair team, based on their project topic/idea/plan. Below are the ONLY valid track slugs (and, where applicable, their ONLY valid branch slugs) — you may recommend ONLY these exact ids, never invent new ones:
 
@@ -141,36 +142,51 @@ Return ONLY a JSON array of objects: [{ "trackSlug": string, "branchSlugs": stri
         },
       ],
     })
-    raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
   } catch (err) {
     console.error('[codex/study-plan] classification call failed:', err)
     return defaultRecommendation(labType)
   }
 
   const validSlugs = new Map(trackBranchOptions.map((t) => [t.slug, new Set(t.branchSlugs)]))
-  try {
-    const match = raw.match(/\[[\s\S]*\]/)
-    if (!match) return defaultRecommendation(labType)
-    const parsed = JSON.parse(match[0]) as unknown
-    if (!Array.isArray(parsed) || parsed.length === 0) return defaultRecommendation(labType)
-
-    const cleaned: RecommendedTrack[] = []
-    for (const item of parsed) {
-      if (typeof item !== 'object' || item === null) continue
-      const rec = item as Partial<RecommendedTrack>
-      if (typeof rec.trackSlug !== 'string' || !validSlugs.has(rec.trackSlug)) continue
-      const allowedBranches = validSlugs.get(rec.trackSlug)!
-      const branchSlugs = Array.isArray(rec.branchSlugs)
-        ? rec.branchSlugs.filter((b): b is string => typeof b === 'string' && allowedBranches.has(b))
-        : []
-      const rationale = typeof rec.rationale === 'string' && rec.rationale.trim() ? rec.rationale.trim() : 'Recommended based on your project.'
-      cleaned.push({ trackSlug: rec.trackSlug, branchSlugs, rationale })
-    }
-
-    if (cleaned.length === 0) return defaultRecommendation(labType)
-    return cleaned.slice(0, 4)
-  } catch (err) {
-    console.error('[codex/study-plan] failed to parse classification response:', raw.slice(0, 300), err)
+  // Through the ONE output boundary (P2-S9): the hand-rolled
+  // regex-slice + `JSON.parse` + per-field typeof ladder is now one schema, and
+  // a `max_tokens` truncation is a failure instead of a shorter track list.
+  const parsed = parseModelOutput(
+    response,
+    z
+      .array(
+        z.object({
+          trackSlug: z.string(),
+          branchSlugs: z.array(z.string()).catch([]),
+          rationale: z.string().trim().min(1).catch('Recommended based on your project.'),
+        }),
+      )
+      .min(1),
+  )
+  if (!parsed.ok) {
+    // Classification output can echo the team's project description —
+    // `logDetail` is a reason, a stop reason, and a length only (A7).
+    logEvent({
+      event: 'codex.study_plan_parse_failed',
+      outcome: 'error',
+      detail: parsed.logDetail,
+    })
     return defaultRecommendation(labType)
   }
+
+  // Slug allowlisting stays here: the model may only ever hand back ids WE
+  // offered it, and a branch must belong to its own track.
+  const cleaned: RecommendedTrack[] = []
+  for (const rec of parsed.data) {
+    const allowedBranches = validSlugs.get(rec.trackSlug)
+    if (!allowedBranches) continue
+    cleaned.push({
+      trackSlug: rec.trackSlug,
+      branchSlugs: rec.branchSlugs.filter((b) => allowedBranches.has(b)),
+      rationale: rec.rationale,
+    })
+  }
+
+  if (cleaned.length === 0) return defaultRecommendation(labType)
+  return cleaned.slice(0, 4)
 }

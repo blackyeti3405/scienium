@@ -17,8 +17,6 @@ export interface Paper {
   /** F12: resolved at read time (promoted source's tier, or DOI-derived, or
    * `null` for "self-uploaded — verify yourself"). */
   credibilityTier?: CredibilityTier | null
-  /** DOI the tier was derived from, when found (badge tooltip context). */
-  doi?: string
 }
 
 export interface ChatMessage {
@@ -47,7 +45,50 @@ export interface GradeResult {
   }[]
 }
 
-/** Q&A panel state machine — quiz sub-phases plus the post-quiz chat view. */
-export type QuizPhase = 'loading' | 'quiz' | 'grading' | 'results' | 'chat' | 'retry' | 'retrying'
+/** Q&A panel state machine — quiz sub-phases plus the post-quiz chat and
+ *  explain-it-back views. */
+export type QuizPhase =
+  | 'loading'
+  /** History read; no graded session. Waiting for the student to ASK for a
+   *  quiz — generation is a paid call and never happens on mount. */
+  | 'idle'
+  | 'quiz'
+  | 'grading'
+  | 'results'
+  | 'chat'
+  | 'retry'
+  | 'retrying'
+  | 'explain'
 
 export const TOTAL_SLOTS = 25
+
+// ─── Explain it back ────────────────────────────────────────────────────────
+
+export interface ExplainVerdict {
+  accuracy: number
+  completeness: number
+  correctPoints: string[]
+  missedPoints: string[]
+  misconceptions: string[]
+  followUpQuestion: string
+}
+
+export interface ExplainState {
+  attemptCount: number
+  bestScore: number
+  passed: boolean
+  latestText: string
+  verdict: ExplainVerdict
+  threshold: { accuracy: number; completeness: number }
+}
+
+// ─── Synthesis Matrix ───────────────────────────────────────────────────────
+
+export interface SynthesisMatrixListItem {
+  id: string
+  title: string
+  templateId: string
+  paperCount: number
+  updatedAt: string
+  lastCheckedAt: string | null
+}

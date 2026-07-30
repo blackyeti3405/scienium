@@ -1,3 +1,4 @@
+import 'server-only'
 import { z } from 'zod'
 
 /**
@@ -65,19 +66,21 @@ export const serverEnv = {
   R2_BUCKET_NAME: lazyEnv('R2_BUCKET_NAME'),
   ANTHROPIC_API_KEY: lazyEnv('ANTHROPIC_API_KEY'),
   FIRECRAWL_API_KEY: lazyEnv('FIRECRAWL_API_KEY'),
-  DATABASE_URL: lazyEnv('DATABASE_URL', z.string().url()),
-  CLERK_SECRET_KEY: lazyEnv('CLERK_SECRET_KEY'),
-  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: lazyEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY'),
   UPSTASH_REDIS_REST_URL: lazyOptionalEnv('UPSTASH_REDIS_REST_URL', z.string().url()),
   UPSTASH_REDIS_REST_TOKEN: lazyOptionalEnv('UPSTASH_REDIS_REST_TOKEN'),
   RATE_LIMIT_IP_HEADER: lazyOptionalEnv('RATE_LIMIT_IP_HEADER'),
   CRON_SECRET: lazyOptionalEnv('CRON_SECRET'),
   RESEND_API_KEY: lazyOptionalEnv('RESEND_API_KEY'),
+  /** Svix signing secret (`whsec_…`) for the bounce/complaint webhook. */
+  RESEND_WEBHOOK_SECRET: lazyOptionalEnv('RESEND_WEBHOOK_SECRET'),
   NOTIFICATION_EMAIL_FROM: lazyOptionalEnv('NOTIFICATION_EMAIL_FROM'),
   OPENALEX_MAILTO: lazyOptionalEnv('OPENALEX_MAILTO', z.string().email()),
   OPENALEX_API_KEY: lazyOptionalEnv('OPENALEX_API_KEY'),
-  NCBI_EMAIL: lazyOptionalEnv('NCBI_EMAIL', z.string().email()),
-  NCBI_API_KEY: lazyOptionalEnv('NCBI_API_KEY'),
+  S2_API_KEY: lazyOptionalEnv('S2_API_KEY'),
+  // Optional free PatentsView Search API key — enables live prior-art results
+  // in the Discovery patents lane (keyless mode degrades to a Google Patents
+  // search link-out).
+  PATENTSVIEW_API_KEY: lazyOptionalEnv('PATENTSVIEW_API_KEY'),
 }
 
 /**

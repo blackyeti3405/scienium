@@ -1,5 +1,5 @@
 import { auth } from '@clerk/nextjs/server'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { getTeamContext } from '@/lib/team/context'
 import { db } from '@/lib/db'
 import { createHash } from 'crypto'
@@ -47,7 +47,7 @@ const FAKE_TITLES = [
  * Deliberately NOT migrated to requireTeamContext: that helper enforces a
  * rate limit, and this dev/E2E seeding route must stay unlimited.
  */
-export async function POST(req: NextRequest) {
+export async function POST() {
   if (process.env.NODE_ENV === 'production') {
     return NextResponse.json({ error: 'Not available in production' }, { status: 403 })
   }

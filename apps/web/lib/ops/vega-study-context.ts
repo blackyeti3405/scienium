@@ -1,3 +1,4 @@
+import 'server-only'
 /**
  * Study with Vega (Feature F18) — project-context builder + system prompt.
  *

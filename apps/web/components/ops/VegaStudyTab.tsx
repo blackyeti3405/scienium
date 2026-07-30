@@ -1,14 +1,10 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Brain, AlertTriangle } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { Brain, AlertTriangle } from 'lucide-react'
+import { ChatComposer, ChatMessageList, type ChatThreadMessage } from '@/components/ui/ChatThread'
 
-interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
+type ChatMessage = ChatThreadMessage
 
 const GREETING: ChatMessage = {
   role: 'assistant',
@@ -24,11 +20,12 @@ const STARTER_PROMPTS = [
 
 /**
  * "Study with Vega" Ops Hub tab (Feature F18) — a persistent, team-shared
- * study chat grounded in the team's own project. Chat UI shape is lifted
- * from LiteratureFeature.tsx's paper-chat panel (greeting, load-history
- * effect, sendMessage, `.chat-md` render loop, autoscroll, disabled-while-
- * sending input) — same pattern, ops-* pixel chrome instead of the reader
- * layout.
+ * study chat grounded in the team's own project. The message-list/composer
+ * markup is the shared `ChatThread` presentation (same as Literature Q&A's
+ * PaperChat); the state here stays local — greeting, load-history effect,
+ * sendMessage, autoscroll, and the pristine-guard below are deliberately
+ * different from `usePaperChat` (team-shared thread, disabled-while-sending
+ * input, starter prompts, error banner) and are not merged into it.
  */
 export function VegaStudyTab() {
   const [messages, setMessages] = useState<ChatMessage[]>([GREETING])
@@ -48,7 +45,15 @@ export function VegaStudyTab() {
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data.messages) && data.messages.length > 0) {
-          setMessages([GREETING, ...data.messages])
+          // Apply ONLY while the thread is still pristine (just the greeting).
+          // This GET fires at mount with pre-send data; a student who types
+          // fast can have sent a turn before it resolves, and replacing state
+          // unconditionally would clobber their message and its reply with the
+          // stale snapshot — the message would visibly vanish. Their turns are
+          // already persisted server-side, so the next reopen shows them.
+          setMessages((prev) =>
+            prev.length <= 1 ? [GREETING, ...data.messages] : prev,
+          )
         }
       })
       .catch(() => setLoadError('Could not load your study history. You can still chat.'))
@@ -96,39 +101,7 @@ export function VegaStudyTab() {
       )}
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 min-h-0">
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex flex-col gap-1 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
-          >
-            <span className="font-pixel text-[6px] text-white/25 uppercase tracking-widest px-1">
-              {msg.role === 'user' ? 'You' : 'Vega'}
-            </span>
-            <div
-              className={`text-sm leading-relaxed px-3 py-2 rounded-sm max-w-full ${
-                msg.role === 'user'
-                  ? 'bg-[#F5C518]/15 text-white/85 text-right'
-                  : 'bg-white/6 text-white/80'
-              }`}
-            >
-              {msg.role === 'user' ? (
-                msg.content
-              ) : (
-                <div className="chat-md">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-        {sending && (
-          <div className="flex items-start gap-2">
-            <div className="bg-white/6 rounded-sm clr-msg__typing">
-              <span /> <span /> <span />
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
+        <ChatMessageList messages={messages} sending={sending} messagesEndRef={messagesEndRef} />
       </div>
 
       {messages.length <= 1 && (
@@ -147,25 +120,14 @@ export function VegaStudyTab() {
         </div>
       )}
 
-      <div className="border-t border-white/10 p-3 flex gap-2 shrink-0">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) =>
-            e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())
-          }
-          disabled={sending}
-          placeholder="Ask Vega about your project…"
-          className="flex-1 bg-[#0a1628] border border-white/20 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60 px-3 py-2 rounded-sm font-pixel text-[8px] disabled:opacity-60"
-        />
-        <button
-          onClick={() => sendMessage()}
-          disabled={!input.trim() || sending}
-          className="shrink-0 bg-[#F5C518] text-[#0d1b2e] p-2 rounded-sm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-        >
-          <Send size={13} />
-        </button>
-      </div>
+      <ChatComposer
+        input={input}
+        onInputChange={setInput}
+        onSend={() => sendMessage()}
+        sending={sending}
+        placeholder="Ask Vega about your project…"
+        disableInputWhileSending
+      />
     </div>
   )
 }

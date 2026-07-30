@@ -17,29 +17,35 @@ export function UploadSourceButton({ onUpload }: { onUpload?: (file: File) => vo
     if (file) onUpload?.(file)
   }
 
+  // A real <button>, not a clickable <div> (§0.9 Row B): the div had no role,
+  // no tabIndex and no key handler, so the only way to add a source was a
+  // mouse. Drag/drop handlers are valid on a button, so this costs nothing.
   return (
-    <div
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={handleDrop}
-      className="border rounded-sm shrink-0 transition-colors border-dashed border-white/25 hover:border-white/45 cursor-pointer bg-white/2 hover:bg-white/4"
-      style={{ minHeight: 52 }}
-      onClick={() => fileInputRef.current?.click()}
-    >
-      <div className="flex items-center justify-center gap-2 h-full py-4">
-        <Upload size={13} className="text-white/35" />
-        <span className="font-pixel text-[8px] text-white/35">Upload source</span>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/pdf"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) onUpload?.(file)
-            e.target.value = ''
-          }}
-        />
-      </div>
-    </div>
+    <>
+      <button
+        type="button"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={handleDrop}
+        className="w-full border rounded-sm shrink-0 transition-colors border-dashed border-white/25 hover:border-white/45 cursor-pointer bg-white/2 hover:bg-white/4"
+        style={{ minHeight: 52 }}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <span className="flex items-center justify-center gap-2 h-full py-4">
+          <Upload size={13} className="text-white/40" />
+          <span className="font-pixel text-[8px] text-white/40">Upload source</span>
+        </span>
+      </button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) onUpload?.(file)
+          e.target.value = ''
+        }}
+      />
+    </>
   )
 }

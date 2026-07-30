@@ -26,6 +26,7 @@ const KIND_META: Record<string, KindMeta> = {
   teacher_feedback: { icon: '💬', accent: '#5ac8fa', label: 'Feedback' },
   phase_reviewed: { icon: '✅', accent: '#4cd964', label: 'Review' },
   showcase_reviewed: { icon: '🏆', accent: '#c58af9', label: 'Showcase' },
+  membership_changed: { icon: '🚪', accent: '#ff9f43', label: 'Membership' },
 }
 
 const FALLBACK_META: KindMeta = { icon: '🔔', accent: 'rgba(255,255,255,0.6)', label: 'Update' }
@@ -50,8 +51,14 @@ export function NotificationBell() {
   // ~1s the first /api/notifications fetch is in flight, on every mount.
   const [loaded, setLoaded] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  // Same overlapping-poll guard as ActivityPanel (§0.9 Row C1): without it a
+  // slow 60 s tick can land after a newer one and roll the unread count back.
+  const inFlightRef = useRef(false)
 
   const load = useCallback(async () => {
+    if (inFlightRef.current) return
+    inFlightRef.current = true
     try {
       const res = await fetch('/api/notifications')
       if (!res.ok) {
@@ -64,6 +71,7 @@ export function NotificationBell() {
     } catch {
       // transient — keep last good state
     } finally {
+      inFlightRef.current = false
       setLoaded(true)
     }
   }, [])
@@ -113,20 +121,37 @@ export function NotificationBell() {
   if (!available) return null
 
   return (
-    <div className="notif-bell" ref={ref}>
+    <div
+      className="notif-bell"
+      ref={ref}
+      // A React handler, not a `document` listener, and deliberately NOT on the
+      // modal stack: the popover is not modal, so it must only answer Escape
+      // while focus is actually inside it (§0.9 Row A).
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape' || !open) return
+        e.stopPropagation()
+        setOpen(false)
+        btnRef.current?.focus()
+      }}
+    >
       <button
+        ref={btnRef}
         type="button"
         className="notif-bell__btn"
         onClick={() => setOpen((o) => !o)}
         title="Notifications"
         aria-label={`Notifications${unread > 0 ? `, ${unread} unread` : ''}`}
+        aria-expanded={open}
+        // Only while the panel exists — `aria-controls` pointing at an absent
+        // id is itself an ARIA error.
+        aria-controls={open ? 'notif-bell-panel' : undefined}
       >
         <Bell size={15} />
         {unread > 0 && <span className="notif-bell__badge">{unread > 9 ? '9+' : unread}</span>}
       </button>
 
       {open && (
-        <div className="notif-bell__panel">
+        <div className="notif-bell__panel" id="notif-bell-panel">
           <div className="notif-bell__head">
             <span className="font-pixel text-[8px] text-white/60 uppercase tracking-widest">
               Notifications
@@ -141,7 +166,7 @@ export function NotificationBell() {
             {!loaded ? (
               <LabeledLoader label="Loading…" fill="inline" className="py-6" />
             ) : items.length === 0 ? (
-              <p className="font-pixel text-[8px] text-white/30 text-center py-6">
+              <p className="font-pixel text-[8px] text-white/40 text-center py-6">
                 No notifications yet.
               </p>
             ) : (

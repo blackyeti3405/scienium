@@ -14,16 +14,47 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    # A real postgres for the Test step. `test/pg/invariants.pg.test.ts` is the
+    # only true-concurrency suite in the repo (A12 quota reservation, A6 LC
+    # claim, A8 retry election, A13 view dedupe); without a reachable database
+    # it self-skipped and those four invariants never ran in CI at all. The
+    # suite now THROWS instead of skipping when `CI` is set, so a broken
+    # service block fails loudly rather than going quietly green.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: scienium
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9 # matches lockfileVersion 9.0
+          # pnpm 11 (lockfileVersion 9.0 is shared by pnpm 9-11). Must be 10+: this
+          # workspace declares `overrides` and `allowBuilds` in pnpm-workspace.yaml,
+          # and pnpm 9 reads overrides from package.json's `pnpm` field instead — so
+          # it sees "no overrides configured", finds them recorded in the lockfile,
+          # and dies with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH before any gate runs.
+          version: 11
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Floor is 24, not 22: pnpm 11 only needs a Node builtin absent in 20
+          # (node:sqlite), but the E2E lane breaks on 22 — see the note in
+          # e2e.yml. Both workflows must stay on the same major, so the stricter
+          # requirement sets it for everything.
+          node-version: 24
           cache: pnpm
 
       - name: Install
@@ -39,17 +70,44 @@ jobs:
         # Required: tsc + next build import @prisma/client types.
         run: pnpm --filter web exec prisma generate
 
+      - name: Integrity (source text + generated codex tracks)
+        # Two things tsc and eslint both tolerate silently:
+        #   - control bytes (NUL etc.) hiding in authored source;
+        #   - drift between lib/ops/codex's content/, tracks/, index.ts registry
+        #     and .checksums.json (P2-S12). `codex:build --check` compares those
+        #     four inventories in both directions and writes nothing.
+        run: pnpm --filter web check:integrity
+
       - name: Typecheck
         run: pnpm --filter web typecheck
 
       - name: Lint
         run: pnpm --filter web lint
 
+      - name: Migrate the test database
+        # `migrate deploy` applies the committed migrations only — never
+        # generates one, never touches a shadow database.
+        run: pnpm --filter web exec prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/scienium
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/scienium
+
       - name: Test
         run: pnpm --filter web test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/scienium
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/scienium
 
       - name: Build
-        run: pnpm --filter web build
+        # ponytail: raise the heap, revisit when the Field Codex outgrows 4 GB.
+        # `next build` compiles every codex content JSON into the bundle graph —
+        # 48 MB across 15 fields today, growing ~3 MB per field with 14 still to
+        # author. That overran the runner's ~2 GB default heap (FATAL ERROR:
+        # Ineffective mark-compacts near heap limit); 4 GB builds clean. The real
+        # upgrade path is to stop compiling the content in — load the JSON at
+        # runtime server-side (or from the DB) so track size stops touching the
+        # bundle — but that is an architecture change, not a CI fix.
+        run: NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter web build
         # Build-time placeholders so `next build` can assemble without real
         # secrets. Routes are dynamic (server-rendered on demand), so these are
         # never used to reach a real service — they only need to be PRESENT.

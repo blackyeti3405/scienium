@@ -22,6 +22,28 @@ CREATE UNIQUE INDEX "citations_paper_id_key" ON "citations"("paper_id");
 -- CreateIndex
 CREATE INDEX "citations_team_id_idx" ON "citations"("team_id");
 
+-- REFACTOR2 P1-S14 correction. `discovery_nodes.paper_id` has existed since
+-- `_init` with no uniqueness, and promotion was a findFirst-then-create, so two
+-- tree nodes claiming the same paper is exactly what the old schema permitted.
+-- One such pair aborts the index below and the whole deploy.
+--
+-- QUARANTINE rather than delete: a node carries children (the tree) and a
+-- `discovery_source_visits` row that is the once-ever KP claim — deleting it
+-- would break the tree AND let the team re-earn KP it was already paid. Detach
+-- the later duplicate from the paper instead. `paperId: r.paperId ?? null` is
+-- already a supported node state (lib/discovery/tree-service.ts), and the
+-- earliest visit keeps the paper.
+UPDATE "discovery_nodes" dn
+SET "paper_id" = NULL
+FROM (
+  SELECT id,
+         row_number() OVER (PARTITION BY "paper_id" ORDER BY "visited_at", "id") AS rn
+  FROM "discovery_nodes"
+  WHERE "paper_id" IS NOT NULL
+) ranked
+WHERE dn.id = ranked.id
+  AND ranked.rn > 1;
+
 -- CreateIndex
 CREATE UNIQUE INDEX "discovery_nodes_paper_id_key" ON "discovery_nodes"("paper_id");
 

@@ -36,11 +36,13 @@ export function StatTile({
   value,
   accent,
   icon,
+  testId,
 }: {
   label: string
   value: string | number
   accent?: boolean
   icon?: ReactNode
+  testId?: string
 }) {
   return (
     <div className="border border-white/10 bg-[#0a1628] rounded-lg p-4 flex flex-col gap-2">
@@ -51,6 +53,7 @@ export function StatTile({
         className={`text-2xl font-semibold tabular-nums leading-none ${
           accent ? 'text-[#F5C518]' : 'text-white'
         }`}
+        data-testid={testId}
       >
         {value}
       </span>

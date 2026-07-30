@@ -35,12 +35,8 @@ export interface Gateway {
   feature: Feature
   /** Building appears once the team's phase reaches this. */
   unlockPhase: Phase
-  /** Canonical route (kept for deep-links/back-compat; primary access is the overlay). */
-  route: string
   /** One-line description shown on hover. */
   hint: string
-  /** Becomes the central structure once present (Operations Hub). */
-  isCentral?: boolean
   /** Position on the isometric plot, around the central Discovery building. */
   cell: IsoCell
 }
@@ -54,7 +50,6 @@ export const GATEWAYS: Gateway[] = [
     label: 'Showcase',
     feature: 'showcase',
     unlockPhase: 'showcase',
-    route: '/showcase/edit',
     hint: 'Publish your research to the world',
     cell: { gx: -1, gy: -1 }, // back-centre
   },
@@ -63,7 +58,6 @@ export const GATEWAYS: Gateway[] = [
     label: 'Discovery',
     feature: 'discovery',
     unlockPhase: 'discovery',
-    route: '/discovery',
     hint: 'Explore topics & Wikipedia deep dives',
     cell: { gx: 0, gy: 0 }, // centre
   },
@@ -72,7 +66,6 @@ export const GATEWAYS: Gateway[] = [
     label: 'Science Fair',
     feature: 'fair_hub',
     unlockPhase: 'discovery',
-    route: '/fair-hub/calendar',
     hint: 'Fair dates, rubric, categories & forms',
     cell: { gx: 1, gy: -1 }, // right
   },
@@ -81,7 +74,6 @@ export const GATEWAYS: Gateway[] = [
     label: 'Literature Review',
     feature: 'literature',
     unlockPhase: 'literature_review',
-    route: '/literature/library',
     hint: 'Review papers, library & citation graph',
     cell: { gx: -1, gy: 1 }, // left
   },
@@ -90,9 +82,7 @@ export const GATEWAYS: Gateway[] = [
     label: 'Operations Hub',
     feature: 'daily',
     unlockPhase: 'literature_review',
-    route: '/daily/codex',
     hint: 'Field Codex, Proof of Expertise, Project & Failure Logs',
-    isCentral: true,
     cell: { gx: 1, gy: 1 }, // front-centre (closest)
   },
   {
@@ -100,7 +90,6 @@ export const GATEWAYS: Gateway[] = [
     label: 'Research Plan',
     feature: 'research_plan',
     unlockPhase: 'research_planning',
-    route: '/research-plan',
     hint: 'Hypothesis, methodology & study design',
     cell: { gx: 0, gy: 1 }, // front-left
   },
@@ -109,7 +98,6 @@ export const GATEWAYS: Gateway[] = [
     label: 'Battle Arena',
     feature: 'pvp',
     unlockPhase: 'working',
-    route: '/pvp/lobby',
     hint: 'PvP combat with your lab characters',
     cell: { gx: 1, gy: 0 }, // front-right
   },

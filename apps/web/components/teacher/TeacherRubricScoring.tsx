@@ -1,12 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Trophy, Check } from 'lucide-react'
 import { ISEF_RUBRIC } from '@/lib/fairs/isef-rubric'
-import { totalMaxFor, type RubricTrackKey } from '@/lib/fairs/rubric-scoring'
+import {
+  clampScore,
+  parseScoreInput,
+  totalMaxFor,
+  type RubricTrackKey,
+} from '@/lib/fairs/rubric-scoring'
+import { createSaveQueue } from '@/lib/save-queue'
 import { anchorFor, type RubricAnchor } from '@/lib/fairs/rubric-anchors'
 import { BusyButton } from '@/components/ui/BusyButton'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
+import { TrackToggle, ChecklistItems } from '@/components/fair/RubricControls'
 
 interface CriterionRow {
   key: string
@@ -47,6 +54,19 @@ export function TeacherRubricScoring({ teamId }: { teamId: string }) {
   const [data, setData] = useState<TeacherRubricResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * A failed save reported UP from a criterion card.
+   *
+   * §0.7 reads this as "track switching can discard unsaved state". In the
+   * ordinary path it does not: clicking the track toggle blurs the field first,
+   * so the autosave is already in flight and `applySave` correctly drops its
+   * stale result. What IS discarded is the FAILURE — the track change remounts
+   * every card under new `row.key`s, so a card whose save then rejects sets its
+   * error on a component that no longer exists. The teacher's typed feedback is
+   * gone and nothing ever said so. This panel survives the switch, so the
+   * message does too.
+   */
+  const [saveError, setSaveError] = useState<{ numeral: string; message: string } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -97,20 +117,7 @@ export function TeacherRubricScoring({ teamId }: { teamId: string }) {
         <h3 className="font-pixel text-[9px] text-white flex items-center gap-1.5">
           <Trophy size={11} className="text-[#F5C518]" /> Rubric Scoring
         </h3>
-        <div className="flex items-center gap-1 border border-white/15 rounded-sm overflow-hidden">
-          {ISEF_RUBRIC.map((t) => (
-            <button
-              key={t.key}
-              data-track={t.key}
-              onClick={() => setTrack(t.key)}
-              className={`font-pixel text-[7px] px-3 py-1.5 transition-colors ${
-                track === t.key ? 'bg-[#F5C518] text-[#0d1b2e]' : 'text-white/45 hover:text-white/70'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TrackToggle value={track} onChange={setTrack} testAttr />
       </div>
 
       {/* Teacher vs student totals */}
@@ -131,6 +138,12 @@ export function TeacherRubricScoring({ teamId }: { teamId: string }) {
 
       {error && <p className="font-pixel text-[8px] text-red-400 leading-loose">{error}</p>}
 
+      {saveError && (
+        <p role="alert" data-testid="rubric-save-error" className="font-pixel text-[8px] text-red-400 leading-loose">
+          Criterion {saveError.numeral}: {saveError.message}
+        </p>
+      )}
+
       {loading ? (
         <div className="flex flex-col gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -148,7 +161,11 @@ export function TeacherRubricScoring({ teamId }: { teamId: string }) {
                 track={track}
                 row={row}
                 items={rubricCriterion?.items ?? rubricCriterion?.subsections?.flatMap((s) => s.items)}
-                onSaved={(patch, totals) => applySave(track, row.key, patch, totals)}
+                onSaved={(patch, totals) => {
+                  setSaveError(null)
+                  applySave(track, row.key, patch, totals)
+                }}
+                onSaveFailed={(message) => setSaveError({ numeral: row.numeral, message })}
               />
             )
           })}
@@ -224,6 +241,7 @@ function TeacherCriterionCard({
   row,
   items,
   onSaved,
+  onSaveFailed,
 }: {
   teamId: string
   track: RubricTrackKey
@@ -233,12 +251,24 @@ function TeacherCriterionCard({
     patch: Partial<CriterionRow>,
     totals: { teacherTotal: number; totalMax: number },
   ) => void
+  /** Reported to the panel, which outlives a track switch. */
+  onSaveFailed: (message: string) => void
 }) {
-  const [score, setScore] = useState(row.teacherScore ?? 0)
+  // The score box holds TEXT, not a number. `Number('')` is 0, so parsing on
+  // every keystroke made a cleared box a real zero — see `parseScoreInput`.
+  const [scoreText, setScoreText] = useState(row.teacherScore === null ? '' : String(row.teacherScore))
   const [notes, setNotes] = useState(row.teacherNotes ?? '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+
+  /** The 2s "Saved" badge timer — cleared on re-save and on unmount. */
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (savedTimer.current) clearTimeout(savedTimer.current)
+    },
+    [],
+  )
 
   // Re-sync local draft ONLY when the identity of the criterion changes (e.g.
   // switching tracks swaps in a different row under the same card position).
@@ -248,37 +278,50 @@ function TeacherCriterionCard({
   // values would re-run this effect on every save and immediately stomp the
   // "Saved" badge.
   useEffect(() => {
-    setScore(row.teacherScore ?? 0)
+    setScoreText(row.teacherScore === null ? '' : String(row.teacherScore))
     setNotes(row.teacherNotes ?? '')
     setSaved(false)
-    setSaveError(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row.key])
 
-  async function save() {
-    if (saving) return
-    setSaving(true)
-    setSaveError(null)
-    setSaved(false)
-    try {
-      // Clamp client-side to maxScore — the server enforces this too (authoritative cap).
-      const clamped = Math.max(0, Math.min(score, row.maxScore))
+  /**
+   * The one writer. Serialized rather than refused: `save()` used to open with
+   * `if (saving) return`, so a teacher who typed a score, tabbed to the notes
+   * box (blur → save starts), typed notes and clicked away (blur → refused) had
+   * their notes silently not persisted — on screen, with no indication.
+   * Reproduced against the original: two blurs, one PUT, and the one that went
+   * out carried the EMPTY notes. `createSaveQueue` coalesces instead, so a burst
+   * still costs one request but the newest snapshot is the one that lands.
+   */
+  // The queue is created ONCE, so its writer would otherwise close over
+  // first-render props forever. Harmless today — a track switch remounts this
+  // card under a different `row.key` — but only by accident, and `onSaved` is a
+  // fresh closure on every parent render. Read the current ones instead.
+  const latest = useRef({ teamId, track, row, onSaved, onSaveFailed })
+  useEffect(() => {
+    latest.current = { teamId, track, row, onSaved, onSaveFailed }
+  })
+
+  const queue = useRef(
+    createSaveQueue<{ score: number; notes: string }>(async (snapshot) => {
+      const { teamId: tid, track: tk, row: r, onSaved: report } = latest.current
       const res = await fetch('/api/teacher/rubric', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          teamId,
-          track,
-          criterionKey: row.key,
-          score: clamped,
-          notes: notes.trim() ? notes.trim() : undefined,
+          teamId: tid,
+          track: tk,
+          criterionKey: r.key,
+          // Clamped at send time, never while typing — the server re-checks.
+          score: clampScore(snapshot.score, r.maxScore),
+          notes: snapshot.notes.trim() ? snapshot.notes.trim() : undefined,
         }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error ?? 'Save failed')
-      setScore(d.criterion.teacherScore)
+      setScoreText(String(d.criterion.teacherScore))
       setNotes(d.criterion.teacherNotes ?? '')
-      onSaved(
+      report(
         {
           teacherScore: d.criterion.teacherScore,
           teacherNotes: d.criterion.teacherNotes,
@@ -287,21 +330,42 @@ function TeacherCriterionCard({
         },
         { teacherTotal: d.teacherTotal, totalMax: d.totalMax },
       )
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Save failed')
-    } finally {
-      setSaving(false)
+    }),
+  )
+
+  const parsedScore = parseScoreInput(scoreText)
+
+  async function save() {
+    // A cleared box is "no score", not zero — there is nothing to send, and the
+    // notes may still be dirty on their own.
+    const score = parsedScore ?? row.teacherScore ?? 0
+    setSaving(true)
+    setSaved(false)
+    await queue.current.save({ score, notes })
+    setSaving(false)
+    if (queue.current.unsaved) {
+      // Reported UP: this card may already be unmounting behind a track switch.
+      latest.current.onSaveFailed('could not be saved — check your connection and try again.')
+      return
     }
+    setSaved(true)
+    if (savedTimer.current) clearTimeout(savedTimer.current)
+    savedTimer.current = setTimeout(() => setSaved(false), 2000)
   }
 
   // Blur must not persist anything the teacher didn't change — focus+blur on
   // an unscored criterion would otherwise write a real 0 ("Last scored by…").
   // onSaved keeps row.teacherScore/teacherNotes current, so this stays accurate
-  // across saves. The Save button still saves unconditionally.
-  const dirty = score !== (row.teacherScore ?? 0) || notes.trim() !== (row.teacherNotes ?? '')
+  // across saves. Compared against what was TYPED, unclamped: clamping first
+  // would make a typed 99 equal a stored 10 and the correcting save would never
+  // fire. The Save button still saves unconditionally.
+  const dirty =
+    (parsedScore !== null && parsedScore !== (row.teacherScore ?? 0)) ||
+    notes.trim() !== (row.teacherNotes ?? '')
   function saveIfDirty() {
+    // Restore the stored value rather than leaving a blank box that the server
+    // does not agree with.
+    if (parsedScore === null && row.teacherScore !== null) setScoreText(String(row.teacherScore))
     if (dirty) void save()
   }
 
@@ -320,16 +384,7 @@ function TeacherCriterionCard({
           <span className="font-pixel text-[8px] text-white/40 shrink-0">{row.maxScore} pts</span>
         </div>
 
-        {items && items.length > 0 && (
-          <ul className="flex flex-col gap-1">
-            {items.map((it, i) => (
-              <li key={i} className="flex gap-1.5 text-[12px] text-white/55 leading-relaxed">
-                <span className="text-green-400/60 shrink-0 mt-[1px]">✓</span>
-                {it}
-              </li>
-            ))}
-          </ul>
-        )}
+        {items && items.length > 0 && <ChecklistItems items={items} />}
 
         {/* Side-by-side comparison: student self-check (read-only) vs teacher score */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -354,15 +409,12 @@ function TeacherCriterionCard({
                 type="number"
                 min={0}
                 max={row.maxScore}
-                value={score}
-                onChange={(e) => {
-                  const n = Number(e.target.value)
-                  setScore(Number.isFinite(n) ? Math.max(0, Math.min(n, row.maxScore)) : 0)
-                }}
+                value={scoreText}
+                onChange={(e) => setScoreText(e.target.value)}
                 onBlur={saveIfDirty}
                 className="w-16 bg-[#0a1628] border border-white/20 text-white text-sm px-2 py-1.5 outline-none focus:border-[#F5C518]/60 rounded-sm"
               />
-              <span className="font-pixel text-[7px] text-white/30">/ {row.maxScore}</span>
+              <span className="font-pixel text-[7px] text-white/40">/ {row.maxScore}</span>
 
               <BusyButton
                 busy={saving}
@@ -391,13 +443,11 @@ function TeacherCriterionCard({
           rows={2}
           maxLength={1000}
           placeholder="Teacher notes — feedback for this criterion…"
-          className="w-full bg-[#0a1628] border border-white/15 text-white text-[13px] px-3 py-2 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/25 resize-none rounded-sm"
+          className="w-full bg-[#0a1628] border border-white/15 text-white text-[13px] px-3 py-2 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40 resize-none rounded-sm"
         />
 
-        {saveError && <p className="font-pixel text-[7px] text-red-400 leading-loose">{saveError}</p>}
-
-        {row.updatedByName && !saveError && (
-          <p className="font-pixel text-[6px] text-white/25">Last scored by {row.updatedByName}</p>
+        {row.updatedByName && (
+          <p className="font-pixel text-[6px] text-white/40">Last scored by {row.updatedByName}</p>
         )}
 
         {/* Anchor content + talking points — regular font, curated static content */}
@@ -414,7 +464,7 @@ function TeacherCriterionCard({
                 >
                   <span className="text-xs font-medium text-white/70">
                     {TIER_LABEL[a.tier]}{' '}
-                    <span className="text-white/35 font-normal">({a.scoreBand})</span>
+                    <span className="text-white/40 font-normal">({a.scoreBand})</span>
                   </span>
                   <p className="text-[12px] text-white/55 leading-relaxed">{a.description}</p>
                 </div>

@@ -22,6 +22,7 @@ import { BusyButton } from '@/components/ui/BusyButton'
 import { FormsChecklist } from './FormsChecklist'
 import { CategoryBrowser } from './CategoryBrowser'
 import { RubricSelfCheck } from './RubricSelfCheck'
+import { TrackToggle, ChecklistItems } from './RubricControls'
 
 type Tab = 'overview' | 'forms' | 'categories' | 'selfcheck'
 
@@ -82,7 +83,7 @@ export function ScienceFairFeature() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
         <div>
           <h2 className="font-pixel text-[10px] text-white">Science Fair Hub</h2>
-          <p className="font-pixel text-[7px] text-white/35 mt-1">
+          <p className="font-pixel text-[7px] text-white/40 mt-1">
             Your competition path — regional, state, and ISEF
           </p>
         </div>
@@ -100,7 +101,7 @@ export function ScienceFairFeature() {
               <CalendarClock size={14} />
               {countdown.days <= 0 ? 'Today!' : `${countdown.days}d`}
             </div>
-            <p className="font-pixel text-[7px] text-white/35 mt-1 max-w-[200px] truncate">
+            <p className="font-pixel text-[7px] text-white/40 mt-1 max-w-[200px] truncate">
               to {countdown.name}
             </p>
           </div>
@@ -123,7 +124,7 @@ export function ScienceFairFeature() {
             className={`flex items-center gap-1.5 font-pixel text-[7px] uppercase tracking-widest px-4 py-2.5 border-b-2 transition-colors ${
               tab === key
                 ? 'border-[#F5C518] text-[#F5C518]'
-                : 'border-transparent text-white/35 hover:text-white/60'
+                : 'border-transparent text-white/40 hover:text-white/60'
             }`}
           >
             {icon}
@@ -178,16 +179,14 @@ export function ScienceFairFeature() {
         tab's `/api/fairs/match` load. Gating it behind that unrelated fetch
         (as `forms`/`categories` still do below, pre-existing/out of scope)
         meant Self-check could never mount — or fetch, or render — while the
-        Overview fetch was pending, PRODUCTION-OBSERVED to actually hang for
-        minutes (a separate, pre-existing performance issue in
-        lib/fairs/match.ts's fair-reseeding loop — 266 fairs vs. only 70
-        currently seeded means ensureFairsSeeded() re-runs its full ~800
-        sequential-round-trip upsert loop on every call instead of
-        short-circuiting; see the changes report). This fix does not touch
-        that route or FormsChecklist/CategoryBrowser (both out of scope) — it
-        only decouples the mount ordering for the tab this feature owns, so
-        Self-check mounts and fetches the instant its tab is selected, exactly
-        like the standalone /fair-hub/rubric route.
+        Overview fetch was pending. (The old `ensureFairsSeeded()` reseed loop
+        that once made that Overview fetch itself hang for minutes was fixed
+        separately by the digest-based short-circuit in lib/fairs/match.ts —
+        REFACTOR2 P1-R16 — so it no longer applies here.) This fix does not
+        touch that route or FormsChecklist/CategoryBrowser (both out of
+        scope) — it only decouples the mount ordering for the tab this
+        feature owns, so Self-check mounts and fetches the instant its tab is
+        selected, exactly like the standalone /fair-hub/rubric route.
       */}
       {tab === 'selfcheck' ? (
         <div className="flex-1 overflow-y-auto">
@@ -199,7 +198,11 @@ export function ScienceFairFeature() {
         // state, so gating it behind an unrelated fetch meant it could never
         // mount while Overview was (historically, sometimes for minutes) pending.
         <div className="flex-1 overflow-y-auto">
-          <FormsChecklist />
+          {/* The matched fair rides along from state already loaded for the
+              Overview tab — the forms tab still mounts and fetches without
+              waiting on it (see above); it just gains the "your fair may
+              differ" line once the match lands. */}
+          <FormsChecklist localFair={localFairRef(fairs)} />
         </div>
       ) : tab === 'categories' ? (
         // CategoryBrowser is fully static (no fetch at all) — never gate it on
@@ -309,8 +312,8 @@ function FairCard({
   if (!fair) {
     return (
       <div className="border border-dashed border-white/12 rounded-sm p-4 flex flex-col gap-2">
-        <span className="font-pixel text-[7px] text-white/30 uppercase tracking-widest">{kind}</span>
-        <p className="text-[13px] text-white/35 leading-relaxed">{emptyHint ?? 'Not available.'}</p>
+        <span className="font-pixel text-[7px] text-white/40 uppercase tracking-widest">{kind}</span>
+        <p className="text-[13px] text-white/40 leading-relaxed">{emptyHint ?? 'Not available.'}</p>
       </div>
     )
   }
@@ -327,7 +330,7 @@ function FairCard({
           {isIsef ? <Trophy size={9} /> : <Award size={9} />} {kind}
         </span>
         {fair.distanceMiles != null && (
-          <span className="font-pixel text-[7px] text-white/30">~{fair.distanceMiles} mi</span>
+          <span className="font-pixel text-[7px] text-white/40">~{fair.distanceMiles} mi</span>
         )}
       </div>
 
@@ -341,7 +344,7 @@ function FairCard({
         {e?.venue && (
           <p className="font-pixel text-[7px] text-white/40 mt-0.5">{e.venue}</p>
         )}
-        {!e && <p className="font-pixel text-[7px] text-white/30">No dates on file yet.</p>}
+        {!e && <p className="font-pixel text-[7px] text-white/40">No dates on file yet.</p>}
       </div>
 
       {/* Status + actions */}
@@ -405,7 +408,7 @@ function DateRow({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-2">
-      <span className="font-pixel text-[7px] text-white/35 uppercase tracking-widest">{label}</span>
+      <span className="font-pixel text-[7px] text-white/40 uppercase tracking-widest">{label}</span>
       <span className={`text-[13px] ${highlight ? 'text-[#F5C518]' : 'text-white/70'}`}>
         {value ? format(new Date(value), 'MMM d, yyyy') : '—'}
       </span>
@@ -425,21 +428,7 @@ function IsefRubric() {
         <h3 className="font-pixel text-[9px] text-white flex items-center gap-1.5">
           <Trophy size={11} className="text-[#F5C518]" /> ISEF Judging Rubric
         </h3>
-        <div className="flex items-center gap-1 border border-white/15 rounded-sm overflow-hidden">
-          {ISEF_RUBRIC.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTrack(t.key)}
-              className={`font-pixel text-[7px] px-3 py-1.5 transition-colors ${
-                track === t.key
-                  ? 'bg-[#F5C518] text-[#0d1b2e]'
-                  : 'text-white/45 hover:text-white/70'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TrackToggle value={track} onChange={setTrack} />
       </div>
 
       <div className="flex flex-col gap-2">
@@ -456,7 +445,11 @@ function IsefRubric() {
               </div>
 
               {/* Checklist subpoints judges score against */}
-              {c.items && <CriterionItems items={c.items} />}
+              {c.items && (
+                <div className="mt-1.5">
+                  <ChecklistItems items={c.items} />
+                </div>
+              )}
 
               {/* Section V: Poster + Interview sub-sections, each with its own items */}
               {c.subsections?.map((s) => (
@@ -465,9 +458,11 @@ function IsefRubric() {
                     <span className="font-pixel text-[7px] text-white/55 uppercase tracking-widest">
                       {s.title}
                     </span>
-                    <span className="font-pixel text-[7px] text-white/30">{s.points} pts</span>
+                    <span className="font-pixel text-[7px] text-white/40">{s.points} pts</span>
                   </div>
-                  <CriterionItems items={s.items} />
+                  <div className="mt-1.5">
+                    <ChecklistItems items={s.items} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -505,17 +500,15 @@ function IsefRubric() {
   )
 }
 
-function CriterionItems({ items }: { items: string[] }) {
-  return (
-    <ul className="flex flex-col gap-1 mt-1.5">
-      {items.map((it, i) => (
-        <li key={i} className="flex gap-1.5 text-[12px] text-white/55 leading-relaxed">
-          <span className="text-green-400/60 shrink-0 mt-[1px]">✓</span>
-          {it}
-        </li>
-      ))}
-    </ul>
-  )
+/**
+ * The fair whose rules actually bind this team (§0.8's local-fair override).
+ * The nearest affiliated/regional fair if there is one, else the state fair —
+ * ISEF is deliberately NOT a fallback: "your fair may require its own forms"
+ * says nothing when the fair named is the one the catalog already comes from.
+ */
+function localFairRef(match: FairMatch | undefined): { name: string; websiteUrl: string | null } | null {
+  const fair = match?.regional ?? match?.stateFair
+  return fair ? { name: fair.name, websiteUrl: fair.websiteUrl } : null
 }
 
 // ─── Countdown + deadline alerts ──────────────────────────────────────────────

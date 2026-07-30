@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { useModalA11y } from './useModalA11y'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,8 +29,9 @@ export interface ConfirmDialogProps {
  *  - 'confirm': Cancel + Confirm buttons (danger or default tone)
  *  - 'alert':   Single OK button
  *
- * Behaviour: Escape = cancel/dismiss, backdrop click = cancel/dismiss,
- * primary button is auto-focused, body scroll is locked while open.
+ * Behaviour (via useModalA11y): Escape = cancel/dismiss, backdrop click =
+ * cancel/dismiss, primary button is auto-focused, focus is TRAPPED inside and
+ * restored to the trigger on close, body scroll is locked while open.
  */
 export function ConfirmDialog({
   open,
@@ -42,27 +44,7 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const primaryRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    // Autofocus primary button
-    primaryRef.current?.focus()
-    // Lock body scroll
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    // Escape dismisses
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onCancel()
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prev
-    }
-  }, [open, onCancel])
+  const containerRef = useModalA11y({ open, onClose: onCancel, initialFocusRef: primaryRef })
 
   if (!open) return null
 
@@ -70,6 +52,7 @@ export function ConfirmDialog({
 
   return (
     <div
+      ref={containerRef}
       className="confirm-dialog__backdrop"
       role="dialog"
       aria-modal="true"

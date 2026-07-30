@@ -1,4 +1,7 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test'
+import { createLab, type OwnedLab } from './lab'
+import { e2eDb } from './db'
+import { gotoFresh } from './api'
 
 /**
  * F10 — "Momentum" weekly recap card on the lab.
@@ -11,7 +14,7 @@ import { test, expect, request as playwrightRequest } from '@playwright/test'
  *  AC1  — Fresh-ISO-week load of /lab shows a card headed "THIS WEEK"/"LAST 7 DAYS"
  *         inside the lab viewport (team has activity)
  *  AC2  — Card shows a "KP EARNED" row with a non-negative numeric value
- *  AC3  — Card shows "SOURCES", "LOGS", "EXPERIMENTS", "DATA POINTS" rows, each numeric
+ *  AC3  — Card shows "SOURCES", "LOGS", "DATASETS", "DATA POINTS" rows, each numeric
  *  AC4  — "NEXT FAIR" row present with a day count + fair name iff daysToNextFair != null
  *  AC5  — Card never overlaps the plot / SHOP / ARRANGE / LOG FAB / FEEDBACK FAB —
  *         all four remain visible and clickable while the card is shown
@@ -41,6 +44,8 @@ import { test, expect, request as playwrightRequest } from '@playwright/test'
  */
 
 const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
+let lab: OwnedLab
+
 const DISMISS_KEY = 'scienium.momentum.dismissed'
 
 interface MomentumResponse {
@@ -48,7 +53,7 @@ interface MomentumResponse {
   kpEarned: number
   sourcesReviewed: number
   logsWritten: number
-  experimentsAdded: number
+  datasetsAdded: number
   pointsAdded: number
   daysToNextFair: number | null
   nextFairName: string | null
@@ -56,7 +61,7 @@ interface MomentumResponse {
 
 /** Clear the dismiss key for the current origin, then reload so /lab re-mounts fresh. */
 async function clearDismissAndReload(page: import('@playwright/test').Page): Promise<void> {
-  await page.goto('/lab')
+  await gotoFresh(page, '/lab')
   await page.evaluate((key) => window.localStorage.removeItem(key), DISMISS_KEY)
   await page.reload()
 }
@@ -87,15 +92,38 @@ test.describe('F10 — Momentum weekly recap card', () => {
   // test's dismiss action bleed into another's "card should be visible" assertion.
   test.describe.configure({ mode: 'serial', timeout: 60_000 })
 
+  test.beforeAll(async () => {
+    // Momentum is computed from the TEAM's recent activity, so on the shared
+    // fixture these counts were whatever the specs that ran earlier happened to
+    // generate. A disposable lab makes them this file's own.
+    lab = await createLab('momentum')
+
+    // The card renders nothing when every stat is zero (`MomentumCard`'s
+    // `quiet` guard — correctly: there is no recap of a week with no work).
+    // On the shared fixture that precondition arrived by accident, from
+    // whatever other specs had written that week. Seed ONE project log so it
+    // is explicit: `logs_written` goes to 1, the card renders, and every
+    // assertion in this file still reads the real route rather than a number
+    // this hook chose.
+    await e2eDb.projectLog.create({
+      data: {
+        teamId: lab.teamId,
+        createdByUserId: lab.leaderUserId,
+        body: '[E2E F10] Seed entry so the weekly recap has something to recap.',
+        entryType: 'progress',
+      },
+    })
+  })
+
   test.afterAll(async ({ browser }) => {
-    // Best-effort: leave the dismiss key cleared so a later run/spec always
-    // starts from "card eligible to show" rather than inheriting this run's
-    // dismissal state. Non-fatal — every AC1-dependent test above already
-    // clears the key itself before asserting, so this is convenience only.
+    await lab.dispose()
+    // Still best-effort, and still browser-side: the dismiss key lives in
+    // localStorage, which no lab owns. Left cleared so a later run starts from
+    // "card eligible to show" rather than inheriting this run's dismissal.
     const context = await browser.newContext({ baseURL: BASE_URL })
     try {
       const page = await context.newPage()
-      await page.goto('/lab')
+      await gotoFresh(page, '/lab')
       await page.evaluate((key) => window.localStorage.removeItem(key), DISMISS_KEY)
     } catch {
       // Non-fatal cleanup — a leftover key only affects a future run's AC1
@@ -143,13 +171,13 @@ test.describe('F10 — Momentum weekly recap card', () => {
   })
 
   // ── AC3 ──────────────────────────────────────────────────────────────────────
-  test('AC3: card shows SOURCES, LOGS, EXPERIMENTS, DATA POINTS rows, each numeric', async ({ page }) => {
+  test('AC3: card shows SOURCES, LOGS, DATASETS, DATA POINTS rows, each numeric', async ({ page }) => {
     await clearDismissAndReload(page)
     const card = momentumCard(page)
     await expect(card).toBeVisible({ timeout: 20_000 })
 
     const text = await card.innerText()
-    for (const label of ['SOURCES', 'LOGS', 'EXPERIMENTS', 'DATA POINTS']) {
+    for (const label of ['SOURCES', 'LOGS', 'DATASETS', 'DATA POINTS']) {
       await expect(card).toContainText(label)
       const value = valueAfterLabel(text, label)
       expect(value, `expected a value line right after "${label}", got card text: ${JSON.stringify(text)}`).not.toBeNull()
@@ -264,7 +292,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
   test('AC8: GET /api/team/momentum (signed in) returns 200 with the full shape, windowDays 7', async ({
     page,
   }) => {
-    await page.goto('/lab')
+    await gotoFresh(page, '/lab')
     const momentum = (await page.evaluate(async () => {
       const res = await fetch('/api/team/momentum')
       return { status: res.status, body: await res.json() }
@@ -273,7 +301,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
     expect(momentum.status).toBe(200)
     const body = momentum.body
     expect(body.windowDays).toBe(7)
-    for (const key of ['kpEarned', 'sourcesReviewed', 'logsWritten', 'experimentsAdded', 'pointsAdded'] as const) {
+    for (const key of ['kpEarned', 'sourcesReviewed', 'logsWritten', 'datasetsAdded', 'pointsAdded'] as const) {
       expect(typeof body[key], `expected "${key}" to be a number, got ${typeof body[key]}`).toBe('number')
       expect(body[key]).toBeGreaterThanOrEqual(0)
     }
@@ -289,7 +317,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
     })) as { status: number; body: MomentumResponse }
     expect(second.status).toBe(200)
     expect(Object.keys(second.body).sort()).toEqual(Object.keys(body).sort())
-    for (const key of ['kpEarned', 'sourcesReviewed', 'logsWritten', 'experimentsAdded', 'pointsAdded'] as const) {
+    for (const key of ['kpEarned', 'sourcesReviewed', 'logsWritten', 'datasetsAdded', 'pointsAdded'] as const) {
       expect(typeof second.body[key]).toBe('number')
       expect(second.body[key]).toBeGreaterThanOrEqual(0)
     }
@@ -315,7 +343,7 @@ test.describe('F10 — Momentum weekly recap card', () => {
       // The actual leak check, regardless of which status came back: no
       // team-stat fields anywhere in the response body.
       const text = await res.text()
-      for (const key of ['kpEarned', 'sourcesReviewed', 'logsWritten', 'experimentsAdded', 'pointsAdded']) {
+      for (const key of ['kpEarned', 'sourcesReviewed', 'logsWritten', 'datasetsAdded', 'pointsAdded']) {
         expect(text).not.toContain(key)
       }
     } finally {

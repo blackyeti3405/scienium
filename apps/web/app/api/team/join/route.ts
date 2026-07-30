@@ -1,12 +1,14 @@
-import { auth, currentUser } from '@clerk/nextjs/server'
+import { currentUser } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { enforceRateLimit } from '@/lib/rate-limit'
+import { requireUserContext } from '@/lib/api/route-context'
+import { RouteError } from '@/lib/api/with-route'
 import { parseJson } from '@/lib/validation'
 import { normalizeInviteCode } from '@/lib/team/invite'
-import { applySchoolAndClass, syncClerkDisplayName, teamLeadClass } from '@/lib/onboarding/profile'
-import { logActivity } from '@/lib/activity/log'
+import { applySchoolAndClass, resolvePrimaryEmail, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { recordActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
+import { leaveOtherTeams, recordMembershipEvent } from '@/lib/team/membership'
 import { lockAggregate } from '@/lib/db-lock'
 
 const JoinBody = z
@@ -25,13 +27,11 @@ const JoinBody = z
  * validity before adding the membership and burning the code.
  */
 export async function POST(req: NextRequest) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   // Tight per-user + per-IP limit: join codes are short, so cap redemption
   // attempts to make brute-forcing an active code impractical.
-  const limited = await enforceRateLimit(req, 'join', userId)
-  if (limited) return limited
+  const { ctx, error: guardError } = await requireUserContext(req, { tier: 'join' })
+  if (guardError) return guardError
+  const { userId } = ctx
 
   const clerkUser = await currentUser()
   if (!clerkUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -42,9 +42,7 @@ export async function POST(req: NextRequest) {
 
   const normalized = normalizeInviteCode(code)
 
-  const email =
-    clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
-    clerkUser.emailAddresses[0]?.emailAddress
+  const email = resolvePrimaryEmail(clerkUser)
   if (!email) return NextResponse.json({ error: 'No email on Clerk account' }, { status: 400 })
 
   // Ensure a User row exists for this Clerk identity.
@@ -66,10 +64,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const teamId = await db.$transaction(async (tx) => {
+      // This read is only for the team id and for friendly, specific errors. It
+      // is NOT the single-use check — see the conditional consume below.
       const invite = await tx.teamInvite.findUnique({ where: { code: normalized } })
-      if (!invite) throw new JoinError('That join code is not valid', 404)
-      if (invite.usedByUserId) throw new JoinError('That join code has already been used', 409)
-      if (invite.expiresAt < new Date()) throw new JoinError('That join code has expired', 410)
+      if (!invite) throw new RouteError('That join code is not valid', 404)
+      if (invite.usedByUserId) throw new RouteError('That join code has already been used', 409)
+      if (invite.expiresAt < new Date()) throw new RouteError('That join code has expired', 410)
 
       await lockAggregate(tx, `team-membership:${invite.teamId}`)
       const team = await tx.team.findUnique({
@@ -78,14 +78,12 @@ export async function POST(req: NextRequest) {
           id: true,
           classId: true,
           maxMembers: true,
+          archivedAt: true,
           members: { select: { userId: true } },
         },
       })
-      if (!team) throw new JoinError('That lab no longer exists', 404)
-      const joiningUser = await tx.user.findUnique({
-        where: { id: user.id },
-        select: { classId: true },
-      })
+      if (!team) throw new RouteError('That lab no longer exists', 404)
+      if (team.archivedAt) throw new RouteError('That lab has been archived', 410)
 
       // Already on this team? Treat as success (idempotent) and leave the code unused.
       if (team.members.some((m) => m.userId === user.id)) {
@@ -94,49 +92,61 @@ export async function POST(req: NextRequest) {
       }
 
       if (team.members.length >= team.maxMembers) {
-        throw new JoinError('That lab is already full', 409)
+        throw new RouteError('That lab is already full', 409)
       }
-      if (joiningUser?.classId && team.classId && joiningUser.classId !== team.classId) {
-        throw new JoinError('That lab belongs to a different class', 409)
-      }
+      // No cross-class block: class membership is per-student, so a lab may hold
+      // members from different classes/schools — each stays in their own class.
 
-      await tx.teamMember.create({ data: { userId: user.id, teamId: team.id, role: 'member' } })
-      await tx.teamInvite.update({
-        where: { code: normalized },
+      // CONSUME THE CODE FIRST, conditionally (REFACTOR2 P1-S1). The read above
+      // is a stale snapshot: two joiners can both see `usedByUserId: null`,
+      // serialize on the team lock, and both join — the old unconditional
+      // `update` then just overwrote the audit owner with the second one. This
+      // predicate makes redemption single-use in the database, so the loser gets
+      // a 409 and its whole transaction rolls back before any membership exists.
+      const consumed = await tx.teamInvite.updateMany({
+        where: { code: normalized, usedByUserId: null, expiresAt: { gt: new Date() } },
         data: { usedByUserId: user.id, usedAt: new Date() },
       })
+      if (consumed.count !== 1) throw new RouteError('That join code has already been used', 409)
+
+      // ONE TEAM AT A TIME (REFACTOR2 P1-R8). Joining used to add a second
+      // membership and just point `activeTeamId` at the new lab, leaving the old
+      // membership live forever — and because teacher visibility is derived from
+      // membership, that stale row was stale authorization. Departing the old
+      // team happens in THIS transaction, with its own consequences (lead
+      // handover, archive-if-last) handled by the membership service.
+      await leaveOtherTeams(tx, user.id, team.id)
+
+      await tx.teamMember.create({ data: { userId: user.id, teamId: team.id, role: 'member' } })
+      // Through the membership service's append point, not a local `create`
+      // (REFACTOR2 P1-5): that is what also writes the security ledger row, so
+      // redeeming a join code is recorded like every other membership change.
+      await recordMembershipEvent(tx, {
+        teamId: team.id,
+        userId: user.id,
+        event: 'joined',
+        role: 'member',
+        actorUserId: user.id,
+        reason: 'invite_code',
+      })
       await tx.user.update({ where: { id: user.id }, data: { activeTeamId: team.id } })
+      // Durable (REFACTOR2 P1-R5): the membership write and its record commit
+      // together. This branch is the actual join — the idempotent "already a
+      // member" return above never reaches here, so a re-POST of the same
+      // code never mints a second "joined the lab" record.
+      await recordActivity(tx, team.id, user.id, 'member_joined', { name: user.name })
       return team.id
     })
 
-    // If the joiner isn't in a class, adopt the lab's class (its lead's) so they
-    // show up on the teacher's roster alongside the rest of the lab.
-    const fresh = await db.user.findUnique({ where: { id: user.id }, select: { classId: true } })
-    if (!fresh?.classId) {
-      const labClass = await teamLeadClass(teamId)
-      if (labClass) {
-        await db.user.update({
-          where: { id: user.id },
-          data: { classId: labClass.classId, schoolId: labClass.schoolId },
-        })
-      }
-    }
+    // No lab-class auto-adopt: class membership is per-student. A joiner keeps
+    // their own class (or requests their own teacher's class separately); the
+    // teacher sees the lab because they own ≥1 member (teacherOwnsTeam).
 
-    logActivity(teamId, user.id, 'member_joined', { name: user.name }).catch(console.error)
     return NextResponse.json({ teamId })
   } catch (err) {
-    if (err instanceof JoinError) {
+    if (err instanceof RouteError) {
       return NextResponse.json({ error: err.message }, { status: err.status })
     }
     throw err
-  }
-}
-
-class JoinError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message)
   }
 }

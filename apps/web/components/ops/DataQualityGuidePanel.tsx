@@ -17,6 +17,7 @@ import {
   GuideResultCount,
   GuideEmptyState,
   GuideBox,
+  useCopyToClipboard,
 } from './guide-chrome'
 
 const CATEGORY_LABEL: Record<DataQualityCategory, string> = Object.fromEntries(
@@ -105,17 +106,11 @@ function DqBox({
   isExpanded: boolean
   onToggle: () => void
 }) {
-  const [copied, setCopied] = useState(false)
+  const { copied, copy } = useCopyToClipboard()
 
   async function copyCode(e: React.MouseEvent) {
     e.stopPropagation()
-    try {
-      await navigator.clipboard.writeText(concept.code)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      /* clipboard blocked — no-op */
-    }
+    await copy(concept.code)
   }
 
   return (
@@ -165,7 +160,7 @@ function DqBox({
           <button
             type="button"
             onClick={copyCode}
-            className="inline-flex items-center gap-1 font-pixel text-[6px] text-white/35 hover:text-[#F5C518] transition-colors"
+            className="inline-flex items-center gap-1 font-pixel text-[6px] text-white/40 hover:text-[#F5C518] transition-colors"
           >
             {copied ? <Check size={10} /> : <Copy size={10} />}
             {copied ? 'Copied' : 'Copy'}
@@ -185,7 +180,7 @@ function DqBox({
           <code>{concept.output}</code>
         </pre>
         <p className="text-sm text-white/60 leading-relaxed mt-2">
-          <span className="font-pixel text-[6px] text-white/35 uppercase tracking-widest mr-1.5">Caveat</span>
+          <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest mr-1.5">Caveat</span>
           {concept.caveat}
         </p>
       </div>

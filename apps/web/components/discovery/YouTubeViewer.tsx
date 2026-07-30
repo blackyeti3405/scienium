@@ -42,7 +42,21 @@ export function YouTubeViewer({ videoId, title, onAddUrl }: Props) {
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const text = e.clipboardData?.getData('text') ?? ''
-      if (looksLikeYouTube(text) && document.activeElement !== inputRef.current) {
+      // Bail on ANY editable target, not just this view's own input (§0.9 Row
+      // B). The handler is on `document` and lives as long as the Discovery
+      // YouTube view is mounted, so guarding only `inputRef` meant a link
+      // pasted into the tree-reflection box, the topic bar or the papers
+      // search was swallowed — preventDefault ate the paste and the URL was
+      // silently added to the tree instead.
+      const el = document.activeElement as HTMLElement | null
+      if (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        el?.isContentEditable
+      ) {
+        return
+      }
+      if (looksLikeYouTube(text)) {
         e.preventDefault()
         add(text)
       }
@@ -64,7 +78,7 @@ export function YouTubeViewer({ videoId, title, onAddUrl }: Props) {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && add(input)}
             placeholder="Paste a YouTube link to add it to your tree…"
-            className="flex-1 bg-[#0a1628] border border-white/20 rounded-sm px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-[#F5C518]/60"
+            className="flex-1 bg-[#0a1628] border border-white/20 rounded-sm px-3 py-2 text-sm text-white placeholder:text-white/40 outline-none focus:border-[#F5C518]/60"
           />
           <button
             onClick={() => add(input)}
@@ -74,7 +88,7 @@ export function YouTubeViewer({ videoId, title, onAddUrl }: Props) {
             {busy ? 'Adding…' : 'Add'}
           </button>
         </div>
-        <p className="font-pixel text-[7px] text-white/30 mt-2 leading-loose">
+        <p className="font-pixel text-[7px] text-white/40 mt-2 leading-loose">
           {error ? (
             <span className="text-red-400">{error}</span>
           ) : captured ? (
@@ -116,7 +130,7 @@ export function YouTubeViewer({ videoId, title, onAddUrl }: Props) {
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
           <span className="text-5xl">▶</span>
           <p className="font-pixel text-[9px] text-white/60 leading-loose">Start a video rabbit hole</p>
-          <p className="font-pixel text-[7px] text-white/35 leading-loose max-w-xs">
+          <p className="font-pixel text-[7px] text-white/40 leading-loose max-w-xs">
             Paste a YouTube link above. Each video you add branches off the one you’re on — building a
             tree of your rabbit hole.
           </p>

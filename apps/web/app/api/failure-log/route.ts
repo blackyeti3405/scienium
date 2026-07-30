@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { logActivity } from '@/lib/activity/log'
+import { logActivityBestEffort } from '@/lib/activity/log'
+import { awardDailyLabCredit } from '@/lib/economy/lab-credit'
+import { incrementDailyTaskCount } from '@/lib/pvp/spell-power'
 import { db } from '@/lib/db'
+import { parseFailureBody, stringifyFailureBody } from '@/lib/ops/failure-followup'
 
 // Body is stored as JSON string: { happened, learned }
 const Body = z.object({
@@ -36,8 +39,7 @@ export async function GET(req: NextRequest) {
 
   // body is stored as JSON: { happened, learned }
   const entries = rows.map((r) => {
-    let parsed = { happened: r.body, learned: '' }
-    try { parsed = JSON.parse(r.body) } catch {}
+    const parsed = parseFailureBody(r.body)
     const fu = r.followups[0]
     return {
       id: r.id,
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest) {
       teamId: ctx.teamId,
       createdByUserId: ctx.dbUserId,
       entryType: 'failure',
-      body: JSON.stringify({ happened: data.happened.trim(), learned: data.learned.trim() }),
+      body: stringifyFailureBody(data.happened, data.learned),
     },
     select: {
       id: true,
@@ -83,24 +85,18 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  let parsed = { happened: entry.body, learned: '' }
-  try { parsed = JSON.parse(entry.body) } catch {}
+  const parsed = parseFailureBody(entry.body)
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'log_created', { kind: 'failure' }).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'log_created', { kind: 'failure' }).catch(console.error)
+  incrementDailyTaskCount(ctx.teamId).catch(() => {})
 
-  // +1 LC the first time this member files a log today (real calendar day, team pool).
-  try {
-    const today = new Date()
-    const day = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
-    await db.$transaction(async (tx) => {
-      await tx.labCreditClaim.create({ data: { userId: ctx.dbUserId, teamId: ctx.teamId, day } })
-      await tx.teamCurrency.update({ where: { teamId: ctx.teamId }, data: { lc: { increment: 1 } } })
-    })
-  } catch {
-    // P2002 (claim already exists today) = already credited; ignore. Never block the log.
-  }
+  // +1 LC the first time this member files a log today (real calendar day, team
+  // pool). Never blocks the saved log; only a duplicate-claim P2002 counts as
+  // "already credited" — anything else is reported as recoverable (A6).
+  const lcAward = await awardDailyLabCredit({ teamId: ctx.teamId, dbUserId: ctx.dbUserId })
 
   return NextResponse.json({
+    lcAward,
     entry: {
       id: entry.id,
       ...parsed,

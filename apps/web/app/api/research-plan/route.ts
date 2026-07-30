@@ -5,7 +5,8 @@ import { parseJson } from '@/lib/validation'
 import { isValidSelection } from '@/lib/research-plan/types'
 import { fetchGoogleDocText, GoogleDocError } from '@/lib/research-plan/google-doc'
 import { IDEA_CHECK_DAILY_LIMIT, ideaChecksUsedToday } from '@/lib/research-plan/idea-check'
-import { logActivity } from '@/lib/activity/log'
+import { planHashOf, isResultStale } from '@/lib/research-plan/plan-hash'
+import { logActivityBestEffort } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 
 const MAX_STORED_TEXT = 100_000
@@ -26,8 +27,15 @@ const PlanBody = z
   .object({
     googleDocUrl: z.string().trim().max(2000).optional(),
     planText: z.string().max(MAX_PLAN_TEXT_INPUT).optional(),
-    projectType: z.string().trim().max(64).optional(),
-    projectSubtype: z.string().trim().max(64).optional(),
+    // `.nullish()`, not `.optional()` (REFACTOR2 P2-S7). Both clients hold these
+    // as `string | null` and serialize the null: `useResearchPlan`'s Save Text
+    // path is DESIGNED to work with no type picked (`canSaveText` checks only
+    // that the textarea is non-empty), so it posted `projectType: null` into a
+    // schema that accepted only a string — an unconditional 400 surfaced as
+    // "Could not save the text". The client is right: null is a real value here,
+    // meaning "no selection", and the handler already stores it as one.
+    projectType: z.string().trim().max(64).nullish(),
+    projectSubtype: z.string().trim().max(64).nullish(),
   })
   .strict()
   .superRefine((body, ctx) => {
@@ -50,6 +58,57 @@ const PlanBody = z
     }
   })
 
+/**
+ * The plan payload GET and POST both return — ONE shape (REFACTOR2 P2-S7).
+ * They had drifted: POST omitted `lastIdeaCheck`/`lastIdeaCheckAt` entirely, so
+ * saving text made the idea check vanish from the client's state until a reload
+ * brought it back.
+ */
+function shapePlan(plan: {
+  googleDocUrl: string | null
+  projectType: string | null
+  projectSubtype: string | null
+  lastSyncedAt: Date | null
+  lastSyncedText: string | null
+  lastSyncedSource: string | null
+  lastReviewJson: unknown
+  lastReviewedAt: Date | null
+  lastIdeaCheckJson: unknown
+  lastIdeaCheckAt: Date | null
+}) {
+  // The identity of the plan as it stands RIGHT NOW. A stored result stamped
+  // with a different hash was produced from text that has since been replaced —
+  // it is still shown (it is the student's work), but it is labelled, not
+  // presented as a verdict on what they can currently see.
+  const currentHash = planHashOf(plan)
+  return {
+    googleDocUrl: plan.googleDocUrl,
+    projectType: plan.projectType,
+    projectSubtype: plan.projectSubtype,
+    lastSyncedAt: plan.lastSyncedAt?.toISOString() ?? null,
+    hasText: !!plan.lastSyncedText,
+    textPreview: plan.lastSyncedText?.slice(0, 600) ?? null,
+    // Legacy rows (pre-F3) never set lastSyncedSource — every one of them got
+    // its text from a doc, so a null column resolves to 'google_doc' here.
+    activeSource: plan.lastSyncedSource ?? (plan.googleDocUrl ? 'google_doc' : null),
+    // Full text ONLY for paste rows, so the textarea can edit-in-place without
+    // ever shipping a (possibly 100k-char) Google Doc export to the client.
+    planTextFull: plan.lastSyncedSource === 'paste' ? plan.lastSyncedText : null,
+    // Only a structured object is a valid review (guards against any legacy value).
+    lastReview:
+      plan.lastReviewJson && typeof plan.lastReviewJson === 'object' ? plan.lastReviewJson : null,
+    lastReviewedAt: plan.lastReviewedAt?.toISOString() ?? null,
+    lastReviewStale: isResultStale(plan.lastReviewJson, currentHash),
+    // The current idea-check result, so it persists across reloads.
+    lastIdeaCheck:
+      plan.lastIdeaCheckJson && typeof plan.lastIdeaCheckJson === 'object'
+        ? plan.lastIdeaCheckJson
+        : null,
+    lastIdeaCheckAt: plan.lastIdeaCheckAt?.toISOString() ?? null,
+    lastIdeaCheckStale: isResultStale(plan.lastIdeaCheckJson, currentHash),
+  }
+}
+
 /** GET /api/research-plan — current plan config, sync state, last review, quota. */
 export async function GET(req: NextRequest) {
   const { ctx, error } = await requireTeamContext(req, { tier: 'read' })
@@ -59,32 +118,7 @@ export async function GET(req: NextRequest) {
   const usedToday = await ideaChecksUsedToday(ctx.teamId)
 
   return NextResponse.json({
-    plan: plan
-      ? {
-          googleDocUrl: plan.googleDocUrl,
-          projectType: plan.projectType,
-          projectSubtype: plan.projectSubtype,
-          lastSyncedAt: plan.lastSyncedAt?.toISOString() ?? null,
-          hasText: !!plan.lastSyncedText,
-          textPreview: plan.lastSyncedText?.slice(0, 600) ?? null,
-          // Legacy rows (pre-F3) never set lastSyncedSource — every one of them got
-          // its text from a doc, so a null column resolves to 'google_doc' here.
-          activeSource: plan.lastSyncedSource ?? (plan.googleDocUrl ? 'google_doc' : null),
-          // Full text ONLY for paste rows, so the textarea can edit-in-place without
-          // ever shipping a (possibly 100k-char) Google Doc export to the client.
-          planTextFull: plan.lastSyncedSource === 'paste' ? plan.lastSyncedText : null,
-          // Only a structured object is a valid review (guards against any legacy value).
-          lastReview:
-            plan.lastReviewJson && typeof plan.lastReviewJson === 'object' ? plan.lastReviewJson : null,
-          lastReviewedAt: plan.lastReviewedAt?.toISOString() ?? null,
-          // The current idea-check result, so it persists across reloads.
-          lastIdeaCheck:
-            plan.lastIdeaCheckJson && typeof plan.lastIdeaCheckJson === 'object'
-              ? plan.lastIdeaCheckJson
-              : null,
-          lastIdeaCheckAt: plan.lastIdeaCheckAt?.toISOString() ?? null,
-        }
-      : null,
+    plan: plan ? shapePlan(plan) : null,
     ideaCheck: { usedToday, limit: IDEA_CHECK_DAILY_LIMIT, remaining: Math.max(0, IDEA_CHECK_DAILY_LIMIT - usedToday) },
   })
 }
@@ -103,7 +137,13 @@ export async function POST(req: NextRequest) {
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
 
-  const { data: body, error } = await parseJson(req, PlanBody)
+  // Raised above the shared MAX_BODY_BYTES (P2-S8): `planText` is allowed up to
+  // MAX_PLAN_TEXT_INPUT above, so the default 256 KiB ceiling would 413 a paste
+  // this route is specifically built to accept and truncate. Sized to clear the
+  // 1 MB field plus JSON escaping, not to be generous.
+  const { data: body, error } = await parseJson(req, PlanBody, {
+    maxBytes: 2 * MAX_PLAN_TEXT_INPUT,
+  })
   if (error) return error
   const { googleDocUrl, planText, projectType, projectSubtype } = body
   if (projectType && projectSubtype && !isValidSelection(projectType, projectSubtype)) {
@@ -127,18 +167,20 @@ export async function POST(req: NextRequest) {
   if (usingDoc) {
     // Doc path — unchanged behaviour: fetch the live doc text, surface sharing
     // problems as a clean error instead of a 500.
-    let text: string
+    let fetched: { text: string; canonicalUrl: string }
     try {
-      text = await fetchGoogleDocText(googleDocUrl)
+      fetched = await fetchGoogleDocText(googleDocUrl)
     } catch (err) {
       if (err instanceof GoogleDocError) {
         return NextResponse.json({ error: err.message }, { status: err.status })
       }
       throw err
     }
-    stored = text.slice(0, MAX_STORED_TEXT)
+    stored = fetched.text.slice(0, MAX_STORED_TEXT)
     data = {
-      googleDocUrl: googleDocUrl.trim(),
+      // The CANONICAL doc URL, never the pasted string — the teacher view
+      // renders this as a trusted link (REFACTOR2 P1-S12).
+      googleDocUrl: fetched.canonicalUrl,
       projectType: projectType ?? null,
       projectSubtype: projectSubtype ?? null,
       lastSyncedText: stored,
@@ -172,21 +214,10 @@ export async function POST(req: NextRequest) {
     update: data,
   })
 
-  logActivity(ctx.teamId, ctx.dbUserId, 'plan_synced', {}).catch(console.error)
+  logActivityBestEffort(ctx.teamId, ctx.dbUserId, 'plan_synced', {}).catch(console.error)
 
-  return NextResponse.json({
-    plan: {
-      googleDocUrl: plan.googleDocUrl,
-      projectType: plan.projectType,
-      projectSubtype: plan.projectSubtype,
-      lastSyncedAt: plan.lastSyncedAt?.toISOString() ?? null,
-      hasText: true,
-      textPreview: stored.slice(0, 600),
-      activeSource: plan.lastSyncedSource ?? (plan.googleDocUrl ? 'google_doc' : null),
-      planTextFull: plan.lastSyncedSource === 'paste' ? plan.lastSyncedText : null,
-      lastReview:
-        plan.lastReviewJson && typeof plan.lastReviewJson === 'object' ? plan.lastReviewJson : null,
-      lastReviewedAt: plan.lastReviewedAt?.toISOString() ?? null,
-    },
-  })
+  // Same shaper as GET — and the staleness flags land here too, which is the
+  // whole point: this response IS the moment new text replaced old, so it is
+  // where a review of the old text must stop looking current.
+  return NextResponse.json({ plan: shapePlan(plan) })
 }

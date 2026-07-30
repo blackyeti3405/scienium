@@ -29,7 +29,14 @@
  * and the ~2-minute video (link). Optional: a GitHub link, extra demo videos, and
  * supplemental-information links.
  */
-export type ShowcaseAssetType = 'board' | 'quad_chart' | 'video' | 'repo_link' | 'demo_video' | 'supplement'
+export type ShowcaseAssetType =
+  | 'board'
+  | 'quad_chart'
+  | 'video'
+  | 'repo_link'
+  | 'demo_video'
+  | 'supplement'
+  | 'figure'
 
 /** True for single-slot asset types (uploading/adding replaces the existing one). */
 export const SINGLE_SLOT: Record<ShowcaseAssetType, boolean> = {
@@ -39,6 +46,10 @@ export const SINGLE_SLOT: Record<ShowcaseAssetType, boolean> = {
   repo_link: true,
   demo_video: false,
   supplement: false,
+  // One Data Terminal figure per showcase — attaching a new one replaces it.
+  // ponytail: single slot reuses the asset route's existing replace path; add a
+  // MULTI_CAP figure gallery (mirroring the link route) only if teams need several.
+  figure: true,
 }
 
 /** Caps for the optional multi-slot links. */
@@ -63,18 +74,63 @@ export function wordCount(text: string): number {
 
 export type PrivacyLevel = 'public' | 'school_only' | 'link_only' | 'private'
 
+/**
+ * Selectable privacy levels. `school_only` is NOT offered — see
+ * `canViewShowcase` (REFACTOR2 P0-R2). The union above still carries it so
+ * rows written before it was withdrawn keep typechecking.
+ */
 export const PRIVACY_OPTIONS: { value: PrivacyLevel; label: string; blurb: string }[] = [
   { value: 'private', label: 'Private', blurb: 'Only your team can see it. A working draft.' },
-  { value: 'link_only', label: 'Anyone with the link', blurb: 'Unlisted — viewable by link, not in the gallery.' },
-  { value: 'school_only', label: 'Your school', blurb: 'Signed-in students at your school can view it.' },
+  { value: 'link_only', label: 'Anyone with the link', blurb: 'Unlisted — viewable only through your secret share link, not in the gallery.' },
   { value: 'public', label: 'Public', blurb: 'Submitted for teacher review — appears in the public gallery once approved.' },
 ]
+
+// ─── Abuse reporting (REFACTOR2 P1-6) ────────────────────────────────────────
+
+/**
+ * The complete reporting vocabulary, mirroring the `ShowcaseReportReason` enum
+ * in schema.prisma. Deliberately short and deliberately closed: a report is a
+ * ROUTING signal for a teacher, not a message, so there is no free-text field
+ * anywhere in this feature — nothing a reporter types can reach a moderation
+ * screen, a log line, or the security ledger.
+ *
+ * Doubles as the takedown vocabulary: `Showcase.takedownReason` holds one of
+ * these, so "why was it reported" and "why was it removed" are the same list.
+ */
+export const SHOWCASE_REPORT_REASONS = [
+  'inappropriate',
+  'harassment',
+  'privacy',
+  'copyright',
+  'spam',
+  'other',
+] as const
+
+export type ShowcaseReportReason = (typeof SHOWCASE_REPORT_REASONS)[number]
+
+/** Reader-facing labels for the report control and the moderation queue. */
+export const REPORT_REASON_LABELS: Record<ShowcaseReportReason, string> = {
+  inappropriate: 'Inappropriate or unsafe content',
+  harassment: 'Bullying or harassment',
+  privacy: 'Personal information about someone',
+  copyright: "Someone else's work used without permission",
+  spam: 'Spam or advertising',
+  other: 'Something else',
+}
 
 export interface ShowcaseViewer {
   userId: string | null
   schoolId: string | null
   /** Team ids the viewer belongs to (for owner/team access to private drafts). */
   teamIds: string[]
+  /**
+   * Team ids the viewer is the TEACHER of. A reviewer must be able to inspect
+   * the exact revision they are being asked to approve — including the board,
+   * quad chart, and video (REFACTOR2 P0-R3). Before this, "View submission"
+   * pointed at the public page, whose pending-content policy admitted team
+   * members but not the reviewing teacher.
+   */
+  moderatorTeamIds: string[]
 }
 
 export interface ShowcaseForView {
@@ -84,26 +140,70 @@ export interface ShowcaseForView {
   moderationStatus: string
   /** Distinct school ids of the team's members (Team has no school of its own). */
   teamSchoolIds: string[]
+  /** `Showcase.takedownAt != null` — staff pulled this from public serving. */
+  takenDown: boolean
 }
+
+/**
+ * How the caller addressed this showcase.
+ *
+ * `slug` is a PUBLIC identifier (title-derived + six hex characters).
+ * `share_token` means the caller presented the 128-bit secret — the only thing
+ * that grants anonymous `link_only` access (REFACTOR2 P1-R7).
+ */
+export type ShowcaseAccess = 'slug' | 'share_token'
 
 /**
  * Whether `viewer` may see a showcase's PUBLIC page. Team members always can
  * (preview their own draft); everyone else needs the showcase published+approved
- * and the privacy level to admit them.
+ * and the privacy level to admit them **through the route they used**.
  */
-export function canViewShowcase(sc: ShowcaseForView, viewer: ShowcaseViewer | null): boolean {
+export function canViewShowcase(
+  sc: ShowcaseForView,
+  viewer: ShowcaseViewer | null,
+  via: ShowcaseAccess = 'slug',
+): boolean {
+  // TAKEDOWN (REFACTOR2 P1-6) — first, and above the owner check, because it is
+  // the one state the owning team must not be able to keep serving. Only the
+  // moderating teacher gets through, and only so the content stays REVIEWABLE:
+  // a takedown removes the page, not the evidence, and an investigation that
+  // has to go to the database to see what was reported is the "ad hoc database
+  // change" this item exists to eliminate.
+  //
+  // This is THE single gate. Both public consumers (the page/one-pager and the
+  // asset-byte route) reach it through `canViewShowcase`, so the bytes cannot
+  // outlive the page; the gallery, which lists rather than views, filters on
+  // `takedownAt: null` in its own query.
+  if (sc.takenDown) return viewer?.moderatorTeamIds.includes(sc.teamId) ?? false
+
   const isOwner = !!viewer && viewer.teamIds.includes(sc.teamId)
   if (isOwner) return true
+
+  // Moderator preview: the teacher of this team sees every revision, in every
+  // state, exactly as stored. Scoped to teams they teach — never a global
+  // teacher bypass.
+  if (viewer?.moderatorTeamIds.includes(sc.teamId)) return true
 
   const live = sc.publishedAt != null && sc.moderationStatus === 'approved'
   if (!live) return false
 
   switch (sc.privacyLevel) {
     case 'public':
-    case 'link_only':
+      // Listed in the gallery and reviewed — the slug is enough.
       return true
+    case 'link_only':
+      // Unlisted. The slug is NOT the secret: its only random part is six hex
+      // characters (24 bits), which request limiting slows but cannot turn into
+      // a capability. Only the 128-bit share token opens this (P1-R7).
+      return via === 'share_token'
     case 'school_only':
-      return !!viewer?.schoolId && sc.teamSchoolIds.includes(viewer.schoolId)
+      // WITHDRAWN — fails closed to private (REFACTOR2 P0-R2). `User.schoolId`
+      // is self-asserted: `resolveSchool()` upserts any typed name and settings
+      // let a student change it at will, so "same schoolId" proved nothing but
+      // that the viewer typed the victim school's name. Restoring this level
+      // requires a *verified* SchoolMembership, not a profile string. Existing
+      // school_only rows degrade to team-only until then.
+      return false
     case 'private':
       return false
   }
@@ -114,9 +214,28 @@ export function teamSchoolIds(members: { user: { schoolId: string | null } }[]):
   return [...new Set(members.map((m) => m.user.schoolId).filter((s): s is string => !!s))]
 }
 
+/** Builds the canViewShowcase() input from a raw showcase record. */
+export function toShowcaseForView(sc: {
+  teamId: string
+  privacyLevel: string
+  publishedAt: Date | null
+  moderationStatus: string
+  takedownAt: Date | null
+  team: { members: { user: { schoolId: string | null } }[] }
+}): ShowcaseForView {
+  return {
+    teamId: sc.teamId,
+    privacyLevel: sc.privacyLevel as PrivacyLevel,
+    publishedAt: sc.publishedAt,
+    moderationStatus: sc.moderationStatus,
+    teamSchoolIds: teamSchoolIds(sc.team.members),
+    takenDown: sc.takedownAt != null,
+  }
+}
+
 // ─── Slug ───────────────────────────────────────────────────────────────────
 
-export function slugify(input: string): string {
+export function slugify(input: string, fallback = 'project'): string {
   const base = input
     .toLowerCase()
     .normalize('NFKD')
@@ -124,7 +243,7 @@ export function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60)
-  return base || 'project'
+  return base || fallback
 }
 
 // ─── Safe links ───────────────────────────────────────────────────────────────
@@ -186,5 +305,25 @@ export function parseVideoUrl(raw: string): ParsedVideo | null {
     if (ok) return { provider: 'vimeo', videoId: ok, embedUrl: `https://player.vimeo.com/video/${ok}` }
   }
   return null
+}
+
+/**
+ * Render-boundary gate for a STORED embed URL (REFACTOR2 P2-3).
+ *
+ * The link route builds `metadataJson.embedUrl` with `parseVideoUrl`, so a row
+ * written through it always holds one of the two canonical provider URLs. A row
+ * that predates that check — or one edited in the database — does not, and it
+ * would otherwise land verbatim in an `<iframe src>`, which is an arbitrary
+ * origin framed inside the page.
+ *
+ * So the stored value is re-derived through `parseVideoUrl` at the moment it is
+ * rendered: the canonical embed URLs are fixed points of that parser, and
+ * anything else (another host, a `javascript:` scheme, a mangled id) returns
+ * null and renders no iframe at all. Re-deriving rather than host-matching is
+ * deliberate — it reuses the write path's allowlist instead of standing up a
+ * second copy that could drift out of step with it.
+ */
+export function safeEmbedUrl(raw: unknown): string | null {
+  return typeof raw === 'string' ? parseVideoUrl(raw)?.embedUrl ?? null : null
 }
 

@@ -91,3 +91,96 @@ describe('computeNotifications', () => {
     expect(drafts.some((d) => d.kind === 'urgency')).toBe(true)
   })
 })
+
+// ─── Edge coverage added with the 0.28.x test sweep ──────────────────────────
+
+describe('computeNotifications — bracket and window edges', () => {
+  const base = { teamId: 't1', now: NOW, deadlineDays: [30, 14, 7, 1], lastProgressLogAt: NOW }
+
+  it('a deadline exactly ON a window lands in that bracket, not the next', () => {
+    const drafts = computeNotifications({
+      ...base,
+      fairs: [fair({ registrationDeadline: daysFromNow(14) })],
+    })
+    expect(drafts).toHaveLength(1)
+    expect(drafts[0].dedupeKey).toContain(':registration:14')
+  })
+
+  it('a deadline TODAY (0 days) fires the tightest bracket with "today" wording', () => {
+    const drafts = computeNotifications({
+      ...base,
+      fairs: [fair({ registrationDeadline: daysFromNow(0) })],
+    })
+    expect(drafts).toHaveLength(1)
+    expect(drafts[0].body).toMatch(/is today\./)
+    expect(drafts[0].dedupeKey).toContain(':registration:1')
+  })
+
+  it('deadlineDays hygiene: duplicates deduped, unsorted input sorted, nonpositive dropped', () => {
+    const drafts = computeNotifications({
+      ...base,
+      deadlineDays: [7, 30, 7, -3, 0],
+      fairs: [fair({ registrationDeadline: daysFromNow(6) })],
+    })
+    expect(drafts).toHaveLength(1)
+    expect(drafts[0].dedupeKey).toContain(':registration:7')
+  })
+
+  it('all-nonpositive windows produce NO drafts (and no crash)', () => {
+    expect(
+      computeNotifications({
+        ...base,
+        deadlineDays: [0, -1],
+        fairs: [fair({ registrationDeadline: daysFromNow(1) })],
+      }),
+    ).toEqual([])
+  })
+})
+
+describe('computeNotifications — urgency selection edges', () => {
+  const stale = { teamId: 't1', now: NOW, deadlineDays: [30, 14, 7, 1], lastProgressLogAt: null }
+
+  it('only the NEAREST upcoming fair nudges when several are in window', () => {
+    const drafts = computeNotifications({
+      ...stale,
+      fairs: [
+        fair({ fairId: 'far', eventId: 'e_far', fairName: 'State Fair', eventDate: daysFromNow(25) }),
+        fair({ fairId: 'near', eventId: 'e_near', fairName: 'Regional Fair', eventDate: daysFromNow(5) }),
+      ],
+    })
+    const urgency = drafts.filter((d) => d.kind === 'urgency')
+    expect(urgency).toHaveLength(1)
+    expect(urgency[0].dedupeKey).toContain('e_near')
+  })
+
+  it('a fair with only a registration deadline (no eventDate) never triggers urgency', () => {
+    const drafts = computeNotifications({
+      ...stale,
+      fairs: [fair({ registrationDeadline: daysFromNow(5) })],
+    })
+    expect(drafts.filter((d) => d.kind === 'urgency')).toHaveLength(0)
+  })
+
+  it('an event beyond the largest window does not nudge', () => {
+    const drafts = computeNotifications({
+      ...stale,
+      fairs: [fair({ eventDate: daysFromNow(31) })],
+    })
+    expect(drafts.filter((d) => d.kind === 'urgency')).toHaveLength(0)
+  })
+
+  it('the urgency dedupeKey changes across an ISO-week boundary (weekly cadence)', () => {
+    const fairs = [fair({ eventDate: daysFromNow(20) })]
+    const week1 = computeNotifications({ ...stale, fairs })
+    const week2 = computeNotifications({
+      ...stale,
+      now: daysFromNow(7),
+      fairs,
+    })
+    const k1 = week1.find((d) => d.kind === 'urgency')?.dedupeKey
+    const k2 = week2.find((d) => d.kind === 'urgency')?.dedupeKey
+    expect(k1).toBeTruthy()
+    expect(k2).toBeTruthy()
+    expect(k1).not.toBe(k2)
+  })
+})
