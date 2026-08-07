@@ -11,9 +11,27 @@ import type {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 export const SPELL_BASE_DAMAGE = 25
-export const SPELL_DAMAGE_PER_LEVEL = 5
-export const SPELL_AOE_RADIUS = 80 // px
+/**
+ * Fraction of a spell's base damage added per building level above 1, so a
+ * level-15 building's spell hits at 1 + 14 × 0.04 = 1.56×. Deliberately flatter
+ * than the building-health curve (100 + 20 × level = 3.3× at L15): a developed
+ * base is meant to get relatively tankier, which caps late-game trophy farming.
+ * This is THE balance knob — tune here, nowhere else.
+ */
+export const SPELL_DAMAGE_PER_LEVEL = 0.04
+/**
+ * Fallback blast radius, in PLOT TILES (lib/plot.ts grid units), used when a
+ * catalog row has none. Was 80 — a pixel value compared against tile coordinates
+ * (posX/posY are gx/gy in [-3, 3]), so every cast covered the entire base and
+ * aiming did nothing. Radius is a tile distance now, matching the design sheet.
+ */
+export const SPELL_AOE_RADIUS = 1.5
 export const SPELL_CAST_DELAY_MS = 1500
+
+/** A spell's damage at a given building level. */
+export function scaleDamage(baseDamage: number, level: number): number {
+  return baseDamage * (1 + SPELL_DAMAGE_PER_LEVEL * Math.max(0, level - 1))
+}
 
 export const BUILDING_BASE_HEALTH = 100
 export const BUILDING_HEALTH_PER_LEVEL = 20
@@ -28,8 +46,12 @@ export const TROPHY_LOSS_TODO = true // exact loss formula is a TODO tunable
 // ─── Spell Construction ─────────────────────────────────────────────────────
 
 /**
- * Build a Spell from a database Building row + its attached Spell row.
- * Damage = base 25 + 5 × level.
+ * Build a Spell from a team's building row + the catalog `Spell` row it maps to.
+ *
+ * The catalog's baseDamage / radius / cooldownMs used to be ignored in favour of
+ * the module constants, which made every spell identical and left three DB
+ * columns dead. They are the source of truth now; the constants are only
+ * fallbacks for rows that predate the seeded catalog.
  */
 export function buildSpell(
   id: string,
@@ -38,17 +60,26 @@ export function buildSpell(
   level: number,
   labType: LabType,
   type: SpellType,
+  catalog?: {
+    baseDamage: number
+    radius: number
+    cooldownMs: number
+    icon?: string
+    lingering?: boolean
+  },
 ): Spell {
   return {
     id,
     name,
     buildingId,
     level,
-    damage: SPELL_BASE_DAMAGE + SPELL_DAMAGE_PER_LEVEL * level,
-    aoeRadius: SPELL_AOE_RADIUS,
-    castDelay: SPELL_CAST_DELAY_MS,
+    damage: Math.round(scaleDamage(catalog?.baseDamage ?? SPELL_BASE_DAMAGE, level)),
+    aoeRadius: catalog?.radius ?? SPELL_AOE_RADIUS,
+    castDelay: catalog?.cooldownMs ?? SPELL_CAST_DELAY_MS,
     labType,
     type,
+    icon: catalog?.icon,
+    lingering: catalog?.lingering,
   }
 }
 
@@ -65,6 +96,7 @@ export function buildBuildingTarget(
   posX: number,
   posY: number,
   type: SpellType,
+  sprite?: string | null,
 ): BuildingTarget {
   const maxHealth = BUILDING_BASE_HEALTH + BUILDING_HEALTH_PER_LEVEL * level
   return {
@@ -75,6 +107,7 @@ export function buildBuildingTarget(
     position: { x: posX, y: posY },
     type,
     level,
+    sprite: sprite ?? null,
   }
 }
 
@@ -82,7 +115,8 @@ export function buildBuildingTarget(
 
 /**
  * Resolves a single spell cast against the defender base.
- * Damages every building within `spell.aoeRadius` of (x, y).
+ * Damages every building within `spell.aoeRadius` TILES of (x, y) — the cast
+ * point and every building position are plot cell coordinates (lib/plot.ts).
  * Damage is scaled by spell type effectiveness vs. building type:
  *   - Same type:      1×
  *   - Super-effective: 2×  (empirical > theoretical > applied > empirical)

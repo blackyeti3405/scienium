@@ -2317,9 +2317,12 @@ enum FormStatus {
 model Spell {
   id          String    @id @default(cuid())
   buildingKey String    @unique @map("building_key")
+  // Display name in the raid spell bar ("Impact Charge") — NOT the building's name.
+  name        String    @default("")
   type        SpellType
   baseDamage  Int       @map("base_damage")
-  radius      Int
+  // Blast radius in plot tiles (lib/plot.ts grid units). Float: the catalog uses 1.5 / 2.5 / 3.5.
+  radius      Float
   cooldownMs  Int       @map("cooldown_ms")
 
   @@map("spells")

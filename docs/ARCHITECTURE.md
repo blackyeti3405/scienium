@@ -257,7 +257,7 @@ Authenticated student pages:
 | `/fair-hub/calendar` | Science Fair feature |
 | `/fair-hub/rubric` | Rubric self-check |
 | `/showcase/edit` | Showcase editor |
-| `/pvp/*` | Incomplete PvP placeholders; raid API remains unimplemented |
+| `/pvp/leaderboard`, `/pvp/battle/[id]` | Class trophy leaderboard and the raid battle screen. The lobby is NOT a route — it is `components/pvp/PvpFeature.tsx`, opened through the Battle Arena gateway overlay (the duplicate `/pvp/lobby` route was removed in v0.78.0). |
 
 `app/(teacher)/layout.tsx` enforces teacher/admin access. Teacher pages are the
 roster, reports, showcase moderation, and student detail views.
@@ -276,6 +276,14 @@ exceptions are:
 
 Static files and Next.js internals are excluded by the matcher.
 
+A signed-out request is answered in the caller's own content type: `/api/*` gets
+`401 {"error":"Unauthorized"}` as JSON, everything else is redirected to sign-in.
+Redirecting an API route is what v0.78.0 fixed — `/api/*` is reached by `fetch`,
+which FOLLOWS the 307 and hands the caller a 200 carrying the sign-in page's
+HTML, so `res.ok` is true and `await res.json()` dies on `<!DOCTYPE`. Every bare
+`res.json()` in the app depends on this branch; `test/middleware-api-401.test.ts`
+holds it in place.
+
 ### 4.3 Route-file index
 
 Every authored App Router file belongs to one of these surfaces:
@@ -286,8 +294,8 @@ Every authored App Router file belongs to one of these surfaces:
   `(onboarding)/layout.tsx`, and `(onboarding)/onboarding/page.tsx`.
 - Student dashboard: `(dashboard)/layout.tsx`; lab; discovery; daily Codex,
   expertise, failure, and log; literature library/review; research plan; fair
-  calendar/rubric; showcase edit; and PvP lobby, team builder, leaderboard, and
-  battle detail pages.
+  calendar/rubric; showcase edit; and the PvP leaderboard and battle detail
+  pages (the lobby is a gateway overlay component, not a route).
 - Teacher: `(teacher)/layout.tsx`; roster home; reports; showcase
   moderation; and student detail.
 - Public: `(public)/layout.tsx`; showcase gallery and showcase-by-slug.
@@ -570,7 +578,9 @@ content-type caps. Adapters supply only their headers, timeout and backoff base.
 - `api/papers/`: upload/list/delete/file, chat, quiz, grade, targeted retry, and
   Explain-it-back grading.
 - `api/project-log/`: log CRUD, references, attachment upload and viewing.
-- `api/pvp`: guarded 501 placeholder for the unbuilt raid system.
+- `api/pvp/`: raid lobby payload (trophies, quota, spell power, matched opponent),
+  `refind`/`start_raid` actions, server-authoritative cast resolution in
+  `[battleId]/action`, and the class leaderboard.
 - `api/research-plan/`: source synchronization, originality check, and review
   (a review of unchanged plan text replays the persisted result — no LLM spend).
 - `api/rubric/self-assessment`: team rubric read/write.
@@ -1285,11 +1295,29 @@ at-most-once: a crash between provider acceptance and the `sent` write retries.
 
 `prisma/schema.prisma` (`Spell`, `PvpRaid`, `PvpTrophies`, `PvpRaidQuota`,
 `SpellType`) describes building-powered raids, spells, trophies, and daily
-quotas. The `packages/shared-types/src/pvp.ts` contract module that once
-mirrored those shapes was deleted as dead code — zero consumers, since nothing
-outside the schema referenced them. The runtime raid engine, matchmaking,
-battle UI, and leaderboard are not implemented. `/api/pvp` intentionally
-returns 501 and the lab opens a `StubFeature`.
+quotas. `packages/shared-types/src/pvp.ts` is the contract module shared by the
+server, lobby, and battle HUD; it also owns `SPELL_POWER_TIERS`, the single tier
+table (v0.78.0 — it had been copy-pasted into four files, which is how the spec
+drifted from the code).
+
+The system shipped in v0.77.0 and became playable in v0.78.0:
+
+- **Spell catalog** — `lib/pvp/spell-catalog.ts` mirrors the design sheet (11 shared
+  archetypes + 30 lab signatures at shop tiers 1/5/8/9/10) and is seeded into
+  `spells` by `prisma/seed-spells.mjs`. `baseDamage`, `radius` and `cooldownMs`
+  are read from those rows; the `combat-engine.ts` constants are only fallbacks.
+- **Class scope** — `lib/pvp/matchmaking.ts` derives the opponent pool from
+  `User.classId` through team members, never the vestigial `Team.classId`
+  (ADR-004). A lab may span classes, so a team holds a set of class ids and two
+  teams are raidable when those sets intersect. `sharesClass` re-checks this on
+  `start_raid`, which takes the opponent id from the request body.
+- **Combat** — all damage resolves server-side in `/api/pvp/[battleId]/action`;
+  the client only renders returned state. Radius is measured in PLOT TILES
+  (`lib/plot.ts` grid units), not pixels.
+- **Art** — `art/spellfx.py` generates 42 hotbar icons and 9 cast FX from 7
+  procedural forms plus 30 emblems (shape = behaviour, colour = type, emblem =
+  granting building), resolved through `getSpellIcon()` in
+  `lib/sprites/manifest.ts`.
 
 ## 9. Data Model
 
@@ -1928,10 +1956,9 @@ content ownership boundaries are all listed above.
 - `SVC-1` (extracting the duplicated quiz/exam currency-minting into a service) is
   the one item from the `0.23.x` hardening pass never completed. Its original
   deferral — until after the concurrent PvP window, since it churns hot routes —
-  no longer applies: **PvP did not ship** (the gateway renders `StubFeature`,
-  `/api/pvp` returns 501, and the `/pvp/*` pages are placeholders — see A1 in
-  [`REFACTOR2.MD`](../REFACTOR2.MD)), and no concurrent PvP implementation owns
-  those files. SVC-1 is tracked in [`REFACTOR2.MD`](../REFACTOR2.MD) §4 "SVC-1",
+  has now genuinely expired: PvP shipped in v0.77.0 and was made playable in
+  v0.78.0, so no concurrent PvP implementation owns those files any more.
+  SVC-1 is tracked in [`REFACTOR2.MD`](../REFACTOR2.MD) §4 "SVC-1",
   with all three current duplication sites listed.
 - Broader privacy, monitoring, CSP, backup, and incident-response work is tracked
   in `SECURITY.md` for the classroom pilot.

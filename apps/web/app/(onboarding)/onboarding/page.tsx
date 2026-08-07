@@ -3,10 +3,25 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
+import { z } from 'zod'
 import { NotificationBell } from '@/components/lab/NotificationBell'
+import { ApiError, requestJson } from '@/lib/api/client'
 
 type Mode = 'create' | 'join'
 type AccountType = 'student' | 'teacher'
+
+/** These routes answer `{ teamId }` / `{ ok }` and this page uses neither — it
+ *  only needs to know the write succeeded. Going through `requestJson` is what
+ *  matters: a bare `res.json()` here died on a non-JSON body ("Failed to execute
+ *  'json' on 'Response'"), which is what a signed-out submit used to produce. */
+const Ignored = z.unknown()
+
+/** A submit the server refused for lack of a session is not a form error — no
+ *  amount of retyping fixes it, and this page has no other way out. Send them
+ *  back through sign-in and return here. */
+function isUnauthorized(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 401
+}
 
 /** "Your name" + "High school" fields — identical in the student and teacher
  *  forms below. Shared so the placeholder/maxLength/styling can't drift
@@ -116,18 +131,20 @@ export default function OnboardingPage() {
         mode === 'create'
           ? { name, teamName, zip: zip.trim() || undefined, ...profile }
           : { name, code, ...profile }
-      const res = await fetch(endpoint, {
+      await requestJson(endpoint, Ignored, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Setup failed')
       // Stay busy through the navigation itself — only `router.push` failing
       // (synchronously, essentially never) would fall through to `finally`.
       setEntering(true)
       router.push('/dashboard')
     } catch (err) {
+      if (isUnauthorized(err)) {
+        router.push('/sign-in?redirect_url=/onboarding')
+        return
+      }
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setLoading(false)
     }
@@ -139,17 +156,11 @@ export default function OnboardingPage() {
     setLoading(true)
 
     try {
-      const res = await fetch('/api/onboarding/teacher', {
+      await requestJson('/api/onboarding/teacher', Ignored, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, highSchool: highSchool.trim() || undefined }),
       })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error ?? 'Setup failed')
-        setLoading(false)
-        return
-      }
       // Stay busy through the hard navigation below (not `finally`) — the button
       // should read "Entering your lab…" until the document unload happens.
       setEntering(true)
@@ -159,6 +170,10 @@ export default function OnboardingPage() {
       // before (teacher)/layout.tsx evaluates the gate. Live-verified step.
       window.location.assign('/teacher')
     } catch (err) {
+      if (isUnauthorized(err)) {
+        router.push('/sign-in?redirect_url=/onboarding')
+        return
+      }
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setLoading(false)
     }

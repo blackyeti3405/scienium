@@ -38,7 +38,10 @@ interface RaidLog {
   spellsAvailable: Spell[]
   defenderBase: BuildingTarget[]
   castEvents: RaidCastEvent[]
+  /** Legacy single-cooldown field; kept so in-flight raids keep validating. */
   lastCastTs: number
+  /** Last cast time PER SPELL — cooldowns are per-spell, not one global timer. */
+  lastCastBySpell?: Record<string, number>
 }
 
 // ─── POST /api/pvp/[battleId]/action ──────────────────────────────────────
@@ -142,15 +145,6 @@ export async function POST(
     lastCastTs: 0,
   }
 
-  // Server-authoritative cooldown: lastCastTs must be >= 1500ms ago.
-  // Client cooldown UX is presentation only.
-  if (raidLog.lastCastTs > 0 && Date.now() - raidLog.lastCastTs < 1500) {
-    return NextResponse.json(
-      { error: 'Cast delay not met — 1.5s required between casts' },
-      { status: 429 },
-    )
-  }
-
   // ── Resolve spell power multiplier (current day's tier) ──────────────
 
   const { multiplier } = await getSpellPower(teamId)
@@ -172,10 +166,28 @@ export async function POST(
   }
 
   // Validate spell is available in this raid session
-  if (!session.spellsAvailable.find((s) => s.id === spellId)) {
+  const spell = session.spellsAvailable.find((s) => s.id === spellId)
+  if (!spell) {
     return NextResponse.json(
       { error: 'Spell not available in this raid' },
       { status: 400 },
+    )
+  }
+
+  // Server-authoritative cooldown, enforced PER SPELL against that spell's own
+  // castDelay. It used to be one shared 1.5s timer across the whole loadout, so
+  // the client (which tracks cooldowns per spell) would offer a second spell the
+  // server then rejected with a 429.
+  const lastCast =
+    raidLog.lastCastBySpell?.[spellId] ??
+    // Pre-existing raids only have the old global stamp; honour it once.
+    (raidLog.lastCastBySpell ? 0 : raidLog.lastCastTs)
+  if (lastCast > 0 && Date.now() - lastCast < spell.castDelay) {
+    return NextResponse.json(
+      {
+        error: `Cast delay not met — ${(spell.castDelay / 1000).toFixed(1)}s required between casts of ${spell.name}`,
+      },
+      { status: 429 },
     )
   }
 
@@ -191,6 +203,7 @@ export async function POST(
     defenderBase: session.defenderBase,
     castEvents: [...raidLog.castEvents, castEvent],
     lastCastTs: Date.now(),
+    lastCastBySpell: { ...(raidLog.lastCastBySpell ?? {}), [spellId]: Date.now() },
   }
 
   await db.pvpRaid.update({

@@ -10,6 +10,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { PixelSkeleton } from '@/components/ui/PixelSkeleton'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -26,6 +27,29 @@ interface RankingEntry {
 function formatLabType(lt: string | null): string {
   if (!lt) return 'Unknown'
   return lt.charAt(0).toUpperCase() + lt.slice(1)
+}
+
+/**
+ * Dark page shell. `(dashboard)/layout.tsx` sets no background, so these cards —
+ * styled for a dark surface — were rendering grey-on-white with white text.
+ */
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-[#0d1b2e]">
+      <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-semibold text-white">Class Rankings</h1>
+          <Link
+            href="/lab"
+            className="text-sm text-[#F5C518] hover:text-amber-300 underline underline-offset-2 transition-colors"
+          >
+            ← Back to lab
+          </Link>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
 }
 
 // ─── Page Component ─────────────────────────────────────────────────────────
@@ -56,12 +80,11 @@ export default function LeaderboardPage() {
 
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto py-8 space-y-4">
-        <h1 className="text-xl font-semibold text-white">Class Rankings</h1>
+      <Shell>
         {[1, 2, 3, 4, 5].map((i) => (
           <PixelSkeleton key={i} variant="line" h="h-14" w="w-full" />
         ))}
-      </div>
+      </Shell>
     )
   }
 
@@ -69,12 +92,11 @@ export default function LeaderboardPage() {
 
   if (error) {
     return (
-      <div className="max-w-2xl mx-auto py-8">
-        <h1 className="text-xl font-semibold text-white mb-4">Class Rankings</h1>
+      <Shell>
         <div className="bg-red-900/40 border border-red-700/50 rounded-lg px-4 py-3 text-red-300 text-sm">
           {error}
         </div>
-      </div>
+      </Shell>
     )
   }
 
@@ -82,23 +104,20 @@ export default function LeaderboardPage() {
 
   if (rankings.length === 0) {
     return (
-      <div className="max-w-2xl mx-auto py-8">
-        <h1 className="text-xl font-semibold text-white mb-4">Class Rankings</h1>
+      <Shell>
         <div className="bg-slate-800/60 rounded-xl border border-slate-700/50 px-5 py-8 text-center">
           <p className="text-slate-400 text-sm">
             No rankings yet — raids start after the first team places a base.
           </p>
         </div>
-      </div>
+      </Shell>
     )
   }
 
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-2xl mx-auto py-8 space-y-4">
-      <h1 className="text-xl font-semibold text-white">Class Rankings</h1>
-
+    <Shell>
       {/* Ranked list */}
       <div className="space-y-2">
         {rankings.map((entry, index) => {
@@ -171,6 +190,6 @@ export default function LeaderboardPage() {
       <p className="text-xs text-slate-500 text-center pt-2">
         Rankings update after each raid completes.
       </p>
-    </div>
+    </Shell>
   )
 }

@@ -174,6 +174,32 @@ Set-Location ..\..
 > lab UI works without it — the page falls back to discovery-phase defaults
 > when a team/row is missing.
 
+### Seeding the PvP spell catalog
+
+```bash
+pnpm --filter web seed:spells
+```
+
+**Required for PvP.** The `spells` table is the source of truth for every spell's
+name, damage, radius and cooldown; with it empty a raid gives the attacker no
+spells at all. Re-run after editing `lib/pvp/spell-catalog.ts` (and
+`python art/spellfx.py` to rebuild the icons). Idempotent.
+
+### Getting into a raid locally
+
+```bash
+pnpm --filter web seed:dev-pvp        # optionally: … seed:dev-pvp you@example.com
+```
+
+Resetting raid counts is almost never what unblocks a raid — `pvp_raid_quota`
+starts empty (0 used). A raid needs the attacker's team at phase `working`+, the
+attacker **in a class** (`User.classId`; null means no opponent will ever be
+found), and an opponent sharing that class, at `working`+, with a placed
+building. This seeder builds that graph (Dev School → Dev Class → Dev Rival Lab)
+and clears the quota. It stays out of the E2E fixture on purpose — a dev lab in
+`E2E Class` would become a candidate opponent and make the pvp specs
+nondeterministic.
+
 ---
 
 ## 5. Run the web app
@@ -677,5 +703,8 @@ Supabase dev DB remains the default for day-to-day `pnpm dev`.)
 |---|---|---|
 | Day-to-day dev server (Supabase = no local DB daemon needed) | `pnpm dev` — web app at :3000 | `pnpm dev` — web app at :3000 |
 | Regenerate all sprites | `python3 art/iso.py && python3 art/build_sprites.py && python3 art/recolor.py` | `py -3 art/iso.py; py -3 art/build_sprites.py; py -3 art/recolor.py` |
+| Regenerate PvP spell icons + cast FX | `python3 art/spellfx.py` | `py -3 art/spellfx.py` |
+| Seed the PvP spell catalog (required for raids) | `pnpm --filter web seed:spells` | `pnpm --filter web seed:spells` |
+| Make a raid possible locally | `pnpm --filter web seed:dev-pvp` | `pnpm --filter web seed:dev-pvp` |
 | Local-Postgres alternative — start | `docker compose -f infra/docker-compose.yml up -d postgres` | `docker compose -f infra/docker-compose.yml up -d postgres` |
 | Local-Postgres alternative — stop | `docker compose -f infra/docker-compose.yml down` | `docker compose -f infra/docker-compose.yml down` |

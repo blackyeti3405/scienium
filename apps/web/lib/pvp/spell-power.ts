@@ -1,22 +1,10 @@
 import { db } from '@/lib/db'
-import type { SpellPowerTier } from '@scienium/shared-types'
+import { SPELL_POWER_TIERS, type SpellPowerTier } from '@scienium/shared-types'
 
-// ─── Spell Power Tiers (Option B — spec §4.4) ─────────────────────────────
-// The multiplier is applied to every spell's baseDamage on the attacker's side
-// for the entire day. Resets at midnight. Raiding does NOT drain it.
-
-export const SPELL_POWER_TIERS: {
-  tier: SpellPowerTier
-  label: string
-  minTasks: number
-  maxTasks: number
-  multiplier: number
-}[] = [
-  { tier: 'NONE', label: 'Dormant', minTasks: 0, maxTasks: 0, multiplier: 0.5 },
-  { tier: 'BASE', label: 'Active', minTasks: 1, maxTasks: 2, multiplier: 1.0 },
-  { tier: 'BOOSTED', label: 'Charged', minTasks: 3, maxTasks: 4, multiplier: 1.5 },
-  { tier: 'MAX', label: 'Overcharged', minTasks: 5, maxTasks: Infinity, multiplier: 2.0 },
-]
+// The tier table lives in @scienium/shared-types so the server, the meter HUD
+// and the lobby badge can never drift apart — it used to be copy-pasted into
+// four files. Re-exported here for the existing import sites.
+export { SPELL_POWER_TIERS }
 
 export function getTierForTaskCount(tasksCompleted: number): {
   tier: SpellPowerTier

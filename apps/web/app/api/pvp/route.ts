@@ -24,6 +24,8 @@ import {
 } from '@/lib/pvp/combat-engine'
 import type { LabType, Spell, BuildingTarget, RaidSession } from '@scienium/shared-types'
 import { shopBuilding } from '@/lib/shop'
+import { spellForBuilding } from '@/lib/pvp/spell-catalog'
+import { teamClassIds, findRandomOpponent, sharesClass } from '@/lib/pvp/matchmaking'
 
 // ─── Tunable balancing values (spec §4, §7) ──────────────────────────────
 
@@ -51,11 +53,16 @@ async function getTeamSpells(
       if (!spell) return null
       return buildSpell(
         spell.id,
-        shopBuilding(b.buildingKey)?.name ?? b.buildingKey,
+        spell.name,
         b.id,
         b.level,
         labType,
         spell.type,
+        {
+          ...spell,
+          icon: spellForBuilding(b.buildingKey)?.icon,
+          lingering: spellForBuilding(b.buildingKey)?.lingering,
+        },
       )
     })
     .filter((s): s is Spell => s !== null)
@@ -77,38 +84,38 @@ async function getTeamBuildings(teamId: string): Promise<BuildingTarget[]> {
     .map((b) => {
       const spell = spellMap.get(b.buildingKey)
       if (!spell) return null
+      const catalog = shopBuilding(b.buildingKey)
       return buildBuildingTarget(
         b.id,
-        shopBuilding(b.buildingKey)?.name ?? b.buildingKey,
+        catalog?.name ?? b.buildingKey,
         b.level,
         b.posX!,
         b.posY!,
         spell.type,
+        catalog?.sprite ?? null,
       )
     })
     .filter((b): b is BuildingTarget => b !== null)
 }
 
-/** Pick a random eligible opponent team from the same class. */
-async function findRandomOpponent(
-  ownTeamId: string,
-  classId: string,
-  shownBaseIds?: string[],
-): Promise<{ id: string; name: string; labType: LabType | null } | null> {
-  const eligible = await db.team.findMany({
-    where: {
-      classId,
-      id: {
-          not: ownTeamId,
-          notIn: shownBaseIds ?? [],
-        },
-      phase: { in: ['working', 'showcase'] },
-      shopBuildings: { some: { posX: { not: null } } },
-    },
-    select: { id: true, name: true, labType: true },
-  })
-  if (eligible.length === 0) return null
-  return eligible[Math.floor(Math.random() * eligible.length)]
+/** Load an opponent's public raid card (base layout + trophies). */
+async function opponentCard(match: {
+  id: string
+  name: string
+  labType: LabType | null
+}) {
+  const [buildings, oppTrophiesRow] = await Promise.all([
+    getTeamBuildings(match.id),
+    db.pvpTrophies.findUnique({
+      where: { teamId: match.id },
+      select: { currentTrophies: true },
+    }),
+  ])
+  return {
+    ...match,
+    buildings,
+    trophies: oppTrophiesRow?.currentTrophies ?? 0,
+  }
 }
 
 // ─── GET /api/pvp ─────────────────────────────────────────────────────────
@@ -121,12 +128,6 @@ export async function GET(req: NextRequest) {
   if (error) return error
 
   const { teamId } = ctx
-
-  // Current team metadata — classId needed for matchmaking
-  const team = await db.team.findUnique({
-    where: { id: teamId },
-    select: { classId: true },
-  })
 
   // Dashboard data — parallelized independent queries
   const [trophiesRow, quota, { tier, multiplier, tasksCompleted }] = await Promise.all([
@@ -149,23 +150,8 @@ export async function GET(req: NextRequest) {
     buildings: BuildingTarget[]
   } | null = null
 
-  if (team?.classId) {
-    const match = await findRandomOpponent(teamId, team.classId)
-    if (match) {
-      const [buildings, oppTrophiesRow] = await Promise.all([
-        getTeamBuildings(match.id),
-        db.pvpTrophies.findUnique({
-          where: { teamId: match.id },
-          select: { currentTrophies: true },
-        }),
-      ])
-      opponent = {
-        ...match,
-        buildings,
-        trophies: oppTrophiesRow?.currentTrophies ?? 0,
-      }
-    }
-  }
+  const match = await findRandomOpponent(teamId, await teamClassIds(teamId))
+  if (match) opponent = await opponentCard(match)
 
   return NextResponse.json({
     trophies: trophiesRow?.currentTrophies ?? 0,
@@ -219,35 +205,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Find a new opponent in the same class — only consume the refind if successful
-    const team = await db.team.findUnique({
-      where: { id: teamId },
-      select: { classId: true },
-    })
-    let opponent: {
-      id: string
-      name: string
-      labType: LabType | null
-      trophies: number
-      buildings: BuildingTarget[]
-    } | null = null
-
-    if (team?.classId) {
-      const match = await findRandomOpponent(teamId, team.classId, shownBaseIds)
-      if (match) {
-        const [buildings, oppTrophiesRow] = await Promise.all([
-          getTeamBuildings(match.id),
-          db.pvpTrophies.findUnique({
-            where: { teamId: match.id },
-            select: { currentTrophies: true },
-          }),
-        ])
-        opponent = {
-          ...match,
-          buildings,
-          trophies: oppTrophiesRow?.currentTrophies ?? 0,
-        }
-      }
-    }
+    const match = await findRandomOpponent(
+      teamId,
+      await teamClassIds(teamId),
+      shownBaseIds,
+    )
+    const opponent = match ? await opponentCard(match) : null
 
     if (!opponent) {
       return NextResponse.json(
@@ -271,19 +234,13 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Scope: the opponent must be a different team in the attacker's own class —
-    // matchmaking only offers those, but this endpoint takes the ID from the
-    // request body, so enforce it here too (cross-class raids would leak base
-    // layouts and drain trophies of arbitrary teams).
-    const [attackerTeam, opponentTeam] = await Promise.all([
-      db.team.findUnique({ where: { id: teamId }, select: { classId: true } }),
-      db.team.findUnique({ where: { id: opponentTeamId }, select: { classId: true } }),
-    ])
+    // Scope: the opponent must be a different team sharing a class with the
+    // attacker — matchmaking only offers those, but this endpoint takes the ID
+    // from the request body, so enforce it here too (cross-class raids would
+    // leak base layouts and drain trophies of arbitrary teams).
     if (
       opponentTeamId === teamId ||
-      !attackerTeam?.classId ||
-      !opponentTeam?.classId ||
-      opponentTeam.classId !== attackerTeam.classId
+      !(await sharesClass(teamId, opponentTeamId))
     ) {
       return NextResponse.json({ error: 'Opponent not raidable' }, { status: 403 })
     }
@@ -303,8 +260,14 @@ export async function POST(req: NextRequest) {
     // Gateways (navigation-only structures) don't have SpellType/level/damage, so
     // the BuildingTarget type needs an `isGateway` flag or a separate array. For now,
     // only TeamShopBuilding positions are included (the core targetable buildings).
-    const defenderBuildings = await getTeamBuildings(opponentTeamId)
-    const attackerSpells = await getTeamSpells(teamId, labType ?? 'biocore')
+    const [defenderBuildings, attackerSpells, defender] = await Promise.all([
+      getTeamBuildings(opponentTeamId),
+      getTeamSpells(teamId, labType ?? 'biocore'),
+      db.team.findUnique({
+        where: { id: opponentTeamId },
+        select: { labType: true },
+      }),
+    ])
 
     const session: RaidSession = {
       id: crypto.randomUUID(),
@@ -313,6 +276,7 @@ export async function POST(req: NextRequest) {
       timeLimit: 15_000,
       spellsAvailable: attackerSpells,
       defenderBase: defenderBuildings,
+      defenderLabType: defender?.labType ?? null,
       startedAt: Date.now(),
     }
 

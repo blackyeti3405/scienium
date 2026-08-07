@@ -3876,3 +3876,45 @@
   .mkt-accordion-flip { transition: none !important; }
   .mkt-lightbox { animation: none !important; }
 }
+
+/* ─── PvP cast effects ──────────────────────────────────────────────────────
+   The spell FX are single PNGs (art/spellfx.py); the motion lives here rather
+   than in sprite sheets, matching how the rest of the app animates. `blast` and
+   `linger` are 2:1 art so they read as lying flat on the isometric ground. */
+
+@keyframes pvp-blast {
+  0%   { transform: scale(0.25); opacity: 0; }
+  22%  { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1.25); opacity: 0; }
+}
+
+@keyframes pvp-impact {
+  0%   { transform: scale(0.4) rotate(0deg); opacity: 0; }
+  18%  { transform: scale(1.15) rotate(8deg); opacity: 1; }
+  100% { transform: scale(0.7) rotate(22deg); opacity: 0; }
+}
+
+/* Held well under half opacity: the cloud has to sit over the buildings it is
+   damaging without hiding their health bars, which the player is reading. */
+@keyframes pvp-linger {
+  0%   { transform: scale(0.3); opacity: 0; }
+  14%  { transform: scale(1); opacity: 0.5; }
+  70%  { transform: scale(1.04); opacity: 0.42; }
+  100% { transform: scale(1.06); opacity: 0; }
+}
+
+.pvp-fx-blast  { animation: pvp-blast 900ms ease-out forwards; }
+.pvp-fx-impact { animation: pvp-impact 520ms ease-out forwards; }
+.pvp-fx-linger { animation: pvp-linger 2600ms ease-out forwards; }
+
+/* Respect a reduced-motion preference: the effect still appears and clears so
+   the player never loses the feedback, it just does not scale or spin. */
+@media (prefers-reduced-motion: reduce) {
+  .pvp-fx-blast,
+  .pvp-fx-impact,
+  .pvp-fx-linger {
+    animation-name: none;
+    opacity: 0.9;
+    transition: opacity 200ms linear;
+  }
+}

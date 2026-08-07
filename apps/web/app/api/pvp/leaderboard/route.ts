@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { db } from '@/lib/db'
+import { teamClassIds, inClasses } from '@/lib/pvp/matchmaking'
 
 /**
  * GET /api/pvp/leaderboard
@@ -29,19 +30,16 @@ export async function GET(req: NextRequest) {
 
   const { teamId } = ctx
 
-  // Get the requesting team's classId
-  const team = await db.team.findUnique({
-    where: { id: teamId },
-    select: { classId: true },
-  })
-  if (!team?.classId) {
+  // ADR-004: class membership is per-student, so scope through members.
+  const classIds = await teamClassIds(teamId)
+  if (classIds.length === 0) {
     return NextResponse.json({ rankings: [] })
   }
 
   // Query all PvpTrophies for teams in the same class, ordered descending
   const rankings = await db.pvpTrophies.findMany({
     where: {
-      team: { classId: team.classId },
+      team: inClasses(classIds),
     },
     orderBy: { currentTrophies: 'desc' },
     include: {

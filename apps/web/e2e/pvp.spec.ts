@@ -37,7 +37,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test'
-import { api } from './api'
+import { api, openGateway } from './api'
 import {
   e2eDb,
   e2eTeamId,
@@ -225,8 +225,10 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   // (02-01). The lobby accessibility proves the gate passes for an eligible team.
 
   test('AC1 — Phase-gate: working+ team accesses PvP lobby and API', async ({ page }) => {
-    await page.goto('/pvp/lobby')
-    await expect(page.locator('h1')).toContainText('Battle Lobby', { timeout: POLL_TIMEOUT })
+    await openGateway(page, 'Battle Arena')
+    await expect(
+      page.getByRole('dialog', { name: 'Battle Arena' }).getByText('Spell Power Meter'),
+    ).toBeVisible({ timeout: POLL_TIMEOUT })
 
     const res = await api.get(page, '/api/pvp')
     expect(res.status()).toBe(200)
@@ -243,7 +245,7 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   // The second team (seeded in beforeAll) has a placed building and working phase.
 
   test('AC2 — Matchmaking returns opponent from same class when eligible', async ({ page }) => {
-    await page.goto('/pvp/lobby')
+    await page.goto('/lab')
 
     const res = await api.get(page, '/api/pvp')
     expect(res.status()).toBe(200)
@@ -261,7 +263,7 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   // Verify opponent has full shape: team name, trophies, buildings.
 
   test('AC3 — Opponent response has full shape: team name, trophies, building targets', async ({ page }) => {
-    await page.goto('/pvp/lobby')
+    await page.goto('/lab')
 
     const res = await api.get(page, '/api/pvp')
     expect(res.status()).toBe(200)
@@ -298,7 +300,7 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   // returns "No opponent found to refind to".
 
   test('AC4 — Refind with shownBaseIds returns no-opponent when no other eligible team exists', async ({ page }) => {
-    await page.goto('/pvp/lobby')
+    await page.goto('/lab')
 
     const getRes = await api.get(page, '/api/pvp')
     const currentOpponent = (await getRes.json()).opponent
@@ -318,7 +320,7 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   // Execute: start_raid -> navigate to BattleScreen -> cast spell -> verify results.
 
   test('AC5 — Full raid E2E: start, navigate to BattleScreen, cast, finalize', async ({ page }) => {
-    await page.goto('/pvp/lobby')
+    await page.goto('/lab')
 
     // 1. Start raid via API
     const { raidId, session } = await startRaid(page)
@@ -379,7 +381,7 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   // Seed quota at max, verify start_raid and refind are blocked.
 
   test('AC6 — Daily quota exhaustion blocks start_raid and refind', async ({ page }) => {
-    await page.goto('/pvp/lobby')
+    await page.goto('/lab')
 
     const todayDate = new Date()
     const utcMidnight = new Date(Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate()))
@@ -415,7 +417,7 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   // (e.g. "3D Printing Shop" not "printing_shop").
 
   test('AC7 — Building and spell names are catalog-sourced, not key-derived', async ({ page }) => {
-    await page.goto('/pvp/lobby')
+    await page.goto('/lab')
 
     // GET /api/pvp returns opponent buildings with catalog names
     const res = await api.get(page, '/api/pvp')
@@ -458,7 +460,7 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   // The E2E team has 0 daily tasks complete -> tier NONE/Dormant (x0.5).
 
   test('AC8 — Spell Power Meter API returns correct tier (0 tasks = Dormant x0.5) and lobby renders meter', async ({ page }) => {
-    await page.goto('/pvp/lobby')
+    await page.goto('/lab')
 
     // GET spell-power API
     const res = await api.get(page, '/api/pvp/spell-power')
@@ -476,10 +478,11 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
     expect(body.multiplier).toBe(0.5)
     expect(body.label).toBe('Dormant')
 
-    // Navigate to lobby and verify meter renders
-    await page.goto('/pvp/lobby')
-    await expect(page.locator('text=Spell Power Meter')).toBeVisible({ timeout: POLL_TIMEOUT })
-    await expect(page.locator('text=Dormant').first()).toBeVisible()
+    // Open the Battle Arena panel (the lobby) and verify the meter renders
+    await openGateway(page, 'Battle Arena')
+    const arena = page.getByRole('dialog', { name: 'Battle Arena' })
+    await expect(arena.getByText('Spell Power Meter')).toBeVisible({ timeout: POLL_TIMEOUT })
+    await expect(arena.getByText('Dormant').first()).toBeVisible()
 
     console.log(`[AC8] Spell Power: tier=${body.tier}, mul=${body.multiplier}, tasks=${body.tasksCompleted}`)
   })
@@ -491,7 +494,7 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   test('AC9 — Trophy delta calculation after raid completion', async ({ page }) => {
     // Clear quota so AC9/AC10 don't exhaust the daily cap (3 raids used by AC5+AC7)
     await e2eDb.pvpRaidQuota.deleteMany({ where: { teamId: e2eTeam } })
-    await page.goto('/pvp/lobby')
+    await page.goto('/lab')
 
     const { raidId, session } = await startRaid(page)
 
@@ -517,7 +520,7 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   // trophyDelta the attacker gained.
 
   test('AC10 — Symmetric defender loss: defender loses same trophyDelta attacker gains', async ({ page }) => {
-    await page.goto('/pvp/lobby')
+    await page.goto('/lab')
 
     // Read pre-raid trophies for both teams
     const attackerBefore = await getTeamTrophies(e2eTeam)

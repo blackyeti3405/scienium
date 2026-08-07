@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
+import { NextResponse } from 'next/server'
 
 // Public routes that don't require authentication
 const isPublicRoute = createRouteMatcher([
@@ -22,10 +23,20 @@ const isPublicRoute = createRouteMatcher([
 ])
 
 export default clerkMiddleware(async (auth, req) => {
-  if (!isPublicRoute(req)) {
-    const { userId, redirectToSignIn } = await auth()
-    if (!userId) return redirectToSignIn()
+  if (isPublicRoute(req)) return
+  const { userId, redirectToSignIn } = await auth()
+  if (userId) return
+
+  // An /api/* request is FETCHED, never navigated to. Answering it with a 307 to
+  // the sign-in page made `fetch` follow the redirect and hand the caller back a
+  // 200 carrying 37KB of sign-in HTML — so `res.ok` was true and every
+  // `res.json()` in the app died on "<!DOCTYPE" ("Failed to execute 'json' on
+  // 'Response'") instead of reading a status it could act on. Answer the caller
+  // in its own content type; only real navigations get redirected.
+  if (req.nextUrl.pathname.startsWith('/api/')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  return redirectToSignIn()
 })
 
 export const config = {

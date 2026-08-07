@@ -5,6 +5,100 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.78.0] — 2026-08-06
+
+PvP goes from "wired up" to actually playable, plus a pre-pilot auth fix. The raid
+system shipped in v0.77.0 but three defects made it unplayable in practice:
+matchmaking read a column that is never written, blast radius was a pixel value
+compared against tile coordinates, and the seeded spell catalog was ignored in
+favour of module constants — so every spell was identical, hit the entire base,
+and no post-ADR-004 team could find an opponent at all. Alongside that: a real
+spell catalog with art, and the account-creation crash that blocked new signups.
+
+### Added
+
+- **Spell catalog** (`lib/pvp/spell-catalog.ts`, spec §11.3) — 11 shared archetypes
+  plus 30 lab signatures placed at shop tiers 1 / 5 / 8 / 9 / 10, so a lab's identity
+  shows on its STARTER building rather than its eighth. Each lab's five signatures
+  span all three types, so no lab lacks an answer to a matchup it never chose (lab
+  type is assigned by topic, not picked). Seed with `pnpm --filter web seed:spells`
+  (`prisma/seed-spells.mjs`). Migration `20260804120000` adds `spells.name` (the
+  spell's own display name) and widens `radius` to `DOUBLE PRECISION` for the
+  catalog's fractional tile radii (1 to 4, in half-tile steps).
+- **Spell art pipeline** (`art/spellfx.py`) — 42 hotbar icons + 9 cast FX generated
+  from 7 procedural forms and 30 emblems, on a three-layer system: shape = behaviour,
+  colour = type, emblem = the granting building. Shape carries behaviour because a
+  raid is 15 seconds and hue is never the only cue (~8% of boys are red-green
+  colourblind; the bar also prints the type word). Resolved through
+  `getSpellIcon()` in `lib/sprites/manifest.ts`.
+- **`lib/pvp/matchmaking.ts`** — one home for PvP class scope: `teamClassIds`,
+  `inClasses`, `sharesClass`, `findRandomOpponent`.
+- **`pnpm --filter web seed:dev-pvp`** (`prisma/seed-dev-pvp.mjs`) — idempotent dev
+  fixture that builds a raidable pairing (Dev School → Dev Class → Dev Rival Lab).
+  Exists because "reset my raid counts" is almost never the real blocker: the quota
+  table starts empty, and a null `User.classId` is what actually prevents a raid.
+  Deliberately kept out of the E2E fixture so it cannot become a candidate opponent
+  for the pvp specs.
+
+### Fixed
+
+- **Account creation failed with `Failed to execute 'json' on 'Response'`.** Middleware
+  answered every unauthenticated request with `redirectToSignIn()`. That is right for a
+  navigation, but `/api/*` is reached by `fetch`, which FOLLOWS the 307 and hands the
+  caller back a **200 carrying the sign-in page's HTML** — so `res.ok` was `true` and
+  `await res.json()` died on `<!DOCTYPE`. `/api/*` now answers `401 {"error":"Unauthorized"}`
+  in JSON; only real navigations redirect. This was one line in one file that cleared the
+  same exposure at ~30 bare `res.json()` call sites across literature, PvP, settings, lab
+  and discovery, and is locked down by `test/middleware-api-401.test.ts`.
+- **No way out of onboarding.** `UserButton` lived only in the lab `StatusStrip` and the
+  teacher layout — both behind a completed profile — so an account that could not finish
+  the form (or picked the wrong account type) was trapped with no sign-out and no way to
+  switch users. The onboarding layout now carries one.
+- **Matchmaking never found anyone.** PvP scoped the opponent pool by `Team.classId`, which
+  ADR-004 made vestigial and which is never written for teams created since. Every
+  post-ADR-004 team matched an empty pool and the lobby read "No opponents found in your
+  class" forever. Class scope is now derived from `User.classId` through team members, the
+  same traversal `teacherOwnsTeam` uses. A lab may span classes, so a team holds a SET of
+  class ids and two teams are "same class" when those sets intersect.
+- **Aiming did nothing.** `SPELL_AOE_RADIUS` was `80` — a pixel value compared against plot
+  coordinates, where `posX`/`posY` are grid cells in [−3, 3]. Every cast therefore covered
+  the entire base. Radius is a tile distance now (catalog values 1–4).
+- **Every spell was identical.** `baseDamage`, `radius` and `cooldownMs` were read from the
+  seeded catalog into three columns the engine then ignored in favour of module constants.
+  The catalog is the source of truth; the constants are fallbacks for pre-catalog rows.
+- **Damage scaling inverted the intended curve.** Flat `+5`/level outpaced nothing; it is now
+  4% of base per level (`scaleDamage()`), deliberately flatter than the building-health curve
+  (`100 + 20 × level`) so a developed base gets relatively tankier and late-game trophy
+  farming is capped. This is the single balance knob.
+- **The spell bar showed the BUILDING's name**, not the spell's — hence the new `spells.name`.
+- **`seed:spells` could never run.** It scraped `spell-catalog.ts` with a regex that required
+  each entry to END at `cooldownMs`, but every entry carries `lingering`/`shape`/`icon` after
+  it — so it parsed zero entries and exited "refusing to run", leaving `spells` empty, which is
+  exactly the state that gives an attacker no spells and a defender no base. It now imports
+  `SPELL_CATALOG` directly (the module's only import is `import type`, which Node's type
+  stripping erases — the same approach `seed-e2e.mjs` uses for `lib/fairs/forms.ts`) and
+  projects to the six persisted columns.
+- **Spell Power tiers had drifted from the spec.** The table was copy-pasted into four files
+  and `docs/SPEC.md` documented 0–9 / 10–19 / 20–29 / 30+ (Dormant / Warming Up / Productive /
+  On Fire), which no build ever implemented and which is unreachable — 30 daily tasks is not a
+  thing a student does. `SPELL_POWER_TIERS` in `packages/shared-types/src/pvp.ts` is now the
+  one definition, carrying its own tier colours, and the spec records the shipped thresholds.
+
+### Changed
+
+- Onboarding submits through the existing `requestJson`/`ApiError` client helper instead of a
+  bare `fetch` + `res.json()`, and a 401 sends the user to sign-in rather than showing a
+  dead-end error it cannot recover from.
+- `RaidSession` gains `defenderLabType`; `BuildingTarget` gains `sprite`, so a raid renders the
+  defender's real base art instead of generic blocks.
+- `/api/pvp` loads the opponent card through one shared `opponentCard()` helper rather than the
+  same three queries inlined at two call sites.
+
+### Removed
+
+- **`/pvp/lobby`** — a near-identical copy of `components/pvp/PvpFeature.tsx`, which is reached
+  through the Battle Arena gateway and is now the only lobby. No live references remained.
+
 ## [0.77.0] — 2026-07-30
 
 Integration release: merges `matthew/pvp-system` (the full PvP raid system) and

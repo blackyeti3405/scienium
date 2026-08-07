@@ -66,11 +66,15 @@ Fair matching/events, rubric self-assessment and scoring, ISEF forms, public sho
 - UI: `components/fair`, `components/showcase` · Domain: `lib/fairs` (seeding is batched/single-flight), `lib/showcase*`
 - Models: `Fair`, `FairEvent`, `FairUserAssociation`, `Rubric*`, `IsefCategory`, `FormsCatalog`, `TeamFormStatus`, `Showcase*`
 
-## PvP (planned minigame)
+## PvP (Battle Arena)
 
-Skeleton only — routes and schema exist, gameplay not built.
+Playable since v0.78.0. Server-authoritative combat; the client only renders returned state.
 
-- Routes: `app/(dashboard)/pvp`, `api/pvp` · Models: `Spell`, `PvpRaid`, `PvpTrophies`, `PvpRaidQuota`
+- Routes: `app/(dashboard)/pvp/leaderboard`, `app/(dashboard)/pvp/battle/[id]`, `api/pvp` (lobby payload, `refind`/`start_raid`, `[battleId]/action`, `leaderboard`)
+- UI: `components/pvp` (`PvpFeature` IS the lobby — a Battle Arena gateway overlay, not a route)
+- Domain: `lib/pvp/matchmaking` (class scope via `User.classId` through members, never the vestigial `Team.classId`), `lib/pvp/spell-catalog` (seeded by `prisma/seed-spells.mjs`), `lib/pvp/combat-engine`, `lib/pvp/spell-power`
+- Art: `art/spellfx.py` → `public/sprites/spells` + `public/sprites/fx`, resolved via `getSpellIcon()`
+- Models: `Spell`, `PvpRaid`, `PvpTrophies`, `PvpRaidQuota`, `TeamDailyTaskDay`
 
 ## Teacher tools
 

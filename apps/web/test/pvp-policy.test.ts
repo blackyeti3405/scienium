@@ -19,21 +19,22 @@ const RAID_A = 'raid_team_a'
 const RAID_B = 'raid_team_b'
 const CLASSMATE = 'teamA2'
 
+const CLASSMATE_USER = 'userA2'
+
 beforeEach(() => {
   h = routeHarness()
-  // The routes read Team.classId as a scalar; the fixture teams only carry
-  // class membership on their members — decorate the scalar in place.
-  for (const t of h.rows('team')) {
-    t.classId = t.id === h.ids.teamA ? h.ids.classA : h.ids.classB
-  }
-  // A classmate of Team A — the only legitimate raid target.
+  // Class scope is per-STUDENT (ADR-004) and PvP now derives it from members,
+  // so the fixture needs real membership — `Team.classId` is vestigial and is
+  // deliberately NOT set here. A route that regresses to reading the scalar
+  // fails these tests.
   h.seed('team', {
     id: CLASSMATE,
     name: 'Team A2',
     phase: 'showcase',
     labType: 'volt_lab',
-    classId: h.ids.classA,
-    members: [],
+    members: [
+      { userId: CLASSMATE_USER, user: { id: CLASSMATE_USER, classId: h.ids.classA } },
+    ],
   })
   const raid = (id: string, attackerTeamId: string) => ({
     id,
@@ -48,12 +49,20 @@ beforeEach(() => {
   h.seed('pvpTrophies', {
     teamId: h.ids.teamA,
     currentTrophies: 12,
-    team: { classId: h.ids.classA, name: 'Team A', labType: 'volt_lab' },
+    team: {
+      name: 'Team A',
+      labType: 'volt_lab',
+      members: [{ userId: h.ids.studentA, user: { id: h.ids.studentA, classId: h.ids.classA } }],
+    },
   })
   h.seed('pvpTrophies', {
     teamId: h.ids.teamB,
     currentTrophies: 99,
-    team: { classId: h.ids.classB, name: 'Team B', labType: 'volt_lab' },
+    team: {
+      name: 'Team B',
+      labType: 'volt_lab',
+      members: [{ userId: h.ids.studentB, user: { id: h.ids.studentB, classId: h.ids.classB } }],
+    },
   })
 })
 

@@ -613,7 +613,10 @@ The system remains a daily engagement loop **separate from project work**: rewar
 - Each spell carries the **type** of its building — Empirical, Theoretical, or Applied (the Spell Type column in §9.3).
 
 **Spell effects (v1):**
-- **All spells are currently the same general damage spell**: a circular AOE that deals instant damage to every building within its radius at the targeted location — identical behavior regardless of which building granted it or its type.
+- Every spell is a circular AOE that deals **instant** damage to every building within its radius of the targeted cell. Damage, radius and cooldown come per-spell from the catalog (`lib/pvp/spell-catalog.ts`, mirroring the "Spells list scienium" design sheet).
+- **Signatures are spread across the progression, not stacked at the end.** Each lab grants five spells unique to it — at shop tiers 1, 5, 8, 9 and 10 — so a lab's identity is visible from its STARTER building rather than its eighth. Shared archetypes fill tiers 2–4, 6 and 7. All five of a lab's signatures span the three types, so no lab lacks an answer to a matchup it never chose (lab type is assigned by topic, not picked).
+- **Radius is measured in PLOT TILES** (`lib/plot.ts` grid units, the plot spans [−3, 3]²), not pixels — building positions in a raid ARE plot cells. Catalog radii run 1 (precise) to 4 (the premium Axiom blast).
+- **Lingering damage and side effects are designed but NOT yet implemented.** The sheet specifies both; the engine resolves every spell as a single instant hit and ignores side effects until that work lands.
 - Differentiated per-type / per-building effects are deliberately deferred; effect design is significant creative work and is being brainstormed separately (§18). Type still matters through the effectiveness multiplier (§11.4).
 
 **How spells are used in a raid:**
@@ -671,14 +674,21 @@ All attacker spell damage in a raid is scaled by a **team-scoped Spell Power mul
 
 | Tier | Tasks Completed | Multiplier | Label |
 |------|----------------|------------|-------|
-| 0 | 0–9 | 0.5× | Dormant |
-| 1 | 10–19 | 1.0× | Warming Up |
-| 2 | 20–29 | 1.5× | Productive |
-| 3 | 30+ | 2.0× | On Fire |
+| `NONE` | 0 | 0.5× | Dormant |
+| `BASE` | 1–2 | 1.0× | Active |
+| `BOOSTED` | 3–4 | 1.5× | Charged |
+| `MAX` | 5+ | 2.0× | Overcharged |
+
+> The thresholds above are the shipped ones. This table previously read 0–9 /
+> 10–19 / 20–29 / 30+ with the labels Dormant / Warming Up / Productive / On
+> Fire, which no build ever implemented — 30 daily tasks is not reachable by a
+> student. The table now lives in ONE place in code
+> (`SPELL_POWER_TIERS` in `packages/shared-types/src/pvp.ts`); it was previously
+> copy-pasted into four files, which is how this drift went unnoticed.
 
 **Mechanics:**
 - The tier is computed fresh on each GET `/api/pvp/spell-power` or GET `/api/pvp` call by querying `team_daily_task_days` rows for the team.
-- Tiers are rounded down (floor): a team with 19 tasks still at tier 1 (Warming Up, 1.0×).
+- Tiers are rounded down (floor): a team with 4 tasks is still `BOOSTED` (Charged, 1.5×).
 - The `team_daily_task_days` table is a per-day rollup already populated by the daily Field Codex and Project Log engagement pillars — no new writes needed; the PvP system reads existing data.
 - The spell power multiplier is included in the `resolveCast` damage calculation: `totalDamage = baseDamage × typeEffectiveness × spellPowerMultiplier`, with each building's resulting health clamped to [0, maxHealth].
 - The tier is shown on the PvP lobby as a visual badge (color-coded by tier) so students see their current multiplier before raiding, encouraging daily engagement.
@@ -687,7 +697,7 @@ All attacker spell damage in a raid is scaled by a **team-scoped Spell Power mul
 
 ### 11.7 Matchmaking
 
-- Matchmaking is **randomized**: pressing the single **Raid** button teleports the player directly into a raid against a randomly selected base — no manual opponent selection. The pool is scoped to the class and to teams that have reached the `working` phase (i.e., that actually have bases).
+- Matchmaking is **randomized**: pressing the single **Raid** button teleports the player directly into a raid against a randomly selected base — no manual opponent selection. The pool is scoped to the class and to teams that have reached the `working` phase (i.e., that actually have bases). **Class scope is derived from `User.classId` through team members** (ADR-004), never from the vestigial `Team.classId` scalar — see `lib/pvp/matchmaking.ts`.
 - If the player doesn't want to raid the base they were matched into, a **"refind"** rerolls them into a different randomly selected base.
 - Refinds are **limited** — a capped number per raid session or per day (tunable). Once out of refinds, the player must either raid the currently shown base or exit without raiding (exiting does not consume a raid from the daily cap).
 
@@ -695,9 +705,12 @@ All attacker spell damage in a raid is scaled by a **team-scoped Spell Power mul
 
 **Schema (replaces the earlier characters/moves battle schema):**
 ```
-spells             id, building_id (1:1 with the economy-building catalog),
+spells             id, building_key (1:1 with the lib/shop.ts economy catalog),
+                   name (the spell's own display name, not the building's),
                    type (empirical | theoretical | applied),
-                   base_damage, radius, cooldown_ms      # per-level scaling in code
+                   base_damage, radius (TILES, float), cooldown_ms
+                   # base_damage is the level-1 value; scaleDamage() applies the
+                   # per-level curve. Seed with `pnpm --filter web seed:spells`.
 pvp_raids          id, attacker_team_id, defender_team_id, started_at, ended_at,
                    percent_destroyed, trophies_delta, raid_log_json
 pvp_trophies       team_id, current_trophies, updated_at

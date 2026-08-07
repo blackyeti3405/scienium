@@ -306,3 +306,52 @@ export const UI_SPRITES: Record<UiSpriteKey, SpriteEntry> = {
     placeholderColor: '#f0902a',
   },
 }
+
+// ─── PvP spell icons + cast FX ────────────────────────────────────────────────
+// Authored by `art/spellfx.py`. Three layers: shape = behaviour, colour = type,
+// emblem = the building that granted it. The slug lives on the spell catalog
+// (`lib/pvp/spell-catalog.ts`), so nothing here has to know about spells.
+
+const SPELL_ICON_SRC = 32
+const SPELL_ICON_SCALE = 2
+
+/** Fallback tint per type, used when a PNG is missing (matches TYPE_COLORS). */
+const TYPE_PLACEHOLDER: Record<string, string> = {
+  empirical: '#3d8fd6',
+  theoretical: '#8a5cd6',
+  applied: '#d69432',
+}
+
+/**
+ * Hotbar icon for a spell. `slug` is `SpellCatalogEntry.icon` — either
+ * `sig_<buildingKey>` (signature) or `<shape>_<type>` (shared archetype).
+ */
+export function getSpellIcon(slug: string, type: string): SpriteEntry {
+  return {
+    path: versioned(`/sprites/spells/${slug}.png`),
+    srcWidth: SPELL_ICON_SRC,
+    srcHeight: SPELL_ICON_SRC,
+    scale: SPELL_ICON_SCALE,
+    description: `${slug.replace(/^sig_/, '').replace(/_/g, ' ')} spell icon`,
+    placeholderColor: TYPE_PLACEHOLDER[type] ?? '#8a5cd6',
+  }
+}
+
+/**
+ * In-world cast effect. `blast` and `linger` are 2:1 (64×32) so they lie flat on
+ * the isometric ground plane; `impact` is a square screen-space flash. All are
+ * stills — the battle screen animates them with CSS.
+ */
+export type SpellFxKind = 'blast' | 'impact' | 'linger'
+
+export function getSpellFx(kind: SpellFxKind, type: string): SpriteEntry {
+  const wide = kind !== 'impact'
+  return {
+    path: versioned(`/sprites/fx/${kind}_${type}.png`),
+    srcWidth: wide ? 64 : 32,
+    srcHeight: 32,
+    scale: SPELL_ICON_SCALE,
+    description: `${kind} cast effect`,
+    placeholderColor: TYPE_PLACEHOLDER[type] ?? '#8a5cd6',
+  }
+}

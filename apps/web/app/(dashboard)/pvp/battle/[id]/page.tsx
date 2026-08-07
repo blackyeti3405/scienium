@@ -2,16 +2,18 @@
  * BattleScreen — playable raid UI for the PvP system.
  *
  * Layout (top-to-bottom):
- *   HUD bar (timer + meter tier)  →  Defender grid (TileBackground + building
- *   sprites + health bars + type labels)  →  Type-cycle [?] tooltip  →
- *   Spell bar (selectable spells with cooldown state)
+ *   HUD bar (timer + meter tier)  →  Defender base, drawn on the real isometric
+ *   plot at each building's own (posX, posY) via lib/plot.ts  →  Type-cycle [?]
+ *   tooltip  →  Spell bar (selectable spells with per-spell cooldown state)
  *
  * Cast flow:
  *   1. Click spell in spell bar → gold highlight ring
- *   2. Hover defender grid → buildings within AOE get green overlay
- *   3. Click highlighted building → POST /api/pvp/{battleId}/action
+ *   2. Hover the base → a tile-radius ring shows the blast; every building
+ *      inside it highlights green
+ *   3. Click any cell → POST /api/pvp/{battleId}/action
  *   4. Server response updates local defenderBase state (no client damage compute)
- *   5. Cast spell enters 1.5s cooldown (client-side visual only)
+ *   5. That spell enters ITS OWN cooldown (spell.castDelay, 2s–6s by catalog);
+ *      the server enforces the same per-spell window
  *
  * When timer expires OR all buildings destroyed, server auto-completes the raid
  * and the client transitions to the ResultsScreen overlay.
@@ -27,18 +29,20 @@ import { useRouter } from 'next/navigation'
 import { TileBackground } from '@/components/lab/TileBackground'
 import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
 import { TypeCycleTooltip, TYPE_COLORS } from '@/lib/pvp/type-cycle'
-import type { BuildingTarget, Spell, RaidSession, RaidResult } from '@scienium/shared-types'
+import { cellToScreen, STEP_X, STEP_Y, CLUSTER_Y } from '@/lib/plot'
+import { getBuildingSprite, getSpellIcon, getSpellFx } from '@/lib/sprites/manifest'
+import { SPELL_POWER_TIERS } from '@scienium/shared-types'
+import type { BuildingTarget, Spell, RaidSession, RaidResult, LabType } from '@scienium/shared-types'
 
-// ─── Cooldown duration (client-side visual only; server enforces 1.5s) ──────
-
-const COOLDOWN_MS = 1500
 const RAID_TIME_LIMIT_MS = 15_000
 
-// ─── Grid constants (matching v0.23.0 TILE_CELL) ────────────────────────────
-
+/** Rendered footprint of one building tile, in px. */
 const TILE_CELL = 64
-const GRID_COLS = 6
-const GRID_ROWS = 4
+
+/** How long a cast effect stays on the plot before it is culled. */
+const CAST_FX_MS = 900
+/** A lingering spell's cloud hangs around noticeably longer than a burst. */
+const LINGER_FX_MS = 2600
 
 // ─── Keys ───────────────────────────────────────────────────────────────────
 
@@ -46,7 +50,14 @@ const SESSION_STORAGE_KEY = 'pvp_active_raid_session'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function distance(x1: number, y1: number, x2: number, y2: number): number {
+/**
+ * Distance between two plot cells, in TILES. Building positions and the cast
+ * point are both plot coordinates (lib/plot.ts gx/gy), and `spell.aoeRadius` is
+ * a tile radius, so this compares like with like. It previously compared tile
+ * coordinates against an 80-PIXEL radius, which meant every building on the plot
+ * was always inside every blast.
+ */
+function tileDistance(x1: number, y1: number, x2: number, y2: number): number {
   return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 }
 
@@ -67,7 +78,8 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   const [spellsAvailable, setSpellsAvailable] = useState<Spell[]>([])
   // Server-provided attack multiplier (display only — the server applies the
   // real multiplier per cast)
-  const [powerMul, setPowerMul] = useState(1.0)
+  const [powerMul, setPowerMul] = useState<number | null>(null)
+  const [defenderLabType, setDefenderLabType] = useState<LabType | null>(null)
 
   // Raid temporal state
   const [startedAt, setStartedAt] = useState<number>(0)
@@ -80,6 +92,13 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   const [cooldownUntil, setCooldownUntil] = useState<Record<string, number>>({})
   const [hoveredTarget, setHoveredTarget] = useState<{ x: number; y: number } | null>(null)
   const [casting, setCasting] = useState(false)
+
+  // Live cast effects on the plot. Each is a still PNG that CSS expands and
+  // fades; `key` is monotonic so re-casting the same cell restarts the animation.
+  const [casts, setCasts] = useState<
+    { key: number; x: number; y: number; type: string; radius: number; lingering: boolean }[]
+  >([])
+  const castSeq = useRef(0)
 
   // Prevents duplicate finalize calls when both timer-expiry and all-destroyed
   // effects fire in the same tick.
@@ -99,6 +118,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           setDefenderBase(session.defenderBase)
           setSpellsAvailable(session.spellsAvailable)
           setStartedAt(session.startedAt)
+          setDefenderLabType(session.defenderLabType ?? null)
 
           // Clean up storage immediately so reloads don't reuse stale data
           sessionStorage.removeItem(SESSION_STORAGE_KEY)
@@ -174,23 +194,44 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           setDefenderBase(data.defenderBase)
         }
 
+        // Show the blast where it actually landed, sized to the spell's radius.
+        const cast = spellsAvailable.find((sp) => sp.id === spellId)
+        if (cast) {
+          const key = ++castSeq.current
+          setCasts((prev) => [
+            ...prev,
+            {
+              key,
+              x,
+              y,
+              type: cast.type,
+              radius: cast.aoeRadius,
+              lingering: cast.lingering === true,
+            },
+          ])
+          window.setTimeout(
+            () => setCasts((prev) => prev.filter((c) => c.key !== key)),
+            cast.lingering ? LINGER_FX_MS : CAST_FX_MS,
+          )
+        }
+
         // Check if raid ended
         if (data.ended && data.result) {
           setEnded(true)
           setResult(data.result)
         } else {
-          // Start cooldown for the cast spell
-          setCooldownUntil((prev) => ({
-            ...prev,
-            [spellId]: Date.now() + COOLDOWN_MS,
-          }))
+          // Start this spell's own cooldown — cooldowns are per-spell and come
+          // from the catalog (2s generic … 6s signature), not one global 1.5s.
+          const cd =
+            spellsAvailable.find((s) => s.id === spellId)?.castDelay ?? 1500
+          setCooldownUntil((prev) => ({ ...prev, [spellId]: Date.now() + cd }))
         }
       } catch (err: any) {
         setError(err.message)
       }
       setCasting(false)
     },
-    [raidId, casting, ended],
+    [raidId, casting, ended, spellsAvailable],
   )
 
   // ── Spell selection ─────────────────────────────────────────────────────
@@ -220,14 +261,12 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
   const allDestroyed =
     defenderBase.length > 0 && defenderBase.every((b) => b.currentHealth <= 0)
 
-  // ── Power tier label (v1: linear fill) ──────────────────────────────────
+  // ── Power tier label (shared table — see @scienium/shared-types) ────────
 
-  const tierLabel = (() => {
-    if (powerMul >= 2.0) return 'Overcharged'
-    if (powerMul >= 1.5) return 'Charged'
-    if (powerMul >= 1.0) return 'Active'
-    return 'Dormant'
-  })()
+  const tierLabel =
+    powerMul === null
+      ? '…'
+      : (SPELL_POWER_TIERS.find((t) => t.multiplier === powerMul)?.label ?? '…')
 
   // ── Finalize helper (shared by timer-expiry + all-destroyed effects) ──
 
@@ -289,10 +328,10 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
         <p className="text-slate-300 text-lg font-semibold">Battle data not found</p>
         <p className="text-slate-500 text-sm">This raid may have expired or the session data was lost.</p>
         <button
-          onClick={() => router.push('/lab')}
+          onClick={() => router.push('/lab?feature=pvp')}
           className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
         >
-          Return to Lobby
+          Return to Battle Arena
         </button>
       </div>
     )
@@ -365,10 +404,10 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
 
           {/* Return to Lobby */}
           <button
-            onClick={() => router.push('/lab')}
+            onClick={() => router.push('/lab?feature=pvp')}
             className="w-full px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors"
           >
-            Return to Lobby
+            Return to Battle Arena
           </button>
         </div>
       </div>
@@ -399,7 +438,7 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-700 text-amber-400">
             {tierLabel}
           </span>
-          <span className="text-xs text-slate-500">{powerMul}x</span>
+          <span className="text-xs text-slate-500">{powerMul === null ? '…' : `${powerMul}x`}</span>
         </div>
       </div>
 
@@ -410,36 +449,58 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
           <TileBackground seed={42} />
         </div>
 
-        {/* Defender buildings at z-1 */}
+        {/* Defender buildings at z-1, laid out on the real isometric plot.
+            `absolute inset-0` + a zero-size origin gives a stable cluster centre
+            — percentage offsets resolved against a flex box that collapses. */}
         <div
           ref={gridRef}
-          className="relative z-10 w-full h-full"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(${GRID_COLS}, ${TILE_CELL}px)`,
-            gridTemplateRows: `repeat(${GRID_ROWS}, ${TILE_CELL}px)`,
-            gap: 0,
-            placeContent: 'center',
-          }}
+          className="absolute inset-0 z-10 flex items-center justify-center"
           role="grid"
           aria-label="Defender base"
         >
-          {defenderBase.map((b) => {
+        <div className="relative" style={{ width: 0, height: 0 }}>
+          {/* Blast preview: a tile-radius ring centred on the hovered cell. */}
+          {hoveredTarget && selectedSpellId && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute rounded-full border-2 border-[#5ef08a]/70 bg-[#5ef08a]/10"
+              style={{
+                left: cellToScreen(hoveredTarget.x, hoveredTarget.y).dx,
+                top: cellToScreen(hoveredTarget.x, hoveredTarget.y).dy + CLUSTER_Y,
+                width: aoeRadius * STEP_X * 2,
+                height: aoeRadius * STEP_Y * 2,
+                transform: 'translate(-50%, -50%)',
+              }}
+            />
+          )}
+
+          {[...defenderBase]
+            // Iso draw order: further cells first so nearer buildings overlap them.
+            .sort(
+              (a, b) =>
+                a.position.x + a.position.y - (b.position.x + b.position.y),
+            )
+            .map((b) => {
             const destroyed = b.currentHealth <= 0
             const hpPct = Math.max(0, (b.currentHealth / b.maxHealth) * 100)
-            const isHoveredTarget =
-              hoveredTarget &&
-              selectedSpellId &&
-              distance(hoveredTarget.x, hoveredTarget.y, b.position.x, b.position.y) <= aoeRadius
-            const isThisBuildingHovered =
-              hoveredTarget?.x === b.position.x && hoveredTarget?.y === b.position.y
+            const inBlast =
+              hoveredTarget !== null &&
+              selectedSpellId !== null &&
+              tileDistance(
+                hoveredTarget.x,
+                hoveredTarget.y,
+                b.position.x,
+                b.position.y,
+              ) <= aoeRadius
+            const { dx, dy } = cellToScreen(b.position.x, b.position.y)
 
             return (
               <button
                 key={b.buildingId}
                 onClick={() => {
-                  // Only cast if a spell is selected and this building is in range
-                  if (selectedSpellId && isHoveredTarget) {
+                  // Cast at THIS cell — everything within the spell's tile radius
+                  // takes damage, so clicking a building in the blast is aiming.
+                  if (selectedSpellId) {
                     handleCast(selectedSpellId, b.position.x, b.position.y)
                   }
                 }}
@@ -449,31 +510,59 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
                 onBlur={() => setHoveredTarget(null)}
                 disabled={destroyed}
                 className={`
-                  relative flex flex-col items-center justify-end p-1
+                  absolute flex flex-col items-center justify-end p-1
                   transition-all duration-200 outline-none
                   ${destroyed ? 'opacity-40 cursor-default' : 'cursor-pointer'}
-                  ${isHoveredTarget && selectedSpellId ? 'ring-2 ring-[#5ef08a] bg-[#5ef08a]/10' : ''}
-                  ${isThisBuildingHovered && selectedSpellId ? 'ring-2 ring-[#5ef08a]' : ''}
+                  ${inBlast ? 'ring-2 ring-[#5ef08a] bg-[#5ef08a]/10' : ''}
                   focus-visible:ring-2 focus-visible:ring-amber-400
                 `}
                 style={{
                   width: TILE_CELL,
                   height: TILE_CELL,
+                  left: dx,
+                  top: dy + CLUSTER_Y,
+                  transform: 'translate(-50%, -50%)',
+                  zIndex: 10 + b.position.x + b.position.y,
                 }}
                 aria-label={`${b.name}, ${b.type} building, HP ${Math.round(b.currentHealth)}/${b.maxHealth}`}
                 tabIndex={0}
               >
-                {/* Building placeholder (pixel-art styled block) */}
-                <div
-                  className={`w-12 h-12 rounded-sm border-2 flex items-center justify-center text-[8px] font-semibold pixel-art ${
-                    destroyed
-                      ? 'border-red-900/60 bg-red-900/30 text-red-400'
-                      : 'border-slate-600/50 bg-slate-700/40 text-slate-300'
-                  }`}
-                  style={{ imageRendering: 'pixelated' }}
-                >
-                  {destroyed ? 'X' : b.name.charAt(0).toUpperCase()}
-                </div>
+                {/* The defender's actual building sprite — same art the lab
+                    scene renders, picked by the defender's lab skin and the
+                    building's upgrade stage. Falls back to an initial tile for
+                    raids snapshotted before `sprite` existed. */}
+                {(() => {
+                  const entry =
+                    defenderLabType && b.sprite
+                      ? getBuildingSprite(defenderLabType, b.sprite, b.level)
+                      : null
+                  if (!entry) {
+                    return (
+                      <div
+                        className={`w-12 h-12 rounded-sm border-2 flex items-center justify-center text-[8px] font-semibold pixel-art ${
+                          destroyed
+                            ? 'border-red-900/60 bg-red-900/30 text-red-400'
+                            : 'border-slate-600/50 bg-slate-700/40 text-slate-300'
+                        }`}
+                        style={{ imageRendering: 'pixelated' }}
+                      >
+                        {destroyed ? 'X' : b.name.charAt(0).toUpperCase()}
+                      </div>
+                    )
+                  }
+                  return (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={entry.path}
+                      alt=""
+                      aria-hidden
+                      width={TILE_CELL}
+                      height={TILE_CELL}
+                      className={destroyed ? 'grayscale brightness-50' : ''}
+                      style={{ imageRendering: 'pixelated', objectFit: 'contain' }}
+                    />
+                  )
+                })()}
 
                 {/* Health bar */}
                 <div className="w-full px-1 mt-1">
@@ -506,6 +595,68 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
               </button>
             )
           })}
+
+          {/* ═══ Cast FX ═══ — stills scaled/faded by CSS (globals.css), sized
+              to the spell's tile radius so the blast matches what it damaged. */}
+          {casts.map((c) => {
+            const { dx, dy } = cellToScreen(c.x, c.y)
+            const w = c.radius * STEP_X * 2
+            const h = c.radius * STEP_Y * 2
+            const ground = getSpellFx(c.lingering ? 'linger' : 'blast', c.type)
+            const flash = getSpellFx('impact', c.type)
+            return (
+              <div
+                key={c.key}
+                aria-hidden
+                className="pointer-events-none absolute"
+                style={{
+                  // Zero-size anchor ON the cell; both children are positioned
+                  // relative to it. Centring the wrapper with translate(-50%)
+                  // AND offsetting the children double-shifts the blast off target.
+                  left: dx,
+                  top: dy + CLUSTER_Y,
+                  width: 0,
+                  height: 0,
+                  zIndex: 60,
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={ground.path}
+                  alt=""
+                  className={c.lingering ? 'pvp-fx-linger' : 'pvp-fx-blast'}
+                  style={{
+                    position: 'absolute',
+                    left: -w / 2,
+                    top: -h / 2,
+                    width: w,
+                    height: h,
+                    // Tailwind preflight sets `img { max-width: 100% }`, and this
+                    // image's containing block is the zero-width anchor above —
+                    // without this the blast collapses to 0px wide.
+                    maxWidth: 'none',
+                    imageRendering: 'pixelated',
+                  }}
+                />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={flash.path}
+                  alt=""
+                  className="pvp-fx-impact"
+                  style={{
+                    position: 'absolute',
+                    left: -24,
+                    top: -24,
+                    width: 48,
+                    height: 48,
+                    maxWidth: 'none',
+                    imageRendering: 'pixelated',
+                  }}
+                />
+              </div>
+            )
+          })}
+        </div>
         </div>
       </div>
 
@@ -550,17 +701,30 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
                     }
                     focus-visible:ring-2 focus-visible:ring-amber-400
                   `}
-                  style={{ minWidth: 72, maxWidth: 80 }}
+                  style={{ minWidth: 96, maxWidth: 132 }}
                   aria-label={`${spell.name} (${spell.type}) — ${spell.damage} damage`}
                   tabIndex={0}
                 >
+                  {/* Icon: shape = behaviour, colour = type, emblem = source building */}
+                  {spell.icon && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={getSpellIcon(spell.icon, spell.type).path}
+                      alt=""
+                      aria-hidden
+                      width={40}
+                      height={40}
+                      style={{ imageRendering: 'pixelated' }}
+                    />
+                  )}
+
                   {/* Spell name (pixel font) */}
                   <span
-                    className="text-white truncate max-w-full"
+                    className="text-white text-center leading-tight"
                     style={{
                       fontFamily: 'var(--font-pixel), monospace',
-                      fontSize: '10px',
-                      lineHeight: 1.4,
+                      fontSize: '8px',
+                      lineHeight: 1.5,
                     }}
                   >
                     {spell.name}

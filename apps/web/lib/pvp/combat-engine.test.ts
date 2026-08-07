@@ -18,6 +18,10 @@ import {
   MAX_TROPHY_LOSS,
   TROPHY_LOSS_TODO,
   SPELL_BASE_DAMAGE,
+  SPELL_AOE_RADIUS,
+  SPELL_DAMAGE_PER_LEVEL,
+  scaleDamage,
+  buildSpell,
 } from './combat-engine'
 import type { RaidSession, RaidCastEvent, BuildingTarget, Spell } from '@scienium/shared-types'
 
@@ -30,7 +34,7 @@ function makeSpell(overrides: Partial<Spell> = {}): Spell {
     buildingId: 'building-1',
     level: 1,
     damage: SPELL_BASE_DAMAGE,
-    aoeRadius: 80,
+    aoeRadius: SPELL_AOE_RADIUS,
     castDelay: 1500,
     labType: 'biocore',
     type: 'empirical',
@@ -67,19 +71,23 @@ function makeSession(overrides: Partial<RaidSession> = {}): RaidSession {
 // ─── resolveCast ───────────────────────────────────────────────────────────
 
 describe('resolveCast', () => {
-  it('damages buildings within AOE radius, spares those outside', () => {
-    const spell = makeSpell({ type: 'empirical', damage: 25, aoeRadius: 80 })
+  // Positions are PLOT CELLS (lib/plot.ts gx/gy, each in [-3, 3]) and aoeRadius
+  // is a tile distance. This used to be an 80-PIXEL radius compared against
+  // those cell coordinates, so the blast always covered the whole plot — the
+  // far corner below is the case that regressed.
+  it('damages buildings within AOE radius (tiles), spares those outside', () => {
+    const spell = makeSpell({ type: 'empirical', damage: 25, aoeRadius: 1.5 })
     const buildingIn = makeBuilding({
       buildingId: 'bldg-in',
       currentHealth: 120,
       maxHealth: 120,
-      position: { x: 40, y: 0 }, // distance = 40 < 80
+      position: { x: 1, y: 0 }, // 1 tile away < 1.5
     })
     const buildingOut = makeBuilding({
       buildingId: 'bldg-out',
       currentHealth: 120,
       maxHealth: 120,
-      position: { x: 200, y: 200 }, // distance > 80
+      position: { x: 3, y: 3 }, // opposite corner of the plot, ~4.2 tiles
     })
     const session = makeSession({
       spellsAvailable: [spell],
@@ -279,5 +287,49 @@ describe('trophy constants are exported', () => {
 
   it('MAX_TROPHY_LOSS is exported and equals 10', () => {
     expect(MAX_TROPHY_LOSS).toBe(10)
+  })
+})
+// ─── Catalog-driven spell stats ────────────────────────────────────────────
+// buildSpell used to ignore the catalog row entirely and hand every spell the
+// same constants, which left baseDamage/radius/cooldownMs dead columns.
+
+describe('buildSpell', () => {
+  const catalog = { baseDamage: 65, radius: 1, cooldownMs: 3000 }
+
+  it('takes damage, radius and cooldown from the catalog row', () => {
+    const s = buildSpell('s1', 'Drill Strike', 'b1', 1, 'volt_lab', 'applied', catalog)
+    expect(s.damage).toBe(65)
+    expect(s.aoeRadius).toBe(1)
+    expect(s.castDelay).toBe(3000)
+    expect(s.name).toBe('Drill Strike')
+  })
+
+  it('falls back to the module constants when no catalog row is given', () => {
+    const s = buildSpell('s1', 'Legacy', 'b1', 1, 'volt_lab', 'applied')
+    expect(s.damage).toBe(SPELL_BASE_DAMAGE)
+    expect(s.aoeRadius).toBe(SPELL_AOE_RADIUS)
+  })
+
+  it('scales damage with building level and never below the level-1 value', () => {
+    const l1 = buildSpell('s', 'x', 'b', 1, 'volt_lab', 'applied', catalog).damage
+    const l15 = buildSpell('s', 'x', 'b', 15, 'volt_lab', 'applied', catalog).damage
+    expect(l1).toBe(65)
+    expect(l15).toBeGreaterThan(l1)
+    // Flatter than the building-health curve (120 -> 400 HP, 3.33x) on purpose.
+    expect(l15 / l1).toBeLessThan(400 / 120)
+  })
+})
+
+describe('scaleDamage', () => {
+  it('is identity at level 1', () => {
+    expect(scaleDamage(30, 1)).toBe(30)
+  })
+
+  it('adds SPELL_DAMAGE_PER_LEVEL of base per level above 1', () => {
+    expect(scaleDamage(100, 15)).toBeCloseTo(100 * (1 + SPELL_DAMAGE_PER_LEVEL * 14), 6)
+  })
+
+  it('never goes below base for out-of-range levels', () => {
+    expect(scaleDamage(30, 0)).toBe(30)
   })
 })

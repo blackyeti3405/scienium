@@ -2,30 +2,20 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-
-// ─── Tier display config (mirrors SPELL_POWER_TIERS from spell-power.ts) ────
-
-const TIER_NOTCHES = [
-  { tier: 'NONE', label: 'Dormant', minTasks: 0, color: 'bg-slate-600' },
-  { tier: 'BASE', label: 'Active', minTasks: 1, color: 'bg-blue-500' },
-  { tier: 'BOOSTED', label: 'Charged', minTasks: 3, color: 'bg-violet-500' },
-  { tier: 'MAX', label: 'Overcharged', minTasks: 5, color: 'bg-amber-400' },
-] as const
-
-function getCurrentTierIndex(tasksCompleted: number): number {
-  for (let i = TIER_NOTCHES.length - 1; i >= 0; i--) {
-    if (tasksCompleted >= TIER_NOTCHES[i].minTasks) return i
-  }
-  return 0
-}
+import {
+  SPELL_POWER_TIERS,
+  SPELL_POWER_MAX_TASKS,
+  spellPowerTierFor,
+} from '@scienium/shared-types'
 
 /**
- * PvP Battle Arena — raid lobby rendered inside the lab's FeaturePanel overlay.
+ * PvP Battle Arena — the raid lobby, rendered inside the lab's FeaturePanel
+ * overlay and reached by clicking the Battle Arena gateway.
  *
  * Fills its parent (`h-full`) so it can mount inside the gateway overlay panel
- * (FeaturePanel). This is the same PvP lobby content previously on the standalone
- * /pvp/lobby route, adapted to the FeaturePanel shell which provides the title
- * bar ("Battle Arena"), close button, and pixel-art framing.
+ * (FeaturePanel), which provides the title bar, close button and pixel framing.
+ * This is the ONLY lobby — the near-identical standalone `/pvp/lobby` route was
+ * a copy of this file and has been deleted.
  */
 export function PvpFeature() {
   const router = useRouter()
@@ -142,9 +132,11 @@ export function PvpFeature() {
 
   // ── Derived values ─────────────────────────────────────────────────────
 
-  const tierIndex = getCurrentTierIndex(spellPower.tasksCompleted)
-  const currentTier = TIER_NOTCHES[tierIndex]
-  const fillPct = Math.min(100, (spellPower.tasksCompleted / 5) * 100)
+  const currentTier = spellPowerTierFor(spellPower.tasksCompleted)
+  const fillPct = Math.min(
+    100,
+    (spellPower.tasksCompleted / SPELL_POWER_MAX_TASKS) * 100,
+  )
   const formatLabType = (lt: string | null) =>
     lt ? lt.charAt(0).toUpperCase() + lt.slice(1) : 'Unknown'
 
@@ -225,7 +217,7 @@ export function PvpFeature() {
 
           {/* Notch labels */}
           <div className="flex justify-between text-[10px] text-slate-500 px-0.5">
-            {TIER_NOTCHES.map((t) => (
+            {SPELL_POWER_TIERS.map((t) => (
               <span key={t.tier}>{t.label}</span>
             ))}
           </div>
@@ -238,14 +230,20 @@ export function PvpFeature() {
           </p>
         </div>
 
-        {/* Daily quota */}
-        <div className="flex gap-4 text-sm text-slate-400">
+        {/* Daily quota + leaderboard */}
+        <div className="flex items-center gap-4 text-sm text-slate-400">
           <span>
             ⚔️ {quota.raidsRemaining} raid{quota.raidsRemaining !== 1 ? 's' : ''} left today
           </span>
           <span>
             🔄 {quota.refindsRemaining} refind{quota.refindsRemaining !== 1 ? 's' : ''} left today
           </span>
+          <button
+            onClick={() => router.push('/pvp/leaderboard')}
+            className="ml-auto text-[#F5C518] hover:text-amber-300 underline underline-offset-2 transition-colors"
+          >
+            🏅 Leaderboard
+          </button>
         </div>
 
         {/* Opponent card */}
