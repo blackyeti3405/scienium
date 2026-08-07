@@ -105,11 +105,11 @@ const UNIT1_REMAINING_LESSON_IDS = [
   'gaitcore-foundations-gait-cycle-determinants-vs-inverted-pendulum',
 ]
 
-// Phases (from lib/phase.ts's PHASE_ORDER) in which the Operations Hub
-// gateway building itself is visible (unlockPhase: 'literature_review') — the
-// dev-only `/lab?phase=` override lets AC1 prove Codex is reachable in ALL of
-// them, not just whatever phase the fixture team happens to be in today.
-const HUB_VISIBLE_PHASES = ['literature_review', 'research_planning', 'working', 'showcase']
+// Phases in which the FIELD CODEX tab is available. The Operations Hub gateway
+// itself opens at `discovery` from v0.80.0, but only its logs half — the Codex
+// and Proof of Expertise are a `working` unlock (PHASE_UNLOCKS in lib/phase.ts),
+// so this is the set the dev-only `/lab?phase=` override can prove Codex in.
+const HUB_VISIBLE_PHASES = ['working']
 
 interface CompleteResponse {
   passed: boolean

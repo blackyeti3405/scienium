@@ -20,6 +20,18 @@ model User {
   activeTeamId String?   @map("active_team_id")
   role         UserRole  @default(student)
   isMinor      Boolean   @default(true) @map("is_minor")
+  /// Terms of Service + Privacy Policy acceptance, captured where the scienium
+  /// account comes into existence (the three onboarding routes; see
+  /// lib/legal/consent.ts). NULL means the row predates the consent gate — the
+  /// routes refuse to create a new one without it.
+  ///
+  /// The VERSION is stored next to the timestamp because a timestamp alone
+  /// cannot say which documents were agreed to, and both will be revised. It is
+  /// stamped server-side from `LEGAL.version`, never taken from the client, and
+  /// only when currently NULL — a re-submit must not overwrite the original
+  /// consent with a later date.
+  legalAcceptedAt DateTime? @map("legal_accepted_at")
+  legalVersion    String?   @map("legal_version")
   createdAt    DateTime  @default(now()) @map("created_at")
   /// Erasure tombstone (REFACTOR2 P1-R9). The row is NOT dropped: team-shared
   /// work the student authored — project logs, discovery nodes, the synthesis
@@ -653,13 +665,15 @@ enum LabType {
   @@map("lab_type")
 }
 
+// Three phases since v0.80.0 (was six). Each is entered by a real student action:
+// locking a final topic → literature_review, entering a research idea → working.
+// `lab_selection`, `research_planning` and `showcase` were passed through
+// automatically and gated nothing a student could see. See PHASE_ORDER in
+// @scienium/shared-types.
 enum ProjectPhase {
   discovery
-  lab_selection
   literature_review
-  research_planning
   working
-  showcase
 
   @@map("project_phase")
 }

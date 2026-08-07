@@ -1,6 +1,7 @@
 import 'server-only'
 import { db } from '@/lib/db'
 import { PHASE_ORDER, type Phase } from '@/lib/phase'
+import { recordActivity } from '@/lib/activity/log'
 
 /**
  * Phase-advancement gate (Feature 1e).
@@ -46,23 +47,21 @@ function nextPhase(phase: Phase): Phase | null {
 }
 
 /**
- * Transitions a student advances through at their own pace, with no
- * mechanically-checkable gate — a free "Advance" click bumps the phase. These
- * are the later milestones (starting data collection → `working`, and advancing
- * to competition → `showcase`); teams self-pace them rather than waiting on a
- * teacher sign-off.
+ * There are no free "Advance" clicks any more (v0.80.0).
+ *
+ * Both surviving transitions are earned by an ACTION, not by pressing a button
+ * that does nothing but increment a counter:
+ *
+ *   discovery         → literature_review   locking a final topic
+ *   literature_review → working             finishing the review + entering an idea
+ *
+ * The two transitions this map used to hold (`research_planning → working` and
+ * `working → showcase`) advanced through phases that gated nothing a student
+ * could see, so the button asked for a decision that had no content.
  */
-export const SELF_ADVANCE_TRANSITIONS: Partial<Record<Phase, Phase>> = {
-  research_planning: 'working',
-  working: 'showcase',
-}
-
-export function isSelfAdvance(from: Phase): boolean {
-  return from in SELF_ADVANCE_TRANSITIONS
-}
 
 /**
- * Computes literature_review → research_planning readiness for a team:
+ * Computes literature_review → working readiness for a team:
  * how many sources are ready, and for each member how many of those they've
  * demonstrated proficiency on. `canAdvance` is true only at/after the target
  * with every member proficient on all of them.
@@ -121,4 +120,31 @@ export async function getLiteratureAdvanceProgress(
     memberCount: members.length,
     canAdvance,
   }
+}
+
+/**
+ * Compare-and-set phase bump. `from` is the predicate, so two concurrent requests
+ * cannot skip a phase between them and only the one that actually moved the team
+ * stamps the phase clock (REFACTOR2 P2-S14) or writes the activity row.
+ *
+ * Returns whether this call is the one that moved it.
+ */
+export async function advanceTeamPhase(
+  teamId: string,
+  actorUserId: string,
+  from: Phase,
+  to: Phase,
+): Promise<boolean> {
+  return db.$transaction(async (tx) => {
+    const { count } = await tx.team.updateMany({
+      where: { id: teamId, phase: from },
+      data: { phase: to, phaseEnteredAt: new Date() },
+    })
+    if (count === 0) return false
+    await recordActivity(tx, teamId, actorUserId, 'phase_advanced', {
+      fromPhase: from,
+      toPhase: to,
+    })
+    return true
+  })
 }

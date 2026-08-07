@@ -14,22 +14,12 @@
 
 import { db } from '@/lib/db'
 import type { LabType } from '@scienium/shared-types'
+import { teamClassIds } from '@/lib/team/class-scope'
 
-/** Distinct class ids this team's members belong to (empty if none are enrolled). */
-export async function teamClassIds(teamId: string): Promise<string[]> {
-  // Read through `team.members`, the same traversal `teacherOwnsTeam` uses.
-  const team = await db.team.findUnique({
-    where: { id: teamId },
-    select: { members: { select: { user: { select: { classId: true } } } } },
-  })
-  return [
-    ...new Set(
-      (team?.members ?? [])
-        .map((m) => m.user.classId)
-        .filter((id): id is string => id !== null),
-    ),
-  ]
-}
+// Class scope itself lives in `lib/team/class-scope.ts` — phase progression asks
+// the same question to decide whether a lab is teacher-paced. Re-exported so PvP
+// call sites keep importing it from here.
+export { teamClassIds }
 
 /** Prisma filter: teams with at least one member in any of `classIds`. */
 export function inClasses(classIds: string[]) {
@@ -62,7 +52,9 @@ export async function findRandomOpponent(
     where: {
       ...inClasses(classIds),
       id: { not: ownTeamId, notIn: shownBaseIds ?? [] },
-      phase: { in: ['working', 'showcase'] },
+      // PvP unlocks with the topic lock, so anyone from literature_review on is
+      // a legitimate target — they have a lab type and can have a placed base.
+      phase: { in: ['literature_review', 'working'] },
       shopBuildings: { some: { posX: { not: null } } },
     },
     select: { id: true, name: true, labType: true },

@@ -7,6 +7,8 @@ const isPublicRoute = createRouteMatcher([
   '/about(.*)', // Public outreach/landing page — no auth required
   '/pvp', // Marketing explainer for the Battle Arena — exact match only, not /pvp/lobby etc.
   '/teachers', // Marketing explainer for the teacher dashboard — distinct from /teacher(.*)
+  '/privacy', // Legal documents MUST be readable without an account — a parent
+  '/terms', //  deciding whether to let their child sign up cannot sign in first.
   '/robots.txt', // Crawler directives — must be reachable unauthenticated
   '/sitemap.xml', // Sitemap — same
   '/sign-in(.*)',

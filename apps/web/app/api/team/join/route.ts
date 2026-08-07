@@ -10,6 +10,7 @@ import { recordActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 import { leaveOtherTeams, recordMembershipEvent } from '@/lib/team/membership'
 import { lockAggregate } from '@/lib/db-lock'
+import { legalConsentShape, recordLegalAcceptance } from '@/lib/legal/consent'
 
 const JoinBody = z
   .object({
@@ -17,6 +18,7 @@ const JoinBody = z
     code: z.string().trim().min(1, 'A join code is required').max(32),
     highSchool: z.string().trim().max(120).optional(),
     classCode: z.string().trim().max(32).optional(),
+    ...legalConsentShape,
   })
   .strict()
 
@@ -55,6 +57,9 @@ export async function POST(req: NextRequest) {
         email,
       },
     }))
+
+  // See /api/onboarding — records which version, first pass only.
+  await recordLegalAcceptance(user.id)
 
   // Ingest the joiner's high school + optional classroom (same rules as create).
   await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => {})

@@ -11,7 +11,6 @@ import { SettingsPanel } from '@/components/settings/SettingsPanel'
 import { ActivityPanel } from '@/components/lab/ActivityPanel'
 import { FeedbackPanel, type FeedbackItem } from '@/components/lab/FeedbackPanel'
 import { PhaseAdvance } from '@/components/lab/PhaseAdvance'
-import { SelfAdvance } from '@/components/lab/SelfAdvance'
 import { StatusStrip, type Currency } from '@/components/lab/StatusStrip'
 import { MomentumCard } from '@/components/lab/MomentumCard'
 import { BuildingMenu } from '@/components/lab/BuildingMenu'
@@ -44,8 +43,6 @@ export interface LabSceneProps {
   memberCount: number
   /** Literature-phase advance gate, or null when no gate applies (Feature 1e). */
   advance: AdvanceProgress | null
-  /** Self-paced advance affordance (research_planning/working), or null. */
-  selfAdvance: { toPhase: Phase } | null
   /** Stable per-team seed so the tiled background never reshuffles. */
   seed?: number
   /** When 'feedback', auto-opens the Feedback panel on mount (deep-link). */
@@ -104,7 +101,6 @@ function LabSceneContent({
   labType,
   memberCount,
   advance,
-  selfAdvance,
   seed = 1,
   initialPanel,
   placedBuildings,
@@ -224,7 +220,6 @@ function LabSceneContent({
       />
 
       {advance && <PhaseAdvance progress={advance} />}
-      {selfAdvance && <SelfAdvance toPhase={selfAdvance.toPhase} />}
 
       <div className="lab-scene__viewport">
         <TileBackground seed={seed} />
@@ -368,7 +363,7 @@ function LabSceneContent({
 
       {openGateway && FeatureComponent && (
         <FeaturePanel title={openGateway.label} onClose={closeOverlay}>
-          <FeatureComponent />
+          <FeatureComponent phase={phase} />
         </FeaturePanel>
       )}
 

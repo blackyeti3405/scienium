@@ -72,11 +72,38 @@ describe('every untrusted-markdown sink uses SafeMarkdown', () => {
     expect(files.length).toBeGreaterThan(50)
   })
 
+  /**
+   * The one component allowed to render markdown outside the policy, and the
+   * reason it is allowed: `LegalDocument` renders the Privacy Policy and Terms
+   * of Service, which are authored in-repo (`lib/legal/`) and reach it through
+   * no request, no database read, and no model call. It is exempt because it
+   * needs same-page anchor links for its table of contents, which SafeMarkdown's
+   * mandatory `target="_blank"` would break.
+   *
+   * The exemption is only sound while its input stays in-repo — pinned by the
+   * consumer assertion below.
+   */
+  const TRUSTED_MARKDOWN = 'components/legal/LegalDocument.tsx'
+
   it('SafeMarkdown is the ONLY component importing react-markdown', () => {
     const importers = files.filter((f) =>
       /from ['"]react-markdown['"]/.test(readFileSync(join(WEB_ROOT, f), 'utf8')),
     )
-    expect(importers).toEqual(['components/ui/SafeMarkdown.tsx'])
+    expect(importers.sort()).toEqual([TRUSTED_MARKDOWN, 'components/ui/SafeMarkdown.tsx'])
+  })
+
+  it('the trusted renderer is only ever fed in-repo legal text', () => {
+    // Every file that renders <LegalDocument> must source its markdown from
+    // `@/lib/legal/`. Pointing it at student writing or model output would make
+    // it an untrusted sink wearing an exemption.
+    const consumers = collectTsx(join(WEB_ROOT, 'app'))
+      .map((p) => relative(WEB_ROOT, p))
+      .filter((f) => /<LegalDocument/.test(readFileSync(join(WEB_ROOT, f), 'utf8')))
+
+    expect(consumers.length).toBeGreaterThan(0)
+    for (const f of consumers) {
+      expect(readFileSync(join(WEB_ROOT, f), 'utf8')).toMatch(/from ['"]@\/lib\/legal\//)
+    }
   })
 
   it('SafeMarkdown never enables rehype-raw (which would restore the HTML sink)', () => {

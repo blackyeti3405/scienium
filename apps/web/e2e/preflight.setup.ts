@@ -106,7 +106,7 @@ setup('preflight: server, database and fixture are the ones the suite expects', 
 
   // The suite exercises every phase's features, which only the terminal phase
   // unlocks cumulatively; the building specs need the matching lab type.
-  expect(team!.phase, 'fixture team is not at the showcase phase — re-run seed:e2e').toBe('showcase')
+  expect(team!.phase, 'fixture team is not at the terminal phase — re-run seed:e2e').toBe('working')
   expect(team!.labType, 'fixture team has the wrong lab type — re-run seed:e2e').toBe('volt_lab')
   expect(team!._count.members, 'fixture team has no members — re-run seed:e2e').toBeGreaterThan(0)
 })

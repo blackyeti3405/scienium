@@ -14,14 +14,23 @@ export const LAB_TYPES = [
 export type LabType = (typeof LAB_TYPES)[number]
 
 // Phase order is meaningful: later phases inherit all earlier unlocks.
-export const PHASE_ORDER = [
-  'discovery',
-  'lab_selection',
-  'literature_review',
-  'research_planning',
-  'working',
-  'showcase',
-] as const
+//
+// THREE phases since v0.80.0, down from six. The arc a student actually walks is
+// "explore → read → build", and each of the three is entered by a real event:
+//
+//   discovery         a new lab starts here — explore topics, browse the fair hub,
+//                     keep the Project and Failure logs
+//   literature_review entered by locking a FINAL TOPIC, which also assigns the
+//                     lab type; unlocks the Literature Review and the Battle Arena
+//   working           entered by finishing the review and entering a research
+//                     idea; unlocks the rest of the Operations Hub (Field Codex,
+//                     Proof of Expertise), the Research Plan and the Showcase
+//
+// The retired three were never events. `lab_selection` and `research_planning`
+// were passed through automatically, and `showcase` only ever gated the Showcase
+// gateway — three enum values, no student-visible transition, and a phase gate
+// that made features look live while every write 403'd.
+export const PHASE_ORDER = ['discovery', 'literature_review', 'working'] as const
 
 export type ProjectPhase = (typeof PHASE_ORDER)[number]
 

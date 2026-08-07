@@ -201,12 +201,13 @@ try {
 
   // ── 4. Team ───────────────────────────────────────────────────────────────
   // The suite exercises features across every phase (literature, buildings,
-  // showcase, …) so the fixture team sits at the terminal `showcase` phase, which
-  // unlocks all features cumulatively. `labType` is `volt_lab` because the
+  // showcase, …) so the fixture team sits at the terminal `working` phase, which
+  // unlocks all features cumulatively. (It was `showcase` until v0.80.0 collapsed
+  // ProjectPhase to three values and made the Showcase a `working` unlock.) `labType` is `volt_lab` because the
   // placement/upgrade specs buy that lab's buildings (3D Printing Shop, Robotics
   // Bay) — lab-specific buildings only render for a matching labType. Without both,
   // the phase-gated shop is empty / building specs can't find their buy button.
-  const FIXTURE_PHASE = 'showcase'
+  const FIXTURE_PHASE = 'working'
   const FIXTURE_LAB_TYPE = 'volt_lab'
   let team = await db.team.findFirst({ where: { name: TEAM_NAME } })
   if (team) {

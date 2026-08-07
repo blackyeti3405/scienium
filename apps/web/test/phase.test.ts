@@ -36,16 +36,23 @@ describe('feature gating', () => {
     for (const p of PHASE_ORDER) expect(isFeatureUnlocked(p, 'buildings')).toBe(true)
   })
 
-  it('working unlocks pvp/data_terminal and everything earlier', () => {
-    expect(isFeatureUnlocked('working', 'pvp')).toBe(true)
-    expect(isFeatureUnlocked('working', 'data_terminal')).toBe(true)
-    expect(isFeatureUnlocked('working', 'literature')).toBe(true)
-    expect(isFeatureUnlocked('working', 'showcase')).toBe(false)
+  it('locking a topic (→ literature_review) opens the review and the arena', () => {
+    expect(isFeatureUnlocked('literature_review', 'literature')).toBe(true)
+    expect(isFeatureUnlocked('literature_review', 'pvp')).toBe(true)
+    // Still earned: the Codex and Proof of Expertise mint KP and raise clearance.
+    expect(isFeatureUnlocked('literature_review', 'daily')).toBe(false)
+    expect(isFeatureUnlocked('literature_review', 'research_plan')).toBe(false)
+    expect(isFeatureUnlocked('literature_review', 'showcase')).toBe(false)
   })
 
-  it('showcase phase unlocks everything', () => {
-    const f = getUnlockedFeatures('showcase')
-    for (const feature of ['discovery', 'fair_hub', 'lab_selection', 'literature', 'research_plan', 'daily', 'buildings', 'pvp', 'showcase'] as const) {
+  it('the logs are open on day one — recording a failure is not a reward', () => {
+    for (const p of PHASE_ORDER) expect(isFeatureUnlocked(p, 'logs')).toBe(true)
+    expect(isFeatureUnlocked('discovery', 'daily')).toBe(false)
+  })
+
+  it('working (the research idea) unlocks everything', () => {
+    const f = getUnlockedFeatures('working')
+    for (const feature of ['discovery', 'fair_hub', 'literature', 'research_plan', 'logs', 'daily', 'buildings', 'pvp', 'data_terminal', 'showcase'] as const) {
       expect(f.has(feature)).toBe(true)
     }
   })
@@ -75,9 +82,8 @@ describe('assertFeatureUnlocked', () => {
 })
 
 describe('getLabSize', () => {
-  it('is small only during discovery/lab_selection', () => {
+  it('is small only before the lab takes on a type', () => {
     expect(getLabSize('discovery')).toBe('small')
-    expect(getLabSize('lab_selection')).toBe('small')
     expect(getLabSize('literature_review')).toBe('grown')
     expect(getLabSize('working')).toBe('grown')
   })

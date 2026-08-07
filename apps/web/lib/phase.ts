@@ -5,7 +5,11 @@
  * Never gate features client-only — always mirror checks server-side.
  *
  * Phase order (cumulative — later phases inherit all earlier unlocks):
- *   discovery → lab_selection → literature_review → research_planning → working → showcase
+ *   discovery → literature_review → working
+ *
+ * Each arrow is a real student action: locking a final topic, then finishing the
+ * review and entering a research idea. See PHASE_ORDER in @scienium/shared-types
+ * for why the other three phases were retired in v0.80.0.
  */
 
 // ─── Phase + lab types ─────────────────────────────────────────────────────────
@@ -39,10 +43,10 @@ export const LAB_TYPE_LABELS: Record<LabType, string> = {
 export type Feature =
   | 'discovery'      // Topic exploration, Wikipedia tree
   | 'fair_hub'       // Science fair calendar, rubric, ISEF categories
-  | 'lab_selection'  // UI to pick one of 6 lab types (one-time action)
   | 'literature'     // Literature review, library, citation graph
   | 'research_plan'  // Research planning tools
-  | 'daily'          // Field Codex, Proof of Expertise, Project Log, Failure Log
+  | 'logs'           // Project Log + Failure Log — the Operations Hub's day-one half
+  | 'daily'          // Field Codex + Proof of Expertise — its earned half
   | 'buildings'      // Lab building purchases, upgrades, and rearranging
   | 'pvp'            // PvP raid system (spec §11)
   | 'data_terminal'  // Experiment tracking + graphing (Operations Hub tab)
@@ -55,13 +59,17 @@ export type Feature =
 // cost and each building's `minClearance` are the real limits on what a team
 // can put down — the phase gate only ever added a second, redundant lock that
 // made the shop and ARRANGE controls look live while every write 403'd.
+//
+// `logs` and `daily` split what used to be one `daily` feature. A new lab can
+// keep a Project Log and a Failure Log on day one — those are how you record an
+// experiment that has not worked yet, so gating them behind progress is exactly
+// backwards. The Field Codex and Proof of Expertise stay earned: they mint KP and
+// raise clearance, and handing a brand-new lab the clearance ladder would let it
+// skip the shop's pacing entirely.
 const PHASE_UNLOCKS: Record<Phase, Feature[]> = {
-  discovery:          ['discovery', 'fair_hub', 'buildings'],
-  lab_selection:      ['lab_selection'],
-  literature_review:  ['literature', 'daily'],
-  research_planning:  ['research_plan'],
-  working:            ['pvp', 'data_terminal'],
-  showcase:           ['showcase'],
+  discovery:          ['discovery', 'fair_hub', 'buildings', 'logs'],
+  literature_review:  ['literature', 'pvp'],
+  working:            ['daily', 'data_terminal', 'research_plan', 'showcase'],
 }
 
 // ─── Core helpers ─────────────────────────────────────────────────────────────
@@ -98,14 +106,14 @@ export function isFeatureUnlocked(phase: Phase, feature: Feature): boolean {
 export const FEATURE_MIN_PHASE: Record<Feature, Phase> = {
   discovery:      'discovery',
   fair_hub:       'discovery',
-  lab_selection:  'lab_selection',
-  literature:     'literature_review',
-  research_plan:  'research_planning',
-  daily:          'literature_review',
   buildings:      'discovery',
-  pvp:            'working',
+  logs:           'discovery',
+  literature:     'literature_review',
+  pvp:            'literature_review',
+  daily:          'working',
   data_terminal:  'working',
-  showcase:       'showcase',
+  research_plan:  'working',
+  showcase:       'working',
 }
 
 // ─── Lab visual properties ────────────────────────────────────────────────────
@@ -113,11 +121,11 @@ export const FEATURE_MIN_PHASE: Record<Feature, Phase> = {
 export type LabSize = 'small' | 'grown'
 
 /**
- * Size is small during early exploration; grows permanently when the team
- * commits to a lab type at the lab_selection phase.
+ * Size is small during early exploration; grows permanently once the team locks a
+ * topic and the lab takes on its type.
  */
 export function getLabSize(phase: Phase): LabSize {
-  return phase === 'discovery' || phase === 'lab_selection' ? 'small' : 'grown'
+  return phase === 'discovery' ? 'small' : 'grown'
 }
 
 // ─── Phase metadata (for UI labels and descriptions) ──────────────────────────
@@ -130,11 +138,8 @@ export interface PhaseInfo {
 
 export const PHASE_INFO: Record<Phase, PhaseInfo> = {
   discovery:         { label: 'Discovery',         description: 'Exploring topics',              color: 'bg-blue-100 text-blue-800' },
-  lab_selection:     { label: 'Lab Selection',     description: 'Choosing your specialty',       color: 'bg-purple-100 text-purple-800' },
   literature_review: { label: 'Literature Review', description: 'Processing research papers',    color: 'bg-yellow-100 text-yellow-800' },
-  research_planning: { label: 'Research Planning', description: 'Designing your study',          color: 'bg-orange-100 text-orange-800' },
   working:           { label: 'Working',           description: 'Running experiments',           color: 'bg-green-100 text-green-800' },
-  showcase:          { label: 'Showcase',          description: 'Publishing your work',          color: 'bg-red-100 text-red-800' },
 }
 
 // ─── API route gating ─────────────────────────────────────────────────────────

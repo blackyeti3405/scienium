@@ -12,6 +12,10 @@ export type ActivityAction =
   | 'topic_locked'
   | 'source_promoted'
   | 'phase_advanced'
+  // The lab's type was derived from its topic/idea and its plot remapped onto the
+  // new catalog. Distinct from `phase_advanced`: a teacher-paced lab is assigned a
+  // type when it locks a topic but does not move phase until its teacher says so.
+  | 'lab_type_assigned'
   | 'member_joined'
   | 'member_left'
   | 'plan_synced'

@@ -49,7 +49,7 @@ export const GATEWAYS: Gateway[] = [
     key: 'showcase',
     label: 'Showcase',
     feature: 'showcase',
-    unlockPhase: 'showcase',
+    unlockPhase: 'working',
     hint: 'Publish your research to the world',
     cell: { gx: -1, gy: -1 }, // back-centre
   },
@@ -80,16 +80,19 @@ export const GATEWAYS: Gateway[] = [
   {
     key: 'operations_hub',
     label: 'Operations Hub',
-    feature: 'daily',
-    unlockPhase: 'literature_review',
-    hint: 'Field Codex, Proof of Expertise, Project & Failure Logs',
+    // Opens on day one, but only its LOGS half — the Field Codex and Proof of
+    // Expertise tabs gate on `daily` inside (OperationsHubFeature). Recording a
+    // failed experiment is how a lab starts, not a reward for progress.
+    feature: 'logs',
+    unlockPhase: 'discovery',
+    hint: 'Project & Failure Logs — Field Codex and Expertise unlock later',
     cell: { gx: 1, gy: 1 }, // front-centre (closest)
   },
   {
     key: 'research_plan',
     label: 'Research Plan',
     feature: 'research_plan',
-    unlockPhase: 'research_planning',
+    unlockPhase: 'working',
     hint: 'Hypothesis, methodology & study design',
     cell: { gx: 0, gy: 1 }, // front-left
   },
@@ -97,7 +100,7 @@ export const GATEWAYS: Gateway[] = [
     key: 'pvp',
     label: 'Battle Arena',
     feature: 'pvp',
-    unlockPhase: 'working',
+    unlockPhase: 'literature_review',
     hint: 'PvP combat with your lab characters',
     cell: { gx: 1, gy: 0 }, // front-right
   },

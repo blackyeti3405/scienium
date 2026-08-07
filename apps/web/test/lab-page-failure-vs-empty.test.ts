@@ -47,7 +47,7 @@ const HEALTHY_USER = {
       team: {
         id: 'team_1',
         name: 'Photon Collective',
-        phase: 'showcase',
+        phase: 'working',
         labType: 'volt_lab',
         currency: { kp: 420, clearanceLevel: 3, lc: 12 },
         members: [{ userId: 'u1' }, { userId: 'u2' }],
@@ -71,7 +71,7 @@ describe('/lab — a load failure is not an empty lab', () => {
   it('resolves the REAL team when the DB is healthy', async () => {
     const data = await load()
     expect(data.teamName).toBe('Photon Collective')
-    expect(data.phase).toBe('showcase')
+    expect(data.phase).toBe('working')
     expect(data.currency).toEqual({ kp: 420, clearanceLevel: 3, lc: 12 })
   })
 

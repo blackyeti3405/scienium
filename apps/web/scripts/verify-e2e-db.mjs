@@ -28,7 +28,8 @@ import { ISEF_EDITION } from '../lib/fairs/forms.ts'
 const require = createRequire(import.meta.url)
 const { PrismaClient } = require('@prisma/client')
 
-const FIXTURE_PHASE = 'showcase'
+// Terminal phase since v0.80.0 — unlocks every feature cumulatively.
+const FIXTURE_PHASE = 'working'
 const FIXTURE_LAB_TYPE = 'volt_lab'
 
 const migrationsDir = path.join(

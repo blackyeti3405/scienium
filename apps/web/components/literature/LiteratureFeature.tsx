@@ -249,7 +249,7 @@ export function LiteratureFeature() {
       </div>
 
       {/*
-        Idea submission box — the literature_review → research_planning gate.
+        Idea submission box — the literature_review → working gate.
 
         Gated on PHASE, not just source count. `locked` only means 25/25 sources
         are in, which stays true forever afterwards, so on source count alone

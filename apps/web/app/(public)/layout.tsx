@@ -20,6 +20,14 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
       <main className="sc-public__main">{children}</main>
       <footer className="sc-public__footer">
         <span>Built by students on scienium — build your virtual research lab, advance real science.</span>
+        {/* Published projects are the one surface a stranger reaches with no
+            account, so the legal documents have to be reachable from here too. */}
+        <span>
+          {' · '}
+          <Link href="/privacy">Privacy</Link>
+          {' · '}
+          <Link href="/terms">Terms</Link>
+        </span>
       </footer>
     </div>
   )

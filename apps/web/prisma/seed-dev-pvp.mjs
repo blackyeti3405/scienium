@@ -51,7 +51,7 @@ async function main() {
   note('found', `attacker ${attacker.name} → team "${team.name}" (${team.phase})`)
 
   // 1. Attacker's team must be at `working`+ for the pvp phase gate.
-  if (team.phase !== 'working' && team.phase !== 'showcase') {
+  if (team.phase !== 'working') {
     await db.team.update({ where: { id: team.id }, data: { phase: 'working' } })
     note('set', `team phase ${team.phase} → working`)
   } else {

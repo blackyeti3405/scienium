@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import { LabeledLoader } from '@/components/ui/LabeledLoader'
+import { isFeatureUnlocked, type Feature, type Phase } from '@/lib/phase'
 
 // EVERY tab body is a dynamic boundary (A10): the hub shell is mounted by
 // /daily/log and /daily/failure as well as the lab gateway, and statically
@@ -30,29 +31,51 @@ const VegaStudyTab = dynamic(() => import('./VegaStudyTab').then((m) => m.VegaSt
 
 export type OperationsTab = 'codex' | 'log' | 'failure' | 'expertise' | 'data' | 'vega'
 
-// Fourth tuple slot is an optional data-testid — only Field Codex + Study with
-// Vega need one per their plans' acceptance criteria; other tabs are untouched.
+interface TabDef {
+  key: OperationsTab
+  icon: string
+  label: string
+  testId?: string
+  /**
+   * Which half of the hub this tab belongs to. `logs` opens on day one — a
+   * Project Log and a Failure Log are how a lab records work that has not
+   * succeeded yet. `daily` is earned at the `working` phase: those tabs mint KP
+   * and raise clearance, which is the shop's pacing.
+   */
+  feature: Extract<Feature, 'logs' | 'daily' | 'data_terminal'>
+}
+
 // Field Codex leads: it replaced Field Dispatch as the daily pillar.
-const TAB_DEFS: [OperationsTab, string, string, string?][] = [
-  ['codex', '📖', 'Field Codex', 'codex-tab'],
-  ['log', '📋', 'Project Log'],
-  ['failure', '⚡', 'Failure Log'],
-  ['expertise', '🎖', 'Proof of Expertise'],
-  ['data', '📊', 'Data Terminal', 'data-terminal-tab'],
-  ['vega', '🧠', 'Study with Vega', 'vega-tab'],
+const TAB_DEFS: TabDef[] = [
+  { key: 'codex', icon: '📖', label: 'Field Codex', testId: 'codex-tab', feature: 'daily' },
+  { key: 'log', icon: '📋', label: 'Project Log', feature: 'logs' },
+  { key: 'failure', icon: '⚡', label: 'Failure Log', feature: 'logs' },
+  { key: 'expertise', icon: '🎖', label: 'Proof of Expertise', feature: 'daily' },
+  { key: 'data', icon: '📊', label: 'Data Terminal', testId: 'data-terminal-tab', feature: 'data_terminal' },
+  { key: 'vega', icon: '🧠', label: 'Study with Vega', testId: 'vega-tab', feature: 'daily' },
 ]
 
 export function OperationsHubFeature({
-  initialTab = 'codex',
+  initialTab,
+  phase,
 }: {
   initialTab?: OperationsTab
+  /** The team's phase — decides which tabs are open. */
+  phase: Phase
 }) {
-  const [tab, setTab] = useState<OperationsTab>(initialTab)
+  const tabs = TAB_DEFS.filter((t) => isFeatureUnlocked(phase, t.feature))
+  // A new lab lands on the Project Log, not the Field Codex — `initialTab` may
+  // name a tab this phase has not unlocked, and defaulting to a locked tab would
+  // render an empty hub.
+  const fallback = tabs[0]?.key ?? 'log'
+  const [tab, setTab] = useState<OperationsTab>(
+    initialTab && tabs.some((t) => t.key === initialTab) ? initialTab : fallback,
+  )
 
   return (
     <div className="flex flex-col h-full bg-[#0d1b2e] text-white">
       <div className="flex border-b border-white/10 shrink-0 px-2 overflow-x-auto">
-        {TAB_DEFS.map(([key, icon, label, testId]) => (
+        {tabs.map(({ key, icon, label, testId }) => (
           <button
             key={key}
             onClick={() => setTab(key)}

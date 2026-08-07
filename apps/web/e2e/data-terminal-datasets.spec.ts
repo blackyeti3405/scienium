@@ -208,7 +208,7 @@ test('AC5: datasets are locked before the working phase', async ({ page }) => {
     await page.getByTestId('stats-guide-tab').click()
     await expect(page.getByTestId('data-subtab')).toBeVisible()
   } finally {
-    await e2eDb.team.update({ where: { id: lab.teamId }, data: { phase: 'showcase' } })
+    await e2eDb.team.update({ where: { id: lab.teamId }, data: { phase: 'working' } })
   }
 })
 

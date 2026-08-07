@@ -33,7 +33,7 @@ import { e2eDb } from './db'
  */
 
 /** Matches the seeder's fixture so feature gating behaves identically. */
-const FIXTURE_PHASE = 'showcase'
+const FIXTURE_PHASE = 'working'
 const FIXTURE_LAB_TYPE = 'volt_lab'
 const KP_BASELINE = 100_000
 const CLEARANCE_BASELINE = 3
@@ -60,7 +60,7 @@ const GATEWAY_LAYOUT: [string, number, number][] = [
   ['pvp', 3, 1],
   ['research_plan', -2, 1],
   ['science_fair', 3, -1],
-  ['showcase', 1, -2],
+  ['working', 1, -2],
 ]
 
 export interface Lab {

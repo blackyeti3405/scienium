@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * Paid-gate ordering for phase advance (PILOT-2): the literature_review →
- * research_planning transition runs an Anthropic classification, so the paid
+ * working transition runs an Anthropic classification, so the paid
  * `ai` tier must be cleared BEFORE `classifyLabType` fires. A denied paid tier
  * means no model call and no phase change.
  */
@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   enforceRateLimit: vi.fn(),
   classifyLabType: vi.fn(),
   getLiteratureAdvanceProgress: vi.fn(),
-  isSelfAdvance: vi.fn(),
+  isTeacherPaced: vi.fn(),
   recordActivity: vi.fn(() => Promise.resolve()),
   teamUpdate: vi.fn(() => Promise.resolve({})),
   teamUpdateMany: vi.fn(() => Promise.resolve({ count: 1 })),
@@ -24,9 +24,9 @@ vi.mock('@/lib/rate-limit', () => ({ enforceRateLimit: mocks.enforceRateLimit })
 vi.mock('@/lib/lab-type/classify', () => ({ classifyLabType: mocks.classifyLabType }))
 vi.mock('@/lib/team/advance', () => ({
   getLiteratureAdvanceProgress: mocks.getLiteratureAdvanceProgress,
-  isSelfAdvance: mocks.isSelfAdvance,
-  SELF_ADVANCE_TRANSITIONS: { research_planning: 'working', working: 'showcase' },
 }))
+// Self-paced by default; a classroom lab is covered by its own case below.
+vi.mock('@/lib/team/class-scope', () => ({ isTeacherPaced: mocks.isTeacherPaced }))
 vi.mock('@/lib/activity/log', () => ({ recordActivity: mocks.recordActivity }))
 vi.mock('@/lib/db', () => {
   const db = {
@@ -59,7 +59,7 @@ const CTX = {
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.requireTeamContext.mockResolvedValue({ ctx: CTX, error: null })
-  mocks.isSelfAdvance.mockReturnValue(false)
+  mocks.isTeacherPaced.mockResolvedValue(false)
   mocks.getLiteratureAdvanceProgress.mockResolvedValue({ canAdvance: true })
 })
 
@@ -87,26 +87,26 @@ describe('advance-phase paid gate', () => {
     expect(mocks.classifyLabType).toHaveBeenCalledOnce()
     // The transition is a COMPARE-AND-SET on the phase, not an unconditional
     // `team.update({ id })` (REFACTOR2 P1-R2) — a paid call takes seconds, and
-    // an unconditional write could stamp `research_planning` over a phase the
+    // an unconditional write could stamp `working` over a phase the
     // team had already moved past. `teamUpdate` is no longer used at all here.
     expect(mocks.teamUpdate).not.toHaveBeenCalled()
     expect(mocks.teamUpdateMany).toHaveBeenCalledWith({
       where: { id: CTX.teamId, phase: 'literature_review' },
-      data: expect.objectContaining({ phase: 'research_planning', labType: 'volt_lab' }),
+      data: expect.objectContaining({ phase: 'working', labType: 'volt_lab' }),
     })
   })
 
-  it('self-paced transitions never touch the paid tier or the model', async () => {
-    mocks.requireTeamContext.mockResolvedValue({
-      ctx: { ...CTX, phase: 'research_planning' },
-      error: null,
-    })
-    mocks.isSelfAdvance.mockReturnValue(true)
+  it('a classroom lab is refused before the paid tier or the model', async () => {
+    // Its teacher runs the unit — the lab does not spend a paid call to advance
+    // itself, and must not move even if the literature gate is satisfied.
+    mocks.isTeacherPaced.mockResolvedValue(true)
 
-    const res = await POST(advanceReq({}))
+    const res = await POST(advanceReq({ researchIdea: 'How light color affects basil growth.' }))
 
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(403)
+    expect(await res.json()).toMatchObject({ teacherPaced: true })
     expect(mocks.enforceRateLimit).not.toHaveBeenCalled()
     expect(mocks.classifyLabType).not.toHaveBeenCalled()
+    expect(mocks.teamUpdateMany).not.toHaveBeenCalled()
   })
 })

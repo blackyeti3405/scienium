@@ -140,6 +140,11 @@ export function MarketingFooter({ userId, launchHref = '/game' }: { userId: stri
           <Link href="/#teachers" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>For teachers</Link>
           <Link href="/about" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>About</Link>
           <Link href="/about#contact" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Contact</Link>
+          {/* CalOPPA requires a conspicuous link containing the word "Privacy"
+              on every page that collects personal information. The footer is on
+              every marketing page, and both documents are public routes. */}
+          <Link href="/privacy" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Privacy</Link>
+          <Link href="/terms" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Terms</Link>
           {userId ? (
             <Link href={launchHref} className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Play</Link>
           ) : (

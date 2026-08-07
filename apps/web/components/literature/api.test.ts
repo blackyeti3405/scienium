@@ -74,7 +74,7 @@ describe('the team phase is parsed, not cast', () => {
 
   it('carries a submitted idea and lab type through', async () => {
     const url = await serve(200, {
-      phase: 'research_planning',
+      phase: 'working',
       researchIdea: 'Soil pH and plant growth',
       labType: 'bio_core',
     })

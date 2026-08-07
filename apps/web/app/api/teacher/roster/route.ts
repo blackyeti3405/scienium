@@ -109,9 +109,9 @@ export async function GET(req: NextRequest) {
     const lastLog = teamId ? (lastLogMap.get(teamId) ?? null) : null
     const lastActivity = teamId ? (lastActivityMap.get(teamId) ?? null) : null
 
-    // Status is only meaningful for working/showcase-phase teams.
+    // Status is only meaningful once a lab is actually running experiments.
     let status: 'on_track' | 'unlogged' | 'stale' | null = null
-    if (team && (team.phase === 'working' || team.phase === 'showcase')) {
+    if (team && team.phase === 'working') {
       const logAge = lastLog ? differenceInCalendarDays(now, lastLog) : Infinity
       const activityAge = lastActivity ? differenceInCalendarDays(now, lastActivity) : Infinity
       const recentLog = logAge <= STALE_LOG_DAYS

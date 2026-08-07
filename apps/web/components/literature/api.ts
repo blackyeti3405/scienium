@@ -93,7 +93,7 @@ export function submitExplanation(paperId: string, text: string) {
 
 /**
  * The slice of `/api/team` the Literature Review needs to decide whether to
- * offer the literature_review → research_planning gate.
+ * offer the literature_review → working gate.
  *
  * ## Why this is parsed and not cast
  *

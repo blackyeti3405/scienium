@@ -20,6 +20,9 @@ const mocks = vi.hoisted(() => ({
   lockAggregate: vi.fn(() => Promise.resolve()),
   userFindUnique: vi.fn(),
   userCreate: vi.fn(),
+  // Consent stamp (lib/legal/consent.ts) — a join is one of the three places an
+  // account is created, so the route records which documents were agreed to.
+  userUpdateMany: vi.fn(() => Promise.resolve({ count: 1 })),
   txInviteFindUnique: vi.fn(),
   txInviteUpdateMany: vi.fn(() => Promise.resolve({ count: 1 })),
   txTeamFindUnique: vi.fn(),
@@ -57,18 +60,23 @@ vi.mock('@/lib/activity/log', () => ({ recordActivity: mocks.recordActivity }))
 vi.mock('@/lib/db-lock', () => ({ lockAggregate: mocks.lockAggregate }))
 vi.mock('@/lib/db', () => ({
   db: {
-    user: { findUnique: mocks.userFindUnique, create: mocks.userCreate },
+    user: {
+      findUnique: mocks.userFindUnique,
+      create: mocks.userCreate,
+      updateMany: mocks.userUpdateMany,
+    },
     $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   },
 }))
 
 import { POST } from '@/app/api/team/join/route'
 
-function joinReq(code = 'ABC123'): NextRequest {
+function joinReq(code = 'ABC123', body: Record<string, unknown> = {}): NextRequest {
   return new NextRequest('http://app.example.com/api/team/join', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ code }),
+    // A join can mint the User row, so the route requires legal acceptance.
+    body: JSON.stringify({ code, acceptedLegal: true, ...body }),
   })
 }
 
@@ -103,6 +111,14 @@ beforeEach(() => {
 })
 
 describe('team join invariants', () => {
+  it('a join without legal acceptance is 400 before any user or team write', async () => {
+    mocks.txInviteFindUnique.mockResolvedValue(invite())
+    const res = await POST(joinReq('ABC123', { acceptedLegal: false }))
+    expect(res.status).toBe(400)
+    expect(mocks.userCreate).not.toHaveBeenCalled()
+    expect(mocks.txMemberCreate).not.toHaveBeenCalled()
+  })
+
   it('an unknown code is 404 and creates nothing', async () => {
     mocks.txInviteFindUnique.mockResolvedValue(null)
     const res = await POST(joinReq())

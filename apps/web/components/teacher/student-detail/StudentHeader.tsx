@@ -11,6 +11,7 @@ import {
 import { fmtDate } from '@/lib/format'
 import { RemoveFromClass } from './RemoveFromClass'
 import { MakeLabLead } from './MakeLabLead'
+import { AdvancePhase } from './AdvancePhase'
 import type { Overview } from './types'
 
 // ─── Student Identity Header ───────────────────────────────────────────────────
@@ -167,6 +168,18 @@ export function StudentHeader({ overview }: { overview: Overview }) {
               )
             })}
           </div>
+          {/* The teacher's lever. A classroom lab cannot advance itself — the
+              student route refuses it with `teacherPaced` — so this is the only
+              way a class moves forward. */}
+          {phase && (
+            <div className="pt-1">
+              <AdvancePhase
+                studentId={student.id}
+                teamName={team.name}
+                phase={phase}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

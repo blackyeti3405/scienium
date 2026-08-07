@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
 import { z } from 'zod'
 import { NotificationBell } from '@/components/lab/NotificationBell'
+import { LabTypePicker } from '@/components/onboarding/LabTypePicker'
+import type { LabType } from '@/lib/phase'
 import { ApiError, requestJson } from '@/lib/api/client'
 
 type Mode = 'create' | 'join'
@@ -70,6 +72,58 @@ function NameAndSchoolFields({
   )
 }
 
+/** The agreement gate. Rendered identically in the student and teacher forms —
+ *  a scienium account is created by three different routes and all three refuse
+ *  a body without it (lib/legal/consent.ts), so the box cannot be styled out of
+ *  one branch and quietly skipped there.
+ *
+ *  Both documents open in a new tab: reading them must not discard a
+ *  half-filled form. */
+function LegalConsentField({
+  accepted,
+  setAccepted,
+}: {
+  accepted: boolean
+  setAccepted: (v: boolean) => void
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3">
+      <input
+        type="checkbox"
+        checked={accepted}
+        onChange={(e) => setAccepted(e.target.checked)}
+        required
+        className="mt-0.5 h-4 w-4 shrink-0 accent-[#F5C518]"
+      />
+      {/* Body font at a readable size, not the 8px pixel chrome the field
+          labels use. An agreement nobody can read is not conspicuous, which is
+          what makes a clickwrap enforceable — and 8px pixel type fails the
+          accessibility floor besides. */}
+      <span className="text-[13px] leading-relaxed text-white/70">
+        I agree to the{' '}
+        <a
+          href="/terms"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#F5C518] underline underline-offset-2 hover:brightness-110"
+        >
+          Terms of Service
+        </a>{' '}
+        and{' '}
+        <a
+          href="/privacy"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#F5C518] underline underline-offset-2 hover:brightness-110"
+        >
+          Privacy Policy
+        </a>
+        . If you are under 18, review them with a parent, guardian, or teacher first.
+      </span>
+    </label>
+  )
+}
+
 export default function OnboardingPage() {
   const { user } = useUser()
   const router = useRouter()
@@ -94,6 +148,11 @@ export default function OnboardingPage() {
     process.env.NODE_ENV !== 'production' ? 'Santa Clara High School' : '',
   )
   const [classCode, setClassCode] = useState('')
+  const [acceptedLegal, setAcceptedLegal] = useState(false)
+  // Creating a lab is two screens: the details, then the lab-type pick. Joining a
+  // lab is one — the lab already has a type, and the joiner does not choose it.
+  const [step, setStep] = useState<'details' | 'labType'>('details')
+  const [labType, setLabType] = useState<LabType | null>(null)
   const [loading, setLoading] = useState(false)
   // True once the mutation has succeeded and we're mid-navigation — distinct from
   // `loading` so the button can swap to "Entering your lab…" for that leg instead
@@ -129,8 +188,8 @@ export default function OnboardingPage() {
       }
       const payload =
         mode === 'create'
-          ? { name, teamName, zip: zip.trim() || undefined, ...profile }
-          : { name, code, ...profile }
+          ? { name, teamName, zip: zip.trim() || undefined, acceptedLegal, labType, ...profile }
+          : { name, code, acceptedLegal, ...profile }
       await requestJson(endpoint, Ignored, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -159,7 +218,11 @@ export default function OnboardingPage() {
       await requestJson('/api/onboarding/teacher', Ignored, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, highSchool: highSchool.trim() || undefined }),
+        body: JSON.stringify({
+          name,
+          highSchool: highSchool.trim() || undefined,
+          acceptedLegal,
+        }),
       })
       // Stay busy through the hard navigation below (not `finally`) — the button
       // should read "Entering your lab…" until the document unload happens.
@@ -179,10 +242,25 @@ export default function OnboardingPage() {
     }
   }
 
-  const canSubmit =
-    !!name.trim() && (mode === 'create' ? !!teamName.trim() : code.trim().length >= 4)
+  const detailsComplete =
+    acceptedLegal &&
+    !!name.trim() &&
+    (mode === 'create' ? !!teamName.trim() : code.trim().length >= 4)
+  // Creating also needs a lab type, which lives on the second screen.
+  const canSubmit = detailsComplete && (mode !== 'create' || !!labType)
 
-  const canTeacherSubmit = !!name.trim()
+  /** Create: advance to the lab-type screen. Join: submit outright. */
+  function handleDetailsSubmit(e: React.FormEvent) {
+    if (mode === 'create') {
+      e.preventDefault()
+      setError(null)
+      setStep('labType')
+      return
+    }
+    void handleSubmit(e)
+  }
+
+  const canTeacherSubmit = acceptedLegal && !!name.trim()
 
   return (
     <div className="max-w-md w-full space-y-8">
@@ -222,7 +300,37 @@ export default function OnboardingPage() {
         ))}
       </div>
 
-      {accountType === 'student' ? (
+      {accountType === 'student' && step === 'labType' ? (
+        /* Screen 2 of creating a lab. Its own screen rather than one more field:
+           this is the only choice in onboarding a student cannot answer from what
+           they already know, so it gets room to explain itself. */
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <LabTypePicker value={labType} onChange={setLabType} />
+
+          {error && <p className="font-pixel text-[8px] text-red-400">{error}</p>}
+
+          <div className="space-y-2">
+            <button
+              type="submit"
+              disabled={loading || !canSubmit}
+              className="w-full font-pixel text-[9px] bg-[#F5C518] text-[#0d1b2e] py-3 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              {entering ? 'Entering your lab…' : loading ? 'Setting up…' : '↑ Enter Your Lab'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setStep('details')
+                setError(null)
+              }}
+              disabled={loading || entering}
+              className="w-full font-pixel text-[8px] text-white/40 hover:text-white/70 py-2 uppercase tracking-widest transition-colors disabled:opacity-40"
+            >
+              ← Back
+            </button>
+          </div>
+        </form>
+      ) : accountType === 'student' ? (
         <>
           {/* Create / Join toggle */}
           <div className="grid grid-cols-2 gap-2">
@@ -245,7 +353,7 @@ export default function OnboardingPage() {
             ))}
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleDetailsSubmit} className="space-y-5">
             <NameAndSchoolFields
               name={name}
               setName={setName}
@@ -314,22 +422,20 @@ export default function OnboardingPage() {
               </div>
             )}
 
+            <LegalConsentField accepted={acceptedLegal} setAccepted={setAcceptedLegal} />
+
             {error && <p className="font-pixel text-[8px] text-red-400">{error}</p>}
 
             <button
               type="submit"
-              disabled={loading || !canSubmit}
+              disabled={loading || !detailsComplete}
               className="w-full font-pixel text-[9px] bg-[#F5C518] text-[#0d1b2e] py-3 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
-              {entering
-                ? 'Entering your lab…'
-                : loading
-                  ? mode === 'create'
-                    ? 'Setting up…'
-                    : 'Joining…'
-                  : mode === 'create'
-                    ? '↑ Enter Your Lab'
-                    : '↑ Join the Lab'}
+              {loading
+                ? 'Joining…'
+                : mode === 'create'
+                  ? 'Next · Pick your lab →'
+                  : '↑ Join the Lab'}
             </button>
           </form>
         </>
@@ -341,6 +447,8 @@ export default function OnboardingPage() {
             highSchool={highSchool}
             setHighSchool={setHighSchool}
           />
+
+          <LegalConsentField accepted={acceptedLegal} setAccepted={setAcceptedLegal} />
 
           {error && <p className="font-pixel text-[8px] text-red-400">{error}</p>}
 

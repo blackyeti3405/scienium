@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { LAB_TYPE_LABELS, PHASE_INFO } from '@/lib/phase'
+import { LAB_TYPE_LABELS } from '@/lib/phase'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import {
-  getLiteratureAdvanceProgress,
-  isSelfAdvance,
-  SELF_ADVANCE_TRANSITIONS,
-} from '@/lib/team/advance'
+import { getLiteratureAdvanceProgress } from '@/lib/team/advance'
+import { isTeacherPaced } from '@/lib/team/class-scope'
 import { classifyLabType } from '@/lib/lab-type/classify'
 import { transferBuildingsToLabType } from '@/lib/lab-type/transfer'
 import { enforceRateLimit } from '@/lib/rate-limit'
@@ -29,42 +26,25 @@ const AdvanceBody = z
  * POST /api/team/advance-phase — runs the phase gate and, if satisfied, bumps
  * the team's phase.
  *
- * literature_review → research_planning:
+ * literature_review → working:
  *   - Gate: 25 sources uploaded AND every member proficient on all of them
  *   - Requires `researchIdea` in body: one sentence describing the project
  *   - Haiku classifies the idea → auto-assigns `teams.lab_type`
- *   - Skips `lab_selection`; jumps directly to `research_planning`
  *
- * research_planning → working and working → showcase:
- *   - Self-paced: a free "Advance" click bumps the phase (no gate, no teacher).
+ * There is no other transition through this route: `discovery` leaves via the
+ * topic lock, and a classroom lab is advanced by its teacher.
  */
 export async function POST(req: NextRequest) {
   const { ctx, error: guardError } = await requireTeamContext(req, { tier: 'mutate' })
   if (guardError) return guardError
 
-  // Self-paced transitions (research_planning → working, working → showcase):
-  // the student advances at their own pace — a conditional bump keeps concurrent
-  // clicks from skipping a phase.
-  if (isSelfAdvance(ctx.phase)) {
-    const toPhase = SELF_ADVANCE_TRANSITIONS[ctx.phase]!
-    // Durable (REFACTOR2 P1-R5): the compare-and-set phase bump and its
-    // record commit together — no paid call on this path, so one transaction
-    // costs nothing.
-    await db.$transaction(async (tx) => {
-      const { count } = await tx.team.updateMany({
-        where: { id: ctx.teamId, phase: ctx.phase },
-        // The phase clock is stamped BY the compare-and-set, so only the
-        // request that actually moved the team sets it (REFACTOR2 P2-S14).
-        data: { phase: toPhase, phaseEnteredAt: new Date() },
-      })
-      if (count > 0) {
-        await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'phase_advanced', {
-          fromPhase: ctx.phase,
-          toPhase,
-        })
-      }
-    })
-    return NextResponse.json({ phase: toPhase, phaseLabel: PHASE_INFO[toPhase].label })
+  // A classroom lab does not pace itself — its teacher runs the unit and decides
+  // when the room moves on (POST /api/teacher/student/[id]/advance).
+  if (await isTeacherPaced(ctx.teamId)) {
+    return NextResponse.json(
+      { error: 'Your teacher advances your lab to the next phase.', teacherPaced: true },
+      { status: 403 },
+    )
   }
 
   if (ctx.phase !== 'literature_review') {
@@ -140,7 +120,7 @@ export async function POST(req: NextRequest) {
 
   // COMPARE-AND-SET, not an unconditional write. The paid call above takes
   // seconds; without the `phase` predicate a response arriving after another
-  // transition would stamp `research_planning` over whatever the team had moved
+  // transition would stamp `working` over whatever the team had moved
   // on to — a later result rolling the lab BACKWARDS through the arc.
   //
   // The classify call already happened above — this transaction opens only
@@ -150,7 +130,7 @@ export async function POST(req: NextRequest) {
     const result = await tx.team.updateMany({
       where: { id: ctx.teamId, phase: 'literature_review' },
       data: {
-        phase: 'research_planning',
+        phase: 'working',
         // Same rule on the paid path: the CAS is the one place a phase change
         // is real, so it is the one place the clock is set (P2-S14).
         phaseEnteredAt: new Date(),
@@ -168,7 +148,7 @@ export async function POST(req: NextRequest) {
       const transfer = await transferBuildingsToLabType(tx, ctx.teamId, labType)
       await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'phase_advanced', {
         fromPhase: 'literature_review',
-        toPhase: 'research_planning',
+        toPhase: 'working',
         labType: LAB_TYPE_LABELS[labType],
         researchIdea,
         buildingsTransferred: transfer.moved,
@@ -185,7 +165,7 @@ export async function POST(req: NextRequest) {
       select: { phase: true, labType: true },
     })
     return NextResponse.json({
-      phase: fresh?.phase ?? 'research_planning',
+      phase: fresh?.phase ?? 'working',
       labType: fresh?.labType ?? null,
       labTypeLabel: fresh?.labType ? LAB_TYPE_LABELS[fresh.labType] : null,
       alreadyAdvanced: true,
@@ -193,7 +173,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    phase: 'research_planning',
+    phase: 'working',
     labType,
     labTypeLabel: LAB_TYPE_LABELS[labType],
     rationale,

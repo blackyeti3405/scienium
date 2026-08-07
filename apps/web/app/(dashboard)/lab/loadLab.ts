@@ -6,7 +6,6 @@ import { loadPlotState, type PlotState } from '@/lib/plot-server'
 import { GATEWAYS } from '@/lib/gateways'
 import {
   getLiteratureAdvanceProgress,
-  SELF_ADVANCE_TRANSITIONS,
   type AdvanceProgress,
 } from '@/lib/team/advance'
 import { PHASE_ORDER, LAB_TYPES, type Phase, type LabType } from '@/lib/phase'
@@ -27,7 +26,6 @@ export interface LabPageData {
   currency: { kp: number; clearanceLevel: number; lc: number }
   memberCount: number
   advance: AdvanceProgress | null
-  selfAdvance: { toPhase: Phase } | null
   seed: number
   placedBuildings: PlotState['economy']
   unplacedKeys: string[]
@@ -138,8 +136,9 @@ export async function loadLabPageData(
     advance = loadedAdvance
   }
 
-  // Self-paced transitions (→ working, → showcase): surface a free advance button.
-  const selfAdvanceTo = SELF_ADVANCE_TRANSITIONS[phase]
+  // No free advance button any more (v0.80.0) — both transitions are earned by an
+  // action (locking a topic; submitting a research idea), so there is nothing to
+  // click here.
 
   return {
     teamName,
@@ -148,7 +147,6 @@ export async function loadLabPageData(
     currency,
     memberCount,
     advance,
-    selfAdvance: teamId && selfAdvanceTo ? { toPhase: selfAdvanceTo } : null,
     seed: teamId ? seedFrom(teamId) : 1,
     placedBuildings: plot.economy,
     unplacedKeys: plot.unplaced,

@@ -6,6 +6,7 @@ import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
 import { recordSecurityEvent } from '@/lib/observability/security-event'
 import { resolvePrimaryEmail, resolveSchool, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { legalConsentShape, recordLegalAcceptance } from '@/lib/legal/consent'
 
 // `.strict()` rejects any field other than name + highSchool — role and userId
 // must never come from the body; the caller's identity comes from auth() only.
@@ -13,6 +14,7 @@ const TeacherOnboardingBody = z
   .object({
     name: z.string().trim().min(1, 'Name is required').max(80),
     highSchool: z.string().trim().max(120).optional(),
+    ...legalConsentShape,
   })
   .strict()
 
@@ -58,6 +60,9 @@ export async function POST(req: NextRequest) {
     (await db.user.create({
       data: { clerkUserId: userId, name, email, role: 'teacher' },
     }))
+
+  // See /api/onboarding — records which version, first pass only.
+  await recordLegalAcceptance(user.id)
 
   // On a fresh teacher signup, mirror the typed name into Clerk so the avatar matches.
   if (!existing) await syncClerkDisplayName(userId, name)

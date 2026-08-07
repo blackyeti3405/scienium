@@ -4,6 +4,7 @@ import { requireTeamContext } from '@/lib/api/route-context'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { parseJson } from '@/lib/validation'
 import { db } from '@/lib/db'
+import { applyTopicLock } from '@/lib/team/progression'
 import { consumeDestructive, proposeDestructive } from '@/lib/api/destructive-proposal'
 import { orphanObjectKey } from '@/lib/uploads/assets'
 import { batchCheckRelevance } from '@/lib/literature/relevance'
@@ -249,11 +250,30 @@ export async function POST(req: NextRequest) {
     connections = matchInterests(newTopic, interests)
   }
 
+  // Locking a FINAL TOPIC is the first phase transition: it derives the lab's
+  // type from the topic (carrying the plot onto the new catalog) and opens the
+  // Literature Review and the Battle Arena. A classroom lab gets its type but
+  // waits for its teacher to move it. No-ops unless the team is still in
+  // `discovery`, so re-editing a topic later costs nothing.
+  let progression: Awaited<ReturnType<typeof applyTopicLock>> | null = null
+  if (newTopic) {
+    try {
+      progression = await applyTopicLock(ctx.teamId, ctx.dbUserId, newTopic, ctx.phase)
+    } catch (err) {
+      // The topic IS saved at this point. A classify hiccup must not fail the
+      // write the student just made — they can re-save to retry the unlock.
+      console.error('[discovery/topic] topic-lock progression failed:', err)
+    }
+  }
+
   return NextResponse.json({
     topic: newTopic || null,
     removedCount,
     removedTitles,
     topicBonusKp,
     connections,
+    labType: progression?.labType ?? null,
+    phaseAdvanced: progression?.advanced ?? false,
+    teacherPaced: progression?.teacherPaced ?? false,
   })
 }

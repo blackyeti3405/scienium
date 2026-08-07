@@ -314,7 +314,7 @@ test.describe('Vocabulary Builder (Literature Review)', () => {
     const db = new PrismaClient()
     const team = await db.team.findUnique({ where: { id: lab.teamId }, select: { phase: true } })
     await db.$disconnect()
-    const reachablePhases = ['literature_review', 'research_planning', 'working', 'showcase']
+    const reachablePhases = ['literature_review', 'working']
     expect(reachablePhases).toContain(team?.phase)
 
     // openVocab already asserts the panel body reached a terminal loaded

@@ -4,10 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 /**
  * Paid phase advancement is claimed and compare-and-set (REFACTOR2 P1-R2).
  *
- * `literature_review → research_planning` reads the phase, runs a PAID Haiku
+ * `literature_review → working` reads the phase, runs a PAID Haiku
  * classification, then wrote with an unconditional `team.update({ id })`. Two
  * concurrent clicks both paid and both wrote, and a request whose model call
- * returned after another transition stamped `research_planning` over whatever
+ * returned after another transition stamped `working` over whatever
  * the team had moved on to — a later result rolling the lab BACKWARDS.
  *
  * The self-advance transitions in the same route already used a conditional
@@ -140,23 +140,23 @@ describe('a late result can never roll the lab backwards', () => {
 
     expect(casCall()).toMatchObject({
       where: { id: 'team_1', phase: 'literature_review' },
-      data: expect.objectContaining({ phase: 'research_planning', advanceClaimedAt: null }),
+      data: expect.objectContaining({ phase: 'working', advanceClaimedAt: null }),
     })
   })
 
   // The headline defect: the team moved on while we were classifying.
-  it('does not overwrite a team that already advanced past research_planning', async () => {
+  it('does not overwrite a team that already advanced past literature_review', async () => {
     mocks.teamUpdateMany
       .mockResolvedValueOnce({ count: 1 }) // claim won
       .mockResolvedValueOnce({ count: 0 }) // CAS matched nothing — phase moved
       .mockResolvedValue({ count: 1 }) // claim release
-    mocks.teamFindUnique.mockResolvedValue({ phase: 'showcase', labType: 'volt_lab' })
+    mocks.teamFindUnique.mockResolvedValue({ phase: 'working', labType: 'volt_lab' })
 
     const res = await POST(advanceReq())
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toMatchObject({ phase: 'showcase', alreadyAdvanced: true })
+    expect(body).toMatchObject({ phase: 'working', alreadyAdvanced: true })
     // And it did NOT claim to have advanced the team itself.
     expect(mocks.recordActivity).not.toHaveBeenCalled()
   })
@@ -169,28 +169,24 @@ describe('a late result can never roll the lab backwards', () => {
       'team_1',
       'user_1',
       'phase_advanced',
-      expect.objectContaining({ fromPhase: 'literature_review', toPhase: 'research_planning' }),
+      expect.objectContaining({ fromPhase: 'literature_review', toPhase: 'working' }),
     )
   })
 })
 
-describe('the free self-advance path is unchanged', () => {
-  it('bumps research_planning → working conditionally, with no paid call', async () => {
+describe('there is no free self-advance any more (v0.80.0)', () => {
+  it('refuses a phase that has no gate instead of bumping it', async () => {
     mocks.requireTeamContext.mockResolvedValue({
-      ctx: { teamId: 'team_1', dbUserId: 'user_1', userId: 'clerk_1', phase: 'research_planning' },
+      ctx: { teamId: 'team_1', dbUserId: 'user_1', userId: 'clerk_1', phase: 'discovery' },
       error: null,
     })
 
     const res = await POST(advanceReq())
 
-    expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ phase: 'working' })
-    expect(mocks.teamUpdateMany).toHaveBeenCalledWith({
-      where: { id: 'team_1', phase: 'research_planning' },
-      data: { phase: 'working', phaseEnteredAt: expect.any(Date) },
-    })
+    // `discovery` leaves via the topic lock, not this route.
+    expect(res.status).toBe(400)
+    expect(mocks.teamUpdateMany).not.toHaveBeenCalled()
     expect(mocks.classifyLabType).not.toHaveBeenCalled()
-    expect(mocks.enforceRateLimit).not.toHaveBeenCalledWith(expect.anything(), 'ai', expect.anything())
   })
 })
 
@@ -207,7 +203,7 @@ describe('the phase clock is stamped by the transition, not the attempt', () => 
     await POST(advanceReq())
 
     expect(casCall().data).toMatchObject({
-      phase: 'research_planning',
+      phase: 'working',
       phaseEnteredAt: expect.any(Date),
     })
   })
@@ -223,7 +219,7 @@ describe('the phase clock is stamped by the transition, not the attempt', () => 
       .mockResolvedValueOnce({ count: 1 }) // claim won
       .mockResolvedValueOnce({ count: 0 }) // CAS matched nothing — phase moved
       .mockResolvedValue({ count: 1 }) // claim release
-    mocks.teamFindUnique.mockResolvedValue({ phase: 'showcase', labType: 'volt_lab' })
+    mocks.teamFindUnique.mockResolvedValue({ phase: 'working', labType: 'volt_lab' })
 
     await POST(advanceReq())
 
