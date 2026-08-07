@@ -345,9 +345,10 @@ still owed:
   [`SECURITY.md`](SECURITY.md) §6.2:
   - **Clerk** application is named "Nova-lab" → shows "as Nova-lab" in auth emails. Rename
     it in the Clerk dashboard (Configure → Settings; also check Customization → Branding).
-  - **R2 bucket** is named `nova-lab-assets` — internal/invisible to users, so renaming is
-    optional cosmetic (R2 can't rename in place: new `scienium-assets` bucket + migrate +
-    update `R2_BUCKET_NAME`).
+  - **R2 bucket** is named `nova-lab-assets`. Renaming is now bundled with the launch
+    (new `scienium-assets` + a separate `scienium-assets-e2e`, which also closes the
+    shared-bucket hazard above) — see
+    [`runbooks/production-launch.md`](runbooks/production-launch.md) Part C.
 
 ## Science Fair dataset (Feature 3 follow-up)
 - `content/fairs/dataset.ts` is a **provisional starter** modeled on the Society for

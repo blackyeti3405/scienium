@@ -344,9 +344,14 @@ are in the repo; project context lives in `SPEC.md`, `ARCHITECTURE.md`, and
 
 ## 8. Production deployment (Vercel + managed services)
 
-The web app is built for **Vercel**. This section is the complete checklist for a
-production deploy — do it whenever you're ready; nothing here is needed for local
-development.
+The web app is built for **Vercel**. This section is the env-var and deploy-step
+reference; nothing here is needed for local development.
+
+> **Launching for the first time?** Follow
+> [`runbooks/production-launch.md`](runbooks/production-launch.md) instead — the
+> click-by-click version covering the Clerk production instance, a production
+> database with RLS and the Data API disabled, the production R2 bucket, and the
+> post-deploy verification list. This section is the reference it points back to.
 
 ### 8.1 Production environment variables
 
