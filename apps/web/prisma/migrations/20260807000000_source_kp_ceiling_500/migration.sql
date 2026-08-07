@@ -1,0 +1,11 @@
+-- Per-source KP ceiling raised 100 → 500 (lib/economy.ts KP_PER_SOURCE_MAX).
+--
+-- `paper_proficiency.kp_awarded` is a KP high-water, not a score, and the award
+-- is `max(0, sourceKp(aggregate) - kp_awarded)`. Left in the old 0–100 units, a
+-- student who had already banked 90 would be re-paid 450 − 90 = 360 KP for
+-- re-passing the SAME quiz at the SAME score — a one-time windfall that also
+-- breaks the "re-passing pays nothing" invariant the anti-farming tests pin.
+--
+-- Rescale the stored high-waters onto the new ceiling. `best_score` is the 0–100
+-- score and is deliberately NOT touched.
+UPDATE "paper_proficiency" SET "kp_awarded" = "kp_awarded" * 5 WHERE "kp_awarded" > 0;

@@ -68,10 +68,13 @@ vi.mock('@/lib/db', () => ({
 
 import { placeBuilding, moveBuilding, sellBuilding, upgradeBuilding } from './service'
 import { sellRefund, upgradeKpCost } from '@/lib/economy'
+import { shopBuilding } from '@/lib/shop'
 
 // 'workshop': tier 0 → cost 1000, minClearance 0 (real catalog entry).
 const KEY = 'workshop'
-const BASE_COST = 1000
+// Derived, not hand-typed: `workshop` is tier 0, so this tracks TIER_LADDER
+// through an economy rebalance instead of pinning a number that moved.
+const BASE_COST = shopBuilding(KEY)!.cost
 
 function shopState(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -223,7 +226,9 @@ describe('upgradeBuilding', () => {
       level: 2,
       posX: 1,
       posY: 1,
-      costPaid: 1_000,
+      // What the team actually paid for this building at purchase — the upgrade
+      // adds to it, and the sell refund is taken off the total.
+      costPaid: BASE_COST,
     })
   })
 
@@ -235,7 +240,7 @@ describe('upgradeBuilding', () => {
     if (res.ok) {
       expect(res.level).toBe(3)
       expect(res.kpCost).toBe(kpCost)
-      expect(res.costPaid).toBe(1_000 + kpCost) // total KP invested drives the sell refund
+      expect(res.costPaid).toBe(BASE_COST + kpCost) // total KP invested drives the sell refund
     }
     expect(mocks.tx.teamCurrency.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ kp: { gte: kpCost } }) }),

@@ -47,23 +47,44 @@ export interface ShopBuilding {
    * through the sprite manifest (`getBuildingSprite`).
    */
   sprite?: string
+  /**
+   * Index into `TIER_LADDER` (0–9). Every lab catalog covers all ten steps
+   * exactly once, which is what makes a building's rank portable BETWEEN labs:
+   * "the tier-9 Volt Lab building" and "the tier-9 BioCore building" are the same
+   * rung. `lib/lab-type/transfer.ts` reassigns a team's plot on that basis.
+   * Undefined only for a hypothetical lab-agnostic entry (there are none today).
+   */
+  tier?: number
 }
 
 /**
  * The shared 10-step (cost, minClearance) economy ladder every lab catalog
  * mirrors, cheapest first. Rebalance prices here — never per lab.
+ *
+ * Rebalanced (v0.79.0). The old ladder ran 1,000 → 18,000 and summed to 70,900 KP
+ * for a full plot, against early-game income of at most 60 KP/day from Discovery —
+ * roughly 17 days of maxed-out grinding for the CHEAPEST building. Costs are ~5×
+ * lower and the entry tier ~7× lower, so a first session ends with buildings on
+ * the plot instead of an empty one. Clearance still carries the real pacing: KP
+ * gets you to the shelf, expertise decides what you may take off it.
+ *
+ * The first THREE rungs are clearance-free (they were 0/1/1). Clearance is raised
+ * by Proof of Expertise, which a brand-new lab has not reached yet — so gating
+ * the 2nd and 3rd buildings on it capped a first session at exactly one building
+ * no matter how much KP the team earned. Expertise now starts gating from tier 3,
+ * where it reads as a milestone rather than a wall.
  */
 export const TIER_LADDER: ReadonlyArray<{ cost: number; minClearance: number }> = [
-  { cost: 1000, minClearance: 0 },
-  { cost: 2800, minClearance: 1 },
-  { cost: 3600, minClearance: 1 },
-  { cost: 4500, minClearance: 2 },
-  { cost: 5500, minClearance: 2 },
-  { cost: 6500, minClearance: 2 },
-  { cost: 7500, minClearance: 3 },
-  { cost: 9000, minClearance: 3 },
-  { cost: 11000, minClearance: 3 },
-  { cost: 18000, minClearance: 4 },
+  { cost: 150, minClearance: 0 },
+  { cost: 400, minClearance: 0 },
+  { cost: 600, minClearance: 0 },
+  { cost: 800, minClearance: 1 },
+  { cost: 1000, minClearance: 1 },
+  { cost: 1300, minClearance: 2 },
+  { cost: 1600, minClearance: 2 },
+  { cost: 2000, minClearance: 3 },
+  { cost: 2600, minClearance: 3 },
+  { cost: 4000, minClearance: 4 },
 ]
 
 interface LabBuildingSpec {
@@ -89,7 +110,8 @@ interface LabBuildingSpec {
  */
 function labBuildings(labType: LabType, specs: LabBuildingSpec[]): ShopBuilding[] {
   return specs.map((spec, i) => {
-    const step = TIER_LADDER[spec.tier ?? i]
+    const tier = spec.tier ?? i
+    const step = TIER_LADDER[tier]
     return {
       key: spec.key,
       name: spec.name,
@@ -98,6 +120,7 @@ function labBuildings(labType: LabType, specs: LabBuildingSpec[]): ShopBuilding[
       description: spec.description,
       labType,
       sprite: spec.sprite ?? spec.key.replaceAll('_', '-'),
+      tier,
     }
   })
 }
@@ -207,4 +230,14 @@ export function shopBuilding(key: string): ShopBuilding | undefined {
  */
 export function shopBuildingsForLabType(labType: LabType | null): ShopBuilding[] {
   return SHOP_BUILDINGS.filter((b) => !b.labType || b.labType === labType)
+}
+
+/**
+ * The building occupying a given rung of `TIER_LADDER` in one lab's catalog —
+ * the counterpart lookup that makes a plot portable across lab types. Every lab
+ * covers tiers 0–9 exactly once, so this resolves for any tier a real building
+ * already holds.
+ */
+export function buildingAtTier(labType: LabType, tier: number): ShopBuilding | undefined {
+  return SHOP_BUILDINGS.find((b) => b.labType === labType && b.tier === tier)
 }

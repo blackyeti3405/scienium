@@ -14,17 +14,27 @@ import type { CredibilityTier } from '@prisma/client'
 // ─── Constants (named exports so tests + the plan agree; tune here later) ─────
 
 /** Base KP for the first visit to any Discovery node (wiki/youtube = base ×1). */
-export const DISCOVERY_VISIT_KP = 5
+export const DISCOVERY_VISIT_KP = 10
 
 /**
  * Hard cap on KP a team can earn from Discovery visits in one real calendar day.
  * ≈ enough for a normal exploratory session; blocks grinding. Awards that would
  * cross the cap are clamped to the remaining headroom (partial, down to 0).
+ *
+ * Raised 60 → 250 (v0.79.0). Discovery is the ONLY KP faucet open before a team
+ * locks a topic — the Literature Review is gated behind that, and the Project /
+ * Failure logs pay Lab Credits, not KP. At 60/day a new lab could not afford even
+ * the cheapest building in its first session, which is the moment the plot is
+ * supposed to start filling in.
  */
-export const DISCOVERY_DAILY_KP_CAP = 60
+export const DISCOVERY_DAILY_KP_CAP = 250
 
-/** One-time-ever bonus granted when a team first locks in its research topic. */
-export const TOPIC_LOCK_KP = 25
+/**
+ * One-time-ever bonus granted when a team first locks in its research topic.
+ * This is the moment the game opens up (lab type assigned, Literature Review and
+ * the Battle Arena unlocked), so it pays like a milestone rather than a click.
+ */
+export const TOPIC_LOCK_KP = 100
 
 /**
  * Credibility-tier multipliers for `source` nodes. Peer-reviewed > preprint /

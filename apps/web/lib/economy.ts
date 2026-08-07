@@ -35,30 +35,46 @@ export interface QuizAward {
   kpEarned: number
   /** New `bestScore` high-water to persist (never below prior). */
   newBestScore: number
-  /** New `kpAwarded` high-water to persist (never below prior, capped at 100). */
+  /** New `kpAwarded` high-water to persist (never below prior, capped at the max). */
   newKpAwarded: number
 }
 
 /**
- * A source grants each student at most 100 KP — their best passing quiz score —
- * and only ever tops up by the improvement over their own prior best. A failing
- * quiz, or a passing retake that doesn't beat the prior best, grants nothing.
+ * Most KP one source can ever grant one student. Was 100 — literally the quiz
+ * score used as a KP amount — which made reading a paper worth a fifth of the
+ * cheapest building. Reading sources is the core loop, so it is now the loop
+ * that funds the lab.
+ */
+export const KP_PER_SOURCE_MAX = 500
+
+/** A quiz aggregate (0–100) as KP. Kept proportional so score still IS the reward. */
+export function sourceKp(aggregate: number): number {
+  return Math.round(clampScore(aggregate) * (KP_PER_SOURCE_MAX / 100))
+}
+
+/**
+ * A source grants each student at most `KP_PER_SOURCE_MAX` KP — scaled from their
+ * best passing quiz score — and only ever tops up by the improvement over their
+ * own prior high-water. A failing quiz, or a passing retake that doesn't beat the
+ * prior best, grants nothing.
  *
- * Mirrors the prior inline logic in papers/[id]/quiz/grade exactly:
- *   kpEarned     = passed ? max(0, aggregate - priorKp) : 0
- *   newKpAwarded = max(priorKp,  min(100, aggregate))     // create used min(100,agg); update used max(priorKp,agg)
+ *   kpEarned     = passed ? max(0, sourceKp(aggregate) - priorKp) : 0
+ *   newKpAwarded = max(priorKp, sourceKp(aggregate))
  *   newBestScore = max(priorBest, aggregate)
- * (aggregate is an average of clamped 0–100 scores, so it is already ≤ 100 and
- * the min(100, …) is a no-op kept for defensiveness.)
+ *
+ * `priorKp` is a KP high-water (0–500), `priorBest`/`aggregate` are 0–100 scores —
+ * the two live in different units on purpose, so raising the ceiling never
+ * rescales a stored score.
  */
 export function computeQuizAward({ passed, aggregate, priorKp, priorBest }: QuizAwardInput): QuizAward {
   if (!passed) {
     return { kpEarned: 0, newBestScore: priorBest, newKpAwarded: priorKp }
   }
+  const earned = sourceKp(aggregate)
   return {
-    kpEarned: Math.max(0, aggregate - priorKp),
+    kpEarned: Math.max(0, earned - priorKp),
     newBestScore: Math.max(priorBest, aggregate),
-    newKpAwarded: Math.max(priorKp, Math.min(100, aggregate)),
+    newKpAwarded: Math.max(priorKp, earned),
   }
 }
 
@@ -148,14 +164,24 @@ export function clampScoreGain(aggregate: number, priorBest: number, maxGain = 1
 export const MAX_BUILDING_LEVEL = 15
 
 /**
- * KP cost to raise a building TO `toLevel` (it starts at level 1). Every upgrade
- * costs KP, scaled by the building's base purchase cost and the level reached:
- *   round(baseCost × 0.25 × (toLevel − 1))
- * so premium buildings cost proportionally more to level up. Caller validates the
- * building is below MAX_BUILDING_LEVEL before charging.
+ * Slope of the per-level upgrade price, as a fraction of the building's base cost.
+ *
+ * Was 0.25, which summed to `baseCost × 26.25` to take one building from L1 to
+ * L15 — maxing a single premium building cost 472,500 KP, more than a class could
+ * earn in a term, so in practice nothing was ever levelled. At 0.06 the same
+ * journey is `baseCost × 6.3`: a real long-term goal instead of a fictional one.
+ * THE upgrade knob — tune here, nowhere else.
+ */
+export const UPGRADE_COST_SLOPE = 0.06
+
+/**
+ * KP cost to raise a building TO `toLevel` (it starts at level 1):
+ *   round(baseCost × UPGRADE_COST_SLOPE × (toLevel − 1))
+ * so premium buildings still cost proportionally more to level up. Caller
+ * validates the building is below MAX_BUILDING_LEVEL before charging.
  */
 export function upgradeKpCost(baseCost: number, toLevel: number): number {
-  return Math.round(baseCost * 0.25 * (toLevel - 1))
+  return Math.round(baseCost * UPGRADE_COST_SLOPE * (toLevel - 1))
 }
 
 /**

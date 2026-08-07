@@ -82,6 +82,7 @@ vi.mock('@/lib/db', () => ({
 
 import { prepareRetry, submitRetry } from './quiz-retry'
 import { QUIZ_QUESTION_COUNT, RETRY_SCORE_CAP } from './quiz'
+import { KP_PER_SOURCE_MAX } from '@/lib/economy'
 
 const PRINCIPAL = { dbUserId: 'u1', teamId: 't1' }
 
@@ -297,14 +298,14 @@ describe('submitRetry — score integrity', () => {
   })
 
   it('KP flows through the transaction only when the award says so', async () => {
-    mocks.proficiencyFindUnique.mockResolvedValue({ kpAwarded: 100, bestScore: 95 })
+    mocks.proficiencyFindUnique.mockResolvedValue({ kpAwarded: KP_PER_SOURCE_MAX, bestScore: 95 })
     const res = await submitRetry('sess_1', 'paper_1', PRINCIPAL, [
       { questionId: 'q1', response: 'a' },
       { questionId: 'q2', response: 'a' },
       { questionId: 'q6', response: 'a' },
     ])
     expect(res.ok).toBe(true)
-    if (res.ok) expect(res.kpEarned).toBe(0) // 100 KP already banked — high-water pays nothing
+    if (res.ok) expect(res.kpEarned).toBe(0) // ceiling already banked — high-water pays nothing
     expect(mocks.currencyUpsert).not.toHaveBeenCalled()
   })
 

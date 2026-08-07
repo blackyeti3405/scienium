@@ -150,15 +150,15 @@ describe('the initial grade is first-writer-wins', () => {
   it('mints the KP and records the pass on the winning grade', async () => {
     const out = await commit()
 
-    expect(out).toEqual({ graded: true, kpEarned: 90 })
-    expect(currency[0]!.kp).toBe(90)
-    expect(proficiencies[0]).toMatchObject({ demonstrated: true, bestScore: 90, kpAwarded: 90 })
+    expect(out).toEqual({ graded: true, kpEarned: 450 })
+    expect(currency[0]!.kp).toBe(450)
+    expect(proficiencies[0]).toMatchObject({ demonstrated: true, bestScore: 90, kpAwarded: 450 })
     expect(activities).toEqual([{ action: 'quiz_passed', inTx: true }])
   })
 
   it('THE ATTACK: a race loser writes nothing at all', async () => {
     // A concurrent request already stamped `gradedAt` inside the lock. Without
-    // the bail, this second commit pays a second 90 KP for one quiz and files a
+    // the bail, this second commit pays a second 450 KP for one quiz and files a
     // second `quiz_passed` for the teacher.
     sessions[0] = session({ gradedAt: new Date(), score: 90, passed: true })
 
@@ -177,13 +177,13 @@ describe('a retry may raise a verdict but never lower it', () => {
 
     const out = await commit({ retry: true, aggregate: 85 })
 
-    expect(out).toEqual({ graded: true, kpEarned: 85 })
+    expect(out).toEqual({ graded: true, kpEarned: 425 })
     expect(sessions[0]).toMatchObject({ score: 85, passed: true, retryGradeClaimedAt: null })
   })
 
   it('THE ATTACK: a late low retry cannot erase an existing pass', async () => {
     sessions[0] = session({ gradedAt: new Date(), score: 88, passed: true })
-    proficiencies.push({ paperId: 'paper_1', userId: 'user_1', kpAwarded: 88, bestScore: 88 })
+    proficiencies.push({ paperId: 'paper_1', userId: 'user_1', kpAwarded: 440, bestScore: 88 })
 
     await commit({ retry: true, aggregate: 30, passed: false })
 
@@ -201,7 +201,7 @@ describe('a retry may raise a verdict but never lower it', () => {
 
 describe('KP is the improvement over this student’s high-water mark', () => {
   it('THE ATTACK: re-passing the same source at the same score pays nothing', async () => {
-    proficiencies.push({ paperId: 'paper_1', userId: 'user_1', kpAwarded: 90, bestScore: 90 })
+    proficiencies.push({ paperId: 'paper_1', userId: 'user_1', kpAwarded: 450, bestScore: 90 })
 
     const out = await commit({ retry: true, aggregate: 90 })
 
@@ -210,13 +210,13 @@ describe('KP is the improvement over this student’s high-water mark', () => {
   })
 
   it('tops up only the difference when a retake beats the prior best', async () => {
-    proficiencies.push({ paperId: 'paper_1', userId: 'user_1', kpAwarded: 70, bestScore: 70 })
+    proficiencies.push({ paperId: 'paper_1', userId: 'user_1', kpAwarded: 350, bestScore: 70 })
 
     const out = await commit({ retry: true, aggregate: 95 })
 
-    expect(out.kpEarned).toBe(25)
-    expect(currency[0]!.kp).toBe(25)
-    expect(proficiencies[0]).toMatchObject({ bestScore: 95, kpAwarded: 95 })
+    expect(out.kpEarned).toBe(125)
+    expect(currency[0]!.kp).toBe(125)
+    expect(proficiencies[0]).toMatchObject({ bestScore: 95, kpAwarded: 475 })
   })
 })
 

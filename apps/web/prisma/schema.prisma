@@ -986,7 +986,10 @@ model PaperProficiency {
   demonstrated Boolean  @default(false)
   // Best aggregate quiz score this student has achieved on the source (0-100).
   bestScore    Int      @default(0) @map("best_score")
-  // High-water mark of KP this student has already earned from the source (max 100).
+  // High-water mark of KP this student has already earned from the source
+  // (max `KP_PER_SOURCE_MAX`, lib/economy.ts — 500 since v0.79.0). This is KP,
+  // NOT a score: `bestScore` above is the 0–100 one. Raising the ceiling
+  // rescaled the stored values (migration 20260807_source_kp_ceiling_500).
   kpAwarded    Int      @default(0) @map("kp_awarded")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

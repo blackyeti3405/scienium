@@ -15,13 +15,13 @@ describe('visitKp — base × tier multiplier', () => {
 
   it('peer-reviewed earns 3× the base', () => {
     expect(visitKp('peer_reviewed')).toBe(DISCOVERY_VISIT_KP * 3)
-    expect(visitKp('peer_reviewed')).toBe(15)
+    expect(visitKp('peer_reviewed')).toBe(30)
   })
 
   it('preprint + open_access earn 2× the base', () => {
     expect(visitKp('preprint')).toBe(DISCOVERY_VISIT_KP * 2)
     expect(visitKp('open_access')).toBe(DISCOVERY_VISIT_KP * 2)
-    expect(visitKp('preprint')).toBe(10)
+    expect(visitKp('preprint')).toBe(20)
   })
 
   it('peer-reviewed > preprint (tier scaling is monotone)', () => {
@@ -54,7 +54,7 @@ describe('clampToDailyCap — daily headroom clamp', () => {
 })
 
 describe('TOPIC_LOCK_KP is the documented one-time bonus', () => {
-  it('equals 25', () => {
-    expect(TOPIC_LOCK_KP).toBe(25)
+  it('equals 100 — a milestone, not a click', () => {
+    expect(TOPIC_LOCK_KP).toBe(100)
   })
 })

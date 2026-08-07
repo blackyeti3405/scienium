@@ -31,6 +31,9 @@ vi.mock('@/lib/activity/log', () => ({ recordActivity: mocks.recordActivity }))
 vi.mock('@/lib/db', () => {
   const db = {
     team: { update: mocks.teamUpdate, updateMany: mocks.teamUpdateMany },
+    // Lab-type reassignment carries the plot with it (lib/lab-type/transfer.ts),
+    // inside this transaction. Empty plot — the remap has its own test.
+    teamShopBuilding: { findMany: vi.fn(async () => []), update: vi.fn() },
     $transaction: vi.fn((cb: (tx: unknown) => unknown) => cb(db)),
   }
   return { db }

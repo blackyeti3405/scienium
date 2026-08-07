@@ -9,6 +9,7 @@ import {
   SELF_ADVANCE_TRANSITIONS,
 } from '@/lib/team/advance'
 import { classifyLabType } from '@/lib/lab-type/classify'
+import { transferBuildingsToLabType } from '@/lib/lab-type/transfer'
 import { enforceRateLimit } from '@/lib/rate-limit'
 import { recordActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
@@ -159,11 +160,18 @@ export async function POST(req: NextRequest) {
       },
     })
     if (result.count === 1) {
+      // The team was told at sign-up to pick "whatever you'll probably do" and
+      // that it would be corrected from the real idea — this is that correction,
+      // so the plot has to come with it. Same transaction as the `labType` write:
+      // a crash between the two would strand a BioCore team holding Volt Lab
+      // buildings that its own shop can no longer see.
+      const transfer = await transferBuildingsToLabType(tx, ctx.teamId, labType)
       await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'phase_advanced', {
         fromPhase: 'literature_review',
         toPhase: 'research_planning',
         labType: LAB_TYPE_LABELS[labType],
         researchIdea,
+        buildingsTransferred: transfer.moved,
       })
     }
     return result

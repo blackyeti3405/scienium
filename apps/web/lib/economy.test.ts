@@ -9,6 +9,8 @@ import {
   upgradeKpCost,
   upgradeLcCost,
   teamCostMultiplier,
+  KP_PER_SOURCE_MAX,
+  UPGRADE_COST_SLOPE,
 } from '@/lib/economy'
 
 describe('clampScore', () => {
@@ -21,35 +23,45 @@ describe('clampScore', () => {
 })
 
 describe('computeQuizAward — KP high-water invariants', () => {
-  it('a fresh pass awards the full aggregate', () => {
+  // `priorKp`/`kpEarned` are KP (0–KP_PER_SOURCE_MAX); `aggregate`/`priorBest`
+  // are 0–100 scores. Different units on purpose — raising the KP ceiling must
+  // never rescale a stored score.
+  it('a fresh pass awards the aggregate scaled to KP', () => {
     expect(computeQuizAward({ passed: true, aggregate: 80, priorKp: 0, priorBest: 0 })).toEqual({
-      kpEarned: 80,
+      kpEarned: 400,
       newBestScore: 80,
-      newKpAwarded: 80,
+      newKpAwarded: 400,
     })
   })
 
+  it('a perfect score pays exactly the per-source ceiling', () => {
+    const r = computeQuizAward({ passed: true, aggregate: 100, priorKp: 0, priorBest: 0 })
+    expect(r.kpEarned).toBe(KP_PER_SOURCE_MAX)
+    expect(r.newKpAwarded).toBe(KP_PER_SOURCE_MAX)
+  })
+
   it('a failing quiz awards nothing and lowers no high-water', () => {
-    expect(computeQuizAward({ passed: false, aggregate: 95, priorKp: 60, priorBest: 70 })).toEqual({
+    expect(computeQuizAward({ passed: false, aggregate: 95, priorKp: 300, priorBest: 70 })).toEqual({
       kpEarned: 0,
       newBestScore: 70,
-      newKpAwarded: 60,
+      newKpAwarded: 300,
     })
   })
 
   it('a passing retake tops up only by the improvement', () => {
-    expect(computeQuizAward({ passed: true, aggregate: 90, priorKp: 70, priorBest: 70 })).toEqual({
-      kpEarned: 20,
+    // Prior 70 → 350 KP banked; now 90 → 450 KP, so only 100 KP is owed.
+    expect(computeQuizAward({ passed: true, aggregate: 90, priorKp: 350, priorBest: 70 })).toEqual({
+      kpEarned: 100,
       newBestScore: 90,
-      newKpAwarded: 90,
+      newKpAwarded: 450,
     })
   })
 
   it('a weaker passing retake grants nothing and never lowers the high-water', () => {
-    const r = computeQuizAward({ passed: true, aggregate: 75, priorKp: 90, priorBest: 90 })
+    const r = computeQuizAward({ passed: true, aggregate: 75, priorKp: 450, priorBest: 90 })
     expect(r.kpEarned).toBe(0)
     expect(r.newBestScore).toBe(90)
-    expect(r.newKpAwarded).toBe(90)
+    expect(r.newKpAwarded).toBe(450)
   })
 
   it('INVARIANT: high-water never decreases across any sequence', () => {
@@ -66,19 +78,21 @@ describe('computeQuizAward — KP high-water invariants', () => {
       kp = r.newKpAwarded
       best = r.newBestScore
     }
-    expect(kp).toBe(100)
+    expect(kp).toBe(KP_PER_SOURCE_MAX)
     expect(best).toBe(100)
   })
 
-  it('total KP credited over retakes never exceeds 100 for one paper', () => {
+  it('total KP credited over retakes never exceeds the ceiling for one paper', () => {
     let kp = 0
+    let best = 0
     let totalCredited = 0
     for (const aggregate of [40, 75, 60, 100, 100]) {
-      const r = computeQuizAward({ passed: true, aggregate, priorKp: kp, priorBest: kp })
+      const r = computeQuizAward({ passed: true, aggregate, priorKp: kp, priorBest: best })
       totalCredited += r.kpEarned
       kp = r.newKpAwarded
+      best = r.newBestScore
     }
-    expect(totalCredited).toBeLessThanOrEqual(100)
+    expect(totalCredited).toBeLessThanOrEqual(KP_PER_SOURCE_MAX)
   })
 })
 
@@ -230,14 +244,25 @@ describe('evaluatePurchase', () => {
   })
 })
 
-describe('upgradeKpCost — round(base × 0.25 × (toLevel − 1))', () => {
+describe('upgradeKpCost — round(base × UPGRADE_COST_SLOPE × (toLevel − 1))', () => {
   it('scales with base cost and target level', () => {
-    expect(upgradeKpCost(1000, 2)).toBe(250)
-    expect(upgradeKpCost(1000, 4)).toBe(750)
-    expect(upgradeKpCost(1000, 8)).toBe(1750)
-    expect(upgradeKpCost(1000, 15)).toBe(3500)
+    expect(upgradeKpCost(1000, 2)).toBe(60)
+    expect(upgradeKpCost(1000, 4)).toBe(180)
+    expect(upgradeKpCost(1000, 8)).toBe(420)
+    expect(upgradeKpCost(1000, 15)).toBe(840)
     // premium building (higher base) costs proportionally more
-    expect(upgradeKpCost(18000, 4)).toBe(13500)
+    expect(upgradeKpCost(4000, 4)).toBe(720)
+  })
+
+  it('a full L1→L15 climb stays within reach of a term of play', () => {
+    // The old 0.25 slope summed to base × 26.25 — 472,500 KP for one premium
+    // building, which is why nothing was ever levelled.
+    const total = Array.from({ length: 14 }, (_, i) => upgradeKpCost(4000, i + 2)).reduce(
+      (a, b) => a + b,
+      0,
+    )
+    expect(total).toBe(Math.round(4000 * UPGRADE_COST_SLOPE * 105))
+    expect(total).toBeLessThan(30_000)
   })
 })
 

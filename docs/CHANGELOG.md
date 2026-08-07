@@ -5,6 +5,58 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.79.0] — 2026-08-07
+
+Economy rebalance and lab-type portability — the first half of the progression
+work (the phase restructure and the lab-type picker follow separately). The old
+numbers made the lab effectively unbuildable: a full plot cost 70,900 KP against
+early-game income of at most 60 KP/day, and maxing ONE premium building cost
+472,500 KP. Nothing in the shop was reachable, so nothing in the shop mattered.
+
+### Added
+
+- **`lib/lab-type/transfer.ts`** — carries a team's plot across a lab-type
+  reassignment. Teams pick a lab type up front but the real one is decided later
+  from their topic, so a Volt Lab that becomes BioCore would otherwise find every
+  building it owns filtered out of its own shop: unbuyable, unsellable,
+  unrenderable. Mapping is by TIER, not name — every lab catalog covers
+  `TIER_LADDER` steps 0–9 exactly once, so the tier-9 Volt Lab building (AI
+  Incubator) becomes the tier-9 BioCore building (Bioinformatics Suite). Grid
+  position, upgrade level and KP actually paid all ride along, so a later sell
+  still refunds the true purchase price. Runs inside the same transaction as the
+  `Team.labType` write; idempotent by construction.
+- **`ShopBuilding.tier`** — a building's rung on `TIER_LADDER`, and
+  `buildingAtTier(labType, tier)` to resolve its counterpart in another lab. The
+  rank was previously implicit in array position, which is not portable.
+
+### Changed
+
+- **Building costs cut ~5×** (entry tier ~7×): the ladder runs 150 → 4,000 instead
+  of 1,000 → 18,000, and a full plot is 14,450 KP instead of 70,900.
+- **The first three rungs are clearance-free** (were 0/1/1). Clearance comes from
+  Proof of Expertise, which a brand-new lab has not reached — so gating the 2nd
+  and 3rd buildings on it capped a first session at exactly one building no matter
+  how much KP was earned. Expertise now gates from tier 3 up.
+- **Upgrade slope 0.25 → 0.06** (`UPGRADE_COST_SLOPE`). L1→L15 on one building
+  falls from `baseCost × 26.25` to `× 6.3` — 25,200 KP for a premium building
+  instead of 472,500.
+- **Per-source Literature KP ceiling 100 → 500** (`KP_PER_SOURCE_MAX`). Reading a
+  source was worth a fifth of the cheapest building; it is now the loop that funds
+  the lab. The award stays proportional to the quiz score and keeps its per-student
+  high-water, so re-passing the same source still pays nothing.
+- **Discovery KP: base 5 → 10, daily cap 60 → 250, topic lock 25 → 100.** Discovery
+  is the only KP faucet open before a topic is locked — Literature is gated behind
+  it and the Project/Failure logs pay Lab Credits, not KP — so at 60/day a new lab
+  could not afford even the cheapest building in its first session.
+
+### Fixed
+
+- **Migration `20260807000000_source_kp_ceiling_500`** rescales stored
+  `paper_proficiency.kp_awarded` ×5. That column is a KP high-water, not a score,
+  and the award is `max(0, sourceKp(aggregate) − kp_awarded)` — left in old units a
+  student who had banked 90 would be re-paid 360 KP for re-passing the SAME quiz at
+  the SAME score, breaking the anti-farming invariant. `best_score` is untouched.
+
 ## [0.78.0] — 2026-08-06
 
 PvP goes from "wired up" to actually playable, plus a pre-pilot auth fix. The raid
