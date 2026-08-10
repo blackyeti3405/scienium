@@ -28,13 +28,14 @@ export interface PlotState {
   economy: PlacedEconomy[]
   /** Economy buildings owned but not yet positioned (legacy / pre-placement rows). */
   unplaced: string[]
-  /** Effective gateway positions — a per-team override, else the hardcoded cell. */
+  /** Gateways the team has PLACED. A gateway that is merely unlocked is not
+   *  here — it sits in the shop until the student puts it down. */
   gateways: PlacedGateway[]
 }
 
 /** Load a team's full plot: placed economy buildings + effective gateway positions. */
 export async function loadPlotState(teamId: string): Promise<PlotState> {
-  const [shop, overrides] = await Promise.all([
+  const [shop, placements] = await Promise.all([
     db.teamShopBuilding.findMany({
       where: { teamId },
       select: { buildingKey: true, posX: true, posY: true, costPaid: true, level: true },
@@ -55,11 +56,14 @@ export async function loadPlotState(teamId: string): Promise<PlotState> {
     }
   }
 
-  const overrideMap = new Map(overrides.map((o) => [o.gatewayKey, { gx: o.posX, gy: o.posY }]))
-  const gateways: PlacedGateway[] = GATEWAYS.map((g) => {
-    const o = overrideMap.get(g.key)
-    return { key: g.key, gx: o?.gx ?? g.cell.gx, gy: o?.gy ?? g.cell.gy }
-  })
+  // Only PLACED gateways render. This used to map over GATEWAYS and fall back
+  // to each one's hardcoded cell, which meant every gateway in the game stood on
+  // every team's plot from day one — `unlockPhase` was declared but enforced
+  // nowhere, so a brand-new lab opened with all seven buildings already up.
+  const known = new Set<string>(GATEWAYS.map((g) => g.key))
+  const gateways: PlacedGateway[] = placements
+    .filter((o) => known.has(o.gatewayKey))
+    .map((o) => ({ key: o.gatewayKey, gx: o.posX, gy: o.posY }))
 
   return { economy, unplaced, gateways }
 }

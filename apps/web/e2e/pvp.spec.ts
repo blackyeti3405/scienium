@@ -3,13 +3,13 @@
  *
  * Criterion-to-test mapping (10 ACs, one per test() block):
  *
- *  AC1 — Phase-gate 403: Verify the PvP lobby renders for a working+ phase team.
- *        (The E2E Test Lab is at `showcase` phase, so PvP gates pass; the 403 path
- *        for a below-working team is covered by combat-engine unit tests per GATE-01.)
+ *  AC1 — Phase-gate 403: Verify the PvP lobby renders for a literature_review+ team.
+ *        (The E2E Test Lab is at `project_development`, so PvP gates pass; the 403
+ *        path for a `discovery` team is covered by combat-engine unit tests per GATE-01.)
  *  AC2 — No-base guard: Verify GET /api/pvp returns opponent data when an eligible
  *        defender exists with placed buildings (seeded second team). The null case
  *        is exercised implicitly by AC4 when no other opponent is elgible.
- *  AC3 — Matchmaking pools same-class, working+ phase: GET /api/pvp returns opponent
+ *  AC3 — Matchmaking pools same-class, literature_review+ phase: GET /api/pvp returns opponent
  *        with team name, trophies, buildings. Opponent is not the attacker's own team.
  *  AC4 — Refind excludes already-shown opponent: POST /api/pvp {action:"refind"}
  *        with shownBaseIds including the only eligible opponent returns no-opponent.
@@ -217,14 +217,14 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
   }
 
   // ── AC1: Phase-gate 403 ───────────────────────────────────────────────
-  // The E2E Test Lab is at `showcase` phase (seed:e2e default). PvP unlocks at
-  // `working`, so the lobby renders and API responds 200. Testing the true 403
-  // path would require a below-working team, which is infeasible without mutating
+  // The E2E Test Lab is at `project_development` (seed:e2e default). PvP unlocks
+  // at `literature_review`, so the lobby renders and the API responds 200.
+  // Testing the true 403 path would require a `discovery`-phase team, which is infeasible without mutating
   // the shared E2E team or creating an entirely new team. The 403 server-side gate
   // is proven by combat-engine unit tests (GATE-01) and the spell-power route fix
   // (02-01). The lobby accessibility proves the gate passes for an eligible team.
 
-  test('AC1 — Phase-gate: working+ team accesses PvP lobby and API', async ({ page }) => {
+  test('AC1 — Phase-gate: literature_review+ team accesses PvP lobby and API', async ({ page }) => {
     await openGateway(page, 'Battle Arena')
     await expect(
       page.getByRole('dialog', { name: 'Battle Arena' }).getByText('Spell Power Meter'),
@@ -237,12 +237,12 @@ test.describe('PvP Raid System — section 11 acceptance criteria', () => {
     expect(body).toHaveProperty('spellPower')
     expect(body).toHaveProperty('quota')
 
-    console.log('[AC1] Lobby renders and PvP API returns 200 for showcase-phase team')
+    console.log('[AC1] Lobby renders and PvP API returns 200 for a terminal-phase team')
   })
 
   // ── AC2: No-base guard / matchmaking returns opponent ──────────────────
   // Verify GET /api/pvp returns opponent data when an eligible team exists.
-  // The second team (seeded in beforeAll) has a placed building and working phase.
+  // The second team (seeded in beforeAll) has a placed building and an unlocked phase.
 
   test('AC2 — Matchmaking returns opponent from same class when eligible', async ({ page }) => {
     await page.goto('/lab')

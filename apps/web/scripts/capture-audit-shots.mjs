@@ -14,7 +14,6 @@ fs.mkdirSync(OUT, { recursive: true })
 
 const PAGES = [
   { route: '/', name: 'home' },
-  { route: '/about', name: 'about' },
 ]
 const VIEWPORTS = [
   { name: 'mobile', width: 390, height: 844 },

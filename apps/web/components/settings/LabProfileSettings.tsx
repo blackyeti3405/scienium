@@ -25,7 +25,8 @@ interface SettingsData {
 
 /**
  * Pixel-styled form rendered inside the Clerk "Lab & Profile" custom page.
- * Lets students edit their name/school (always) and lab name/ZIP (lead only).
+ * Lets students edit their name (always) and lab name/ZIP (lead only).
+ * School is deliberately absent — students do not supply one.
  * Also lets any team member edit the research topic and research-plan doc.
  */
 export function LabProfileSettings() {
@@ -258,18 +259,6 @@ export function LabProfileSettings() {
             />
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label className="font-pixel text-[7px] text-white/50 uppercase tracking-widest">
-              School
-            </label>
-            <input
-              value={school}
-              onChange={(e) => setSchool(e.target.value)}
-              maxLength={120}
-              placeholder="High school name"
-              className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm"
-            />
-          </div>
         </div>
       )}
 
@@ -321,7 +310,7 @@ export function LabProfileSettings() {
             value={zip}
             onChange={(e) => setZip(e.target.value)}
             maxLength={10}
-            placeholder="90089"
+            placeholder="94016"
             disabled={!data?.isLead}
             className="bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2 outline-none focus:border-[#F5C518]/60 placeholder:text-white/40 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
           />

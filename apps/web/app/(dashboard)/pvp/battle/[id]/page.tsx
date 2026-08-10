@@ -27,17 +27,29 @@
 import { use, useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { TileBackground } from '@/components/lab/TileBackground'
-import { PixelProgressBar } from '@/components/ui/PixelProgressBar'
 import { TypeCycleTooltip, TYPE_COLORS } from '@/lib/pvp/type-cycle'
-import { cellToScreen, STEP_X, STEP_Y, CLUSTER_Y } from '@/lib/plot'
-import { getBuildingSprite, getSpellIcon, getSpellFx } from '@/lib/sprites/manifest'
+import { cellToScreen, STEP_X, STEP_Y, CLUSTER_Y, BUILDING_PX } from '@/lib/plot'
+import { getBuildingSprite, getGatewaySprite, getSpellIcon, getSpellFx } from '@/lib/sprites/manifest'
+import type { GatewayKey, GatewaySkin } from '@/lib/sprites/manifest'
 import { SPELL_POWER_TIERS } from '@scienium/shared-types'
 import type { BuildingTarget, Spell, RaidSession, RaidResult, LabType } from '@scienium/shared-types'
 
 const RAID_TIME_LIMIT_MS = 15_000
 
-/** Rendered footprint of one building tile, in px. */
-const TILE_CELL = 64
+/**
+ * Health bar colour: green when healthy, through amber, to red at death's door.
+ *
+ * A hue sweep rather than three hard-coded steps, so the bar reads as a
+ * continuous drain — you can see a building sliding toward red mid-raid instead
+ * of watching it snap between buckets. 120deg (green) to 0deg (red).
+ */
+function healthColor(pct: number): string {
+  // Biased rather than linear. On a linear ramp a building at 60% HP still
+  // reads plain green, so a base under real pressure looked untouched; the
+  // exponent pulls the amber/red range up so damage is legible early.
+  const t = Math.max(0, Math.min(1, pct / 100))
+  return `hsl(${Math.pow(t, 1.6) * 120}, 85%, 45%)`
+}
 
 /** How long a cast effect stays on the plot before it is culled. */
 const CAST_FX_MS = 900
@@ -517,8 +529,16 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
                   focus-visible:ring-2 focus-visible:ring-amber-400
                 `}
                 style={{
-                  width: TILE_CELL,
-                  height: TILE_CELL,
+                  // The building's OWN sprite footprint (lib/plot's BUILDING_PX),
+                  // not a ground-tile cell.
+                  // This box used to be TILE_CELL (64px) with the sprite, health
+                  // bar, HP text, type and name stacked inside it — so the art
+                  // was squeezed to half the size the lab renders it at, which
+                  // is why a raid looked like a village of miniatures. The bar
+                  // is now overlaid rather than stacked, so the box is free to
+                  // be exactly one building.
+                  width: BUILDING_PX,
+                  height: BUILDING_PX,
                   left: dx,
                   top: dy + CLUSTER_Y,
                   transform: 'translate(-50%, -50%)',
@@ -532,10 +552,18 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
                     building's upgrade stage. Falls back to an initial tile for
                     raids snapshotted before `sprite` existed. */}
                 {(() => {
-                  const entry =
-                    defenderLabType && b.sprite
-                      ? getBuildingSprite(defenderLabType, b.sprite, b.level)
-                      : null
+                  // Two sprite sets: gateways are keyed by lab SKIN, economy
+                  // buildings by upgrade TIER. A gateway carries its key in
+                  // `sprite` and has no level, so it must not go through the
+                  // tier resolver — that returns null and drops it to the
+                  // letter-tile placeholder.
+                  const entry = !b.sprite
+                    ? null
+                    : b.isGateway
+                      ? getGatewaySprite(b.sprite as GatewayKey, (defenderLabType ?? 'generic') as GatewaySkin)
+                      : defenderLabType
+                        ? getBuildingSprite(defenderLabType, b.sprite, b.level)
+                        : null
                   if (!entry) {
                     return (
                       <div
@@ -556,33 +584,47 @@ export default function BattlePage({ params }: { params: Promise<{ id: string }>
                       src={entry.path}
                       alt=""
                       aria-hidden
-                      width={TILE_CELL}
-                      height={TILE_CELL}
+                      // The sprite's own display size — srcWidth x scale, the
+                      // same arithmetic the lab scene uses — so a raided base
+                      // is drawn at exactly the size the defender built it.
+                      width={entry.srcWidth * entry.scale}
+                      height={entry.srcHeight * entry.scale}
                       className={destroyed ? 'grayscale brightness-50' : ''}
-                      style={{ imageRendering: 'pixelated', objectFit: 'contain' }}
+                      style={{ imageRendering: 'pixelated', objectFit: 'contain', maxWidth: 'none' }}
                     />
                   )
                 })()}
 
-                {/* Health bar */}
-                <div className="w-full px-1 mt-1">
-                  <PixelProgressBar value={hpPct} />
+                {/* Health bar, pinned ACROSS THE TOP of the building and
+                    overlaid rather than stacked underneath. Overlapping a
+                    neighbouring sprite is fine and deliberate: keeping the
+                    building art full-size matters more than keeping the bars
+                    from touching, and the bar sits above its own building so
+                    which bar belongs to which is never ambiguous. */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[60%] pointer-events-none">
+                  <div className="h-1.5 w-full rounded-sm bg-black/70 ring-1 ring-black/50 overflow-hidden">
+                    <div
+                      className="h-full rounded-sm transition-[width,background-color] duration-200"
+                      style={{ width: `${hpPct}%`, background: healthColor(hpPct) }}
+                    />
+                  </div>
+                  <span className="block text-center text-[7px] leading-none pt-0.5 text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.95)]">
+                    {Math.round(b.currentHealth)}/{b.maxHealth}
+                  </span>
                 </div>
 
-                {/* Health text */}
-                <span className="text-[9px] text-slate-400 leading-tight">
-                  {Math.round(b.currentHealth)}/{b.maxHealth}
-                </span>
-
-                {/* Type label */}
-                <span className={`text-[8px] font-medium leading-tight ${TYPE_COLORS[b.type] ?? 'text-slate-500'}`}>
-                  {b.type}
-                </span>
-
-                {/* Building name */}
-                <span className="text-[9px] text-white font-semibold leading-tight truncate max-w-full text-center">
-                  {b.name}
-                </span>
+                {/* Name + type, pinned to the BOTTOM so they never push the
+                    sprite out of its own box the way the stacked layout did. */}
+                <div className="absolute bottom-0 left-0 right-0 pointer-events-none">
+                  <span className="block text-[9px] text-white font-semibold leading-tight truncate text-center [text-shadow:0_1px_2px_rgba(0,0,0,0.95)]">
+                    {b.name}
+                  </span>
+                  <span
+                    className={`block text-center text-[8px] font-medium leading-tight ${TYPE_COLORS[b.type] ?? 'text-slate-500'} [text-shadow:0_1px_2px_rgba(0,0,0,0.95)]`}
+                  >
+                    {b.type}
+                  </span>
+                </div>
 
                 {/* Destroyed overlay */}
                 {destroyed && (

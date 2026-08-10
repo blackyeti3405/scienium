@@ -145,7 +145,7 @@ beforeAll(async () => {
   const team = await db.team.create({
     // `showcase` unlocks every feature gate, so the route-level races below
     // exercise the cap rather than the phase gate.
-    data: { name: `PG Fixture Lab ${ns}`, teamLeadId: userId, phase: 'working', labType: 'volt_lab' },
+    data: { name: `PG Fixture Lab ${ns}`, teamLeadId: userId, phase: 'project_development', labType: 'volt_lab' },
     select: { id: true },
   })
   teamId = team.id
@@ -716,7 +716,7 @@ describePg('P2-6 — deleting a team that still holds storage is refused, not si
 describePg('P1-6 — takedown evidence outlives the showcase it is about', () => {
   it('the moderation history refuses the delete, and the reports survive it anyway', async () => {
     const doomedTeam = await db.team.create({
-      data: { name: `PG Takedown Lab ${ns}`, teamLeadId: userId, phase: 'working' },
+      data: { name: `PG Takedown Lab ${ns}`, teamLeadId: userId, phase: 'project_development' },
       select: { id: true },
     })
     const sc = await db.showcase.create({

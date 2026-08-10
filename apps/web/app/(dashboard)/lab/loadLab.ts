@@ -3,9 +3,11 @@ import 'server-only'
 import { db } from '@/lib/db'
 import { pickActiveTeam } from '@/lib/team/context'
 import { loadPlotState, type PlotState } from '@/lib/plot-server'
-import { GATEWAYS } from '@/lib/gateways'
+import { STARTING_GATEWAYS, pendingUnlock } from '@/lib/gateways'
+import type { GatewayKey } from '@/lib/sprites/manifest'
 import {
   getLiteratureAdvanceProgress,
+  literatureTargetFor,
   type AdvanceProgress,
 } from '@/lib/team/advance'
 import { PHASE_ORDER, LAB_TYPES, type Phase, type LabType } from '@/lib/phase'
@@ -22,6 +24,8 @@ import { PHASE_ORDER, LAB_TYPES, type Phase, type LabType } from '@/lib/phase'
 export interface LabPageData {
   teamName: string
   phase: Phase
+  /** Gateways this phase unlocked that the team has not placed or acknowledged. */
+  pendingUnlock: { phase: Phase; keys: GatewayKey[] } | null
   labType: LabType | null
   currency: { kp: number; clearanceLevel: number; lc: number }
   memberCount: number
@@ -49,6 +53,7 @@ export async function loadLabPageData(
   let teamId = ''
   let teamName = 'Your Lab'
   let phase: Phase = 'discovery'
+  let unlockAckPhase: Phase | null = null
   let labType: LabType | null = null
   let currency = { kp: 0, clearanceLevel: 0, lc: 0 }
   let memberCount = 1
@@ -67,6 +72,7 @@ export async function loadLabPageData(
                 id: true,
                 name: true,
                 phase: true,
+                unlockAckPhase: true,
                 labType: true,
                 currency: { select: { kp: true, clearanceLevel: true, lc: true } },
                 members: { select: { userId: true } },
@@ -82,6 +88,7 @@ export async function loadLabPageData(
       teamId = team.id
       teamName = team.name
       phase = team.phase as Phase
+      unlockAckPhase = (team.unlockAckPhase as Phase | null) ?? null
       labType = (team.labType as LabType | null) ?? null
       if (team.currency) currency = team.currency
       memberCount = team.members.length || 1
@@ -115,7 +122,8 @@ export async function loadLabPageData(
   let plot: PlotState = {
     economy: [],
     unplaced: [],
-    gateways: GATEWAYS.map((g) => ({ key: g.key, gx: g.cell.gx, gy: g.cell.gy })),
+    // No team yet (preview): show what a new lab opens with, not every gateway.
+    gateways: STARTING_GATEWAYS.map((g) => ({ key: g.key, gx: g.cell.gx, gy: g.cell.gy })),
   }
   let advance: AdvanceProgress | null = null
 
@@ -128,7 +136,7 @@ export async function loadLabPageData(
       loadPlotState(teamId),
       // Advance progress genuinely is optional — it is a hint on a gate button,
       // and losing it degrades nothing the student owns.
-      phase === 'literature_review'
+      literatureTargetFor(phase) !== null
         ? getLiteratureAdvanceProgress(teamId, phase).catch(() => null)
         : Promise.resolve(null),
     ])
@@ -140,9 +148,19 @@ export async function loadLabPageData(
   // action (locking a topic; submitting a research idea), so there is nothing to
   // click here.
 
+  // What the "BUILDING UNLOCKED" ceremony should announce, if anything. Derived
+  // from placement + acknowledgement rather than stored as a queue, so it comes
+  // back correct after a reload without any in-flight state to lose.
+  const unlock = pendingUnlock(
+    phase,
+    new Set(plot.gateways.map((g) => g.key)),
+    unlockAckPhase,
+  )
+
   return {
     teamName,
     phase,
+    pendingUnlock: unlock,
     labType,
     currency,
     memberCount,

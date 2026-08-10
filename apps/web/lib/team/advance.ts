@@ -17,8 +17,44 @@ import { recordActivity } from '@/lib/activity/log'
  * progress affordance and POST /api/team/advance-phase read it.
  */
 
-/** Sources required to leave literature_review (mirrors the 25 literature slots). */
+/**
+ * The literature review is no longer one all-or-nothing gate at 25 sources. It
+ * is three milestones, and EVERY member must be proficient on the count for the
+ * milestone to count — a lab moves at the pace of its whole team, not its
+ * keenest student.
+ *
+ *   10  unlocks entering a research idea, which is what advances the team to
+ *       `plan_refinement`. The count opens the door; the idea walks through it.
+ *   20  advances to `project_development` on its own (no second action).
+ *   25  pays a one-time KP bonus. Not a phase gate — the arc is already over by
+ *       then, so the last five sources are rewarded rather than required.
+ */
+export const LITERATURE_TIERS = {
+  idea: 10,
+  projectDevelopment: 20,
+  bonus: 25,
+} as const
+
+/**
+ * Paid per MEMBER, into the shared pool: building costs scale with lab size
+ * (`teamCostMultiplier`), so a flat team bonus would be worth progressively less
+ * to a bigger lab that had to do proportionally more work to earn it.
+ */
+export const LITERATURE_BONUS_KP_PER_MEMBER = 5000
+
+/** Kept for the 25-slot upload UI, which is unchanged. */
 export const LITERATURE_SOURCE_TARGET = 25
+
+/**
+ * The source count this phase's gate needs, or null where no literature gate
+ * applies. Driven off the phase so the route, the progress affordance and the
+ * server check can never disagree about which tier is live.
+ */
+export function literatureTargetFor(phase: Phase): number | null {
+  if (phase === 'literature_review') return LITERATURE_TIERS.idea
+  if (phase === 'plan_refinement') return LITERATURE_TIERS.projectDevelopment
+  return null
+}
 
 export interface MemberProgress {
   userId: string
@@ -61,15 +97,16 @@ function nextPhase(phase: Phase): Phase | null {
  */
 
 /**
- * Computes literature_review → working readiness for a team:
- * how many sources are ready, and for each member how many of those they've
- * demonstrated proficiency on. `canAdvance` is true only at/after the target
- * with every member proficient on all of them.
+ * Computes readiness for whichever literature tier `fromPhase` sits behind
+ * (see `literatureTargetFor`): how many sources are ready, and for each member
+ * how many of those they have demonstrated proficiency on. `canAdvance` is true
+ * only at/after that tier's target with EVERY member proficient on that many.
  */
 export async function getLiteratureAdvanceProgress(
   teamId: string,
   fromPhase: Phase,
 ): Promise<AdvanceProgress> {
+  const target = literatureTargetFor(fromPhase) ?? LITERATURE_SOURCE_TARGET
   const [readyPapers, members] = await Promise.all([
     db.paper.findMany({ where: { teamId, status: 'ready' }, select: { id: true } }),
     db.teamMember.findMany({
@@ -100,13 +137,14 @@ export async function getLiteratureAdvanceProgress(
       userId: m.userId,
       name: m.user.name,
       demonstratedCount,
-      ready: sourceCount >= LITERATURE_SOURCE_TARGET && demonstratedCount >= LITERATURE_SOURCE_TARGET,
+      ready: sourceCount >= target && demonstratedCount >= target,
     }
   })
 
   const membersReady = memberProgress.filter((m) => m.ready).length
   const canAdvance =
-    sourceCount >= LITERATURE_SOURCE_TARGET &&
+    literatureTargetFor(fromPhase) !== null &&
+    sourceCount >= target &&
     memberProgress.length > 0 &&
     memberProgress.every((m) => m.ready)
 
@@ -114,7 +152,7 @@ export async function getLiteratureAdvanceProgress(
     fromPhase,
     toPhase: nextPhase(fromPhase),
     sourceCount,
-    sourceTarget: LITERATURE_SOURCE_TARGET,
+    sourceTarget: target,
     members: memberProgress,
     membersReady,
     memberCount: members.length,
@@ -146,5 +184,67 @@ export async function advanceTeamPhase(
       toPhase: to,
     })
     return true
+  })
+}
+
+/**
+ * Pay the one-time 25-source bonus if the team has just earned it.
+ *
+ * Called after any proficiency changes. Idempotent by construction: the grant is
+ * an `updateMany` predicated on `literatureBonusAt: null`, so of two concurrent
+ * quiz submissions that both see 25/25, exactly one updates a row and only that
+ * one credits KP. A boolean read followed by a write would double-pay here.
+ *
+ * Returns the KP credited (0 when the bar is not met, or it was already paid).
+ */
+export async function maybeGrantLiteratureBonus(
+  teamId: string,
+  actorUserId: string,
+): Promise<number> {
+  const team = await db.team.findUnique({
+    where: { id: teamId },
+    select: { literatureBonusAt: true },
+  })
+  // Cheap pre-check: skip the counting entirely once it has been paid.
+  if (!team || team.literatureBonusAt) return 0
+
+  const [readyPapers, members] = await Promise.all([
+    db.paper.findMany({ where: { teamId, status: 'ready' }, select: { id: true } }),
+    db.teamMember.findMany({ where: { teamId }, select: { userId: true } }),
+  ])
+  if (readyPapers.length < LITERATURE_TIERS.bonus || members.length === 0) return 0
+
+  const profs = await db.paperProficiency.findMany({
+    where: { paperId: { in: readyPapers.map((p) => p.id) }, demonstrated: true },
+    select: { userId: true },
+  })
+  const byUser = new Map<string, number>()
+  for (const p of profs) byUser.set(p.userId, (byUser.get(p.userId) ?? 0) + 1)
+  const everyoneProficient = members.every(
+    (m) => (byUser.get(m.userId) ?? 0) >= LITERATURE_TIERS.bonus,
+  )
+  if (!everyoneProficient) return 0
+
+  const kp = LITERATURE_BONUS_KP_PER_MEMBER * members.length
+
+  return db.$transaction(async (tx) => {
+    // The CAS: only the caller that flips null → now() pays.
+    const { count } = await tx.team.updateMany({
+      where: { id: teamId, literatureBonusAt: null },
+      data: { literatureBonusAt: new Date() },
+    })
+    if (count === 0) return 0
+
+    await tx.teamCurrency.upsert({
+      where: { teamId },
+      create: { teamId, kp },
+      update: { kp: { increment: kp } },
+    })
+    await recordActivity(tx, teamId, actorUserId, 'literature_bonus', {
+      sources: LITERATURE_TIERS.bonus,
+      members: members.length,
+      kp,
+    })
+    return kp
   })
 }

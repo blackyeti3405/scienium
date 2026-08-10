@@ -4,9 +4,9 @@ import { NextResponse } from 'next/server'
 // Public routes that don't require authentication
 const isPublicRoute = createRouteMatcher([
   '/',
-  '/about(.*)', // Public outreach/landing page — no auth required
-  '/pvp', // Marketing explainer for the Battle Arena — exact match only, not /pvp/lobby etc.
-  '/teachers', // Marketing explainer for the teacher dashboard — distinct from /teacher(.*)
+  // Dev-only harnesses (skeleton audit). The pages themselves 404 in
+  // production, so this never exposes anything on scienium.app.
+  ...(process.env.NODE_ENV !== 'production' ? ['/dev/(.*)' as const] : []),
   '/privacy', // Legal documents MUST be readable without an account — a parent
   '/terms', //  deciding whether to let their child sign up cannot sign in first.
   '/robots.txt', // Crawler directives — must be reachable unauthenticated

@@ -51,7 +51,7 @@ const TEAM = {
   // The route returns more than the panel renders; the extra keys must not make
   // the parse fail, and must not survive it either.
   teamId: 't1',
-  phase: 'working',
+  phase: 'plan_refinement',
   researchIdea: 'Mould on bread',
   labType: 'volt_lab',
   advance: null,

@@ -30,7 +30,7 @@ beforeEach(() => {
   h.seed('team', {
     id: CLASSMATE,
     name: 'Team A2',
-    phase: 'working',
+    phase: 'plan_refinement',
     labType: 'volt_lab',
     members: [
       { userId: CLASSMATE_USER, user: { id: CLASSMATE_USER, classId: h.ids.classA } },

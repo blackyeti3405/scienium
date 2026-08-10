@@ -70,25 +70,23 @@ export async function resolveClass(code: string | null | undefined): Promise<Cla
 }
 
 /**
- * Assign a user's school from their typed high-school name, and — when a class
- * code matches — file a PENDING class-join request instead of enrolling directly
- * (the teacher must approve; see `requestClassJoin`). No-ops silently when
- * neither is provided so it's safe to call unconditionally.
+ * When a class code matches, file a PENDING class-join request rather than
+ * enrolling directly (the teacher must approve; see `requestClassJoin`). No-ops
+ * silently without a code, so it's safe to call unconditionally.
  *
- * Class membership is per-student: entering a code never changes the student's
- * own school (they keep the one they typed) — the class's school is applied only
- * on approval. `classId` in the return is always null (enrollment happens on
- * approval); `pendingClassId` reports the class a request was filed against.
+ * Students no longer supply a school. `User.schoolId` was only ever read by the
+ * `school_only` showcase tier, which was withdrawn as forgeable (a self-asserted
+ * name proved nothing) — so the field was identifying data on a minor with no
+ * consumer. A student's school is now set solely by a teacher APPROVING their
+ * class join, which is a verified affiliation rather than a typed string.
+ *
+ * `classId` in the return is always null (enrollment happens on approval);
+ * `pendingClassId` reports the class a request was filed against.
  */
-export async function applySchoolAndClass(
+export async function applyClassCode(
   dbUserId: string,
-  opts: { highSchool?: string | null; classCode?: string | null },
+  opts: { classCode?: string | null },
 ): Promise<{ classId: null; pendingClassId: string | null }> {
-  const schoolId = await resolveSchool(opts.highSchool)
-  if (schoolId) {
-    await db.user.update({ where: { id: dbUserId }, data: { schoolId } })
-  }
-
   const classMatch = await resolveClass(opts.classCode)
   const pendingClassId = classMatch ? await requestClassJoin(dbUserId, classMatch.classId) : null
   return { classId: null, pendingClassId }

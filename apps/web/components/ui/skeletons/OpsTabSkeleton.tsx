@@ -8,7 +8,7 @@ export type OpsTabSkeletonVariant = 'card' | 'log' | 'terminal'
  * spinner on a fixed layout.
  *
  *  - `card`: prompt card + chip row + disclosure row (Proof of Expertise)
- *  - `log`: entry composer form + a few timeline entry rows
+ *  - `log`: the entry composer card (at its real height) + the empty notice
  *  - `terminal`: experiment list rows
  */
 export function OpsTabSkeleton({ variant }: { variant: OpsTabSkeletonVariant }) {
@@ -35,14 +35,57 @@ export function OpsTabSkeleton({ variant }: { variant: OpsTabSkeletonVariant }) 
   if (variant === 'log') {
     return (
       <div className="ops-tab-body" data-testid="ops-tab-skeleton-log">
-        <PixelSkeleton variant="box" h="h-64" w="w-full" />
-        <div className="ops-timeline flex flex-col gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="flex gap-3.5">
-              <PixelSkeleton variant="pill" h="h-6" w="w-6" />
-              <PixelSkeleton variant="box" h="h-28" w="w-full" />
+        {/* The composer, built inside the REAL `ops-entry-card` so it inherits
+            the card's border, radius and shadow. Measured against the live tab:
+            the card is ~636px, not the 256px this used to draw — the old
+            skeleton showed a small box and then the panel jumped by 380px. */}
+        <div className="ops-entry-card">
+          <div className="ops-entry-card__head">
+            <PixelSkeleton variant="box" h="h-[35px]" w="w-[35px]" />
+            <div className="flex flex-col gap-2">
+              <PixelSkeleton variant="line" h="h-3.5" w="w-44" />
+              <PixelSkeleton variant="line" h="h-2.5" w="w-28" />
             </div>
-          ))}
+          </div>
+          {/* Real classes supply the padding and gaps; only the control heights
+              are set here, and they are MEASURED off the live tab rather than
+              guessed. Every `ops-label` is an 11px line with a 9px bottom
+              margin, and the four controls are 44 / 149 / 67 / 72px — which is
+              how each field lands on its real 64 / 169 / 87 / 92. */}
+          <div className="ops-entry-card__body">
+            {/* Written out rather than mapped: Tailwind extracts class names
+                statically, so a template-built `h-[${n}px]` never reaches the
+                CSS and the block silently collapses to zero height. */}
+            <div className="ops-field">
+              <div className="mb-[9px]"><PixelSkeleton variant="line" h="h-[11px]" w="w-28" /></div>
+              <PixelSkeleton variant="box" h="h-[44px]" w="w-full" />
+            </div>
+            <div className="ops-field">
+              <div className="mb-[9px]"><PixelSkeleton variant="line" h="h-[11px]" w="w-28" /></div>
+              <PixelSkeleton variant="box" h="h-[149px]" w="w-full" />
+            </div>
+            <div className="ops-field">
+              <div className="mb-[9px]"><PixelSkeleton variant="line" h="h-[11px]" w="w-24" /></div>
+              <PixelSkeleton variant="box" h="h-[67px]" w="w-full" />
+            </div>
+            <div className="ops-field">
+              <div className="mb-[9px]"><PixelSkeleton variant="line" h="h-[11px]" w="w-40" /></div>
+              {/* The photos control is a single 72x72 `ops-upload-btn` square,
+                  NOT a full-width block — measured, after the full-width version
+                  read as a huge slab next to a small dropzone. */}
+              <PixelSkeleton variant="box" h="h-[72px]" w="w-[72px]" />
+            </div>
+          </div>
+          <div className="ops-entry-card__foot">
+            <PixelSkeleton variant="box" h="h-8" w="w-32" />
+          </div>
+        </div>
+
+        {/* What sits below is the EMPTY state (min-height 150px), not a list of
+            entries. Drawing three timeline cards here was inventing content a
+            new lab does not have — they then vanished into an empty notice. */}
+        <div className="ops-empty">
+          <PixelSkeleton variant="line" h="h-3" w="w-40" />
         </div>
       </div>
     )

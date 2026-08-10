@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { SignOutButton } from '@clerk/nextjs'
 
 /**
  * Shared marketing nav + footer for the public pages (`/`, `/about`). Light theme:
@@ -9,7 +10,7 @@ import Link from 'next/link'
  * front-door surfaces are light. Nav links point at homepage anchors (prefixed
  * with `/`) so they work from any marketing page. `font-display` = Space Grotesk.
  *
- * The section links (Journey/Battle Arena/Teachers) are `md:flex` only — below
+ * The section links (Journey/Battle Arena/Teachers) are `lg:flex` only — below
  * that a hamburger toggle opens the same links in a dropdown, so mobile visitors
  * aren't left with zero way to jump to a section short of scrolling the whole page.
  */
@@ -23,12 +24,15 @@ const NAV_CTA_PRESS =
   'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[4px_4px_0_0_#0d1b2e] ' +
   'active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_0_#0d1b2e]'
 
+// The marketing site is a single page — every nav link is an anchor on `/`,
+// never a subpage. Keep these in sync with the section ids in app/page.tsx.
+// Rendered as plain <a>, NOT next/link: Link intercepts the click and does
+// its own instant hash jump, which pre-empts SmoothAnchorScroll entirely.
 const NAV_LINKS = [
   { href: '/#journey', label: 'The journey' },
   { href: '/#pvp', label: 'Battle Arena' },
   { href: '/#teachers', label: 'For teachers' },
-  { href: '/about', label: 'About' },
-  { href: '/about#contact', label: 'Contact' },
+  { href: '/#author', label: 'About' },
 ]
 
 export function MarketingNav({ userId, launchHref = '/game' }: { userId: string | null; launchHref?: string }) {
@@ -36,37 +40,58 @@ export function MarketingNav({ userId, launchHref = '/game' }: { userId: string 
 
   return (
     <header className="sticky top-0 z-50 border-b border-[#e6e5dd] bg-[#f7f7f4]/90 backdrop-blur-sm">
-      <div className="mx-auto flex h-[68px] max-w-6xl items-center justify-between px-6 md:px-10">
-        <Link href="/" className={`flex items-center gap-3 rounded ${FOCUS}`}>
+      <div className="mx-auto flex h-[68px] max-w-6xl items-center justify-between gap-2 px-4 sm:px-6 md:px-10">
+        <Link href="/" className={`flex shrink-0 items-center gap-2 rounded sm:gap-3 ${FOCUS}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/scienium-logo.png" alt="scienium" width={28} height={28} className="mkt-pixel" />
-          <span className="font-pixel text-[#0d1b2e]" style={{ fontSize: '0.8rem' }}>scienium</span>
+          <img src="/scienium-logo.png" alt="scienium" width={28} height={28} className="mkt-pixel shrink-0" />
+          <span className="font-pixel whitespace-nowrap text-[0.6rem] text-[#0d1b2e] sm:text-[0.8rem]">scienium</span>
         </Link>
-        <nav className="hidden items-center gap-8 font-pixel md:flex" style={{ fontSize: '0.6rem' }}>
+        <nav className="hidden items-center gap-8 font-pixel lg:flex" style={{ fontSize: '0.6rem' }}>
           {NAV_LINKS.map((l) => (
-            <Link key={l.href} href={l.href} className={`rounded text-[#5a6b80] transition-colors hover:text-[#0d1b2e] ${FOCUS}`}>
+            <a key={l.href} href={l.href} className={`rounded text-[#5a6b80] transition-colors hover:text-[#0d1b2e] ${FOCUS}`}>
               {l.label}
-            </Link>
+            </a>
           ))}
         </nav>
-        <div className="flex items-center gap-2 sm:gap-4">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-4">
           <div className="flex items-center gap-4 font-pixel" style={{ fontSize: '0.6rem' }}>
             {userId ? (
-              <Link href={launchHref} className={`rounded text-[#0d1b2e] underline decoration-[#F5C518] decoration-2 underline-offset-4 hover:opacity-70 ${FOCUS}`}>
-                Launch
-              </Link>
+              // Signed in, the pair mirrors the signed-out pair exactly: the
+              // ghost slot becomes Sign out where Sign in was, and the gold CTA
+              // becomes Launch where Get started was. There was previously no
+              // way to sign out from the marketing site at all — the only
+              // sign-out lived behind the lab, so a signed-in visitor on `/`
+              // was stuck.
+              <>
+                <SignOutButton redirectUrl="/">
+                  <button
+                    type="button"
+                    className={`hidden min-h-[38px] shrink-0 items-center whitespace-nowrap border border-[#0d1b2e] bg-[#f7f7f4] px-4 text-[#0d1b2e] sm:flex ${NAV_CTA_PRESS} ${FOCUS}`}
+                    style={{ borderRadius: 6 }}
+                  >
+                    Sign out
+                  </button>
+                </SignOutButton>
+                <Link
+                  href={launchHref}
+                  className={`flex min-h-[38px] shrink-0 items-center whitespace-nowrap bg-[#F5C518] px-3 text-[#0d1b2e] sm:px-4 ${NAV_CTA_PRESS} ${FOCUS}`}
+                  style={{ borderRadius: 6 }}
+                >
+                  Launch
+                </Link>
+              </>
             ) : (
               <>
                 <Link
                   href="/sign-in"
-                  className={`hidden min-h-[38px] items-center border border-[#0d1b2e] bg-[#f7f7f4] px-4 text-[#0d1b2e] sm:flex ${NAV_CTA_PRESS} ${FOCUS}`}
+                  className={`hidden min-h-[38px] shrink-0 items-center whitespace-nowrap border border-[#0d1b2e] bg-[#f7f7f4] px-4 text-[#0d1b2e] sm:flex ${NAV_CTA_PRESS} ${FOCUS}`}
                   style={{ borderRadius: 6 }}
                 >
                   Sign in
                 </Link>
                 <Link
                   href="/sign-up"
-                  className={`flex min-h-[38px] items-center bg-[#F5C518] px-4 text-[#0d1b2e] ${NAV_CTA_PRESS} ${FOCUS}`}
+                  className={`flex min-h-[38px] shrink-0 items-center whitespace-nowrap bg-[#F5C518] px-3 text-[#0d1b2e] sm:px-4 ${NAV_CTA_PRESS} ${FOCUS}`}
                   style={{ borderRadius: 6 }}
                 >
                   Get started
@@ -80,7 +105,7 @@ export function MarketingNav({ userId, launchHref = '/game' }: { userId: string 
             aria-expanded={menuOpen}
             aria-controls="mkt-mobile-menu"
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-            className={`flex h-11 w-11 shrink-0 items-center justify-center text-[#0d1b2e] md:hidden ${FOCUS}`}
+            className={`flex h-11 w-11 shrink-0 items-center justify-center text-[#0d1b2e] lg:hidden ${FOCUS}`}
             style={{ borderRadius: 4 }}
           >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
@@ -97,20 +122,32 @@ export function MarketingNav({ userId, launchHref = '/game' }: { userId: string 
       {menuOpen && (
         <nav
           id="mkt-mobile-menu"
-          className="border-t border-[#e6e5dd] bg-[#f7f7f4] px-6 py-2 font-pixel md:hidden"
+          className="border-t border-[#e6e5dd] bg-[#f7f7f4] px-6 py-2 font-pixel lg:hidden"
           style={{ fontSize: '0.65rem' }}
         >
           {NAV_LINKS.map((l) => (
-            <Link
+            <a
               key={l.href}
               href={l.href}
               onClick={() => setMenuOpen(false)}
               className={`block rounded py-3 text-[#5a6b80] transition-colors hover:text-[#0d1b2e] ${FOCUS}`}
             >
               {l.label}
-            </Link>
+            </a>
           ))}
-          {!userId && (
+          {userId ? (
+            // Below `lg` the header only has room for the gold CTA, so the
+            // hamburger is where Sign out has to live on a phone.
+            <SignOutButton redirectUrl="/">
+              <button
+                type="button"
+                onClick={() => setMenuOpen(false)}
+                className={`block w-full rounded py-3 text-left text-[#5a6b80] transition-colors hover:text-[#0d1b2e] ${FOCUS}`}
+              >
+                Sign out
+              </button>
+            </SignOutButton>
+          ) : (
             <Link
               href="/sign-in"
               onClick={() => setMenuOpen(false)}
@@ -135,18 +172,27 @@ export function MarketingFooter({ userId, launchHref = '/game' }: { userId: stri
           <span className="font-pixel text-[#5a6b80]" style={{ fontSize: '0.55rem' }}>© scienium</span>
         </div>
         <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 font-display text-sm text-[#5a6b80]">
-          <Link href="/#journey" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>The journey</Link>
-          <Link href="/#pvp" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Battle Arena</Link>
-          <Link href="/#teachers" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>For teachers</Link>
-          <Link href="/about" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>About</Link>
-          <Link href="/about#contact" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Contact</Link>
+          {NAV_LINKS.map((l) => (
+            <a key={l.href} href={l.href} className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>
+              {l.label}
+            </a>
+          ))}
           {/* CalOPPA requires a conspicuous link containing the word "Privacy"
               on every page that collects personal information. The footer is on
               every marketing page, and both documents are public routes. */}
           <Link href="/privacy" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Privacy</Link>
           <Link href="/terms" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Terms</Link>
           {userId ? (
-            <Link href={launchHref} className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Play</Link>
+            <>
+              <Link href={launchHref} className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Play</Link>
+              {/* Mirrors the header: wherever a signed-out visitor is offered
+                  Sign in, a signed-in one is offered Sign out. */}
+              <SignOutButton redirectUrl="/">
+                <button type="button" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>
+                  Sign out
+                </button>
+              </SignOutButton>
+            </>
           ) : (
             <Link href="/sign-in" className={`rounded py-2 hover:text-[#0d1b2e] ${FOCUS}`}>Sign in</Link>
           )}

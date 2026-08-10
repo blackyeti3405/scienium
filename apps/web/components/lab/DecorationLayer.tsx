@@ -1,20 +1,30 @@
 'use client'
 
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { DECOR, DECOR_SCALE } from '@/lib/sprites/manifest'
-import { computeScatter } from '@/lib/lab/decoration'
+import { computeScatter, type BlockedCell } from '@/lib/lab/decoration'
 import { useElementSize } from '@/lib/hooks/useElementSize'
 
-// A dense, seeded scatter of nature objects on top of the grass — trees, bushes,
-// shrubs, tufts, flowers, rocks — so the world reads lush (Stardew-style) rather
-// than an empty lawn. Sits BELOW the building plot (z-index 0 vs the plot's 1) and
-// leaves a central clearing so it never covers the buildings. The pure slot→sprite
-// placement math lives in lib/lab/decoration.ts (unit-tested regression guard).
+// A dense, seeded scatter of nature objects on top of the grass — shrubs, tufts,
+// rocks — so the world reads lush (Stardew-style) rather than an empty lawn. Sits
+// BELOW the building plot (z-index 0 vs the plot's 1), and any slot covered by a
+// placed building is dropped so nothing grows through a wall. The pure
+// slot→sprite placement math lives in lib/lab/decoration.ts (unit-tested).
 
-export function DecorationLayer({ seed = 1 }: { seed?: number }) {
+/** Stable default so the memo below doesn't re-run on every parent render. */
+const EMPTY: readonly BlockedCell[] = []
+
+export function DecorationLayer({
+  seed = 1,
+  blocked = EMPTY,
+}: {
+  seed?: number
+  /** Tiles holding a building, as offsets from the cluster centre. */
+  blocked?: readonly BlockedCell[]
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const { w, h } = useElementSize(ref)
-  const items = computeScatter(w, h, seed)
+  const items = useMemo(() => computeScatter(w, h, seed, blocked), [w, h, seed, blocked])
 
   return (
     <div ref={ref} aria-hidden className="decor-layer">

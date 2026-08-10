@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { LAB_TYPE_LABELS } from '@/lib/phase'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson } from '@/lib/validation'
-import { getLiteratureAdvanceProgress } from '@/lib/team/advance'
+import { advanceTeamPhase, getLiteratureAdvanceProgress } from '@/lib/team/advance'
 import { isTeacherPaced } from '@/lib/team/class-scope'
 import { classifyLabType } from '@/lib/lab-type/classify'
 import { transferBuildingsToLabType } from '@/lib/lab-type/transfer'
@@ -45,6 +45,30 @@ export async function POST(req: NextRequest) {
       { error: 'Your teacher advances your lab to the next phase.', teacherPaced: true },
       { status: 403 },
     )
+  }
+
+  // plan_refinement → project_development: earned purely by the 20-source tier.
+  // No research idea and no paid classification — the lab type was already
+  // derived on the previous transition, so this one is a free CAS.
+  if (ctx.phase === 'plan_refinement') {
+    const progress = await getLiteratureAdvanceProgress(ctx.teamId, ctx.phase)
+    if (!progress.canAdvance) {
+      return NextResponse.json(
+        { error: 'Your lab is not ready to advance yet', progress },
+        { status: 409 },
+      )
+    }
+    const moved = await advanceTeamPhase(
+      ctx.teamId,
+      ctx.dbUserId,
+      'plan_refinement',
+      'project_development',
+    )
+    return NextResponse.json({
+      phase: 'project_development',
+      alreadyAdvanced: !moved,
+      progress,
+    })
   }
 
   if (ctx.phase !== 'literature_review') {
@@ -130,7 +154,7 @@ export async function POST(req: NextRequest) {
     const result = await tx.team.updateMany({
       where: { id: ctx.teamId, phase: 'literature_review' },
       data: {
-        phase: 'working',
+        phase: 'plan_refinement',
         // Same rule on the paid path: the CAS is the one place a phase change
         // is real, so it is the one place the clock is set (P2-S14).
         phaseEnteredAt: new Date(),
@@ -148,7 +172,7 @@ export async function POST(req: NextRequest) {
       const transfer = await transferBuildingsToLabType(tx, ctx.teamId, labType)
       await recordActivity(tx, ctx.teamId, ctx.dbUserId, 'phase_advanced', {
         fromPhase: 'literature_review',
-        toPhase: 'working',
+        toPhase: 'plan_refinement',
         labType: LAB_TYPE_LABELS[labType],
         researchIdea,
         buildingsTransferred: transfer.moved,
@@ -165,7 +189,7 @@ export async function POST(req: NextRequest) {
       select: { phase: true, labType: true },
     })
     return NextResponse.json({
-      phase: fresh?.phase ?? 'working',
+      phase: fresh?.phase ?? 'plan_refinement',
       labType: fresh?.labType ?? null,
       labTypeLabel: fresh?.labType ? LAB_TYPE_LABELS[fresh.labType] : null,
       alreadyAdvanced: true,
@@ -173,7 +197,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    phase: 'working',
+    phase: 'plan_refinement',
     labType,
     labTypeLabel: LAB_TYPE_LABELS[labType],
     rationale,

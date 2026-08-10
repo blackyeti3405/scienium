@@ -43,7 +43,7 @@ function put(body: unknown): Promise<Response> {
 beforeEach(() => {
   upsert.mockClear()
   requireTeamContext.mockResolvedValue({
-    ctx: { userId: 'clerk_1', dbUserId: 'user_1', teamId: 'team_1', phase: 'working', labType: null },
+    ctx: { userId: 'clerk_1', dbUserId: 'user_1', teamId: 'team_1', phase: 'plan_refinement', labType: null },
     error: null,
   })
   findUnique.mockResolvedValue({ email: ACCOUNT_EMAIL, deletedAt: null })

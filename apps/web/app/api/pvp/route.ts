@@ -21,7 +21,11 @@ import {
   consumeRefind,
   buildSpell,
   buildBuildingTarget,
+  buildGatewayTarget,
+  GATEWAY_SPELL_TYPES,
 } from '@/lib/pvp/combat-engine'
+import { GATEWAY_LABELS } from '@/lib/sprites/manifest'
+import type { GatewayKey } from '@/lib/sprites/manifest'
 import type { LabType, Spell, BuildingTarget, RaidSession } from '@scienium/shared-types'
 import { shopBuilding } from '@/lib/shop'
 import { spellForBuilding } from '@/lib/pvp/spell-catalog'
@@ -68,8 +72,44 @@ async function getTeamSpells(
     .filter((s): s is Spell => s !== null)
 }
 
-/** Build BuildingTarget objects for a team's placed shop buildings. */
+/**
+ * Every raidable structure a team has PLACED: economy buildings and gateways
+ * alike, as one flat list of targets.
+ *
+ * Gateways used to be left out, so a raid screen showed ten economy buildings
+ * floating on empty grass while the Discovery and Literature Review halls the
+ * defender actually built were invisible and invulnerable. They are ordinary
+ * targets now — same shape, same damage resolution, same contribution to the
+ * destroyed-percentage — differing only in art and in having no upgrade level
+ * (see `buildGatewayTarget`).
+ */
 async function getTeamBuildings(teamId: string): Promise<BuildingTarget[]> {
+  const [shop, gateways] = await Promise.all([
+    getTeamShopTargets(teamId),
+    getTeamGatewayTargets(teamId),
+  ])
+  return [...shop, ...gateways]
+}
+
+/** Placed gateways as raid targets. */
+async function getTeamGatewayTargets(teamId: string): Promise<BuildingTarget[]> {
+  const placements = await db.teamGatewayPlacement.findMany({ where: { teamId } })
+  return placements.map((p) =>
+    buildGatewayTarget(
+      p.id,
+      GATEWAY_LABELS[p.gatewayKey as GatewayKey] ?? p.gatewayKey,
+      p.gatewayKey,
+      p.posX,
+      p.posY,
+      // A key with no assigned type would otherwise be `undefined` and skip the
+      // type cycle entirely; empirical is the neutral default.
+      GATEWAY_SPELL_TYPES[p.gatewayKey] ?? 'empirical',
+    ),
+  )
+}
+
+/** Build BuildingTarget objects for a team's placed shop buildings. */
+async function getTeamShopTargets(teamId: string): Promise<BuildingTarget[]> {
   const buildings = await db.teamShopBuilding.findMany({
     where: { teamId, posX: { not: null }, posY: { not: null } },
   })
@@ -254,12 +294,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Snapshot defender base at raid start
-    // TODO(D-04, ENGINE-05): Also read TeamGatewayPlacement rows for the defender
-    // and fold them into the snapshot so the raid engine sees the full base layout.
-    // Gateways (navigation-only structures) don't have SpellType/level/damage, so
-    // the BuildingTarget type needs an `isGateway` flag or a separate array. For now,
-    // only TeamShopBuilding positions are included (the core targetable buildings).
+    // Snapshot defender base at raid start — economy buildings AND gateways.
+    // `getTeamBuildings` returns both (see its doc comment), so the raid engine
+    // sees the full layout the defender actually built.
     const [defenderBuildings, attackerSpells, defender] = await Promise.all([
       getTeamBuildings(opponentTeamId),
       getTeamSpells(teamId, labType ?? 'biocore'),

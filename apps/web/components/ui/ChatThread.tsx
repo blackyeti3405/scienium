@@ -31,8 +31,12 @@ export function ChatMessageList({
           key={i}
           className={`flex flex-col gap-1 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
         >
+          {/* "Vega" alone reads as a person, and the name is the only thing
+              labelling who is talking. Students are minors, so the fact that
+              this is a machine belongs where the conversation is — on every
+              turn — not only in a policy nobody opens. */}
           <span className="font-pixel text-[6px] text-white/40 uppercase tracking-widest px-1">
-            {msg.role === 'user' ? 'You' : 'Vega'}
+            {msg.role === 'user' ? 'You' : 'Vega · AI'}
           </span>
           <div
             className={`text-sm leading-relaxed px-3 py-2 rounded-sm max-w-full ${
@@ -92,7 +96,8 @@ export function ChatComposer({
   disableInputWhileSending?: boolean
 }) {
   return (
-    <div className="border-t border-white/10 p-3 flex gap-2 shrink-0">
+    <div className="border-t border-white/10 p-3 shrink-0">
+      <div className="flex gap-2">
       <input
         value={input}
         onChange={(e) => onInputChange(e.target.value)}
@@ -109,6 +114,12 @@ export function ChatComposer({
       >
         <Send size={13} />
       </button>
+      </div>
+      {/* Persistent, at-the-keyboard disclosure. Both chat surfaces render this
+          composer, so it cannot be forgotten on one of them. */}
+      <p className="font-pixel text-[6px] leading-loose text-white/35 pt-2 px-1">
+        Vega is an AI. It can be wrong — check the source and ask your teacher.
+      </p>
     </div>
   )
 }

@@ -45,7 +45,17 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider afterSignOutUrl="/">
-      <html lang="en" className={`${inter.variable} ${pixelFont.variable} ${grotesk.variable}`}>
+      {/* suppressHydrationWarning is load-bearing, not a papered-over bug: the
+          <head> script below adds `js` to this element's class list BEFORE React
+          hydrates, so the server HTML and the live DOM disagree on className by
+          design. Without it React logs a hydration mismatch on every page. It
+          suppresses one level deep — this element's own attributes — so real
+          mismatches anywhere inside still surface. */}
+      <html
+        lang="en"
+        suppressHydrationWarning
+        className={`${inter.variable} ${pixelFont.variable} ${grotesk.variable}`}
+      >
         <head>
           {/* Progressive enhancement marker: reveal-on-scroll only hides content
               once JS is confirmed (see globals.css `.js [data-reveal]`). Runs

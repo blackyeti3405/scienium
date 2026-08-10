@@ -11,7 +11,8 @@ For each of the 7 generic source JSONs in art/src/<key>_generic.json and each of
 the 6 lab types, this writes art/src/<key>_<lab>.json and renders the PNG to
 apps/web/public/sprites/gateways/<key>_<lab>.png (+ preview).
 
-Palette directions follow spec §20.4 (starting direction; refine in design system).
+Palette directions: identity in the glass ramp, accent chosen for contrast
+against it. See LAB_PALETTES below for the reasoning and the measurements.
 
 Run:  python art/recolor.py
 """
@@ -36,42 +37,61 @@ GATEWAY_KEYS = [
 # char -> hex, keyed identically to the canonical palette (canon.py):
 #   K outline | W/L/M/D/d wall (light→dark) | h/c/g/G glass | o/O/r accent
 LAB_PALETTES = {
-    # BioCore — greens + organic teal, warm amber accents
+    # Identity lives in the GLASS ramp, not the accent.
+    #
+    # Measured across all 7 gateways, glass is 31% of the non-transparent pixels
+    # and accent only 13%. Volt Lab was the one lab whose accent "showed" — and
+    # only because its glass ramp is yellow too, so 44% of the sprite sings one
+    # note. Every other lab was a 13% scatter of trim fighting a 31% mass in a
+    # distant hue, which is why the accents read as noise.
+    #
+    # So each lab now takes its identity in the glass, and the accent is chosen
+    # for CONTRAST against it rather than as a second theme colour.
+    #
+    # Hues are also spread deliberately: the old palettes put five of six labs in
+    # a 111-degree arc (chemworks h207 and axiom h208 were 1.5 degrees apart —
+    # the same blue). Worst separation is now 32 degrees. No blues, no purples.
+
+    # BioCore — chlorophyll green, warm amber accent (90 degrees off the glass)
     "biocore": {
-        "K": "#1a2417", "W": "#e8f2d8", "L": "#c4dba6", "M": "#9fc07e", "D": "#6f9456", "d": "#4a6e3a",
-        "h": "#d2f7ec", "c": "#9fefcf", "g": "#36cc9e", "G": "#1d8f70",
-        "o": "#f0b24d", "O": "#ffd488", "r": "#b9701e",
+        "K": "#16200f", "W": "#eef3e2", "L": "#cfdcb8", "M": "#a8bd8a", "D": "#74905a", "d": "#4c6339",
+        "h": "#ddffe9", "c": "#8ff0b6", "g": "#3fd07a", "G": "#1f8a4e",
+        "o": "#ffb02e", "O": "#ffd782", "r": "#b86a10",
     },
-    # ChemWorks — glassware blues + reactive violet accents
+    # ChemWorks — beaker glass / copper sulfate aqua, reaction-heat orange accent
     "chemworks": {
-        "K": "#161a2e", "W": "#e6ecfb", "L": "#c2cdee", "M": "#9aa8d8", "D": "#6f7cb0", "d": "#4b5688",
-        "h": "#d6ecff", "c": "#a8d4ff", "g": "#4aa0e6", "G": "#2166b0",
-        "o": "#c89cf0", "O": "#e0c2ff", "r": "#6a34a8",
+        "K": "#101f22", "W": "#e9f1f0", "L": "#c5d5d2", "M": "#97aca8", "D": "#667e7a", "d": "#435754",
+        "h": "#d6fff8", "c": "#7fecdd", "g": "#17c4b0", "G": "#0b8477",
+        "o": "#ff6a2a", "O": "#ffa268", "r": "#b83c10",
     },
-    # Volt Lab — industrial steel grey + ELECTRIC YELLOW energy (glass ramp is yellow,
-    # not cyan, so the glowing masses read as electricity against the cool steel body)
+    # Volt Lab — UNCHANGED. It was already the one lab that read correctly, and
+    # it is the model the rest now follow: identity in the glass.
     "volt_lab": {
         "K": "#15181d", "W": "#eef2f6", "L": "#cdd6dd", "M": "#9aa3ad", "D": "#6c7682", "d": "#49515b",
         "h": "#fffde6", "c": "#ffe96b", "g": "#ffc915", "G": "#a8770c",
         "o": "#ffe85a", "O": "#fff7a8", "r": "#c89a14",
     },
-    # TerraBase — earthy ochre/slate + mineral teal
+    # TerraBase — iron-oxide rust and strata, pale sand accent. Sand sits closer
+    # in hue than the other pairs, so it carries on VALUE instead (l68 vs l53).
     "terrabase": {
-        "K": "#20190f", "W": "#efe6cf", "L": "#d6c8a0", "M": "#b09a6e", "D": "#7e6c47", "d": "#54462c",
-        "h": "#d6f2ea", "c": "#a4e2d4", "g": "#34b6a2", "G": "#1d8474",
-        "o": "#e0a850", "O": "#ffce80", "r": "#9a5e1e",
+        "K": "#1f1509", "W": "#f2e7d2", "L": "#d9c4a0", "M": "#b08a63", "D": "#7d5f3e", "d": "#523c26",
+        "h": "#ffddc6", "c": "#f79f6e", "g": "#e2622c", "G": "#9c3a12",
+        "o": "#f2c66b", "O": "#ffe4a8", "r": "#a87b2c",
     },
-    # MindFrame — muted indigo/violet + soft magenta
+    # MindFrame — rose-crimson, warm and human rather than the usual "brain =
+    # purple". Wall is a desaturated rosy grey, NOT a violet.
     "mindframe": {
-        "K": "#181428", "W": "#e8e2f6", "L": "#cabfe6", "M": "#9f90c8", "D": "#6f5fa0", "d": "#4a3c70",
-        "h": "#ecc8f4", "c": "#d0a8ee", "g": "#a45ce0", "G": "#6a2fb0",
-        "o": "#f08cce", "O": "#ffb8e2", "r": "#b03a80",
+        "K": "#21111a", "W": "#f4e8ec", "L": "#dcc4cc", "M": "#b08a92", "D": "#7d5a63", "d": "#533a41",
+        "h": "#ffdcea", "c": "#fb92b8", "g": "#f0417e", "G": "#a81a4e",
+        "o": "#ffcf5c", "O": "#ffe9a8", "r": "#b58a1e",
     },
-    # Axiom — deep space navy + starlight gold/cyan
+    # Axiom — the one lab differentiated by CHROMA rather than hue: chalk,
+    # vacuum, starlight. Six saturated labs on a wheel with no blue or purple
+    # gets cramped, so this one goes achromatic and takes gold as its accent.
     "axiom": {
-        "K": "#0e1124", "W": "#dfe6f6", "L": "#b4bee0", "M": "#7c88b8", "D": "#4e5888", "d": "#333a60",
-        "h": "#d6ecff", "c": "#aad8ff", "g": "#4a9ce6", "G": "#2060b0",
-        "o": "#ffe27a", "O": "#fff3c0", "r": "#c89a2a",
+        "K": "#14171c", "W": "#f0f3f7", "L": "#d2d8e0", "M": "#9fa6ad", "D": "#6d747c", "d": "#474d54",
+        "h": "#ffffff", "c": "#f7faff", "g": "#e4ebf5", "G": "#a8b3c4",
+        "o": "#ffd34a", "O": "#fff0b8", "r": "#b8912a",
     },
 }
 

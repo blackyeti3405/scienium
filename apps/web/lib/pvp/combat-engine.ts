@@ -111,6 +111,63 @@ export function buildBuildingTarget(
   }
 }
 
+/**
+ * Flat health for a GATEWAY target.
+ *
+ * Gateways do not upgrade, so running them through the level formula would mean
+ * inventing a level they don't have. 300 sits deliberately between a fresh
+ * economy building (level 1 → 120) and a maxed one (level 15 → 400): a gateway
+ * is a core structure and should cost a raider real time, without being the
+ * free percentage that a level-1-equivalent would hand out. Tune here.
+ */
+export const GATEWAY_HEALTH = 300
+
+/**
+ * Spell type for each gateway, so the type cycle (empirical > theoretical >
+ * applied > empirical) still means something when raiding one.
+ *
+ * Assigned by what the building DOES, not at random: the ones about gathering
+ * and measuring are empirical, the ones about reasoning and writing are
+ * theoretical, the ones about building and shipping are applied. A raider who
+ * knows the cycle can pick the right spell for the right gateway, which is the
+ * whole point of the mechanic.
+ */
+export const GATEWAY_SPELL_TYPES: Record<string, SpellType> = {
+  discovery: 'empirical',
+  literature_review: 'theoretical',
+  research_plan: 'theoretical',
+  science_fair: 'empirical',
+  operations_hub: 'applied',
+  showcase: 'applied',
+  pvp: 'applied',
+}
+
+/**
+ * A gateway as a raid target. Same shape as an economy building so every
+ * downstream consumer — damage resolution, the destroyed-percentage, trophy
+ * maths — treats it identically; only the art and level differ.
+ */
+export function buildGatewayTarget(
+  placementId: string,
+  name: string,
+  gatewayKey: string,
+  posX: number,
+  posY: number,
+  type: SpellType,
+): BuildingTarget {
+  return {
+    buildingId: placementId,
+    name,
+    maxHealth: GATEWAY_HEALTH,
+    currentHealth: GATEWAY_HEALTH,
+    position: { x: posX, y: posY },
+    type,
+    level: 0,
+    sprite: gatewayKey,
+    isGateway: true,
+  }
+}
+
 // ─── Damage Resolution ─────────────────────────────────────────────────────
 
 /**

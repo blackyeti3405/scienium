@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { ModalBackdrop } from '@/components/ui/ModalBackdrop'
 import { Lock } from 'lucide-react'
 import { shopBuildingsForLabType, type ShopBuilding } from '@/lib/shop'
@@ -9,7 +9,7 @@ import { clearanceTitle } from '@/lib/clearance/expertise'
 import { Sprite } from '@/components/lab/Sprite'
 import { getBuildingSprite, getGatewaySprite, type GatewaySkin, type SpriteEntry } from '@/lib/sprites/manifest'
 import { GATEWAYS } from '@/lib/gateways'
-import type { LabType } from '@/lib/phase'
+import { isPhaseAtLeast, PHASE_INFO, type LabType, type Phase } from '@/lib/phase'
 import type { Currency } from '@/components/lab/StatusStrip'
 
 /**
@@ -20,8 +20,9 @@ import type { Currency } from '@/components/lab/StatusStrip'
  *
  * Picking an economy building here doesn't buy it outright — it hands the building
  * to the plot as a cursor ghost (`onPlace`); the KP is debited when it's dropped
- * (POST /api/buildings/place). The 7 gateway buildings are shown greyed-out as
- * "Already placed" since they're the navigation spine, not purchasable.
+ * (POST /api/buildings/place). Gateways are FREE — the phase milestone is their
+ * price — and show one of three states: already placed, unlocked and waiting to
+ * be placed, or locked with the milestone that opens it.
  *
  * Two gates apply (mirrored on the server in lib/economy.ts):
  *   • KP — `baseCost × memberCount` (Feature 1c): a bigger lab pays proportionally.
@@ -34,7 +35,11 @@ export function ShopPanel({
   labType,
   ownedKeys,
   unplacedKeys,
+  phase,
+  placedGatewayKeys,
+  highlightGatewayKeys = [],
   onPlace,
+  onPlaceGateway,
   onClose,
 }: {
   currency: Currency
@@ -45,8 +50,16 @@ export function ShopPanel({
   ownedKeys: ReadonlySet<string>
   /** Economy keys owned but not yet positioned (free to place). */
   unplacedKeys: ReadonlySet<string>
+  /** The team's phase — decides which gateways are unlocked. */
+  phase: Phase
+  /** Gateway keys already standing on the plot. */
+  placedGatewayKeys: ReadonlySet<string>
+  /** Newly unlocked gateways — scrolled into view and ringed when the shop opens. */
+  highlightGatewayKeys?: readonly string[]
   /** Begin placing a building on the plot; `owned` = already paid for (free). */
   onPlace: (building: ShopBuilding, owned: boolean) => void
+  /** Begin placing an unlocked gateway (always free). */
+  onPlaceGateway: (key: string) => void
   onClose: () => void
 }) {
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -102,7 +115,18 @@ export function ShopPanel({
               )
             })}
             {GATEWAYS.map((g) => (
-              <GatewayCard key={g.key} label={g.label} sprite={getGatewaySprite(g.key, skin)} />
+              <GatewayCard
+                key={g.key}
+                gatewayKey={g.key}
+                label={g.label}
+                hint={g.hint}
+                sprite={getGatewaySprite(g.key, skin)}
+                placed={placedGatewayKeys.has(g.key)}
+                unlocked={isPhaseAtLeast(phase, g.unlockPhase)}
+                unlockLabel={PHASE_INFO[g.unlockPhase].label}
+                highlighted={highlightGatewayKeys.includes(g.key)}
+                onPlaceGateway={onPlaceGateway}
+              />
             ))}
           </div>
         </div>
@@ -202,16 +226,84 @@ function ShopCard({
  * navigation spine, not purchasable, so the card is non-interactive and exists
  * only to show the full roster of structures on the plot.
  */
-function GatewayCard({ label, sprite }: { label: string; sprite: SpriteEntry }) {
+/**
+ * A gateway in the shop. Placed → inert. Unlocked but not placed → a real button
+ * that hands the plot a free ghost. Locked → greyed with the phase that opens it,
+ * so the shelf reads as a roadmap instead of a wall of identical grey cards.
+ */
+function GatewayCard({
+  gatewayKey,
+  label,
+  hint,
+  sprite,
+  placed,
+  unlocked,
+  unlockLabel,
+  highlighted,
+  onPlaceGateway,
+}: {
+  gatewayKey: string
+  label: string
+  hint: string
+  sprite: SpriteEntry
+  placed: boolean
+  unlocked: boolean
+  unlockLabel: string
+  highlighted: boolean
+  onPlaceGateway: (key: string) => void
+}) {
+  // The shelf scrolls horizontally and the newly unlocked building is rarely
+  // the first card, so the ceremony's promise ("open the shop to place it") only
+  // holds if the shop brings it to the student rather than making them hunt.
+  const ref = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (highlighted && !placed) {
+      ref.current?.scrollIntoView({ block: 'nearest', inline: 'center' })
+    }
+  }, [highlighted, placed])
+  if (placed) {
+    return (
+      <div className="shop-card shop-card--placed" aria-hidden="true">
+        <div className="shop-card__image">
+          <Sprite entry={sprite} scale={3} />
+        </div>
+        <span className="shop-card__name font-pixel">{label}</span>
+        <span className="shop-card__status shop-card__status--placed font-pixel">Already placed</span>
+        <span className="shop-card__desc">{hint}</span>
+      </div>
+    )
+  }
+
+  if (!unlocked) {
+    return (
+      <div className="shop-card shop-card--locked">
+        <div className="shop-card__image">
+          <Sprite entry={sprite} scale={3} />
+        </div>
+        <span className="shop-card__name font-pixel">{label}</span>
+        <span className="shop-card__status font-pixel">
+          <Lock size={10} aria-hidden /> {unlockLabel}
+        </span>
+        <span className="shop-card__desc">{hint}</span>
+      </div>
+    )
+  }
+
   return (
-    <div className="shop-card shop-card--placed" aria-hidden="true">
+    <button
+      ref={ref}
+      type="button"
+      data-testid={`shop-gateway-${gatewayKey}`}
+      className={`shop-card shop-card--affordable${highlighted ? ' shop-card--new' : ''}`}
+      onClick={() => onPlaceGateway(gatewayKey)}
+    >
       <div className="shop-card__image">
         <Sprite entry={sprite} scale={3} />
       </div>
       <span className="shop-card__name font-pixel">{label}</span>
-      <span className="shop-card__status shop-card__status--placed font-pixel">Already placed</span>
-      <span className="shop-card__desc">Gateway building — part of your lab&apos;s navigation.</span>
-    </div>
+      <span className="shop-card__status font-pixel">Place · free</span>
+      <span className="shop-card__desc">{hint}</span>
+    </button>
   )
 }
 

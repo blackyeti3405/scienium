@@ -92,7 +92,7 @@ describe('advance-phase paid gate', () => {
     expect(mocks.teamUpdate).not.toHaveBeenCalled()
     expect(mocks.teamUpdateMany).toHaveBeenCalledWith({
       where: { id: CTX.teamId, phase: 'literature_review' },
-      data: expect.objectContaining({ phase: 'working', labType: 'volt_lab' }),
+      data: expect.objectContaining({ phase: 'plan_refinement', labType: 'volt_lab' }),
     })
   })
 

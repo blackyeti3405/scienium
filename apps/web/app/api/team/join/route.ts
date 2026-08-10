@@ -5,7 +5,7 @@ import { requireUserContext } from '@/lib/api/route-context'
 import { RouteError } from '@/lib/api/with-route'
 import { parseJson } from '@/lib/validation'
 import { normalizeInviteCode } from '@/lib/team/invite'
-import { applySchoolAndClass, resolvePrimaryEmail, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { applyClassCode, resolvePrimaryEmail, syncClerkDisplayName } from '@/lib/onboarding/profile'
 import { recordActivity } from '@/lib/activity/log'
 import { db } from '@/lib/db'
 import { leaveOtherTeams, recordMembershipEvent } from '@/lib/team/membership'
@@ -16,7 +16,6 @@ const JoinBody = z
   .object({
     name: z.string().trim().max(80).optional(),
     code: z.string().trim().min(1, 'A join code is required').max(32),
-    highSchool: z.string().trim().max(120).optional(),
     classCode: z.string().trim().max(32).optional(),
     ...legalConsentShape,
   })
@@ -40,7 +39,7 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await parseJson(req, JoinBody)
   if (error) return error
-  const { name, code, highSchool, classCode } = data
+  const { name, code, classCode } = data
 
   const normalized = normalizeInviteCode(code)
 
@@ -61,8 +60,8 @@ export async function POST(req: NextRequest) {
   // See /api/onboarding — records which version, first pass only.
   await recordLegalAcceptance(user.id)
 
-  // Ingest the joiner's high school + optional classroom (same rules as create).
-  await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => {})
+  // Optional classroom only (same rules as create) — no school from students.
+  await applyClassCode(user.id, { classCode }).catch(() => {})
 
   // Mirror the display name into Clerk so the avatar/account match from day one.
   await syncClerkDisplayName(userId, user.name)

@@ -40,6 +40,11 @@ const mocks = vi.hoisted(() => ({
   aiOpUpdateMany: vi.fn<(...args: unknown[]) => unknown>(),
 }))
 
+// Stubbed for the same reason as test/quiz-award.test.ts: the 25-source bonus
+// runs after the grading transaction and reads models this file's db mock does
+// not carry. It is covered by test/literature-tiers.test.ts.
+vi.mock('@/lib/team/advance', () => ({ maybeGrantLiteratureBonus: vi.fn(async () => 0) }))
+
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/db-lock', () => ({ lockAggregate: mocks.lockAggregate }))
 vi.mock('@/lib/activity/log', () => ({

@@ -9,7 +9,9 @@ type ChatMessage = ChatThreadMessage
 const GREETING: ChatMessage = {
   role: 'assistant',
   content:
-    "I'm Vega, your study companion for this project. Ask me to explain a concept, quiz you on your topic, or pose the kind of question a judge might ask about your method — I'll coach you toward the answer rather than write it for you.",
+    // Self-introduction, so it says what it is. The per-message label and the
+    // composer note carry the disclosure from here on.
+    "I'm Vega, an AI study companion for this project. Ask me to explain a concept, quiz you on your topic, or pose the kind of question a judge might ask about your method — I'll coach you toward the answer rather than write it for you.",
 }
 
 const STARTER_PROMPTS = [

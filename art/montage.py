@@ -44,12 +44,19 @@ STAGES = [("", "base"), ("_t2", "t2"), ("_t3", "t3"), ("_t4", "t4"), ("_t5", "t5
 
 # Top-of-sheet column headers: tier name + the levels it is shown at (manifest tier-ups).
 COL_HEADERS = [
-    ("BASE", "Levels 1–3"),
-    ("TIER 2", "Levels 4–6"),
-    ("TIER 3", "Levels 7–9"),
-    ("TIER 4", "Levels 10–14"),
+    ("BASE", "Levels 1-3"),
+    ("TIER 2", "Levels 4-6"),
+    ("TIER 3", "Levels 7-9"),
+    ("TIER 4", "Levels 10-14"),
     ("TIER 5", "Level 15"),
 ]
+
+# The 7 navigation gateways, in plot order (lib/gateways.ts). Unlike economy
+# buildings these are ONE grid recolored six ways, so the sheet shows them as a
+# lab x gateway matrix rather than an upgrade run — they have no tiers.
+GATEWAY_KEYS = ["discovery", "science_fair", "operations_hub", "literature_review",
+                "research_plan", "pvp", "showcase"]
+GATEWAY_SPRITES = os.path.join(ROOT, "apps", "web", "public", "sprites", "gateways")
 
 # Per-lab building slug order (matches OTHER_LABS_PROMPT.md / manifest BUILDING_SPRITES).
 LAB_SLUGS = {
@@ -188,7 +195,15 @@ def all_sheet(scale: int = 6) -> str:
     content_w = label_w + cols * side + (cols - 1) * col_gap
     W = M * 2 + content_w
 
-    H = M + title_h + colhdr_h
+    # Gateway band sits above the economy grid. Its 7 columns have to fit the
+    # width the 5-column economy grid already fixed, so its cells are smaller —
+    # snapped DOWN to a whole multiple of 64 so the sprites stay integer-scaled
+    # and pixel-crisp rather than resampled.
+    g_avail = cols * side + (cols - 1) * col_gap
+    g_side = max(64, ((g_avail - (len(GATEWAY_KEYS) - 1) * col_gap) // len(GATEWAY_KEYS)) // 64 * 64)
+    gate_h = labhdr_h + colhdr_h // 2 + len(ALL_LAB_ORDER) * (g_side + row_gap)
+
+    H = M + title_h + gate_h + lab_gap + colhdr_h
     for lab in ALL_LAB_ORDER:
         n = len(LAB_SLUGS[lab])
         H += lab_gap + labhdr_h + n * side + (n - 1) * row_gap
@@ -198,11 +213,31 @@ def all_sheet(scale: int = 6) -> str:
     draw = ImageDraw.Draw(sheet)
 
     # title
-    draw.text((M, M + 10), "scienium — building upgrade evolution  ·  all 60 economy buildings × 5 stages",
+    draw.text((M, M + 10),
+              "scienium - buildings  ·  7 gateways x 6 skins  +  60 economy buildings x 5 stages",
               fill=LABEL, font=f_title)
 
+    # ── Gateway band ────────────────────────────────────────────────────────
+    gy = M + title_h
+    draw.rectangle([M, gy, W - M, gy + labhdr_h], fill=LABBAND)
+    draw.text((M + 16, gy + (labhdr_h - 40) // 2),
+              "GATEWAY BUILDINGS  ·  7 gateways x 6 lab skins", fill=LABEL, font=f_lab)
+    gy += labhdr_h
+    for ci, key in enumerate(GATEWAY_KEYS):
+        x = grid_x0 + ci * (g_side + col_gap)
+        _centered(draw, x, g_side, gy + 8, key.replace("_", " "), f_colsub, MUTED)
+    gy += colhdr_h // 2
+    for ri, lab in enumerate(ALL_LAB_ORDER):
+        ry = gy + ri * (g_side + row_gap)
+        draw.text((M + 8, ry + g_side // 2 - 14), LAB_DISPLAY[lab], fill=LABEL, font=f_row)
+        for ci, key in enumerate(GATEWAY_KEYS):
+            x = grid_x0 + ci * (g_side + col_gap)
+            path = os.path.join(GATEWAY_SPRITES, f"{key}_{lab}.png")
+            sheet.alpha_composite(_cell(path, g_side), (x, ry))
+            draw.rectangle([x, ry, x + g_side - 1, ry + g_side - 1], outline=GRID, width=1)
+
     # column header band: BUILDING + the five tier/level columns
-    cy = M + title_h
+    cy = M + title_h + gate_h + lab_gap
     draw.text((M + 6, cy + 32), "BUILDING", fill=MUTED, font=f_colsub)
     for ci, (tier, lvl) in enumerate(COL_HEADERS):
         x = grid_x0 + ci * (side + col_gap)

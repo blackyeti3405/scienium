@@ -278,6 +278,22 @@ export type AnalysisSpec = z.infer<typeof AnalysisSpecSchema>
  * composing Lab template clamps panels to `rows*cols` regardless.
  */
 export const MAX_LAYOUT_DIM = 4
+
+/**
+ * One poster CELL, in inches — mirrors `_PANEL_W` / `_PANEL_H` in
+ * `runtime/analysis-templates.mjs`, which lays the exported board out as
+ * `plt.subplots(rows, cols, figsize=(cols * _PANEL_W, rows * _PANEL_H))`.
+ *
+ * The on-screen preview shapes its cells to this same ratio so that what a
+ * student arranges is what the PDF prints. Duplicating a number across the
+ * JS/Python boundary is a drift risk, so `poster-geometry.test.ts` reads the
+ * template source and fails if these two stop agreeing.
+ */
+export const POSTER_PANEL_W = 4.5
+export const POSTER_PANEL_H = 3.4
+/** matplotlib `wspace`/`hspace`: gap between subplots, as a fraction of a cell. */
+export const POSTER_WSPACE = 0.04
+export const POSTER_HSPACE = 0.06
 const LayoutPanelSchema = z.object({ analysisId: columnId }).strict()
 export const LayoutSpecSchema = z
   .object({

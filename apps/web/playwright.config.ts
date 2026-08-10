@@ -114,6 +114,17 @@ export default defineConfig({
       use: { ...devices['Desktop Safari'], storageState: STORAGE.leader },
       dependencies: ['setup'],
     },
+    // Marketing screenshots, run on demand — never part of a suite run. The
+    // `.capture.ts` suffix is outside Playwright's default `*.spec.ts` match,
+    // so these files are invisible unless this project is named explicitly:
+    //   pnpm --filter web exec playwright test --project=capture
+    // They write PNGs into public/, which is exactly why they must not run in CI.
+    {
+      name: 'capture',
+      testMatch: /\.capture\.ts$/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, storageState: STORAGE.leader },
+      dependencies: ['setup'],
+    },
   ],
   webServer: {
     // Boot on PORT (default 3000) so a worktree / concurrent ship run can isolate

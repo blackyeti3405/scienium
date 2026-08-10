@@ -13,12 +13,12 @@ import Image from 'next/image'
  * Captured via scripts/capture-marketing-shots.mjs.
  *
  * Click (or Enter/Space) opens a full-size lightbox — these are real product
- * screens, worth letting a visitor actually read. A subtle cursor-driven tilt
- * (desktop hover only — never fires on touch, which is fine, it's a cosmetic
- * enhancement, not information) adds depth without distorting the screenshot.
+ * screens, worth letting a visitor actually read.
+ *
+ * No cursor-driven tilt. The frame used to rotate a few degrees to follow the
+ * pointer; it added nothing and made the screenshots wobble as you read them,
+ * which is the opposite of what a frame is for.
  */
-const MAX_TILT_DEG = 5
-
 export function Shot({
   src,
   title,
@@ -37,23 +37,8 @@ export function Shot({
   className?: string
 }) {
   const [open, setOpen] = useState(false)
-  const [tilt, setTilt] = useState({ x: 0, y: 0 })
-  const figureRef = useRef<HTMLElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
-
-  function handleMouseMove(e: React.MouseEvent<HTMLElement>) {
-    const el = figureRef.current
-    if (!el) return
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-    const rect = el.getBoundingClientRect()
-    const px = (e.clientX - rect.left) / rect.width
-    const py = (e.clientY - rect.top) / rect.height
-    setTilt({ x: (py - 0.5) * -2 * MAX_TILT_DEG, y: (px - 0.5) * 2 * MAX_TILT_DEG })
-  }
-  function handleMouseLeave() {
-    setTilt({ x: 0, y: 0 })
-  }
 
   useEffect(() => {
     if (!open) return
@@ -74,18 +59,9 @@ export function Shot({
 
   return (
     <>
-      <div style={{ perspective: '1400px' }}>
       <figure
-        ref={figureRef as React.RefObject<HTMLElement>}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
         className={`overflow-hidden border border-[#e4e3db] bg-white shadow-[0_36px_70px_-40px_rgba(13,27,46,0.45)] ${className}`}
-        style={{
-          borderRadius: 8,
-          transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
-          transformStyle: 'preserve-3d',
-          transition: tilt.x === 0 && tilt.y === 0 ? 'transform 0.35s ease' : 'none',
-        }}
+        style={{ borderRadius: 8 }}
       >
         <figcaption className="flex items-center gap-2.5 border-b border-[#ecebe3] bg-[#f4f3ee] px-4 py-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -119,7 +95,6 @@ export function Shot({
           </span>
         </button>
       </figure>
-      </div>
 
       {open && (
         <div

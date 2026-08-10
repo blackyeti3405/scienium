@@ -103,3 +103,40 @@ export function diamondPoints(cx: number, cy: number): string {
     `${cx - STEP_X},${cy}`,
   ].join(' ')
 }
+
+/**
+ * Display size of a plot building sprite: every gateway and economy building is
+ * a 64px source rendered at PLOT_SCALE 2 (see LabPlot).
+ */
+export const BUILDING_PX = 128
+
+/** An axis-aligned box in cluster-centre space. */
+export interface ArtBox {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+
+/**
+ * The box a building's ART actually occupies, as an offset rect from the cluster
+ * centre — NOT its tile.
+ *
+ * A sprite is anchored bottom-centre on the tile's FRONT vertex, so its art
+ * reaches ~(BUILDING_PX − FOOT_HALF_Y) above the tile centre and FOOT_HALF_Y
+ * below it, a half-sprite either side. The tile diamond is far smaller and
+ * narrows to a point top and bottom, so culling ground decor against the diamond
+ * alone leaves shrubs poking out beside every building — which is exactly what it
+ * did. Ground decor draws UNDER the plot, so anything inside this box is either
+ * already hidden or is the bug; clearing all of it is safe.
+ */
+export function buildingArtBox(gx: number, gy: number): ArtBox {
+  const { dx, dy } = cellToScreen(gx, gy)
+  const anchorY = CLUSTER_Y + dy + FOOT_HALF_Y
+  return {
+    x0: dx - BUILDING_PX / 2,
+    x1: dx + BUILDING_PX / 2,
+    y0: anchorY - BUILDING_PX,
+    y1: anchorY,
+  }
+}

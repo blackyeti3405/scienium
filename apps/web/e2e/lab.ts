@@ -33,7 +33,7 @@ import { e2eDb } from './db'
  */
 
 /** Matches the seeder's fixture so feature gating behaves identically. */
-const FIXTURE_PHASE = 'working'
+const FIXTURE_PHASE = 'project_development'
 const FIXTURE_LAB_TYPE = 'volt_lab'
 const KP_BASELINE = 100_000
 const CLEARANCE_BASELINE = 3
@@ -60,7 +60,14 @@ const GATEWAY_LAYOUT: [string, number, number][] = [
   ['pvp', 3, 1],
   ['research_plan', -2, 1],
   ['science_fair', 3, -1],
-  ['working', 1, -2],
+  // `showcase` is a GATEWAY KEY, not a phase. The v0.80.0 phase rename reached
+  // into this list and turned it into `project_development` — which matches no
+  // gateway, so `plot-server` dropped it and every disposable lab was left one
+  // gateway short. Harmless until the unlock ceremony gave an unplaced gateway a
+  // consequence: `showcase` unlocks at `project_development`, so every lab made
+  // by `createLab` opened owing a ceremony, and its modal scrim blocked the 36
+  // specs that build a lab to test something else.
+  ['showcase', 1, -2],
 ]
 
 export interface Lab {

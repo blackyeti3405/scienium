@@ -5,11 +5,11 @@
  * Never gate features client-only — always mirror checks server-side.
  *
  * Phase order (cumulative — later phases inherit all earlier unlocks):
- *   discovery → literature_review → working
+ *   discovery → literature_review → plan_refinement → project_development
  *
- * Each arrow is a real student action: locking a final topic, then finishing the
- * review and entering a research idea. See PHASE_ORDER in @scienium/shared-types
- * for why the other three phases were retired in v0.80.0.
+ * Each arrow is a real student action or milestone: locking a final topic, then
+ * entering a research idea (earned at 10 fully-proficient sources), then reaching
+ * 20 fully-proficient sources. See PHASE_ORDER in @scienium/shared-types.
  */
 
 // ─── Phase + lab types ─────────────────────────────────────────────────────────
@@ -67,9 +67,10 @@ export type Feature =
 // raise clearance, and handing a brand-new lab the clearance ladder would let it
 // skip the shop's pacing entirely.
 const PHASE_UNLOCKS: Record<Phase, Feature[]> = {
-  discovery:          ['discovery', 'fair_hub', 'buildings', 'logs'],
-  literature_review:  ['literature', 'pvp'],
-  working:            ['daily', 'data_terminal', 'research_plan', 'showcase'],
+  discovery:           ['discovery', 'fair_hub', 'buildings', 'logs'],
+  literature_review:   ['literature', 'pvp'],
+  plan_refinement:     ['research_plan'],
+  project_development: ['daily', 'data_terminal', 'showcase'],
 }
 
 // ─── Core helpers ─────────────────────────────────────────────────────────────
@@ -82,6 +83,12 @@ export function phaseIndex(phase: Phase): number {
 /** True if `current` is at or past `required` in the phase sequence. */
 export function isPhaseAtLeast(current: Phase, required: Phase): boolean {
   return phaseIndex(current) >= phaseIndex(required)
+}
+
+/** Every phase at or after `from`, in order. Use this instead of hardcoding a
+ *  list of phase literals — those silently go stale when a phase is added. */
+export function phasesFrom(from: Phase): Phase[] {
+  return PHASE_ORDER.slice(phaseIndex(from)) as Phase[]
 }
 
 /** Returns every feature unlocked at `phase` (includes all prior phases). */
@@ -110,10 +117,10 @@ export const FEATURE_MIN_PHASE: Record<Feature, Phase> = {
   logs:           'discovery',
   literature:     'literature_review',
   pvp:            'literature_review',
-  daily:          'working',
-  data_terminal:  'working',
-  research_plan:  'working',
-  showcase:       'working',
+  research_plan:  'plan_refinement',
+  daily:          'project_development',
+  data_terminal:  'project_development',
+  showcase:       'project_development',
 }
 
 // ─── Lab visual properties ────────────────────────────────────────────────────
@@ -137,9 +144,10 @@ export interface PhaseInfo {
 }
 
 export const PHASE_INFO: Record<Phase, PhaseInfo> = {
-  discovery:         { label: 'Discovery',         description: 'Exploring topics',              color: 'bg-blue-100 text-blue-800' },
-  literature_review: { label: 'Literature Review', description: 'Processing research papers',    color: 'bg-yellow-100 text-yellow-800' },
-  working:           { label: 'Working',           description: 'Running experiments',           color: 'bg-green-100 text-green-800' },
+  discovery:           { label: 'Discovery',           description: 'Exploring topics',            color: 'bg-blue-100 text-blue-800' },
+  literature_review:   { label: 'Literature Review',   description: 'Processing research papers',  color: 'bg-yellow-100 text-yellow-800' },
+  plan_refinement:     { label: 'Plan Refinement',     description: 'Designing the study',         color: 'bg-purple-100 text-purple-800' },
+  project_development: { label: 'Project Development', description: 'Running experiments',         color: 'bg-green-100 text-green-800' },
 }
 
 // ─── API route gating ─────────────────────────────────────────────────────────

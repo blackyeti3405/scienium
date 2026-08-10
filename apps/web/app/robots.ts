@@ -4,14 +4,14 @@ import type { MetadataRoute } from 'next'
  * Disallows crawling of every authenticated/private route (dashboard, lab,
  * teacher panels, API, etc.) — none of it has value indexed, and the app
  * already 501s/redirects unauthenticated requests anyway. Allows the real
- * public surfaces: the two marketing pages and the Showcase Wing.
+ * public surfaces: the single-page marketing site and the Showcase Wing.
  */
 export default function robots(): MetadataRoute.Robots {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   return {
     rules: {
       userAgent: '*',
-      allow: ['/', '/about', '/showcase', '/pvp', '/teachers'],
+      allow: ['/', '/showcase'],
       disallow: [
         '/dashboard',
         '/game',

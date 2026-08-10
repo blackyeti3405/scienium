@@ -39,8 +39,9 @@ interface TabDef {
   /**
    * Which half of the hub this tab belongs to. `logs` opens on day one — a
    * Project Log and a Failure Log are how a lab records work that has not
-   * succeeded yet. `daily` is earned at the `working` phase: those tabs mint KP
-   * and raise clearance, which is the shop's pacing.
+   * succeeded yet. `daily` and `data_terminal` are earned at
+   * `project_development` (20 fully-proficient sources): those tabs mint KP and
+   * raise clearance, which is the shop's pacing.
    */
   feature: Extract<Feature, 'logs' | 'daily' | 'data_terminal'>
 }

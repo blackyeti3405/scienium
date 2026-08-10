@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * `PATCH /api/settings` must reject before it writes (REFACTOR2 P2-S7).
  *
  * Reproduced against the pre-fix handler: it applied the name (and mirrored it
- * to Clerk), the school, the research idea and the lab name IN THAT ORDER, and
+ * to Clerk), the research idea and the lab name IN THAT ORDER, and
  * only then asked whether the ZIP mapped to a US state. A single PATCH carrying
  * a good name, a good lab name and a bad ZIP came back 400 with four writes
  * already committed — the caller is told the update failed while most of it
@@ -22,7 +22,6 @@ const mocks = vi.hoisted(() => ({
   userUpdate: vi.fn(),
   teamUpdate: vi.fn(),
   transaction: vi.fn(),
-  resolveSchool: vi.fn(),
   syncClerkDisplayName: vi.fn(),
   geocodeZip: vi.fn(),
 }))
@@ -30,7 +29,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/api/route-context', () => ({ requireTeamContext: mocks.requireTeamContext }))
 vi.mock('@/lib/onboarding/profile', () => ({
-  resolveSchool: mocks.resolveSchool,
   syncClerkDisplayName: mocks.syncClerkDisplayName,
 }))
 vi.mock('@/lib/fairs/zip', async (importOriginal) => ({
@@ -83,10 +81,6 @@ beforeEach(() => {
     writes.push('team.update')
     return {}
   })
-  mocks.resolveSchool.mockImplementation(async () => {
-    writes.push('resolveSchool')
-    return 'school_1'
-  })
   mocks.geocodeZip.mockResolvedValue([41.7, -72.6] as const)
   // Run the callback with the same model mocks, so a write inside the
   // transaction is recorded exactly like one outside it.
@@ -96,6 +90,19 @@ beforeEach(() => {
       team: { update: mocks.teamUpdate },
     }),
   )
+})
+
+describe('PATCH /api/settings — a student cannot set a school', () => {
+  it('rejects a body carrying `school` instead of silently ignoring it', async () => {
+    // Students no longer supply a school anywhere: the field was only ever read
+    // by the withdrawn `school_only` showcase tier, so it was identifying data
+    // on a minor with no consumer. `.strict()` makes removing it from the schema
+    // a REFUSAL rather than a quiet drop, so a stale client can't keep writing.
+    const res = await PATCH(patchReq({ name: 'New Name', school: 'Central High' }))
+    expect(res.status).toBe(400)
+    expect(writes).toEqual([])
+    expect(mocks.transaction).not.toHaveBeenCalled()
+  })
 })
 
 describe('PATCH /api/settings — nothing is applied unless everything validates', () => {
@@ -119,7 +126,7 @@ describe('PATCH /api/settings — nothing is applied unless everything validates
 
   it('a valid PATCH commits every field in ONE transaction', async () => {
     const res = await PATCH(
-      patchReq({ name: 'New Name', school: 'Central High', labName: 'New Lab', zip: '06001' }),
+      patchReq({ name: 'New Name', labName: 'New Lab', zip: '06001' }),
     )
     expect(res.status).toBe(200)
     expect(mocks.transaction).toHaveBeenCalledTimes(1)

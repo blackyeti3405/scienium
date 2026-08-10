@@ -249,6 +249,10 @@ export function LabLane({
           exportLayout={exportLayout}
           runtimeReady={runtimeReady}
           running={running}
+          // The preview draws the figures each analysis ALREADY rendered, so
+          // arranging a board costs nothing — no second trip through Pyodide.
+          results={results}
+          currentSignature={signature}
         />
       )}
     </div>

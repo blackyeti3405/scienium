@@ -69,7 +69,7 @@ beforeEach(() => {
   mocks.getLiteratureAdvanceProgress.mockResolvedValue({ canAdvance: true })
   mocks.classifyLabType.mockResolvedValue({ labType: 'volt_lab', rationale: 'electronics' })
   mocks.teamUpdateMany.mockResolvedValue({ count: 1 })
-  mocks.teamFindUnique.mockResolvedValue({ phase: 'working', labType: 'volt_lab' })
+  mocks.teamFindUnique.mockResolvedValue({ phase: 'plan_refinement', labType: 'volt_lab' })
 })
 
 describe('the paid advance is claimed before it spends', () => {
@@ -140,7 +140,7 @@ describe('a late result can never roll the lab backwards', () => {
 
     expect(casCall()).toMatchObject({
       where: { id: 'team_1', phase: 'literature_review' },
-      data: expect.objectContaining({ phase: 'working', advanceClaimedAt: null }),
+      data: expect.objectContaining({ phase: 'plan_refinement', advanceClaimedAt: null }),
     })
   })
 
@@ -150,13 +150,13 @@ describe('a late result can never roll the lab backwards', () => {
       .mockResolvedValueOnce({ count: 1 }) // claim won
       .mockResolvedValueOnce({ count: 0 }) // CAS matched nothing — phase moved
       .mockResolvedValue({ count: 1 }) // claim release
-    mocks.teamFindUnique.mockResolvedValue({ phase: 'working', labType: 'volt_lab' })
+    mocks.teamFindUnique.mockResolvedValue({ phase: 'plan_refinement', labType: 'volt_lab' })
 
     const res = await POST(advanceReq())
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toMatchObject({ phase: 'working', alreadyAdvanced: true })
+    expect(body).toMatchObject({ phase: 'plan_refinement', alreadyAdvanced: true })
     // And it did NOT claim to have advanced the team itself.
     expect(mocks.recordActivity).not.toHaveBeenCalled()
   })
@@ -169,7 +169,7 @@ describe('a late result can never roll the lab backwards', () => {
       'team_1',
       'user_1',
       'phase_advanced',
-      expect.objectContaining({ fromPhase: 'literature_review', toPhase: 'working' }),
+      expect.objectContaining({ fromPhase: 'literature_review', toPhase: 'plan_refinement' }),
     )
   })
 })
@@ -203,7 +203,7 @@ describe('the phase clock is stamped by the transition, not the attempt', () => 
     await POST(advanceReq())
 
     expect(casCall().data).toMatchObject({
-      phase: 'working',
+      phase: 'plan_refinement',
       phaseEnteredAt: expect.any(Date),
     })
   })
@@ -219,7 +219,7 @@ describe('the phase clock is stamped by the transition, not the attempt', () => 
       .mockResolvedValueOnce({ count: 1 }) // claim won
       .mockResolvedValueOnce({ count: 0 }) // CAS matched nothing — phase moved
       .mockResolvedValue({ count: 1 }) // claim release
-    mocks.teamFindUnique.mockResolvedValue({ phase: 'working', labType: 'volt_lab' })
+    mocks.teamFindUnique.mockResolvedValue({ phase: 'plan_refinement', labType: 'volt_lab' })
 
     await POST(advanceReq())
 

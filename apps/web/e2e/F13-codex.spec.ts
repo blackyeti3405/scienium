@@ -109,7 +109,7 @@ const UNIT1_REMAINING_LESSON_IDS = [
 // itself opens at `discovery` from v0.80.0, but only its logs half — the Codex
 // and Proof of Expertise are a `working` unlock (PHASE_UNLOCKS in lib/phase.ts),
 // so this is the set the dev-only `/lab?phase=` override can prove Codex in.
-const HUB_VISIBLE_PHASES = ['working']
+const HUB_VISIBLE_PHASES = ['project_development']
 
 interface CompleteResponse {
   passed: boolean

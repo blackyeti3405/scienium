@@ -4,6 +4,7 @@ import { requireTeacher } from '@/lib/teacher/auth'
 import { db } from '@/lib/db'
 import { pickActiveTeam } from '@/lib/team/active-team'
 import { MAX_TEACHER_ROSTER_STUDENTS, overflowTake, withOverflow } from '@/lib/teacher/caps'
+import { isPhaseAtLeast, type Phase } from '@/lib/phase'
 
 /** Days without a progress log before a working-phase team is flagged stale. */
 const STALE_LOG_DAYS = 5
@@ -111,7 +112,7 @@ export async function GET(req: NextRequest) {
 
     // Status is only meaningful once a lab is actually running experiments.
     let status: 'on_track' | 'unlogged' | 'stale' | null = null
-    if (team && team.phase === 'working') {
+    if (team && isPhaseAtLeast(team.phase as Phase, 'plan_refinement')) {
       const logAge = lastLog ? differenceInCalendarDays(now, lastLog) : Infinity
       const activityAge = lastActivity ? differenceInCalendarDays(now, lastActivity) : Infinity
       const recentLog = logAge <= STALE_LOG_DAYS

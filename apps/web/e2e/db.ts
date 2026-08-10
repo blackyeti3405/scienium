@@ -211,7 +211,7 @@ export async function ensureSecondTeam(): Promise<string> {
     data: {
       name: SECOND_TEAM_NAME,
       teamLeadId: leaderUser.id,
-      phase: 'working',
+      phase: 'project_development',
       labType: 'volt_lab',
       // No `classId` on purpose — matchmaking derives class from members, so
       // this fixture proves the ADR-004 path rather than the vestigial column.
@@ -251,6 +251,10 @@ export async function removeSecondTeam(): Promise<void> {
 
   await clearPvpData(team.id)
   await e2eDb.teamShopBuilding.deleteMany({ where: { teamId: team.id } })
+  // Gateways became raid targets, so a defender fixture can now carry
+  // placements too — and `team_gateway_placements_team_id_fkey` blocks the
+  // delete below if they are left behind.
+  await e2eDb.teamGatewayPlacement.deleteMany({ where: { teamId: team.id } })
   await e2eDb.pvpTrophies.deleteMany({ where: { teamId: team.id } })
   await e2eDb.teamMember.deleteMany({ where: { teamId: team.id } })
   await e2eDb.team.delete({ where: { id: team.id } })

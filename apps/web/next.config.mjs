@@ -2,6 +2,16 @@ import { withSentryConfig } from '@sentry/nextjs'
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Dev-only routes are compiled out of PRODUCTION builds entirely.
+  //
+  // `app/dev/*` holds visual harnesses (the skeleton audit). Runtime guards
+  // alone were not enough: the page still shipped in the production bundle and
+  // showed up in the build manifest, relying on a `notFound()` to hide it. With
+  // this, a production build does not resolve `page.dev.tsx` at all, so those
+  // routes do not exist to be reached, probed, or served.
+  pageExtensions: process.env.NODE_ENV === 'production'
+    ? ['tsx', 'ts', 'jsx', 'js']
+    : ['dev.tsx', 'tsx', 'ts', 'jsx', 'js'],
   images: {
     remotePatterns: [
       {
@@ -104,8 +114,27 @@ const nextConfig = {
         : []),
     ]
 
+    // The stored-PDF routes are the ONE place the app embeds its own response in
+    // its own <iframe> (the Q&A viewer). The global lock below sends
+    // `frame-ancestors 'none'` + `X-Frame-Options: DENY` on every response,
+    // which the browser applies to the PDF document itself — so it fetches the
+    // bytes (200 in the server log) and then refuses to render them, leaving a
+    // blank viewer with no error anywhere.
+    //
+    // These two routes relax to SAME-ORIGIN only. Every other route keeps the
+    // hard lock, so the clickjacking posture is unchanged for anything an
+    // attacker could actually want to frame: a PDF the caller must already be
+    // authenticated and team-scoped to read is not a clickjacking target.
+    const sameOriginFrameable = [
+      { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+      { key: 'Content-Security-Policy', value: csp.replace("frame-ancestors 'none'", "frame-ancestors 'self'") },
+    ]
+
     return [
       { source: '/(.*)', headers: securityHeaders },
+      // AFTER the global rule: for duplicate keys the later match wins.
+      { source: '/api/papers/:id/file', headers: sameOriginFrameable },
+      { source: '/api/teacher/student/:id/literature/:paperId/file', headers: sameOriginFrameable },
       {
         // Sprite URLs are content-addressed (the manifest appends a ?v=<hash> token, see
         // lib/sprites/manifest.ts + scripts/gen-sprite-versions.mjs), so a redraw changes

@@ -1,9 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TileBackground } from '@/components/lab/TileBackground'
 import { DecorationLayer } from '@/components/lab/DecorationLayer'
 import { LabPlot } from '@/components/lab/LabPlot'
+import { buildingArtBox } from '@/lib/plot'
 import { FeaturePanel } from '@/components/lab/FeaturePanel'
 import { ShopPanel } from '@/components/lab/ShopPanel'
 import { TeamPanel } from '@/components/lab/TeamPanel'
@@ -15,6 +16,7 @@ import { StatusStrip, type Currency } from '@/components/lab/StatusStrip'
 import { MomentumCard } from '@/components/lab/MomentumCard'
 import { BuildingMenu } from '@/components/lab/BuildingMenu'
 import { UpgradeBurst } from '@/components/lab/UpgradeBurst'
+import { UnlockCeremony } from '@/components/lab/UnlockCeremony'
 import { DevFillButton } from '@/components/lab/DevFillButton'
 import { Activity, MessageSquare, Move, X } from 'lucide-react'
 import { getISOWeek, getISOWeekYear } from 'date-fns'
@@ -49,6 +51,8 @@ export interface LabSceneProps {
   initialPanel?: 'feedback'
   /** Economy buildings already placed on the plot. */
   placedBuildings: PlacedEconomy[]
+  /** Gateways this phase unlocked that are neither placed nor acknowledged. */
+  pendingUnlock: { phase: Phase; keys: string[] } | null
   /** Economy buildings owned but not yet positioned (legacy rows). */
   unplacedKeys: string[]
   /** Effective gateway positions. */
@@ -104,6 +108,7 @@ function LabSceneContent({
   seed = 1,
   initialPanel,
   placedBuildings,
+  pendingUnlock,
   unplacedKeys,
   gatewayPositions,
 }: LabSceneProps) {
@@ -141,6 +146,7 @@ function LabSceneContent({
     burst,
     toast,
     beginPlace,
+    beginPlaceGateway,
     onPick,
     onSelectEconomy,
     onDrop,
@@ -196,6 +202,35 @@ function LabSceneContent({
     setMomentumDismissed(true)
   }
 
+  // Ground the decor layer must leave bare — the buildings' ART boxes, not their
+  // tiles. Both are measured from the cluster centre, which is the same space
+  // the scatter works in, so these drop straight through.
+  // The ceremony is server-derived, so a reload replays exactly the same state.
+  // Acknowledging it is what ends it — opening the shop is the acknowledgement,
+  // which is also the action it is asking for.
+  const [unlockDone, setUnlockDone] = useState(false)
+  const ceremony = !unlockDone && pendingUnlock ? pendingUnlock : null
+
+  async function acknowledgeUnlock() {
+    setUnlockDone(true) // optimistic: the overlay must never outlive the click
+    try {
+      await fetch('/api/team/unlock-ack', { method: 'POST' })
+    } catch {
+      // Non-fatal. Worst case the ceremony replays on the next load, which is
+      // far better than trapping the student under a scrim we cannot dismiss.
+    }
+  }
+
+  const placedGatewayKeys = useMemo(
+    () => new Set(plotGateways.map((g) => g.key)),
+    [plotGateways],
+  )
+
+  const decorBlocked = useMemo(
+    () => [...plotGateways, ...plotEconomy].map(({ gx, gy }) => buildingArtBox(gx, gy)),
+    [plotGateways, plotEconomy],
+  )
+
   const skin: GatewaySkin = (labType ?? 'generic') as GatewaySkin
 
   const openKey = overlay.kind === 'feature' ? overlay.key : null
@@ -208,8 +243,14 @@ function LabSceneContent({
     beginPlace(building, owned)
   }
 
+  /** Same, for a gateway the team has unlocked but not yet put down. */
+  function handlePlaceGateway(key: string) {
+    closeOverlay()
+    beginPlaceGateway(key)
+  }
+
   return (
-    <div className="lab-scene">
+    <div className={`lab-scene${ceremony ? ' lab-scene--unlocking' : ''}`}>
       <StatusStrip
         teamName={teamName}
         phase={phase}
@@ -223,7 +264,7 @@ function LabSceneContent({
 
       <div className="lab-scene__viewport">
         <TileBackground seed={seed} />
-        <DecorationLayer seed={seed} />
+        <DecorationLayer seed={seed} blocked={decorBlocked} />
 
         {!momentumDismissed && <MomentumCard onDismiss={handleDismissMomentum} />}
 
@@ -298,11 +339,16 @@ function LabSceneContent({
 
         {toast && <div className="plot-toast font-pixel">{toast}</div>}
 
+        {ceremony && <UnlockCeremony count={ceremony.keys.length} />}
+
         {/* Buildings shop — anchored bottom-right of the lab viewport. */}
         <button
           type="button"
           className="shop-button font-pixel"
-          onClick={() => setOverlay({ kind: 'shop' })}
+          onClick={() => {
+            if (ceremony) void acknowledgeUnlock()
+            setOverlay({ kind: 'shop' })
+          }}
           title="Buildings"
           aria-label="Open buildings shop"
         >
@@ -374,7 +420,11 @@ function LabSceneContent({
           labType={labType}
           ownedKeys={ownedSet}
           unplacedKeys={unplacedSet}
+          phase={phase}
+          placedGatewayKeys={placedGatewayKeys}
+          highlightGatewayKeys={pendingUnlock?.keys ?? []}
           onPlace={handlePlace}
+          onPlaceGateway={handlePlaceGateway}
           onClose={closeOverlay}
         />
       )}

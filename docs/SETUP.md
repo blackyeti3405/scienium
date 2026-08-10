@@ -192,13 +192,20 @@ pnpm --filter web seed:dev-pvp        # optionally: … seed:dev-pvp you@example
 ```
 
 Resetting raid counts is almost never what unblocks a raid — `pvp_raid_quota`
-starts empty (0 used). A raid needs the attacker's team at phase `working`+, the
+starts empty (0 used). A raid needs the attacker's team at phase `literature_review`+, the
 attacker **in a class** (`User.classId`; null means no opponent will ever be
-found), and an opponent sharing that class, at `working`+, with a placed
+found), and an opponent sharing that class, at `literature_review`+, with a placed
 building. This seeder builds that graph (Dev School → Dev Class → Dev Rival Lab)
 and clears the quota. It stays out of the E2E fixture on purpose — a dev lab in
 `E2E Class` would become a candidate opponent and make the pvp specs
 nondeterministic.
+
+The rival gets the FULL catalogue at max tier plus all seven gateways (raidable
+since v0.81.0), on interleaved cells — economy buildings on even coordinates,
+gateways on odd — so the two sets never land on the same tile. It only ever
+ADVANCES the attacker's phase, never rewinds it: an earlier version wrote a flat
+`working`, which both failed the current enum and would have knocked a
+late-phase dev lab backwards to "unlock" pvp it already had.
 
 ---
 
@@ -244,7 +251,7 @@ production builds):
 /lab?phase=showcase&lab=axiom               # Axiom reskin, Showcase locked (padlock)
 ```
 
-`phase` ∈ discovery · lab_selection · literature_review · research_planning · working · showcase
+`phase` ∈ discovery · literature_review · plan_refinement · project_development
 `lab` ∈ biocore · chemworks · volt_lab · terrabase · mindframe · axiom
 
 ### Code / Lab-mode Python runtime (optional)

@@ -71,6 +71,16 @@
 }
 
 /* ── Spatial lab scene ──────────────────────────────────────────────────────── */
+
+/* Tailwind's preflight sets `img { max-width: 100% }`. Every sprite in the lab
+   is an <img> sized in px to an exact integer pixel-art scale, and the buildings
+   sit in absolutely-positioned boxes anchored `left: calc(50% + Npx)` — so the
+   box's available width is (viewport - left), which shrinks as the window
+   narrows. The clamp then squeezes the sprite horizontally while its inline
+   `height` stays fixed, and buildings on the right render visibly squashed.
+   Pixel art must never be scaled non-uniformly; opt the whole scene out. */
+.lab-scene img { max-width: none; }
+
 .lab-scene {
   display: flex;
   flex-direction: column;
@@ -96,7 +106,14 @@
   align-items: center;
   gap: 14px;
 }
-.status-strip__brand { color: #cfd6f0; font-size: 10px; display: inline-flex; align-items: center; gap: 7px; }
+.status-strip__brand {
+  color: #cfd6f0; font-size: 10px; display: inline-flex; align-items: center; gap: 7px;
+  border-radius: 3px; transition: color 120ms ease;
+}
+.status-strip__brand:hover { color: #f5c518; }
+.status-strip__brand:focus-visible {
+  outline: 2px solid #f5c518; outline-offset: 3px;
+}
 .status-strip__team { color: #aeb6d0; font-size: 13px; font-weight: 600; }
 /* Team name doubles as the Team-panel trigger when a roster is available. */
 .status-strip__team--button {
@@ -842,6 +859,136 @@
 }
 .shop-button:hover { transform: translateY(-2px); filter: brightness(1.06); }
 .shop-button:active { transform: translateY(0); }
+
+/* ── Unlock ceremony ──────────────────────────────────────────────────────── */
+/* Sits between the lab (z 0-3) and the shop button, which is raised to z 7 while
+   the ceremony runs so it is the ONLY thing the scrim does not swallow. */
+.unlock-ceremony { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+
+.unlock-ceremony__scrim {
+  position: absolute;
+  inset: 0;
+  /* "Slightly" grey out — enough to read as inert, not enough to hide the lab
+     the arrow is pointing across. */
+  background: rgba(8, 12, 22, 0.45);
+  pointer-events: auto;
+  animation: unlock-fade 220ms ease-out both;
+}
+
+.unlock-ceremony__banner {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  animation: unlock-pop 320ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+.unlock-ceremony__title {
+  font-size: 15px;
+  color: #ffe566;
+  letter-spacing: 2px;
+  text-shadow: 0 3px 0 #6b5200, 0 0 18px rgba(245, 197, 24, 0.55);
+}
+.unlock-ceremony__hint {
+  margin-top: 10px;
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 1px;
+}
+
+/* Anchored by `right` and laid out head-last, so growing extends the arrow
+   LEFTWARD and the tip stays put.
+
+   The HEIGHT IS FIXED at 44px on purpose. With `align-items: center` the tip
+   sits at the container's vertical middle, so a fixed height means the tip
+   cannot drift as the head grows — a container that hugged its contents moved
+   the tip every frame. 44px clears the tallest head (35px).
+
+   `bottom: 15px` puts that middle at 38px off the scene floor, which is exactly
+   the shop button's centre (measured: 39px tall, 18px off the floor). The tip
+   points at the middle of the button, not above it.  */
+.unlock-ceremony__arrow {
+  position: absolute;
+  right: 100px;
+  bottom: 15px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+}
+.unlock-ceremony__arrow-shaft {
+  display: block;
+  background: #F5C518;
+  animation: unlock-arrow-shaft 1.2s steps(1, end) infinite;
+}
+.unlock-ceremony__arrow-head {
+  display: block;
+  animation: unlock-arrow-head 1.2s steps(1, end) infinite;
+}
+
+@keyframes unlock-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes unlock-pop {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.86) }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1) }
+}
+/* The WHOLE arrow pulses — head and shaft together — rather than the shaft
+   stretching against a fixed head, which read as rubber-banding.
+   Thirteen frames, so the pulse reads as motion rather than a flicker between
+   two states. The head can only take sizes that keep its blocks square — its
+   viewBox is 4x7 units, so its widths must be whole multiples of 4 — but the
+   shaft is a plain bar with no block structure and steps every 4px, reaching
+   56px so the arrow reads as a long pointer rather than a stub.
+   `steps(1, end)` holds each frame rather than interpolating, so no size is ever
+   fractional mid-tween. */
+@keyframes unlock-arrow-shaft {
+  0%   { width: 24px; height:  6px }
+  8%   { width: 28px; height:  9px }
+  17%  { width: 32px; height:  9px }
+  25%  { width: 36px; height: 12px }
+  33%  { width: 40px; height: 12px }
+  42%  { width: 48px; height: 15px }
+  50%  { width: 56px; height: 15px }
+  58%  { width: 48px; height: 15px }
+  67%  { width: 40px; height: 12px }
+  75%  { width: 36px; height: 12px }
+  83%  { width: 32px; height:  9px }
+  92%  { width: 28px; height:  9px }
+  100% { width: 24px; height:  6px }
+}
+/* Four head sizes, 2px to 5px per unit. Each is a WHOLE number of pixels per
+   unit (8/12/16/20 across a 4-unit viewBox, 14/21/28/35 across 7), so every
+   frame keeps its blocks square. The 6px-per-unit frame was dropped: at 24x42
+   the head was taller than the 39px shop button it points at. */
+@keyframes unlock-arrow-head {
+  0%   { width:  8px; height: 14px }
+  8%   { width: 12px; height: 21px }
+  17%  { width: 12px; height: 21px }
+  25%  { width: 16px; height: 28px }
+  33%  { width: 16px; height: 28px }
+  42%  { width: 20px; height: 35px }
+  50%  { width: 20px; height: 35px }
+  58%  { width: 20px; height: 35px }
+  67%  { width: 16px; height: 28px }
+  75%  { width: 16px; height: 28px }
+  83%  { width: 12px; height: 21px }
+  92%  { width: 12px; height: 21px }
+  100% { width:  8px; height: 14px }
+}
+
+/* While the ceremony runs the shop button is the one live control. */
+.lab-scene--unlocking .shop-button { z-index: 7; }
+
+/* The card the ceremony just pointed at. */
+.shop-card--new {
+  border-color: #F5C518 !important;
+  box-shadow: 0 0 0 2px rgba(245, 197, 24, 0.35), 0 0 22px rgba(245, 197, 24, 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unlock-ceremony__scrim,
+  .unlock-ceremony__banner { animation: none }
+  .unlock-ceremony__arrow-shaft { animation: none; width: 32px; height: 12px }
+  .unlock-ceremony__arrow-head { animation: none; width: 16px; height: 28px }
+}
 .shop-button__icon { font-size: 18px; line-height: 1; }
 .shop-button__label { font-size: 8px; letter-spacing: 0.5px; }
 
@@ -3697,8 +3844,47 @@
 .dt-poster__row { display: flex; align-items: center; gap: 8px; }
 .dt-poster__row .dt-input { flex: 1; }
 .dt-poster__grid-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
-.dt-poster__panels { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
-.dt-poster__panel { min-width: 160px; }
+/* The panel controls mirror the board: `grid-template-columns` is set inline
+   from the layout's own `cols`, so A/B/C… land in the cells they will occupy
+   and "Add panel" flows into the next free one. */
+.dt-poster__panels { display: grid; gap: 10px; align-items: end; }
+.dt-poster__panel { min-width: 0; }
+.dt-poster__addpanel { align-self: end; justify-content: center; min-height: 34px; }
+
+/* Live preview of the board being assembled — geometry mirrors the exported
+   figure (see PosterLayouts.tsx). `padding` is matplotlib's 1% margin; the
+   row/column gaps come from its wspace/hspace, set inline from the layout.
+   Capped so even a 4x4 board stays on screen; the aspect does the rest. */
+.dt-poster__preview { margin: 12px 0 0; }
+.dt-poster__board {
+  display: grid; padding: 1%;
+  max-width: 640px;
+  background: #fff; border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+/* Fixed ASPECT, never fixed height: the cell is the shape matplotlib will give
+   this panel, and the figure fills it. A fixed pixel height was what left the
+   figures floating in whitespace while the export packed them tight. */
+.dt-poster__cell {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  min-height: 0; min-width: 0;
+  border: 1px dashed rgba(13, 27, 46, 0.18); border-radius: 2px;
+}
+.dt-poster__cell-label {
+  position: absolute; top: 2px; left: 3px; z-index: 1;
+  font-family: var(--font-pixel), monospace; font-size: 7px; color: #0d1b2e;
+  background: rgba(255, 255, 255, 0.7); padding: 0 2px; border-radius: 1px;
+}
+/* `contain` matches imshow, which preserves the panel's own aspect inside the
+   cell rather than stretching it. */
+.dt-poster__cell-fig { width: 100%; height: 100%; object-fit: contain; }
+/* Matches the lane's convention: a figure rendered against since-changed data
+   is dimmed, never presented as current. */
+.dt-poster__cell-fig.is-stale { opacity: 0.4; }
+.dt-poster__cell-empty {
+  font-family: var(--font-pixel), monospace; font-size: 7px; line-height: 1.8;
+  color: rgba(13, 27, 46, 0.4); text-align: center; padding: 0 6px;
+}
 
 /* Phase F1: per-figure Format + Export tools on the results sheet. */
 .dt-analysis__figtools {

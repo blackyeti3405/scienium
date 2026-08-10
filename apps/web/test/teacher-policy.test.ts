@@ -62,7 +62,7 @@ describe('GET /api/teacher/roster (ADR-004: per-student class membership)', () =
         {
           teamId: h.ids.teamA,
           joinedAt: new Date(0),
-          team: { id: h.ids.teamA, name: 'Team A', phase: 'working', labType: 'volt_lab' },
+          team: { id: h.ids.teamA, name: 'Team A', phase: 'plan_refinement', labType: 'volt_lab' },
         },
       ],
     })

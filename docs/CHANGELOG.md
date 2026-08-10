@@ -5,6 +5,94 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.81.0] — 2026-08-10
+
+The progression rework lands properly, the front door becomes a real landing
+page, and the raid screen finally draws the base at the size it was built.
+Three shipped bugs were traced to one cause: v0.80.0 retired the `working`
+phase, but two seeders and an E2E fixture kept writing it, so the fixture sat
+at `discovery` — below every gate — and `pvp.spec.ts` had been failing on it.
+
+### Added
+
+- **Four-phase progression** (`discovery` → `literature_review` →
+  `plan_refinement` → `project_development`), replacing the three-phase model.
+  Gateways are now unlocked by phase and PLACED by hand rather than appearing
+  pre-built, and the Operations Hub gates its tabs the same way.
+- **Unlock ceremony**, DB-backed via `Team.unlockAckPhase`. The ceremony is
+  DERIVED (the phase unlocks a gateway the team has not placed) rather than
+  queued, so the acknowledgement alone is enough to make it survive a reload
+  without re-showing forever.
+- **Literature tiers at 10/20/25 sources**, with a one-time 25-source bonus
+  guarded by `Team.literatureBonusAt` — presence IS the idempotency guard, so
+  concurrent quiz submissions cannot both pay it.
+- **Gateways are raidable.** `TeamGatewayPlacement` rows now enter the raid
+  snapshot as ordinary `BuildingTarget`s (`isGateway`), at a flat 300 HP with a
+  spell type assigned by what the building does. Closes `TODO(D-04, ENGINE-05)`.
+- **Poster layouts** in the Data Terminal gained a live preview of the board and
+  panel controls laid out in the board's own shape, so "Add panel" falls into
+  the next free cell.
+- **`e2e/pvp-shot.capture.ts`** and a `capture` Playwright project — marketing
+  screenshots from a real raid. Outside the default `*.spec.ts` match, so it
+  never joins a suite run.
+- Seven new unit suites: literature tiers, ops-hub tabs, PDF streaming and
+  framing headers, poster geometry, gateway raid targets, unlock ceremony.
+
+### Changed
+
+- **The landing page is a single page.** New hero, a five-step journey built
+  from real product screenshots, a "Meet the author" section, and sign-out in
+  the nav. Anchor links scroll on a trapezoidal velocity curve.
+- **The lab colour scheme** was reworked across 7 gateways × 6 skins and all 300
+  economy building sprites: identity now lives in the GLASS ramp (31% of a
+  sprite) rather than the accent (13%), which is why every lab but Volt Lab read
+  as grey. Worst hue separation is now 32°, was 1.5°.
+- **Skeleton loaders** were rebuilt against the real panels they stand in for,
+  measured rather than estimated.
+- **Raided buildings render at full size.** The board sized them with a 64px
+  ground-tile constant instead of their own 128px footprint, so every raid drew
+  a base of miniatures. Health bars moved to the top of each building and now
+  ramp green → amber → red.
+- The dev harness (`app/dev/`) is compiled out of production via
+  `pageExtensions`; verified absent from the production build output.
+
+### Fixed
+
+- **Stored PDFs.** A missing object and an unreachable bucket both answered 502,
+  so the viewer could not tell "this file is gone" from "try again" and showed a
+  blank frame for both. Now 404 `pdf_missing` vs 502 `pdf_unavailable`, with
+  `PdfFrame` probing before it mounts. The PDF routes also serve
+  `X-Frame-Options: SAMEORIGIN` + `frame-ancestors 'self'` — the global `DENY`
+  applied to the PDF document itself, so it could never be framed in-panel.
+- **AI disclosure at the point of use.** Vega is labelled `Vega · AI` on every
+  message with a persistent note under the composer, on both the study tab and
+  paper chat. The policy already disclosed this; the product did not.
+- **`seed-e2e` and `seed-dev-pvp` wrote the retired `working` phase.** The E2E
+  fixture silently stayed at `discovery` (breaking `pvp.spec.ts`), and
+  `seed-dev-pvp` would DOWNGRADE a late-phase dev lab. Both now use the current
+  enum, and the dev seeder only ever advances.
+- `removeSecondTeam` left gateway placements behind, so the FK blocked the team
+  delete once gateways became raid targets.
+- Students are no longer asked for their high school; teachers still are.
+
+### Removed
+
+- `/about`, `/teachers` and `/pvp` marketing subpages, folded into the one-pager,
+  along with `ContactForm`, `CountUp`, `FaqAccordion`, `FlipWords` and
+  `TiltCard`.
+- The cursor-driven tilt on marketing screenshots — it made the shots wobble
+  while you read them.
+
+---
+
+## [0.80.0] — 2026-08-06
+
+Three-phase progression, lab-type selection, teacher pacing, and the ToS/Privacy
+documents. Shipped in [#33]; this entry is reconstructed from the release commit
+because the original was never written into the changelog. See the PR for detail.
+
+---
+
 ## [0.79.0] — 2026-08-07
 
 Economy rebalance and lab-type portability — the first half of the progression

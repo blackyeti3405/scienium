@@ -30,6 +30,10 @@ export type Ghost =
   | { mode: 'place-owned'; building: ShopBuilding }
   | { mode: 'move-economy'; key: string; from: IsoPos; costPaid: number; level: number }
   | { mode: 'move-gateway'; key: string; from: IsoPos }
+  // First placement of a newly unlocked gateway. Distinct from 'move-gateway'
+  // because there is no previous cell to roll back to — a failure removes the
+  // gateway from the plot rather than returning it somewhere.
+  | { mode: 'place-gateway'; key: string }
 
 /**
  * Plot-building state machine for the lab scene: owns the authoritative client
@@ -170,6 +174,13 @@ export function usePlotBuildings({
     setGhost(owned ? { mode: 'place-owned', building } : { mode: 'new', building })
   }
 
+  /** Start placing a gateway unlocked by the team's phase. Always free. */
+  function beginPlaceGateway(key: string) {
+    setArrangeMode(false)
+    setSelected(null)
+    setGhost({ mode: 'place-gateway', key })
+  }
+
   function onPick(kind: 'economy' | 'gateway', key: string, from: IsoPos) {
     setHoveredName(null) // the picked-up building unmounts; drop any stale hover name
     setSelected(null)
@@ -222,6 +233,24 @@ export function usePlotBuildings({
         setEconomy((prev) => prev.filter((item) => item.key !== key))
         if (g.mode === 'place-owned') setUnplaced((prev) => [...prev, key])
         if (predictedCost > 0) addCurrency({ kp: predictedCost })
+        setNotice(err instanceof Error ? err.message : 'Something went wrong')
+        await refreshPlotState(mySeq)
+      } finally {
+        setPlacing(false)
+      }
+      return
+    }
+
+    if (g.mode === 'place-gateway') {
+      const key = g.key
+      setGateways((prev) => [...prev, { key, gx, gy }])
+      setGhost(null)
+      try {
+        // Same endpoint as a move: the upsert IS the first placement, and the
+        // server re-checks the phase unlock there (lib/buildings/service.ts).
+        await post('/api/buildings/move', { kind: 'gateway', key, gx, gy })
+      } catch (err) {
+        setGateways((prev) => prev.filter((item) => item.key !== key))
         setNotice(err instanceof Error ? err.message : 'Something went wrong')
         await refreshPlotState(mySeq)
       } finally {
@@ -353,7 +382,7 @@ export function usePlotBuildings({
     .map(({ key, gx, gy, level }) => ({ key, gx, gy, level }))
 
   const plotGhost: PlotGhost | null = ghost
-    ? ghost.mode === 'move-gateway'
+    ? ghost.mode === 'move-gateway' || ghost.mode === 'place-gateway'
       ? { kind: 'gateway', key: ghost.key }
       : ghost.mode === 'move-economy'
         ? { kind: 'economy', key: ghost.key, level: ghost.level }
@@ -380,6 +409,7 @@ export function usePlotBuildings({
     burst,
     toast,
     beginPlace,
+    beginPlaceGateway,
     onPick,
     onSelectEconomy,
     onDrop,

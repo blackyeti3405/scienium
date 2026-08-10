@@ -201,21 +201,41 @@ try {
 
   // ── 4. Team ───────────────────────────────────────────────────────────────
   // The suite exercises features across every phase (literature, buildings,
-  // showcase, …) so the fixture team sits at the terminal `working` phase, which
-  // unlocks all features cumulatively. (It was `showcase` until v0.80.0 collapsed
-  // ProjectPhase to three values and made the Showcase a `working` unlock.) `labType` is `volt_lab` because the
+  // showcase, …) so the fixture team sits at the TERMINAL phase, which unlocks
+  // every feature cumulatively. `labType` is `volt_lab` because the
   // placement/upgrade specs buy that lab's buildings (3D Printing Shop, Robotics
   // Bay) — lab-specific buildings only render for a matching labType. Without both,
   // the phase-gated shop is empty / building specs can't find their buy button.
-  const FIXTURE_PHASE = 'working'
+  //
+  // History, because this has now moved twice: `showcase` → `working` → here.
+  // The four-phase rework retired `working`, and because this constant kept
+  // writing a value the enum no longer has, the fixture silently stayed at
+  // `discovery` — below the gates for pvp, buildings and the shop — which is
+  // what broke pvp.spec.ts. Keep this in lockstep with PHASE_ORDER in
+  // @scienium/shared-types; `e2e/db.ts` already uses the same terminal value.
+  const FIXTURE_PHASE = 'project_development'
   const FIXTURE_LAB_TYPE = 'volt_lab'
   let team = await db.team.findFirst({ where: { name: TEAM_NAME } })
   if (team) {
     note(`team: ${TEAM_NAME}`, 'found')
-    if (team.phase !== FIXTURE_PHASE || team.labType !== FIXTURE_LAB_TYPE) {
+    if (
+      team.phase !== FIXTURE_PHASE ||
+      team.labType !== FIXTURE_LAB_TYPE ||
+      team.unlockAckPhase !== FIXTURE_PHASE
+    ) {
       await db.team.update({
         where: { id: team.id },
-        data: { phase: FIXTURE_PHASE, labType: FIXTURE_LAB_TYPE },
+        // `unlockAckPhase` matters as much as the phase here. The unlock
+        // ceremony is a MODAL with a full-page scrim, so a fixture left owing
+        // one has every /lab spec fail on "subtree intercepts pointer events"
+        // — nothing to do with the feature under test. The fixture represents
+        // an established team, and an established team has already seen its
+        // ceremonies.
+        data: {
+          phase: FIXTURE_PHASE,
+          labType: FIXTURE_LAB_TYPE,
+          unlockAckPhase: FIXTURE_PHASE,
+        },
       })
       note(`team: phase/labType`, 'updated', `${FIXTURE_PHASE} / ${FIXTURE_LAB_TYPE}`)
     }
@@ -227,6 +247,7 @@ try {
         classId: klass.id,
         phase: FIXTURE_PHASE,
         labType: FIXTURE_LAB_TYPE,
+        unlockAckPhase: FIXTURE_PHASE,
       },
     })
     note(`team: ${TEAM_NAME}`, 'created', `${FIXTURE_PHASE} / ${FIXTURE_LAB_TYPE}`)

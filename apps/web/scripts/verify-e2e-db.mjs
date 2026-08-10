@@ -28,8 +28,14 @@ import { ISEF_EDITION } from '../lib/fairs/forms.ts'
 const require = createRequire(import.meta.url)
 const { PrismaClient } = require('@prisma/client')
 
-// Terminal phase since v0.80.0 — unlocks every feature cumulatively.
-const FIXTURE_PHASE = 'working'
+// Terminal phase — unlocks every feature cumulatively. Keep in lockstep with
+// PHASE_ORDER in @scienium/shared-types and FIXTURE_PHASE in seed-e2e.mjs.
+//
+// This is the THIRD copy of this constant (seeder, dev-pvp seeder, verifier),
+// and all three held the retired `working` after v0.81.0 renamed the enum. The
+// seeder's copy silently left the fixture at `discovery`; this one then rejected
+// the correctly-seeded fixture. If the phase model moves again, grep for it.
+const FIXTURE_PHASE = 'project_development'
 const FIXTURE_LAB_TYPE = 'volt_lab'
 
 const migrationsDir = path.join(

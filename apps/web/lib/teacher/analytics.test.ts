@@ -148,8 +148,8 @@ describe('dedupeScopedTeams — membership-backed selection (P2-S14)', () => {
 
 describe('computePhaseCounts / computeKpDistribution / computePhasePacing', () => {
   it('counts teams per phase', () => {
-    const out = computePhaseCounts([team('a', 'discovery'), team('b', 'discovery'), team('c', 'working')])
-    expect(out).toEqual({ discovery: 2, working: 1 })
+    const out = computePhaseCounts([team('a', 'discovery'), team('b', 'discovery'), team('c', 'plan_refinement')])
+    expect(out).toEqual({ discovery: 2, plan_refinement: 1 })
   })
 
   it('KP histogram returns every bucket, zero-filled', () => {
@@ -160,7 +160,7 @@ describe('computePhaseCounts / computeKpDistribution / computePhasePacing', () =
   })
 
   it('pacing sorts oldest team first (most days) and floors at 0 for today', () => {
-    const old = team('old', 'working', new Date(Date.now() - 10 * 24 * 3600 * 1000))
+    const old = team('old', 'plan_refinement', new Date(Date.now() - 10 * 24 * 3600 * 1000))
     const fresh = team('new', 'discovery', new Date())
     const out = computePhasePacing([fresh, old])
     expect(out[0].teamId).toBe('old')
@@ -174,18 +174,18 @@ describe('computePhaseCounts / computeKpDistribution / computePhasePacing', () =
    * its current phase, and the teacher's "who is stuck" ranking is that number.
    */
   it('a month-old team that entered its phase TODAY reports 0 days, not 30', () => {
-    const t = team('t', 'working', new Date(Date.now() - 30 * 864e5), new Date())
+    const t = team('t', 'plan_refinement', new Date(Date.now() - 30 * 864e5), new Date())
     expect(computePhasePacing([t])[0].daysInPhase).toBe(0)
   })
 
   it('a team that has SAT in one phase for a month still reports 30 days', () => {
     const month = new Date(Date.now() - 30 * 864e5)
-    const t = team('t', 'working', new Date(Date.now() - 60 * 864e5), month)
+    const t = team('t', 'plan_refinement', new Date(Date.now() - 60 * 864e5), month)
     expect(computePhasePacing([t])[0].daysInPhase).toBe(30)
   })
 
   it('a row predating the column falls back to createdAt (the pre-migration reading)', () => {
-    const t = team('t', 'working', new Date(Date.now() - 12 * 864e5), null)
+    const t = team('t', 'plan_refinement', new Date(Date.now() - 12 * 864e5), null)
     expect(computePhasePacing([t])[0].daysInPhase).toBe(12)
   })
 })

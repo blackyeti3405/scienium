@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { computeQuizAward } from '@/lib/economy'
 import { recordActivity } from '@/lib/activity/log'
+import { maybeGrantLiteratureBonus } from '@/lib/team/advance'
 import { lockAggregate } from '@/lib/db-lock'
 import type { QuizQuestion } from '@/lib/literature/quiz'
 
@@ -54,10 +55,15 @@ export interface QuizGradeCommit {
 }
 
 /** `graded: false` means a concurrent request owned this grade; nothing was written. */
-export type QuizGradeOutcome = { graded: boolean; kpEarned: number }
+export type QuizGradeOutcome = {
+  graded: boolean
+  kpEarned: number
+  /** Set only on the submission that tips the team over the 25-source bonus. */
+  bonusKp?: number
+}
 
 export async function commitQuizGrade(input: QuizGradeCommit): Promise<QuizGradeOutcome> {
-  return db.$transaction(async (tx) => {
+  const outcome = await db.$transaction(async (tx) => {
     await lockAggregate(tx, `paper-quiz:${input.paperId}:${input.dbUserId}`)
     const [fresh, existing] = await Promise.all([
       tx.paperQuizSession.findUnique({
@@ -147,4 +153,15 @@ export async function commitQuizGrade(input: QuizGradeCommit): Promise<QuizGrade
     }
     return { graded: true, kpEarned: award.kpEarned }
   })
+
+  // The 25-source bonus is checked AFTER the grading transaction commits, not
+  // inside it: it reads the team's whole proficiency set, and doing that in the
+  // same transaction would hold row locks across a much wider query for every
+  // quiz submission. Its own conditional update makes it safe to call here, and
+  // safe to call repeatedly — it pays at most once per team.
+  if (outcome.graded && input.passed) {
+    const bonusKp = await maybeGrantLiteratureBonus(input.teamId, input.dbUserId)
+    if (bonusKp > 0) return { ...outcome, bonusKp }
+  }
+  return outcome
 }

@@ -4,13 +4,11 @@ import { auth } from '@clerk/nextjs/server'
 import { getLaunchContext } from '@/lib/launch'
 import { LaunchPreloader } from '@/components/LaunchPreloader'
 import { Reveal } from '@/components/marketing/Reveal'
-import { CountUp } from '@/components/marketing/CountUp'
 import { Shot, ShotPlaceholder } from '@/components/marketing/Shot'
 import { HeroParallaxBg } from '@/components/marketing/HeroParallaxBg'
-import { TiltCard } from '@/components/marketing/TiltCard'
 import { MarketingNav, MarketingFooter } from '@/components/marketing/MarketingChrome'
 import { JourneyRail } from '@/components/marketing/JourneyRail'
-import { FlipWords } from '@/components/marketing/FlipWords'
+import { SmoothAnchorScroll } from '@/components/marketing/SmoothAnchorScroll'
 
 /**
  * Public marketing home (`/`) — the product front door. Light theme (paper field,
@@ -63,22 +61,6 @@ const CTA_PRESS =
   'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_0_#0d1b2e] ' +
   'active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_0_#0d1b2e]'
 
-// Same press effect for CTAs sitting on the dark Battle Arena section — the
-// offset shadow flips to the paper color so it still reads against navy.
-const DARK_CTA_PRESS =
-  'shadow-[4px_4px_0_0_#f7f7f4] transition-[transform,box-shadow] duration-150 ' +
-  'hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_0_#f7f7f4] ' +
-  'active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0_0_#f7f7f4]'
-
-// Real rock-paper-scissors type cycle every building/spell belongs to
-// (docs/SPEC.md §11.4) — condensed for the homepage; the full reasoning for
-// each matchup lives on /pvp.
-const PVP_TYPES = [
-  { type: 'Empirical', beats: 'Beats Theoretical. Real data can prove a model wrong.' },
-  { type: 'Theoretical', beats: "Beats Applied. You can't engineer it right without the theory." },
-  { type: 'Applied', beats: "Beats Empirical. The instruments you build make real observation possible." },
-]
-
 function PrimaryCTA({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
@@ -91,23 +73,93 @@ function PrimaryCTA({ href, children }: { href: string; children: React.ReactNod
   )
 }
 
+/** In-page anchor CTA. Plain <a>, not next/link — see MarketingChrome. */
 function GhostCTA({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <Link
+    <a
       href={href}
       className={`font-pixel flex min-h-[52px] items-center border border-[#0d1b2e] bg-[#f7f7f4] px-8 text-[#0d1b2e] transition-colors ${CTA_PRESS} ${CTA_FOCUS}`}
       style={{ fontSize: '0.7rem', letterSpacing: '0.04em', borderRadius: 6 }}
     >
       {children}
-    </Link>
+    </a>
   )
 }
 
-/* One idea per phase, mirrors the in-game phase order. Real shot or honest slot. */
+/* One idea per step, mirrors the in-game phase order. Real shot or honest slot. */
 const NUM = '#63614f' // legible muted numeral (clears AA on the band)
 
-// The six lab types — reused by the game-layer FlipWords headline and CategoryList.
-const LAB_TYPES = ['BioCore', 'ChemWorks', 'Volt Lab', 'TerraBase', 'MindFrame', 'Axiom']
+/**
+ * The five steps scienium walks a team through. `src: null` means we have no
+ * real capture of that surface yet and the row falls back to a labeled slot —
+ * never a stock image standing in for a screen we can't show.
+ */
+/**
+ * Each shot carries its OWN aspect ratio, taken from the PNG's real pixel
+ * dimensions. Every entry used to be boxed at a hardcoded 16/10 with
+ * `object-cover object-top`, but no real capture is 16/10 — they run 1.15 to
+ * 1.36 — so every one was silently cropped from the bottom, between 15% and
+ * 28%. That is how a shot chosen FOR its footer (the codex checkpoint) would
+ * have shipped with the footer cut off. Matching the ratio means the shot shows
+ * exactly what its alt text says it shows.
+ */
+const JOURNEY = [
+  {
+    title: 'Topic Discovery',
+    blurb: 'Branch through Wikipedia, YouTube, and real papers until a testable question clicks.',
+    // The EXPLORER, not the empty landing state: this is the mechanic itself —
+    // a Wikipedia article with its links live, branching into the tree beside it.
+    src: '/marketing/discovery-explorer.png',
+    ratio: '2134 / 1572',
+    shotTitle: 'Discovery · /discovery',
+    shotNote:
+      'The Discovery explorer: a Wikipedia article with selectable links, branching into a live discovery tree of chosen topics alongside it.',
+  },
+  {
+    title: 'Literature Review',
+    blurb: 'Upload real sources, get each one checked for relevance, and prove you understood them.',
+    src: '/marketing/literature-review.png',
+    ratio: '2278 / 1736',
+    shotTitle: 'Literature Review · /literature',
+    shotNote:
+      'The Literature Review screen: a peer-reviewed paper open in the reader beside its graded comprehension quiz, showing a passed proficiency score and per-question feedback on the student’s own answers.',
+  },
+  {
+    title: 'Creating Research Plans',
+    blurb: 'Write your hypothesis, methodology, and study design, then have it reviewed before you commit.',
+    // The capture whose Google Doc URL was replaced with a placeholder — the
+    // other framings of this screen show a live "anyone with the link" doc,
+    // which must never go on a public, indexed page.
+    src: '/marketing/research-plan4.png',
+    ratio: '2248 / 1700',
+    shotTitle: 'Research Plan · /research-plan',
+    shotNote:
+      'The Research Plan screen: a plan connected from a Google Doc with its synced preview, review and originality-check actions, and the resulting review — an overall STRONG verdict scored 83 above a per-section rubric with specific written criticism.',
+  },
+  {
+    title: 'Field-Specific Knowledge',
+    blurb: 'Lessons that teach the methods your own field actually uses, each with a checkpoint.',
+    // Ends on the CHECKPOINT block, which is the half of the blurb the previous
+    // capture never showed — "each with a checkpoint" was a claim with no
+    // picture behind it. The Ops Hub tab bar at the top also places the lesson
+    // somewhere instead of floating as anonymous prose.
+    src: '/marketing/codex-lesson1.png',
+    ratio: '1842 / 1600',
+    shotTitle: 'Field Codex · /daily/codex',
+    shotNote:
+      'A real Field Codex lesson inside the Operations Hub: a gold Worked Example dissecting a flawed gait experiment, a Why Judges Ask This note, and a checkpoint worth 8 knowledge points that requires all four questions correct to pass.',
+  },
+  {
+    title: 'Analyzing Data',
+    blurb: 'Turn raw measurements into real figures, with stats and charts built in.',
+    src: '/marketing/data-terminal.png',
+    ratio: '2254 / 1708',
+    shotTitle: 'Data Terminal · Ops Hub',
+    shotNote:
+      'A real two-way ANOVA in the Data Terminal: an effects table with F, p, and partial eta-squared for both factors and their interaction, automatic normality and equal-variance assumption checks, and a matplotlib grouped bar chart with error bars.',
+  },
+]
+
 
 export default async function HomePage() {
   const { userId, sessionClaims } = await auth()
@@ -122,28 +174,21 @@ export default async function HomePage() {
       {launch && launch.preloadSprites.length > 0 && (
         <LaunchPreloader href={launch.href} sprites={launch.preloadSprites} />
       )}
+      <SmoothAnchorScroll />
       <MarketingNav userId={userId} launchHref={launchHref} />
 
       {/* ── Hero: real lab shot as an atmospheric backdrop, fading into the paper field. ── */}
       <section className="relative flex min-h-[86vh] items-end overflow-hidden">
         <HeroParallaxBg src="/marketing/lab-hero-crop-maxed.png" />
         <div className="relative z-[2] mx-auto w-full max-w-6xl px-6 pb-16 md:px-10">
-          <div className="max-w-[640px]">
-            <p className="font-display text-base font-bold" style={{ color: ACCENT_INK }}>
-              The world&apos;s first science-fair video game.
-            </p>
+          <div className="max-w-[680px]">
             <h1
-              className="mt-4 font-display font-bold leading-[0.98] tracking-tight"
+              className="font-display font-bold leading-[0.98] tracking-tight"
               style={{ fontSize: 'clamp(2.6rem, 7vw, 5rem)', textWrap: 'balance' } as React.CSSProperties}
             >
-              Run the science fair as a real lab.
+              The world&apos;s first science-fair video game.
             </h1>
-            <p className="mt-6 max-w-[48ch] font-display text-lg leading-relaxed text-[#33465e]">
-              scienium is a browser game where student teams pick a real question, master the
-              methods, run real experiments, and raid rival labs head-to-head in the Battle Arena
-              on the way to the fair.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-4">
+            <div className="mt-10 flex flex-wrap items-center gap-4">
               <PrimaryCTA href={primaryHref}>{primaryLabel}</PrimaryCTA>
               <GhostCTA href="#journey">SEE THE JOURNEY</GhostCTA>
             </div>
@@ -163,248 +208,113 @@ export default async function HomePage() {
         </a>
       </section>
 
-      {/* ── Proof: two numbers, in context (not a stat wall). Instant. ─────── */}
-      <section className="border-y border-[#e6e5dd] bg-[#f2f1ea]">
-        <div className="mx-auto grid max-w-5xl gap-10 px-6 py-16 sm:grid-cols-2 md:px-10">
-          <div className="flex items-baseline gap-4">
-            <span className="font-pixel text-[#0d1b2e]" style={{ fontSize: '1.6rem' }}><CountUp value={832} /></span>
-            <span className="font-display text-[15px] leading-snug text-[#46566b]">
-              authored lessons that teach the research method in real depth
-            </span>
-          </div>
-          <div className="flex items-baseline gap-4">
-            <span className="font-pixel text-[#0d1b2e]" style={{ fontSize: '1.6rem' }}><CountUp value={70} /></span>
-            <span className="font-display text-[15px] leading-snug text-[#46566b]">
-              methodology terms, defined and always one tap away
-            </span>
+      {/* ── By the author — the credibility beat. ────────────────────────── */}
+      <section id="author" className="scroll-mt-[84px] border-y border-[#e6e5dd] bg-[#f2f1ea]">
+        <div className="mx-auto max-w-5xl px-6 py-24 md:px-10 md:py-28">
+          <div className="grid items-center gap-10 md:grid-cols-[280px_1fr] md:gap-16">
+            <Reveal>
+              <Shot
+                src="/marketing/author-image.jpg"
+                title="Rig Saini"
+                alt="Rig Saini standing beside his ISEF project board for ATLAS, a multi-axis ankle-foot prosthetic, with the prosthetic prototype on the table in front of it."
+                ratio="1148 / 1401"
+              />
+            </Reveal>
+            <div>
+              <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
+                Meet the author
+              </h2>
+              <p className="mt-5 max-w-[52ch] font-display text-lg leading-relaxed text-[#33465e]">
+                Rig Saini is the founder of scienium. He has competed in science fair for 5 years
+                and has numerous awards at the regional, state, and international level, placing
+                2nd in Biomedical Engineering at ISEF last year.
+              </p>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* ── The gap (one statement, instant). ────────────────────────────── */}
-      <section className="mx-auto max-w-4xl px-6 py-24 md:px-10 md:py-32">
-        <p className="font-display text-2xl font-semibold leading-snug tracking-tight sm:text-3xl md:text-[2.4rem]">
-          The science fair is one of the only times school asks for real research. It almost never
-          teaches students how competitive that research really is.
-        </p>
-        <p className="mt-6 max-w-[62ch] font-display text-lg leading-relaxed text-[#46566b]">
-          scienium keeps the rigor and adds what is missing: the real judging criteria, and a lab
-          full of rivals chasing the same spot at the fair. You advance by proving you understand,
-          not by clicking.
-        </p>
-      </section>
-
       {/* ── The journey (headings instant; only the shots reveal). ────────── */}
-      <section id="journey" className="border-t border-[#e6e5dd] bg-[#f2f1ea]">
+      <section id="journey" className="scroll-mt-[84px] border-t border-[#e6e5dd] bg-[#f2f1ea]">
         <div className="mx-auto max-w-6xl px-6 py-24 md:px-10 md:py-28">
-          <div className="max-w-2xl">
-            <Eyebrow>THE JOURNEY</Eyebrow>
-            <h2 className="mt-5 font-display text-3xl font-bold tracking-tight sm:text-4xl md:text-[2.7rem]">
-              Six phases, from a blank page to the fair floor.
+          <div className="max-w-3xl">
+            <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl md:text-[2.7rem]">
+              Scienium helps you at every step of the process.
             </h2>
-            <p className="mt-5 font-display text-lg leading-relaxed text-[#46566b]">
-              Every team walks the same path a real researcher does. Each phase unlocks a building on
-              your plot, and the lab grows as you advance.
-            </p>
           </div>
 
-          <div className="md:flex md:items-stretch md:gap-10">
-          <JourneyRail />
-          <div className="min-w-0 md:flex-1">
-          {/* 01 Discovery */}
-          <div className="mt-20 grid items-center gap-10 md:mt-24 md:grid-cols-2 md:gap-14" data-journey-step={1}>
-            <div>
-              <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>01</span>
-              <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[1.8rem]">
-                Find a question worth chasing.
-              </h3>
-              <p className="mt-4 max-w-[48ch] font-display text-[17px] leading-relaxed text-[#46566b]">
-                Explore across Wikipedia, YouTube, and academic papers. Let curiosity branch until a
-                real, testable topic clicks, then commit it and break ground.
-              </p>
+          <div className="mt-16 md:mt-20 md:flex md:items-stretch md:gap-10">
+            <JourneyRail />
+            <div className="min-w-0 md:flex-1">
+              {JOURNEY.map((step, i) => {
+                // The shots are the point of this run, so the text column is
+                // pinned narrow and the shot takes the rest. Alternating rows
+                // swap BOTH the visual order and the template, so the narrow
+                // column always lands under the text — never under the image.
+                const flipped = i % 2 === 1
+                const cols = flipped
+                  ? 'md:grid-cols-[minmax(0,1fr)_minmax(0,300px)]'
+                  : 'md:grid-cols-[minmax(0,300px)_minmax(0,1fr)]'
+                return (
+                  <div
+                    key={step.title}
+                    className={`grid items-center gap-10 md:gap-12 ${cols} ${i === 0 ? '' : 'mt-24'}`}
+                    data-journey-step={i + 1}
+                  >
+                    <div className={flipped ? 'md:order-2' : undefined}>
+                      <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                      <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[1.8rem]">
+                        {step.title}
+                      </h3>
+                      <p className="mt-4 font-display text-[17px] leading-relaxed text-[#46566b]">
+                        {step.blurb}
+                      </p>
+                    </div>
+                    <Reveal className={flipped ? 'md:order-1' : undefined}>
+                      {step.src ? (
+                        <Shot src={step.src} title={step.shotTitle} alt={step.shotNote} ratio={step.ratio} />
+                      ) : (
+                        <ShotPlaceholder title={step.shotTitle} note={step.shotNote} badge="Preview soon" />
+                      )}
+                    </Reveal>
+                  </div>
+                )
+              })}
             </div>
-            <Reveal>
-              <Shot src="/marketing/discovery.png" title="Discovery · /discovery" alt="The Discovery screen: a topic-exploration panel prompting the team to seed interests and branch out through Wikipedia, YouTube and papers, with a Start Exploring button." ratio="16 / 10" />
-            </Reveal>
-          </div>
-
-          {/* 02 Literature Review (placeholder, product voice) */}
-          <div className="mt-24 grid items-center gap-10 md:grid-cols-2 md:gap-14" data-journey-step={2}>
-            <div className="md:order-2">
-              <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>02</span>
-              <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[1.8rem]">
-                Ground it in the literature, and prove you get it.
-              </h3>
-              <p className="mt-4 max-w-[48ch] font-display text-[17px] leading-relaxed text-[#46566b]">
-                Upload 25 real sources. Vega checks each one is relevant, then quizzes every teammate
-                to proficiency. A 70-term methodology glossary stays open the whole time.
-              </p>
-            </div>
-            <Reveal className="md:order-1">
-              <ShotPlaceholder
-                title="Literature Review"
-                note="The review library with 25 vetted sources and a passed comprehension quiz."
-                badge="Preview soon"
-              />
-            </Reveal>
-          </div>
-
-          {/* 03 Field Codex — full-width feature */}
-          <div className="mt-28" data-journey-step={3}>
-            <div className="mx-auto max-w-2xl text-center">
-              <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>03</span>
-              <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[2rem]">
-                Learn the methods, in real depth.
-              </h3>
-              <p className="mt-4 font-display text-[17px] leading-relaxed text-[#46566b]">
-                832 authored lessons, sequentially unlocked, each with a worked example, a note on
-                why judges ask about it, and a checkpoint quiz. A daily plan surfaces the three your
-                project needs next.
-              </p>
-            </div>
-            <Reveal className="mx-auto mt-12 max-w-4xl">
-              <Shot
-                src="/marketing/codex-lesson.png"
-                title="Field Codex · /daily/codex"
-                alt="A real Field Codex lesson, Sound as a Longitudinal Pressure Wave, showing several sections of explanatory physics prose and a gold Worked Example block."
-                ratio="16 / 10"
-              />
-            </Reveal>
-          </div>
-
-          {/* 04 Research Plan */}
-          <div className="mt-24 grid items-center gap-10 md:grid-cols-2 md:gap-14" data-journey-step={4}>
-            <div>
-              <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>04</span>
-              <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[1.8rem]">
-                Design a study that holds up.
-              </h3>
-              <p className="mt-4 max-w-[48ch] font-display text-[17px] leading-relaxed text-[#46566b]">
-                Pick your ISEF category, then write your hypothesis, methodology, and study design.
-                Vega reviews it by project type and web searches your idea for novelty before you
-                advance.
-              </p>
-            </div>
-            <Reveal>
-              <Shot src="/marketing/research-plan.png" title="Research Plan · /research-plan" alt="The Research Plan screen: project-type selector (Engineering or Science) with category cards, a connected Google-Doc plan source, and Review my plan and originality-check actions." ratio="16 / 10" />
-            </Reveal>
-          </div>
-
-          {/* 05 Experiment & Data */}
-          <div className="mt-24 grid items-center gap-10 md:grid-cols-2 md:gap-14" data-journey-step={5}>
-            <div className="md:order-2">
-              <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>05</span>
-              <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[1.8rem]">
-                Run it. Log it. Chart it.
-              </h3>
-              <p className="mt-4 max-w-[48ch] font-display text-[17px] leading-relaxed text-[#46566b]">
-                Keep a Project Log and a Failure Log, then turn measurements into figures in the Data
-                Terminal, with built-in Stats, Charts, and Plot guides.
-              </p>
-            </div>
-            <Reveal className="md:order-1">
-              <ShotPlaceholder
-                title="Experiment & Data"
-                note="Experiment runs, Project and Failure logs, and the Data Terminal turning raw numbers into real charts."
-                ratio="16 / 11"
-                badge="Preview soon"
-              />
-            </Reveal>
-          </div>
-
-          {/* 06 Fair & Showcase */}
-          <div className="mt-24 grid items-center gap-10 md:grid-cols-2 md:gap-14" data-journey-step={6}>
-            <div>
-              <span className="font-pixel" style={{ color: NUM, fontSize: '1.4rem' }}>06</span>
-              <h3 className="mt-3 font-display text-2xl font-bold tracking-tight sm:text-[1.8rem]">
-                Present like it counts.
-              </h3>
-              <p className="mt-4 max-w-[48ch] font-display text-[17px] leading-relaxed text-[#46566b]">
-                Score your project against the same five weighted sections real ISEF judges use for
-                a judge-readiness score out of 100, then publish it to a public showcase anyone can
-                see. Every team ships, win or lose.
-              </p>
-            </div>
-            <Reveal>
-              <Shot src="/marketing/rubric.png" title="Science Fair · /fair-hub/rubric" alt="The official ISEF rubric self-check: a Science and Engineering toggle, a judge-readiness score out of 100, and weighted criteria rows (Research Question, Design and Methodology, Execution) each with a score input." ratio="16 / 10" />
-            </Reveal>
-          </div>
-          </div>
           </div>
         </div>
       </section>
 
       {/* ── Battle Arena (the gamified hook, heavily featured). ───────────── */}
-      <section id="pvp" className="bg-[#0d1b2e] text-white">
+      <section id="pvp" className="scroll-mt-[84px] bg-[#0d1b2e] text-white">
         <div className="mx-auto max-w-5xl px-6 py-24 md:px-10 md:py-32">
           <div className="mx-auto max-w-2xl text-center">
-            <span className="font-pixel text-[#F5C518]" style={{ fontSize: '0.6rem', letterSpacing: '0.1em' }}>BATTLE ARENA</span>
-            <h2 className="mt-5 font-display text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-[2.7rem]">
-              Every building you own is a weapon.
+            <h2 className="font-display text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-[2.7rem]">
+              Battle against your friends.
             </h2>
             <p className="mt-5 font-display text-lg leading-relaxed text-[#b7c2d0]">
-              Once a day, raid another team&apos;s lab. You&apos;re matched at random against a
-              snapshot of their base, so their real progress stays untouched, and you get 15
-              seconds to bring it down with spells your own buildings earned you. Destroy the whole
-              base and you take the maximum 10 trophies on the class leaderboard. Raid carelessly
-              and you lose trophies instead. Every raid is a real bet, not a free click.
+              Put your labs head to head in timed, raid-style battles.
             </p>
           </div>
 
-          <div className="mt-16 grid gap-5 sm:grid-cols-3">
-            {PVP_TYPES.map((t, i) => (
-              <Reveal key={t.type} delay={i * 100}>
-                <TiltCard className="h-full rounded-lg border border-white/15 px-6 py-7 text-center">
-                  <span className="font-pixel text-[#F5C518]" style={{ fontSize: '0.65rem', letterSpacing: '0.05em' }}>
-                    {t.type.toUpperCase()}
-                  </span>
-                  <p className="mt-3 font-display text-[15px] leading-relaxed text-[#b7c2d0]">{t.beats}</p>
-                </TiltCard>
-              </Reveal>
-            ))}
-          </div>
-
-          <div className="mt-12 flex justify-center">
-            <Link
-              href="/pvp"
-              className={`font-pixel flex min-h-[52px] items-center border border-[#F5C518] bg-[#0d1b2e] px-8 text-[#F5C518] ${DARK_CTA_PRESS} ${CTA_FOCUS}`}
-              style={{ fontSize: '0.7rem', letterSpacing: '0.04em', borderRadius: 6 }}
-            >
-              SEE HOW PVP WORKS
-            </Link>
-          </div>
+          <Reveal className="mx-auto mt-14 max-w-3xl">
+            {/* Captured live by e2e/pvp-shot.capture.ts — a real raid, real
+                casts, effects held at their peak frame. Re-shoot with:
+                pnpm --filter web exec playwright test --project=capture */}
+            <Shot
+              src="/marketing/pvp.png"
+              title="Battle Arena · /pvp/battle"
+              alt="A live raid in the Battle Arena: three spells detonating over a rival lab's base of maxed buildings and gateways, each with a health bar, above the spell bar showing damage values, types and cooldowns, with 10.4 seconds left on the raid clock."
+              ratio="1440 / 900"
+            />
+          </Reveal>
         </div>
       </section>
 
-      {/* ── The game layer. Full-width, centered (breaks the split run). ──── */}
-      <section className="mx-auto max-w-5xl px-6 py-24 text-center md:px-10 md:py-28">
-        <h2 className="mx-auto max-w-[20ch] font-display text-3xl font-bold tracking-tight sm:text-4xl">
-          Your lab is the progress bar.
-        </h2>
-        <p className="mx-auto mt-5 max-w-[60ch] font-display text-lg leading-relaxed text-[#46566b]">
-          As you advance, new buildings appear on your plot and the whole lab reskins to your{' '}
-          <FlipWords words={LAB_TYPES} /> field, one of six lab types chosen from your research idea.
-          Each building levels up 15 times as your team grows.
-        </p>
-        <ul
-          className="mt-8 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 font-pixel text-[#5a6b80]"
-          style={{ fontSize: '0.6rem', letterSpacing: '0.04em' }}
-        >
-          {LAB_TYPES.map((t, i) => (
-            <li key={t} className="flex items-center gap-3">
-              {t}
-              {i < LAB_TYPES.length - 1 && (
-                <span aria-hidden className="text-[#c9c8bd]">
-                  /
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      </section>
-
       {/* ── For teachers. Split, image-LEFT (varies orientation). ─────────── */}
-      <section id="teachers" className="border-y border-[#e6e5dd] bg-[#f2f1ea]">
+      <section id="teachers" className="scroll-mt-[84px] border-y border-[#e6e5dd] bg-[#f2f1ea]">
         <div className="mx-auto max-w-6xl px-6 py-24 md:px-10 md:py-28">
           <div className="grid items-center gap-12 md:grid-cols-2 md:gap-16">
             <Reveal>
@@ -418,9 +328,6 @@ export default async function HomePage() {
                 validation and advance requests, and read class-wide engagement at a glance. Built
                 for a real classroom.
               </p>
-              <div className="mt-7">
-                <GhostCTA href="/teachers">SEE HOW TEACHERS USE IT</GhostCTA>
-              </div>
             </div>
           </div>
         </div>

@@ -36,6 +36,12 @@ let attempts: Record<string, unknown>[]
 let activities: { action: string; inTx: boolean }[]
 let inTransaction = false
 
+// The 25-source bonus runs AFTER the grading transaction and reads the team's
+// whole proficiency set. It has its own tests (test/literature-tiers.test.ts);
+// these are about what one grade mints, so it is stubbed out rather than having
+// every db model it touches added to the mock below.
+vi.mock('@/lib/team/advance', () => ({ maybeGrantLiteratureBonus: vi.fn(async () => 0) }))
+
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/db-lock', () => ({ lockAggregate: async () => undefined }))
 vi.mock('@/lib/activity/log', () => ({

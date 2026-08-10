@@ -30,29 +30,45 @@ scienium is a hybrid physical-digital STEM engagement game designed to motivate 
 
 scienium uses an explicit **phase** model stored on each team. Phases are sequential and non-skippable. Features from earlier phases remain available in all later phases.
 
+**Four phases (implemented, v0.81.0).** `PHASE_ORDER` in
+`@scienium/shared-types` is the single source of truth; `schema.prisma` mirrors
+it.
+
 | # | Phase | App Phase Key | Trigger to advance |
 |---|---|---|---|
 | 0 | **Onboarding** | *(pre-phase)* | Account creation, choose solo or team |
 | 1 | **Discovery** | `discovery` | Commit to a research topic |
-| 2 | **Lab Selection** | `lab_selection` | *(Auto-assigned — see below; no manual step.)* |
-| 3 | **Literature Review** | `literature_review` | Complete 25-paper review gate, then submit a one-sentence research idea |
-| 4 | **Research Planning** | `research_planning` | Finalize hypothesis, methodology, and study design; advance when ready |
-| 5 | **Working** | `working` | Self-paced — advance when ready to start data collection |
-| 6 | **Showcase** | `showcase` | Self-paced — advance when ready for competition |
+| 2 | **Literature Review** | `literature_review` | Source tiers at 10 / 20 / 25 with proficiency; a one-sentence research idea assigns the lab type |
+| 3 | **Plan Refinement** | `plan_refinement` | Finalize hypothesis, methodology, and study design; advance when ready |
+| 4 | **Project Development** | `project_development` | Terminal phase — data collection, showcase, competition |
 
-Phase advancement is **self-paced**: `literature_review → research_planning` is
-gated on the 25-source proficiency check (below), and the later transitions are
-free student-clicked advances. There is no teacher phase-validation step.
+Phase advancement is **self-paced**: `literature_review → plan_refinement` is
+gated on the source-proficiency tiers (below), and the later transition is a
+free student-clicked advance. There is no teacher phase-validation step.
 
-**Lab type is auto-assigned (implemented).** Rather than a manual selection screen, the lab type is derived from the student's project itself. At the end of Literature Review — once the 25-source gate is met — the team submits a **one-sentence research idea**, which Claude Haiku classifies into one of the 6 lab types. The team then advances **directly from `literature_review` → `research_planning`**, skipping the standalone `lab_selection` phase (the phase key is retained in the lifecycle for ordering/back-compat but is no longer a stop). The assigned type and Haiku's rationale are shown immediately, and the idea is stored on `teams.research_idea`.
+The earlier lifecycle had a standalone `lab_selection` stop and separate
+`working` / `showcase` phases. `lab_selection` became automatic (the lab type is
+classified from the research idea), and `working`/`showcase` collapsed into
+`project_development` — everything the two used to gate is available together
+once a team's plan is settled. **Every feature gate that once named `working`
+now names `plan_refinement` or `project_development`**; `working` and `showcase`
+are not values of the enum.
+
+**Gateways are unlocked by phase and placed by hand.** Reaching a phase makes
+its gateway buyable, not pre-built: the team places it on the plot, and a
+one-time **unlock ceremony** marks the moment. The ceremony is derived (the
+phase unlocks a gateway the team has not placed) and acknowledged through
+`Team.unlockAckPhase`, so it survives a reload without re-showing forever.
+
+**Lab type is auto-assigned (implemented).** Rather than a manual selection screen, the lab type is derived from the student's project itself. At the end of Literature Review — once the 25-source gate is met — the team submits a **one-sentence research idea**, which Claude Haiku classifies into one of the 6 lab types. The team then advances **directly from `literature_review` → `plan_refinement`**; there is no standalone `lab_selection` phase. The assigned type and Haiku's rationale are shown immediately, and the idea is stored on `teams.research_idea`.
 
 **Visual milestone:** When the lab type is assigned, the virtual lab **grows in size** and **reskins** to that lab type (palette switching is planned). This is a one-time, visible moment — the lab goes from small + generic to grown + type-specific.
 
-**Phase-locked features:** PvP raids and building purchases/upgrades are inaccessible during `discovery`, `literature_review`, and `research_planning`. The Showcase Wing additionally requires reaching the `showcase` phase. See Section 14 for the complete feature-unlock matrix.
+**Phase-locked features:** building purchases/upgrades are inaccessible during `discovery`. PvP unlocks at `literature_review`. The Showcase Wing opens at `project_development`. See Section 14 for the complete feature-unlock matrix.
 
 **Daily activities** (Field Codex, Proof of Expertise, Project Log, Failure Log) become available from `literature_review` onward, when a lab type — and therefore discipline-specific content — has been established. The Fair Hub is always accessible from day one.
 
-> **Note on prior spec:** The original lifecycle omitted Research Planning as a distinct phase. It has been added between Literature Review and Working to enforce that students define their study design before beginning experiments. Phase-locking of PvP to `working` supersedes the earlier §14.3 statement that PvP unlocks with "at least 1 built building" (which could have occurred as early as Literature Review).
+> **Note on prior spec:** The original lifecycle omitted Research Planning as a distinct phase. It has been added between Literature Review and Working to enforce that students define their study design before beginning experiments. Phase-locking of PvP to `literature_review` supersedes the earlier §14.3 statement that PvP unlocks with "at least 1 built building" (which could have occurred as early as Literature Review).
 
 ---
 
@@ -186,6 +202,10 @@ The Literature Review gateway building opens a single unified panel — no sub-t
 
 ### 6.3 The 25-Resource Gate
 - Proficiency is tracked **per student** (`paper_proficiency`): each member demonstrates understanding of each source independently by passing its quiz, and the literature panel shows the current member's own proficiency
+- Sources land in **tiers at 10 / 20 / 25** (v0.81.0). Each tier is a milestone
+  in its own right rather than one all-or-nothing wall at 25, and reaching 25
+  pays a **one-time bonus** guarded by `Team.literatureBonusAt` — presence IS the
+  idempotency guard, so two concurrent quiz submissions cannot both pay it
 - To leave `literature_review`, the team needs **25 sources uploaded AND every member proficient on all 25** — surfaced by the lab-scene phase-advance banner ("18/25 sources · 2/3 members ready"). Bigger teams therefore do proportionally more total reading, balancing the extra KP they earn
 - Progress visible in the panel header (progress bar + counter)
 - Off-topic detection deferred to v1.1
@@ -336,9 +356,9 @@ A specialized Project Log entry type for documenting failed experiments, dead en
 - Both Project and Failure entries live in the same `project_logs` table, distinguished by the `entry_type` enum (`progress | failure`) — keeps queries simple and the Failure Wall is just a filtered view. Progress entries use the structured columns (`next_steps`, `attendee_ids`, `attachment_urls`); failure entries store their two prompts as JSON in `body`. Shared editing is supported by `last_edited_by_user_id` + `last_edited_at`; image attachments are private R2 objects served via an authenticated streaming route (`/api/project-log/attachment/view`).
 
 ### 7.6 Data Terminal — *implemented*
-The **Data Terminal** tab is where students record, analyze, graph, and learn how to present their results. It has two layers with different unlock rules: a **workbench** over the team's datasets (phase-gated to `working`) and five **reference guides** (always available). The workbench is three interchangeable **lanes** over one shared dataset — Sheets, Code, and Lab — plus the figure-craft and showcase tooling that turns an analysis into a poster panel. It replaces the earlier single-x/single-y experiment tracker, which could hold exactly one x and one y and so could not represent a CSV.
+The **Data Terminal** tab is where students record, analyze, graph, and learn how to present their results. It has two layers with different unlock rules: a **workbench** over the team's datasets (phase-gated to `project_development`) and five **reference guides** (always available). The workbench is three interchangeable **lanes** over one shared dataset — Sheets, Code, and Lab — plus the figure-craft and showcase tooling that turns an analysis into a poster panel. It replaces the earlier single-x/single-y experiment tracker, which could hold exactly one x and one y and so could not represent a CSV.
 
-**The dataset spine (phase-gated to `working`).** A dataset is a spreadsheet with typed columns, each carrying an experimental **role** (X / Y / ±Y / ±X / group / label / ignore) and, for wide replicate layouts, a link to the column it repeats. Above the columns sits a **table type** — XY, Column, Grouped, Contingency, Nested, Parts of whole, Multiple variables — chosen when the dataset is created; it decides which roles are legal and, in Lab mode, which analyses the Analyze dialog may offer and which chart families are drawable, so a Column table can never be handed a correlation. That gating is the accessibility mechanism borrowed from GraphPad Prism: the structure carries the experimental design, so error bars are derived rather than configured and replication is visible to the statistics instead of assumed away — a nested table's n is its number of groups, not its number of measurements.
+**The dataset spine (phase-gated to `project_development`).** A dataset is a spreadsheet with typed columns, each carrying an experimental **role** (X / Y / ±Y / ±X / group / label / ignore) and, for wide replicate layouts, a link to the column it repeats. Above the columns sits a **table type** — XY, Column, Grouped, Contingency, Nested, Parts of whole, Multiple variables — chosen when the dataset is created; it decides which roles are legal and, in Lab mode, which analyses the Analyze dialog may offer and which chart families are drawable, so a Column table can never be handed a correlation. That gating is the accessibility mechanism borrowed from GraphPad Prism: the structure carries the experimental design, so error bars are derived rather than configured and replication is visible to the statistics instead of assumed away — a nested table's n is its number of groups, not its number of measurements.
 
 Students type into the grid, paste from a spreadsheet, or import a CSV; a column may carry a **formula** over other columns (`=col(Mass) / col(Volume)`), evaluated in TypeScript and recomputed whenever its inputs change (so Sheets mode never needs Python). Edits autosave, and because a dataset is team-shared, every write carries the copy's version stamp — a save based on a stale copy is refused rather than silently discarding a teammate's work. This layer unlocks at the **Working** phase (once real data collection begins) and is locked before then with an explanatory screen (`datasets` table).
 
@@ -358,7 +378,7 @@ Bounds are **caps refused at write time, never truncations at read time**: a lab
 
 **Showcase figure attachment.** An exported Data Terminal figure can be attached to the team's public showcase page as an optional **`figure` asset**, alongside the existing report and repo-link assets (stored in the same private R2 bucket and streamed through the authenticated asset route).
 
-**The phase gate is unchanged** — only the noun changed (experiments → datasets). The same `data_terminal` feature gate in `lib/phase.ts` unlocks the workbench at the `working` phase, exactly when the old Experiments tab did; the three lanes are ungated relative to each other, and all five reference guides below stay open in every phase.
+**The phase gate is unchanged** — only the noun changed (experiments → datasets). The same `data_terminal` feature gate in `lib/phase.ts` unlocks the workbench at the `project_development` phase, exactly when the old Experiments tab did; the three lanes are ungated relative to each other, and all five reference guides below stay open in every phase.
 
 **Reference guides (always available, no phase gate).** Five built-in, offline reference libraries teach data literacy and are deliberately reachable in **every** phase — a student planning a study can consult them before they own a single data point:
 - **Stats Guide** — a catalog of **65** statistics measures (mean/median through t-tests, ANOVA, regression, classification metrics, and FDR, plus nonparametric tests, regression diagnostics, epidemiology, Bayesian, and agreement/reliability measures), organized by category. Each entry gives a plain-language definition, when to use it, the formula (with a term-by-term breakdown), a small sample dataset, and a self-contained, verified Python snippet with its exact printed output.
@@ -520,21 +540,21 @@ The seven gateway buildings are the app's primary navigation. Each is a structur
 |---|---|---|---|---|
 | 1 | **Discovery building** | Topic Discovery (Wikipedia deep dives + idea generation) | `discovery` | The starter building; the only structure on the plot during Discovery |
 | 2 | **Literature Review building** | Literature Review + Library | `literature_review` | — |
-| 3 | **Research Plan building** | Research Planning (hypothesis, methodology, study design) | `research_planning` | — |
+| 3 | **Research Plan building** | Research Planning (hypothesis, methodology, study design) | `plan_refinement` | — |
 | 4 | **Operations Hub** | Daily pillars: Field Codex, Proof of Expertise, Project Log / Failure Log | `literature_review` *(see §18)* | Becomes the **central** building once unlocked — the everyday home base |
 | 5 | **Science Fair Research building** | Science Fair Information Hub | `discovery` *(see §18)* | Reference center; available early |
 | 6 | **Showcase building** | Showcase Wing (public portfolio) | `showcase` | Appears once the team is teacher-advanced to `showcase` |
-| 7 | **PvP building** | PvP raid arena | `working` | Raid entry, spell loadout, class trophy leaderboard |
+| 7 | **PvP building** | PvP raid arena | `project_development` | Raid entry, spell loadout, class trophy leaderboard |
 
 **Visual behavior:**
 - All gateway buildings start in the shared **generic grey/teal sci-fi palette** (see Section 19).
-- On specialization (entering `lab_selection` and committing to a lab type), **the gateway buildings reskin** to the chosen lab type's palette. This is the visible specialization milestone, in concert with the lab growing in size. Only the gateway buildings reskin — the background/environment is unchanged for the pilot.
+- On specialization (when the lab type is assigned at the end of Literature Review), **the gateway buildings reskin** to the chosen lab type's palette. This is the visible specialization milestone, in concert with the lab growing in size. Only the gateway buildings reskin — the background/environment is unchanged for the pilot.
 - Gateways have no upgrade levels; their appearance is a function of `(lab_type)` for skin and `(phase)` for which are present.
 
 **Relationship to economy buildings:** gateways are fixed and unbuyable; the 60 economy buildings (9.2–9.3) are bought with KP/LC and populate the grown lab after specialization. A student can have all relevant gateways present while still owning zero economy buildings.
 
 ### 9.5 Research Plan Building (implemented)
-The Research Plan gateway (unlocked at `research_planning`) turns a team's plan into a coached, reviewable artifact. Three parts:
+The Research Plan gateway (unlocked at `plan_refinement`) turns a team's plan into a coached, reviewable artifact. Three parts:
 
 **Provide the plan text — two ways.** A "Plan source" toggle lets the team either:
 - **Connect a Google Doc (paste-a-link):** paste an "Anyone with the link" Google Doc URL; the app fetches the published plain text on demand (no account connection — full Google OAuth is deferred, see `TODO.md`). "Refresh" re-syncs the latest text. The fetch lives behind one abstraction (`lib/research-plan/google-doc.ts`) so swapping in the Docs API later is localized.
@@ -697,7 +717,7 @@ All attacker spell damage in a raid is scaled by a **team-scoped Spell Power mul
 
 ### 11.7 Matchmaking
 
-- Matchmaking is **randomized**: pressing the single **Raid** button teleports the player directly into a raid against a randomly selected base — no manual opponent selection. The pool is scoped to the class and to teams that have reached the `working` phase (i.e., that actually have bases). **Class scope is derived from `User.classId` through team members** (ADR-004), never from the vestigial `Team.classId` scalar — see `lib/pvp/matchmaking.ts`.
+- Matchmaking is **randomized**: pressing the single **Raid** button teleports the player directly into a raid against a randomly selected base — no manual opponent selection. The pool is scoped to the class and to teams that have reached the `literature_review` phase (i.e., that actually have bases). **Class scope is derived from `User.classId` through team members** (ADR-004), never from the vestigial `Team.classId` scalar — see `lib/pvp/matchmaking.ts`.
 - If the player doesn't want to raid the base they were matched into, a **"refind"** rerolls them into a different randomly selected base.
 - Refinds are **limited** — a capped number per raid session or per day (tunable). Once out of refinds, the player must either raid the currently shown base or exit without raiding (exiting does not consume a raid from the daily cap).
 
@@ -723,7 +743,7 @@ pvp_raid_quota     team_id, date, raids_used, refinds_used   # enforces daily ca
 - `raid_log_json` stores the cast sequence for replay/dispute purposes.
 
 **Matchmaking:**
-- Random pick from the eligible pool (same class, `working`+ phase, never the attacker's own team); a refind is another random pick excluding bases already shown this session.
+- Random pick from the eligible pool (same class, `plan_refinement`+ phase, never the attacker's own team); a refind is another random pick excluding bases already shown this session.
 - Quota checks (`pvp_raid_quota`) run at match time, before a raid row is created.
 
 **Libraries & scale:**
@@ -780,7 +800,7 @@ The editor's abstract field carries an **Abstract Structure guide** *(implemente
 
 ### 12.4 Unlock & Publishing
 
-- Showcase Wing feature unlocks when the team reaches the `showcase` phase (self-paced advancement to school/regional competition)
+- Showcase Wing feature unlocks when the team reaches `project_development` (self-paced advancement to school/regional competition)
 - Available even if the student doesn't advance further — reaching this phase acknowledges the level most projects reach
 - For minors, **public publishing requires verified parental consent** (separate from initial app consent)
 - **`link_only` sharing uses a secret 128-bit share token**, not the public slug
@@ -1026,11 +1046,11 @@ team_form_status      id, team_id, form_id, status (not_started|in_progress|comp
 | **Literature Review** | `literature_review` | Upload, quiz, relevance probe |
 | **Literature Library** | `literature_review` | Searchable archive of processed papers |
 | **Daily Activities** | `literature_review` | Field Codex, Expertise, Project Log, Failure Log |
-| **Research Plan** | `research_planning` | Google Doc connect + type-specific AI review + web-search idea check (§9.5) |
-| **Building Purchases** | `working` | KP-based; building catalog available |
-| **Building Upgrades** | `working` | Levels 1–15; KP every level + LC at tier-ups (→4/7/10/15); no clearance cap (§9.2) |
-| **PvP Raids** | `working` | Daily raid cap; random matchmaking with limited refinds (§11) |
-| **Data Terminal — Datasets** | `working` | Three-lane dataset workbench (Sheets / Code / Lab) — analysis + graphing (§7.6) |
+| **Research Plan** | `plan_refinement` | Google Doc connect + type-specific AI review + web-search idea check (§9.5) |
+| **Building Purchases** | `project_development` | KP-based; building catalog available |
+| **Building Upgrades** | `project_development` | Levels 1–15; KP every level + LC at tier-ups (→4/7/10/15); no clearance cap (§9.2) |
+| **PvP Raids** | `project_development` | Daily raid cap; random matchmaking with limited refinds (§11) |
+| **Data Terminal — Datasets** | `project_development` | Three-lane dataset workbench (Sheets / Code / Lab) — analysis + graphing (§7.6) |
 | **Data Terminal — Reference Guides** | `discovery` | Stats / Charts / Plot guides; always available, no phase gate (§7.6) |
 | **Rubric Self-Check** | `discovery` | Judge-readiness /100 against the ISEF rubric (§13.3); Fair Hub is always available |
 | **Showcase Wing** | `showcase` | Public-facing portfolio system |

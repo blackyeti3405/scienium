@@ -81,7 +81,8 @@ export type GatewaySkin = (typeof GATEWAY_SKINS)[number]
 const GATEWAY_SRC = 64
 const GATEWAY_SCALE = 2
 
-const GATEWAY_LABELS: Record<GatewayKey, string> = {
+/** Human names for the gateways — also the raid target names (PvP snapshot). */
+export const GATEWAY_LABELS: Record<GatewayKey, string> = {
   discovery: 'Discovery building',
   science_fair: 'Science Fair Research building',
   literature_review: 'Literature Review building',

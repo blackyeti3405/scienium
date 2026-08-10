@@ -3,13 +3,12 @@ import { z } from 'zod'
 import { requireTeamContext } from '@/lib/api/route-context'
 import { parseJson, zipString } from '@/lib/validation'
 import { zipToState, geocodeZip } from '@/lib/fairs/zip'
-import { resolveSchool, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { syncClerkDisplayName } from '@/lib/onboarding/profile'
 import { db } from '@/lib/db'
 
 const SettingsBody = z
   .object({
     name: z.string().trim().min(1).max(80).optional(),
-    school: z.string().trim().max(120).optional(),
     labName: z.string().trim().min(1).max(80).optional(),
     zip: zipString.optional(),
     researchIdea: z.string().trim().max(500).optional(),
@@ -113,24 +112,12 @@ export async function PATCH(req: NextRequest) {
     teamData.locationLng = coords?.[1] ?? null
   }
 
-  // Find-or-create the School by name, also before the transaction (it is a
-  // shared lookup row, keyed by unique name, that any user may already have
-  // created). Only the user's POINTER to it is part of the atomic write below.
-  const schoolId =
-    data.school !== undefined ? await resolveSchool(data.school) : undefined
-
   await db.$transaction(async (tx) => {
     // User-field writes (any member, self-scoped)
-    if (data.name !== undefined || schoolId !== undefined) {
-      await tx.user.update({
-        where: { id: ctx.dbUserId },
-        data: {
-          ...(data.name !== undefined ? { name: data.name } : {}),
-          // `resolveSchool('')` is null — a blank school name clears nothing
-          // today, matching the previous `if (schoolId)` behaviour.
-          ...(schoolId ? { schoolId } : {}),
-        },
-      })
+    // A student's school is NOT writable here any more: it is set only when a
+    // teacher approves their class-join request. See lib/onboarding/profile.ts.
+    if (data.name !== undefined) {
+      await tx.user.update({ where: { id: ctx.dbUserId }, data: { name: data.name } })
     }
     if (Object.keys(teamData).length > 0) {
       await tx.team.update({ where: { id: ctx.teamId }, data: teamData })

@@ -7,9 +7,9 @@
 //   findRandomOpponent() → `if (classIds.length === 0) return null`
 //
 // A raid needs ALL of:
-//   1. attacker's team at phase `working`+   (PHASE_UNLOCKS: pvp unlocks at working)
+//   1. attacker's team at phase `literature_review`+  (PHASE_UNLOCKS: pvp unlocks there)
 //   2. the attacker IS IN A CLASS           (User.classId — null ⇒ never any opponent)
-//   3. an opponent in the SAME class, at `working`+, with a PLACED building
+//   3. an opponent in the SAME class, at `literature_review`+, with a PLACED building
 //      (team_shop_buildings.pos_x NOT NULL)
 //
 // The dev account had classId = NULL, so no amount of quota resetting could ever
@@ -37,6 +37,13 @@ const RIVAL_TEAM_NAME = 'Dev Rival Lab'
 const RIVAL_CLERK_ID = 'dev_pvp_rival_fixture'
 const RIVAL_EMAIL = 'dev-pvp-rival@scienium.invalid'
 
+// Mirrors PHASE_ORDER in @scienium/shared-types and `phasesFrom('literature_review')`
+// in lib/pvp/matchmaking.ts. Restated rather than imported because this script is
+// plain .mjs run by node against the built Prisma client, with no TS pipeline —
+// so if the phase model changes again, this list is what has to change with it.
+const PVP_MIN_PHASE = 'literature_review'
+const PVP_PHASES = ['literature_review', 'plan_refinement', 'project_development']
+
 const report = []
 const note = (state, what) => report.push(`  ${state.padEnd(7)} ${what}`)
 
@@ -50,12 +57,18 @@ async function main() {
   const team = attacker.activeTeam
   note('found', `attacker ${attacker.name} → team "${team.name}" (${team.phase})`)
 
-  // 1. Attacker's team must be at `working`+ for the pvp phase gate.
-  if (team.phase !== 'working') {
-    await db.team.update({ where: { id: team.id }, data: { phase: 'working' } })
-    note('set', `team phase ${team.phase} → working`)
-  } else {
+  // 1. Attacker's team must be at `literature_review`+ for the pvp phase gate.
+  //
+  // Only ADVANCE, never rewind. The old version wrote a flat `phase = 'working'`
+  // from a three-phase model that no longer exists; against the current enum
+  // that both fails the constraint AND, if it had succeeded, would have knocked
+  // a late-phase dev lab back down to unlock pvp it already had. A dev
+  // convenience script must never cost someone their progression state.
+  if (PVP_PHASES.includes(team.phase)) {
     note('ok', `team phase ${team.phase} already unlocks pvp`)
+  } else {
+    await db.team.update({ where: { id: team.id }, data: { phase: PVP_MIN_PHASE } })
+    note('set', `team phase ${team.phase} → ${PVP_MIN_PHASE}`)
   }
 
   // 2. School + class. The teacher is whoever already teaches here; falls back to
@@ -108,7 +121,7 @@ async function main() {
       data: {
         name: RIVAL_TEAM_NAME,
         teamLeadId: rivalUser.id,
-        phase: 'working',
+        phase: PVP_MIN_PHASE,
         labType: team.labType ?? 'volt_lab',
         members: { create: { userId: rivalUser.id, role: 'lead' } },
         currency: { create: {} },
@@ -116,7 +129,7 @@ async function main() {
     })
     note('created', `rival team "${RIVAL_TEAM_NAME}"`)
   } else {
-    await db.team.update({ where: { id: rivalTeam.id }, data: { phase: 'working' } })
+    await db.team.update({ where: { id: rivalTeam.id }, data: { phase: PVP_MIN_PHASE } })
     note('found', `rival team "${RIVAL_TEAM_NAME}"`)
   }
 
@@ -129,21 +142,51 @@ async function main() {
   })
 
   // 5. A placed base — `shopBuildings: { some: { posX: { not: null } } }`.
-  //    Mirrors the attacker's own buildings so the rival can actually fight back.
-  const attackerBuildings = await db.teamShopBuilding.findMany({
-    where: { teamId: team.id, posX: { not: null } },
-    select: { buildingKey: true, posX: true, posY: true, level: true },
-  })
-  const seedBuildings = attackerBuildings.length
-    ? attackerBuildings
-    : [{ buildingKey: 'printing_shop', posX: 0, posY: 0, level: 1 }]
+  //
+  // The FULL catalogue at max tier, not a mirror of the attacker. Mirroring
+  // meant a fresh dev lab with two huts produced a two-hut opponent, so the
+  // raid screen showed off nothing. A rival is a demo target: it should always
+  // be the best-looking base the game can draw. Level 15 is the `_t5` sprite
+  // stage (lib/sprites/manifest.ts buildingStageSuffix), the top of the art.
+  // Spread on a 2-cell pitch across the plot (PLOT_RADIUS is 3, so [-3,3]^2).
+  // Packing them adjacent made the base render as one indistinct pile once the
+  // sprites were drawn at their true 128px size: cellToScreen is
+  // dx=(gx-gy)*68, dy=(gx+gy)*34, so neighbouring cells put 128px sprites only
+  // 68px/34px apart. A 2-cell pitch separates them without looking like a grid.
+  const rivalLayout = [
+    { buildingKey: 'mechanical_testing_rig', posX: -2, posY: -2 },
+    { buildingKey: 'welding_fabrication', posX: 0, posY: -2 },
+    { buildingKey: 'pcb_fab', posX: 2, posY: -2 },
+    { buildingKey: 'embedded_systems_lab', posX: -2, posY: 0 },
+    { buildingKey: 'ai_incubator', posX: 0, posY: 0 },
+    { buildingKey: 'robotics_bay', posX: 2, posY: 0 },
+    { buildingKey: 'workshop', posX: -2, posY: 2 },
+    { buildingKey: 'electronics_bench', posX: 0, posY: 2 },
+    { buildingKey: 'cnc_mill_shop', posX: 2, posY: 2 },
+    { buildingKey: 'printing_shop', posX: 3, posY: 3 },
+  ]
+  const RIVAL_LEVEL = 15
 
   let placed = 0
-  for (const b of seedBuildings) {
+  let upgraded = 0
+  for (const b of rivalLayout) {
     const existing = await db.teamShopBuilding.findUnique({
       where: { teamId_buildingKey: { teamId: rivalTeam.id, buildingKey: b.buildingKey } },
     })
-    if (existing) continue
+    if (existing) {
+      // Re-runs top up an older, weaker rival instead of leaving it stunted —
+      // and re-place it if the layout above has since moved, which an
+      // `already max level and placed somewhere` check would silently skip.
+      if (existing.level >= RIVAL_LEVEL && existing.posX === b.posX && existing.posY === b.posY) {
+        continue
+      }
+      await db.teamShopBuilding.update({
+        where: { id: existing.id },
+        data: { level: RIVAL_LEVEL, posX: b.posX, posY: b.posY },
+      })
+      upgraded++
+      continue
+    }
     await db.teamShopBuilding.create({
       data: {
         teamId: rivalTeam.id,
@@ -151,15 +194,42 @@ async function main() {
         purchasedByUserId: rivalUser.id,
         posX: b.posX,
         posY: b.posY,
-        level: b.level,
+        level: RIVAL_LEVEL,
       },
     })
     placed++
   }
+  // 5b. Gateways. They are raid targets now (app/api/pvp/route.ts folds
+  // TeamGatewayPlacement into the base snapshot), so a demo rival wants a good
+  // spread of them. Deliberately on ODD cells: the economy layout above is all
+  // even, so the two sets interleave instead of landing on top of each other —
+  // the rival previously had `discovery` sitting exactly on `ai_incubator`.
+  const rivalGateways = [
+    { gatewayKey: 'discovery', posX: -1, posY: -1 },
+    { gatewayKey: 'literature_review', posX: 1, posY: -1 },
+    { gatewayKey: 'research_plan', posX: -1, posY: 1 },
+    { gatewayKey: 'operations_hub', posX: 1, posY: 1 },
+    { gatewayKey: 'science_fair', posX: -3, posY: 1 },
+    { gatewayKey: 'showcase', posX: 1, posY: 3 },
+    { gatewayKey: 'pvp', posX: 3, posY: -1 },
+  ]
+  for (const g of rivalGateways) {
+    await db.teamGatewayPlacement.upsert({
+      where: { teamId_gatewayKey: { teamId: rivalTeam.id, gatewayKey: g.gatewayKey } },
+      update: { posX: g.posX, posY: g.posY },
+      create: { teamId: rivalTeam.id, gatewayKey: g.gatewayKey, posX: g.posX, posY: g.posY },
+    })
+  }
+  note('ok', `rival gateways: ${rivalGateways.length} placed (raidable)`)
+
   const rivalPlaced = await db.teamShopBuilding.count({
     where: { teamId: rivalTeam.id, posX: { not: null } },
   })
-  note(placed ? 'created' : 'ok', `rival base: ${rivalPlaced} placed building(s)`)
+  note(
+    placed || upgraded ? 'created' : 'ok',
+    `rival base: ${rivalPlaced} placed building(s) at level ${RIVAL_LEVEL}` +
+      (upgraded ? ` (${upgraded} upgraded)` : ''),
+  )
 
   // 6. The originally-requested bit: clear today's quota for the attacker's team.
   const cleared = await db.pvpRaidQuota.deleteMany({ where: { teamId: team.id } })

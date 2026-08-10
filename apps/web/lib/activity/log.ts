@@ -9,6 +9,8 @@ export type ActivityAction =
   | 'topic_changed'
   | 'discovery_node_added'
   | 'discovery_kp_awarded'
+  // The one-time 25-source literature bonus was paid (lib/team/advance.ts).
+  | 'literature_bonus'
   | 'topic_locked'
   | 'source_promoted'
   | 'phase_advanced'
@@ -53,6 +55,7 @@ export const DURABLE_ACTIVITY_ACTIONS: ReadonlySet<ActivityAction> = new Set([
   'member_joined',
   'topic_locked',
   'discovery_kp_awarded',
+  'literature_bonus',
   'building_purchased',
   'building_sold',
   'building_upgraded',

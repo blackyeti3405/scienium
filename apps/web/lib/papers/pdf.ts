@@ -32,7 +32,20 @@ export async function streamStoredPdf(
       return new NextResponse(body, { status: 200, headers })
     } catch (err) {
       console.error(logLabel, err)
-      return NextResponse.json({ error: 'PDF not available' }, { status: 502 })
+      // A row whose key points at an object that is NOT THERE is a permanent,
+      // per-paper fact — the file will not appear on a retry, and the student
+      // needs to be told to re-upload it. R2 being unreachable is a transient,
+      // whole-service fact and a retry is exactly right. Both used to answer
+      // 502, so the viewer could not tell "this file is gone" from "try again"
+      // and showed a blank frame for both.
+      const missing = isMissingObject(err)
+      return NextResponse.json(
+        {
+          error: missing ? 'This source\u2019s file is no longer in storage.' : 'PDF could not be loaded.',
+          code: missing ? 'pdf_missing' : 'pdf_unavailable',
+        },
+        { status: missing ? 404 : 502 },
+      )
     }
   }
 
@@ -43,5 +56,23 @@ export async function streamStoredPdf(
     return new NextResponse(new Uint8Array(bytes), { status: 200, headers })
   }
 
-  return NextResponse.json({ error: 'PDF not available' }, { status: 404 })
+  return NextResponse.json(
+    { error: 'No file was stored for this source.', code: 'pdf_missing' },
+    { status: 404 },
+  )
+}
+
+/**
+ * Whether an S3/R2 error means the object does not exist, as opposed to the
+ * service being unreachable. The SDK reports this as `NoSuchKey` on GetObject
+ * and `NotFound` on HeadObject, and some gateways only set the HTTP status.
+ */
+function isMissingObject(err: unknown): boolean {
+  const e = err as { name?: string; Code?: string; $metadata?: { httpStatusCode?: number } }
+  return (
+    e?.name === 'NoSuchKey' ||
+    e?.name === 'NotFound' ||
+    e?.Code === 'NoSuchKey' ||
+    e?.$metadata?.httpStatusCode === 404
+  )
 }

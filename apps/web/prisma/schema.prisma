@@ -517,6 +517,15 @@ model Team {
   // teacher, and cannot be joined.
   archivedAt       DateTime?    @map("archived_at")
   phaseEnteredAt   DateTime?    @default(now()) @map("phase_entered_at")
+  /// The phase whose "BUILDING UNLOCKED" ceremony the team has already seen.
+  /// The ceremony is DERIVED (phase unlocks a gateway the team has not placed)
+  /// rather than stored as a queue, so this is only the acknowledgement — which
+  /// is what lets it survive a reload without being re-shown forever.
+  unlockAckPhase   ProjectPhase? @map("unlock_ack_phase")
+  /// When the one-time 25-source literature bonus was paid. Presence IS the
+  /// idempotency guard — the grant is a conditional update predicated on this
+  /// being null, so concurrent quiz submissions cannot both pay it.
+  literatureBonusAt DateTime?   @map("literature_bonus_at")
   createdAt        DateTime     @default(now()) @map("created_at")
 
   teamLead              User                   @relation("teamLead", fields: [teamLeadId], references: [id])
@@ -673,7 +682,8 @@ enum LabType {
 enum ProjectPhase {
   discovery
   literature_review
-  working
+  plan_refinement
+  project_development
 
   @@map("project_phase")
 }

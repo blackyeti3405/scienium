@@ -30,30 +30,45 @@ function tileFor(col: number, row: number, seed: number): GroundTileId {
 
 /**
  * Fills the ENTIRE viewport with the grass tiles. The grid is measured from the
- * container (ResizeObserver) so it always covers the screen — no dark margins.
- * Placement is deterministic (seeded by tile coordinate + a stable per-team
- * seed), so the background never reshuffles or flickers between renders.
+ * container (ResizeObserver) so it always covers the screen, with no dark
+ * margins. Placement is deterministic (seeded by tile coordinate + a stable
+ * per-team seed) AND centre-anchored, so the ground neither reshuffles between
+ * renders nor slides under the lab when the window resizes.
  */
 export function TileBackground({ seed = 1 }: { seed?: number }) {
   const ref = useRef<HTMLDivElement>(null)
   const { w, h } = useElementSize(ref)
-  const cols = Math.ceil(w / TILE_CELL) + 1
-  const rows = Math.ceil(h / TILE_CELL) + 1
+
+  // Tiles are indexed from the viewport CENTRE, not its top-left corner. The
+  // building cluster is centre-anchored, so a top-left-indexed ground grid
+  // re-tiles underneath it every time the window resizes — the ground visibly
+  // changes behind a lab that hasn't moved. Anchored to the centre, tile (0,0)
+  // always sits under the middle of the cluster and a resize only adds or drops
+  // tiles at the edges.
+  const halfCols = Math.ceil(w / 2 / TILE_CELL) + 1
+  const halfRows = Math.ceil(h / 2 / TILE_CELL) + 1
 
   const cells: { id: GroundTileId; col: number; row: number }[] = []
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
+  for (let row = -halfRows; row <= halfRows; row++) {
+    for (let col = -halfCols; col <= halfCols; col++) {
       cells.push({ id: tileFor(col, row, seed), col, row })
     }
   }
+
+  // Tile (col,row) is centred on (centre + col*CELL). Rounded so the grid stays
+  // on whole pixels and the art keeps its crisp edges.
+  const originX = Math.round(w / 2 - TILE_CELL / 2) - halfCols * TILE_CELL
+  const originY = Math.round(h / 2 - TILE_CELL / 2) - halfRows * TILE_CELL
 
   return (
     <div ref={ref} aria-hidden className="tile-bg">
       <div
         className="tile-bg__grid"
         style={{
-          gridTemplateColumns: `repeat(${cols}, ${TILE_CELL}px)`,
-          gridTemplateRows: `repeat(${rows}, ${TILE_CELL}px)`,
+          left: originX,
+          top: originY,
+          gridTemplateColumns: `repeat(${halfCols * 2 + 1}, ${TILE_CELL}px)`,
+          gridTemplateRows: `repeat(${halfRows * 2 + 1}, ${TILE_CELL}px)`,
         }}
       >
         {cells.map(({ id, col, row }) => (

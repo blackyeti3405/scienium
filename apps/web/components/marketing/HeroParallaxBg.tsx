@@ -47,8 +47,24 @@ export function HeroParallaxBg({ src }: { src: string }) {
         className="h-full w-full object-cover"
         style={{ objectPosition: 'center' }}
       />
+      {/* Below `sm` the art is full-bleed (no 60% column to sit beside), so a
+          horizontal fade leaves the headline on top of busy pixel art and
+          unreadable. Fade VERTICALLY instead: art up top, solid paper across the
+          band where the copy sits.
+          Measured from the BOTTOM in px, not in %: the hero copy is bottom-
+          anchored (`items-end`), so its distance from the bottom is fixed while
+          the hero's height tracks the viewport. A percentage stop that clears
+          the headline on a 812px phone slides back under it on a 667px one. */}
       <div
-        className="absolute inset-0"
+        className="absolute inset-0 sm:hidden"
+        style={{
+          backgroundImage:
+            'linear-gradient(0deg, #f7f7f4 0px, #f7f7f4 460px, ' +
+            'rgba(247,247,244,0.78) 530px, rgba(13,27,46,0.16) 610px, rgba(13,27,46,0.10) 100%)',
+        }}
+      />
+      <div
+        className="absolute inset-0 hidden sm:block"
         style={{
           backgroundImage:
             'linear-gradient(90deg, #f7f7f4 0%, #f7f7f4 8%, rgba(247,247,244,0.7) 20%, rgba(247,247,244,0) 38%), ' +

@@ -25,50 +25,55 @@ function isUnauthorized(err: unknown): boolean {
   return err instanceof ApiError && err.status === 401
 }
 
-/** "Your name" + "High school" fields — identical in the student and teacher
- *  forms below. Shared so the placeholder/maxLength/styling can't drift
- *  between the two branches. */
-function NameAndSchoolFields({
-  name,
-  setName,
+/** The name field, shared by the student and teacher forms. */
+function NameField({ name, setName }: { name: string; setName: (v: string) => void }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
+        Your name
+      </label>
+      <input
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        required
+        placeholder="Ada Lovelace"
+        className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
+      />
+    </div>
+  )
+}
+
+/**
+ * TEACHERS ONLY. A teacher's school is real, load-bearing data: `Class.schoolId`
+ * is a required FK, so creating a class needs one.
+ *
+ * Students are deliberately NOT asked. `User.schoolId` was only ever read by the
+ * `school_only` showcase tier, withdrawn as forgeable — leaving it as
+ * identifying data on a minor collected for nothing. A student's school is now
+ * set only when a teacher approves their class-join request.
+ */
+function SchoolField({
   highSchool,
   setHighSchool,
 }: {
-  name: string
-  setName: (v: string) => void
   highSchool: string
   setHighSchool: (v: string) => void
 }) {
   return (
-    <>
-      <div className="space-y-1.5">
-        <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-          Your name
-        </label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          placeholder="Rig Saini"
-          className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
-          High school
-        </label>
-        <input
-          type="text"
-          value={highSchool}
-          onChange={(e) => setHighSchool(e.target.value)}
-          placeholder="Santa Clara High School"
-          maxLength={120}
-          className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
-        />
-      </div>
-    </>
+    <div className="space-y-1.5">
+      <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
+        High school
+      </label>
+      <input
+        type="text"
+        value={highSchool}
+        onChange={(e) => setHighSchool(e.target.value)}
+        placeholder="Lincoln High School"
+        maxLength={120}
+        className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
+      />
+    </div>
   )
 }
 
@@ -143,10 +148,7 @@ export default function OnboardingPage() {
   const [teamName, setTeamName] = useState('')
   const [zip, setZip] = useState('')
   const [code, setCode] = useState('')
-  // Dev convenience: pre-fill the pilot's high school locally (inert in prod).
-  const [highSchool, setHighSchool] = useState(
-    process.env.NODE_ENV !== 'production' ? 'Santa Clara High School' : '',
-  )
+  const [highSchool, setHighSchool] = useState('')
   const [classCode, setClassCode] = useState('')
   const [acceptedLegal, setAcceptedLegal] = useState(false)
   // Creating a lab is two screens: the details, then the lab-type pick. Joining a
@@ -182,10 +184,7 @@ export default function OnboardingPage() {
 
     try {
       const endpoint = mode === 'create' ? '/api/onboarding' : '/api/team/join'
-      const profile = {
-        highSchool: highSchool.trim() || undefined,
-        classCode: classCode.trim() || undefined,
-      }
+      const profile = { classCode: classCode.trim() || undefined }
       const payload =
         mode === 'create'
           ? { name, teamName, zip: zip.trim() || undefined, acceptedLegal, labType, ...profile }
@@ -262,8 +261,16 @@ export default function OnboardingPage() {
 
   const canTeacherSubmit = acceptedLegal && !!name.trim()
 
+  // Screen 2 of creating a lab. The account type is already settled by the time
+  // you get here, so the student/teacher toggle comes off — and the wider
+  // container gives the six lab cards room for their building art.
+  const onLabTypeStep = accountType === 'student' && step === 'labType'
+
   return (
-    <div className="max-w-md w-full space-y-8">
+    <div className={`w-full space-y-8 ${onLabTypeStep ? 'max-w-4xl' : 'max-w-md'}`}>
+      {/* The lab-type step is its own screen with its own heading — a second
+          "Welcome to scienium" above it is just noise by that point. */}
+      {!onLabTypeStep && (
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-pixel text-white text-lg">Welcome to scienium</h1>
@@ -278,32 +285,36 @@ export default function OnboardingPage() {
             user row yet. */}
         <NotificationBell />
       </div>
+      )}
 
-      {/* Student / Teacher top-level account type toggle */}
-      <div className="grid grid-cols-2 gap-2">
-        {(['student', 'teacher'] as AccountType[]).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => {
-              setAccountType(t)
-              setError(null)
-            }}
-            className={`font-pixel text-[8px] uppercase tracking-widest py-2.5 border transition-colors ${
-              accountType === t
-                ? 'border-[#F5C518] text-[#F5C518] bg-[#F5C518]/10'
-                : 'border-white/20 text-white/40 hover:border-white/40 hover:text-white/60'
-            }`}
-          >
-            {t === 'student' ? "I'm a student" : "I'm a teacher"}
-          </button>
-        ))}
-      </div>
+      {/* Student / Teacher top-level account type toggle. Hidden on the lab-type
+          screen: the choice is already made, and "Back" is the way to change it. */}
+      {!onLabTypeStep && (
+        <div className="grid grid-cols-2 gap-2">
+          {(['student', 'teacher'] as AccountType[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => {
+                setAccountType(t)
+                setError(null)
+              }}
+              className={`font-pixel text-[8px] uppercase tracking-widest py-2.5 border transition-colors ${
+                accountType === t
+                  ? 'border-[#F5C518] text-[#F5C518] bg-[#F5C518]/10'
+                  : 'border-white/20 text-white/40 hover:border-white/40 hover:text-white/60'
+              }`}
+            >
+              {t === 'student' ? "I'm a student" : "I'm a teacher"}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {accountType === 'student' && step === 'labType' ? (
-        /* Screen 2 of creating a lab. Its own screen rather than one more field:
-           this is the only choice in onboarding a student cannot answer from what
-           they already know, so it gets room to explain itself. */
+      {onLabTypeStep ? (
+        /* Its own screen rather than one more field: this is the only choice in
+           onboarding a student cannot answer from what they already know, so it
+           gets room to explain itself. */
         <form onSubmit={handleSubmit} className="space-y-6">
           <LabTypePicker value={labType} onChange={setLabType} />
 
@@ -354,12 +365,7 @@ export default function OnboardingPage() {
           </div>
 
           <form onSubmit={handleDetailsSubmit} className="space-y-5">
-            <NameAndSchoolFields
-              name={name}
-              setName={setName}
-              highSchool={highSchool}
-              setHighSchool={setHighSchool}
-            />
+            <NameField name={name} setName={setName} />
 
             <div className="space-y-1.5">
               <label className="font-pixel text-[8px] text-white/50 uppercase tracking-widest">
@@ -369,7 +375,7 @@ export default function OnboardingPage() {
                 type="text"
                 value={classCode}
                 onChange={(e) => setClassCode(e.target.value.toUpperCase())}
-                placeholder="MRB-2026"
+                placeholder="SCI-2026"
                 maxLength={32}
                 className="w-full bg-[#0a1628] border border-white/20 text-white text-sm tracking-[0.2em] px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40 placeholder:tracking-normal"
               />
@@ -385,7 +391,7 @@ export default function OnboardingPage() {
                   value={teamName}
                   onChange={(e) => setTeamName(e.target.value)}
                   required
-                  placeholder="Saini Research Lab"
+                  placeholder="Nova Research Lab"
                   className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
                 />
                 <div className="space-y-1.5 pt-3">
@@ -396,7 +402,7 @@ export default function OnboardingPage() {
                     type="text"
                     value={zip}
                     onChange={(e) => setZip(e.target.value)}
-                    placeholder="90089"
+                    placeholder="94016"
                     maxLength={10}
                     className="w-full bg-[#0a1628] border border-white/20 text-white text-sm px-3 py-2.5 outline-none focus:border-[#F5C518]/60 transition-colors placeholder:text-white/40"
                   />
@@ -441,12 +447,8 @@ export default function OnboardingPage() {
         </>
       ) : (
         <form onSubmit={handleTeacherSubmit} className="space-y-5">
-          <NameAndSchoolFields
-            name={name}
-            setName={setName}
-            highSchool={highSchool}
-            setHighSchool={setHighSchool}
-          />
+          <NameField name={name} setName={setName} />
+          <SchoolField highSchool={highSchool} setHighSchool={setHighSchool} />
 
           <LegalConsentField accepted={acceptedLegal} setAccepted={setAcceptedLegal} />
 

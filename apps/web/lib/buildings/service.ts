@@ -14,6 +14,7 @@ import 'server-only'
 import { db } from '@/lib/db'
 import { lockAggregate } from '@/lib/db-lock'
 import { GATEWAYS } from '@/lib/gateways'
+import { isPhaseAtLeast, type Phase } from '@/lib/phase'
 import { shopBuilding } from '@/lib/shop'
 import {
   evaluatePurchase,
@@ -176,8 +177,18 @@ export async function moveBuilding(
 ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   if (!isOnGrid(input.gx, input.gy)) return fail('That spot is off the plot.', 400)
 
-  if (input.kind === 'gateway' && !GATEWAYS.find((g) => g.key === input.key)) {
-    return fail('Unknown gateway', 404)
+  if (input.kind === 'gateway') {
+    const gateway = GATEWAYS.find((g) => g.key === input.key)
+    if (!gateway) return fail('Unknown gateway', 404)
+    // Placing a gateway for the FIRST time is how it gets onto the plot, so this
+    // path is also the unlock gate. Without it a client could place a locked
+    // gateway by asking to "move" one it never had — the upsert below would
+    // happily create the row.
+    const team = await db.team.findUnique({ where: { id: teamId }, select: { phase: true } })
+    if (!team) return fail('Team not found', 404)
+    if (!isPhaseAtLeast(team.phase as Phase, gateway.unlockPhase)) {
+      return fail('That building is still locked.', 403)
+    }
   }
 
   // Fast pre-check against a snapshot (excludes the moving item's own cell). The

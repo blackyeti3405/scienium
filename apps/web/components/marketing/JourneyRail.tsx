@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react'
 
-const STEPS = ['01', '02', '03', '04', '05', '06']
+const STEPS = ['01', '02', '03', '04', '05']
 
 /**
  * Sticky-left progress rail for the Journey section (DESIGN.md › Motion). Pure
- * augmentation — the six phase content blocks in page.tsx are untouched, they
+ * augmentation — the five step content blocks in page.tsx are untouched, they
  * just carry a `data-journey-step="N"` marker this component watches with one
  * IntersectionObserver. A single gold fill line (.mkt-rail-fill, already in
  * globals.css) grows step-wise via the --rail custom property as each phase

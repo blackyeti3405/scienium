@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   requireUserContext: vi.fn(),
   currentUser: vi.fn(),
-  applySchoolAndClass: vi.fn(() => Promise.resolve()),
+  applyClassCode: vi.fn(() => Promise.resolve()),
   syncClerkDisplayName: vi.fn(() => Promise.resolve()),
   recordActivity: vi.fn(() => Promise.resolve()),
   lockAggregate: vi.fn(() => Promise.resolve()),
@@ -49,7 +49,7 @@ const tx = {
 vi.mock('@/lib/api/route-context', () => ({ requireUserContext: mocks.requireUserContext }))
 vi.mock('@clerk/nextjs/server', () => ({ currentUser: mocks.currentUser, auth: vi.fn() }))
 vi.mock('@/lib/onboarding/profile', () => ({
-  applySchoolAndClass: mocks.applySchoolAndClass,
+  applyClassCode: mocks.applyClassCode,
   syncClerkDisplayName: mocks.syncClerkDisplayName,
   resolvePrimaryEmail: (u: { primaryEmailAddressId?: string | null; emailAddresses?: { id: string; emailAddress: string }[] } | null) =>
     u?.emailAddresses?.find((e) => e.id === u.primaryEmailAddressId)?.emailAddress ??

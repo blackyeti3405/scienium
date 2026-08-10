@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { UserButton } from '@clerk/nextjs'
 import { FlaskConical, Settings } from 'lucide-react'
 import { PHASE_INFO, LAB_TYPE_LABELS, type Phase, type LabType } from '@/lib/phase'
@@ -41,11 +42,14 @@ export function StatusStrip({
   return (
     <div className="status-strip">
       <div className="status-strip__left">
-        <span className="font-pixel status-strip__brand">
+        {/* The wordmark is the way out of the game — every other surface treats
+            the brand as "home", and in here it was the one dead end. The image
+            stays alt="" (decorative): the adjacent text already names the link. */}
+        <Link href="/" className="font-pixel status-strip__brand" title="Back to the scienium home page">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/scienium-logo.png" alt="" width={24} height={24} className="pixel-art" />
           scienium
-        </span>
+        </Link>
         {onOpenTeam ? (
           <button
             type="button"

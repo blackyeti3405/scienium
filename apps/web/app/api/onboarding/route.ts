@@ -8,7 +8,8 @@ import { db } from '@/lib/db'
 import { pickActiveTeam } from '@/lib/team/context'
 import { isValidZip, zipToState, geocodeZip } from '@/lib/fairs/zip'
 import { LAB_TYPES } from '@/lib/phase'
-import { applySchoolAndClass, resolvePrimaryEmail, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { applyClassCode, resolvePrimaryEmail, syncClerkDisplayName } from '@/lib/onboarding/profile'
+import { STARTING_GATEWAYS } from '@/lib/gateways'
 import { legalConsentShape, recordLegalAcceptance } from '@/lib/legal/consent'
 
 // Names are capped so a client can't store unbounded text; `.strict()` rejects
@@ -18,7 +19,6 @@ const OnboardingBody = z
     name: z.string().trim().min(1, 'Name is required').max(80),
     teamName: z.string().trim().min(1, 'Team name is required').max(80),
     zip: z.string().trim().max(10).optional(),
-    highSchool: z.string().trim().max(120).optional(),
     classCode: z.string().trim().max(32).optional(),
     // The lab type the student picked at sign-up. A starting guess, not a
     // commitment: locking a topic re-derives it from the actual work and carries
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await parseJson(req, OnboardingBody)
   if (error) return error
-  const { name, teamName, zip, highSchool, classCode, labType } = data
+  const { name, teamName, zip, classCode, labType } = data
 
   // Optional US location (Feature 3): derive state + geocode to lat/lng.
   const locationZip = zip && isValidZip(zip) ? zip : null
@@ -75,9 +75,10 @@ export async function POST(req: NextRequest) {
   // records WHICH version, and only on the first pass.
   await recordLegalAcceptance(user.id)
 
-  // Ingest the student's high school (find-or-create) and optional classroom.
+  // File a pending class-join request when a class code was supplied. No school
+  // is collected from students — see lib/onboarding/profile.ts.
   // Non-fatal — a school lookup hiccup must not block lab creation.
-  await applySchoolAndClass(user.id, { highSchool, classCode }).catch(() => {})
+  await applyClassCode(user.id, { classCode }).catch(() => {})
 
   // Mirror the display name into Clerk so the avatar/account match from day one.
   await syncClerkDisplayName(userId, user.name)
@@ -90,7 +91,20 @@ export async function POST(req: NextRequest) {
         labType,
         // ADR-004: `Team.classId` is vestigial — class membership is per
         // student. New teams never populate it.
-        phase: 'literature_review',
+        //
+        // A new lab starts in DISCOVERY. This used to create teams straight into
+        // `literature_review`, skipping the first phase entirely — every lab
+        // opened one phase ahead of where the arc says it should.
+        phase: 'discovery',
+        // The three discovery gateways are standing on day one; every later
+        // gateway is earned and placed from the shop.
+        gatewayPlacements: {
+          create: STARTING_GATEWAYS.map((g) => ({
+            gatewayKey: g.key,
+            posX: g.cell.gx,
+            posY: g.cell.gy,
+          })),
+        },
         locationZip,
         locationState,
         locationLat: locationCoords?.[0] ?? null,

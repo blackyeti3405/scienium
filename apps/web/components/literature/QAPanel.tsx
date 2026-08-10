@@ -10,6 +10,7 @@ import { useExplainBack } from './useExplainBack'
 import { QuizPanel } from './QuizPanel'
 import { PaperChat } from './PaperChat'
 import { ExplainPanel } from './ExplainPanel'
+import { PdfFrame } from './PdfFrame'
 
 /**
  * Split Q&A view for one paper: the PDF (left) and, on the right, the
@@ -56,7 +57,7 @@ export function QAPanel({
         </div>
         <VettingChecklist tier={paper.credibilityTier} />
         {paper.fileUrl ? (
-          <iframe src={paper.fileUrl} className="flex-1 w-full" title="Paper PDF" />
+          <PdfFrame src={paper.fileUrl} title="Paper PDF" />
         ) : (
           <div className="flex-1 flex items-center justify-center text-white/40">
             <p className="font-pixel text-[8px] text-center px-6">PDF not available</p>

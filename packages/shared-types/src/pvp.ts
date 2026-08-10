@@ -114,6 +114,17 @@ export interface BuildingTarget {
    * fall back to a placeholder tile.
    */
   sprite?: string | null
+  /**
+   * True when this target is a GATEWAY (the feature buildings — Discovery,
+   * Literature Review, the Ops Hub…) rather than an economy building.
+   *
+   * They are raidable and destructible like anything else, but they differ in
+   * two ways the client has to know about: their art comes from the gateway
+   * sprite set keyed by lab skin (`getGatewaySprite`) rather than the economy
+   * set keyed by upgrade tier, and they have no upgrade level — so `sprite`
+   * carries the gateway KEY and `level` is 0.
+   */
+  isGateway?: boolean
 }
 
 // ─── Raid Session (Option B — spec §4) ────────────────────────────────────

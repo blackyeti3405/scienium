@@ -15,6 +15,7 @@
 import { db } from '@/lib/db'
 import type { LabType } from '@scienium/shared-types'
 import { teamClassIds } from '@/lib/team/class-scope'
+import { phasesFrom } from '@/lib/phase'
 
 // Class scope itself lives in `lib/team/class-scope.ts` — phase progression asks
 // the same question to decide whether a lab is teacher-paced. Re-exported so PvP
@@ -54,7 +55,7 @@ export async function findRandomOpponent(
       id: { not: ownTeamId, notIn: shownBaseIds ?? [] },
       // PvP unlocks with the topic lock, so anyone from literature_review on is
       // a legitimate target — they have a lab type and can have a placed base.
-      phase: { in: ['literature_review', 'working'] },
+      phase: { in: phasesFrom('literature_review') },
       shopBuildings: { some: { posX: { not: null } } },
     },
     select: { id: true, name: true, labType: true },
