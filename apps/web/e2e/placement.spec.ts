@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './test'
 import { setE2eKnowledgePoints } from './db'
 import { createLab, type OwnedLab } from './lab'
 

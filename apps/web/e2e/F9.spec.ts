@@ -1,4 +1,5 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test'
+import { test, expect } from './test'
+import { request as playwrightRequest } from '@playwright/test'
 import { STORAGE } from './roles'
 import { api, gotoFresh, registerPageRole, withSeedPage } from './api'
 import { createLab, type OwnedLab } from './lab'
@@ -76,10 +77,9 @@ let secondCallAlreadyNudged: boolean | null = null
 let seededFeedbackCreatedThisRun = false
 
 test.describe('F9 — Teacher nudge from the roster', () => {
-  // Serial: AC1-AC8 build on a single shared team + shared same-day dedupeKey
-  // state; racing them would make the "first vs second call" assertions
-  // nondeterministic.
-  test.describe.configure({ mode: 'serial' })
+  // Order-dependent (order comes from fullyParallel:false — see playwright.config.ts): AC1-AC8 build on a
+  // single shared team + shared same-day dedupeKey state, which is what makes
+  // the "first vs second call" assertions mean anything.
 
   // ── Seed ─────────────────────────────────────────────────────────────────────
 

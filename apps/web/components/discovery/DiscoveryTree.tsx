@@ -112,9 +112,8 @@ export function DiscoveryTree({
   }
 
   const svgW = Math.max(...laid.map((n) => n.x + NODE_W)) + PAD
-  // #11: the interest swatch + the pre-existing "+ Lit Review" pill both draw
-  // slightly below the node body — pad enough that the bottom-most row's
-  // controls aren't clipped by the svg's own bounding box.
+  // The "+ Lit Review" pill draws slightly below the node body — pad enough that
+  // the bottom-most row's controls aren't clipped by the svg's own bounding box.
   const svgH = Math.max(...laid.map((n) => n.y + NODE_H)) + PAD + 8
 
   return (
@@ -256,8 +255,9 @@ export function DiscoveryTree({
                   </g>
                 </g>
 
-                {/* ── #11: interest swatch — click-to-cycle, bottom-left corner so it
-                    never overlaps the right-side tier dot / "+ Lit Review" pill / ✓.
+                {/* ── #11: interest swatch — click-to-cycle, centred on the node's
+                    right edge; the tier dot and ✓ sit above and below it in the
+                    same right-hand column.
                     Color + a distinct shape (accessibility: color is never the only
                     signal). unset = hollow outline ring; high/mid/low = filled
                     shape + color, both with a thin dark stroke for contrast on the
@@ -265,8 +265,8 @@ export function DiscoveryTree({
                 {(() => {
                   const level = n.interestLevel ?? null
                   const meta = level ? INTEREST_META[level] : null
-                  const cx = n.x + 6
-                  const cy = n.y + NODE_H + 8
+                  const cx = n.x + NODE_W - 14
+                  const cy = n.y + NODE_H / 2
                   const upcoming = nextInterest(level)
                   const upcomingLabel = upcoming
                     ? INTEREST_META[upcoming].label
@@ -328,8 +328,8 @@ export function DiscoveryTree({
                 {/* Tier dot (source nodes only) — credibility at a glance */}
                 {tierColor && (
                   <circle
-                    cx={n.x + NODE_W - 15}
-                    cy={n.y + 11}
+                    cx={n.x + NODE_W - 14}
+                    cy={n.y + 9}
                     r={4}
                     fill={tierColor}
                     stroke="rgba(0,0,0,0.3)"
@@ -351,11 +351,12 @@ export function DiscoveryTree({
                   {label}
                 </text>
 
-                {/* Explored ✓ badge (right side) */}
+                {/* Explored ✓ badge (right column, under the interest swatch) */}
                 {n.explored && (
                   <text
-                    x={n.x + NODE_W - 15} y={n.y + 26}
+                    x={n.x + NODE_W - 14} y={n.y + 36}
                     fontSize={10}
+                    textAnchor="middle"
                     fill={checkFill}
                     className="select-none pointer-events-none"
                   >

@@ -1,4 +1,5 @@
-import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { request as playwrightRequest, type Page } from '@playwright/test'
 import { api, withRateLimitRetry, openLiteratureReview, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
@@ -51,7 +52,7 @@ import { e2eDb } from './db'
  *  AC18 — the quiz is unaffected: "Quiz results" still shows the graded quiz
  *         after using Explain, and `GET /api/papers/{id}`'s
  *         `proficiencyDemonstrated` is unchanged by an explanation submission.
- *  (unauth) — an unauthenticated POST to the explain route 307-redirects to
+ *  (unauth) — an unauthenticated POST to the explain route gets a JSON 401 from
  *         /sign-in (never 401), with no verdict data in the body.
  *
  * Determinism seam: E2E_SKIP_LLM=1 (playwright.config.ts) makes the POST route
@@ -85,7 +86,6 @@ const EXPLAIN_KP_AWARD = 25 // D3 — flat, once-ever (lib/literature/explain.ts
 let lab: OwnedLab
 
 test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => {
-  test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
     lab = await createLab('explain')
@@ -474,7 +474,7 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
   })
 
   // ── Unauthenticated POST ─────────────────────────────────────────────────
-  test('unauthenticated POST to the explain route 307-redirects to /sign-in (never 401), with no verdict data in the body', async ({
+  test('unauthenticated POST to the explain route gets a JSON 401 (never sign-in HTML), with no verdict data in the body', async ({
     page,
   }) => {
     const paper = await seedFreshPaper()
@@ -489,8 +489,12 @@ test.describe('lit-explain-it-back — "Explain it back" (Feynman mode)', () => 
         data: { text: 'a'.repeat(50) },
         maxRedirects: 0,
       })
-      expect(res.status()).toBe(307)
-      expect(res.headers()['location']).toContain('/sign-in')
+      // v0.78.0 (febe752e): /api/* answers an unauthenticated caller with JSON 401,
+      // NOT a 307 to /sign-in. A fetch follows that redirect and hands the caller a
+      // 200 carrying sign-in HTML, so `res.ok` is true and `res.json()` dies on
+      // "<!DOCTYPE". The block is still pre-route — no handler runs — which is what
+      // the no-leak assertions below prove.
+      expect(res.status()).toBe(401)
 
       const text = await res.text()
       expect(text).not.toContain('"verdict"')

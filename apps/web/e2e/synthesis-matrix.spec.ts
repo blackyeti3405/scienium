@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { type Page } from '@playwright/test'
 import { api, withRateLimitRetry, gotoFresh } from './api'
 import { createLab, seedPapers, type OwnedLab } from './lab'
 import { e2eDb } from './db'
@@ -59,7 +60,6 @@ let paperIds: string[] = []
 let foreignMatrixId: string | null = null
 
 test.describe('Synthesis Matrix (Literature Review)', () => {
-  test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
     // A lab that exists only for this file (e2e/lab.ts). Before this, the spec

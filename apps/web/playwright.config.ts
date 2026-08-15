@@ -20,6 +20,24 @@ process.env.E2E_SKIP_LLM = '1'
 // (meaningless for the fake seed ids), so it belongs here, not in .env.local.
 process.env.E2E_MOCK_SOURCES = '1'
 
+// Serve the Pyodide runtime from the local .pyodide-cache, never R2.
+//
+// Set HERE for a third reason beyond the two above: `E2E_BUILD=1` runs
+// `next build && next start`, which is production mode, and Next loads
+// `.env.production.local` in production at HIGHER precedence than `.env.local`.
+// A developer who keeps a copy of the production environment in that file (as
+// this checkout does) silently hands the E2E server `PYODIDE_SOURCE=r2` — and
+// the wheels are not in R2 until the one-time upload runs, so every runtime
+// asset 404s, the worker never signals ready, and all 18 Lab/Code specs sit on
+// `expect(lab-run).toBeEnabled()` for 150s each. That is ~40 minutes of a run
+// spent on a misread env var; it is exactly the CI failure e2e.yml already
+// documents ("waits 150s for a runtime that 404s forever"), reintroduced
+// locally through a different door.
+//
+// A real process env var outranks every .env file, so setting it here makes the
+// lane immune to whatever that file says. `preflight` asserts it took effect.
+process.env.PYODIDE_SOURCE = 'local'
+
 const PORT = Number(process.env.E2E_PORT ?? 3000)
 const baseURL = `http://localhost:${PORT}`
 
@@ -47,6 +65,16 @@ export default defineConfig({
   // worker gets its own dedicated test account + team, the suite runs SERIALLY so
   // it's deterministically green. Override locally for speed with E2E_WORKERS (you
   // may then see contention flakes). See PARALLELISM.md.
+  //
+  // THIS is what orders tests within a file: `fullyParallel: false` means files
+  // run in parallel but the tests inside one file run in declaration order on a
+  // single worker, nested describes included. 25 spec files ALSO set
+  // `mode: 'serial'` for that ordering, which they never needed — and serial
+  // mode's real effect is that one failure SKIPS every later test in the group.
+  // 307 of 379 tests (81%) sat behind that cascade; one red run once cost 48
+  // tests that never executed and hid four assertions that had been dead for
+  // five versions (docs/runbooks/e2e.md). Serial mode is now gone. Specs that
+  // depend on ordering say so in a comment and depend on this line instead.
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -114,17 +142,31 @@ export default defineConfig({
       use: { ...devices['Desktop Safari'], storageState: STORAGE.leader },
       dependencies: ['setup'],
     },
-    // Marketing screenshots, run on demand — never part of a suite run. The
-    // `.capture.ts` suffix is outside Playwright's default `*.spec.ts` match,
-    // so these files are invisible unless this project is named explicitly:
-    //   pnpm --filter web exec playwright test --project=capture
-    // They write PNGs into public/, which is exactly why they must not run in CI.
-    {
-      name: 'capture',
-      testMatch: /\.capture\.ts$/,
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, storageState: STORAGE.leader },
-      dependencies: ['setup'],
-    },
+    // Marketing screenshots, run on demand. They write PNGs into public/, which
+    // is exactly why they must not run in CI:
+    //   E2E_CAPTURE=1 pnpm --filter web exec playwright test --project=capture
+    //
+    // The project is CONDITIONAL, not merely narrow. A project-level `testMatch`
+    // REPLACES the config default rather than intersecting with it, so the
+    // `.capture.ts` suffix hid nothing — `playwright test` with no arguments runs
+    // every configured project, and this one was test 374 of 374 in both the
+    // nightly `full` lane and the local `test:e2e` script. The suffix is still
+    // useful (it keeps captures out of the chromium project), but the env flag is
+    // what actually keeps them out of a suite run.
+    ...(process.env.E2E_CAPTURE === '1'
+      ? [
+          {
+            name: 'capture',
+            testMatch: /\.capture\.ts$/,
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1440, height: 900 },
+              storageState: STORAGE.leader,
+            },
+            dependencies: ['setup'],
+          },
+        ]
+      : []),
   ],
   webServer: {
     // Boot on PORT (default 3000) so a worktree / concurrent ship run can isolate

@@ -1,4 +1,5 @@
-import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { request as playwrightRequest, type Page } from '@playwright/test'
 import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
@@ -204,7 +205,7 @@ async function answerCurrentWrong(page: Page) {
 let lab: OwnedLab
 
 test.describe('F13 — Field Codex', () => {
-  test.describe.configure({ mode: 'serial', timeout: 180_000 })
+  test.describe.configure({ timeout: 180_000 })
 
   test.beforeAll(async () => {
     // `true` for co-members: this spec signs in as the student fixture, which

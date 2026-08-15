@@ -1,4 +1,5 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test'
+import { test, expect } from './test'
+import { request as playwrightRequest } from '@playwright/test'
 import { api, gotoFresh, withSeedPage } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
@@ -90,9 +91,9 @@ const WORKS_CITED_TEXT =
 // ── Suite ─────────────────────────────────────────────────────────────────────
 
 test.describe('F4-print — Showcase one-pager print export', () => {
-  // Several tests reuse/mutate the same showcase row (privacy/published toggles) —
-  // serial avoids races, same rationale as e2e/F4.spec.ts.
-  test.describe.configure({ mode: 'serial' })
+  // Order-dependent (order comes from fullyParallel:false — see playwright.config.ts): several tests
+  // reuse/mutate the same showcase row (privacy/published toggles). Same
+  // rationale as e2e/F4.spec.ts.
 
   // ── Seed ─────────────────────────────────────────────────────────────────────
 

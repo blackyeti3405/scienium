@@ -238,6 +238,135 @@ come from `lib/fairs/forms.ts` itself, so they cannot drift from the ones the
 route serves, and `verify:e2e` now fails in two seconds if any are missing rather
 than after a seven-minute build.
 
+## Serial mode is gone (and what replaced it)
+
+25 spec files set `test.describe.configure({ mode: 'serial' })`, holding **307 of
+379 tests (81%)**. They set it to get ordering — which they already had:
+`fullyParallel: false` runs the tests in a file in declaration order on a single
+worker, nested describes included. What serial mode actually added was its other
+half: **one failure skips every later test in the group.** That is the mechanism
+behind the "48 tests never ran" row in the table above and behind the four
+assertions that had been dead for five versions without anyone hearing about it.
+
+Serial mode is now removed everywhere. Ordering is unchanged (verified with
+`playwright test --list`); a failing test now costs one test instead of a file.
+
+Two consequences to expect:
+
+- **A red run reports more failures than it used to.** Those are not new bugs —
+  they are the ones the cascade was swallowing. Read a first red run as a
+  backlog, not a regression.
+- **A retry no longer re-runs the group.** Serial mode retried a whole group
+  together, rebuilding the state chain from `beforeAll`. Without it, CI's single
+  retry re-runs only the failed test, against state its predecessors already
+  consumed — so a mid-chain test tends to fail its retry too. That errs toward
+  reporting failure, which is the right direction.
+
+A file that depends on declaration order says so in a comment above its
+describe, and points at `fullyParallel` in `playwright.config.ts`. If that config
+value is ever flipped to `true`, those files need real fixtures — not
+`mode: 'serial'` back.
+
+## The runtime-error sentinel
+
+`e2e/test.ts` wraps Playwright's `test` with an auto fixture that fails a test
+when the page raised an error no assertion covers: an uncaught exception, a
+`console.error` (React hydration warnings included), or a same-origin 5xx. Every
+spec imports `test`/`expect` from `./test` rather than `@playwright/test`.
+
+A spec that deliberately provokes an error declares it:
+
+```ts
+import { test, expect, allowErrors } from './test'
+allowErrors(page, /\/api\/fairs\/forms/)
+```
+
+Tune the shared allowlist with `E2E_SENTINEL_DEBUG=1`, which prints everything
+each test saw, allowed or not, instead of guessing which pattern swallowed what.
+
+Known and permanently allowed: Clerk's bundle tries to spawn a `blob:` worker on
+most page loads and our `worker-src 'self'` blocks it (four `console.error`s per
+load). Clerk degrades silently and every auth assertion passes, so the CSP is
+left alone rather than growing a `blob:` allowance for a third party.
+
+**The allowlist matches on message AND source location, and engines disagree
+about both.** Chromium blames `clerk.browser.js` for that worker block; Firefox
+and WebKit blame the page. A rule written against the Chromium wording passes
+locally and turns both compat lanes red — which is exactly what the first
+calibration run did. Match on the stable token (`worker-src`), not the sentence.
+
+### Measured, 2026-08-11 (v0.81.0, production build, one worker)
+
+| | v0.51.0 (last green) | first run | after the fixes |
+| --- | --- | --- | --- |
+| passed | 309 | 324 | **366** |
+| failed | 0 | 42 | **0** |
+| skipped | — | 7 | 6 |
+| never ran (serial cascade) | 0 | 0 | **0** (mechanism removed) |
+| wall clock | 14.8 min | 1.2 h | **27.6 min** |
+
+v0.51.0 was the last green run. Since then the PR gate has run `F1.spec.ts` and
+nothing else, so 16 versions shipped with ~97% of the browser suite ungated —
+which is the whole argument for making the full Chromium lane required on PRs.
+Two of the 42 turned out to be **product bugs users would hit**, not test rot.
+
+The 42 were five causes, not 42 problems:
+
+**1. A production env file was steering the E2E server (18 failures, ~40 min).**
+`E2E_BUILD=1` runs `next build && next start` — production mode — and Next loads
+`apps/web/.env.production.local` at HIGHER precedence than `.env.local`. On a
+maintainer's machine that file is a copy of the real production environment, and
+it carries `PYODIDE_SOURCE=r2`. The runtime proxy then served from a bucket the
+wheels were never uploaded to, every asset 404'd, the worker never signalled
+ready, and all 18 Lab/Code specs waited 150s each on a Run button that never
+enabled. Nothing appeared in any log: the fetches happen inside a **Web Worker**,
+and `page.on('console')` does not see worker output.
+
+`playwright.config.ts` now sets `PYODIDE_SOURCE=local` (a real process env var
+outranks every `.env` file) and `preflight` asserts it took effect. Note the
+general hazard: **any** key in `.env.production.local` that is absent from
+`.env.local` reaches the E2E production-build server.
+
+**2. Five tests asserted an auth contract retired in v0.78.0.** `febe752e` made
+`/api/*` answer an unauthenticated caller with JSON 401 instead of a 307 to
+`/sign-in`, because `fetch` follows the redirect and hands back 200 + sign-in
+HTML, so `res.json()` dies on `<!DOCTYPE`. The app was right; the tests were
+three versions stale. Specs that already accepted `[307, 401]` kept passing —
+which is why only five broke.
+
+**3. The Ops Hub hid the Data Terminal before the working phase (product bug).**
+v0.80.0 filtered locked tabs out of the hub entirely. That took the Stats and
+Charts reference guides with it — reading a student needs precisely while
+PLANNING — and made `DatasetsView`'s "unlocks at the Working phase" screen
+unreachable dead code, against its own copy ("The guides above are open now").
+The tab now always renders; `data_terminal` is still enforced server-side by the
+datasets route's 403, which is what that screen was always driven by.
+
+**4. The literature gate is tiered now (product drift).** v0.80.0 made it 10 at
+`literature_review` and 20 at `plan_refinement`, leaving 25 as a bonus ceiling.
+`issue-6` still asserted a flat `/ 25`; the card reads "0 / 10 sources ready".
+
+**5. Bare `page.goto()` rides a lapsed Clerk token.** Deep into a run the stored
+`storageState` token has expired, so a plain navigation renders the page with
+every data fetch 401ing. Server-rendered assertions still pass, so this was
+invisible until the sentinel saw the 401 burst. The Data Terminal specs now use
+`gotoFresh`, which is the convention the rest of the suite already follows.
+
+### The skips (6)
+
+None are load-bearing; most are misfiled rather than genuinely unrunnable.
+
+- **4 static grep checks** (`F11` AC17, `papers-tab` AC10 / PM8, and PM6's
+  duplicate-of-AC7) that need no browser. They belong in Vitest, or deleted.
+- **1 fixture-conditional** (`team-membership`, "a solo lead sees no
+  self-directed member actions") — the E2E lab has two members, so the solo case
+  can never run. Manufacturable with a second, single-member disposable lab.
+- `F1` AC11 was a **seventh** skip and is now live. It had been skipped since it
+  was written, on the belief that Clerk's testing interceptors make a signed-out
+  request impossible. That is true of an authenticated context but not of
+  `playwrightRequest.newContext({ storageState: undefined })`, which five other
+  specs use to get a real 401. The security assertion it names now runs.
+
 ## Still open
 
 - **Parallelism.** The suite still runs with one worker. `User.activeTeamId` is
@@ -247,13 +376,12 @@ than after a seven-minute build.
   change that would move the 13.6-minute runtime materially. Everything above
   is the half that does not need new accounts — and it is the half that removes
   the flakes.
-- **Migrating the remaining specs to `createLab`.** Four are done
-  (`synthesis-matrix`, `F4`, `F4-print`, `F3-plan-paste` — v0.73.0); the rest
-  still use the shared lab. Each migration deletes a `beforeAll` full of
-  `deleteMany` calls and removes one more reason for CROSS-FILE pollution — it
-  usually does NOT let a file drop `mode: 'serial'` on its own, since most of
-  these files test a genuinely sequential state machine (a later AC reads what
-  an earlier one saved) rather than independent concerns.
+- **Migrating the remaining specs to `createLab`.** All but `a11y` and `pvp` are
+  done. Each migration deletes a `beforeAll` full of `deleteMany` calls and
+  removes one more reason for CROSS-FILE pollution. It does NOT make a file's
+  tests independent of each other: most test a genuinely sequential state
+  machine (a later AC reads what an earlier one saved), so they still rely on
+  declaration order — see the note below.
 - **v0.71.0 silently broke `createLab()` for every consumer, fixed in v0.73.0.**
   `TeamMember.userId` became `@@unique` (one-team-at-a-time) in v0.71.0, but
   `e2e/lab.ts` was never updated for it — every `createLab()` call gave the

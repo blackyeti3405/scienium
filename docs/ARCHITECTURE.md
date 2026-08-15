@@ -1178,10 +1178,11 @@ Progress keys include user, team, track, and lesson. First completion awards KP
 once, and an atomic user/team/day counter enforces the daily cap.
 
 Content growth is a `.claude/codex-pipeline/` authoring process (one Workflow
-per segment), not an architectural change to the engine above. As of this
-writing the library stands at 6/29 fields (36/174 segments); the
-`clinical-medicine-pharmacology` field is now complete (Core + 5 subfield
-branches, 275 lessons).
+per FIELD — brief, draft and adversarially fact-check all six segments in a
+single fan-out, then assemble deterministically with `codex:merge`), not an
+architectural change to the engine above. As of this writing the library stands
+at 19/29 fields (114/174 segments, 5,215 lessons); the `molecular-cell-biology`
+field is the most recent to complete (Core + 5 subfield branches, 275 lessons).
 
 ### 8.6 Science Fair Hub
 

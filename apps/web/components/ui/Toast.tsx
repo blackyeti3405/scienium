@@ -1,6 +1,7 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 /**
  * Floating pixel-styled notice pill — THE shared primitive for transient
@@ -14,9 +15,12 @@ import type { ReactNode } from 'react'
  *     </Toast>
  *   )}
  *
- * Renders absolutely positioned against the nearest positioned ancestor (the
- * feature shell), horizontally centered. `nonce` re-mounts the pill so a rapid
- * second notice restarts its entry animation.
+ * Inside a FeaturePanel overlay the pill renders INTO the panel's title bar —
+ * the panel body clips its own overflow, so anything positioned at the top of
+ * the feature lands on the feature's own toolbar instead. On a standalone route
+ * (no panel bar) it falls back to the top of the nearest positioned ancestor.
+ * Horizontally centered either way; `nonce` re-mounts the pill so a rapid second
+ * notice restarts its entry animation.
  */
 export type ToastTone = 'kp' | 'error'
 
@@ -33,13 +37,20 @@ export interface ToastProps {
 }
 
 export function Toast({ tone = 'kp', nonce, children }: ToastProps) {
-  return (
+  const [bar, setBar] = useState<Element | null>(null)
+  useEffect(() => setBar(document.querySelector('.feature-panel__bar')), [])
+
+  const pill = (
     <div
       key={nonce}
       role="status"
-      className={`pointer-events-none absolute top-4 left-1/2 z-[60] -translate-x-1/2 rounded-sm border px-4 py-2 font-pixel text-[9px] shadow-lg ${TONE_CLASSES[tone]}`}
+      className={`pointer-events-none absolute left-1/2 z-[60] -translate-x-1/2 rounded-sm border px-4 py-1.5 font-pixel text-[9px] shadow-lg ${
+        bar ? 'top-1/2 -translate-y-1/2' : 'top-4'
+      } ${TONE_CLASSES[tone]}`}
     >
       {children}
     </div>
   )
+
+  return bar ? createPortal(pill, bar) : pill
 }

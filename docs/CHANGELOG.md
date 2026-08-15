@@ -5,6 +5,100 @@ Format: `## [version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **F
 
 ---
 
+## [0.82.0] — 2026-08-12
+
+A testing-hardening pass, four more Codex fields, and three lab/Discovery UI
+fixes. The testing work is the substantial half: coverage is now a CI gate
+measured over *every* authored `lib/**` module rather than only the ones a test
+happens to import, and the E2E suite lost the serial-mode cascade that was
+letting one failure skip 81% of the run. That cascade is also how v0.81.0 came
+to claim the `capture` project "never joins a suite run" — it had been running
+as test 374 of 374 in both the nightly lane and local `test:e2e`.
+
+### Added
+
+- **Four Field Codex fields** — `immunology-microbiology`, `materials-science`,
+  `meteorology-climate`, and `molecular-cell-biology`, each Core + 5 subfield
+  branches at 43 units / 275 lessons. The library goes **15 → 19 of 29 fields,
+  90 → 114 of 174 segments, 4,115 → 5,215 lessons**.
+- **A coverage floor in CI.** `verify` now runs `test:coverage` instead of
+  `test`, with thresholds in `vitest.config.ts` (statements 77 / branches 69 /
+  functions 77 / lines 79). `include: ['lib/**']` measures authored modules even
+  when no test imports them, so a new untested service *lowers* the number
+  instead of disappearing from the report. Generated Codex content, generated
+  registries and the Pyodide worker are excluded — they have their own gates.
+- **Twelve unit suites** covering the previously route-only-tested seams:
+  activity log, clearance context, data-request inventory, vocab curation,
+  project-log service, codex study-plan, PvP matchmaking / spell catalog / spell
+  power, and team advance / class-scope / progression.
+- **A runtime-error sentinel for E2E** (`e2e/test.ts`). Every spec now imports
+  `test` from there, and a test fails if the page raised an uncaught exception, a
+  `console.error` (React hydration and key warnings included), or a same-origin
+  5xx that the spec did not declare. Third-party 5xx are ignored as somebody
+  else's outage. A spec that provokes an error on purpose opts out narrowly with
+  `allowErrors(page, /pattern/)`, which turns "this route 500s here" into an
+  assertion rather than an absence.
+- `docs/TESTING_AUDIT_2026-08-11.md` — the audit behind the floors, including the
+  before/after coverage table and what is deliberately classified as
+  browser-owned or generated rather than counted as untested logic.
+- `test/gateway-layout.test.ts` — pins that every gateway holds a distinct
+  on-grid cell (nothing at the DB level stops two sharing one) and that the three
+  starting gateways sit in one row.
+
+### Changed
+
+- **A new lab opens with its three starting gateways in a row** — Operations Hub
+  centre at (0,0), Discovery to its left, Science Fair to its right; Literature
+  Review takes the vacated front-centre cell. Existing labs keep the positions
+  stored in `team_gateway_placements`; only newly created labs get the new
+  defaults.
+- **The KP toast renders in the feature panel's title bar.** It used to sit at
+  the top of the feature body, which the panel clips — so in Discovery it landed
+  on the feature's own toolbar. `Toast` now portals into `.feature-panel__bar`,
+  falling back to the old placement on the standalone `/discovery` route, which
+  has no panel bar.
+- **The Discovery tree's interest swatch moved inside the node**, centred on its
+  right edge instead of floating below-left; the credibility tier dot and the
+  explored ✓ restack above and below it in the same column.
+- **`PYODIDE_SOURCE=local` is pinned in `playwright.config.ts`.** `E2E_BUILD=1`
+  runs production mode, where Next loads `.env.production.local` at higher
+  precedence than `.env.local` — a checkout holding production env there silently
+  handed the E2E server `PYODIDE_SOURCE=r2`, whose wheels do not exist until a
+  one-time upload, so all 18 Lab/Code specs waited out 150s each. A real process
+  env var outranks every `.env` file; `preflight` asserts it took effect.
+- **The `capture` Playwright project is opt-in** behind `E2E_CAPTURE=1`.
+
+### Fixed
+
+- **One E2E failure no longer skips the rest of its file.** 25 spec files set
+  `mode: 'serial'` for an ordering guarantee `fullyParallel: false` already
+  provides; what serial mode actually added was skipping every later test in the
+  group on a failure. 307 of 379 tests (81%) sat behind that, and one red run
+  cost 48 tests that never executed — hiding four assertions that had been dead
+  for five versions.
+- The `.capture.ts` suffix did **not** keep marketing screenshots out of suite
+  runs, contrary to the v0.81.0 note: a project-level `testMatch` *replaces* the
+  config default rather than intersecting with it, so a bare `playwright test`
+  ran every configured project. Now gated on `E2E_CAPTURE`.
+- **The Data Terminal's reference guides are reachable again.** SPEC §7.6 has
+  always specified two unlock rules for that tab — the datasets workbench
+  phase-gated to `project_development`, the five guides always available — but
+  v0.80.0 gave the whole tab a `feature: 'data_terminal'` gate and filtered it
+  out wholesale. That hid the Stats and Charts guides during exactly the phase
+  the tab's own copy tells students to read them in ("read them while you plan"),
+  and made `DatasetsView`'s "unlocks at the Working phase" screen unreachable.
+  The tab is now always present and gates its own contents; the datasets route
+  still 403s server-side, which is what that screen renders from. `TabDef.feature`
+  is optional for this case, documented in place.
+
+### Removed
+
+- `test.describe.configure({ mode: 'serial' })` from 25 spec files. Specs that
+  genuinely depend on declaration order now say so in a comment and rely on
+  `fullyParallel: false`.
+
+---
+
 ## [0.81.0] — 2026-08-10
 
 The progression rework lands properly, the front door becomes a real landing

@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { type Page } from '@playwright/test'
 import { api, withRateLimitRetry, openLiteratureReview, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
@@ -60,7 +61,6 @@ const RUN_ID = Date.now()
 let lab: OwnedLab
 
 test.describe('F11 — Vega quiz-miss review + targeted retry loop', () => {
-  test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
     lab = await createLab('quiz-retry')

@@ -20,10 +20,10 @@ import { isPhaseAtLeast, type Phase, type Feature } from '@/lib/phase'
 import type { GatewayKey } from '@/lib/sprites/manifest'
 
 /**
- * An isometric grid cell, relative to the central Discovery building at (0,0).
+ * An isometric grid cell, relative to the central Operations Hub at (0,0).
  * Screen offset from the cluster centre is:
  *   dx = (gx - gy) * STEP_X      dy = (gx + gy) * STEP_Y
- * so the lab expands right / left / up / down around Discovery, and depth order
+ * so the lab expands right / left / up / down around the Hub, and depth order
  * is (gx + gy) — higher = nearer the viewer = drawn on top.
  */
 export interface IsoCell {
@@ -40,13 +40,14 @@ export interface Gateway {
   unlockPhase: Phase
   /** One-line description shown on hover. */
   hint: string
-  /** Position on the isometric plot, around the central Discovery building. */
+  /** Position on the isometric plot, around the central Operations Hub. */
   cell: IsoCell
 }
 
-// Compact diamond cluster centred on Discovery (0,0): Science Fair to the right,
-// Literature to the left, the daily Operations Hub up front-centre, Research Plan
-// and PvP flanking the front, Showcase grandly at the back.
+// Compact diamond cluster centred on the Operations Hub (0,0). The three
+// starting gateways stand in one row — Discovery left, Operations Hub centre,
+// Science Fair right — with Literature up front-centre, Research Plan and PvP
+// flanking the front, Showcase grandly at the back.
 export const GATEWAYS: Gateway[] = [
   {
     key: 'showcase',
@@ -62,7 +63,7 @@ export const GATEWAYS: Gateway[] = [
     feature: 'discovery',
     unlockPhase: 'discovery',
     hint: 'Explore topics & Wikipedia deep dives',
-    cell: { gx: 0, gy: 0 }, // centre
+    cell: { gx: -1, gy: 1 }, // left
   },
   {
     key: 'science_fair',
@@ -78,7 +79,7 @@ export const GATEWAYS: Gateway[] = [
     feature: 'literature',
     unlockPhase: 'literature_review',
     hint: 'Review papers, library & citation graph',
-    cell: { gx: -1, gy: 1 }, // left
+    cell: { gx: 1, gy: 1 }, // front-centre
   },
   {
     key: 'operations_hub',
@@ -89,7 +90,7 @@ export const GATEWAYS: Gateway[] = [
     feature: 'logs',
     unlockPhase: 'discovery',
     hint: 'Project & Failure Logs — Field Codex and Expertise unlock later',
-    cell: { gx: 1, gy: 1 }, // front-centre (closest)
+    cell: { gx: 0, gy: 0 }, // centre
   },
   {
     key: 'research_plan',

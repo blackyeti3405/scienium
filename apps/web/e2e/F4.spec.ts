@@ -1,4 +1,5 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test'
+import { test, expect } from './test'
+import { request as playwrightRequest } from '@playwright/test'
 import { api, gotoFresh, withSeedPage } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { minimalPdfBytes, minimalPngBytes } from './fixtures'
@@ -65,8 +66,8 @@ const REJECTION_NOTE = `[E2E-F4-${RUN_ID}] Please add your raw data table to the
 // ── Suite ─────────────────────────────────────────────────────────────────────
 
 test.describe('F4 — Teacher moderation gate for public showcases', () => {
-  // All tests mutate DB state; serial is required.
-  test.describe.configure({ mode: 'serial' })
+  // Order-dependent (order comes from fullyParallel:false — see playwright.config.ts): all tests mutate the
+  // same showcase row and each leaves state ready for the next.
 
   // ── Seed ─────────────────────────────────────────────────────────────────────
 

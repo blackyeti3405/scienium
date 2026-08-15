@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './test'
 import { withSeedPage, gotoFresh } from './api'
 import { e2eDb } from './db'
 

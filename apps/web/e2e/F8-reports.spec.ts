@@ -1,4 +1,5 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test'
+import { test, expect } from './test'
+import { request as playwrightRequest } from '@playwright/test'
 import { STORAGE } from './roles'
 import { api, withSeedPage, gotoFresh } from './api'
 
@@ -22,7 +23,7 @@ import { api, withSeedPage, gotoFresh } from './api'
  *  AC2  — Teacher layout nav shows a "Reports" link with href /teacher/reports
  *  AC3  — GET /api/teacher/reports as teacher -> 200 JSON with the 5 aggregate keys
  *  AC4  — CORRECTED per task brief: unauthenticated GET is blocked pre-route by
- *         Clerk middleware with a 307 -> /sign-in (not 401), no data in body
+ *         Clerk middleware with a JSON 401 (not a sign-in redirect), no data in body
  *  AC5  — CORRECTED per task brief: authenticated non-teacher (leader/student)
  *         gets whatever requireTeacher's role layer actually returns (403 JSON
  *         `{ error: 'Teacher access required' }`), asserted as that real behavior
@@ -91,7 +92,7 @@ test.describe('F8 — Teacher Reports', () => {
   })
 
   // ── AC4 (corrected) ────────────────────────────────────────────────────────
-  test('AC4: unauthenticated GET is blocked pre-route with a 307 redirect to /sign-in', async () => {
+  test('AC4: unauthenticated GET is blocked pre-route with a JSON 401', async () => {
     // storageState MUST be explicitly cleared: playwrightRequest.newContext
     // otherwise inherits the chromium project's default storageState
     // (STORAGE.leader), which would make this "unauthenticated" request
@@ -99,8 +100,12 @@ test.describe('F8 — Teacher Reports', () => {
     const anonCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: undefined })
     try {
       const res = await anonCtx.get('/api/teacher/reports', { maxRedirects: 0 })
-      expect(res.status()).toBe(307)
-      expect(res.headers()['location']).toContain('/sign-in')
+      // v0.78.0 (febe752e): /api/* answers an unauthenticated caller with JSON 401,
+      // NOT a 307 to /sign-in. A fetch follows that redirect and hands the caller a
+      // 200 carrying sign-in HTML, so `res.ok` is true and `res.json()` dies on
+      // "<!DOCTYPE". The block is still pre-route — no handler runs — which is what
+      // the no-leak assertions below prove.
+      expect(res.status()).toBe(401)
 
       const text = await res.text()
       expect(text).not.toContain('"phaseCounts"')

@@ -70,6 +70,10 @@ export const CODEX_TRACKS: CodexTrackSummary[] = [
   { slug: 'gait-biomechanics', label: 'Gait Biomechanics', branchCount: 5, lessonCount: 274 },
   { slug: 'genetics-genomics', label: 'Genetics / Genomics', branchCount: 5, lessonCount: 275 },
   { slug: 'geology-seismology', label: 'Geology / Seismology', branchCount: 5, lessonCount: 275 },
+  { slug: 'immunology-microbiology', label: 'Immunology / Microbiology', branchCount: 5, lessonCount: 275 },
+  { slug: 'materials-science', label: 'Materials Science', branchCount: 5, lessonCount: 275 },
+  { slug: 'meteorology-climate', label: 'Meteorology / Climate', branchCount: 5, lessonCount: 275 },
+  { slug: 'molecular-cell-biology', label: 'Molecular & Cell Biology', branchCount: 5, lessonCount: 275 },
 ]
 
 type CodexTrackSlug = (typeof CODEX_TRACKS)[number]['slug']
@@ -97,6 +101,10 @@ const LOADERS: Record<CodexTrackSlug, () => Promise<{ default: CodexTrack }>> = 
   'gait-biomechanics': () => import('./tracks/gait-biomechanics'),
   'genetics-genomics': () => import('./tracks/genetics-genomics'),
   'geology-seismology': () => import('./tracks/geology-seismology'),
+  'immunology-microbiology': () => import('./tracks/immunology-microbiology'),
+  'materials-science': () => import('./tracks/materials-science'),
+  'meteorology-climate': () => import('./tracks/meteorology-climate'),
+  'molecular-cell-biology': () => import('./tracks/molecular-cell-biology'),
 }
 
 /**

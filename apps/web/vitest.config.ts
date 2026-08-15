@@ -33,5 +33,33 @@ export default defineConfig({
       'components/**/*.test.ts',
     ],
     globals: false,
+    coverage: {
+      provider: 'v8',
+      // Measure every authored library module, including modules no test imports.
+      // Presentational React behavior remains owned by Playwright; generated data,
+      // generated registries and browser-worker bundles are verified by their own
+      // integrity/smoke gates and would distort this logic-focused signal.
+      include: ['lib/**/*.{ts,mjs}'],
+      exclude: [
+        'lib/**/*.test.ts',
+        'lib/ops/codex/content/**',
+        'lib/ops/codex/tracks/**',
+        'lib/ops/codex/scripts/**',
+        'lib/data-terminal/charts/**',
+        'lib/data-terminal/runtime/analysis-templates.mjs',
+        'lib/data-terminal/runtime/pyodide.worker.ts',
+        'lib/sprites/*.generated.ts',
+      ],
+      reporter: ['text', 'json-summary'],
+      thresholds: {
+        // Audited baseline (2026-08-11): 77.92 / 69.75 / 77.98 / 79.67.
+        // These are regression floors, not a claim that the remaining lines are
+        // unimportant. Raise them as behavior is moved behind testable seams.
+        statements: 77,
+        branches: 69,
+        functions: 77,
+        lines: 79,
+      },
+    },
   },
 })

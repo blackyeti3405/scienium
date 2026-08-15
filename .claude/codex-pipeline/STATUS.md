@@ -10,7 +10,7 @@
 > Symbols: ✅ all 6 segments built · 🔨 partial · ⬜ not started.
 > Each field = 1 Core + 5 subfields = 6 segments; 29 fields = **174 segments** total.
 
-**Progress: 15 / 29 fields · 90 / 174 segments.**
+**Progress: 19 / 29 fields · 114 / 174 segments.**
 
 ---
 
@@ -164,45 +164,45 @@
 - [x] seismology-earthquake-science
 - [x] structural-geology-geophysics
 
-## immunology-microbiology ⬜
+## immunology-microbiology ✅
 *Immunology / Microbiology*
 
-- [ ] Core
-- [ ] adaptive-immunity
-- [ ] antimicrobial-resistance
-- [ ] applied-antimicrobial-testing
-- [ ] host-pathogen-infection
-- [ ] microbial-ecology
+- [x] Core
+- [x] adaptive-immunity
+- [x] antimicrobial-resistance
+- [x] applied-antimicrobial-testing
+- [x] host-pathogen-infection
+- [x] microbial-ecology
 
-## materials-science ⬜
+## materials-science ✅
 *Materials Science*
 
-- [ ] Core
-- [ ] ceramics-glasses
-- [ ] composites-biomaterials
-- [ ] metals-alloys
-- [ ] nanomaterials-thin-films
-- [ ] polymers-soft-matter
+- [x] Core
+- [x] ceramics-glasses
+- [x] composites-biomaterials
+- [x] metals-alloys
+- [x] nanomaterials-thin-films
+- [x] polymers-soft-matter
 
-## meteorology-climate ⬜
+## meteorology-climate ✅
 *Meteorology / Climate*
 
-- [ ] Core
-- [ ] applied-wind-solar-resource
-- [ ] atmospheric-chemistry-aerosols
-- [ ] boundary-layer-microclimate
-- [ ] climatology-climate-dynamics
-- [ ] synoptic-severe-weather
+- [x] Core
+- [x] applied-wind-solar-resource
+- [x] atmospheric-chemistry-aerosols
+- [x] boundary-layer-microclimate
+- [x] climatology-climate-dynamics
+- [x] synoptic-severe-weather
 
-## molecular-cell-biology ⬜
+## molecular-cell-biology ✅
 *Molecular & Cell Biology*
 
-- [ ] Core
-- [ ] cell-culture-microscopy
-- [ ] cell-signaling-metabolism
-- [ ] molecular-cloning-techniques
-- [ ] molecular-toxicology-stress
-- [ ] transcriptional-epigenetic-regulation
+- [x] Core
+- [x] cell-culture-microscopy
+- [x] cell-signaling-metabolism
+- [x] molecular-cloning-techniques
+- [x] molecular-toxicology-stress
+- [x] transcriptional-epigenetic-regulation
 
 ## neuroscience ⬜
 *Neuroscience*

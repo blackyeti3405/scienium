@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, allowErrors } from './test'
+import { type Page } from '@playwright/test'
 import { api, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { dismissHome, openDiscovery } from './discovery-helpers'
@@ -181,10 +182,10 @@ async function clickSwatchAndWait(page: Page, nodeId: string) {
 }
 
 test.describe('F11 — Discovery interest color-coding + Discovery Tree view + New-tree creation', () => {
-  // Serial: several tests seed/mark/delete nodes on the one shared team tree;
-  // running out of order or concurrently would race root counts and tier
-  // section membership between tests.
-  test.describe.configure({ mode: 'serial', timeout: 90_000 })
+  // Order-dependent (order comes from fullyParallel:false — see playwright.config.ts): several tests
+  // seed/mark/delete nodes on the one shared team tree, so root counts and
+  // tier section membership carry between them.
+  test.describe.configure({ timeout: 90_000 })
 
   // Still tracked — but for LOGIC, not cleanup: AC14/AC15 identify the root a
   // test just created by excluding the ones earlier tests made, and a disposable
@@ -202,6 +203,14 @@ test.describe('F11 — Discovery interest color-coding + Discovery Tree view + N
     // `dispose()` removes the nodes with the lab, including the parent/child
     // descendants `deleteE2eDiscoveryNodes` had to walk by hand.
     await lab.dispose()
+  })
+
+  test.beforeEach(async ({ page }) => {
+    // This file seeds roots with synthetic titles ("F11 e2e cycle-mid <ts>"), so
+    // the reader's article lookup for them legitimately 404s — there is no such
+    // article. A fixture artifact, not app behaviour, so it is scoped to that
+    // one route instead of being allowed suite-wide.
+    allowErrors(page, /\/api\/discovery\/article/)
   })
 
   // ── AC1 ──────────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
-import { test, expect, type Browser } from '@playwright/test'
+import { test, expect } from './test'
+import { type Browser } from '@playwright/test'
 import { api, withSeedPage } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'

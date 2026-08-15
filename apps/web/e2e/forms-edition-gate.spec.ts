@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, allowErrors } from './test'
 import { openGateway } from './api'
 import { createLab, type OwnedLab } from './lab'
 
@@ -21,7 +21,6 @@ import { createLab, type OwnedLab } from './lab'
 let lab: OwnedLab
 
 test.describe('Forms checklist — unreviewed edition (§0.8)', () => {
-  test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
     lab = await createLab('edgate')
@@ -62,7 +61,13 @@ test.describe('Forms checklist — unreviewed edition (§0.8)', () => {
 let failLab: OwnedLab
 
 test.describe('Forms checklist — load and status-update failures (P2-4)', () => {
-  test.describe.configure({ mode: 'serial' })
+  // Every test in this block deliberately makes /api/fairs/forms fail, so the
+  // error sentinel (e2e/test.ts) would otherwise fail them for the very thing
+  // they exist to prove. Scoped to that one route: an unexpected error anywhere
+  // ELSE on the page is still a failure, which is the whole point.
+  test.beforeEach(async ({ page }) => {
+    allowErrors(page, /\/api\/fairs\/forms/)
+  })
 
   test.beforeAll(async () => {
     failLab = await createLab('p24lab')

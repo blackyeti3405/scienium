@@ -1,4 +1,5 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test'
+import { test, expect } from './test'
+import { request as playwrightRequest } from '@playwright/test'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
 import { gotoFresh } from './api'
@@ -87,10 +88,10 @@ function valueAfterLabel(cardText: string, label: string): string | null {
 }
 
 test.describe('F10 — Momentum weekly recap card', () => {
-  // Serial: several tests share the same localStorage dismiss key on the same
-  // team/context; running them out of order or concurrently would let one
-  // test's dismiss action bleed into another's "card should be visible" assertion.
-  test.describe.configure({ mode: 'serial', timeout: 60_000 })
+  // Order-dependent (order comes from fullyParallel:false — see playwright.config.ts): several tests share the
+  // same localStorage dismiss key on the same team/context, so one test's
+  // dismiss action would otherwise bleed into another's "card is visible".
+  test.describe.configure({ timeout: 60_000 })
 
   test.beforeAll(async () => {
     // Momentum is computed from the TEAM's recent activity, so on the shared

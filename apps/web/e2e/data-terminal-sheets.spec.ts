@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { type Page } from '@playwright/test'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
 

@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './test'
+import { request as playwrightRequest } from '@playwright/test'
 import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
@@ -36,8 +37,8 @@ let lab: OwnedLab
 let seededId: string | null = null
 
 test.describe('F1 — Student-facing teacher feedback inbox', () => {
-  // Run tests in serial so DB state mutations (mark-addressed, resolve) do not race.
-  test.describe.configure({ mode: 'serial' })
+  // Order-dependent (order comes from fullyParallel:false — see playwright.config.ts): DB state mutations
+  // (mark-addressed, resolve) build on each other.
 
   // ── Seed / teardown ───────────────────────────────────────────────────────────
 
@@ -288,16 +289,30 @@ test.describe('F1 — Student-facing teacher feedback inbox', () => {
   })
 
   test('AC11 (401): GET /api/team/feedback denies unauthenticated access', async () => {
-    // Clerk's @testing/playwright clerkSetup() installs browser-level FAPI
-    // interceptors that inject the testing JWT into every in-context fetch,
-    // making it impossible to simulate a truly signed-out browser request here.
-    // Observable security: requireTeamContext returns 401 when auth() yields no
-    // userId; Clerk middleware redirects unauthenticated browser requests to
-    // /sign-in (HTTP 307).  Verified outside the runner: curl → 307.
-    test.skip(
-      true,
-      'Clerk @testing interceptors prevent unauthenticated E2E requests; verified at route level',
-    )
+    // This AC was skipped from the day it was written, on the belief that Clerk's
+    // @testing/playwright interceptors inject the testing JWT into every
+    // in-context fetch and so a signed-out request could not be simulated. That
+    // is true of a request made through an AUTHENTICATED context — but a request
+    // context built with `storageState: undefined` has no session to inject, and
+    // five other specs now prove the point by getting a real 401 that way
+    // (F8-reports AC4, F10-teacher-rubric AC13, papers-tab PM7,
+    // disco-article-sources AC-Article-5, lit-explain-it-back). So the security
+    // assertion this AC names runs for real now, instead of being taken on trust.
+    const anonCtx = await playwrightRequest.newContext({
+      baseURL: `http://localhost:${process.env.E2E_PORT ?? 3000}`,
+      storageState: undefined,
+    })
+    try {
+      const res = await anonCtx.get('/api/team/feedback', { maxRedirects: 0 })
+      // v0.78.0 (febe752e): /api/* answers JSON 401, never a 307 to sign-in HTML.
+      expect(res.status()).toBe(401)
+
+      const text = await res.text()
+      expect(text).not.toContain('"items"')
+      expect(text).not.toContain('"unresolvedCount"')
+    } finally {
+      await anonCtx.dispose()
+    }
   })
 
   // ── AC12 ─────────────────────────────────────────────────────────────────────

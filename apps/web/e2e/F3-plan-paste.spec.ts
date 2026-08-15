@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { type Page } from '@playwright/test'
 import { api, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
@@ -11,8 +12,8 @@ import { createLab, type OwnedLab } from './lab'
  * disposable per-file lab (`createLab`, e2e/lab.ts) rather than the shared
  * "E2E Test Lab" — this file's own ACs are inherently a sequential state
  * machine (AC5 reads what AC4 saved, AC8/AC9 reload it, AC10/AC11 mutate it
- * further), so `mode: 'serial'` stays (no other spec touches
- * `research_plans`, so this was never cross-spec pollution). A fresh, empty
+ * further), and it relies on declaration order to stay one (no other spec
+ * touches `research_plans`, so this was never cross-spec pollution). A fresh, empty
  * ResearchPlan row also makes AC7's idea-check quota deterministic (3/3,
  * never partially consumed by another suite sharing the old fixture team).
  *
@@ -121,9 +122,8 @@ async function selectProjectType(dialog: ReturnType<Page['getByRole']>) {
 }
 
 test.describe('F3 — Research Plan paste-text fallback', () => {
-  // Tests mutate the same team's single ResearchPlan row serially — must not
-  // run concurrently or later ACs would race earlier ones' saves.
-  test.describe.configure({ mode: 'serial' })
+  // Order-dependent (order comes from fullyParallel:false — see playwright.config.ts): tests mutate the same
+  // team's single ResearchPlan row, so later ACs read earlier ones' saves.
 
   // ── Disposable lab ─────────────────────────────────────────────────────────
   // A fresh team per file run (e2e/lab.ts) instead of the shared "E2E Test

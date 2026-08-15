@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { type Page } from '@playwright/test'
 import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
@@ -59,8 +60,8 @@ function seedCard(page: Page) {
 }
 
 test.describe('F2 — Failure Log AI "dig deeper" follow-up', () => {
-  // Serial: state mutations (generate, answer) must not race.
-  test.describe.configure({ mode: 'serial' })
+  // Order-dependent (order comes from fullyParallel:false — see playwright.config.ts): the state mutations
+  // (generate, then answer) build on each other.
 
   // ── Seed / teardown ─────────────────────────────────────────────────────────
 

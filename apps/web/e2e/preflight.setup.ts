@@ -61,12 +61,25 @@ setup('preflight: server, database and fixture are the ones the suite expects', 
     mockSources: boolean
     dbFingerprint: string | null
     nodeEnv: string
+    pyodideSource: string
   }
   expect(health.skipLlm, 'the server reports it is not stubbing LLM calls').toBe(true)
   expect(
     health.mockSources,
     'E2E_MOCK_SOURCES is not set on the server — the discovery specs would hit live APIs',
   ).toBe(true)
+  // `next start` is production mode, so `.env.production.local` outranks
+  // `.env.local`. If that file carries `PYODIDE_SOURCE=r2` (a maintainer's copy
+  // of the production environment does), the runtime proxy serves from a bucket
+  // the wheels may never have been uploaded to. There is no error to find later:
+  // the fetches are inside a Web Worker, so all 18 Lab/Code specs simply wait
+  // 150s each on a Run button that never enables. Two seconds here instead.
+  expect(
+    health.pyodideSource,
+    'the server will serve the Pyodide runtime from R2, not the local cache. ' +
+      'playwright.config.ts sets PYODIDE_SOURCE=local for this reason, so something ' +
+      'is overriding it — check apps/web/.env.production.local.',
+  ).toBe('local')
 
   // ── 2. Runner and server share one database ─────────────────────────────
   const [{ fp }] = await e2eDb.$queryRaw<{ fp: string }[]>`

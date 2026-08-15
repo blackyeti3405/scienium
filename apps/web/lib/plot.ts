@@ -3,7 +3,7 @@
  * the placement interaction, and the server-side placement validation.
  *
  * The plot is a finite diamond of 1×1 cells addressed by integer (gx, gy), with
- * the central Discovery gateway at (0, 0). The screen transform matches the
+ * the central Operations Hub gateway at (0, 0). The screen transform matches the
  * cluster the scene already used (lib/gateways.ts header):
  *
  *   dx = (gx − gy) · STEP_X     dy = (gx + gy) · STEP_Y

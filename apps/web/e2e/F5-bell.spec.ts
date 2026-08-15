@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { type Page } from '@playwright/test'
 import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
@@ -54,9 +55,8 @@ async function seedExtraFeedback(page: Page, bodySuffix: string): Promise<void> 
 }
 
 test.describe('F5 — Notification bell: all five kinds first-class', () => {
-  // Serial: seeding + read-state assertions mutate shared notification rows on
-  // the one E2E Test Lab team, so races between tests must be avoided.
-  test.describe.configure({ mode: 'serial' })
+  // Order-dependent (order comes from fullyParallel:false — see playwright.config.ts): seeding and
+  // read-state assertions mutate shared notification rows on the one team.
 
   // ── Seed / teardown ───────────────────────────────────────────────────────────
 

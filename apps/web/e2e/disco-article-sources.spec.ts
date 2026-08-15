@@ -1,4 +1,5 @@
-import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { request as playwrightRequest, type Page } from '@playwright/test'
 import { api, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { dismissHome, openDiscovery, resetTree, treeHasExternalId } from './discovery-helpers'
@@ -40,7 +41,7 @@ import { dismissHome, openDiscovery, resetTree, treeHasExternalId } from './disc
  *     already exercised for the sibling `source` node type in papers-tab.spec.ts
  *     AC7/PM6 — not re-proven here to avoid a redundant duplicate).
  *  5. AC-Article-5 — unauthenticated requests to the new article routes
- *     (browse GET, resolve POST) 307-redirect to /sign-in (not 401), with no
+ *     (browse GET, resolve POST) get a JSON 401 (not a sign-in redirect), with no
  *     article data in the response body.
  */
 
@@ -70,9 +71,9 @@ async function waitForArticlePersisted(page: Page, externalId: string) {
 let lab: OwnedLab
 
 test.describe('Feature — disco-article-sources (article Discovery source type)', () => {
-  // Serial: every test in this FILE shares one discovery tree. The lab is
-  // per-file, so `beforeEach` still has to reset between tests.
-  test.describe.configure({ mode: 'serial' })
+  // Order-dependent (order comes from fullyParallel:false — see playwright.config.ts): every test in this
+  // FILE shares one discovery tree. The lab is per-file, so `beforeEach` still
+  // has to reset between tests.
 
   test.beforeAll(async () => {
     lab = await createLab('article-sources')
@@ -274,7 +275,7 @@ test.describe('Feature — disco-article-sources (article Discovery source type)
   })
 
   // ── Criterion 5 ──────────────────────────────────────────────────────────────
-  test('AC-Article-5: unauthenticated requests to the article routes 307-redirect to /sign-in, no article data leaks', async ({
+  test('AC-Article-5: unauthenticated requests to the article routes get a JSON 401, no article data leaks', async ({
     page,
   }) => {
     // Navigate first so a live page exists for context (not strictly required for
@@ -288,8 +289,12 @@ test.describe('Feature — disco-article-sources (article Discovery source type)
     try {
       // GET .../articles/browse
       const browseRes = await anonCtx.get('/api/discovery/articles/browse?feed=quanta', { maxRedirects: 0 })
-      expect(browseRes.status()).toBe(307)
-      expect(browseRes.headers()['location']).toContain('/sign-in')
+      // v0.78.0 (febe752e): /api/* answers an unauthenticated caller with JSON 401,
+      // NOT a 307 to /sign-in. A fetch follows that redirect and hands the caller a
+      // 200 carrying sign-in HTML, so `res.ok` is true and `res.json()` dies on
+      // "<!DOCTYPE". The block is still pre-route — no handler runs — which is what
+      // the no-leak assertions below prove.
+      expect(browseRes.status()).toBe(401)
       const browseText = await browseRes.text()
       expect(browseText).not.toContain('"results"')
       expect(browseText).not.toContain('"feeds"')
@@ -300,8 +305,12 @@ test.describe('Feature — disco-article-sources (article Discovery source type)
         data: { externalId: JOURNALISM_EXTERNAL_ID, feed: 'quanta' },
         maxRedirects: 0,
       })
-      expect(resolveRes.status()).toBe(307)
-      expect(resolveRes.headers()['location']).toContain('/sign-in')
+      // v0.78.0 (febe752e): /api/* answers an unauthenticated caller with JSON 401,
+      // NOT a 307 to /sign-in. A fetch follows that redirect and hands the caller a
+      // 200 carrying sign-in HTML, so `res.ok` is true and `res.json()` dies on
+      // "<!DOCTYPE". The block is still pre-route — no handler runs — which is what
+      // the no-leak assertions below prove.
+      expect(resolveRes.status()).toBe(401)
       const resolveText = await resolveRes.text()
       expect(resolveText).not.toContain('"html"')
       expect(resolveText).not.toContain('"excerpt"')

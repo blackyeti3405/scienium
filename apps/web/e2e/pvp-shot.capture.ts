@@ -1,11 +1,15 @@
 /**
  * Marketing capture: a live PvP raid, written to public/marketing/pvp.png.
  *
- * NOT a test — it asserts almost nothing and it writes into the repo. The
- * filename deliberately ends `.capture.ts` so Playwright's default
- * `**\/*.spec.ts` match never picks it up; it runs only via its own project:
+ * NOT a test — it asserts almost nothing and it writes into the repo. It runs
+ * only when its project is explicitly enabled:
  *
- *   pnpm --filter web exec playwright test --project=capture
+ *   E2E_CAPTURE=1 pnpm --filter web exec playwright test --project=capture
+ *
+ * The `.capture.ts` suffix keeps it out of the chromium project, but that alone
+ * never kept it out of a SUITE run: a bare `playwright test` runs every
+ * configured project, so this file executed in the nightly `full` lane and in
+ * `pnpm test:e2e` until the capture project was made conditional on E2E_CAPTURE.
  *
  * Why Playwright rather than driving a browser by hand: a raid lasts 15s and a
  * cast effect 900ms, while a round-trip through an interactive browser tool is

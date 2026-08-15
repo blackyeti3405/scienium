@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { type Page } from '@playwright/test'
 import { api, withSeedPage, uploadLogAttachment, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
@@ -125,9 +126,9 @@ function cardFor(page: Page, bodyMarker: string) {
 }
 
 test.describe('F6 — Project-Log log↔log linking', () => {
-  // All tests share the same three seeded entries and mutate their references;
-  // serial execution avoids races between add/remove/reload assertions.
-  test.describe.configure({ mode: 'serial' })
+  // Order-dependent (order comes from fullyParallel:false — see playwright.config.ts): all tests share the
+  // same three seeded entries and mutate their references, so the
+  // add/remove/reload assertions run against each other's results.
 
   // ── Seed / teardown ───────────────────────────────────────────────────────────
 

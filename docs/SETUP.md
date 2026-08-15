@@ -485,14 +485,22 @@ It runs on **every pull request and every push to `main`**, and it is the green 
 3. **Generates the Prisma client** (needed for type-checking)
 4. **`typecheck`** — `tsc --noEmit` (strict)
 5. **`lint`** — ESLint (`next/core-web-vitals`)
-6. **`test`** — the Vitest unit suite
+6. **`test:coverage`** — the Vitest unit suite **plus a coverage floor**. Coverage
+   is measured over every authored `lib/**` module, *including modules no test
+   imports*, so a new untested service lowers the number instead of vanishing
+   from the report. The thresholds in `vitest.config.ts` (statements 77 /
+   branches 69 / functions 77 / lines 79) are **regression floors** from the
+   2026-08-11 audit baseline, not targets — raise them as behavior moves behind
+   testable seams. Generated Codex content, generated registries and
+   browser-worker bundles are excluded; they have their own integrity gates.
 7. **`build`** — a full `next build` with placeholder env (routes are dynamic, so
    the values only need to be *present*; swap in repo Actions secrets for a
    faithful build)
 
 If any step fails, `verify` goes red — that's the signal **not** to merge until
-it's fixed. A green `verify` means types, lint, tests, and the production build
-all pass.
+it's fixed. A green `verify` means types, lint, tests, coverage floors, and the
+production build all pass. Run the coverage gate locally with
+`pnpm --filter web test:coverage`; plain `pnpm --filter web test` skips the floor.
 
 ### 9.3 Branch protection (the gate)
 

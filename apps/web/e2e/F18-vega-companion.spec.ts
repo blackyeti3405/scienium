@@ -1,4 +1,5 @@
-import { test, expect, request as playwrightRequest, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { request as playwrightRequest, type Page } from '@playwright/test'
 import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
@@ -62,7 +63,6 @@ async function openVegaTab(page: Page) {
 let lab: OwnedLab
 
 test.describe('F18 — Study with Vega', () => {
-  test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
     // `true` for co-members: AC4b signs in as the student fixture and asserts

@@ -36,7 +36,8 @@
  * teams' buildings so the raid engine can resolve type-typed damage.
  */
 
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { type Page } from '@playwright/test'
 import { api, openGateway } from './api'
 import {
   e2eDb,
@@ -120,9 +121,9 @@ async function ensureTrophiesBaseline(): Promise<void> {
 }
 
 test.describe('PvP Raid System — section 11 acceptance criteria', () => {
-  // Serial: all tests share one team; concurrent runs would race trophy counts,
-  // quotas, and raid state.
-  test.describe.configure({ mode: 'serial', timeout: 90_000 })
+  // Order-dependent (order comes from fullyParallel:false — see playwright.config.ts): all tests share one
+  // team, carrying trophy counts, quotas and raid state between them.
+  test.describe.configure({ timeout: 90_000 })
 
   test.beforeAll(async () => {
     secondTeamId = await ensureSecondTeam()

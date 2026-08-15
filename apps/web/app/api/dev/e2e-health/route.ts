@@ -49,5 +49,13 @@ export async function GET() {
     mockSources: process.env.E2E_MOCK_SOURCES === '1',
     nodeEnv: process.env.NODE_ENV,
     dbFingerprint: row?.fp ?? null,
+    // Which source the Data Terminal runtime proxy will serve from. Reported
+    // because `next start` is production mode, so `.env.production.local` — a
+    // file that on a maintainer's machine holds the real production
+    // environment — outranks `.env.local` and can point this at R2, where the
+    // wheels may not exist. The whole Lab/Code lane then fails as a 150s
+    // timeout per spec with no error anywhere: the fetches happen inside a Web
+    // Worker, so nothing reaches the page console.
+    pyodideSource: process.env.PYODIDE_SOURCE ?? '(unset — falls back to local cache if present)',
   })
 }

@@ -1,5 +1,7 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, allowErrors } from './test'
+import { type Page } from '@playwright/test'
 import { createLab, type OwnedLab } from './lab'
+import { gotoFresh } from './api'
 import { e2eDb } from './db'
 
 /**
@@ -38,7 +40,13 @@ test.afterEach(async () => {
 
 /** Open the Operations Hub and reveal the Data Terminal's sub-tabs. */
 async function openDataTerminal(page: Page) {
-  await page.goto('/lab')
+  // gotoFresh, not page.goto: deep into a full-suite run the stored Clerk
+  // token has lapsed, and a bare navigation renders /lab with every one of its
+  // data fetches 401ing (notifications, feedback, momentum, codex progress).
+  // The assertions here still passed — the page under test is server-rendered —
+  // which is exactly why this went unnoticed until the error sentinel saw the
+  // 401 burst. See e2e/api.ts.
+  await gotoFresh(page, '/lab')
   await page.getByRole('button', { name: 'Open Operations Hub' }).click({ timeout: 10_000 })
   await expect(page.getByRole('dialog', { name: 'Operations Hub' })).toBeVisible({ timeout: 15_000 })
   const terminalTab = page.getByTestId('data-terminal-tab')
@@ -191,6 +199,10 @@ test('AC4: a blank cell stays blank all the way to the database', async ({ page 
 })
 
 test('AC5: datasets are locked before the working phase', async ({ page }) => {
+  // The 403 from the datasets route IS the gate under test — it is what
+  // `DatasetsView` turns into the "unlocks at the Working phase" screen. Declare
+  // it so the error sentinel does not read the proof as a regression.
+  allowErrors(page, /\/api\/data-terminal\/datasets/)
   // The team's REAL phase has to move: `?phase=` is a client-side scene
   // override, while the lock is enforced server-side by `data_terminal` in
   // lib/phase.ts. Testing it any other way would assert the placeholder, not

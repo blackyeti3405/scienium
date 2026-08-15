@@ -1,5 +1,7 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { type Page } from '@playwright/test'
 import { createLab, type OwnedLab } from './lab'
+import { gotoFresh } from './api'
 import { e2eDb } from './db'
 
 /**
@@ -81,7 +83,13 @@ test.afterEach(async () => {
 })
 
 async function openDataLane(page: Page) {
-  await page.goto('/lab')
+  // gotoFresh, not page.goto: deep into a full-suite run the stored Clerk
+  // token has lapsed, and a bare navigation renders /lab with every one of its
+  // data fetches 401ing (notifications, feedback, momentum, codex progress).
+  // The assertions here still passed — the page under test is server-rendered —
+  // which is exactly why this went unnoticed until the error sentinel saw the
+  // 401 burst. See e2e/api.ts.
+  await gotoFresh(page, '/lab')
   await page.getByRole('button', { name: 'Open Operations Hub' }).click({ timeout: 10_000 })
   await expect(page.getByRole('dialog', { name: 'Operations Hub' })).toBeVisible({ timeout: 15_000 })
   const terminalTab = page.getByTestId('data-terminal-tab')

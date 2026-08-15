@@ -39,11 +39,20 @@ interface TabDef {
   /**
    * Which half of the hub this tab belongs to. `logs` opens on day one — a
    * Project Log and a Failure Log are how a lab records work that has not
-   * succeeded yet. `daily` and `data_terminal` are earned at
-   * `project_development` (20 fully-proficient sources): those tabs mint KP and
-   * raise clearance, which is the shop's pacing.
+   * succeeded yet. `daily` is earned at `project_development` (20
+   * fully-proficient sources): those tabs mint KP and raise clearance, which is
+   * the shop's pacing.
+   *
+   * OMITTED when the tab is open in every phase and gates its own contents. The
+   * Data Terminal is the one such tab: its Stats and Charts guides are reference
+   * reading a student needs precisely while PLANNING, and `data_terminal` (the
+   * datasets themselves) is still enforced server-side — the datasets route
+   * 403s, which `DatasetsView` turns into its "unlocks at the Working phase"
+   * screen. Filtering the whole tab out instead (v0.80.0) made that screen
+   * unreachable and took the guides with it, against this file's own copy
+   * ("The guides above are open now — read them while you plan").
    */
-  feature: Extract<Feature, 'logs' | 'daily' | 'data_terminal'>
+  feature?: Extract<Feature, 'logs' | 'daily' | 'data_terminal'>
 }
 
 // Field Codex leads: it replaced Field Dispatch as the daily pillar.
@@ -52,7 +61,7 @@ const TAB_DEFS: TabDef[] = [
   { key: 'log', icon: '📋', label: 'Project Log', feature: 'logs' },
   { key: 'failure', icon: '⚡', label: 'Failure Log', feature: 'logs' },
   { key: 'expertise', icon: '🎖', label: 'Proof of Expertise', feature: 'daily' },
-  { key: 'data', icon: '📊', label: 'Data Terminal', testId: 'data-terminal-tab', feature: 'data_terminal' },
+  { key: 'data', icon: '📊', label: 'Data Terminal', testId: 'data-terminal-tab' },
   { key: 'vega', icon: '🧠', label: 'Study with Vega', testId: 'vega-tab', feature: 'daily' },
 ]
 
@@ -64,7 +73,7 @@ export function OperationsHubFeature({
   /** The team's phase — decides which tabs are open. */
   phase: Phase
 }) {
-  const tabs = TAB_DEFS.filter((t) => isFeatureUnlocked(phase, t.feature))
+  const tabs = TAB_DEFS.filter((t) => !t.feature || isFeatureUnlocked(phase, t.feature))
   // A new lab lands on the Project Log, not the Field Codex — `initialTab` may
   // name a tab this phase has not unlocked, and defaulting to a locked tab would
   // render an empty hub.

@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from './test'
+import { type Page } from '@playwright/test'
 import { api, openGateway, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 
@@ -77,7 +78,6 @@ async function fillAndSave(card: import('@playwright/test').Locator, value: stri
 }
 
 test.describe('Rubric self-assessment (F1)', () => {
-  test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
     // A fresh lab has no rubric rows at all, so `science:I` already reads 0 —

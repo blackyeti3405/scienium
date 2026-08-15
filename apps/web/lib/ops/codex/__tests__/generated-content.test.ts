@@ -36,6 +36,10 @@ import fluidDynamicsAerodynamics from '../tracks/fluid-dynamics-aerodynamics'
 import gaitBiomechanics from '../tracks/gait-biomechanics'
 import geneticsGenomics from '../tracks/genetics-genomics'
 import geologySeismology from '../tracks/geology-seismology'
+import immunologyMicrobiology from '../tracks/immunology-microbiology'
+import materialsScience from '../tracks/materials-science'
+import meteorologyClimate from '../tracks/meteorology-climate'
+import molecularCellBiology from '../tracks/molecular-cell-biology'
 
 const WRAPPERS: Record<string, CodexTrack> = {
   'acoustics-sound': acousticsSound,
@@ -53,6 +57,10 @@ const WRAPPERS: Record<string, CodexTrack> = {
   'gait-biomechanics': gaitBiomechanics,
   'genetics-genomics': geneticsGenomics,
   'geology-seismology': geologySeismology,
+  'immunology-microbiology': immunologyMicrobiology,
+  'materials-science': materialsScience,
+  'meteorology-climate': meteorologyClimate,
+  'molecular-cell-biology': molecularCellBiology,
 }
 
 function readContent(slug: string): unknown {

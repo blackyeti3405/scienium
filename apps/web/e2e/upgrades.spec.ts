@@ -26,10 +26,13 @@
  * cell (-3,3) — far from placement.spec.ts which uses "3D Printing Shop" at (3,3).
  * This prevents collisions when files run in parallel under E2E_WORKERS=2.
  *
- * SERIALISATION NOTE: The entire file is wrapped in a single describe with
- * mode:'serial'. This prevents the two sub-describes (seeded-LC upgrades and
- * LC-earning) from running concurrently, which would let one block's beforeAll/
- * afterAll corrupt the other's LC balance.
+ * ORDERING NOTE: the two sub-describes (seeded-LC upgrades and LC-earning) must
+ * not interleave — one block's beforeAll/afterAll would corrupt the other's LC
+ * balance. `fullyParallel: false` (playwright.config.ts) already guarantees
+ * that: tests in a file run in declaration order on one worker, nested
+ * describes included. If that config value is ever flipped to true, this file
+ * needs a real fix, not `mode: 'serial'` — which bought the ordering already in
+ * force at the price of skipping every later test after one failure.
  *
  * DB seed: LC is set to 30 for the leader team in beforeAll (so upgrade assertions
  * work deterministically without relying on the daily-earning path). The afterAll
@@ -40,7 +43,8 @@
  * context to stay deterministic without depending on the full failure-log UI.
  */
 
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, allowErrors } from './test'
+import { type Page } from '@playwright/test'
 import {
   deleteE2eLabCreditClaimsToday,
   getE2eLabCredits,
@@ -68,14 +72,13 @@ const UPGRADE_BUILDING_NAME = 'Robotics Bay'
 const DROP_GX = -3
 const DROP_GY = 3
 
-// ─── All upgrades tests wrapped in a single serial describe ──────────────────
-// mode:'serial' here prevents the two sub-describes (seeded-LC upgrades and
-// LC-earning) from interleaving when fullyParallel:true is set in the config.
+// ─── All upgrades tests wrapped in a single describe ─────────────────────────
+// The two sub-describes (seeded-LC upgrades and LC-earning) must not interleave;
+// see the ORDERING NOTE at the top of this file.
 
 let lab: OwnedLab
 
 test.describe('upgrades feature', () => {
-  test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async () => {
     // One lab for the whole file. It also retires the "(-3,3) so we never
@@ -291,6 +294,9 @@ test.describe('upgrades feature', () => {
     // Use the TOP tier (14→15 needs 10 LC) with LC drained to 0, so a stray +LC grant
     // from a parallel spec sharing this test team can't push LC over the threshold.
     test('AC9 — tier upgrade returns 402 when LC is insufficient', async ({ page }) => {
+      // The 402 IS the assertion — tell the error sentinel to expect it on this
+      // one route rather than treat the browser's console entry as a regression.
+      allowErrors(page, /\/api\/buildings\/upgrade/)
       await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 14, lab.teamId)
       await setE2eLabCredits(0, lab.teamId)
 
@@ -347,6 +353,8 @@ test.describe('upgrades feature', () => {
     test('AC8 — level-15 building shows Max level state; upgrade route returns 409', async ({
       page,
     }) => {
+      // The 409 IS the assertion, same as AC9's 402 — declare it for the sentinel.
+      allowErrors(page, /\/api\/buildings\/upgrade/)
       // Set the building to max level via DB.
       await setE2eBuildingLevel(UPGRADE_BUILDING_KEY, 15, lab.teamId)
 

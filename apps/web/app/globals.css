@@ -740,6 +740,10 @@
   background: #0f1320;
   border-bottom: 3px solid #2a3048;
   flex-shrink: 0;
+  /* Containing block for the Toast pill, which portals in here — the body below
+     clips its overflow, so a toast at the top of a feature lands on the
+     feature's own toolbar. */
+  position: relative;
 }
 .feature-panel__title { color: #e8ecfb; font-size: 10px; }
 .feature-panel__close {

@@ -13,5 +13,9 @@
   "fluid-dynamics-aerodynamics": "af93b6f46ad148da5858f9fc1a786e94b9f0fd31b904801ec14eb718a10ae133",
   "gait-biomechanics": "52cd924bd46eae08aca924c71ad02793a0a941fe30d868673435fae6b3fe2bbf",
   "genetics-genomics": "760c2783ee448bc860e13dea10dd1571fb43252daf0edc053de47557720368df",
-  "geology-seismology": "9611a1b960ea880372fb602c44c66269d6d6bfca91ea418eea45c301d11331ac"
+  "geology-seismology": "9611a1b960ea880372fb602c44c66269d6d6bfca91ea418eea45c301d11331ac",
+  "immunology-microbiology": "5e72286fa5facaf3e6619214363429cb4b0ccfab89e7e628c1bb6753fbd05a55",
+  "materials-science": "2a5c179971a1dc8d2ceff17291f25a8b8a9a8c96df376b51495ce059bd9d73b4",
+  "meteorology-climate": "3a777757e545442f8bede229a4933cc73d7c8c0d4a2cdf5613289994e5eabf40",
+  "molecular-cell-biology": "88b6ac0dcaea31864569dab7e31b536724248a1c1ea1fb8f9bb3cea512df6fb8"
 }

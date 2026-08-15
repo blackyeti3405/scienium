@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, allowErrors } from './test'
+import { type Page } from '@playwright/test'
 import { api, withSeedPage, uploadLogAttachment, openGateway, openLiteratureReview, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
 import { e2eDb } from './db'
@@ -57,7 +58,6 @@ async function openDiscovery(page: Page) {
 // ── Setup / Teardown ──────────────────────────────────────────────────────────
 
 test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
-  test.describe.configure({ mode: 'serial' })
 
   test.beforeAll(async ({ browser }) => {
     lab = await createLab('confirm-dialogs')
@@ -425,7 +425,10 @@ test.describe('F3 — Pixel-native confirm/alert dialogs', () => {
     }
     const { entry: ac9Entry } = await seedRes.json()
 
-    // Intercept the DELETE request for this specific entry and return 500.
+    // Intercept the DELETE request for this specific entry and return 500. The
+    // 500 is the point of the test, so the error sentinel (e2e/test.ts) is told
+    // to expect it — for this one entry's route only.
+    allowErrors(page, new RegExp(`/api/failure-log/${ac9Entry.id}`))
     await page.route(`**/api/failure-log/${ac9Entry.id}`, async (route) => {
       if (route.request().method() === 'DELETE') {
         await route.fulfill({ status: 500, body: JSON.stringify({ error: 'simulated error' }) })

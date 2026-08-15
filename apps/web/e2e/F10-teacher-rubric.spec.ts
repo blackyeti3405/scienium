@@ -1,10 +1,5 @@
-import {
-  test,
-  expect,
-  request as playwrightRequest,
-  type Browser,
-  type Page,
-} from '@playwright/test'
+import { test, expect } from './test'
+import { request as playwrightRequest, type Browser, type Page } from '@playwright/test'
 import { STORAGE } from './roles'
 import { api, registerPageRole, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
@@ -35,7 +30,7 @@ import { createLab, type OwnedLab } from './lab'
  *  AC10 — IDOR (own team): GET returns 200 with a criteria array, totalMax 100
  *  AC11 — IDOR (foreign team): GET returns 403 and no criteria data
  *  AC12 — IDOR (write): PUT with a foreign teamId returns 403, no row created
- *  AC13 — Unauthenticated GET is blocked pre-route with a 307 -> /sign-in
+ *  AC13 — Unauthenticated GET is blocked pre-route with a JSON 401
  *  AC14 — PUT persists a teacher score that a subsequent GET reflects, while
  *         the student self-check value for the same key is unchanged
  *
@@ -94,7 +89,7 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   // These tests intentionally exercise the remote development database through
   // multiple full student-detail loads. Reload cases can exceed Playwright's
   // 30-second default even when every individual request is healthy.
-  test.describe.configure({ mode: 'serial', timeout: 60_000 })
+  test.describe.configure({ timeout: 60_000 })
   // Every test in this suite drives the teacher-only drill-down / API — override
   // the default chromium storageState (lab leader) once for the whole describe
   // block. test.use() cannot be called from inside an async test body.
@@ -417,14 +412,18 @@ test.describe('F10 (teacher rubric) — teacher-side rubric scoring + comparison
   })
 
   // ── AC13 ─────────────────────────────────────────────────────────────────────
-  test('AC13: unauthenticated GET is blocked pre-route with a 307 redirect to /sign-in', async () => {
+  test('AC13: unauthenticated GET is blocked pre-route with a JSON 401', async () => {
     const anonCtx = await playwrightRequest.newContext({ baseURL: BASE_URL, storageState: undefined })
     try {
       const res = await anonCtx.get('/api/teacher/rubric?teamId=anything&track=science', {
         maxRedirects: 0,
       })
-      expect(res.status()).toBe(307)
-      expect(res.headers()['location']).toContain('/sign-in')
+      // v0.78.0 (febe752e): /api/* answers an unauthenticated caller with JSON 401,
+      // NOT a 307 to /sign-in. A fetch follows that redirect and hands the caller a
+      // 200 carrying sign-in HTML, so `res.ok` is true and `res.json()` dies on
+      // "<!DOCTYPE". The block is still pre-route — no handler runs — which is what
+      // the no-leak assertions below prove.
+      expect(res.status()).toBe(401)
 
       const text = await res.text()
       expect(text).not.toContain('"criteria"')

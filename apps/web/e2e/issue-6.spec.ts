@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './test'
 import { STORAGE } from './roles'
 import { api, withSeedPage, gotoFresh } from './api'
 import { createLab, type OwnedLab } from './lab'
@@ -36,7 +36,6 @@ let inScopeStudentId: string | null = null
 test.use({ storageState: STORAGE.teacher })
 
 test.describe('Issue 6 — Teacher dashboard revamp', () => {
-  test.describe.configure({ mode: 'serial' })
 
   // ── Seed ─────────────────────────────────────────────────────────────────────
 
@@ -200,8 +199,8 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
 
   // ── AC5 ──────────────────────────────────────────────────────────────────────
   // The Literature tab shows: source/paper list, the 25-source gate progress
-  // ("N / 25"), and this student's demonstrated-proficiency count.
-  test('AC5: Literature tab shows source gate N/25, paper list, and student proficiency count', async ({
+  // ("N / <tier target>"), and this student's demonstrated-proficiency count.
+  test('AC5: Literature tab shows the tiered source gate, paper list, and student proficiency count', async ({
     page,
   }) => {
     if (!inScopeStudentId) throw new Error('inScopeStudentId not set — beforeAll failed')
@@ -212,13 +211,24 @@ test.describe('Issue 6 — Teacher dashboard revamp', () => {
     await expect(litTab).toBeVisible({ timeout: 10000 })
     await litTab.click()
 
-    // Source gate card: the progress display renders the target "/ 25" (or whatever sourceTarget is).
-    // data-testid="source-count" is on the count number span; its sibling shows "/ <target>".
+    // Source gate card: `data-testid="source-count"` is the count number span;
+    // its sibling shows "/ <target> sources ready".
     const sourceCount = page.locator('[data-testid="source-count"]')
     await expect(sourceCount).toBeVisible({ timeout: 5000 })
 
-    // The source target text "/ 25" must appear next to the count.
-    await expect(page.getByText(/\/ 25/)).toBeVisible()
+    // The target is TIERED, not a constant: v0.80.0 made it 10 at
+    // literature_review and 20 at plan_refinement, leaving 25 as the bonus
+    // ceiling a team is rewarded for rather than required to hit. This assertion
+    // hardcoded 25 and had been failing ever since — the roster student sits at
+    // literature_review, so the card reads "0 / 10 sources ready".
+    //
+    // Matched by SHAPE rather than value on purpose. Which tier applies depends
+    // on the student's phase, which this test does not control, and the values
+    // live in `lib/team/advance.ts`, which is `server-only` and cannot be
+    // imported here. Pinning the numbers belongs in a unit test on
+    // `literatureTargetFor`; what a browser test can honestly assert is that the
+    // gate renders a real target beside the count.
+    await expect(page.getByText(/\/ \d+ sources ready/)).toBeVisible()
 
     // Student proficiency count: data-testid="proficiency-count".
     const proficiencyCount = page.locator('[data-testid="proficiency-count"]')
