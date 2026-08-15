@@ -49,6 +49,7 @@
  * created, if it ever earns its keep.
  */
 import { test as base, expect, type Page } from '@playwright/test'
+import fs from 'node:fs'
 
 /**
  * Noise that is real but not ours, allowed for every test.
@@ -81,6 +82,55 @@ const ALLOW: RegExp[] = [
   /ERR_ABORTED|The user aborted a request|signal is aborted/i,
   // React DevTools nag, printed once per page load in a production build.
   /Download the React DevTools/i,
+  // Sentry's tunnel route, which WebKit refuses: "due to access control checks".
+  // Confirmed against a PRODUCTION build, not just dev. It currently escapes
+  // notice only because it fires inside the window `forgetHarnessErrors` clears
+  // — so any spec that navigates again after bootstrap would trip on it.
+  //
+  // Allowed rather than fixed because a blocked telemetry beacon is not what
+  // these specs assert. It does mean WebKit/Safari clients may not deliver error
+  // reports to Sentry at all — a real observability gap, tracked as product work
+  // rather than papered over here.
+  /\/monitoring\?/,
+]
+
+/**
+ * Tolerated on WebKit ONLY, because the harness puts WebKit somewhere no user
+ * goes — this is not a product allowance and must not migrate into ALLOW.
+ *
+ * WebKit is the one engine that cannot ride a restored `storageState` session
+ * (`isWebKit` in e2e/api.ts), so it alone signs in IN-PAGE and then has
+ * `__client_uat` written into its jar BY HAND, because the browser refuses to
+ * store Clerk's `Domain=localhost` copy. That cookie is what the client uses to
+ * guess "am I signed in" before clerk-js finishes loading. A hand-mirrored value
+ * can disagree with what the SERVER just rendered from the real session, and any
+ * component branching on auth state then renders differently on the two sides:
+ * React #418, roughly one run in ten. React recovers by re-rendering the subtree
+ * on the client, which is why every assertion in the lane still passes.
+ *
+ * Waiting for `window.Clerk.session` before navigating (e2e/api.ts) removed the
+ * 401s this used to arrive with; it did not remove the mismatch, and chasing it
+ * further means debugging our own cookie workaround rather than the product.
+ *
+ * REVISIT IF THIS APPEARS ON CHROMIUM OR FIREFOX. Those restore a real session
+ * and never mirror a cookie, so a hydration error there is a genuine product bug
+ * and this tolerance would be hiding nothing — it is scoped to WebKit precisely
+ * so that signal survives.
+ */
+const WEBKIT_ONLY: RegExp[] = [
+  /Minified React error #418|hydrat/i,
+  // The same fabricated jar, one symptom earlier: the shell's own boot fetches
+  // can go out while the session is still settling and come back 401. Waiting for
+  // `window.Clerk.session` before navigating (e2e/api.ts) cleared these on macOS
+  // WebKit 10 runs out of 10; Linux WebKit still leaks the first one, usually
+  // `momentum`, because the cookie it is authenticating with is one we wrote
+  // ourselves rather than one the browser accepted.
+  //
+  // Pinned to the three shell endpoints rather than a bare /401/, so an
+  // unexpected 401 anywhere else still fails this lane. And the same spec runs on
+  // Chromium and Firefox with a real session, where a genuine 401 regression on
+  // these endpoints WOULD fail — the signal survives on two engines of three.
+  /401 \(Unauthorized\).*\/api\/(team\/(momentum|feedback)|notifications)/,
 ]
 
 /** Per-page extra allowances, registered by `allowErrors`. */
@@ -156,11 +206,40 @@ export const test = base.extend<{ errorSentinel: void }>({
         console.log(`\n[sentinel] ${testInfo.title}\n` + seen.map((e) => `    ${e}`).join('\n'))
       }
 
+      // A hydration error in a PRODUCTION build is "Minified React error #418"
+      // and nothing else — no component, no element, no text. That is why the
+      // WebKit one seen on 2026-08-15 could not be chased: it appeared once in
+      // ~14 loads and left nothing to look at. Capture the two documents whose
+      // disagreement IS the bug, so the next occurrence is diffable instead of
+      // merely annoying. Best-effort: diagnostics must never mask the failure.
+      if (seen.some((e) => /418|423|425|hydrat/i.test(e))) {
+        try {
+          const url = page.url()
+          const client = await page.content()
+          const server = await page.request.get(url).then((r) => r.text())
+          // Written with fs into the test's own output dir rather than
+          // `testInfo.attach`: attach from a fixture teardown produced no files
+          // in CI on the 2026-08-15 run that DID hit this branch, and a
+          // diagnostic that silently writes nothing is worse than none.
+          // `test-results/` is what the workflow uploads.
+          fs.writeFileSync(testInfo.outputPath('hydration-client-dom.html'), client)
+          fs.writeFileSync(testInfo.outputPath('hydration-server-html.html'), server)
+          console.log(
+            `[sentinel] hydration mismatch on ${url} — wrote client/server HTML to ${testInfo.outputDir}`,
+          )
+        } catch (err) {
+          // Never mask the real failure, but say so: a silent catch here is how
+          // the previous attempt looked like it worked.
+          console.warn(`[sentinel] could not capture hydration HTML: ${String(err).slice(0, 200)}`)
+        }
+      }
+
       // Already red? The assertion failure is the better message; adding console
       // noise on top of it only buries the diagnosis.
       if (testInfo.status !== testInfo.expectedStatus) return
 
-      const allowed = [...ALLOW, ...(perPage.get(page) ?? [])]
+      const isWebKit = page.context().browser()?.browserType().name() === 'webkit'
+      const allowed = [...ALLOW, ...(isWebKit ? WEBKIT_ONLY : []), ...(perPage.get(page) ?? [])]
       const unexplained = seen.filter((e) => !allowed.some((p) => p.test(e)))
       if (unexplained.length === 0) return
 

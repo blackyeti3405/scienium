@@ -178,7 +178,14 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     // Prod mode pays a full `next build` before the server answers — give it room.
-    timeout: PROD_BUILD ? 420_000 : 120_000,
+    //
+    // 7 minutes was too tight to be a budget, and the failure it produces says
+    // nothing about the app: the compat lane died on
+    // "Timed out waiting 420000ms from config.webServer" having run no test at
+    // all, on the same commit whose smoke lane built and passed in 7m40s. A
+    // shared runner's build time is the variable here, not our code, so the
+    // ceiling is set where only a genuinely stuck build hits it.
+    timeout: PROD_BUILD ? 900_000 : 120_000,
     // The Playwright-spawned server inherits this process's env (E2E_SKIP_LLM /
     // E2E_MOCK_SOURCES set above), so it stubs LLM + external-source calls. A
     // manually-started `pnpm dev` never sees them.

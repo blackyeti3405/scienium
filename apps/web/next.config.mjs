@@ -1,7 +1,30 @@
 import { withSentryConfig } from '@sentry/nextjs'
 
+/**
+ * The clerk-js build the browser loads, PINNED.
+ *
+ * The npm packages are locked by the lockfile, but clerk-js itself is fetched
+ * from Clerk's CDN at runtime — so it is the one dependency that can change
+ * under a frozen commit. The app a user loads today need not be the app CI
+ * verified yesterday, and a browser-only regression lands with nothing in the
+ * diff to explain it. That is not hypothetical here: the E2E gate went red
+ * overnight on 2026-08-11 against an unchanged `main` and an unchanged secret.
+ *
+ * Pinned in config rather than in the environment on purpose: an env var has to
+ * be set in `.env.local`, the `E2E_ENV_FILE` CI secret AND Vercel, and wherever
+ * it is missing the pin silently does not apply. This applies everywhere, and a
+ * bump shows up in review. A real env var still wins, for a one-off test.
+ *
+ * To bump: raise the version, run the E2E gate (Chromium + the compat lane),
+ * then commit the new number.
+ */
+const CLERK_JS_VERSION = '6.29.0'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_CLERK_JS_VERSION: process.env.NEXT_PUBLIC_CLERK_JS_VERSION ?? CLERK_JS_VERSION,
+  },
   // Dev-only routes are compiled out of PRODUCTION builds entirely.
   //
   // `app/dev/*` holds visual harnesses (the skeleton audit). Runtime guards

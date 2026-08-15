@@ -240,6 +240,31 @@ async function signInProgrammatically(page: Page): Promise<void> {
   // stops at `needs_second_factor` creates no session and leaves middleware
   // handshaking `session-token-but-no-client-uat` until `page.goto` times out.
   await clerk.signIn({ page, signInParams: { strategy: 'ticket', ticket: await signInTicket(acct.identifier) } })
+
+  // `clerk.signIn` resolving means the API call finished, NOT that clerk-js has
+  // finished putting the session live in this page — `setActive` completes on its
+  // own schedule. Navigating during that window is what made the compat lane
+  // flaky: the cookies are already good, so the SERVER renders the page signed
+  // in, while the client boots with clerk-js still mid-activation and renders a
+  // different tree. That is React #418 (a WebKit-only hydration mismatch that
+  // reproduced roughly one run in ten), and the same window is why the shell's
+  // authed fetches went out early and came back 401 — one cause, both symptoms.
+  //
+  // Only this path was ever exposed: Chromium and Firefox restore `storageState`
+  // and never sign in in-page, which is exactly why neither ever saw #418.
+  await page
+    .waitForFunction(
+      () => Boolean((window as { Clerk?: { session?: unknown } }).Clerk?.session),
+      null,
+      { timeout: 10_000 },
+    )
+    .catch(() => {
+      // Bounded, and worth saying out loud: if the session never goes live the
+      // navigation below will fail on its own terms, which is a better error
+      // than a silent hang here.
+      console.warn('[e2e/api] clerk-js did not report a live session within 10s — navigating anyway')
+    })
+
   await mirrorClientUat(page)
   // Land on the role's own surface before returning. clerk-js's `setActive`
   // navigates to the after-sign-in URL on its own schedule; absorbing that here
