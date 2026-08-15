@@ -86,6 +86,29 @@ const ALLOW: RegExp[] = [
 /** Per-page extra allowances, registered by `allowErrors`. */
 const perPage = new WeakMap<Page, RegExp[]>()
 
+/** Per-page "discard what you have seen so far", wired by the fixture below. */
+const forget = new WeakMap<Page, () => void>()
+
+/**
+ * Discard everything the page has raised SO FAR — for the harness's own
+ * bootstrap, not for specs.
+ *
+ * `e2e/api.ts` boots WebKit by loading the app while signed OUT (clerk.signIn
+ * needs ClerkProvider mounted first), and the shell fires its authed fetches
+ * during that render: three guaranteed 401s from /api/team/momentum,
+ * /api/notifications and /api/team/feedback before the sign-in has happened.
+ * They are an artifact of how the harness authenticates, so failing a spec on
+ * them reports the harness, not the app.
+ *
+ * Deliberately NOT `allowErrors(/401/)`: that would tolerate those endpoints for
+ * the whole test, including a genuine regression after the spec starts. This
+ * only drops what was already recorded, so everything from the spec's own work
+ * onward is still caught. Call it exactly once, at the end of the bootstrap.
+ */
+export function forgetHarnessErrors(page: Page): void {
+  forget.get(page)?.()
+}
+
 /**
  * Tolerate errors matching `patterns` for the rest of this test.
  *
@@ -101,6 +124,9 @@ export const test = base.extend<{ errorSentinel: void }>({
   errorSentinel: [
     async ({ page, baseURL }, use, testInfo) => {
       const seen: string[] = []
+      forget.set(page, () => {
+        seen.length = 0
+      })
 
       page.on('pageerror', (err) => {
         seen.push(`uncaught: ${err.message}`)

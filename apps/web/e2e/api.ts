@@ -8,7 +8,8 @@ import type {
 } from '@playwright/test'
 import { expect } from '@playwright/test'
 import { clerk, clerkSetup, setupClerkTestingToken } from '@clerk/testing/playwright'
-import { STORAGE, getAccounts, type Role } from './roles'
+import { STORAGE, getAccounts, signInTicket, type Role } from './roles'
+import { forgetHarnessErrors } from './test'
 
 const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3000}`
 const LANDING: Record<Role, string> = { leader: '/lab', student: '/lab', teacher: '/teacher' }
@@ -84,6 +85,12 @@ async function ensureAppLoaded(page: Page): Promise<void> {
   if (isWebKit(page)) {
     console.warn('[e2e/api] webkit cannot restore a saved Clerk session — signing in in-page')
     await signInProgrammatically(page)
+    // That sign-in booted the app signed OUT on its way in, so the shell fired
+    // its authed fetches and collected guaranteed 401s. They belong to the
+    // harness, not the spec — drop them before the spec's own work begins, so
+    // the sentinel still catches anything raised from here on. Bootstrap only:
+    // the mid-test `reauthenticate` path deliberately does NOT do this.
+    forgetHarnessErrors(page)
     return
   }
   const role = PAGE_ROLE.get(page) ?? 'leader'
@@ -228,10 +235,11 @@ async function signInProgrammatically(page: Page): Promise<void> {
     .catch(() => {})
   await page.goto('/')
   await clerk.signOut({ page }).catch(() => {}) // a half-dead session blocks signIn
-  await clerk.signIn({
-    page,
-    signInParams: { strategy: 'password', identifier: acct.identifier, password: acct.password },
-  })
+  // Ticket, not password — same reason auth.setup.ts uses one (`signInTicket` in
+  // ./roles.ts). This is the WebKit first-load path, where a password sign-in that
+  // stops at `needs_second_factor` creates no session and leaves middleware
+  // handshaking `session-token-but-no-client-uat` until `page.goto` times out.
+  await clerk.signIn({ page, signInParams: { strategy: 'ticket', ticket: await signInTicket(acct.identifier) } })
   await mirrorClientUat(page)
   // Land on the role's own surface before returning. clerk-js's `setActive`
   // navigates to the after-sign-in URL on its own schedule; absorbing that here
@@ -259,8 +267,23 @@ async function signInProgrammatically(page: Page): Promise<void> {
  * accepted the cookie, which is why this needs no engine check.
  */
 async function mirrorClientUat(page: Page): Promise<void> {
-  const cookies = await page.context().cookies(BASE_URL)
+  let cookies = await page.context().cookies(BASE_URL)
   if (cookies.some((c) => c.name.startsWith('__client_uat'))) return
+
+  // clerk-js writes `__session` asynchronously, after `setActive` resolves. Run
+  // before that lands and there is nothing to mirror FROM: this returned having
+  // added nothing, the cookie appeared a moment later, and the next navigation
+  // went out with a session token and no `__client_uat` — which is precisely the
+  // `__clerk_hs_reason=session-token-but-no-client-uat` handshake loop this
+  // function exists to prevent. Wait (bounded) for something to mirror.
+  const hasSession = (cs: typeof cookies) =>
+    cs.some((c) => c.name === '__session' || c.name.startsWith('__session_'))
+  for (let i = 0; i < 20 && !hasSession(cookies); i++) {
+    await page.waitForTimeout(100)
+    cookies = await page.context().cookies(BASE_URL)
+    // A late-arriving real cookie is better than a mirrored one — stop either way.
+    if (cookies.some((c) => c.name.startsWith('__client_uat'))) return
+  }
   // One per `__session` cookie: dev instances also carry an instance-suffixed
   // pair (`__session_-Y45bENH` / `__client_uat_-Y45bENH`), and which pair
   // middleware reads depends on both being present.
@@ -350,6 +373,12 @@ async function refreshed(
 export async function gotoFresh(page: Page, url: string): Promise<void> {
   await ensureAppLoaded(page)
   await refreshClerkSession(page)
+  // Last thing before the document request, because that request is what
+  // handshakes. `refreshClerkSession` rotates the session token, and on an engine
+  // that would not store `__client_uat` the rotation leaves the pair mismatched
+  // again — mirroring at sign-in time only is not enough. A no-op wherever the
+  // browser kept the real cookie, which is every engine but Linux WebKit.
+  await mirrorClientUat(page)
   const res = await gotoSettled(page, url)
   if (!hijackedBySignIn(page, res)) return
   console.warn(
