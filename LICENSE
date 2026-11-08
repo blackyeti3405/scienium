@@ -1,0 +1,42 @@
+Copyright (c) 2026 the scienium authors. All rights reserved.
+
+scienium is source-available, not open source. The source is published so that
+it can be read, reviewed, and evaluated. It is not published for reuse.
+
+GRANT
+
+You may view, read, download, and run this software for the sole purposes of
+personal study, evaluation, academic review, and non-commercial testing. You may
+quote short excerpts in a review, an article, or academic work, with attribution.
+
+RESTRICTIONS
+
+Without prior written permission from the copyright holder, you may not:
+
+  - use this software, in whole or in part, in any product or service, whether
+    or not that product or service is commercial;
+  - redistribute, publish, sublicense, sell, or host this software or any
+    derivative of it;
+  - incorporate any part of this source into another codebase;
+  - remove or alter this notice.
+
+No trademark rights are granted. "scienium" and the scienium marks and artwork
+are not licensed by this document.
+
+THIRD-PARTY MATERIAL
+
+This repository depends on third-party packages that carry their own licenses,
+which this document does not alter or supersede. Some reference material under
+`art_ref/` is included for design discussion only and may be owned by others;
+it is not covered by the grant above.
+
+NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+For any use beyond the grant above, ask: hello@scienium.app

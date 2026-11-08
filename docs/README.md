@@ -6,7 +6,6 @@ Video-game designed to spread STEM and improve student commitment to science fai
 - [Product specification](SPEC.md)
 - [Technical architecture](ARCHITECTURE.md)
 - [Setup and operations](SETUP.md)
-- [Security checklist](SECURITY.md)
 - [Changelog](CHANGELOG.md)
 - [Deferred work](TODO.md)
 - [Architecture decisions and refactor plans](architecture/)

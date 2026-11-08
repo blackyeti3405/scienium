@@ -1218,7 +1218,7 @@ Reports, advanced analytics, and bulk actions are deferred until pilot feedback 
 **Authorization:**
 - Teacher role distinct from student role (`role` enum on `users` table); the DB row is authoritative (a stale Clerk claim can't override a downgrade)
 - Individual-student access is gated on the student's own `class_id ∈ the teacher's classes`; team-level artifacts are authorized by **membership** (`teacherOwnsTeam` — a teacher owns any team with ≥1 member in their classes), so a cross-school lab is visible to both owning teachers
-- Application-level scoping today; Postgres RLS remains deferred pre-pilot defense-in-depth (see `SECURITY.md`)
+- Application-level scoping today; Postgres RLS remains deferred pre-pilot defense-in-depth (tracked in the private security register)
 - Admin role separately defined for school-level access
 
 **Tables (current):**
@@ -1270,7 +1270,7 @@ Showcase moderation state lives on the `showcase` row itself (`moderation_status
 
 ### 17.1 Security & Abuse Prevention
 
-scienium serves minors and calls paid AI APIs, so abuse prevention is a first-class requirement, not an afterthought. (Implementation details live in `ARCHITECTURE.md` §5 and §10; the pre-pilot checklist is in `SECURITY.md`.)
+scienium serves minors and calls paid AI APIs, so abuse prevention is a first-class requirement, not an afterthought. (Implementation details live in `ARCHITECTURE.md` §5 and §10; the pre-pilot checklist is in the private security register.)
 
 - **Rate limiting on all endpoints.** Every API route is rate-limited per authenticated user (with a coarse per-IP backstop tuned so a shared school/NAT network isn't penalized). The AI-backed actions — paper chat, quiz generation/grading, research-plan review, "has this been done before?" idea-check, and fair-deadline reads — are capped tightly because each call costs money; runaway or scripted use is throttled with a friendly "slow down" response. On serverless/multi-instance production the paid tiers **fail closed** without a shared (Upstash) counter, so the per-student cost cap can't silently multiply by instance count. Idea-checks keep their per-team daily cap (3/day). Invite/join-code redemption is throttled to make code guessing impractical.
 - **Strict input validation.** All user input is validated against a strict Zod schema: correct types, sensible length limits (shared `boundedText` / `cuid` / `httpUrl` helpers), and rejection of unexpected fields. Identity/authority fields are never honored from a request body.

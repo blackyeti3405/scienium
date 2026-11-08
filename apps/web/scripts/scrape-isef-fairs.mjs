@@ -167,6 +167,8 @@ async function geocode(city, state) {
   const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=us`
   try {
     const res = await fetch(url, {
+      // Nominatim's usage policy requires a contact address in the User-Agent.
+      // Use the project mailbox, never a personal one — this source is published.
       headers: { 'User-Agent': 'scienium-fair-scraper/1.0 (hello@scienium.app)' },
     })
     const data = await res.json()

@@ -15,7 +15,7 @@ without reading the code. Hand this file to counsel with the documents._
 | Constant | Value |
 | --- | --- |
 | `entity` | Rig Saini, operating as an individual (no company) |
-| `address` | [address redacted] |
+| `address` | set from `LEGAL_CONTACT_ADDRESS` in the deployment environment — deliberately not recorded in this repository |
 | `governingState` / `governingCounty` | California / Santa Clara |
 | `effectiveDate` / `version` | August 6, 2026 / 1.0 — bump on every substantive edit |
 
@@ -36,10 +36,14 @@ Two open items:
   before a district signs anything is the single largest risk reduction
   available, and district procurement is markedly more comfortable contracting
   with an entity than with a person.
-- **The address is a residence.** It is published on a page aimed at minors and
-  is now the operator's contact of record. A PO box or virtual mailbox (~$10–20 a
+- **The address is a residence.** It is still published on a page aimed at minors
+  and is the operator's contact of record. A PO box or virtual mailbox (~$10–20 a
   month), or a registered agent's address once an LLC exists, removes a home
-  address from a public page without weakening the notice.
+  address from a public page without weakening the notice. **The source tree no
+  longer carries it**: `LEGAL.address` reads `LEGAL_CONTACT_ADDRESS` from the
+  deployment environment (`apps/web/lib/legal/shared.ts`), so publishing this
+  repository does not publish the address. That is containment, not a fix — the
+  live page still shows a home address until a mailbox replaces it.
 - **DMCA safe harbour** requires a designated agent **registered with the US
   Copyright Office** (~$6, dmca.copyright.gov). ToS §9 describes the notice
   process but the safe harbour does not attach until the agent is registered.
@@ -104,7 +108,7 @@ Recorded so a future edit does not reintroduce one.
 9. **Safety.** ToS §13 disclaims any role in real-world experimentation, which
    for a science-fair product is the largest non-privacy exposure.
 10. **Science-fair rules.** ToS §12 says in-app fair guidance is informational and
-    may be incomplete — consistent with `docs/SECURITY.md`, which records that
+    may be incomplete — consistent with the private security register, which records that
     ISEF applicability guidance is gated behind a qualified review.
 
 ## 5. Suggested order of work

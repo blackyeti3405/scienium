@@ -27,7 +27,20 @@ const { PrismaClient } = require('@prisma/client')
 
 const db = new PrismaClient()
 
-const ATTACKER_EMAIL = process.argv[2] ?? 'hello@scienium.app'
+// Whose dev account to unblock. Pass it as argv[2], or set it once in
+// .env.local (which `seed:dev-pvp` already loads via --env-file). Deliberately
+// not defaulted to a real address: this source is published.
+const ATTACKER_EMAIL = process.argv[2] ?? process.env.DEV_PVP_ATTACKER_EMAIL
+if (!ATTACKER_EMAIL) {
+  console.error(
+    [
+      'No attacker account given. Pass the email of the dev account to unblock:',
+      '  pnpm --filter web seed:dev-pvp you@example.com',
+      'or set DEV_PVP_ATTACKER_EMAIL in apps/web/.env.local.',
+    ].join('\n'),
+  )
+  process.exit(1)
+}
 const SCHOOL_NAME = 'Dev School'
 const CLASS_NAME = 'Dev Class'
 const RIVAL_TEAM_NAME = 'Dev Rival Lab'

@@ -88,7 +88,7 @@ now an `INSERT`, not a project — which is exactly why the numbers were left ou
 guessed at.
 
 **None of the numbers below are ours or the owner's to decide.** FERPA/COPPA and the school
-contract govern them; `docs/SECURITY.md` already flags that as needing a lawyer. Bring this
+contract govern them; the private security register already flags that as needing a lawyer. Bring this
 table to that review.
 
 | `key` | What a row is | Days | Notes for the reviewer |
@@ -327,8 +327,8 @@ still owed:
   Upstash Redis, and Cloudflare R2. No Vercel project is linked yet (no `.vercel/`),
   and prod should use its **own** Supabase project — not the dev DB. The production
   domain **`scienium.app`** is registered (Cloudflare DNS).
-- **To go live (see SETUP.md §8 + [`SECURITY.md`](SECURITY.md) §1.1 launch blockers and
-  §6.2 "Email, domain, DNS"):**
+- **To go live (see SETUP.md §8 + the private security register's launch blockers
+  and its "Email, domain, DNS" checklist):**
   - **Supabase** — create a **separate production project**; set `DATABASE_URL`
     (pooled) + `DIRECT_URL` (direct, for `prisma migrate deploy`).
   - **Vercel** — import the GitHub repo (`blackyeti3405/scienium`), set root to
@@ -342,7 +342,7 @@ still owed:
 ## Branding — nova-lab → scienium (leftover from the original project name)
 - The repo/source is already "scienium" (no `nova-lab` anywhere in code). The leftover
   "nova-lab" lives **only in external accounts**, tracked as a checklist in
-  [`SECURITY.md`](SECURITY.md) §6.2:
+  the private security register:
   - **Clerk** application is named "Nova-lab" → shows "as Nova-lab" in auth emails. Rename
     it in the Clerk dashboard (Configure → Settings; also check Customization → Branding).
   - **R2 bucket** is named `nova-lab-assets`. Renaming is now bundled with the launch

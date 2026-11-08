@@ -352,6 +352,7 @@ Required:
 | `VIEW_FINGERPRINT_SALT` | `openssl rand -hex 32` |
 | `CRON_SECRET` | `openssl rand -hex 32` — **must be ≥32 chars** |
 | `PYODIDE_SOURCE` | `r2` |
+| `LEGAL_CONTACT_ADDRESS` | the postal address /privacy and /terms publish |
 
 Generate the two secrets:
 
@@ -362,6 +363,12 @@ openssl rand -hex 32
 > `CRON_SECRET` **fails closed**: unset or shorter than 32 characters and every
 > cron route answers 503, so the papers pipeline, notifications and data-request
 > sweeps silently stop. Vercel sends it automatically as a Bearer token once set.
+
+> `LEGAL_CONTACT_ADDRESS` **degrades visibly** rather than failing closed: unset,
+> `/privacy` and `/terms` print `[postal address not configured ...]` where the
+> address belongs and the server logs an error. That is a compliance defect on a
+> page aimed at minors, so check both pages after the first deploy. Use a PO box,
+> virtual mailbox or registered-agent address — not a residence.
 
 Strongly recommended:
 

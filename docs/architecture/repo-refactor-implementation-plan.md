@@ -539,7 +539,6 @@ Required outcome:
 Edit:
 
 - `docs/ARCHITECTURE.md`
-- `docs/SECURITY.md`
 - `docs/CHANGELOG.md`
 - `docs/TODO.md`
 - `docs/architecture/*.md`
@@ -1194,7 +1193,6 @@ one-off patterns.
 - `docs/architecture/adr-003-feature-boundaries.md`
 - `.claude/PARALLELISM.md`
 - `docs/TODO.md`
-- `docs/SECURITY.md`
 
 ### Required Changes
 
@@ -1212,7 +1210,6 @@ After implementation, update docs to reflect the real architecture:
     `content/fairs/dataset.ts`.
   - `docs/TODO.md` still describes showcase moderation as missing even though route
     and component support exist.
-  - `docs/SECURITY.md` dependency-review notes must match the current package pins.
 
 ### Acceptance Criteria
 

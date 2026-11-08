@@ -6,10 +6,11 @@
  */
 import { chromium } from '@playwright/test'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3005'
-const OUT = process.env.OUT_DIR ?? '/private/tmp/claude-501/-path-to-scienium/ab9fe080-44f8-4441-a6b9-39bdeebe3b92/scratchpad/audit'
+const OUT = process.env.OUT_DIR ?? path.join(os.tmpdir(), 'scienium-audit-shots')
 fs.mkdirSync(OUT, { recursive: true })
 
 const PAGES = [

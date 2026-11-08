@@ -522,7 +522,7 @@ else goes through the gate.
 >
 > The ruleset config is saved and activates automatically once the repo is on a
 > qualifying plan — no rework needed. Tracked as a launch blocker in
-> [`SECURITY.md`](SECURITY.md) §1.1 ("Repository / CI").
+> the private security register.
 
 **Until enforcement is on, the team agreement is:** always open a PR, wait for a
 **green `verify`**, and get **one review** before merging. Don't push straight to

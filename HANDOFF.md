@@ -210,7 +210,7 @@ load skews the suite; `test:e2e:file` uses `next dev`). New this session:
 - A full DB backup + per-table row manifest is in `backups/` (gitignored).
 - Commit + push to `Rig-features` after each finding. **Never open a PR or merge to main without
   asking.** No AI co-author trailer.
-- Update `docs/CHANGELOG.md`, `REFACTOR2.MD` §0.11, `docs/SECURITY.md`, `docs/ARCHITECTURE.md`,
+- Update `docs/CHANGELOG.md`, `REFACTOR2.MD` §0.11, `docs/ARCHITECTURE.md`,
   `docs/SPEC.md`, `docs/TODO.md` as part of each batch, not afterwards.
 - **Record what each fix STILL OWES.** That honesty is the point — and correct the register when
   you prove it wrong.

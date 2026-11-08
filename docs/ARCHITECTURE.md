@@ -3,7 +3,6 @@
 > Last fact-checked against the repository: 2026-07-20
 > Product behavior: [`SPEC.md`](SPEC.md)
 > Setup and operations: [`SETUP.md`](SETUP.md)
-> Security launch checklist: [`SECURITY.md`](SECURITY.md)
 > Durable decisions: [`architecture/`](architecture/)
 
 ## 1. System Summary
@@ -78,7 +77,6 @@ scienium/
 |   |-- ARCHITECTURE.md           this document
 |   |-- CHANGELOG.md              release history
 |   |-- SETUP.md                  local, CI, E2E, and deployment setup
-|   |-- SECURITY.md               pre-pilot security and privacy checklist
 |   |-- TODO.md                   explicitly deferred work
 |   |-- architecture/             architecture decision records and refactor plans
 |   `-- reference/
@@ -637,7 +635,7 @@ Top-level infrastructure and policy files:
   provider byte ceiling (streaming counter, cancels at the limit, throws rather
   than truncating — `content-length` is optional and a chunked body omits it).
   `lib/discovery/openalex.ts` uses it; the other adapters are the open half
-  (REFACTOR2 §0.7, `docs/SECURITY.md` §3.8).
+  (REFACTOR2 §0.7, the private security register).
 - `shop-server.ts`, `plot-server.ts`, `showcase-server.ts` (+
   `resolveShowcaseViewer` — the signed-in viewer's team/school context, plus the
   teams they teach, for a showcase privacy check; and
@@ -1806,7 +1804,7 @@ mid-lesson costs more than the bill it saves. See `docs/TODO.md` → "AI cost
 review".
 
 No error-monitoring or product-analytics SDK is currently integrated. Those
-remain pre-pilot operational work in `SECURITY.md`.
+remain pre-pilot operational work, tracked in the private security register.
 
 ## 13. Tests and Delivery Gates
 
@@ -1962,4 +1960,4 @@ content ownership boundaries are all listed above.
   SVC-1 is tracked in [`REFACTOR2.MD`](../REFACTOR2.MD) §4 "SVC-1",
   with all three current duplication sites listed.
 - Broader privacy, monitoring, CSP, backup, and incident-response work is tracked
-  in `SECURITY.md` for the classroom pilot.
+  in the private security register for the classroom pilot.
